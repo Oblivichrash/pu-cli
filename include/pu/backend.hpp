@@ -1,10 +1,12 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 //
 // Abstract backend interface for language model providers.
 
-#pragma once
+#ifndef PU_BACKEND_HPP
+#define PU_BACKEND_HPP
 
-#include <algorithm>
 #include <functional>
 #include <optional>
 #include <string>
@@ -13,49 +15,33 @@
 
 namespace pu::backend {
 
+// ============================================================================
+// Token types emitted during streaming
+// ============================================================================
 enum class TokenType {
-  kReasoning,
-  kContent
+  kReasoning,   // Model's internal reasoning (e.g., DeepSeek-R1)
+  kContent      // Final answer content
 };
 
+// ============================================================================
+// Streaming callback signature
+// ============================================================================
 using ChatCallback = std::function<void(TokenType type,
                                         std::string_view token,
                                         bool is_final)>;
 
-struct ToolParameterSchema {
-  std::string raw_schema;
-};
-
-struct ToolDefinition {
-  std::string name;
-  std::string description;
-  ToolParameterSchema parameters;
-};
-
-struct ToolCall {
-  std::string id;
-  std::string name;
-  std::string arguments;
-};
-
+// ============================================================================
+// Message structure representing a single conversation turn
+// ============================================================================
 struct Message {
-  enum class Role { kSystem, kUser, kAssistant, kTool };
+  enum class Role { kSystem, kUser, kAssistant };
   Role role;
   std::string content;
-  std::string tool_name;
-  std::vector<ToolCall> tool_calls;
-
-  Message() = default;
-  Message(Role role, std::string content)
-      : role(role), content(std::move(content)) {}
-  Message(Role role, std::string tool_name, std::string content)
-      : role(role), content(std::move(content)), tool_name(std::move(tool_name)) {}
-  Message(Role role, std::vector<ToolCall> tool_calls)
-      : role(role), tool_calls(std::move(tool_calls)) {}
 };
 
-using ToolCallback = std::function<void(const ToolCall& call)>;
-
+// ============================================================================
+// Abstract backend interface
+// ============================================================================
 class Backend {
  public:
   struct Config {
@@ -64,40 +50,23 @@ class Backend {
     std::optional<std::string> system_prompt;
   };
 
-  explicit Backend(Config config) : config_(std::move(config)) {}
+  explicit Backend(Config config);
   virtual ~Backend() = default;
 
+  // Non-copyable, movable
   Backend(const Backend&) = delete;
   Backend& operator=(const Backend&) = delete;
-  Backend(Backend&&) noexcept = default;
-  Backend& operator=(Backend&&) noexcept = default;
+  Backend(Backend&&) = default;
+  Backend& operator=(Backend&&) = default;
 
+  /// Send conversation history and receive streaming tokens via callback.
+  /// @param history The full conversation context.
+  /// @param cb Callback invoked for each token and at stream end (is_final=true).
+  /// @throws std::runtime_error on network, HTTP, or parsing failures.
   virtual void Chat(const std::vector<Message>& history,
                     ChatCallback cb) = 0;
-
-  virtual void Chat(const std::vector<Message>& history,
-                    const std::vector<ToolDefinition>& tools,
-                    ChatCallback content_cb,
-                    ToolCallback tool_cb) = 0;
-
-  virtual bool SupportsTools() const { return false; }
-
- protected:
-  Config config_;
-
-  // Build a message list with the system prompt injected once, if configured and not already present.
-  std::vector<Message> BuildMessagesWithSystemPrompt(const std::vector<Message>& history) const {
-    std::vector<Message> messages;
-    if (config_.system_prompt &&
-        std::none_of(history.begin(), history.end(),
-                     [](const auto& m) { return m.role == Message::Role::kSystem; })) {
-      messages.push_back({Message::Role::kSystem, *config_.system_prompt});
-    }
-    for (const auto& msg : history) {
-      messages.push_back(msg);
-    }
-    return messages;
-  }
 };
 
 }  // namespace pu::backend
+
+#endif  // PU_BACKEND_HPP
