@@ -50,7 +50,7 @@ class Backend {
     std::optional<std::string> system_prompt;
   };
 
-  explicit Backend(Config config) {};
+  explicit Backend(Config config) : config_(std::move(config)) {}
   virtual ~Backend() = default;
 
   // Non-copyable, movable
@@ -65,6 +65,9 @@ class Backend {
   /// @throws std::runtime_error on network, HTTP, or parsing failures.
   virtual void Chat(const std::vector<Message>& history,
                     ChatCallback cb) = 0;
+
+ protected:
+  Config config_;
 };
 
 }  // namespace pu::backend

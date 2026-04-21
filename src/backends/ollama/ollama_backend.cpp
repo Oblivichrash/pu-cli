@@ -43,9 +43,8 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
 // Public API
 // ============================================================================
 OllamaBackend::OllamaBackend(Config config,
-                             std::string host,
                              std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(std::move(config)), config_(config), host_(std::move(host)), http_(std::move(http)) {}
+    : Backend(config), host_(std::move(config.host)), http_(std::move(http)) {}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {

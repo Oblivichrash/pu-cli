@@ -44,14 +44,15 @@ TEST_CASE("OllamaBackend SSE parsing", "[ollama]") {
 }
 
 TEST_CASE("OllamaBackend request building", "[ollama]") {
-  pu::backend::Backend::Config config;
+  OllamaBackend::Config config;
   config.model = "llama3.2:1b";
   config.temperature = 0.5f;
   config.system_prompt = "You are helpful.";
+  config.host = "http://localhost:11434";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OllamaBackend backend(std::move(config), "http://localhost:11434", std::move(mock_http));
+  OllamaBackend backend(std::move(config), std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}

@@ -28,20 +28,14 @@ jobs:
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        vcpkg install curl nlohmann-json catch2
+        vcpkg install curl:x64-windows nlohmann-json:x64-windows
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
     - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
     - name: Build
       run: cmake --build build --config Release
 
-    - name: Test run
-      run: |
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          ./build/Release/pu.exe
-        else
-          ./build/pu
-        fi
-      shell: bash
+    - name: Test
+      run: ctest --test-dir build -C Release --output-on-failure

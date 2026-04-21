@@ -10,15 +10,17 @@
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace pu::backends::ollama {
 
 class OllamaBackend : public pu::backend::Backend {
  public:
+  struct Config : public pu::backend::Backend::Config {
+    std::string host = "http://localhost:11434";
+  };
+
   explicit OllamaBackend(Config config,
-                         std::string host,
                          std::unique_ptr<pu::http::HttpClient> http);
   ~OllamaBackend() override = default;
 
@@ -28,7 +30,6 @@ class OllamaBackend : public pu::backend::Backend {
  private:
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
 
-  Config config_;
   std::string host_;
   std::unique_ptr<pu::http::HttpClient> http_;
 };

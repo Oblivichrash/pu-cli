@@ -49,7 +49,6 @@ void CurlHttpClient::PostStream(const std::string& url,
   for (const auto& h : headers) slist.append(h.c_str());
   curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, slist.list);
 
-  // C-style callback trampoline
   curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, WriteCallbackTrampoline);
   curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &write_cb);
 
@@ -64,7 +63,7 @@ void CurlHttpClient::PostStream(const std::string& url,
     throw std::runtime_error("HTTP error: " + std::to_string(http_code));
   }
 
-  curl_easy_reset(handle_);  // Prepare for next request
+  curl_easy_reset(handle_);
 }
 
 }  // namespace pu::http
