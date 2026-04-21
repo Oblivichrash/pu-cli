@@ -28,7 +28,7 @@ target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_backend PRIVATE pu_http nlohmann_json::nlohmann_json)
+target_link_libraries(pu_backend PUBLIC pu_http nlohmann_json::nlohmann_json)
 add_library(pu::backend ALIAS pu_backend)
 
 # Main executable
