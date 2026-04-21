@@ -4,8 +4,7 @@
 //
 // Abstract backend interface for language model providers.
 
-#ifndef PU_BACKEND_HPP
-#define PU_BACKEND_HPP
+#pragma once
 
 #include <functional>
 #include <optional>
@@ -56,8 +55,8 @@ class Backend {
   // Non-copyable, movable
   Backend(const Backend&) = delete;
   Backend& operator=(const Backend&) = delete;
-  Backend(Backend&&) = default;
-  Backend& operator=(Backend&&) = default;
+  Backend(Backend&&) noexcept = default;
+  Backend& operator=(Backend&&) noexcept = default;
 
   /// Send conversation history and receive streaming tokens via callback.
   /// @param history The full conversation context.
@@ -71,5 +70,3 @@ class Backend {
 };
 
 }  // namespace pu::backend
-
-#endif  // PU_BACKEND_HPP

@@ -4,8 +4,7 @@
 //
 // Abstract HTTP client interface for dependency injection.
 
-#ifndef PU_HTTP_HTTP_CLIENT_HPP
-#define PU_HTTP_HTTP_CLIENT_HPP
+#pragma once
 
 #include <functional>
 #include <string>
@@ -26,5 +25,3 @@ class HttpClient {
 };
 
 }  // namespace pu::http
-
-#endif  // PU_HTTP_HTTP_CLIENT_HPP

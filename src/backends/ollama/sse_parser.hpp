@@ -4,8 +4,7 @@
 //
 // Internal SSE parsing utilities for Ollama backend.
 
-#ifndef PU_BACKENDS_OLLAMA_SSE_PARSER_HPP
-#define PU_BACKENDS_OLLAMA_SSE_PARSER_HPP
+#pragma once
 
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -23,7 +22,8 @@ struct SseToken {
 inline std::optional<SseToken> ParseSseLine(std::string_view line) {
   if (line.empty()) return std::nullopt;
   try {
-    nlohmann::json j = nlohmann::json::parse(line);
+    using json = nlohmann::json;  // local alias to minimize scope
+    json j = json::parse(line);
     SseToken token;
     if (j.contains("done") && j["done"].get<bool>()) {
       token.done = true;
@@ -41,5 +41,3 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
 }
 
 }  // namespace pu::backends::ollama::internal
-
-#endif  // PU_BACKENDS_OLLAMA_SSE_PARSER_HPP

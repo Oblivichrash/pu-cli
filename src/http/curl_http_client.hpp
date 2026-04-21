@@ -4,8 +4,7 @@
 //
 // libcurl implementation of HttpClient.
 
-#ifndef PU_HTTP_CURL_HTTP_CLIENT_HPP
-#define PU_HTTP_CURL_HTTP_CLIENT_HPP
+#pragma once
 
 #include "pu/http/http_client.hpp"
 #include <curl/curl.h>
@@ -42,5 +41,3 @@ struct CurlSlist {
 };
 
 }  // namespace pu::http
-
-#endif  // PU_HTTP_CURL_HTTP_CLIENT_HPP

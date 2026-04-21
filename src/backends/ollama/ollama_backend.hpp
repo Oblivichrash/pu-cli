@@ -4,8 +4,7 @@
 //
 // Ollama backend implementation.
 
-#ifndef PU_BACKENDS_OLLAMA_BACKEND_HPP
-#define PU_BACKENDS_OLLAMA_BACKEND_HPP
+#pragma once
 
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
@@ -18,6 +17,7 @@ class OllamaBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
     std::string host = "http://localhost:11434";
+    Config() = default;
   };
 
   explicit OllamaBackend(Config config,
@@ -35,5 +35,3 @@ class OllamaBackend : public pu::backend::Backend {
 };
 
 }  // namespace pu::backends::ollama
-
-#endif  // PU_BACKENDS_OLLAMA_BACKEND_HPP

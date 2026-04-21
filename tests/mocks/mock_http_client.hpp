@@ -2,8 +2,7 @@
 // Use of this source code is governed by a GPL-3.0-style license that can be
 // found in the LICENSE file.
 
-#ifndef PU_TESTS_MOCKS_MOCK_HTTP_CLIENT_HPP
-#define PU_TESTS_MOCKS_MOCK_HTTP_CLIENT_HPP
+#pragma once
 
 #include "pu/http/http_client.hpp"
 #include <functional>
@@ -36,5 +35,3 @@ class MockHttpClient : public pu::http::HttpClient {
 };
 
 }  // namespace pu::tests
-
-#endif  // PU_TESTS_MOCKS_MOCK_HTTP_CLIENT_HPP
