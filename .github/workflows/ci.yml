@@ -28,7 +28,7 @@ jobs:
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        vcpkg install curl:x64-windows nlohmann-json:x64-windows
+        vcpkg install curl nlohmann-json catch2
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
     - name: Configure CMake
