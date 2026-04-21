@@ -1,13 +1,16 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 
 #include "curl_http_client.hpp"
-#include "platform/platform.hpp"
-
 #include <curl/curl.h>
 #include <stdexcept>
 
 namespace pu::http {
 
+// ============================================================================
+// CurlSlist implementation
+// ============================================================================
 CurlSlist::~CurlSlist() {
   if (list) curl_slist_free_all(list);
 }
@@ -16,6 +19,9 @@ void CurlSlist::append(const char* str) {
   list = curl_slist_append(list, str);
 }
 
+// ============================================================================
+// CurlHttpClient implementation
+// ============================================================================
 CurlHttpClient::CurlHttpClient() {
   handle_ = curl_easy_init();
   if (!handle_) throw std::runtime_error("Failed to initialize libcurl");
@@ -23,17 +29,6 @@ CurlHttpClient::CurlHttpClient() {
 
 CurlHttpClient::~CurlHttpClient() {
   if (handle_) curl_easy_cleanup(handle_);
-}
-
-static int ProgressCallback(void* /*clientp*/,
-                            curl_off_t /*dltotal*/,
-                            curl_off_t /*dlnow*/,
-                            curl_off_t /*ultotal*/,
-                            curl_off_t /*ulnow*/) {
-  if (pu::platform::IsInterrupted()) {
-    return 1;
-  }
-  return 0;
 }
 
 static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -57,14 +52,8 @@ void CurlHttpClient::PostStream(const std::string& url,
   curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, WriteCallbackTrampoline);
   curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &write_cb);
 
-  curl_easy_setopt(handle_, CURLOPT_NOPROGRESS, 0L);
-  curl_easy_setopt(handle_, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
-
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
-    if (pu::platform::IsInterrupted()) {
-      throw std::runtime_error("Request interrupted by user");
-    }
     throw std::runtime_error(std::string("libcurl error: ") + curl_easy_strerror(res));
   }
 
