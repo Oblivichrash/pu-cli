@@ -22,5 +22,10 @@ cmake --build build
 ./build/pu
 ```
 
+### Optional: Generate compile_commands.json for clangd/IDE
+```bash
+cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+```
+
 ## License
 GPL-3.0 – see [LICENSE](./LICENSE).

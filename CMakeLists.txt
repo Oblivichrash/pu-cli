@@ -17,7 +17,7 @@ target_include_directories(pu_http PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_http PRIVATE CURL::libcurl)
+target_link_libraries(pu_http PUBLIC CURL::libcurl)
 add_library(pu::http ALIAS pu_http)
 
 # Backends library
