@@ -4,8 +4,7 @@
 //
 // Abstract backend interface for language model providers.
 
-#ifndef PU_BACKEND_HPP
-#define PU_BACKEND_HPP
+#pragma once
 
 #include <functional>
 #include <optional>
@@ -50,14 +49,14 @@ class Backend {
     std::optional<std::string> system_prompt;
   };
 
-  explicit Backend(Config config);
+  explicit Backend(Config config) : config_(std::move(config)) {}
   virtual ~Backend() = default;
 
   // Non-copyable, movable
   Backend(const Backend&) = delete;
   Backend& operator=(const Backend&) = delete;
-  Backend(Backend&&) = default;
-  Backend& operator=(Backend&&) = default;
+  Backend(Backend&&) noexcept = default;
+  Backend& operator=(Backend&&) noexcept = default;
 
   /// Send conversation history and receive streaming tokens via callback.
   /// @param history The full conversation context.
@@ -65,8 +64,9 @@ class Backend {
   /// @throws std::runtime_error on network, HTTP, or parsing failures.
   virtual void Chat(const std::vector<Message>& history,
                     ChatCallback cb) = 0;
+
+ protected:
+  Config config_;
 };
 
 }  // namespace pu::backend
-
-#endif  // PU_BACKEND_HPP

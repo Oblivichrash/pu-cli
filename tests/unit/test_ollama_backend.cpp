@@ -1,4 +1,6 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/ollama/sse_parser.hpp"
@@ -75,6 +77,7 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
+  // Prepare simulated SSE stream
   std::vector<std::string> chunks = {
     R"({"message":{"content":"Hello"}})",
     R"({"message":{"content":" world"}})",
