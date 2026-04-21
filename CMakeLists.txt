@@ -18,6 +18,7 @@ target_include_directories(pu_http PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(pu_http PRIVATE CURL::libcurl)
+add_library(pu::http ALIAS pu_http)
 
 # Backends library
 add_library(pu_backend STATIC
@@ -28,6 +29,7 @@ target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(pu_backend PRIVATE pu_http nlohmann_json::nlohmann_json)
+add_library(pu::backend ALIAS pu_backend)
 
 # Main executable
 add_executable(pu src/main.cpp)

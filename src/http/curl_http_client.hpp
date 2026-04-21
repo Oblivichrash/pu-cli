@@ -9,6 +9,7 @@
 
 #include "pu/http/http_client.hpp"
 #include <curl/curl.h>
+#include <functional>
 #include <stdexcept>
 #include <string>
 

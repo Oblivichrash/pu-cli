@@ -6,7 +6,9 @@
 #define PU_TESTS_MOCKS_MOCK_HTTP_CLIENT_HPP
 
 #include "pu/http/http_client.hpp"
+#include <functional>
 #include <string>
+#include <vector>
 
 namespace pu::tests {
 
@@ -15,19 +17,22 @@ class MockHttpClient : public pu::http::HttpClient {
   void PostStream(const std::string& url,
                   const std::string& body,
                   const std::vector<std::string>& headers,
-                  WriteCallback write_cb) override {
+                  pu::http::WriteCallback write_cb) override {
     last_url = url;
     last_body = body;
     last_headers = headers;
     if (simulate_response) {
-      simulate_response(write_cb);
+      simulate_response(url, body, headers, write_cb);
     }
   }
 
   std::string last_url;
   std::string last_body;
   std::vector<std::string> last_headers;
-  std::function<void(WriteCallback&)> simulate_response;
+  std::function<void(const std::string&,
+                     const std::string&,
+                     const std::vector<std::string>&,
+                     pu::http::WriteCallback)> simulate_response;
 };
 
 }  // namespace pu::tests

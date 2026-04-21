@@ -50,7 +50,7 @@ class Backend {
     std::optional<std::string> system_prompt;
   };
 
-  explicit Backend(Config config);
+  explicit Backend(Config config) {};
   virtual ~Backend() = default;
 
   // Non-copyable, movable

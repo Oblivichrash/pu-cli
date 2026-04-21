@@ -3,40 +3,20 @@
 // found in the LICENSE file.
 
 #include "ollama_backend.hpp"
+#include "sse_parser.hpp"
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace pu::backends::ollama {
 
 using json = nlohmann::json;
 
 // ============================================================================
-// SSE parsing (pure function, testable)
-// ============================================================================
-std::optional<OllamaBackend::SseToken> OllamaBackend::ParseSseLine(std::string_view line) {
-  if (line.empty()) return std::nullopt;
-  try {
-    json j = json::parse(line);
-    SseToken token;
-    if (j.contains("done") && j["done"].get<bool>()) {
-      token.done = true;
-      return token;
-    }
-    if (j.contains("message") && j["message"].contains("content")) {
-      token.content = j["message"]["content"];
-      token.done = false;
-      return token;
-    }
-  } catch (const std::exception&) {
-    throw std::runtime_error("JSON parse error in SSE line: " + std::string(line));
-  }
-  return std::nullopt;
-}
-
-// ============================================================================
 // Request building
 // ============================================================================
-std::string OllamaBackend::BuildRequest(const std::vector<Message>& history) const {
+std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
   req["stream"] = true;
@@ -49,9 +29,9 @@ std::string OllamaBackend::BuildRequest(const std::vector<Message>& history) con
   for (const auto& msg : history) {
     std::string role;
     switch (msg.role) {
-      case Message::Role::kUser: role = "user"; break;
-      case Message::Role::kAssistant: role = "assistant"; break;
-      case Message::Role::kSystem: role = "system"; break;
+      case pu::backend::Message::Role::kUser: role = "user"; break;
+      case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
+      case pu::backend::Message::Role::kSystem: role = "system"; break;
     }
     messages.push_back({{"role", role}, {"content", msg.content}});
   }
@@ -63,12 +43,14 @@ std::string OllamaBackend::BuildRequest(const std::vector<Message>& history) con
 // Public API
 // ============================================================================
 OllamaBackend::OllamaBackend(Config config,
+                             std::string host,
                              std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(std::move(config)), config_(config), http_(std::move(http)) {}
+    : Backend(std::move(config)), config_(config), host_(std::move(host)), http_(std::move(http)) {}
 
-void OllamaBackend::Chat(const std::vector<Message>& history, ChatCallback cb) {
+void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
+                         pu::backend::ChatCallback cb) {
   std::string body = BuildRequest(history);
-  std::string url = "http://localhost:11434/api/chat";  // TODO: make configurable
+  std::string url = host_ + "/api/chat";
 
   std::string line_buffer;
   std::string current_content;
@@ -81,16 +63,16 @@ void OllamaBackend::Chat(const std::vector<Message>& history, ChatCallback cb) {
       line_buffer.erase(0, pos + 1);
       if (!line.empty() && line.back() == '\r') line.pop_back();
 
-      auto token_opt = ParseSseLine(line);
+      auto token_opt = internal::ParseSseLine(line);
       if (!token_opt) continue;
 
       const auto& token = *token_opt;
       if (token.done) {
-        cb(TokenType::kContent, "", true);
+        cb(pu::backend::TokenType::kContent, "", true);
         return total;
       } else if (!token.content.empty()) {
         current_content += token.content;
-        cb(TokenType::kContent, token.content, false);
+        cb(pu::backend::TokenType::kContent, token.content, false);
       }
     }
     return total;

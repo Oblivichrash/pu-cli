@@ -18,20 +18,18 @@ namespace pu::backends::ollama {
 class OllamaBackend : public pu::backend::Backend {
  public:
   explicit OllamaBackend(Config config,
+                         std::string host,
                          std::unique_ptr<pu::http::HttpClient> http);
   ~OllamaBackend() override = default;
 
-  void Chat(const std::vector<Message>& history, ChatCallback cb) override;
+  void Chat(const std::vector<pu::backend::Message>& history,
+            pu::backend::ChatCallback cb) override;
 
  private:
-  struct SseToken {
-    std::string content;
-    bool done = false;
-  };
-  static std::optional<SseToken> ParseSseLine(std::string_view line);
-  std::string BuildRequest(const std::vector<Message>& history) const;
+  std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
 
   Config config_;
+  std::string host_;
   std::unique_ptr<pu::http::HttpClient> http_;
 };
 

@@ -31,6 +31,11 @@ CurlHttpClient::~CurlHttpClient() {
   if (handle_) curl_easy_cleanup(handle_);
 }
 
+static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userdata) {
+  auto& cb = *static_cast<WriteCallback*>(userdata);
+  return cb(ptr, size * nmemb);
+}
+
 void CurlHttpClient::PostStream(const std::string& url,
                                 const std::string& body,
                                 const std::vector<std::string>& headers,
@@ -45,11 +50,7 @@ void CurlHttpClient::PostStream(const std::string& url,
   curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, slist.list);
 
   // C-style callback trampoline
-  static auto trampoline = [](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
-    auto& cb = *static_cast<WriteCallback*>(userdata);
-    return cb(ptr, size * nmemb);
-  };
-  curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, trampoline);
+  curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, WriteCallbackTrampoline);
   curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &write_cb);
 
   CURLcode res = curl_easy_perform(handle_);

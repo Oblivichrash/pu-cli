@@ -8,6 +8,14 @@ A minimalist, extensible CLI orchestrator for large language models, embracing t
 Under active development – basic skeleton.
 
 ## Build
+
+### Prerequisites
+- CMake 3.16+
+- libcurl
+- nlohmann/json (3.10+)
+- Catch2 (3.x, for tests)
+
+### Compile
 ```bash
 cmake -B build
 cmake --build build
