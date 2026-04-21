@@ -68,3 +68,54 @@ TEST_CASE("OllamaBackend request building", "[ollama]") {
   REQUIRE(body["messages"][0]["role"] == "system");
   REQUIRE(body["messages"][1]["role"] == "user");
 }
+
+TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
+  OllamaBackend::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  // Prepare simulated SSE stream
+  std::vector<std::string> chunks = {
+    R"({"message":{"content":"Hello"}})",
+    R"({"message":{"content":" world"}})",
+    R"({"done":true})"
+  };
+
+  mock_ptr->simulate_response = [&](const std::string&,
+                                    const std::string&,
+                                    const std::vector<std::string>&,
+                                    pu::http::WriteCallback cb) {
+    for (const auto& chunk : chunks) {
+      std::string data = chunk + "\n";
+      cb(data.data(), data.size());
+    }
+  };
+
+  OllamaBackend backend(std::move(config), std::move(mock_http));
+
+  std::vector<pu::backend::Message> history = {
+    {pu::backend::Message::Role::kUser, "Hi"}
+  };
+
+  std::string accumulated;
+  bool final_received = false;
+
+  backend.Chat(history, [&](pu::backend::TokenType type,
+                            std::string_view token,
+                            bool is_final) {
+    REQUIRE(type == pu::backend::TokenType::kContent);
+    if (!token.empty()) {
+      accumulated += token;
+    }
+    if (is_final) {
+      final_received = true;
+    }
+  });
+
+  REQUIRE(accumulated == "Hello world");
+  REQUIRE(final_received == true);
+  REQUIRE(mock_ptr->last_url == "http://localhost:11434/api/chat");
+}
