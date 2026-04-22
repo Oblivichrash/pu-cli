@@ -3,6 +3,7 @@ find_package(Catch2 3 REQUIRED)
 add_executable(pu_tests
     unit/test_ollama_backend.cpp
     unit/test_openai_backend.cpp
+    unit/test_model_config.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
