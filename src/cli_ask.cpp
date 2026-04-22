@@ -1,16 +1,13 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 
 #include "pu/cli_ask.hpp"
 
 #include "http/curl_http_client.hpp"
 #include "pu/backend.hpp"
-#include "pu/expert.hpp"
-#include "pu/expert_config.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/renderer.hpp"
-
-#include "experts/chat/chat_expert.hpp"
-#include "experts/bash/bash_expert.hpp"
+#include "pu/model_config.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -23,16 +20,15 @@ namespace pu::cli {
 namespace {
 
 void PrintUsage() {
-  std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] <prompt>\n"
+  std::cerr << "Usage: pu ask [-m <model>] <prompt>\n"
             << "Options:\n"
-            << "  --expert <name>     Specify the expert to use (default: from config)\n"
-            << "  --show-reasoning    Show model's internal reasoning\n"
-            << "  -h, --help          Show this help message\n";
+            << "  -m, --model <model>  Specify the model to use (default: from config)\n"
+            << "  -h, --help           Show this help message\n";
 }
 
-void PrintAvailableExperts(const pu::config::ExpertsConfig& config) {
-  std::cerr << "Available experts:\n";
-  for (const auto& entry : config.experts) {
+void PrintAvailableModels(const pu::config::ModelsFile& models) {
+  std::cerr << "Available models:\n";
+  for (const auto& entry : models.models) {
     std::cerr << "  " << entry.name;
     if (!entry.description.empty()) {
       std::cerr << " - " << entry.description;
@@ -44,25 +40,22 @@ void PrintAvailableExperts(const pu::config::ExpertsConfig& config) {
 }  // namespace
 
 int RunAskCommand(int argc, char* argv[]) {
-  std::string expert_name;
+  std::string model_name;
   std::string prompt;
-  bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
       PrintUsage();
       return 0;
-    } else if (arg == "--expert") {
+    } else if (arg == "-m" || arg == "--model") {
       if (i + 1 < argc) {
-        expert_name = argv[++i];
+        model_name = argv[++i];
       } else {
-        std::cerr << "Error: --expert requires an argument\n";
+        std::cerr << "Error: --model requires an argument\n";
         PrintUsage();
         return 1;
       }
-    } else if (arg == "--show-reasoning") {
-      show_reasoning = true;
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
@@ -86,55 +79,69 @@ int RunAskCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  pu::config::ExpertsConfig config;
+  pu::config::ModelsFile models;
   try {
-    config = pu::config::LoadExpertsConfig(config_path);
+    models = pu::config::LoadModelsConfig(config_path);
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to load config: " << e.what() << "\n";
     return 1;
   }
 
-  if (config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
+  if (models.models.empty()) {
+    std::cerr << "Error: no models configured\n";
     return 1;
   }
 
-  std::string target_name = expert_name.empty() ? config.default_expert : expert_name;
-  const pu::config::ExpertEntry* target_entry = nullptr;
-  for (const auto& entry : config.experts) {
-    if (entry.name == target_name) {
-      target_entry = &entry;
-      break;
+  const pu::config::ModelEntry* target_entry = nullptr;
+  if (model_name.empty()) {
+    for (const auto& entry : models.models) {
+      if (entry.name == models.default_model) {
+        target_entry = &entry;
+        break;
+      }
+    }
+    if (!target_entry) {
+      std::cerr << "Error: default model '" << models.default_model << "' not found\n";
+      PrintAvailableModels(models);
+      return 1;
+    }
+  } else {
+    for (const auto& entry : models.models) {
+      if (entry.name == model_name) {
+        target_entry = &entry;
+        break;
+      }
+    }
+    if (!target_entry) {
+      std::cerr << "Error: model '" << model_name << "' not found\n";
+      PrintAvailableModels(models);
+      return 1;
     }
   }
-  if (!target_entry) {
-    std::cerr << "Error: expert '" << target_name << "' not found\n";
-    PrintAvailableExperts(config);
+
+  auto http = std::make_unique<pu::http::CurlHttpClient>();
+  std::unique_ptr<pu::backend::Backend> backend;
+  try {
+    backend = pu::config::CreateBackend(target_entry->backend, std::move(http));
+  } catch (const std::exception& e) {
+    std::cerr << "Error: failed to create backend: " << e.what() << "\n";
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  auto chat_backend = pu::config::CreateBackend(target_entry->backend, std::move(chat_http));
-
-  pu::expert::ExpertManager manager;
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), target_entry->name));
-
-  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-  auto bash_backend = pu::config::CreateBackend(target_entry->backend, std::move(bash_http));
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!target_name.empty()) {
-    manager.SetActiveExpert(target_name);
-  }
-  if (show_reasoning) {
-    manager.SetShowReasoning(true);
-  }
+  std::vector<pu::backend::Message> history;
+  history.push_back({pu::backend::Message::Role::kUser, prompt});
 
   try {
-    manager.Dispatch(prompt);
+    backend->Chat(history, [](pu::backend::TokenType type,
+                              std::string_view token,
+                              bool is_final) {
+      if (type == pu::backend::TokenType::kContent) {
+        std::cout << token << std::flush;
+        if (is_final) {
+          std::cout << std::endl;
+        }
+      }
+    });
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what() << "\n";
     return 1;

@@ -34,7 +34,13 @@ target_link_libraries(pu_backend PUBLIC pu_http nlohmann_json::nlohmann_json)
 add_library(pu::backend ALIAS pu_backend)
 
 # Main executable
-add_executable(pu src/main.cpp)
+add_executable(pu
+    src/main.cpp
+    src/cli_ask.cpp
+)
+target_include_directories(pu PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 target_link_libraries(pu PRIVATE pu_backend)
 
 if(MSVC)
