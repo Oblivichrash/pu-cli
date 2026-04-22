@@ -44,9 +44,10 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
 // ============================================================================
 OpenAIBackend::OpenAIBackend(Config config,
                              std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(config),
-      host_(std::move(config.host)),
+    // Move members before passing config to base to avoid use-after-move
+    : host_(std::move(config.host)),
       api_key_(std::move(config.api_key)),
+      Backend(std::move(config)),
       http_(std::move(http)) {}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
@@ -54,10 +55,11 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   std::string body = BuildRequest(history);
   std::string url = host_ + "/v1/chat/completions";
 
-  std::vector<std::string> headers = {
-      "Content-Type: application/json",
-      "Authorization: Bearer " + api_key_
-  };
+  std::vector<std::string> headers;
+  headers.push_back("Content-Type: application/json");
+  if (!api_key_.empty()) {
+    headers.push_back("Authorization: Bearer " + api_key_);
+  }
 
   std::string line_buffer;
   std::string current_content;

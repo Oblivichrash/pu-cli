@@ -20,12 +20,20 @@ struct SseToken {
 };
 
 inline std::optional<SseToken> ParseSseLine(std::string_view line) {
-  // OpenAI SSE format: "data: <json>" or "data: [DONE]"
+  // OpenAI SSE format: "data: <json>" or "data: [DONE]".
+  // Some servers may include extra whitespace after the colon.
   constexpr std::string_view kDataPrefix = "data: ";
-  if (line.substr(0, kDataPrefix.size()) != kDataPrefix) {
+  
+  // Trim leading whitespace (should not be necessary for well-formed SSE,
+  // but we handle it defensively).
+  size_t start = line.find_first_not_of(" \t");
+  if (start == std::string_view::npos) return std::nullopt;
+  std::string_view trimmed = line.substr(start);
+  
+  if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) {
     return std::nullopt;  // ignore comments or empty lines
   }
-  std::string_view data = line.substr(kDataPrefix.size());
+  std::string_view data = trimmed.substr(kDataPrefix.size());
   if (data == "[DONE]") {
     SseToken token;
     token.done = true;

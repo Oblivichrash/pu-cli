@@ -49,6 +49,13 @@ TEST_CASE("OpenAIBackend SSE parsing", "[openai]") {
     std::string line = "data: not json";
     REQUIRE_THROWS_AS(ParseSseLine(line), std::runtime_error);
   }
+
+  SECTION("handles whitespace after data: prefix") {
+    std::string line = R"(data:  {"choices":[{"delta":{"content":"Hello"}}]})";
+    auto token = ParseSseLine(line);
+    REQUIRE(token.has_value());
+    REQUIRE(token->content == "Hello");
+  }
 }
 
 TEST_CASE("OpenAIBackend request building", "[openai]") {
@@ -83,6 +90,28 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
     if (h.find("Authorization: Bearer test-key") != std::string::npos) has_auth = true;
   }
   REQUIRE(has_auth);
+}
+
+TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empty", "[openai]") {
+  OpenAIBackend::Config config;
+  config.model = "local-model";
+  config.host = "http://localhost:8080";
+  config.api_key = "";  // explicitly empty
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIBackend backend(std::move(config), std::move(mock_http));
+
+  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
+  backend.Chat(history, [](auto&&...) {});
+
+  // Verify that no Authorization header was added
+  bool has_auth = false;
+  for (const auto& h : mock_ptr->last_headers) {
+    if (h.find("Authorization:") != std::string::npos) has_auth = true;
+  }
+  REQUIRE_FALSE(has_auth);
+  REQUIRE(mock_ptr->last_url == "http://localhost:8080/v1/chat/completions");
 }
 
 TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
@@ -130,4 +159,28 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
   REQUIRE(accumulated == "Hello world");
   REQUIRE(final_received == true);
   REQUIRE(mock_ptr->last_url == "https://api.openai.com/v1/chat/completions");
+}
+
+TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
+  OpenAIBackend::Config config;
+  config.model = "gpt-4o-mini";
+  config.api_key = "invalid-key";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  // Simulate an HTTP 401 Unauthorized error by throwing from PostStream
+  mock_ptr->simulate_response = [&](const std::string&,
+                                    const std::string&,
+                                    const std::vector<std::string>&,
+                                    pu::http::WriteCallback) {
+    throw std::runtime_error("HTTP error: 401 Unauthorized");
+  };
+
+  OpenAIBackend backend(std::move(config), std::move(mock_http));
+
+  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
+  
+  REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), std::runtime_error);
+  REQUIRE_THROWS_WITH(backend.Chat(history, [](auto&&...) {}), "HTTP error: 401 Unauthorized");
 }

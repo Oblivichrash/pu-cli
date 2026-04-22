@@ -13,11 +13,17 @@
 
 namespace pu::backends::openai {
 
+/// OpenAI-compatible chat completion backend.
+/// Supports any service that implements the OpenAI /v1/chat/completions
+/// API with SSE streaming (e.g., DeepSeek, Qwen, Doubao, local vLLM).
+/// Requires an API key unless the endpoint is unauthenticated.
 class OpenAIBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
     std::string host = "https://api.openai.com";
     std::string api_key;  // Required for OpenAI API
+    
+    Config() = default;
   };
 
   explicit OpenAIBackend(Config config,
