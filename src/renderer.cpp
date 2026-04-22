@@ -62,20 +62,23 @@ backend::ChatCallback StreamingRenderer::Create(bool show_reasoning) {
   first_content_token_ = true;
   ClearInterruptFlag();
 
-  return [show_reasoning](backend::TokenType type,
-                          std::string_view token,
-                          bool is_final) {
-    OnToken(type, token, is_final, show_reasoning);
+  // Capture per-request state for reasoning prefix
+  bool first_reasoning = true;
+
+  return [show_reasoning, first_reasoning](backend::TokenType type,
+                                           std::string_view token,
+                                           bool is_final) mutable {
+    OnToken(type, token, is_final, show_reasoning, first_reasoning);
   };
 }
 
 void StreamingRenderer::OnToken(backend::TokenType type,
                                 std::string_view token,
                                 bool is_final,
-                                bool show_reasoning) {
+                                bool show_reasoning,
+                                bool& first_reasoning) {
   if (type == backend::TokenType::kReasoning) {
     if (show_reasoning) {
-      static bool first_reasoning = true;
       if (first_reasoning) {
         std::cerr << "[Thinking] ";
         first_reasoning = false;
@@ -83,7 +86,6 @@ void StreamingRenderer::OnToken(backend::TokenType type,
       std::cerr << token << std::flush;
       if (is_final) {
         std::cerr << std::endl;
-        first_reasoning = true;
       }
     }
     return;

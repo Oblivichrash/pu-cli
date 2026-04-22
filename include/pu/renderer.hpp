@@ -27,6 +27,7 @@ class StreamingRenderer {
   // Create a ChatCallback that renders tokens to stdout. If show_reasoning is
   // true, reasoning tokens are printed to stderr with a "[Thinking]" prefix.
   // Default is false (ignore reasoning).
+  // Each call to Create resets the internal rendering state.
   static backend::ChatCallback Create(bool show_reasoning = false);
 
   // This class uses static state and is not safe for concurrent use.
@@ -35,7 +36,8 @@ class StreamingRenderer {
   static void OnToken(backend::TokenType type,
                       std::string_view token,
                       bool is_final,
-                      bool show_reasoning);
+                      bool show_reasoning,
+                      bool& first_reasoning);
 
   static std::string accumulated_;
   static bool first_content_token_;
