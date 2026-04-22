@@ -1,4 +1,5 @@
 #include "pu/cli_ask.hpp"
+#include "pu/renderer.hpp"
 
 #include <curl/curl.h>
 #include <cstdlib>
@@ -9,6 +10,8 @@
 int main(int argc, char* argv[]) {
   curl_global_init(CURL_GLOBAL_DEFAULT);
   std::atexit(curl_global_cleanup);
+
+  pu::SetupSignalHandler();
 
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
