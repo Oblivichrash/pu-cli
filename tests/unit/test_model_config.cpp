@@ -11,12 +11,39 @@
 #include <cstdlib>
 #include <filesystem>
 
+#ifdef _WIN32
+#include <cstring>
+#endif
+
 using namespace pu::config;
 using namespace pu::tests;
 
 namespace fs = std::filesystem;
 
+// ----------------------------------------------------------------------------
+// Cross-platform environment variable helpers for testing
+// ----------------------------------------------------------------------------
+#ifdef _WIN32
+static void set_env(const char* name, const char* value) {
+    std::string s = std::string(name) + "=" + value;
+    _putenv(s.c_str());
+}
+static void unset_env(const char* name) {
+    std::string s = std::string(name) + "=";
+    _putenv(s.c_str());
+}
+#else
+static void set_env(const char* name, const char* value) {
+    setenv(name, value, 1);
+}
+static void unset_env(const char* name) {
+    unsetenv(name);
+}
+#endif
+
+// ----------------------------------------------------------------------------
 // Helper to create a temporary config file
+// ----------------------------------------------------------------------------
 struct TempConfigFile {
   fs::path path;
   TempConfigFile() {
@@ -32,6 +59,9 @@ struct TempConfigFile {
   }
 };
 
+// ----------------------------------------------------------------------------
+// Tests
+// ----------------------------------------------------------------------------
 TEST_CASE("LoadModelsConfig parses valid JSON", "[model_config]") {
   TempConfigFile tmp;
   std::string json = R"({
@@ -62,7 +92,7 @@ TEST_CASE("LoadModelsConfig parses valid JSON", "[model_config]") {
   tmp.write(json);
 
   // Set environment variable for test
-  setenv("OPENAI_KEY", "test-key-123", 1);
+  set_env("OPENAI_KEY", "test-key-123");
 
   ModelsFile models = LoadModelsConfig(tmp.path.string());
 
@@ -74,7 +104,7 @@ TEST_CASE("LoadModelsConfig parses valid JSON", "[model_config]") {
   REQUIRE(models.models[1].backend.type == BackendType::kOpenAI);
   REQUIRE(models.models[1].backend.api_key == "test-key-123");
 
-  unsetenv("OPENAI_KEY");
+  unset_env("OPENAI_KEY");
 }
 
 TEST_CASE("LoadModelsConfig throws on missing file", "[model_config]") {
@@ -164,13 +194,15 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[model_config]") {
         "name": "x",
         "backend": {
           "type": "ollama",
-          "host": "http://localhost",
-          "model": "${UNDEFINED_VAR_FOR_TEST}"
+          "host": "http://localhost:11434",
+          "model": "llama3.2",
+          "system_prompt": "${UNDEFINED_VAR_FOR_TEST}"
         }
       }
     ]
   })";
   tmp.write(json);
   ModelsFile models = LoadModelsConfig(tmp.path.string());
-  REQUIRE(models.models[0].backend.model.empty());  // expands to empty
+  REQUIRE(models.models[0].backend.system_prompt.has_value());
+  REQUIRE(models.models[0].backend.system_prompt->empty());  // expands to empty
 }

@@ -26,7 +26,7 @@ namespace {
 // Expand ${VAR} syntax with environment variable values.
 // Prints warning to std::cerr if variable is not defined.
 std::string ExpandEnvVars(const std::string& input) {
-  static std::regex env_re(R"(\$\{([^}]+)\})");
+  static const std::regex env_re(R"(\$\{([^}]+)\})");
   std::string result = input;
   std::smatch match;
   while (std::regex_search(result, match, env_re)) {
@@ -42,7 +42,8 @@ std::string ExpandEnvVars(const std::string& input) {
 
 BackendType ParseBackendType(const std::string& str) {
   if (str == "openai") return BackendType::kOpenAI;
-  return BackendType::kOllama;  // default
+  if (str == "ollama") return BackendType::kOllama;
+  throw std::runtime_error("Unknown backend type: '" + str + "'");
 }
 
 BackendConfig ParseBackendConfig(const json& j) {
@@ -68,8 +69,7 @@ std::string FindConfigPath() {
     return env;
   }
 
-  std::ifstream file("./models.json");
-  if (file.good()) {
+  if (std::filesystem::exists("./models.json")) {
     return "./models.json";
   }
 
@@ -108,6 +108,12 @@ ModelsFile LoadModelsConfig(const std::string& config_path) {
       throw std::runtime_error("Model '" + entry.name + "' missing 'backend' block");
     }
     entry.backend = ParseBackendConfig(item["backend"]);
+    if (entry.backend.host.empty()) {
+      throw std::runtime_error("Model '" + entry.name + "': 'host' is required");
+    }
+    if (entry.backend.model.empty()) {
+      throw std::runtime_error("Model '" + entry.name + "': 'model' is required");
+    }
     result.models.push_back(std::move(entry));
   }
 
