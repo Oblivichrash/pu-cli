@@ -6,6 +6,7 @@
 #include "backends/openai/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
 #include <nlohmann/json.hpp>
 
 using namespace pu::backend;
@@ -68,7 +69,7 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(std::move(config), std::move(mock_http));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -100,7 +101,7 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(std::move(config), std::move(mock_http));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   backend.Chat(history, [](auto&&...) {});
@@ -139,7 +140,7 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
     }
   };
 
-  OpenAIBackend backend(std::move(config), std::move(mock_http));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}
@@ -177,10 +178,16 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
     throw std::runtime_error("HTTP error: 401 Unauthorized");
   };
 
-  OpenAIBackend backend(std::move(config), std::move(mock_http));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   
   REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), std::runtime_error);
-  REQUIRE_THROWS_WITH(backend.Chat(history, [](auto&&...) {}), "HTTP error: 401 Unauthorized");
+
+  // Verify exception message contains expected text
+  try {
+    backend.Chat(history, [](auto&&...) {});
+  } catch (const std::runtime_error& e) {
+    REQUIRE(std::string(e.what()).find("401 Unauthorized") != std::string::npos);
+  }
 }

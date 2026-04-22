@@ -42,13 +42,12 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
 // ============================================================================
 // Public API
 // ============================================================================
-OpenAIBackend::OpenAIBackend(Config config,
+OpenAIBackend::OpenAIBackend(const Config& config,
                              std::unique_ptr<pu::http::HttpClient> http)
-    // Move members before passing config to base to avoid use-after-move
-    : host_(std::move(config.host)),
-      api_key_(std::move(config.api_key)),
-      Backend(std::move(config)),
-      http_(std::move(http)) {}
+    : Backend(config),                // base class copies Config
+      http_(std::move(http)),
+      host_(config.host),
+      api_key_(config.api_key) {}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {

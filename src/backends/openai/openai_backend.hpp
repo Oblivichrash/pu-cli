@@ -26,7 +26,7 @@ class OpenAIBackend : public pu::backend::Backend {
     Config() = default;
   };
 
-  explicit OpenAIBackend(Config config,
+  explicit OpenAIBackend(const Config& config,
                          std::unique_ptr<pu::http::HttpClient> http);
   ~OpenAIBackend() override = default;
 
@@ -36,9 +36,9 @@ class OpenAIBackend : public pu::backend::Backend {
  private:
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
 
+  std::unique_ptr<pu::http::HttpClient> http_;
   std::string host_;
   std::string api_key_;
-  std::unique_ptr<pu::http::HttpClient> http_;
 };
 
 }  // namespace pu::backends::openai
