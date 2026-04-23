@@ -8,6 +8,7 @@
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
 #include "pu/model_config.hpp"
+#include "pu/renderer.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -132,16 +133,8 @@ int RunAskCommand(int argc, char* argv[]) {
   history.push_back({pu::backend::Message::Role::kUser, prompt});
 
   try {
-    backend->Chat(history, [](pu::backend::TokenType type,
-                              std::string_view token,
-                              bool is_final) {
-      if (type == pu::backend::TokenType::kContent) {
-        std::cout << token << std::flush;
-        if (is_final) {
-          std::cout << std::endl;
-        }
-      }
-    });
+    auto renderer_cb = pu::StreamingRenderer::Create(/*show_reasoning=*/false);
+    backend->Chat(history, renderer_cb);
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what() << "\n";
     return 1;

@@ -37,6 +37,7 @@ add_library(pu::backend ALIAS pu_backend)
 add_executable(pu
     src/main.cpp
     src/cli_ask.cpp
+    src/renderer.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
