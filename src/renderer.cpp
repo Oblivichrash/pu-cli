@@ -4,6 +4,7 @@
 
 #include "pu/renderer.hpp"
 
+#include <atomic>
 #include <csignal>
 #include <iostream>
 
@@ -45,24 +46,12 @@ void SetupSignalHandler() {
 #endif
 }
 
-bool IsInterrupted() {
-  return interrupted;
-}
-
-void ClearInterruptFlag() {
-  interrupted = false;
-}
-
-// Static members
-std::string StreamingRenderer::accumulated_;
-bool StreamingRenderer::first_content_token_ = true;
+bool IsInterrupted() { return interrupted; }
+void ClearInterruptFlag() { interrupted = false; }
 
 backend::ChatCallback StreamingRenderer::Create(bool show_reasoning) {
-  accumulated_.clear();
-  first_content_token_ = true;
   ClearInterruptFlag();
 
-  // Capture per-request state for reasoning prefix
   bool first_reasoning = true;
 
   return [show_reasoning, first_reasoning](backend::TokenType type,
@@ -84,24 +73,14 @@ void StreamingRenderer::OnToken(backend::TokenType type,
         first_reasoning = false;
       }
       std::cerr << token << std::flush;
-      if (is_final) {
-        std::cerr << std::endl;
-      }
+      if (is_final) std::cerr << std::endl;
     }
     return;
   }
 
   if (type == backend::TokenType::kContent) {
-    if (first_content_token_) {
-      first_content_token_ = false;
-    }
-    accumulated_ += token;
-    std::cout << "\r" << accumulated_ << std::flush;
-    if (is_final) {
-      std::cout << std::endl;
-      accumulated_.clear();
-      first_content_token_ = true;
-    }
+    std::cout << token << std::flush;
+    if (is_final) std::cout << std::endl;
   }
 }
 
