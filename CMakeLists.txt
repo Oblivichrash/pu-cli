@@ -33,6 +33,18 @@ target_include_directories(pu_backend PRIVATE
 target_link_libraries(pu_backend PUBLIC pu_http nlohmann_json::nlohmann_json)
 add_library(pu::backend ALIAS pu_backend)
 
+# Expert library
+add_library(pu_expert STATIC
+    src/expert/expert_manager.cpp
+    src/experts/chat/chat_expert.cpp
+)
+target_include_directories(pu_expert PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(pu_expert PRIVATE pu_backend pu_http)
+add_library(pu::expert ALIAS pu_expert)
+
 # Main executable
 add_executable(pu
     src/main.cpp
@@ -43,16 +55,18 @@ add_executable(pu
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu PRIVATE pu_backend)
+target_link_libraries(pu PRIVATE pu_expert pu_backend pu_http)
 
 if(MSVC)
     target_compile_options(pu PRIVATE /W4)
     target_compile_options(pu_backend PRIVATE /W4)
     target_compile_options(pu_http PRIVATE /W4)
+    target_compile_options(pu_expert PRIVATE /W4)
 else()
     target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_backend PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_http PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_expert PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 # Testing
