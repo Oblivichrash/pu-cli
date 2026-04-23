@@ -16,6 +16,7 @@ namespace pu::backends::openai::internal {
 
 struct SseToken {
   std::string content;
+  std::string reasoning;  // reasoning_content from OpenAI o1 / compatible services
   bool done = false;
 };
 
@@ -46,11 +47,15 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     token.done = false;
     if (j.contains("choices") && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
-      if (choice.contains("delta") && choice["delta"].contains("content")) {
-        token.content = choice["delta"]["content"];
+      if (choice.contains("delta")) {
+        if (choice["delta"].contains("content")) {
+          token.content = choice["delta"]["content"];
+        }
+        if (choice["delta"].contains("reasoning")) {
+          token.reasoning = choice["delta"]["reasoning"];
+        }
       }
     }
-    // Some APIs also put finish_reason in the last chunk; we rely on [DONE] instead
     return token;
   } catch (const std::exception&) {
     throw std::runtime_error("JSON parse error in SSE line: " + std::string(line));

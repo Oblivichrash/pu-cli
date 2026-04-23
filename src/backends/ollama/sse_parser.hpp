@@ -16,6 +16,7 @@ namespace pu::backends::ollama::internal {
 
 struct SseToken {
   std::string content;
+  std::string reasoning;  // thinking/reasoning content
   bool done = false;
 };
 
@@ -29,8 +30,13 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
       token.done = true;
       return token;
     }
-    if (j.contains("message") && j["message"].contains("content")) {
-      token.content = j["message"]["content"];
+    if (j.contains("message")) {
+      if (j["message"].contains("content")) {
+        token.content = j["message"]["content"];
+      }
+      if (j["message"].contains("thinking")) {
+        token.reasoning = j["message"]["thinking"];
+      }
       token.done = false;
       return token;
     }
