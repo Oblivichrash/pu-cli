@@ -71,6 +71,7 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
     return experts_.begin()->first;
   }
 
+  // Build routing prompt dynamically based on registered experts
   std::ostringstream prompt;
   prompt << "You are a strict router. Direct the user request to the best expert.\n"
          << "Available experts:\n";
@@ -78,26 +79,36 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
     prompt << "- " << name << ": " << expert->Description() << "\n";
   }
   prompt << "\nRules:\n"
-         << "- Use 'chat' for conversation, questions, explanations.\n"
-         << "- Use 'bash' ONLY when the user explicitly asks to execute a command.\n"
-         << "- If unsure, default to 'chat'.\n"
+         << "- Use 'chat' for conversation, questions, explanations.\n";
+  if (experts_.count("bash")) {
+    prompt << "- Use 'bash' ONLY when the user explicitly asks to execute a command.\n";
+  }
+  prompt << "- If unsure, default to 'chat'.\n"
          << "\nUser request: \"" << input << "\"\n"
          << "Expert name:";
 
+  std::vector<backend::Message> history;
+  history.push_back({backend::Message::Role::kUser, prompt.str()});
+
   std::string selected = "chat";
-  bool first = true;
-  router_->Chat(std::vector<backend::Message>{}, [&](backend::TokenType type,
-                                                      std::string_view token,
-                                                      bool is_final) {
-    if (is_final) return;
-    if (type == backend::TokenType::kContent) {
-      if (first) {
-        selected.clear();
-        first = false;
+  try {
+    bool first = true;
+    router_->Chat(history, [&](backend::TokenType type,
+                               std::string_view token,
+                               bool is_final) {
+      if (is_final) return;
+      if (type == backend::TokenType::kContent) {
+        if (first) {
+          selected.clear();
+          first = false;
+        }
+        selected.append(token);
       }
-      selected.append(token);
-    }
-  });
+    });
+  } catch (const std::exception& e) {
+    std::cerr << "[Router] LLM call failed, falling back to 'chat': " << e.what() << "\n";
+    return "chat";
+  }
 
   // Trim whitespace
   selected.erase(0, selected.find_first_not_of(" \t\n\r"));
