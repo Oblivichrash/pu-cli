@@ -4,15 +4,19 @@
 
 #include "pu/cli_chat.hpp"
 
-#include "http/curl_http_client.hpp"
 #include "pu/backend.hpp"
+#include "pu/expert.hpp"
 #include "pu/http/http_client.hpp"
 #include "pu/model_config.hpp"
 #include "pu/renderer.hpp"
 
+#include "experts/chat/chat_expert.hpp"
+#include "http/curl_http_client.hpp"
+
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -100,14 +104,30 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  auto http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> backend;
+  // Create the chat backend
+  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
+  std::unique_ptr<pu::backend::Backend> chat_backend;
   try {
-    backend = pu::config::CreateBackend(current_entry->backend, std::move(http));
+    chat_backend = pu::config::CreateBackend(current_entry->backend, std::move(chat_http));
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to create backend: " << e.what() << "\n";
     return 1;
   }
+
+  // Create the router backend (reuse the same configuration for now)
+  auto router_http = std::make_unique<pu::http::CurlHttpClient>();
+  std::unique_ptr<pu::backend::Backend> router_backend;
+  try {
+    router_backend = pu::config::CreateBackend(current_entry->backend, std::move(router_http));
+  } catch (const std::exception& e) {
+    std::cerr << "Error: failed to create router backend: " << e.what() << "\n";
+    return 1;
+  }
+
+  // Set up the expert framework
+  pu::expert::ExpertManager manager(std::move(router_backend));
+  manager.RegisterExpert(
+      std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
 
   std::cout << "[INFO] Connected to model: " << current_entry->name;
   if (!current_entry->description.empty()) {
@@ -115,7 +135,6 @@ int RunChatCommand(int argc, char* argv[]) {
   }
   std::cout << "\nType /help for available commands.\n\n";
 
-  std::vector<pu::backend::Message> history;
   std::string input;
 
   while (true) {
@@ -129,14 +148,25 @@ int RunChatCommand(int argc, char* argv[]) {
       } else if (input == "/exit" || input == "/quit") {
         break;
       } else if (input == "/clear") {
-        history.clear();
+        manager.ClearSessions();
         std::cout << "[INFO] Conversation history cleared.\n";
       } else if (input == "/models") {
         PrintModels(models, current_entry->name);
       } else if (input.rfind("/model ", 0) == 0) {
-        std::string new_name = input.substr(7);
-        new_name.erase(0, new_name.find_first_not_of(" \t"));
-        new_name.erase(new_name.find_last_not_of(" \t") + 1);
+        // Extract and trim the model name
+        std::string new_name = input.substr(7);  // after "/model "
+        size_t start = new_name.find_first_not_of(" \t");
+        if (start != std::string::npos) {
+          new_name = new_name.substr(start);
+        } else {
+          new_name.clear();
+        }
+        size_t end = new_name.find_last_not_of(" \t");
+        if (end != std::string::npos) {
+          new_name = new_name.substr(0, end + 1);
+        } else {
+          new_name.clear();
+        }
         if (new_name.empty()) {
           std::cerr << "Error: model name required.\n";
           continue;
@@ -152,17 +182,33 @@ int RunChatCommand(int argc, char* argv[]) {
           std::cerr << "Error: model '" << new_name << "' not found.\n";
           continue;
         }
-        auto new_http = std::make_unique<pu::http::CurlHttpClient>();
-        std::unique_ptr<pu::backend::Backend> new_backend;
+
+        // Rebuild chat backend with new configuration
+        auto new_chat_http = std::make_unique<pu::http::CurlHttpClient>();
+        std::unique_ptr<pu::backend::Backend> new_chat_backend;
         try {
-          new_backend = pu::config::CreateBackend(new_entry->backend, std::move(new_http));
+          new_chat_backend = pu::config::CreateBackend(new_entry->backend, std::move(new_chat_http));
         } catch (const std::exception& e) {
           std::cerr << "Error: failed to switch model: " << e.what() << "\n";
           continue;
         }
-        backend = std::move(new_backend);
+
+        // Rebuild router backend as well
+        auto new_router_http = std::make_unique<pu::http::CurlHttpClient>();
+        std::unique_ptr<pu::backend::Backend> new_router_backend;
+        try {
+          new_router_backend = pu::config::CreateBackend(new_entry->backend, std::move(new_router_http));
+        } catch (const std::exception& e) {
+          std::cerr << "Error: failed to switch router model: " << e.what() << "\n";
+          continue;
+        }
+
+        // Rebuild ExpertManager and register ChatExpert
+        manager = pu::expert::ExpertManager(std::move(new_router_backend));
+        manager.RegisterExpert(
+            std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
+
         current_entry = new_entry;
-        history.clear();
         std::cout << "[INFO] Switched to model: " << current_entry->name;
         if (!current_entry->description.empty()) {
           std::cout << " (" << current_entry->description << ")";
@@ -174,16 +220,12 @@ int RunChatCommand(int argc, char* argv[]) {
       continue;
     }
 
-    history.push_back({pu::backend::Message::Role::kUser, input});
+    // Dispatch through expert framework
     try {
-      auto renderer_cb = pu::StreamingRenderer::Create(/*show_reasoning=*/false);
-      backend->Chat(history, renderer_cb);
+      std::string response = manager.Dispatch(input);
       std::cout << std::endl;
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
-      if (!history.empty() && history.back().role == pu::backend::Message::Role::kUser) {
-        history.pop_back();
-      }
     }
   }
 
