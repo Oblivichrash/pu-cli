@@ -241,7 +241,9 @@ int RunChatCommand(int argc, char* argv[]) {
     // Dispatch through expert framework
     try {
       std::string response = manager.Dispatch(input);
-      std::cout << std::endl;
+      // Prefix is now printed inside Dispatch, so just ensure a newline
+      // if the response itself didn't end with one (it should, via renderer).
+      // No extra endl here to avoid double spacing.
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }

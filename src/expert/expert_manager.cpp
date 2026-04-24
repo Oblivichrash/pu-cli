@@ -39,26 +39,20 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     return "No experts available.";
   }
 
-  // Determine if we need to reroute
-  bool do_route = active_expert_.empty() || ShouldReroute(input);
-
-  std::string target;
-  if (do_route) {
-    target = RouteToExpert(input);
-    auto it = experts_.find(target);
+  // Always route to determine the best expert for this input
+  std::string target = RouteToExpert(input);
+  auto it = experts_.find(target);
+  if (it == experts_.end()) {
+    // Fallback: prefer chat, then first expert
+    it = experts_.find("chat");
     if (it == experts_.end()) {
-      // Fallback: prefer chat, then first expert
-      it = experts_.find("chat");
-      if (it == experts_.end()) {
-        it = experts_.begin();
-      }
+      it = experts_.begin();
     }
-    active_expert_ = it->first;
   }
 
-  auto it = experts_.find(active_expert_);
-  if (it == experts_.end()) {
-    return "No experts available.";
+  // Update active expert only if it changed
+  if (target != active_expert_) {
+    active_expert_ = target;
   }
 
   ExpertContext ctx;
@@ -73,12 +67,10 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   };
   ctx.working_dir = ".";
 
-  std::string response = it->second->Handle(input, ctx);
+  // Output expert prefix before streaming response
+  std::cout << "\n[" << active_expert_ << "] " << std::flush;
 
-  // Output prefix for expert identification
-  std::cout << "\n[" << active_expert_ << "] ";
-
-  return response;
+  return it->second->Handle(input, ctx);
 }
 
 std::string ExpertManager::CallExpert(const std::string& expert_name, const std::string& input) {
@@ -94,18 +86,6 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
   ctx.working_dir = ".";
 
   return it->second->Handle(input, ctx);
-}
-
-bool ExpertManager::ShouldReroute(const std::string& input) {
-  // Use a lightweight routing prompt to check if the user wants to switch experts.
-  // This runs the router with a simplified prompt to see if target differs from active.
-  std::string target = RouteToExpert(input);
-  if (target != active_expert_ && experts_.count(target)) {
-    std::cerr << "[Router] Switching from " << active_expert_ << " to " << target << "\n";
-    active_expert_ = target;
-    return true;
-  }
-  return false;
 }
 
 std::string ExpertManager::RouteToExpert(const std::string& input) {
@@ -124,8 +104,13 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
   if (experts_.count("bash")) {
     prompt << "- Use 'bash' ONLY when the user explicitly asks to execute a command.\n";
   }
-  prompt << "- If unsure, default to 'chat'.\n"
+  prompt << "- If the user says 'ask <expert>' or 'switch to <expert>', "
+         << "immediately route to that expert.\n"
+         << "- If unsure, default to 'chat'.\n"
          << "- Output ONLY the expert name, no extra text.\n"
+         << "\nExample:\n"
+         << "User request: \"Ask bash to list files\"\n"
+         << "Expert name: bash\n"
          << "\nUser request: \"" << input << "\"\n"
          << "Expert name:";
 
