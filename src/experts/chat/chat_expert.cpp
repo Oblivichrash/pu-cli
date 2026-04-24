@@ -11,8 +11,8 @@
 namespace pu::experts {
 
 ChatExpert::ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
-                       const std::string& name)
-    : backend_(std::move(backend)), name_(name) {}
+                       const std::string& model_id)
+    : backend_(std::move(backend)), model_id_(model_id) {}
 
 std::string ChatExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& /*ctx*/) {
@@ -38,7 +38,6 @@ std::string ChatExpert::Handle(const std::string& input,
   }
 
   std::string response = full_response.str();
-  // Store assistant response in history
   if (!response.empty()) {
     history_.push_back({pu::backend::Message::Role::kAssistant, response});
   }

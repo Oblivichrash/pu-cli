@@ -52,17 +52,25 @@ void PrintModels(const pu::config::ModelsFile& models, const std::string& curren
 
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_model;
+  std::string initial_expert;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [-m <model>]\n";
+      std::cout << "Usage: pu chat [-m <model>] [--expert <name>]\n";
       return 0;
     } else if (arg == "-m" || arg == "--model") {
       if (i + 1 < argc) {
         initial_model = argv[++i];
       } else {
         std::cerr << "Error: --model requires an argument\n";
+        return 1;
+      }
+    } else if (arg == "--expert") {
+      if (i + 1 < argc) {
+        initial_expert = argv[++i];
+      } else {
+        std::cerr << "Error: --expert requires an argument\n";
         return 1;
       }
     } else {
@@ -115,7 +123,7 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create the router backend
+  // Create the router backend (reuse the same configuration for now)
   auto router_http = std::make_unique<pu::http::CurlHttpClient>();
   std::unique_ptr<pu::backend::Backend> router_backend;
   try {
@@ -131,6 +139,11 @@ int RunChatCommand(int argc, char* argv[]) {
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
   manager.RegisterExpert(
       std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
+
+  // If an initial expert was specified, set it as active
+  if (!initial_expert.empty()) {
+    manager.SetActiveExpert(initial_expert);
+  }
 
   std::cout << "[INFO] Connected to model: " << current_entry->name;
   if (!current_entry->description.empty()) {
@@ -228,7 +241,7 @@ int RunChatCommand(int argc, char* argv[]) {
     // Dispatch through expert framework
     try {
       std::string response = manager.Dispatch(input);
-      std::cout << response << std::endl;
+      std::cout << std::endl;
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }
