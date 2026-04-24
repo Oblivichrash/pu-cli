@@ -11,6 +11,7 @@
 #include "pu/renderer.hpp"
 
 #include "experts/chat/chat_expert.hpp"
+#include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
 
 #include <cstdlib>
@@ -128,6 +129,7 @@ int RunChatCommand(int argc, char* argv[]) {
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
+  manager.RegisterExpert(std::make_unique<pu::experts::BashExpert>());
 
   std::cout << "[INFO] Connected to model: " << current_entry->name;
   if (!current_entry->description.empty()) {
