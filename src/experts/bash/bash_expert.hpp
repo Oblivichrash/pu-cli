@@ -8,6 +8,7 @@
 
 #include "executor/command_executor.hpp"
 #include "pu/expert.hpp"
+#include "pu/backend.hpp"
 #include <memory>
 #include <string>
 
@@ -15,7 +16,8 @@ namespace pu::experts {
 
 class BashExpert : public pu::expert::BaseExpert {
  public:
-  BashExpert();
+  // cmd_backend is a non-owning pointer used for command generation.
+  BashExpert(pu::backend::Backend* cmd_backend);
   ~BashExpert() override = default;
 
   std::string Name() const override { return "bash"; }
@@ -28,10 +30,11 @@ class BashExpert : public pu::expert::BaseExpert {
   void ResetSession() override;
 
  private:
-  std::string GenerateCommand(const std::string& task, pu::expert::ExpertContext& ctx);
+  std::string GenerateCommand(const std::string& task);
   std::string ExecuteCommand(const std::string& command);
 
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
+  pu::backend::Backend* cmd_backend_;  // borrowed, not owned
 };
 
 }  // namespace pu::experts

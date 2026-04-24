@@ -66,6 +66,10 @@ class ExpertManager {
   // Clear the session of all registered experts.
   void ClearSessions();
 
+  // Returns a pointer to the backend used for routing (e.g., for raw text generation).
+  // The pointer remains valid as long as the ExpertManager exists.
+  backend::Backend* GetRouterBackend();
+
  private:
   // Use the router LLM to select the best expert for the input.
   std::string RouteToExpert(const std::string& input);

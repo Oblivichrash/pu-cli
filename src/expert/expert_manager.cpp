@@ -122,4 +122,8 @@ void ExpertManager::ClearSessions() {
   }
 }
 
+backend::Backend* ExpertManager::GetRouterBackend() {
+  return router_.get();
+}
+
 }  // namespace pu::expert

@@ -115,7 +115,7 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create the router backend (reuse the same configuration for now)
+  // Create the router backend
   auto router_http = std::make_unique<pu::http::CurlHttpClient>();
   std::unique_ptr<pu::backend::Backend> router_backend;
   try {
@@ -129,7 +129,8 @@ int RunChatCommand(int argc, char* argv[]) {
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
-  manager.RegisterExpert(std::make_unique<pu::experts::BashExpert>());
+  manager.RegisterExpert(
+      std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
 
   std::cout << "[INFO] Connected to model: " << current_entry->name;
   if (!current_entry->description.empty()) {
@@ -205,10 +206,12 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild ExpertManager and register ChatExpert
+        // Rebuild ExpertManager and register experts
         manager = pu::expert::ExpertManager(std::move(new_router_backend));
         manager.RegisterExpert(
             std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
+        manager.RegisterExpert(
+            std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
 
         current_entry = new_entry;
         std::cout << "[INFO] Switched to model: " << current_entry->name;
@@ -225,7 +228,7 @@ int RunChatCommand(int argc, char* argv[]) {
     // Dispatch through expert framework
     try {
       std::string response = manager.Dispatch(input);
-      std::cout << std::endl;
+      std::cout << response << std::endl;
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }

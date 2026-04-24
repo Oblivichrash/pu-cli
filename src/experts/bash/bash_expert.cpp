@@ -10,29 +10,48 @@
 
 namespace pu::experts {
 
-BashExpert::BashExpert()
-    : executor_(std::make_unique<pu::executor::CommandExecutor>(".")) {}
+BashExpert::BashExpert(pu::backend::Backend* cmd_backend)
+    : executor_(std::make_unique<pu::executor::CommandExecutor>(".")),
+      cmd_backend_(cmd_backend) {}
 
 void BashExpert::ResetSession() {
   // nothing
 }
 
-std::string BashExpert::GenerateCommand(const std::string& task,
-                                        pu::expert::ExpertContext& ctx) {
+std::string BashExpert::GenerateCommand(const std::string& task) {
   std::string prompt = "Generate a single bash command to accomplish this task. "
                        "Output ONLY the command surrounded by ```bash ... ```. "
                        "Task: " + task;
-  std::string response = ctx.call_expert("chat", prompt);
 
+  std::vector<pu::backend::Message> msgs{
+    {pu::backend::Message::Role::kUser, prompt}
+  };
+
+  std::string full_response;
+  try {
+    cmd_backend_->Chat(msgs, [&](pu::backend::TokenType type,
+                                 std::string_view token,
+                                 bool is_final) {
+      if (type == pu::backend::TokenType::kContent) {
+        full_response.append(token);
+      }
+    });
+  } catch (const std::exception& e) {
+    std::cerr << "[BashExpert] Command generation failed: " << e.what() << "\n";
+    return {};
+  }
+
+  // Extract command from code block
   std::regex re(R"(```(?:bash)?\s*\n([\s\S]*?)\n```)");
   std::smatch match;
-  if (std::regex_search(response, match, re)) {
+  if (std::regex_search(full_response, match, re)) {
     std::string cmd = match[1].str();
+    // Trim whitespace
     cmd.erase(0, cmd.find_first_not_of(" \t\r\n"));
     cmd.erase(cmd.find_last_not_of(" \t\r\n") + 1);
     return cmd;
   }
-  return response;
+  return {};  // No command found
 }
 
 std::string BashExpert::ExecuteCommand(const std::string& command) {
@@ -54,9 +73,9 @@ std::string BashExpert::ExecuteCommand(const std::string& command) {
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  std::string command = GenerateCommand(input, ctx);
+  std::string command = GenerateCommand(input);
   if (command.empty()) {
-    return "I couldn't generate a command for that request.";
+    return "I couldn't generate a safe command for that request.";
   }
 
   std::ostringstream confirm_msg;
