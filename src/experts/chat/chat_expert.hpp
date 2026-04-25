@@ -16,13 +16,17 @@ namespace pu::experts {
 
 class ChatExpert : public pu::expert::BaseExpert {
  public:
+  // 'model_id' is a human-readable label for display (e.g., model name).
+  // The expert is always registered with the fixed name "chat".
   explicit ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
-                      const std::string& name = "chat");
+                      const std::string& model_id = "");
   ~ChatExpert() override = default;
 
-  std::string Name() const override { return name_; }
+  std::string Name() const override { return "chat"; }
   std::string Description() const override {
-    return "General conversational assistant powered by " + name_;
+    std::string desc = "General conversational assistant";
+    if (!model_id_.empty()) desc += " powered by " + model_id_;
+    return desc;
   }
 
   std::string Handle(const std::string& input, pu::expert::ExpertContext& ctx) override;
@@ -31,7 +35,7 @@ class ChatExpert : public pu::expert::BaseExpert {
  private:
   std::unique_ptr<pu::backend::Backend> backend_;
   std::vector<pu::backend::Message> history_;
-  std::string name_;
+  std::string model_id_;
 };
 
 }  // namespace pu::experts
