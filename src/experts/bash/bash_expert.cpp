@@ -24,13 +24,15 @@ std::string BashExpert::Handle(const std::string& input,
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input) {
+  if (!backend_->SupportsTools()) {
+    return "This backend does not support tool calling. Cannot execute commands.";
+  }
+
   using json = nlohmann::json;
 
-  // Conversation history within the tool loop
   std::vector<pu::backend::Message> history;
   history.push_back({pu::backend::Message::Role::kUser, user_input});
 
-  // Define the bash tool
   pu::backend::ToolDefinition bash_tool;
   bash_tool.name = "execute_bash";
   bash_tool.description = "Execute a safe Linux bash command and return the output.";
@@ -47,7 +49,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
     std::ostringstream content_stream;
 
     backend_->Chat(history, tools,
-      // Content callback: stream user-visible text
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
           if (!is_final) {
@@ -58,7 +59,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
           }
         }
       },
-      // Tool callback: collect tool calls
       [&](const pu::backend::ToolCall& call) {
         tool_was_called = true;
         collected_calls.push_back(call);
@@ -70,7 +70,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // Ask for user confirmation before executing any tool
+    // Ask for user confirmation BEFORE appending tool call to history
     std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
     std::string confirm;
     std::getline(std::cin, confirm);
@@ -79,7 +79,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // Append assistant message with tool calls
+    // User approved: record assistant message with tool calls
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;

@@ -23,7 +23,7 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["temperature"] = config_.temperature;
 
   json messages = json::array();
-  if (config_.system_prompt) {
+  if (config_.system_prompt && history.empty()) {
     messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
   }
   for (const auto& msg : history) {
@@ -62,8 +62,8 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   }
 
   std::string line_buffer;
-  std::string accumulated_content;   // Tracks full content from server
-  std::string accumulated_reasoning; // Tracks full reasoning from server
+  std::string accumulated_content;
+  std::string accumulated_reasoning;
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     line_buffer.append(ptr, total);
@@ -82,7 +82,6 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         return total;
       }
 
-      // Helper lambda to extract delta from potentially cumulative text
       auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
         if (new_text.empty()) return new_text;
         if (new_text.size() < accumulated.size()) {
@@ -98,7 +97,6 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         return delta;
       };
 
-      // Handle reasoning tokens
       if (!token.reasoning.empty()) {
         std::string_view delta = extract_delta(token.reasoning, accumulated_reasoning);
         if (!delta.empty()) {
@@ -106,7 +104,6 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         }
       }
 
-      // Handle content tokens
       if (!token.content.empty()) {
         std::string_view delta = extract_delta(token.content, accumulated_content);
         if (!delta.empty()) {

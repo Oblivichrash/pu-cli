@@ -17,8 +17,8 @@ namespace pu::backends::ollama::internal {
 
 struct SseToken {
   std::string content;
-  std::string reasoning;                  // thinking/reasoning content
-  std::vector<backend::ToolCall> tool_calls;  // tool calls if any
+  std::string reasoning;
+  std::vector<backend::ToolCall> tool_calls;
   bool done = false;
 };
 
@@ -31,13 +31,18 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
 
     if (j.contains("done") && j["done"].get<bool>()) {
       token.done = true;
+      return token;  // always signal completion
     }
+
+    bool has_content = false;
     if (j.contains("message")) {
       if (j["message"].contains("content")) {
         token.content = j["message"]["content"];
+        has_content = true;
       }
       if (j["message"].contains("thinking")) {
         token.reasoning = j["message"]["thinking"];
+        has_content = true;
       }
       if (j["message"].contains("tool_calls")) {
         for (const auto& tc : j["message"]["tool_calls"]) {
@@ -45,17 +50,20 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
           if (tc.contains("id")) call.id = tc["id"].get<std::string>();
           if (tc.contains("function")) {
             call.name = tc["function"].value("name", "");
+            // arguments is already a JSON string, do not re-serialize
             if (tc["function"].contains("arguments")) {
-              call.arguments = tc["function"]["arguments"].dump(); // keep JSON string
+              call.arguments = tc["function"]["arguments"].get<std::string>();
             }
           }
           token.tool_calls.push_back(call);
         }
+        has_content = true;
       }
     }
-    if (!token.done && token.content.empty() && token.reasoning.empty() && token.tool_calls.empty()) {
-      return std::nullopt;
-    }
+
+    // ignore empty lines that are not a done signal
+    if (!has_content) return std::nullopt;
+
     return token;
   } catch (const std::exception&) {
     throw std::runtime_error("JSON parse error in SSE line: " + std::string(line));

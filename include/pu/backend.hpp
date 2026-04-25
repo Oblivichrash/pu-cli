@@ -61,6 +61,12 @@ struct Message {
   Message() = default;
   Message(Role role, std::string content)
       : role(role), content(std::move(content)) {}
+
+  // Convenience constructors for complete initialization
+  Message(Role role, std::string tool_name, std::string content)
+      : role(role), content(std::move(content)), tool_name(std::move(tool_name)) {}
+  Message(Role role, std::vector<ToolCall> tool_calls)
+      : role(role), tool_calls(std::move(tool_calls)) {}
 };
 
 // ============================================================================
@@ -92,13 +98,14 @@ class Backend {
   virtual void Chat(const std::vector<Message>& history,
                     ChatCallback cb) = 0;
 
-  /// Send conversation history with tool definitions. content_cb receives
-  /// content tokens and reasoning tokens, and is_final signals end of stream.
-  /// tool_cb receives each tool call requested by the model.
+  /// Send conversation history with tool definitions.
   virtual void Chat(const std::vector<Message>& history,
                     const std::vector<ToolDefinition>& tools,
                     ChatCallback content_cb,
                     ToolCallback tool_cb) = 0;
+
+  /// Query whether this backend supports tool/function calling.
+  virtual bool SupportsTools() const { return false; }
 
  protected:
   Config config_;

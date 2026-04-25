@@ -17,8 +17,8 @@ namespace pu::backends::openai::internal {
 
 struct SseToken {
   std::string content;
-  std::string reasoning;                  // reasoning_content from OpenAI o1 / compatible services
-  std::vector<backend::ToolCall> tool_calls;  // tool calls if any
+  std::string reasoning;
+  std::vector<backend::ToolCall> tool_calls;
   bool done = false;
 };
 
@@ -45,17 +45,17 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     SseToken token;
     token.done = false;
 
-    bool has_meaningful_content = false;
+    bool has_content = false;
     if (j.contains("choices") && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
       if (choice.contains("delta")) {
         if (choice["delta"].contains("content")) {
           token.content = choice["delta"]["content"];
-          has_meaningful_content = true;
+          has_content = true;
         }
         if (choice["delta"].contains("reasoning")) {
           token.reasoning = choice["delta"]["reasoning"];
-          has_meaningful_content = true;
+          has_content = true;
         }
         if (choice["delta"].contains("tool_calls")) {
           for (const auto& tc : choice["delta"]["tool_calls"]) {
@@ -64,25 +64,22 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
             if (tc.contains("function")) {
               call.name = tc["function"].value("name", "");
               if (tc["function"].contains("arguments")) {
-                call.arguments = tc["function"]["arguments"].dump();
+                // arguments is a JSON string, avoid double encoding
+                call.arguments = tc["function"]["arguments"].get<std::string>();
               }
             }
             token.tool_calls.push_back(call);
           }
-          has_meaningful_content = true;
+          has_content = true;
         }
       }
-      // Even if no delta content, the presence of choices constitutes a valid token
-      if (!has_meaningful_content) {
-        // Token is empty but valid (e.g., heartbeat)
-        return token;
-      }
-    } else {
-      // No choices: this line has no useful data; ignore unless done
-      if (!j.contains("done")) {
-        return std::nullopt;
-      }
+    } else if (!j.contains("done")) {
+      // No choices and no done flag -> ignore
+      return std::nullopt;
     }
+
+    // only return token if it carries content or is a done signal
+    if (!has_content && !token.done) return std::nullopt;
 
     return token;
   } catch (const std::exception&) {

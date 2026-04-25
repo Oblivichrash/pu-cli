@@ -32,6 +32,8 @@ class OllamaBackend : public pu::backend::Backend {
             pu::backend::ChatCallback content_cb,
             pu::backend::ToolCallback tool_cb) override;
 
+  bool SupportsTools() const override { return true; }
+
  private:
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
 
