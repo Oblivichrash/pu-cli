@@ -1,25 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "command_executor.hpp"
-
-#include <cstdio>
-#include <cstdlib>
-#include <memory>
-#include <regex>
-#include <stdexcept>
-#include <array>
-
-#ifdef _WIN32
-#define popen _popen
-#define pclose _pclose
-
-static int GetExitCodeFromPClose(int status) {
-    return (status == -1) ? -1 : status;
-}
-#else
-#include <sys/wait.h>
-#define GetExitCodeFromPClose(status) WEXITSTATUS(status)
-#endif
+#include "platform/platform.hpp"
 
 namespace pu::executor {
 
@@ -36,19 +18,7 @@ CommandExecutor::CommandExecutor(std::string sandbox_path)
 
 bool CommandExecutor::IsDangerous(const std::string& command,
                                   std::string* reason) const {
-  for (const auto& pattern : dangerous_patterns_) {
-    try {
-      std::regex re(pattern, std::regex::icase);
-      if (std::regex_search(command, re)) {
-        if (reason) {
-          *reason = "Matches dangerous pattern: " + pattern;
-        }
-        return true;
-      }
-    } catch (const std::regex_error&) {
-    }
-  }
-  return false;
+  return pu::platform::IsDangerous(command, reason);
 }
 
 ExecutionResult CommandExecutor::Execute(const std::string& command) {
@@ -62,26 +32,19 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
     return result;
   }
 
-  std::string full_cmd = command;
+  std::string full_command = command;
   if (!sandbox_path_.empty()) {
-    full_cmd = "cd " + sandbox_path_ + " && " + command + " 2>&1";
-  }
-  FILE* pipe = popen(full_cmd.c_str(), "r");
-  if (!pipe) {
-    result.exit_code = -1;
-    result.stderr_content = "popen failed";
-    return result;
+    full_command = "cd " + sandbox_path_ + " && " + command;
   }
 
-  std::array<char, 256> buffer;
   std::string output;
-  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-    output += buffer.data();
-  }
+  int exit_code = pu::platform::ExecuteCommand(full_command, output);
 
-  int status = pclose(pipe);
-  result.exit_code = GetExitCodeFromPClose(status);
+  result.exit_code = exit_code;
   result.stdout_content = output;
+  if (exit_code != 0) {
+    result.stderr_content = output;  // stderr merged
+  }
   return result;
 }
 

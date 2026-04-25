@@ -135,7 +135,7 @@ int RunChatCommand(int argc, char* argv[]) {
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
   manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>(router_raw,
+      std::make_unique<pu::experts::BashExpert>(*router_raw,
                                                 std::make_unique<pu::executor::CommandExecutor>(".")));
 
   if (!initial_expert.empty()) {
@@ -219,7 +219,7 @@ int RunChatCommand(int argc, char* argv[]) {
         manager.RegisterExpert(
             std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
         manager.RegisterExpert(
-            std::make_unique<pu::experts::BashExpert>(new_router_raw,
+            std::make_unique<pu::experts::BashExpert>(*new_router_raw,
                                                       std::make_unique<pu::executor::CommandExecutor>(".")));
 
         current_entry = new_entry;

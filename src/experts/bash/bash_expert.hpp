@@ -14,7 +14,7 @@ namespace pu::experts {
 
 class BashExpert : public pu::expert::BaseExpert {
  public:
-  BashExpert(pu::backend::Backend* backend,
+  BashExpert(pu::backend::Backend& backend,
              std::unique_ptr<pu::executor::CommandExecutor> executor);
   ~BashExpert() override = default;
 
@@ -30,7 +30,7 @@ class BashExpert : public pu::expert::BaseExpert {
  private:
   std::string RunToolLoop(const std::string& user_input);
 
-  pu::backend::Backend* backend_;
+  pu::backend::Backend& backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
 };
 

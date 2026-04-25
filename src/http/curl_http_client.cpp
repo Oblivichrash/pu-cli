@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "curl_http_client.hpp"
-#include "pu/renderer.hpp"
+#include "platform/platform.hpp"
 
 #include <curl/curl.h>
 #include <stdexcept>
@@ -30,7 +30,7 @@ static int ProgressCallback(void* /*clientp*/,
                             curl_off_t /*dlnow*/,
                             curl_off_t /*ultotal*/,
                             curl_off_t /*ulnow*/) {
-  if (pu::IsInterrupted()) {
+  if (pu::platform::IsInterrupted()) {
     return 1;
   }
   return 0;
@@ -62,7 +62,7 @@ void CurlHttpClient::PostStream(const std::string& url,
 
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
-    if (pu::IsInterrupted()) {
+    if (pu::platform::IsInterrupted()) {
       throw std::runtime_error("Request interrupted by user");
     }
     throw std::runtime_error(std::string("libcurl error: ") + curl_easy_strerror(res));

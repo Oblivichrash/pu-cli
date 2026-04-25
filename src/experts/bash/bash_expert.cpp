@@ -7,7 +7,7 @@
 
 namespace pu::experts {
 
-BashExpert::BashExpert(pu::backend::Backend* backend,
+BashExpert::BashExpert(pu::backend::Backend& backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
     : backend_(backend), executor_(std::move(executor)) {}
 
@@ -21,7 +21,7 @@ std::string BashExpert::Handle(const std::string& input,
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input) {
-  if (!backend_->SupportsTools()) {
+  if (!backend_.SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
@@ -45,7 +45,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
     std::vector<pu::backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
 
-    backend_->Chat(history, tools,
+    backend_.Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
           if (!is_final) {
@@ -67,7 +67,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // Ask for user confirmation before appending tool call to history
     std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
     std::string confirm;
     std::getline(std::cin, confirm);

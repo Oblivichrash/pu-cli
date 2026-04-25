@@ -37,7 +37,7 @@ class ExpertManager {
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
-  backend::Backend* GetRouterBackend();
+  backend::Backend& GetRouterBackend();
 
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
