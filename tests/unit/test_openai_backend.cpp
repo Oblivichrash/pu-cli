@@ -41,9 +41,8 @@ TEST_CASE("OpenAIBackend SSE parsing", "[openai]") {
   SECTION("ignores empty content") {
     std::string line = R"(data: {"choices":[{"delta":{}}]})";
     auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->content.empty());
-    REQUIRE(token->done == false);
+    // New behavior: empty non-final tokens are dropped
+    REQUIRE(!token.has_value());
   }
 
   SECTION("throws on invalid JSON") {
@@ -81,6 +80,7 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
   REQUIRE(body["model"] == "gpt-4o-mini");
   REQUIRE(body["stream"] == true);
   REQUIRE(body["temperature"] == 0.7f);
+  // system prompt should be inserted because history lacks a system message
   REQUIRE(body["messages"].size() == 2);
   REQUIRE(body["messages"][0]["role"] == "system");
   REQUIRE(body["messages"][1]["role"] == "user");

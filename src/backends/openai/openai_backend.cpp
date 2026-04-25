@@ -23,7 +23,10 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["temperature"] = config_.temperature;
 
   json messages = json::array();
-  if (config_.system_prompt && history.empty()) {
+  // Insert system prompt only if not present in history
+  if (config_.system_prompt &&
+      std::none_of(history.begin(), history.end(),
+                   [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
     messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
   }
   for (const auto& msg : history) {
