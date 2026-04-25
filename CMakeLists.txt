@@ -7,7 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+# Interface library – public type definitions only
+add_library(pu_backend_interface INTERFACE)
+target_include_directories(pu_backend_interface INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_library(pu::backend_interface ALIAS pu_backend_interface)
 
 # HTTP abstraction library
 add_library(pu_http STATIC
@@ -20,7 +25,7 @@ target_include_directories(pu_http PRIVATE
 target_link_libraries(pu_http PUBLIC CURL::libcurl)
 add_library(pu::http ALIAS pu_http)
 
-# Backends library
+# Backend implementation library
 add_library(pu_backend STATIC
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
@@ -30,7 +35,10 @@ target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_backend PUBLIC pu_http nlohmann_json::nlohmann_json)
+target_link_libraries(pu_backend
+    PUBLIC  pu_backend_interface
+    PRIVATE pu_http nlohmann_json::nlohmann_json
+)
 add_library(pu::backend ALIAS pu_backend)
 
 # Expert library
@@ -44,7 +52,10 @@ target_include_directories(pu_expert PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_expert PRIVATE pu_backend pu_http)
+target_link_libraries(pu_expert
+    PUBLIC  pu_backend_interface
+    PRIVATE pu_backend pu_http
+)
 add_library(pu::expert ALIAS pu_expert)
 
 # Main executable
@@ -57,7 +68,7 @@ add_executable(pu
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu PRIVATE pu_expert pu_backend pu_http)
+target_link_libraries(pu PRIVATE pu_expert pu_backend)
 
 if(MSVC)
     target_compile_options(pu PRIVATE /W4)
@@ -80,3 +91,4 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pu)
