@@ -17,13 +17,9 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["stream"] = true;
   req["temperature"] = config_.temperature;
 
+  auto messages_history = BuildMessagesWithSystemPrompt(history);
   json messages = json::array();
-  if (config_.system_prompt &&
-      std::none_of(history.begin(), history.end(),
-                   [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
-    messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
-  }
-  for (const auto& msg : history) {
+  for (const auto& msg : messages_history) {
     std::string role;
     switch (msg.role) {
       case pu::backend::Message::Role::kSystem: role = "system"; break;
