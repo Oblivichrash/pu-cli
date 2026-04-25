@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Internal SSE parsing utilities for OpenAI-compatible backends.
 
@@ -64,7 +62,6 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
             if (tc.contains("function")) {
               call.name = tc["function"].value("name", "");
               if (tc["function"].contains("arguments")) {
-                // arguments is a JSON string, avoid double encoding
                 call.arguments = tc["function"]["arguments"].get<std::string>();
               }
             }
@@ -74,11 +71,9 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
         }
       }
     } else if (!j.contains("done")) {
-      // No choices and no done flag -> ignore
       return std::nullopt;
     }
 
-    // only return token if it carries content or is a done signal
     if (!has_content && !token.done) return std::nullopt;
 
     return token;

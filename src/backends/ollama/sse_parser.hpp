@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Internal SSE parsing utilities for Ollama backend.
 
@@ -31,7 +29,7 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
 
     if (j.contains("done") && j["done"].get<bool>()) {
       token.done = true;
-      return token;  // always signal completion
+      return token;
     }
 
     bool has_content = false;
@@ -50,7 +48,6 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
           if (tc.contains("id")) call.id = tc["id"].get<std::string>();
           if (tc.contains("function")) {
             call.name = tc["function"].value("name", "");
-            // arguments is already a JSON string, do not re-serialize
             if (tc["function"].contains("arguments")) {
               call.arguments = tc["function"]["arguments"].get<std::string>();
             }
@@ -61,7 +58,6 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
       }
     }
 
-    // ignore empty lines that are not a done signal
     if (!has_content) return std::nullopt;
 
     return token;
