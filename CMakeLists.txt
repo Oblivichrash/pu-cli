@@ -37,6 +37,8 @@ add_library(pu::backend ALIAS pu_backend)
 add_library(pu_expert STATIC
     src/expert/expert_manager.cpp
     src/experts/chat/chat_expert.cpp
+    src/experts/bash/bash_expert.cpp
+    src/executor/command_executor.cpp
 )
 target_include_directories(pu_expert PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
