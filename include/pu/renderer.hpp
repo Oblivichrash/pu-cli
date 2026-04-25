@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Terminal streaming renderer.
 
@@ -16,8 +14,6 @@ void ClearInterruptFlag();
 
 class StreamingRenderer {
  public:
-  // Create a ChatCallback that renders tokens to stdout. If show_reasoning is
-  // true, reasoning tokens are printed to stderr with a "[Thinking]" prefix.
   static backend::ChatCallback Create(bool show_reasoning = false);
 
  private:
