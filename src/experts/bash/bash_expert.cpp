@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "bash_expert.hpp"
 #include <nlohmann/json.hpp>
@@ -14,7 +12,6 @@ BashExpert::BashExpert(pu::backend::Backend* backend,
     : backend_(backend), executor_(std::move(executor)) {}
 
 void BashExpert::ResetSession() {
-  // Stateless for now.
 }
 
 std::string BashExpert::Handle(const std::string& input,
@@ -70,7 +67,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // Ask for user confirmation BEFORE appending tool call to history
+    // Ask for user confirmation before appending tool call to history
     std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
     std::string confirm;
     std::getline(std::cin, confirm);
@@ -79,13 +76,11 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // User approved: record assistant message with tool calls
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;
     history.push_back(assistant_msg);
 
-    // Execute each tool and append tool messages
     for (const auto& call : collected_calls) {
       std::string result;
       if (call.name == "execute_bash") {

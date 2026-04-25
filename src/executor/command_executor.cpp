@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "command_executor.hpp"
 
@@ -12,17 +10,14 @@
 #include <array>
 
 #ifdef _WIN32
-// Windows popen/pclose compatibility
 #define popen _popen
 #define pclose _pclose
 
-// Extract exit code from _pclose return value (simplified)
 static int GetExitCodeFromPClose(int status) {
-    // On Windows, _pclose returns the exit code of the cmd process.
     return (status == -1) ? -1 : status;
 }
 #else
-#include <sys/wait.h>  // for WEXITSTATUS
+#include <sys/wait.h>
 #define GetExitCodeFromPClose(status) WEXITSTATUS(status)
 #endif
 
@@ -51,7 +46,6 @@ bool CommandExecutor::IsDangerous(const std::string& command,
         return true;
       }
     } catch (const std::regex_error&) {
-      // ignore malformed patterns
     }
   }
   return false;
@@ -68,7 +62,6 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
     return result;
   }
 
-  // Build command with sandbox path
   std::string full_cmd = command;
   if (!sandbox_path_.empty()) {
     full_cmd = "cd " + sandbox_path_ + " && " + command + " 2>&1";

@@ -1,9 +1,6 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/expert.hpp"
-
 #include "pu/backend.hpp"
 
 #include <iostream>
@@ -39,7 +36,6 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     return "No experts available.";
   }
 
-  // Always route to determine the best expert for this input
   std::string target = RouteToExpert(input);
   auto it = experts_.find(target);
   if (it == experts_.end()) {
@@ -49,7 +45,6 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     }
   }
 
-  // Update active expert
   active_expert_ = it->first;
 
   ExpertContext ctx;
@@ -64,7 +59,6 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   };
   ctx.working_dir = ".";
 
-  // Output expert prefix before streaming response
   std::cout << "\n[" << active_expert_ << "] " << std::flush;
 
   return it->second->Handle(input, ctx);
@@ -134,7 +128,6 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
     return "chat";
   }
 
-  // Trim whitespace
   selected.erase(0, selected.find_first_not_of(" \t\n\r"));
   selected.erase(selected.find_last_not_of(" \t\n\r") + 1);
 

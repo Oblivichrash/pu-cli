@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // BashExpert: executes safe system commands via native tool calling.
 
@@ -16,8 +14,6 @@ namespace pu::experts {
 
 class BashExpert : public pu::expert::BaseExpert {
  public:
-  // backend: non‑owning pointer, must outlive this expert.
-  // executor: command execution and safety checks.
   BashExpert(pu::backend::Backend* backend,
              std::unique_ptr<pu::executor::CommandExecutor> executor);
   ~BashExpert() override = default;
