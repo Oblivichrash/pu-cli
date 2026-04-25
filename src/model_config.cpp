@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/model_config.hpp"
 
@@ -155,7 +153,7 @@ void SaveModelsConfig(const std::string& config_path, const ModelsFile& models) 
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open config file for writing: " + config_path);
   }
-  file << j.dump(2);  // pretty print with 2-space indent
+  file << j.dump(2);
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(

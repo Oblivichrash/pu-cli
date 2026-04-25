@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/renderer.hpp"
 
@@ -16,7 +14,7 @@ namespace pu {
 
 namespace {
 
-// Global interrupt flag – note that this is shared across all active requests.
+// Global interrupt flag – shared across all active requests.
 // In a single-threaded CLI this is acceptable, but future multi‑session
 // support should replace it with per-request stop tokens.
 std::atomic<bool> interrupted{false};

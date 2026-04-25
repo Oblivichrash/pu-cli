@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/openai/openai_backend.hpp"
 #include "backends/openai/sse_parser.hpp"
@@ -41,7 +39,6 @@ TEST_CASE("OpenAIBackend SSE parsing", "[openai]") {
   SECTION("ignores empty content") {
     std::string line = R"(data: {"choices":[{"delta":{}}]})";
     auto token = ParseSseLine(line);
-    // New behavior: empty non-final tokens are dropped
     REQUIRE(!token.has_value());
   }
 
@@ -80,12 +77,10 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
   REQUIRE(body["model"] == "gpt-4o-mini");
   REQUIRE(body["stream"] == true);
   REQUIRE(body["temperature"] == 0.7f);
-  // system prompt should be inserted because history lacks a system message
   REQUIRE(body["messages"].size() == 2);
   REQUIRE(body["messages"][0]["role"] == "system");
   REQUIRE(body["messages"][1]["role"] == "user");
 
-  // Check headers
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
     if (h.find("Authorization: Bearer test-key") != std::string::npos) has_auth = true;
@@ -97,7 +92,7 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
   OpenAIBackend::Config config;
   config.model = "local-model";
   config.host = "http://localhost:8080";
-  config.api_key = "";  // explicitly empty
+  config.api_key = "";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
@@ -106,7 +101,6 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   backend.Chat(history, [](auto&&...) {});
 
-  // Verify that no Authorization header was added
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
     if (h.find("Authorization:") != std::string::npos) has_auth = true;
@@ -170,7 +164,6 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  // Simulate an HTTP 401 Unauthorized error by throwing from PostStream
   mock_ptr->simulate_response = [&](const std::string&,
                                     const std::string&,
                                     const std::vector<std::string>&,
@@ -181,10 +174,9 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
   OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-  
+
   REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), std::runtime_error);
 
-  // Verify exception message contains expected text
   try {
     backend.Chat(history, [](auto&&...) {});
   } catch (const std::runtime_error& e) {

@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/cli_chat.hpp"
 
@@ -113,7 +111,6 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create the chat backend
   auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
   std::unique_ptr<pu::backend::Backend> chat_backend;
   try {
@@ -123,7 +120,6 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create the router backend
   auto router_http = std::make_unique<pu::http::CurlHttpClient>();
   std::unique_ptr<pu::backend::Backend> router_backend;
   try {
@@ -133,10 +129,8 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Save raw pointer before moving the unique_ptr
   pu::backend::Backend* router_raw = router_backend.get();
 
-  // Set up the expert framework
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
@@ -201,7 +195,6 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild chat backend
         auto new_chat_http = std::make_unique<pu::http::CurlHttpClient>();
         std::unique_ptr<pu::backend::Backend> new_chat_backend;
         try {
@@ -211,7 +204,6 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild router backend
         auto new_router_http = std::make_unique<pu::http::CurlHttpClient>();
         std::unique_ptr<pu::backend::Backend> new_router_backend;
         try {
@@ -221,10 +213,8 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Save raw pointer before moving
         pu::backend::Backend* new_router_raw = new_router_backend.get();
 
-        // Rebuild manager and register experts
         manager = pu::expert::ExpertManager(std::move(new_router_backend));
         manager.RegisterExpert(
             std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
@@ -244,7 +234,6 @@ int RunChatCommand(int argc, char* argv[]) {
       continue;
     }
 
-    // Dispatch through expert framework
     try {
       manager.Dispatch(input);
     } catch (const std::exception& e) {
