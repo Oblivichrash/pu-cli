@@ -30,13 +30,39 @@ using ChatCallback = std::function<void(TokenType type,
                                         bool is_final)>;
 
 // ============================================================================
+// Tool-related types
+// ============================================================================
+struct ToolParameterSchema {
+  std::string raw_schema;   // JSON Schema string (e.g. {"type":"object", ...})
+};
+
+struct ToolDefinition {
+  std::string name;
+  std::string description;
+  ToolParameterSchema parameters;
+};
+
+struct ToolCall {
+  std::string id;          // optional, may be empty
+  std::string name;        // function name
+  std::string arguments;   // JSON string of arguments
+};
+
+// ============================================================================
 // Message structure representing a single conversation turn
 // ============================================================================
 struct Message {
-  enum class Role { kSystem, kUser, kAssistant };
+  enum class Role { kSystem, kUser, kAssistant, kTool };
   Role role;
   std::string content;
+  std::string tool_name;              // only used when role == kTool
+  std::vector<ToolCall> tool_calls;   // only used when role == kAssistant
 };
+
+// ============================================================================
+// Tool callback type
+// ============================================================================
+using ToolCallback = std::function<void(const ToolCall& call)>;
 
 // ============================================================================
 // Abstract backend interface
@@ -59,11 +85,16 @@ class Backend {
   Backend& operator=(Backend&&) noexcept = default;
 
   /// Send conversation history and receive streaming tokens via callback.
-  /// @param history The full conversation context.
-  /// @param cb Callback invoked for each token and at stream end (is_final=true).
-  /// @throws std::runtime_error on network, HTTP, or parsing failures.
   virtual void Chat(const std::vector<Message>& history,
                     ChatCallback cb) = 0;
+
+  /// Send conversation history with tool definitions. content_cb receives
+  /// content tokens and reasoning tokens, and is_final signals end of stream.
+  /// tool_cb receives each tool call requested by the model.
+  virtual void Chat(const std::vector<Message>& history,
+                    const std::vector<ToolDefinition>& tools,
+                    ChatCallback content_cb,
+                    ToolCallback tool_cb) = 0;
 
  protected:
   Config config_;

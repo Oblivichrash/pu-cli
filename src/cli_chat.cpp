@@ -219,12 +219,15 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild ExpertManager and register experts
-        manager = pu::expert::ExpertManager(std::move(new_router_backend));
+	// Get raw pointer before moving into ExpertManager/ChatExpert
+        auto router_backend_ptr = router_backend.get();
+
+        pu::expert::ExpertManager manager(std::move(router_backend));
         manager.RegisterExpert(
-            std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
+            std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
         manager.RegisterExpert(
-            std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
+            std::make_unique<pu::experts::BashExpert>(router_backend_ptr,
+                                                      std::make_unique<pu::executor::CommandExecutor>(".")));
 
         current_entry = new_entry;
         std::cout << "[INFO] Switched to model: " << current_entry->name;
