@@ -24,16 +24,35 @@ void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
   experts_[name] = std::move(expert);
 }
 
+void ExpertManager::SetActiveExpert(const std::string& name) {
+  if (experts_.count(name)) {
+    active_expert_ = name;
+  }
+}
+
+std::string ExpertManager::GetActiveExpert() const {
+  return active_expert_;
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
   }
 
+  // Always route to determine the best expert for this input
   std::string target = RouteToExpert(input);
   auto it = experts_.find(target);
   if (it == experts_.end()) {
-    // Fallback to any expert
-    it = experts_.begin();
+    // Fallback: prefer chat, then first expert
+    it = experts_.find("chat");
+    if (it == experts_.end()) {
+      it = experts_.begin();
+    }
+  }
+
+  // Update active expert only if it changed
+  if (target != active_expert_) {
+    active_expert_ = target;
   }
 
   ExpertContext ctx;
@@ -47,6 +66,9 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     return (answer == "y" || answer == "Y");
   };
   ctx.working_dir = ".";
+
+  // Output expert prefix before streaming response
+  std::cout << "\n[" << active_expert_ << "] " << std::flush;
 
   return it->second->Handle(input, ctx);
 }
@@ -71,7 +93,6 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
     return experts_.begin()->first;
   }
 
-  // Build routing prompt dynamically based on registered experts
   std::ostringstream prompt;
   prompt << "You are a strict router. Direct the user request to the best expert.\n"
          << "Available experts:\n";
@@ -83,7 +104,13 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
   if (experts_.count("bash")) {
     prompt << "- Use 'bash' ONLY when the user explicitly asks to execute a command.\n";
   }
-  prompt << "- If unsure, default to 'chat'.\n"
+  prompt << "- If the user says 'ask <expert>' or 'switch to <expert>', "
+         << "immediately route to that expert.\n"
+         << "- If unsure, default to 'chat'.\n"
+         << "- Output ONLY the expert name, no extra text.\n"
+         << "\nExample:\n"
+         << "User request: \"Ask bash to list files\"\n"
+         << "Expert name: bash\n"
          << "\nUser request: \"" << input << "\"\n"
          << "Expert name:";
 
@@ -113,6 +140,12 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
   // Trim whitespace
   selected.erase(0, selected.find_first_not_of(" \t\n\r"));
   selected.erase(selected.find_last_not_of(" \t\n\r") + 1);
+
+  if (experts_.find(selected) == experts_.end()) {
+    std::cerr << "[Router] Unexpected expert name '" << selected << "', falling back to 'chat'\n";
+    return "chat";
+  }
+
   return selected;
 }
 
@@ -120,6 +153,11 @@ void ExpertManager::ClearSessions() {
   for (auto& [name, expert] : experts_) {
     expert->ResetSession();
   }
+  active_expert_.clear();
+}
+
+backend::Backend* ExpertManager::GetRouterBackend() {
+  return router_.get();
 }
 
 }  // namespace pu::expert

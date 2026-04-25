@@ -11,6 +11,7 @@
 #include "pu/renderer.hpp"
 
 #include "experts/chat/chat_expert.hpp"
+#include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
 
 #include <cstdlib>
@@ -51,17 +52,25 @@ void PrintModels(const pu::config::ModelsFile& models, const std::string& curren
 
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_model;
+  std::string initial_expert;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [-m <model>]\n";
+      std::cout << "Usage: pu chat [-m <model>] [--expert <name>]\n";
       return 0;
     } else if (arg == "-m" || arg == "--model") {
       if (i + 1 < argc) {
         initial_model = argv[++i];
       } else {
         std::cerr << "Error: --model requires an argument\n";
+        return 1;
+      }
+    } else if (arg == "--expert") {
+      if (i + 1 < argc) {
+        initial_expert = argv[++i];
+      } else {
+        std::cerr << "Error: --expert requires an argument\n";
         return 1;
       }
     } else {
@@ -128,6 +137,13 @@ int RunChatCommand(int argc, char* argv[]) {
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
+  manager.RegisterExpert(
+      std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
+
+  // If an initial expert was specified, set it as active
+  if (!initial_expert.empty()) {
+    manager.SetActiveExpert(initial_expert);
+  }
 
   std::cout << "[INFO] Connected to model: " << current_entry->name;
   if (!current_entry->description.empty()) {
@@ -203,10 +219,12 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild ExpertManager and register ChatExpert
+        // Rebuild ExpertManager and register experts
         manager = pu::expert::ExpertManager(std::move(new_router_backend));
         manager.RegisterExpert(
             std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
+        manager.RegisterExpert(
+            std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
 
         current_entry = new_entry;
         std::cout << "[INFO] Switched to model: " << current_entry->name;
@@ -223,7 +241,9 @@ int RunChatCommand(int argc, char* argv[]) {
     // Dispatch through expert framework
     try {
       std::string response = manager.Dispatch(input);
-      std::cout << std::endl;
+      // Prefix is now printed inside Dispatch, so just ensure a newline
+      // if the response itself didn't end with one (it should, via renderer).
+      // No extra endl here to avoid double spacing.
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }

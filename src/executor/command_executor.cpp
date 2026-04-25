@@ -1,7 +1,30 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 
 #include "command_executor.hpp"
-#include "platform/platform.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <regex>
+#include <stdexcept>
+#include <array>
+
+#ifdef _WIN32
+// Windows popen/pclose compatibility
+#define popen _popen
+#define pclose _pclose
+
+// Extract exit code from _pclose return value (simplified)
+static int GetExitCodeFromPClose(int status) {
+    // On Windows, _pclose returns the exit code of the cmd process.
+    return (status == -1) ? -1 : status;
+}
+#else
+#include <sys/wait.h>  // for WEXITSTATUS
+#define GetExitCodeFromPClose(status) WEXITSTATUS(status)
+#endif
 
 namespace pu::executor {
 
@@ -18,7 +41,20 @@ CommandExecutor::CommandExecutor(std::string sandbox_path)
 
 bool CommandExecutor::IsDangerous(const std::string& command,
                                   std::string* reason) const {
-  return pu::platform::IsDangerous(command, reason);
+  for (const auto& pattern : dangerous_patterns_) {
+    try {
+      std::regex re(pattern, std::regex::icase);
+      if (std::regex_search(command, re)) {
+        if (reason) {
+          *reason = "Matches dangerous pattern: " + pattern;
+        }
+        return true;
+      }
+    } catch (const std::regex_error&) {
+      // ignore malformed patterns
+    }
+  }
+  return false;
 }
 
 ExecutionResult CommandExecutor::Execute(const std::string& command) {
@@ -32,19 +68,27 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
     return result;
   }
 
-  std::string full_command = command;
+  // Build command with sandbox path
+  std::string full_cmd = command;
   if (!sandbox_path_.empty()) {
-    full_command = "cd " + sandbox_path_ + " && " + command;
+    full_cmd = "cd " + sandbox_path_ + " && " + command + " 2>&1";
+  }
+  FILE* pipe = popen(full_cmd.c_str(), "r");
+  if (!pipe) {
+    result.exit_code = -1;
+    result.stderr_content = "popen failed";
+    return result;
   }
 
+  std::array<char, 256> buffer;
   std::string output;
-  int exit_code = pu::platform::ExecuteCommand(full_command, output);
-
-  result.exit_code = exit_code;
-  result.stdout_content = output;
-  if (exit_code != 0) {
-    result.stderr_content = output;  // stderr merged
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+    output += buffer.data();
   }
+
+  int status = pclose(pipe);
+  result.exit_code = GetExitCodeFromPClose(status);
+  result.stdout_content = output;
   return result;
 }
 

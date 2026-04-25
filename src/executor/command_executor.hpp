@@ -1,4 +1,6 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 //
 // Simple command executor for Linux/WSL with dangerous pattern checks.
 
@@ -21,8 +23,10 @@ class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path);
 
+  // Execute command, returns combined output and exit code
   ExecutionResult Execute(const std::string& command);
 
+  // Check if a command matches dangerous patterns
   bool IsDangerous(const std::string& command, std::string* reason = nullptr) const;
 
  private:

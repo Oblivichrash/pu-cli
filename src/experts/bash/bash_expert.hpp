@@ -1,55 +1,40 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 pu-cli authors. All rights reserved.
+// Use of this source code is governed by a GPL-3.0-style license that can be
+// found in the LICENSE file.
 //
-// BashExpert: executes safe system commands via native tool calling.
+// BashExpert: executes safe system commands on behalf of the user.
 
 #pragma once
 
+#include "executor/command_executor.hpp"
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
-#include "pu/conversation.hpp"
-#include "executor/command_executor.hpp"
-
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace pu::experts {
 
 class BashExpert : public pu::expert::BaseExpert {
  public:
-  BashExpert(const std::string& name,
-             std::unique_ptr<pu::backend::Backend> backend,
-             std::unique_ptr<pu::executor::CommandExecutor> executor);
+  // cmd_backend is a non-owning pointer used for command generation.
+  BashExpert(pu::backend::Backend* cmd_backend);
   ~BashExpert() override = default;
 
-  std::string Name() const override { return name_; }
+  std::string Name() const override { return "bash"; }
   std::string Description() const override {
-    return "Executes safe Linux commands using tool calling. "
-           "Performs security review before execution.";
+    return "Executes safe Linux commands. Can list files, create directories, "
+           "run scripts, etc. Requires user confirmation for destructive actions.";
   }
 
   std::string Handle(const std::string& input, pu::expert::ExpertContext& ctx) override;
   void ResetSession() override;
 
-  std::vector<ChatMessage> SaveState() const override;
-  void LoadState(const std::vector<ChatMessage>& messages) override;
-
- protected:
-  std::vector<pu::backend::Message> BuildInitialHistory() const;
-  void AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
-                           size_t initial_size,
-                           std::vector<ChatMessage>& turn_history) const;
-
  private:
-  std::string RunToolLoop(const std::string& user_input,
-                          bool show_reasoning,
-                          std::vector<ChatMessage>& turn_history,
-                          const std::vector<pu::backend::Message>& initial_history = {});
+  std::string GenerateCommand(const std::string& task);
+  std::string ExecuteCommand(const std::string& command);
 
-  std::string name_;
-  std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
-  std::vector<ChatMessage> history_;
+  pu::backend::Backend* cmd_backend_;  // borrowed, not owned
 };
 
 }  // namespace pu::experts
