@@ -1,56 +1,23 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/renderer.hpp"
+#include "platform/platform.hpp"
 
-#include <atomic>
-#include <csignal>
 #include <iostream>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace pu {
 
-namespace {
-
-// Global interrupt flag – note that this is shared across all active requests.
-// In a single-threaded CLI this is acceptable, but future multi‑session
-// support should replace it with per-request stop tokens.
-std::atomic<bool> interrupted{false};
-
-#ifdef _WIN32
-BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type) {
-  if (ctrl_type == CTRL_C_EVENT) {
-    interrupted = true;
-    return TRUE;
-  }
-  return FALSE;
-}
-#else
-void SignalHandler(int /*signum*/) {
-  interrupted = true;
-}
-#endif
-
-}  // namespace
-
 void SetupSignalHandler() {
-#ifdef _WIN32
-  SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
-#else
-  struct sigaction sa{};
-  sa.sa_handler = SignalHandler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = 0;
-  sigaction(SIGINT, &sa, nullptr);
-#endif
+  pu::platform::SetupSignalHandler();
 }
 
-bool IsInterrupted() { return interrupted; }
-void ClearInterruptFlag() { interrupted = false; }
+bool IsInterrupted() {
+  return pu::platform::IsInterrupted();
+}
+
+void ClearInterruptFlag() {
+  pu::platform::ClearInterruptFlag();
+}
 
 backend::ChatCallback StreamingRenderer::Create(bool show_reasoning) {
   ClearInterruptFlag();

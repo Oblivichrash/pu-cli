@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // libcurl implementation of HttpClient.
 
@@ -19,7 +17,6 @@ class CurlHttpClient : public HttpClient {
   CurlHttpClient();
   ~CurlHttpClient() override;
 
-  // Non-copyable
   CurlHttpClient(const CurlHttpClient&) = delete;
   CurlHttpClient& operator=(const CurlHttpClient&) = delete;
 
@@ -32,7 +29,6 @@ class CurlHttpClient : public HttpClient {
   CURL* handle_;
 };
 
-// RAII wrapper for curl_slist (used internally)
 struct CurlSlist {
   struct curl_slist* list = nullptr;
   ~CurlSlist();

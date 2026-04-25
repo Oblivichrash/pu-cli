@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/model_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
@@ -20,9 +18,6 @@ using namespace pu::tests;
 
 namespace fs = std::filesystem;
 
-// ----------------------------------------------------------------------------
-// Cross-platform environment variable helpers for testing
-// ----------------------------------------------------------------------------
 #ifdef _WIN32
 static void set_env(const char* name, const char* value) {
     std::string s = std::string(name) + "=" + value;
@@ -41,9 +36,6 @@ static void unset_env(const char* name) {
 }
 #endif
 
-// ----------------------------------------------------------------------------
-// Helper to create a temporary config file
-// ----------------------------------------------------------------------------
 struct TempConfigFile {
   fs::path path;
   TempConfigFile() {
@@ -59,9 +51,6 @@ struct TempConfigFile {
   }
 };
 
-// ----------------------------------------------------------------------------
-// Tests
-// ----------------------------------------------------------------------------
 TEST_CASE("LoadModelsConfig parses valid JSON", "[model_config]") {
   TempConfigFile tmp;
   std::string json = R"({
@@ -91,7 +80,6 @@ TEST_CASE("LoadModelsConfig parses valid JSON", "[model_config]") {
   })";
   tmp.write(json);
 
-  // Set environment variable for test
   set_env("OPENAI_KEY", "test-key-123");
 
   ModelsFile models = LoadModelsConfig(tmp.path.string());
@@ -147,7 +135,6 @@ TEST_CASE("SaveModelsConfig writes valid JSON", "[model_config]") {
 
   SaveModelsConfig(tmp.path.string(), original);
 
-  // Read back and verify
   ModelsFile loaded = LoadModelsConfig(tmp.path.string());
   REQUIRE(loaded.default_model == "test");
   REQUIRE(loaded.models.size() == 1);
@@ -168,8 +155,6 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[model_config]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto backend = CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
-  // We can't easily inspect the concrete type without RTTI,
-  // but we can verify it doesn't throw.
 }
 
 TEST_CASE("CreateBackend creates OpenAIBackend", "[model_config]") {
@@ -185,8 +170,6 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[model_config]") {
 }
 
 TEST_CASE("ExpandEnvVars warns on undefined variable", "[model_config]") {
-  // This is tested indirectly via loading; the warning goes to cerr.
-  // We just ensure the behavior doesn't crash.
   TempConfigFile tmp;
   std::string json = R"({
     "models": [
@@ -204,5 +187,5 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[model_config]") {
   tmp.write(json);
   ModelsFile models = LoadModelsConfig(tmp.path.string());
   REQUIRE(models.models[0].backend.system_prompt.has_value());
-  REQUIRE(models.models[0].backend.system_prompt->empty());  // expands to empty
+  REQUIRE(models.models[0].backend.system_prompt->empty());
 }
