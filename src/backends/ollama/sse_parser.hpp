@@ -53,8 +53,9 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
         }
       }
     }
-
-    // Return token even if done is true and no content, since done signals end.
+    if (!token.done && token.content.empty() && token.reasoning.empty() && token.tool_calls.empty()) {
+      return std::nullopt;
+    }
     return token;
   } catch (const std::exception&) {
     throw std::runtime_error("JSON parse error in SSE line: " + std::string(line));

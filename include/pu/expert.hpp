@@ -41,6 +41,10 @@ class ExpertManager {
   void ClearSessions();
   backend::Backend* GetRouterBackend();
 
+  // Set the active expert directly (used for --expert flag)
+  void SetActiveExpert(const std::string& name);
+  std::string GetActiveExpert() const;
+
  private:
   std::string RouteToExpert(const std::string& input);
 

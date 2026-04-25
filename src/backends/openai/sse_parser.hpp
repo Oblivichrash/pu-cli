@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "pu/backend.hpp"
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <stdexcept>
@@ -16,23 +17,20 @@ namespace pu::backends::openai::internal {
 
 struct SseToken {
   std::string content;
-  std::string reasoning;  // reasoning_content from OpenAI o1 / compatible services
+  std::string reasoning;                  // reasoning_content from OpenAI o1 / compatible services
+  std::vector<backend::ToolCall> tool_calls;  // tool calls if any
   bool done = false;
 };
 
 inline std::optional<SseToken> ParseSseLine(std::string_view line) {
-  // OpenAI SSE format: "data: <json>" or "data: [DONE]".
-  // Some servers may include extra whitespace after the colon.
   constexpr std::string_view kDataPrefix = "data: ";
-  
-  // Trim leading whitespace (should not be necessary for well-formed SSE,
-  // but we handle it defensively).
+
   size_t start = line.find_first_not_of(" \t");
   if (start == std::string_view::npos) return std::nullopt;
   std::string_view trimmed = line.substr(start);
-  
+
   if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) {
-    return std::nullopt;  // ignore comments or empty lines
+    return std::nullopt;
   }
   std::string_view data = trimmed.substr(kDataPrefix.size());
   if (data == "[DONE]") {
@@ -40,22 +38,52 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     token.done = true;
     return token;
   }
+
   try {
     using json = nlohmann::json;
     json j = json::parse(data);
     SseToken token;
     token.done = false;
+
+    bool has_meaningful_content = false;
     if (j.contains("choices") && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
       if (choice.contains("delta")) {
         if (choice["delta"].contains("content")) {
           token.content = choice["delta"]["content"];
+          has_meaningful_content = true;
         }
         if (choice["delta"].contains("reasoning")) {
           token.reasoning = choice["delta"]["reasoning"];
+          has_meaningful_content = true;
+        }
+        if (choice["delta"].contains("tool_calls")) {
+          for (const auto& tc : choice["delta"]["tool_calls"]) {
+            backend::ToolCall call;
+            if (tc.contains("id")) call.id = tc["id"].get<std::string>();
+            if (tc.contains("function")) {
+              call.name = tc["function"].value("name", "");
+              if (tc["function"].contains("arguments")) {
+                call.arguments = tc["function"]["arguments"].dump();
+              }
+            }
+            token.tool_calls.push_back(call);
+          }
+          has_meaningful_content = true;
         }
       }
+      // Even if no delta content, the presence of choices constitutes a valid token
+      if (!has_meaningful_content) {
+        // Token is empty but valid (e.g., heartbeat)
+        return token;
+      }
+    } else {
+      // No choices: this line has no useful data; ignore unless done
+      if (!j.contains("done")) {
+        return std::nullopt;
+      }
     }
+
     return token;
   } catch (const std::exception&) {
     throw std::runtime_error("JSON parse error in SSE line: " + std::string(line));

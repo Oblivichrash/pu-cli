@@ -57,6 +57,10 @@ struct Message {
   std::string content;
   std::string tool_name;              // only used when role == kTool
   std::vector<ToolCall> tool_calls;   // only used when role == kAssistant
+
+  Message() = default;
+  Message(Role role, std::string content)
+      : role(role), content(std::move(content)) {}
 };
 
 // ============================================================================

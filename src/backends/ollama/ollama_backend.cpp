@@ -23,7 +23,7 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["options"]["temperature"] = config_.temperature;
 
   json messages = json::array();
-  if (config_.system_prompt && history.empty()) {
+  if (config_.system_prompt) {
     messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
   }
   for (const auto& msg : history) {
@@ -32,14 +32,19 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
       case pu::backend::Message::Role::kUser: role = "user"; break;
       case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
       case pu::backend::Message::Role::kSystem: role = "system"; break;
-      // kTool not expected in plain chat
-      default: continue;
+      case pu::backend::Message::Role::kTool: role = "tool"; break;
     }
-    messages.push_back({{"role", role}, {"content", msg.content}});
+    if (!role.empty()) {
+      messages.push_back({{"role", role}, {"content", msg.content}});
+    }
   }
   req["messages"] = messages;
   return req.dump();
 }
+
+OllamaBackend::OllamaBackend(Config config,
+                             std::unique_ptr<pu::http::HttpClient> http)
+    : Backend(std::move(config)), host_(std::move(config.host)), http_(std::move(http)) {}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {
@@ -47,7 +52,8 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
   std::string url = host_ + "/api/chat";
 
   std::string line_buffer;
-  std::string current_content;
+  std::string accumulated_content;   // Tracks full content from server
+  std::string accumulated_reasoning; // Tracks full reasoning (thinking) from server
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     line_buffer.append(ptr, total);
@@ -64,9 +70,38 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
       if (token.done) {
         cb(pu::backend::TokenType::kContent, "", true);
         return total;
-      } else if (!token.content.empty()) {
-        current_content += token.content;
-        cb(pu::backend::TokenType::kContent, token.content, false);
+      }
+
+      // Helper lambda to extract delta from potentially cumulative text
+      auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
+        if (new_text.empty()) return new_text;
+        if (new_text.size() < accumulated.size()) {
+          accumulated.clear();
+        }
+        if (accumulated.empty() ||
+            new_text.compare(0, accumulated.size(), accumulated) != 0) {
+          accumulated = new_text;
+          return new_text;
+        }
+        std::string_view delta = new_text.substr(accumulated.size());
+        accumulated = new_text;
+        return delta;
+      };
+
+      // Handle reasoning (thinking) tokens
+      if (!token.reasoning.empty()) {
+        std::string_view delta = extract_delta(token.reasoning, accumulated_reasoning);
+        if (!delta.empty()) {
+          cb(pu::backend::TokenType::kReasoning, delta, false);
+        }
+      }
+
+      // Handle content tokens
+      if (!token.content.empty()) {
+        std::string_view delta = extract_delta(token.content, accumulated_content);
+        if (!delta.empty()) {
+          cb(pu::backend::TokenType::kContent, delta, false);
+        }
       }
     }
     return total;
@@ -89,7 +124,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
 
   // Build messages including tool roles and tool_calls
   json messages = json::array();
-  if (config_.system_prompt && history.empty()) {
+  if (config_.system_prompt) {
     messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
   }
   for (const auto& msg : history) {
@@ -169,9 +204,5 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
 
   http_->PostStream(url, body, {"Content-Type: application/json"}, write_cb);
 }
-
-OllamaBackend::OllamaBackend(Config config,
-                             std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(std::move(config)), host_(config.host), http_(std::move(http)) {}
 
 }  // namespace pu::backends::ollama

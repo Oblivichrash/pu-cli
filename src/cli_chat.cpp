@@ -123,7 +123,7 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Create the router backend (reuse the same configuration for now)
+  // Create the router backend
   auto router_http = std::make_unique<pu::http::CurlHttpClient>();
   std::unique_ptr<pu::backend::Backend> router_backend;
   try {
@@ -133,14 +133,17 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
+  // Save raw pointer before moving the unique_ptr
+  pu::backend::Backend* router_raw = router_backend.get();
+
   // Set up the expert framework
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
   manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>(manager.GetRouterBackend()));
+      std::make_unique<pu::experts::BashExpert>(router_raw,
+                                                std::make_unique<pu::executor::CommandExecutor>(".")));
 
-  // If an initial expert was specified, set it as active
   if (!initial_expert.empty()) {
     manager.SetActiveExpert(initial_expert);
   }
@@ -169,8 +172,7 @@ int RunChatCommand(int argc, char* argv[]) {
       } else if (input == "/models") {
         PrintModels(models, current_entry->name);
       } else if (input.rfind("/model ", 0) == 0) {
-        // Extract and trim the model name
-        std::string new_name = input.substr(7);  // after "/model "
+        std::string new_name = input.substr(7);
         size_t start = new_name.find_first_not_of(" \t");
         if (start != std::string::npos) {
           new_name = new_name.substr(start);
@@ -199,7 +201,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild chat backend with new configuration
+        // Rebuild chat backend
         auto new_chat_http = std::make_unique<pu::http::CurlHttpClient>();
         std::unique_ptr<pu::backend::Backend> new_chat_backend;
         try {
@@ -209,7 +211,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Rebuild router backend as well
+        // Rebuild router backend
         auto new_router_http = std::make_unique<pu::http::CurlHttpClient>();
         std::unique_ptr<pu::backend::Backend> new_router_backend;
         try {
@@ -219,14 +221,15 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-	// Get raw pointer before moving into ExpertManager/ChatExpert
-        auto router_backend_ptr = router_backend.get();
+        // Save raw pointer before moving
+        pu::backend::Backend* new_router_raw = new_router_backend.get();
 
-        pu::expert::ExpertManager manager(std::move(router_backend));
+        // Rebuild manager and register experts
+        manager = pu::expert::ExpertManager(std::move(new_router_backend));
         manager.RegisterExpert(
-            std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
+            std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
         manager.RegisterExpert(
-            std::make_unique<pu::experts::BashExpert>(router_backend_ptr,
+            std::make_unique<pu::experts::BashExpert>(new_router_raw,
                                                       std::make_unique<pu::executor::CommandExecutor>(".")));
 
         current_entry = new_entry;
@@ -243,10 +246,7 @@ int RunChatCommand(int argc, char* argv[]) {
 
     // Dispatch through expert framework
     try {
-      std::string response = manager.Dispatch(input);
-      // Prefix is now printed inside Dispatch, so just ensure a newline
-      // if the response itself didn't end with one (it should, via renderer).
-      // No extra endl here to avoid double spacing.
+      manager.Dispatch(input);
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }

@@ -70,6 +70,15 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
+    // Ask for user confirmation before executing any tool
+    std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
+    std::string confirm;
+    std::getline(std::cin, confirm);
+    if (confirm != "y" && confirm != "Y") {
+      final_response = "Command execution cancelled by user.";
+      break;
+    }
+
     // Append assistant message with tool calls
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
