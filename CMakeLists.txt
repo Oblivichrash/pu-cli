@@ -66,7 +66,7 @@ target_include_directories(pu_expert PRIVATE
 )
 target_link_libraries(pu_expert
     PUBLIC  pu_backend_interface pu_platform
-    PRIVATE pu_backend pu_http
+    PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json
 )
 add_library(pu::expert ALIAS pu_expert)
 
