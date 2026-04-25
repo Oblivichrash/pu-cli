@@ -16,6 +16,9 @@ namespace pu {
 
 namespace {
 
+// Global interrupt flag – note that this is shared across all active requests.
+// In a single-threaded CLI this is acceptable, but future multi‑session
+// support should replace it with per-request stop tokens.
 std::atomic<bool> interrupted{false};
 
 #ifdef _WIN32
