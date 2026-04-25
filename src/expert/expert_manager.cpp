@@ -43,17 +43,14 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   std::string target = RouteToExpert(input);
   auto it = experts_.find(target);
   if (it == experts_.end()) {
-    // Fallback: prefer chat, then first expert
     it = experts_.find("chat");
     if (it == experts_.end()) {
       it = experts_.begin();
     }
   }
 
-  // Update active expert only if it changed
-  if (target != active_expert_) {
-    active_expert_ = target;
-  }
+  // Update active expert
+  active_expert_ = it->first;
 
   ExpertContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {

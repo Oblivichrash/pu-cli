@@ -14,7 +14,7 @@ namespace pu::backends::openai {
 using json = nlohmann::json;
 
 // ============================================================================
-// Request building
+// Request building (without tools)
 // ============================================================================
 std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
@@ -23,15 +23,19 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["temperature"] = config_.temperature;
 
   json messages = json::array();
-  if (config_.system_prompt) {
+  // Insert system prompt only if not present in history
+  if (config_.system_prompt &&
+      std::none_of(history.begin(), history.end(),
+                   [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
     messages.push_back({{"role", "system"}, {"content", *config_.system_prompt}});
   }
   for (const auto& msg : history) {
     std::string role;
     switch (msg.role) {
+      case pu::backend::Message::Role::kSystem: role = "system"; break;
       case pu::backend::Message::Role::kUser: role = "user"; break;
       case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
-      case pu::backend::Message::Role::kSystem: role = "system"; break;
+      case pu::backend::Message::Role::kTool: role = "tool"; break;
     }
     messages.push_back({{"role", role}, {"content", msg.content}});
   }
@@ -61,8 +65,8 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   }
 
   std::string line_buffer;
-  std::string accumulated_content;   // Tracks full content from server
-  std::string accumulated_reasoning; // Tracks full reasoning from server
+  std::string accumulated_content;
+  std::string accumulated_reasoning;
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     line_buffer.append(ptr, total);
@@ -77,31 +81,25 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
       const auto& token = *token_opt;
       if (token.done) {
-        // Signal end of stream for content (renderer handles reasoning independently)
         cb(pu::backend::TokenType::kContent, "", true);
         return total;
       }
 
-      // Helper lambda to extract delta from potentially cumulative text
       auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
         if (new_text.empty()) return new_text;
-        // Heuristic: if new content is shorter than accumulated, treat as a reset
         if (new_text.size() < accumulated.size()) {
           accumulated.clear();
         }
         if (accumulated.empty() ||
             new_text.compare(0, accumulated.size(), accumulated) != 0) {
-          // Not a prefix of accumulated: use whole new_text as delta
           accumulated = new_text;
           return new_text;
         }
-        // It's a prefix: the suffix is the new delta
         std::string_view delta = new_text.substr(accumulated.size());
         accumulated = new_text;
         return delta;
       };
 
-      // Handle reasoning tokens
       if (!token.reasoning.empty()) {
         std::string_view delta = extract_delta(token.reasoning, accumulated_reasoning);
         if (!delta.empty()) {
@@ -109,7 +107,6 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         }
       }
 
-      // Handle content tokens
       if (!token.content.empty()) {
         std::string_view delta = extract_delta(token.content, accumulated_content);
         if (!delta.empty()) {
@@ -121,6 +118,17 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   };
 
   http_->PostStream(url, body, headers, write_cb);
+}
+
+// ============================================================================
+// Tool‑calling Chat (not yet implemented)
+// ============================================================================
+void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
+                         const std::vector<pu::backend::ToolDefinition>& tools,
+                         pu::backend::ChatCallback content_cb,
+                         pu::backend::ToolCallback tool_cb) {
+  (void)history; (void)tools; (void)content_cb; (void)tool_cb;
+  throw std::runtime_error("OpenAIBackend does not support tool calling yet");
 }
 
 }  // namespace pu::backends::openai

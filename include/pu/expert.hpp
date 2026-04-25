@@ -41,13 +41,12 @@ class ExpertManager {
   void ClearSessions();
   backend::Backend* GetRouterBackend();
 
-  // Set the active expert directly, bypassing routing for subsequent messages.
+  // Set the active expert directly (used for --expert flag)
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
 
  private:
   std::string RouteToExpert(const std::string& input);
-  bool ShouldReroute(const std::string& input);
 
   std::unique_ptr<backend::Backend> router_;
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
