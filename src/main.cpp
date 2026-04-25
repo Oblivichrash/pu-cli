@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 #include "pu/cli_ask.hpp"
 #include "pu/cli_chat.hpp"
 #include "pu/renderer.hpp"

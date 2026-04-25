@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // OpenAI-compatible backend implementation.
 
@@ -13,16 +11,12 @@
 
 namespace pu::backends::openai {
 
-/// OpenAI-compatible chat completion backend.
-/// Supports any service that implements the OpenAI /v1/chat/completions
-/// API with SSE streaming (e.g., DeepSeek, Qwen, Doubao, local vLLM).
-/// Requires an API key unless the endpoint is unauthenticated.
 class OpenAIBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
     std::string host = "https://api.openai.com";
-    std::string api_key;  // Required for OpenAI API
-    
+    std::string api_key;
+
     Config() = default;
   };
 

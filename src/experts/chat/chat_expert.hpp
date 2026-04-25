@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // ChatExpert: conversational assistant with LLM backend.
 
@@ -16,8 +14,6 @@ namespace pu::experts {
 
 class ChatExpert : public pu::expert::BaseExpert {
  public:
-  // 'model_id' is a human-readable label for display (e.g., model name).
-  // The expert is always registered with the fixed name "chat".
   explicit ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
                       const std::string& model_id = "");
   ~ChatExpert() override = default;

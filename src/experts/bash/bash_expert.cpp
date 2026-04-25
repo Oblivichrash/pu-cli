@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "bash_expert.hpp"
 #include <nlohmann/json.hpp>
@@ -9,12 +7,11 @@
 
 namespace pu::experts {
 
-BashExpert::BashExpert(pu::backend::Backend* backend,
+BashExpert::BashExpert(pu::backend::Backend& backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
     : backend_(backend), executor_(std::move(executor)) {}
 
 void BashExpert::ResetSession() {
-  // Stateless for now.
 }
 
 std::string BashExpert::Handle(const std::string& input,
@@ -24,7 +21,7 @@ std::string BashExpert::Handle(const std::string& input,
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input) {
-  if (!backend_->SupportsTools()) {
+  if (!backend_.SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
@@ -48,7 +45,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
     std::vector<pu::backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
 
-    backend_->Chat(history, tools,
+    backend_.Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
           if (!is_final) {
@@ -70,7 +67,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // Ask for user confirmation BEFORE appending tool call to history
     std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
     std::string confirm;
     std::getline(std::cin, confirm);
@@ -79,13 +75,11 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
       break;
     }
 
-    // User approved: record assistant message with tool calls
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;
     history.push_back(assistant_msg);
 
-    // Execute each tool and append tool messages
     for (const auto& call : collected_calls) {
       std::string result;
       if (call.name == "execute_bash") {
