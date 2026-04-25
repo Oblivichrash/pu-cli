@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "openai_backend.hpp"
 #include "sse_parser.hpp"
@@ -13,9 +11,6 @@ namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
-// ============================================================================
-// Request building (without tools)
-// ============================================================================
 std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
@@ -23,7 +18,6 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["temperature"] = config_.temperature;
 
   json messages = json::array();
-  // Insert system prompt only if not present in history
   if (config_.system_prompt &&
       std::none_of(history.begin(), history.end(),
                    [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
@@ -43,9 +37,6 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   return req.dump();
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
 OpenAIBackend::OpenAIBackend(const Config& config,
                              std::unique_ptr<pu::http::HttpClient> http)
     : Backend(config),
@@ -120,14 +111,10 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   http_->PostStream(url, body, headers, write_cb);
 }
 
-// ============================================================================
-// Tool‑calling Chat (not yet implemented)
-// ============================================================================
-void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         const std::vector<pu::backend::ToolDefinition>& tools,
-                         pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb) {
-  (void)history; (void)tools; (void)content_cb; (void)tool_cb;
+void OpenAIBackend::Chat([[maybe_unused]] const std::vector<pu::backend::Message>& history,
+                         [[maybe_unused]] const std::vector<pu::backend::ToolDefinition>& tools,
+                         [[maybe_unused]] pu::backend::ChatCallback content_cb,
+                         [[maybe_unused]] pu::backend::ToolCallback tool_cb) {
   throw std::runtime_error("OpenAIBackend does not support tool calling yet");
 }
 

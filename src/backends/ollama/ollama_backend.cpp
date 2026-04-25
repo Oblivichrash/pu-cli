@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "ollama_backend.hpp"
 #include "sse_parser.hpp"
@@ -13,9 +11,6 @@ namespace pu::backends::ollama {
 
 using json = nlohmann::json;
 
-// ============================================================================
-// Original Chat (no tools)
-// ============================================================================
 std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
@@ -23,7 +18,6 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["options"]["temperature"] = config_.temperature;
 
   json messages = json::array();
-  // Insert system prompt only if not present in history
   if (config_.system_prompt &&
       std::none_of(history.begin(), history.end(),
                    [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
@@ -77,6 +71,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
 
       auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
         if (new_text.empty()) return new_text;
+        // Heuristic: if new content is shorter than accumulated, treat as a reset
         if (new_text.size() < accumulated.size()) {
           accumulated.clear();
         }
@@ -110,9 +105,6 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
   http_->PostStream(url, body, {"Content-Type: application/json"}, write_cb);
 }
 
-// ============================================================================
-// Tool‑calling Chat
-// ============================================================================
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
@@ -122,9 +114,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  // Build messages including tool roles and tool_calls
   json messages = json::array();
-  // Insert system prompt only if not present in history
   if (config_.system_prompt &&
       std::none_of(history.begin(), history.end(),
                    [](const auto& m) { return m.role == pu::backend::Message::Role::kSystem; })) {
@@ -158,7 +148,6 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
   }
   req["messages"] = messages;
 
-  // Build tools array
   json tools_json = json::array();
   for (const auto& tool : tools) {
     json t;
