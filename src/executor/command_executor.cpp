@@ -11,6 +11,21 @@
 #include <stdexcept>
 #include <array>
 
+#ifdef _WIN32
+// Windows popen/pclose compatibility
+#define popen _popen
+#define pclose _pclose
+
+// Extract exit code from _pclose return value (simplified)
+static int GetExitCodeFromPClose(int status) {
+    // On Windows, _pclose returns the exit code of the cmd process.
+    return (status == -1) ? -1 : status;
+}
+#else
+#include <sys/wait.h>  // for WEXITSTATUS
+#define GetExitCodeFromPClose(status) WEXITSTATUS(status)
+#endif
+
 namespace pu::executor {
 
 const std::vector<std::string> CommandExecutor::dangerous_patterns_ = {
@@ -53,8 +68,11 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
     return result;
   }
 
-  // Use popen to capture output (simplified, cross‑platform with caveats)
-  std::string full_cmd = "cd " + sandbox_path_ + " && " + command + " 2>&1";
+  // Build command with sandbox path
+  std::string full_cmd = command;
+  if (!sandbox_path_.empty()) {
+    full_cmd = "cd " + sandbox_path_ + " && " + command + " 2>&1";
+  }
   FILE* pipe = popen(full_cmd.c_str(), "r");
   if (!pipe) {
     result.exit_code = -1;
@@ -69,7 +87,7 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
   }
 
   int status = pclose(pipe);
-  result.exit_code = WEXITSTATUS(status);
+  result.exit_code = GetExitCodeFromPClose(status);
   result.stdout_content = output;
   return result;
 }
