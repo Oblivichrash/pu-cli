@@ -1,6 +1,4 @@
-// Copyright (c) 2026 pu-cli authors. All rights reserved.
-// Use of this source code is governed by a GPL-3.0-style license that can be
-// found in the LICENSE file.
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Expert framework base classes.
 
@@ -39,9 +37,8 @@ class ExpertManager {
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
-  backend::Backend* GetRouterBackend();
+  backend::Backend& GetRouterBackend();
 
-  // Set the active expert directly (used for --expert flag)
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
 
