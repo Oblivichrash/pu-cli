@@ -126,12 +126,15 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     if (!msg.tool_calls.empty()) {
       json tcs = json::array();
       for (const auto& tc : msg.tool_calls) {
-        tcs.push_back({
-          {"function", {
-            {"name", tc.name},
-            {"arguments", tc.arguments}
-          }}
-        });
+        json func = {{"name", tc.name}};
+        if (!tc.arguments.empty()) {
+          try {
+            func["arguments"] = json::parse(tc.arguments);
+          } catch (...) {
+            func["arguments"] = tc.arguments;
+          }
+        }
+        tcs.push_back({{"function", func}});
       }
       m["tool_calls"] = tcs;
     }

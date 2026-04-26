@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/model_config.hpp"
+#include "pu/expert_config.hpp"
 
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/openai/openai_backend.hpp"
@@ -8,7 +8,6 @@
 #include "pu/http/http_client.hpp"
 
 #include <nlohmann/json.hpp>
-
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -21,8 +20,6 @@ using json = nlohmann::json;
 
 namespace {
 
-// Expand ${VAR} syntax with environment variable values.
-// Prints warning to std::cerr if variable is not defined.
 std::string ExpandEnvVars(const std::string& input) {
   static const std::regex env_re(R"(\$\{([^}]+)\})");
   std::string result = input;
@@ -44,6 +41,12 @@ BackendType ParseBackendType(const std::string& str) {
   throw std::runtime_error("Unknown backend type: '" + str + "'");
 }
 
+ExpertType ParseExpertType(const std::string& str) {
+  if (str == "chat") return ExpertType::kChat;
+  if (str == "bash") return ExpertType::kBash;
+  throw std::runtime_error("Unknown expert type: '" + str + "'");
+}
+
 BackendConfig ParseBackendConfig(const json& j) {
   BackendConfig cfg;
   cfg.type = ParseBackendType(j.value("type", "ollama"));
@@ -59,79 +62,78 @@ BackendConfig ParseBackendConfig(const json& j) {
   return cfg;
 }
 
+ExpertEntry ParseExpertEntry(const json& j) {
+  ExpertEntry entry;
+  entry.name = j.value("name", "");
+  if (entry.name.empty()) {
+    throw std::runtime_error("Expert entry missing 'name'");
+  }
+  entry.description = j.value("description", "");
+  entry.type = ParseExpertType(j.value("type", "chat"));
+  if (!j.contains("backend") || !j["backend"].is_object()) {
+    throw std::runtime_error("Expert '" + entry.name + "' missing 'backend' block");
+  }
+  entry.backend = ParseBackendConfig(j["backend"]);
+  if (entry.backend.host.empty()) {
+    throw std::runtime_error("Expert '" + entry.name + "': 'host' is required");
+  }
+  if (entry.backend.model.empty()) {
+    throw std::runtime_error("Expert '" + entry.name + "': 'model' is required");
+  }
+  if (entry.type == ExpertType::kBash && j.contains("executor") && j["executor"].is_object()) {
+    entry.sandbox_path = j["executor"].value("sandbox", ".");
+  }
+  return entry;
+}
+
 }  // namespace
 
 std::string FindConfigPath() {
-  const char* env = std::getenv("PU_MODELS_CONFIG");
+  const char* env = std::getenv("PU_EXPERTS_CONFIG");
   if (env && env[0] != '\0') {
     return env;
   }
-
-  if (std::filesystem::exists("./models.json")) {
-    return "./models.json";
+  if (std::filesystem::exists("./experts.json")) {
+    return "./experts.json";
   }
-
   throw std::runtime_error("Configuration file not found. "
-                           "Set PU_MODELS_CONFIG or place models.json in current directory.");
+                           "Set PU_EXPERTS_CONFIG or place experts.json in current directory.");
 }
 
-ModelsFile LoadModelsConfig(const std::string& config_path) {
+ExpertsConfig LoadExpertsConfig(const std::string& config_path) {
   std::ifstream file(config_path);
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open config file: " + config_path);
   }
-
   json j;
   try {
     file >> j;
   } catch (const json::parse_error& e) {
     throw std::runtime_error("JSON parse error in " + config_path + ": " + e.what());
   }
-
-  ModelsFile result;
-  result.default_model = j.value("default_model", "");
-
-  if (!j.contains("models") || !j["models"].is_array()) {
-    throw std::runtime_error("Config file missing 'models' array");
+  ExpertsConfig result;
+  result.default_expert = j.value("default_expert", "");
+  if (!j.contains("experts") || !j["experts"].is_array()) {
+    throw std::runtime_error("Config file missing 'experts' array");
   }
-
-  for (const auto& item : j["models"]) {
-    ModelEntry entry;
-    entry.name = item.value("name", "");
-    if (entry.name.empty()) {
-      throw std::runtime_error("Model entry missing 'name'");
-    }
-    entry.description = item.value("description", "");
-    if (!item.contains("backend") || !item["backend"].is_object()) {
-      throw std::runtime_error("Model '" + entry.name + "' missing 'backend' block");
-    }
-    entry.backend = ParseBackendConfig(item["backend"]);
-    if (entry.backend.host.empty()) {
-      throw std::runtime_error("Model '" + entry.name + "': 'host' is required");
-    }
-    if (entry.backend.model.empty()) {
-      throw std::runtime_error("Model '" + entry.name + "': 'model' is required");
-    }
-    result.models.push_back(std::move(entry));
+  for (const auto& item : j["experts"]) {
+    result.experts.push_back(ParseExpertEntry(item));
   }
-
-  if (result.default_model.empty() && !result.models.empty()) {
-    result.default_model = result.models[0].name;
+  if (result.default_expert.empty() && !result.experts.empty()) {
+    result.default_expert = result.experts[0].name;
   }
-
   return result;
 }
 
-void SaveModelsConfig(const std::string& config_path, const ModelsFile& models) {
+void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config) {
   json j;
-  j["default_model"] = models.default_model;
-
-  json models_array = json::array();
-  for (const auto& entry : models.models) {
+  j["default_expert"] = config.default_expert;
+  json experts_array = json::array();
+  for (const auto& entry : config.experts) {
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
-
+    item["type"] = (entry.type == ExpertType::kChat) ? "chat" : "bash";
     json backend;
     backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
     backend["host"] = entry.backend.host;
@@ -144,11 +146,12 @@ void SaveModelsConfig(const std::string& config_path, const ModelsFile& models) 
       backend["system_prompt"] = *entry.backend.system_prompt;
     }
     item["backend"] = backend;
-
-    models_array.push_back(item);
+    if (entry.type == ExpertType::kBash) {
+      item["executor"] = {{"sandbox", entry.sandbox_path}};
+    }
+    experts_array.push_back(item);
   }
-  j["models"] = models_array;
-
+  j["experts"] = experts_array;
   std::ofstream file(config_path);
   if (!file.is_open()) {
     throw std::runtime_error("Failed to open config file for writing: " + config_path);

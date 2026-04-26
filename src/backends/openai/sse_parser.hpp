@@ -62,7 +62,12 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
             if (tc.contains("function")) {
               call.name = tc["function"].value("name", "");
               if (tc["function"].contains("arguments")) {
-                call.arguments = tc["function"]["arguments"].get<std::string>();
+                const auto& args = tc["function"]["arguments"];
+                if (args.is_string()) {
+                  call.arguments = args.get<std::string>();
+                } else if (args.is_object() || args.is_array()) {
+                  call.arguments = args.dump();
+                }
               }
             }
             token.tool_calls.push_back(call);

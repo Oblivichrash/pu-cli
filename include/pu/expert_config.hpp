@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Model configuration loading and backend factory.
+// Expert configuration loading and backend factory.
 
 #pragma once
 
@@ -33,21 +33,27 @@ struct BackendConfig {
   std::optional<std::string> system_prompt;
 };
 
-struct ModelEntry {
-  std::string name;
-  std::string description;
-  BackendConfig backend;
+enum class ExpertType {
+  kChat,
+  kBash
 };
 
-struct ModelsFile {
-  std::string default_model;
-  std::vector<ModelEntry> models;
+struct ExpertEntry {
+  std::string name;
+  ExpertType type = ExpertType::kChat;
+  std::string description;
+  BackendConfig backend;
+  std::string sandbox_path = ".";
+};
+
+struct ExpertsConfig {
+  std::string default_expert;
+  std::vector<ExpertEntry> experts;
 };
 
 std::string FindConfigPath();
-ModelsFile LoadModelsConfig(const std::string& config_path);
-void SaveModelsConfig(const std::string& config_path, const ModelsFile& models);
-
+ExpertsConfig LoadExpertsConfig(const std::string& config_path);
+void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg,
     std::unique_ptr<pu::http::HttpClient> http);
