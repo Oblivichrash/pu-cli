@@ -16,11 +16,10 @@ void BashExpert::ResetSession() {
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  (void)ctx;
-  return RunToolLoop(input);
+  return RunToolLoop(input, ctx.show_reasoning);
 }
 
-std::string BashExpert::RunToolLoop(const std::string& user_input) {
+std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
   if (!backend_.SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
@@ -53,6 +52,11 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
             content_stream << token;
           } else {
             std::cout << std::endl;
+          }
+        } else if (type == pu::backend::TokenType::kReasoning && show_reasoning) {
+          std::cerr << "[Thinking] " << token << std::flush;
+          if (is_final) {
+            std::cerr << std::endl;
           }
         }
       },

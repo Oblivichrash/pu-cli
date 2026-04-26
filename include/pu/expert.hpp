@@ -19,6 +19,7 @@ struct ExpertContext {
   std::function<std::string(const std::string& name, const std::string& input)> call_expert;
   std::function<bool(const std::string& message)> request_confirmation;
   std::string working_dir;
+  bool show_reasoning = false;
 };
 
 class BaseExpert {
@@ -37,17 +38,17 @@ class ExpertManager {
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
-  backend::Backend& GetRouterBackend();
-
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
+  backend::Backend& GetRouterBackend();
+  void SetShowReasoning(bool enable);
 
  private:
   std::string RouteToExpert(const std::string& input);
-
   std::unique_ptr<backend::Backend> router_;
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
+  bool show_reasoning_ = false;
 };
 
 }  // namespace pu::expert

@@ -13,18 +13,22 @@ ChatExpert::ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
     : backend_(std::move(backend)), model_id_(model_id) {}
 
 std::string ChatExpert::Handle(const std::string& input,
-                               pu::expert::ExpertContext& /*ctx*/) {
+                               pu::expert::ExpertContext& ctx) {
   history_.push_back({pu::backend::Message::Role::kUser, input});
 
   std::ostringstream full_response;
   try {
-    auto renderer_cb = pu::StreamingRenderer::Create(/*show_reasoning=*/false);
+    auto renderer_cb = pu::StreamingRenderer::Create(ctx.show_reasoning);
     backend_->Chat(history_, [&](pu::backend::TokenType type,
                                  std::string_view token,
                                  bool is_final) {
       if (type == pu::backend::TokenType::kContent) {
         renderer_cb(type, token, is_final);
-        if (!is_final) full_response << token;
+        if (!is_final) {
+          full_response << token;
+        }
+      } else if (type == pu::backend::TokenType::kReasoning && ctx.show_reasoning) {
+        renderer_cb(type, token, is_final);
       }
     });
   } catch (const std::exception& e) {
