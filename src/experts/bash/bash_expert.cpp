@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace pu::experts {
 
@@ -12,8 +13,7 @@ BashExpert::BashExpert(pu::backend::Backend& backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
     : backend_(backend), executor_(std::move(executor)) {}
 
-void BashExpert::ResetSession() {
-}
+void BashExpert::ResetSession() {}
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
@@ -68,22 +68,32 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       break;
     }
 
-    // Show the exact commands that will be executed
+    // Build confirmation prompt with commands
+    std::vector<std::string> commands;
     for (const auto& call : collected_calls) {
       if (call.name == "execute_bash") {
         try {
           json args = json::parse(call.arguments);
-          std::string command = args.value("command", "");
-          if (!command.empty()) {
-            std::cout << "[BASH] Will execute: " << command << "\n";
+          std::string cmd = args.value("command", "");
+          if (!cmd.empty()) {
+            commands.push_back(cmd);
           }
-        } catch (...) {
-          // Ignore parse errors and continue to confirmation
-        }
+        } catch (...) {}
       }
     }
 
-    std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
+    if (commands.empty()) {
+      std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
+    } else if (commands.size() == 1) {
+      std::cout << "[CONFIRM] Execute: " << commands[0] << "? [y/N] ";
+    } else {
+      std::cout << "[CONFIRM] Execute these commands?\n";
+      for (size_t i = 0; i < commands.size(); ++i) {
+        std::cout << "  " << (i + 1) << ". " << commands[i] << "\n";
+      }
+      std::cout << "[y/N] ";
+    }
+
     std::string confirm;
     std::getline(std::cin, confirm);
     if (confirm != "y" && confirm != "Y") {
