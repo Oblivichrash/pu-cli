@@ -36,7 +36,24 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     return "No experts available.";
   }
 
-  std::string target = RouteToExpert(input);
+  std::string target = active_expert_;
+  std::string message = input;
+
+  // Parse @expert prefix
+  if (!input.empty() && input[0] == '@') {
+    size_t space_pos = input.find(' ');
+    if (space_pos != std::string::npos) {
+      target = input.substr(1, space_pos - 1);
+      message = input.substr(space_pos + 1);
+    } else {
+      // Only @expert with no message – ignore
+      return "";
+    }
+  } else if (target.empty()) {
+    // No lock and no @ – route
+    target = RouteToExpert(input);
+  }
+
   auto it = experts_.find(target);
   if (it == experts_.end()) {
     it = experts_.find("chat");
@@ -45,7 +62,11 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     }
   }
 
-  active_expert_ = it->first;
+  // Keep active_expert_ only if locked or via @ (not auto-routed)
+  // Actually, auto-routing also sets active for subsequent messages without @
+  if (active_expert_.empty() && input[0] != '@') {
+    active_expert_ = it->first;
+  }
 
   ExpertContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
@@ -59,9 +80,8 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   };
   ctx.working_dir = ".";
 
-  std::cout << "\n[" << active_expert_ << "] " << std::flush;
-
-  return it->second->Handle(input, ctx);
+  std::cout << "\n[" << it->first << "] " << std::flush;
+  return it->second->Handle(message, ctx);
 }
 
 std::string ExpertManager::CallExpert(const std::string& expert_name, const std::string& input) {
@@ -128,6 +148,7 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
     return "chat";
   }
 
+  // Trim whitespace
   selected.erase(0, selected.find_first_not_of(" \t\n\r"));
   selected.erase(selected.find_last_not_of(" \t\n\r") + 1);
 
