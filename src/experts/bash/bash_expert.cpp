@@ -68,6 +68,21 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       break;
     }
 
+    // Show the exact commands that will be executed
+    for (const auto& call : collected_calls) {
+      if (call.name == "execute_bash") {
+        try {
+          json args = json::parse(call.arguments);
+          std::string command = args.value("command", "");
+          if (!command.empty()) {
+            std::cout << "[BASH] Will execute: " << command << "\n";
+          }
+        } catch (...) {
+          // Ignore parse errors and continue to confirmation
+        }
+      }
+    }
+
     std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
     std::string confirm;
     std::getline(std::cin, confirm);
