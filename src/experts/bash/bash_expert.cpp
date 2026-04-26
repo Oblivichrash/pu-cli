@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "bash_expert.hpp"
+#include "pu/renderer.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <sstream>
@@ -16,11 +17,10 @@ void BashExpert::ResetSession() {
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  (void)ctx;
-  return RunToolLoop(input);
+  return RunToolLoop(input, ctx.show_reasoning);
 }
 
-std::string BashExpert::RunToolLoop(const std::string& user_input) {
+std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
   if (!backend_.SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
@@ -44,16 +44,17 @@ std::string BashExpert::RunToolLoop(const std::string& user_input) {
     tool_was_called = false;
     std::vector<pu::backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
+    auto renderer_cb = pu::StreamingRenderer::Create(show_reasoning);
 
     backend_.Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
+          renderer_cb(type, token, is_final);
           if (!is_final) {
-            std::cout << token << std::flush;
             content_stream << token;
-          } else {
-            std::cout << std::endl;
           }
+        } else if (type == pu::backend::TokenType::kReasoning) {
+          renderer_cb(type, token, is_final);
         }
       },
       [&](const pu::backend::ToolCall& call) {
