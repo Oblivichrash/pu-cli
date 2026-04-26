@@ -33,6 +33,10 @@ std::string ExpertManager::GetActiveExpert() const {
   return active_expert_;
 }
 
+void ExpertManager::SetShowReasoning(bool enable) {
+  show_reasoning_ = enable;
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
@@ -76,6 +80,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     return (answer == "y" || answer == "Y");
   };
   ctx.working_dir = ".";
+  ctx.show_reasoning = show_reasoning_;
 
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
@@ -106,7 +111,6 @@ std::string ExpertManager::RouteToExpert(const std::string& input) {
   for (const auto& [name, expert] : experts_) {
     prompt << "- " << name << ": " << expert->Description() << "\n";
   }
-
   prompt << "\nRules:\n"
          << "- Use 'chat' for conversation, questions, explanations.\n";
   if (experts_.count("bash")) {

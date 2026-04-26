@@ -23,10 +23,11 @@ namespace pu::cli {
 namespace {
 
 void PrintUsage() {
-  std::cerr << "Usage: pu ask [--expert <name>] <prompt>\n"
+  std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] <prompt>\n"
             << "Options:\n"
-            << "  --expert <name>  Specify the expert to use (default: from config)\n"
-            << "  -h, --help        Show this help message\n";
+            << "  --expert <name>     Specify the expert to use (default: from config)\n"
+            << "  --show-reasoning    Show model's internal reasoning\n"
+            << "  -h, --help          Show this help message\n";
 }
 
 void PrintAvailableExperts(const pu::config::ExpertsConfig& config) {
@@ -45,6 +46,7 @@ void PrintAvailableExperts(const pu::config::ExpertsConfig& config) {
 int RunAskCommand(int argc, char* argv[]) {
   std::string expert_name;
   std::string prompt;
+  bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -59,6 +61,8 @@ int RunAskCommand(int argc, char* argv[]) {
         PrintUsage();
         return 1;
       }
+    } else if (arg == "--show-reasoning") {
+      show_reasoning = true;
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
@@ -125,6 +129,9 @@ int RunAskCommand(int argc, char* argv[]) {
 
   if (!target_name.empty()) {
     manager.SetActiveExpert(target_name);
+  }
+  if (show_reasoning) {
+    manager.SetShowReasoning(true);
   }
 
   try {
