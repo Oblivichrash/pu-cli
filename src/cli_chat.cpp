@@ -4,8 +4,8 @@
 
 #include "pu/backend.hpp"
 #include "pu/expert.hpp"
+#include "pu/expert_config.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/model_config.hpp"
 #include "pu/renderer.hpp"
 
 #include "experts/chat/chat_expert.hpp"
@@ -27,14 +27,14 @@ void PrintHelp() {
   std::cout << "Available commands:\n"
             << "  /help           Show this help\n"
             << "  /exit, /quit    Exit interactive mode\n"
-            << "  /clear          Clear conversation history\n"
-            << "  /model <name>   Switch to a different model (clears history)\n"
-            << "  /models         List available models\n";
+            << "  /clear          Clear conversation history and expert lock\n"
+            << "  /expert <name>  Switch to different expert\n"
+            << "  /experts        List available experts\n";
 }
 
-void PrintModels(const pu::config::ModelsFile& models, const std::string& current) {
-  std::cout << "Available models:\n";
-  for (const auto& entry : models.models) {
+void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
+  std::cout << "Available experts:\n";
+  for (const auto& entry : config.experts) {
     std::cout << "  " << entry.name;
     if (!entry.description.empty()) {
       std::cout << " - " << entry.description;
@@ -49,21 +49,13 @@ void PrintModels(const pu::config::ModelsFile& models, const std::string& curren
 }  // namespace
 
 int RunChatCommand(int argc, char* argv[]) {
-  std::string initial_model;
   std::string initial_expert;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [-m <model>] [--expert <name>]\n";
+      std::cout << "Usage: pu chat [--expert <name>]\n";
       return 0;
-    } else if (arg == "-m" || arg == "--model") {
-      if (i + 1 < argc) {
-        initial_model = argv[++i];
-      } else {
-        std::cerr << "Error: --model requires an argument\n";
-        return 1;
-      }
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
         initial_expert = argv[++i];
@@ -85,29 +77,29 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  pu::config::ModelsFile models;
+  pu::config::ExpertsConfig config;
   try {
-    models = pu::config::LoadModelsConfig(config_path);
+    config = pu::config::LoadExpertsConfig(config_path);
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to load config: " << e.what() << "\n";
     return 1;
   }
 
-  if (models.models.empty()) {
-    std::cerr << "Error: no models configured\n";
+  if (config.experts.empty()) {
+    std::cerr << "Error: no experts configured\n";
     return 1;
   }
 
-  const pu::config::ModelEntry* current_entry = nullptr;
-  std::string current_name = initial_model.empty() ? models.default_model : initial_model;
-  for (const auto& entry : models.models) {
+  const pu::config::ExpertEntry* current_entry = nullptr;
+  std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
+  for (const auto& entry : config.experts) {
     if (entry.name == current_name) {
       current_entry = &entry;
       break;
     }
   }
   if (!current_entry) {
-    std::cerr << "Error: model '" << current_name << "' not found\n";
+    std::cerr << "Error: expert '" << current_name << "' not found\n";
     return 1;
   }
 
@@ -142,7 +134,7 @@ int RunChatCommand(int argc, char* argv[]) {
     manager.SetActiveExpert(initial_expert);
   }
 
-  std::cout << "[INFO] Connected to model: " << current_entry->name;
+  std::cout << "[INFO] Connected to expert: " << current_entry->name;
   if (!current_entry->description.empty()) {
     std::cout << " (" << current_entry->description << ")";
   }
@@ -162,11 +154,11 @@ int RunChatCommand(int argc, char* argv[]) {
         break;
       } else if (input == "/clear") {
         manager.ClearSessions();
-        std::cout << "[INFO] Conversation history cleared.\n";
-      } else if (input == "/models") {
-        PrintModels(models, current_entry->name);
-      } else if (input.rfind("/model ", 0) == 0) {
-        std::string new_name = input.substr(7);
+        std::cout << "[INFO] Conversation history and expert lock cleared.\n";
+      } else if (input == "/experts") {
+        PrintExperts(config, manager.GetActiveExpert());
+      } else if (input.rfind("/expert ", 0) == 0) {
+        std::string new_name = input.substr(8);
         size_t start = new_name.find_first_not_of(" \t");
         if (start != std::string::npos) {
           new_name = new_name.substr(start);
@@ -180,54 +172,28 @@ int RunChatCommand(int argc, char* argv[]) {
           new_name.clear();
         }
         if (new_name.empty()) {
-          std::cerr << "Error: model name required.\n";
+          std::cerr << "Error: expert name required.\n";
           continue;
         }
-        const pu::config::ModelEntry* new_entry = nullptr;
-        for (const auto& entry : models.models) {
+
+        const pu::config::ExpertEntry* new_entry = nullptr;
+        for (const auto& entry : config.experts) {
           if (entry.name == new_name) {
             new_entry = &entry;
             break;
           }
         }
         if (!new_entry) {
-          std::cerr << "Error: model '" << new_name << "' not found.\n";
+          std::cerr << "Error: expert '" << new_name << "' not found.\n";
           continue;
         }
 
-        auto new_chat_http = std::make_unique<pu::http::CurlHttpClient>();
-        std::unique_ptr<pu::backend::Backend> new_chat_backend;
-        try {
-          new_chat_backend = pu::config::CreateBackend(new_entry->backend, std::move(new_chat_http));
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to switch model: " << e.what() << "\n";
-          continue;
+        manager.SetActiveExpert(new_entry->name);
+        std::cout << "[INFO] Switched to expert: " << new_entry->name;
+        if (!new_entry->description.empty()) {
+          std::cout << " (" << new_entry->description << ")";
         }
-
-        auto new_router_http = std::make_unique<pu::http::CurlHttpClient>();
-        std::unique_ptr<pu::backend::Backend> new_router_backend;
-        try {
-          new_router_backend = pu::config::CreateBackend(new_entry->backend, std::move(new_router_http));
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to switch router model: " << e.what() << "\n";
-          continue;
-        }
-
-        pu::backend::Backend* new_router_raw = new_router_backend.get();
-
-        manager = pu::expert::ExpertManager(std::move(new_router_backend));
-        manager.RegisterExpert(
-            std::make_unique<pu::experts::ChatExpert>(std::move(new_chat_backend), new_entry->name));
-        manager.RegisterExpert(
-            std::make_unique<pu::experts::BashExpert>(*new_router_raw,
-                                                      std::make_unique<pu::executor::CommandExecutor>(".")));
-
-        current_entry = new_entry;
-        std::cout << "[INFO] Switched to model: " << current_entry->name;
-        if (!current_entry->description.empty()) {
-          std::cout << " (" << current_entry->description << ")";
-        }
-        std::cout << "\n[INFO] Conversation history cleared.\n";
+        std::cout << "\n";
       } else {
         std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
       }
