@@ -28,7 +28,7 @@ class BashExpert : public pu::expert::BaseExpert {
   void ResetSession() override;
 
  private:
-  std::string RunToolLoop(const std::string& user_input);
+  std::string RunToolLoop(const std::string& user_input, bool show_reasoning);
 
   pu::backend::Backend& backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;

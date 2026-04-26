@@ -29,7 +29,8 @@ void PrintHelp() {
             << "  /exit, /quit    Exit interactive mode\n"
             << "  /clear          Clear conversation history and expert lock\n"
             << "  /expert <name>  Switch to different expert\n"
-            << "  /experts        List available experts\n";
+            << "  /experts        List available experts\n"
+            << "  --show-reasoning (startup flag) Show model reasoning\n";
 }
 
 void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
@@ -50,11 +51,12 @@ void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& cu
 
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
+  bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>]\n";
+      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
       return 0;
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
@@ -63,6 +65,8 @@ int RunChatCommand(int argc, char* argv[]) {
         std::cerr << "Error: --expert requires an argument\n";
         return 1;
       }
+    } else if (arg == "--show-reasoning") {
+      show_reasoning = true;
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
@@ -131,6 +135,9 @@ int RunChatCommand(int argc, char* argv[]) {
 
   if (!initial_expert.empty()) {
     manager.SetActiveExpert(initial_expert);
+  }
+  if (show_reasoning) {
+    manager.SetShowReasoning(true);
   }
 
   std::cout << "[INFO] Connected to expert: " << current_entry->name;
