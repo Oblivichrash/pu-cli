@@ -90,8 +90,8 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  const pu::config::ExpertEntry* current_entry = nullptr;
   std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
+  const pu::config::ExpertEntry* current_entry = nullptr;
   for (const auto& entry : config.experts) {
     if (entry.name == current_name) {
       current_entry = &entry;
@@ -122,7 +122,6 @@ int RunChatCommand(int argc, char* argv[]) {
   }
 
   pu::backend::Backend* router_raw = router_backend.get();
-
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
@@ -141,11 +140,14 @@ int RunChatCommand(int argc, char* argv[]) {
   std::cout << "\nType /help for available commands.\n\n";
 
   std::string input;
-
   while (true) {
     std::cout << "> " << std::flush;
-    if (!std::getline(std::cin, input)) break;
-    if (input.empty()) continue;
+    if (!std::getline(std::cin, input)) {
+      break;
+    }
+    if (input.empty()) {
+      continue;
+    }
 
     if (input[0] == '/') {
       if (input == "/help") {

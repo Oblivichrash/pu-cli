@@ -95,8 +95,8 @@ int RunAskCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  const pu::config::ExpertEntry* target_entry = nullptr;
   std::string target_name = expert_name.empty() ? config.default_expert : expert_name;
+  const pu::config::ExpertEntry* target_entry = nullptr;
   for (const auto& entry : config.experts) {
     if (entry.name == target_name) {
       target_entry = &entry;
