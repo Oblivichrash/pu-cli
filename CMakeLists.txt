@@ -41,7 +41,7 @@ add_library(pu::platform ALIAS pu_platform)
 add_library(pu_backend STATIC
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
-    src/model_config.cpp
+    src/expert_config.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
