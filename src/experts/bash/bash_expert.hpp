@@ -14,11 +14,12 @@ namespace pu::experts {
 
 class BashExpert : public pu::expert::BaseExpert {
  public:
-  BashExpert(pu::backend::Backend& backend,
+  BashExpert(const std::string& name,
+             std::unique_ptr<pu::backend::Backend> backend,
              std::unique_ptr<pu::executor::CommandExecutor> executor);
   ~BashExpert() override = default;
 
-  std::string Name() const override { return "bash"; }
+  std::string Name() const override { return name_; }
   std::string Description() const override {
     return "Executes safe Linux commands using tool calling. "
            "Performs security review before execution.";
@@ -30,7 +31,8 @@ class BashExpert : public pu::expert::BaseExpert {
  private:
   std::string RunToolLoop(const std::string& user_input, bool show_reasoning);
 
-  pu::backend::Backend& backend_;
+  std::string name_;
+  std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
 };
 

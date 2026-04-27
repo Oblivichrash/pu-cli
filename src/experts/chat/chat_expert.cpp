@@ -8,9 +8,10 @@
 
 namespace pu::experts {
 
-ChatExpert::ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
+ChatExpert::ChatExpert(const std::string& name,
+                       std::unique_ptr<pu::backend::Backend> backend,
                        const std::string& model_id)
-    : backend_(std::move(backend)), model_id_(model_id) {}
+    : backend_(std::move(backend)), name_(name), model_id_(model_id) {}
 
 std::string ChatExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {

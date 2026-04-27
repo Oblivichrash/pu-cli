@@ -9,10 +9,6 @@
 #include <string>
 #include <unordered_map>
 
-namespace pu::backend {
-class Backend;
-}  // namespace pu::backend
-
 namespace pu::expert {
 
 struct ExpertContext {
@@ -33,19 +29,16 @@ class BaseExpert {
 
 class ExpertManager {
  public:
-  explicit ExpertManager(std::unique_ptr<backend::Backend> router);
+  ExpertManager() = default;
   void RegisterExpert(std::unique_ptr<BaseExpert> expert);
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
-  backend::Backend& GetRouterBackend();
   void SetShowReasoning(bool enable);
 
  private:
-  std::string RouteToExpert(const std::string& input);
-  std::unique_ptr<backend::Backend> router_;
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;

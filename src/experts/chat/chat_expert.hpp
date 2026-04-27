@@ -6,7 +6,6 @@
 
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
-
 #include <memory>
 #include <string>
 
@@ -14,11 +13,12 @@ namespace pu::experts {
 
 class ChatExpert : public pu::expert::BaseExpert {
  public:
-  explicit ChatExpert(std::unique_ptr<pu::backend::Backend> backend,
+  explicit ChatExpert(const std::string& name,
+                      std::unique_ptr<pu::backend::Backend> backend,
                       const std::string& model_id = "");
   ~ChatExpert() override = default;
 
-  std::string Name() const override { return "chat"; }
+  std::string Name() const override { return name_; }
   std::string Description() const override {
     std::string desc = "General conversational assistant";
     if (!model_id_.empty()) desc += " powered by " + model_id_;
@@ -31,6 +31,7 @@ class ChatExpert : public pu::expert::BaseExpert {
  private:
   std::unique_ptr<pu::backend::Backend> backend_;
   std::vector<pu::backend::Message> history_;
+  std::string name_;
   std::string model_id_;
 };
 

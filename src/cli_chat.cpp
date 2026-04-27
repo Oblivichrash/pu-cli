@@ -107,35 +107,29 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> chat_backend;
-  try {
-    chat_backend = pu::config::CreateBackend(current_entry->backend, std::move(chat_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create backend: " << e.what() << "\n";
-    return 1;
+  // Create backend only for the matched expert type
+  std::unique_ptr<pu::http::CurlHttpClient> http;
+  std::unique_ptr<pu::backend::Backend> backend;
+
+  http = std::make_unique<pu::http::CurlHttpClient>();
+  backend = pu::config::CreateBackend(current_entry->backend, std::move(http));
+
+  pu::expert::ExpertManager manager;
+
+  if (current_entry->type == pu::config::ExpertType::kChat) {
+    manager.RegisterExpert(
+        std::make_unique<pu::experts::ChatExpert>(current_entry->name,
+                                                  std::move(backend),
+                                                  current_entry->backend.model));
+  } else {
+    manager.RegisterExpert(
+        std::make_unique<pu::experts::BashExpert>(current_entry->name,
+                                                  std::move(backend),
+                                                  std::make_unique<pu::executor::CommandExecutor>(
+                                                      current_entry->sandbox_path)));
   }
 
-  auto router_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> router_backend;
-  try {
-    router_backend = pu::config::CreateBackend(current_entry->backend, std::move(router_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create router backend: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::backend::Backend* router_raw = router_backend.get();
-  pu::expert::ExpertManager manager(std::move(router_backend));
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), current_entry->name));
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>(*router_raw,
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!initial_expert.empty()) {
-    manager.SetActiveExpert(initial_expert);
-  }
+  manager.SetActiveExpert(current_entry->name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
   }

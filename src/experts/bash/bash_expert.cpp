@@ -9,9 +9,10 @@
 
 namespace pu::experts {
 
-BashExpert::BashExpert(pu::backend::Backend& backend,
+BashExpert::BashExpert(const std::string& name,
+                       std::unique_ptr<pu::backend::Backend> backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
-    : backend_(backend), executor_(std::move(executor)) {}
+    : name_(name), backend_(std::move(backend)), executor_(std::move(executor)) {}
 
 void BashExpert::ResetSession() {}
 
@@ -21,7 +22,7 @@ std::string BashExpert::Handle(const std::string& input,
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
-  if (!backend_.SupportsTools()) {
+  if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
@@ -46,7 +47,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
     std::ostringstream content_stream;
     auto renderer_cb = pu::StreamingRenderer::Create(show_reasoning);
 
-    backend_.Chat(history, tools,
+    backend_->Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
           renderer_cb(type, token, is_final);
