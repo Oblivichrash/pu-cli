@@ -6,9 +6,12 @@
 
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
+#include "pu/conversation.hpp"
 #include "executor/command_executor.hpp"
+
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace pu::experts {
 
@@ -28,12 +31,16 @@ class BashExpert : public pu::expert::BaseExpert {
   std::string Handle(const std::string& input, pu::expert::ExpertContext& ctx) override;
   void ResetSession() override;
 
+  std::vector<ChatMessage> SaveState() const override;
+  void LoadState(const std::vector<ChatMessage>& messages) override;
+
  private:
   std::string RunToolLoop(const std::string& user_input, bool show_reasoning);
 
   std::string name_;
   std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
+  std::vector<ChatMessage> history_;  // persistent history
 };
 
 }  // namespace pu::experts

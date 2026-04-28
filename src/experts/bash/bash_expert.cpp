@@ -14,11 +14,18 @@ BashExpert::BashExpert(const std::string& name,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
     : name_(name), backend_(std::move(backend)), executor_(std::move(executor)) {}
 
-void BashExpert::ResetSession() {}
+void BashExpert::ResetSession() {
+  history_.clear();
+}
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  return RunToolLoop(input, ctx.show_reasoning);
+  // Record user message in persistent history
+  history_.push_back({0, "", "user", input});
+  std::string response = RunToolLoop(input, ctx.show_reasoning);
+  // Record assistant (bash) response
+  history_.push_back({0, "", "bash", response});
+  return response;
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
@@ -69,7 +76,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       break;
     }
 
-    // Build confirmation prompt with commands
     std::vector<std::string> commands;
     for (const auto& call : collected_calls) {
       if (call.name == "execute_bash") {
@@ -147,6 +153,15 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
   } while (tool_was_called);
 
   return final_response;
+}
+
+std::vector<ChatMessage> BashExpert::SaveState() const {
+  // Return a copy of the persistent history (id/timestamp will be set by store)
+  return history_;
+}
+
+void BashExpert::LoadState(const std::vector<ChatMessage>& messages) {
+  history_ = messages;
 }
 
 }  // namespace pu::experts

@@ -11,7 +11,7 @@ namespace pu::experts {
 ChatExpert::ChatExpert(const std::string& name,
                        std::unique_ptr<pu::backend::Backend> backend,
                        const std::string& model_id)
-    : backend_(std::move(backend)), name_(name), model_id_(model_id) {}
+    : name_(name), model_id_(model_id), backend_(std::move(backend)) {}
 
 std::string ChatExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
@@ -49,6 +49,38 @@ std::string ChatExpert::Handle(const std::string& input,
 
 void ChatExpert::ResetSession() {
   history_.clear();
+}
+
+std::vector<ChatMessage> ChatExpert::SaveState() const {
+  std::vector<ChatMessage> messages;
+  for (const auto& msg : history_) {
+    std::string role;
+    switch (msg.role) {
+      case pu::backend::Message::Role::kUser: role = "user"; break;
+      case pu::backend::Message::Role::kAssistant: role = "chat"; break;
+      case pu::backend::Message::Role::kSystem: role = "system"; break;
+      default: role = "unknown"; break;
+    }
+    messages.push_back({/*id=*/0, /*timestamp=*/"", role, msg.content});
+  }
+  return messages;
+}
+
+void ChatExpert::LoadState(const std::vector<ChatMessage>& messages) {
+  history_.clear();
+  for (const auto& msg : messages) {
+    pu::backend::Message::Role role;
+    if (msg.role == "user") {
+      role = pu::backend::Message::Role::kUser;
+    } else if (msg.role == "chat" || msg.role == "assistant") {
+      role = pu::backend::Message::Role::kAssistant;
+    } else if (msg.role == "system") {
+      role = pu::backend::Message::Role::kSystem;
+    } else {
+      continue;  // ignore unknown roles
+    }
+    history_.push_back({role, msg.content});
+  }
 }
 
 }  // namespace pu::experts
