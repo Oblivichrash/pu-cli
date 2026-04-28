@@ -30,7 +30,7 @@ class BaseExpert {
   virtual void ResetSession() = 0;
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
-  virtual void LoadState(const std::vector<ChatMessage>& messages) {}
+  virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
 };
 
 class ExpertManager {
