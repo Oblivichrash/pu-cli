@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include "pu/backend.hpp"
+#include "pu/conversation.hpp"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -25,20 +28,29 @@ class BaseExpert {
   virtual std::string Description() const = 0;
   virtual std::string Handle(const std::string& input, ExpertContext& ctx) = 0;
   virtual void ResetSession() = 0;
+
+  virtual std::vector<ChatMessage> SaveState() const { return {}; }
+  virtual void LoadState(const std::vector<ChatMessage>& messages) {}
 };
 
 class ExpertManager {
  public:
-  ExpertManager() = default;
+  explicit ExpertManager(std::unique_ptr<backend::Backend> router);
   void RegisterExpert(std::unique_ptr<BaseExpert> expert);
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
+  backend::Backend& GetRouterBackend();
   void SetShowReasoning(bool enable);
 
+  std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
+  void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
+
  private:
+  std::string RouteToExpert(const std::string& input);
+  std::unique_ptr<backend::Backend> router_;
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/expert.hpp"
+#include "pu/backend.hpp"
 
 #include <iostream>
+#include <sstream>
 
 namespace pu::expert {
+
+ExpertManager::ExpertManager(std::unique_ptr<backend::Backend> router)
+    : router_(std::move(router)) {}
 
 void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
   if (!expert) {
@@ -48,15 +53,8 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     } else {
       return "";
     }
-  }
-
-  // If no lock and no @, fallback to the first expert (or you could keep a default)
-  if (target.empty()) {
-    if (!experts_.empty()) {
-      target = experts_.begin()->first;
-    } else {
-      return "No experts available.";
-    }
+  } else if (target.empty()) {
+    target = RouteToExpert(input);
   }
 
   auto it = experts_.find(target);
@@ -67,7 +65,6 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     }
   }
 
-  // Keep locked expert or set from @ (do not overwrite locked expert)
   if (active_expert_.empty() && input[0] != '@') {
     active_expert_ = it->first;
   }
@@ -103,11 +100,92 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
   return it->second->Handle(input, ctx);
 }
 
+std::string ExpertManager::RouteToExpert(const std::string& input) {
+  if (experts_.size() == 1) {
+    return experts_.begin()->first;
+  }
+
+  std::ostringstream prompt;
+  prompt << "You are a strict router. Direct the user request to the best expert.\n"
+         << "Available experts:\n";
+  for (const auto& [name, expert] : experts_) {
+    prompt << "- " << name << ": " << expert->Description() << "\n";
+  }
+  prompt << "\nRules:\n"
+         << "- Use 'chat' for conversation, questions, explanations.\n";
+  if (experts_.count("bash")) {
+    prompt << "- Use 'bash' ONLY when the user explicitly asks to execute a command.\n";
+  }
+  prompt << "- If the user says 'ask <expert>' or 'switch to <expert>', "
+         << "immediately route to that expert.\n"
+         << "- If unsure, default to 'chat'.\n"
+         << "- Output ONLY the expert name, no extra text.\n"
+         << "\nExample:\n"
+         << "User request: \"Ask bash to list files\"\n"
+         << "Expert name: bash\n"
+         << "\nUser request: \"" << input << "\"\n"
+         << "Expert name:";
+
+  std::vector<backend::Message> history;
+  history.push_back({backend::Message::Role::kUser, prompt.str()});
+
+  std::string selected = "chat";
+  try {
+    bool first = true;
+    router_->Chat(history, [&](backend::TokenType type, std::string_view token, bool is_final) {
+      if (is_final) {
+        return;
+      }
+      if (type == backend::TokenType::kContent) {
+        if (first) {
+          selected.clear();
+          first = false;
+        }
+        selected.append(token);
+      }
+    });
+  } catch (const std::exception& e) {
+    std::cerr << "[Router] LLM call failed, falling back to 'chat': " << e.what() << "\n";
+    return "chat";
+  }
+
+  selected.erase(0, selected.find_first_not_of(" \t\n\r"));
+  selected.erase(selected.find_last_not_of(" \t\n\r") + 1);
+
+  if (experts_.find(selected) == experts_.end()) {
+    std::cerr << "[Router] Unexpected expert name '" << selected << "', falling back to 'chat'\n";
+    return "chat";
+  }
+  return selected;
+}
+
 void ExpertManager::ClearSessions() {
   for (auto& [name, expert] : experts_) {
     expert->ResetSession();
   }
   active_expert_.clear();
+}
+
+backend::Backend& ExpertManager::GetRouterBackend() {
+  return *router_;
+}
+
+std::unordered_map<std::string, std::vector<ChatMessage>> ExpertManager::SnapshotExperts() const {
+  std::unordered_map<std::string, std::vector<ChatMessage>> result;
+  for (const auto& [name, expert] : experts_) {
+    result[name] = expert->SaveState();
+  }
+  return result;
+}
+
+void ExpertManager::RestoreExperts(
+    const std::unordered_map<std::string, std::vector<ChatMessage>>& states) {
+  for (const auto& [name, messages] : states) {
+    auto it = experts_.find(name);
+    if (it != experts_.end()) {
+      it->second->LoadState(messages);
+    }
+  }
 }
 
 }  // namespace pu::expert
