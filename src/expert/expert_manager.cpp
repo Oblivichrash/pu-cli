@@ -170,4 +170,22 @@ backend::Backend& ExpertManager::GetRouterBackend() {
   return *router_;
 }
 
+std::unordered_map<std::string, std::vector<ChatMessage>> ExpertManager::SnapshotExperts() const {
+  std::unordered_map<std::string, std::vector<ChatMessage>> result;
+  for (const auto& [name, expert] : experts_) {
+    result[name] = expert->SaveState();
+  }
+  return result;
+}
+
+void ExpertManager::RestoreExperts(
+    const std::unordered_map<std::string, std::vector<ChatMessage>>& states) {
+  for (const auto& [name, messages] : states) {
+    auto it = experts_.find(name);
+    if (it != experts_.end()) {
+      it->second->LoadState(messages);
+    }
+  }
+}
+
 }  // namespace pu::expert

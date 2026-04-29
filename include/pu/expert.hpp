@@ -4,14 +4,13 @@
 
 #pragma once
 
+#include "pu/backend.hpp"
+#include "pu/conversation.hpp"
+
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
-
-namespace pu::backend {
-class Backend;
-}  // namespace pu::backend
 
 namespace pu::expert {
 
@@ -29,6 +28,12 @@ class BaseExpert {
   virtual std::string Description() const = 0;
   virtual std::string Handle(const std::string& input, ExpertContext& ctx) = 0;
   virtual void ResetSession() = 0;
+
+  virtual std::vector<ChatMessage> SaveState() const { return {}; }
+  virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
+
+  // Allow experts to silently observe a new panel message for proactive behaviour (future use)
+  virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
 };
 
 class ExpertManager {
@@ -42,6 +47,9 @@ class ExpertManager {
   std::string GetActiveExpert() const;
   backend::Backend& GetRouterBackend();
   void SetShowReasoning(bool enable);
+
+  std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
+  void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
 
  private:
   std::string RouteToExpert(const std::string& input);
