@@ -378,17 +378,29 @@ int RunChatCommand(int argc, char* argv[]) {
       user_content
     });
 
+    // Determine the actual expert that replied
+    std::string reply_role;
+    if (!input.empty() && input[0] == '@') {
+      size_t space_pos = input.find(' ');
+      if (space_pos != std::string::npos) {
+        reply_role = input.substr(1, space_pos - 1);
+      } else {
+        reply_role = "chat";
+      }
+    } else {
+      reply_role = manager.GetActiveExpert();
+      if (reply_role.empty()) {
+        reply_role = "chat";
+      }
+    }
+
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {
-        std::string role = manager.GetActiveExpert();
-        if (role.empty()) {
-          role = "chat";
-        }
         panel_messages.push_back({
           ++message_id,
           CurrentTimestamp(),
-          role,
+          reply_role,
           response
         });
       }

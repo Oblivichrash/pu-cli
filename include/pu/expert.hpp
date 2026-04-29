@@ -31,6 +31,9 @@ class BaseExpert {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
+
+  // Allow experts to silently observe a new panel message for proactive behaviour (future use)
+  virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
 };
 
 class ExpertManager {
