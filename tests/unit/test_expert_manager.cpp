@@ -11,6 +11,17 @@ using namespace pu::expert;
 
 namespace {
 
+class MockBackend : public backend::Backend {
+ public:
+  MockBackend() : Backend(Backend::Config{}) {}
+  void Chat(const std::vector<backend::Message>&,
+            backend::ChatCallback) override {}
+  void Chat(const std::vector<backend::Message>&,
+            const std::vector<backend::ToolDefinition>&,
+            backend::ChatCallback,
+            backend::ToolCallback) override {}
+};
+
 class MockExpert : public BaseExpert {
  public:
   explicit MockExpert(std::string name) : name_(std::move(name)) {}
@@ -41,7 +52,8 @@ class MockExpert : public BaseExpert {
 }  // namespace
 
 TEST_CASE("ExpertManager SnapshotExperts collects all states", "[expert]") {
-  ExpertManager manager;
+  auto backend = std::make_unique<MockBackend>();
+  ExpertManager manager(std::move(backend));
 
   auto expert1 = std::make_unique<MockExpert>("mock1");
   expert1->AddFakeMessage({1, "", "user", "hello"});
@@ -61,7 +73,8 @@ TEST_CASE("ExpertManager SnapshotExperts collects all states", "[expert]") {
 }
 
 TEST_CASE("ExpertManager RestoreExperts loads states", "[expert]") {
-  ExpertManager manager;
+  auto backend = std::make_unique<MockBackend>();
+  ExpertManager manager(std::move(backend));
 
   auto expert = std::make_unique<MockExpert>("mock1");
   manager.RegisterExpert(std::move(expert));
@@ -79,7 +92,8 @@ TEST_CASE("ExpertManager RestoreExperts loads states", "[expert]") {
 }
 
 TEST_CASE("ExpertManager RestoreExperts ignores unknown experts", "[expert]") {
-  ExpertManager manager;
+  auto backend = std::make_unique<MockBackend>();
+  ExpertManager manager(std::move(backend));
 
   std::unordered_map<std::string, std::vector<ChatMessage>> states;
   states["nonexistent"] = {{1, "", "user", "nobody"}};
@@ -88,7 +102,8 @@ TEST_CASE("ExpertManager RestoreExperts ignores unknown experts", "[expert]") {
 }
 
 TEST_CASE("ExpertManager ClearSessions resets all states", "[expert]") {
-  ExpertManager manager;
+  auto backend = std::make_unique<MockBackend>();
+  ExpertManager manager(std::move(backend));
 
   auto expert = std::make_unique<MockExpert>("mock1");
   expert->AddFakeMessage({1, "", "user", "data"});

@@ -4,6 +4,8 @@ add_executable(pu_tests
     unit/test_ollama_backend.cpp
     unit/test_openai_backend.cpp
     unit/test_expert_config.cpp
+    unit/test_conversation_store.cpp
+    unit/test_expert_manager.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -15,6 +17,7 @@ target_include_directories(pu_tests PRIVATE
 
 target_link_libraries(pu_tests PRIVATE
     pu::backend
+    pu::expert
     pu::http
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json

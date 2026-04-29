@@ -119,12 +119,14 @@ int RunAskCommand(int argc, char* argv[]) {
   auto router_http = std::make_unique<pu::http::CurlHttpClient>();
   auto router_backend = pu::config::CreateBackend(target_entry->backend, std::move(router_http));
 
-  pu::backend::Backend* router_raw = router_backend.get();
   pu::expert::ExpertManager manager(std::move(router_backend));
   manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>(std::move(chat_backend), target_entry->name));
+      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), target_entry->name));
+
+  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
+  auto bash_backend = pu::config::CreateBackend(target_entry->backend, std::move(bash_http));
   manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>(*router_raw,
+      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
                                                 std::make_unique<pu::executor::CommandExecutor>(".")));
 
   if (!target_name.empty()) {

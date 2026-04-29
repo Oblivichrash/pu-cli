@@ -5,23 +5,31 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace pu::experts {
 
-BashExpert::BashExpert(pu::backend::Backend& backend,
+BashExpert::BashExpert(const std::string& name,
+                       std::unique_ptr<pu::backend::Backend> backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor)
-    : backend_(backend), executor_(std::move(executor)) {}
+    : name_(name), backend_(std::move(backend)), executor_(std::move(executor)) {}
 
 void BashExpert::ResetSession() {
+  history_.clear();
 }
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  return RunToolLoop(input, ctx.show_reasoning);
+  // Record user message in persistent history
+  history_.push_back({0, "", "user", input});
+  std::string response = RunToolLoop(input, ctx.show_reasoning);
+  // Record assistant (bash) response
+  history_.push_back({0, "", "bash", response});
+  return response;
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
-  if (!backend_.SupportsTools()) {
+  if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
@@ -46,7 +54,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
     std::ostringstream content_stream;
     auto renderer_cb = pu::StreamingRenderer::Create(show_reasoning);
 
-    backend_.Chat(history, tools,
+    backend_->Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
         if (type == pu::backend::TokenType::kContent) {
           renderer_cb(type, token, is_final);
@@ -68,7 +76,31 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       break;
     }
 
-    std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
+    std::vector<std::string> commands;
+    for (const auto& call : collected_calls) {
+      if (call.name == "execute_bash") {
+        try {
+          json args = json::parse(call.arguments);
+          std::string cmd = args.value("command", "");
+          if (!cmd.empty()) {
+            commands.push_back(cmd);
+          }
+        } catch (...) {}
+      }
+    }
+
+    if (commands.empty()) {
+      std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
+    } else if (commands.size() == 1) {
+      std::cout << "[CONFIRM] Execute: " << commands[0] << "? [y/N] ";
+    } else {
+      std::cout << "[CONFIRM] Execute these commands?\n";
+      for (size_t i = 0; i < commands.size(); ++i) {
+        std::cout << "  " << (i + 1) << ". " << commands[i] << "\n";
+      }
+      std::cout << "[y/N] ";
+    }
+
     std::string confirm;
     std::getline(std::cin, confirm);
     if (confirm != "y" && confirm != "Y") {
@@ -121,6 +153,15 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
   } while (tool_was_called);
 
   return final_response;
+}
+
+std::vector<ChatMessage> BashExpert::SaveState() const {
+  // Return a copy of the persistent history (id/timestamp will be set by store)
+  return history_;
+}
+
+void BashExpert::LoadState(const std::vector<ChatMessage>& messages) {
+  history_ = messages;
 }
 
 }  // namespace pu::experts
