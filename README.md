@@ -79,6 +79,10 @@ In chat mode, type `/help` to see built‑in commands:
 - `/expert <name>` – switch the active expert
 - `/experts` – list all configured experts
 - `/clear` – reset session and expert lock
+- `/save [name]` – save current conversation
+- `/load <id>` – load a saved conversation
+- `/list` – list saved conversations
+- `/export <id>` – export conversation to Markdown
 
 ## Testing
 ```bash
