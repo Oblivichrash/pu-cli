@@ -60,7 +60,7 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
   config.model = "gpt-4o-mini";
   config.temperature = 0.7f;
   config.system_prompt = "You are helpful.";
-  config.host = "https://api.openai.com";
+  config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
@@ -91,7 +91,7 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
 TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empty", "[openai]") {
   OpenAIBackend::Config config;
   config.model = "local-model";
-  config.host = "http://localhost:8080";
+  config.host = "http://localhost:8080/v1";
   config.api_key = "";
 
   auto mock_http = std::make_unique<MockHttpClient>();
@@ -112,7 +112,7 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
 TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
   OpenAIBackend::Config config;
   config.model = "gpt-4o-mini";
-  config.host = "https://api.openai.com";
+  config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
@@ -174,7 +174,7 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
   OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-
+  
   REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), std::runtime_error);
 
   try {
