@@ -15,6 +15,7 @@ class OllamaBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
     std::string host = "http://localhost:11434";
+    std::string api_key;  // optional, set to use Bearer authentication
     Config() = default;
   };
 
@@ -36,6 +37,7 @@ class OllamaBackend : public pu::backend::Backend {
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
 
   std::string host_;
+  std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
 };
 

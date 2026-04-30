@@ -47,16 +47,20 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     if (j.contains("choices") && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
       if (choice.contains("delta")) {
-        if (choice["delta"].contains("content")) {
-          token.content = choice["delta"]["content"];
+        auto& delta = choice["delta"];
+        if (delta.contains("content") && !delta["content"].is_null()) {
+          token.content = delta["content"].get<std::string>();
           has_content = true;
         }
-        if (choice["delta"].contains("reasoning")) {
-          token.reasoning = choice["delta"]["reasoning"];
+        if (delta.contains("reasoning_content") && !delta["reasoning_content"].is_null()) {
+          token.reasoning = delta["reasoning_content"].get<std::string>();
+          has_content = true;
+        } else if (delta.contains("reasoning") && !delta["reasoning"].is_null()) {
+          token.reasoning = delta["reasoning"].get<std::string>();
           has_content = true;
         }
-        if (choice["delta"].contains("tool_calls")) {
-          for (const auto& tc : choice["delta"]["tool_calls"]) {
+        if (delta.contains("tool_calls")) {
+          for (const auto& tc : delta["tool_calls"]) {
             backend::ToolCall call;
             if (tc.contains("id")) call.id = tc["id"].get<std::string>();
             if (tc.contains("function")) {
