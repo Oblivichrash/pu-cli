@@ -384,6 +384,14 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     }
 
+    // Prepare recent panel messages for context (last 20)
+    std::vector<pu::ChatMessage> recent_msgs;
+    size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+    for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+      recent_msgs.push_back(panel_messages[i]);
+    }
+    manager.SetRecentMessages(recent_msgs);
+
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {

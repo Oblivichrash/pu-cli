@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/expert.hpp"
-
 #include <iostream>
 
 namespace pu::expert {
@@ -34,6 +33,10 @@ void ExpertManager::SetShowReasoning(bool enable) {
   show_reasoning_ = enable;
 }
 
+void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
+  recent_messages_ = messages;
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
@@ -51,8 +54,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
       return "";
     }
   } else if (target.empty()) {
-    // No locked expert and no @ – fallback to first available (usually chat)
-    target = experts_.begin()->first;
+    target = experts_.count("chat") ? "chat" : experts_.begin()->first;
   }
 
   auto it = experts_.find(target);
@@ -79,6 +81,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   };
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
+  ctx.recent_panel_messages = recent_messages_;
 
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);

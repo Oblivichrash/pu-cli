@@ -15,6 +15,7 @@ struct ChatMessage {
   std::string timestamp;
   std::string role;      // "user", "chat", "bash", "system"
   std::string content;
+  std::string tool_name; // only used when role == "tool_result"
 };
 
 struct Conversation {

@@ -123,7 +123,6 @@ std::vector<Conversation> ConversationStore::List() const {
   for (const auto& entry : std::filesystem::directory_iterator(dir_)) {
     if (entry.path().extension() == ".json") {
       auto id = entry.path().stem().string();
-      std::cerr << "Loading conversation: " << id << std::endl;
       try {
         results.push_back(Load(id));
       } catch (...) {

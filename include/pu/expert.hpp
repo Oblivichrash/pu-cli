@@ -46,6 +46,7 @@ class ExpertManager {
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
   void SetShowReasoning(bool enable);
+  void SetRecentMessages(const std::vector<ChatMessage>& messages);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
@@ -54,6 +55,7 @@ class ExpertManager {
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;
+  std::vector<ChatMessage> recent_messages_;
 };
 
 }  // namespace pu::expert
