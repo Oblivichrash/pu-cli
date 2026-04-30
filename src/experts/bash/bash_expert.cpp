@@ -126,7 +126,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
 
     if (!tool_was_called) {
       final_response = content_stream.str();
-      turn_history.push_back({0, "", "bash", final_response});
+      turn_history.push_back({0, "", "bash", final_response, ""});
       break;
     }
 
@@ -159,7 +159,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     std::getline(std::cin, confirm);
     if (confirm != "y" && confirm != "Y") {
       final_response = "Command execution cancelled by user.";
-      turn_history.push_back({0, "", "bash", final_response});
+      turn_history.push_back({0, "", "bash", final_response, ""});
       break;
     }
 

@@ -3,12 +3,62 @@
 #include "pu/conversation_store.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
 namespace pu {
 
 using json = nlohmann::json;
+
+namespace {
+
+json MessageToJson(const ChatMessage& msg) {
+  return {
+    {"id", msg.id},
+    {"timestamp", msg.timestamp},
+    {"role", msg.role},
+    {"content", msg.content},
+    {"tool_name", msg.tool_name}
+  };
+}
+
+ChatMessage MessageFromJson(const json& j) {
+  ChatMessage msg;
+  msg.id = j.value("id", 0);
+  msg.timestamp = j.value("timestamp", "");
+  msg.role = j.value("role", "");
+  msg.content = j.value("content", "");
+  msg.tool_name = j.value("tool_name", "");
+  return msg;
+}
+
+json ExpertHistoriesToJson(
+    const std::unordered_map<std::string, std::vector<ChatMessage>>& histories) {
+  json obj = json::object();
+  for (const auto& [name, msgs] : histories) {
+    json arr = json::array();
+    for (const auto& m : msgs) {
+      arr.push_back(MessageToJson(m));
+    }
+    obj[name] = arr;
+  }
+  return obj;
+}
+
+std::unordered_map<std::string, std::vector<ChatMessage>> ExpertHistoriesFromJson(const json& j) {
+  std::unordered_map<std::string, std::vector<ChatMessage>> result;
+  for (auto& [name, arr] : j.items()) {
+    std::vector<ChatMessage> list;
+    for (const auto& item : arr) {
+      list.push_back(MessageFromJson(item));
+    }
+    result[name] = std::move(list);
+  }
+  return result;
+}
+
+}  // namespace
 
 ConversationStore::ConversationStore(std::filesystem::path storage_dir)
     : dir_(std::move(storage_dir)) {
@@ -27,29 +77,10 @@ void ConversationStore::Save(const Conversation& conv) {
 
   json messages = json::array();
   for (const auto& msg : conv.messages) {
-    messages.push_back({
-      {"id", msg.id},
-      {"timestamp", msg.timestamp},
-      {"role", msg.role},
-      {"content", msg.content}
-    });
+    messages.push_back(MessageToJson(msg));
   }
   j["messages"] = messages;
-
-  json experts = json::object();
-  for (const auto& [name, history] : conv.expert_histories) {
-    json expert_msgs = json::array();
-    for (const auto& msg : history) {
-      expert_msgs.push_back({
-        {"id", msg.id},
-        {"timestamp", msg.timestamp},
-        {"role", msg.role},
-        {"content", msg.content}
-      });
-    }
-    experts[name] = expert_msgs;
-  }
-  j["experts"] = experts;
+  j["experts"] = ExpertHistoriesToJson(conv.expert_histories);
 
   std::ofstream file(PathFor(conv.id));
   if (!file.is_open()) {
@@ -77,27 +108,11 @@ Conversation ConversationStore::Load(const std::string& id) const {
   conv.updated_at = j.value("updated_at", "");
 
   for (const auto& item : j["messages"]) {
-    ChatMessage msg;
-    msg.id = item.value("id", 0);
-    msg.timestamp = item.value("timestamp", "");
-    msg.role = item.value("role", "");
-    msg.content = item.value("content", "");
-    conv.messages.push_back(msg);
+    conv.messages.push_back(MessageFromJson(item));
   }
 
   if (j.contains("experts")) {
-    for (auto& [name, arr] : j["experts"].items()) {
-      std::vector<ChatMessage> history;
-      for (const auto& item : arr) {
-        ChatMessage msg;
-        msg.id = item.value("id", 0);
-        msg.timestamp = item.value("timestamp", "");
-        msg.role = item.value("role", "");
-        msg.content = item.value("content", "");
-        history.push_back(msg);
-      }
-      conv.expert_histories[name] = std::move(history);
-    }
+    conv.expert_histories = ExpertHistoriesFromJson(j["experts"]);
   }
 
   return conv;
@@ -111,7 +126,7 @@ std::vector<Conversation> ConversationStore::List() const {
       try {
         results.push_back(Load(id));
       } catch (...) {
-        // skip invalid files
+        std::cerr << "Skipping invalid file: " << id << std::endl;
       }
     }
   }

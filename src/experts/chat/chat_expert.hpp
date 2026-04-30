@@ -38,7 +38,7 @@ class ChatExpert : public pu::expert::BaseExpert {
   std::string name_;
   std::string model_id_;
   std::unique_ptr<pu::backend::Backend> backend_;
-  std::vector<pu::backend::Message> history_;
+  std::vector<ChatMessage> history_;
 };
 
 }  // namespace pu::experts
