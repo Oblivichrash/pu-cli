@@ -15,7 +15,7 @@ ChatExpert::ChatExpert(const std::string& name,
 
 std::string ChatExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  history_.push_back({0, "", "user", input});
+  history_.push_back({0, "", "user", input, ""});
 
   std::vector<pu::backend::Message> backend_history;
   for (const auto& cm : history_) {
@@ -58,7 +58,7 @@ std::string ChatExpert::Handle(const std::string& input,
 
   std::string response = full_response.str();
   if (!response.empty()) {
-    history_.push_back({0, "", "chat", response});
+    history_.push_back({0, "", "chat", response, ""});
   }
   return response;
 }

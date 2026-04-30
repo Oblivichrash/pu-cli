@@ -366,7 +366,8 @@ int RunChatCommand(int argc, char* argv[]) {
       ++message_id,
       CurrentTimestamp(),
       "user",
-      user_content
+      user_content,
+      ""
     });
 
     std::string reply_role;
@@ -399,7 +400,8 @@ int RunChatCommand(int argc, char* argv[]) {
           ++message_id,
           CurrentTimestamp(),
           reply_role,
-          response
+          response,
+          ""
         });
       }
     } catch (const std::exception& e) {
