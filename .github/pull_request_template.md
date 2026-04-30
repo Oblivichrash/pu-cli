@@ -1,6 +1,11 @@
 ## Description
+<!-- Briefly describe the change -->
+
+## Why
+<!-- Why is this change needed? -->
 
 ## Related Issue
+<!-- e.g. #123 or N/A -->
 
 ## Type of Change
 - [ ] Bug fix
@@ -9,6 +14,6 @@
 - [ ] Documentation update
 
 ## Checklist
-- [ ] Code follows style guidelines
+- [ ] Code follows project style guidelines
 - [ ] Self-reviewed
 - [ ] Tests added/updated
