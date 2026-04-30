@@ -60,7 +60,7 @@ void PrintHelp() {
             << "  /list           List saved conversations\n"
             << "  /export <id>    Export conversation to Markdown\n"
             << "  --show-reasoning (startup flag) Show model reasoning\n"
-            << "  --proactive     (startup flag) Enable proactive expert suggestions\n";
+            << "  --proactive [threshold]  Enable proactive expert suggestions (default threshold: 0.6)\n";
 }
 
 void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
@@ -95,12 +95,12 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
   bool show_reasoning = false;
-  bool proactive = false;
+  double proactive_threshold = 0.0;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning] [--proactive]\n";
+      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning] [--proactive [threshold]]\n";
       return 0;
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
@@ -112,7 +112,15 @@ int RunChatCommand(int argc, char* argv[]) {
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
     } else if (arg == "--proactive") {
-      proactive = true;
+      proactive_threshold = 0.6;
+      if (i + 1 < argc) {
+        char* endptr = nullptr;
+        double val = std::strtod(argv[i + 1], &endptr);
+        if (endptr != argv[i + 1] && *endptr == '\0' && val > 0.0) {
+          proactive_threshold = val;
+          ++i;
+        }
+      }
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
@@ -140,7 +148,6 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Determine initial expert name
   std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
   bool initial_found = false;
 
@@ -168,13 +175,13 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  // Set initial active expert
   manager.SetActiveExpert(current_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
   }
-  if (proactive) {
+  if (proactive_threshold > 0.0) {
     manager.SetProactiveEnabled(true);
+    manager.SetProactiveThreshold(proactive_threshold);
   }
 
   auto store_dir = std::filesystem::path(
@@ -237,7 +244,6 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Verify expert exists in config
         const pu::config::ExpertEntry* new_entry = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == new_name) {

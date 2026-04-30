@@ -41,6 +41,13 @@ void ExpertManager::SetProactiveEnabled(bool enabled) {
   proactive_enabled_ = enabled;
 }
 
+void ExpertManager::SetProactiveThreshold(double threshold) {
+  proactive_threshold_ = threshold;
+  for (auto& [name, expert] : experts_) {
+    expert->SetProactiveThreshold(threshold);
+  }
+}
+
 void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
   for (auto& [name, expert] : experts_) {
     expert->OnPanelMessage(msg);
