@@ -18,24 +18,77 @@ void BashExpert::ResetSession() {
   history_.clear();
 }
 
+std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
+  std::vector<pu::backend::Message> initial;
+  for (const auto& cm : history_) {
+    pu::backend::Message msg;
+    if (cm.role == "user") {
+      msg.role = pu::backend::Message::Role::kUser;
+    } else if (cm.role == "bash" || cm.role == "assistant") {
+      msg.role = pu::backend::Message::Role::kAssistant;
+    } else if (cm.role == "tool_result") {
+      msg.role = pu::backend::Message::Role::kTool;
+    } else {
+      msg.role = pu::backend::Message::Role::kSystem;
+    }
+    msg.content = cm.content;
+    initial.push_back(msg);
+  }
+  return initial;
+}
+
+void BashExpert::AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
+                                     size_t initial_size,
+                                     std::vector<ChatMessage>& turn_history) const {
+  for (size_t i = initial_size + 1; i < history.size(); ++i) {
+    const auto& msg = history[i];
+    ChatMessage cm;
+    cm.id = 0;
+    cm.timestamp = "";
+    if (msg.role == pu::backend::Message::Role::kAssistant) {
+      cm.role = "bash";
+      if (!msg.content.empty()) {
+        cm.content = msg.content;
+      } else {
+        std::ostringstream tool_summary;
+        for (const auto& tc : msg.tool_calls) {
+          tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
+        }
+        cm.content = tool_summary.str();
+      }
+    } else if (msg.role == pu::backend::Message::Role::kTool) {
+      cm.role = "tool_result";
+      cm.content = msg.content;
+    } else {
+      cm.role = "unknown";
+      cm.content = msg.content;
+    }
+    turn_history.push_back(cm);
+  }
+}
+
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
-  // Record user message in persistent history
-  history_.push_back({0, "", "user", input});
-  std::string response = RunToolLoop(input, ctx.show_reasoning);
-  // Record assistant (bash) response
-  history_.push_back({0, "", "bash", response});
+  auto initial_history = BuildInitialHistory();
+
+  std::vector<ChatMessage> turn_history;
+  std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history, initial_history);
+
+  history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
 
-std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning) {
+std::string BashExpert::RunToolLoop(const std::string& user_input,
+                                    bool show_reasoning,
+                                    std::vector<ChatMessage>& turn_history,
+                                    const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
   using json = nlohmann::json;
 
-  std::vector<pu::backend::Message> history;
+  std::vector<pu::backend::Message> history = initial_history;
   history.push_back({pu::backend::Message::Role::kUser, user_input});
 
   pu::backend::ToolDefinition bash_tool;
@@ -73,6 +126,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
 
     if (!tool_was_called) {
       final_response = content_stream.str();
+      turn_history.push_back({0, "", "bash", final_response});
       break;
     }
 
@@ -105,6 +159,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
     std::getline(std::cin, confirm);
     if (confirm != "y" && confirm != "Y") {
       final_response = "Command execution cancelled by user.";
+      turn_history.push_back({0, "", "bash", final_response});
       break;
     }
 
@@ -152,11 +207,12 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
     }
   } while (tool_was_called);
 
+  AppendTurnToHistory(history, initial_history.size(), turn_history);
+
   return final_response;
 }
 
 std::vector<ChatMessage> BashExpert::SaveState() const {
-  // Return a copy of the persistent history (id/timestamp will be set by store)
   return history_;
 }
 
