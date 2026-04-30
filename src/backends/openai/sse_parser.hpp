@@ -47,11 +47,15 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     if (j.contains("choices") && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
       if (choice.contains("delta")) {
-        if (choice["delta"].contains("content")) {
+        if (choice["delta"].contains("content") && !choice["delta"]["content"].is_null()) {
           token.content = choice["delta"]["content"];
           has_content = true;
         }
-        if (choice["delta"].contains("reasoning")) {
+        // Check for reasoning content under two possible field names
+        if (choice["delta"].contains("reasoning_content")) {
+          token.reasoning = choice["delta"]["reasoning_content"];
+          has_content = true;
+        } else if (choice["delta"].contains("reasoning")) {
           token.reasoning = choice["delta"]["reasoning"];
           has_content = true;
         }
