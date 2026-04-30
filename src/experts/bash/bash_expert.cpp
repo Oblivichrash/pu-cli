@@ -18,9 +18,8 @@ void BashExpert::ResetSession() {
   history_.clear();
 }
 
-std::string BashExpert::Handle(const std::string& input,
-                               pu::expert::ExpertContext& ctx) {
-  std::vector<pu::backend::Message> initial_history;
+std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
+  std::vector<pu::backend::Message> initial;
   for (const auto& cm : history_) {
     pu::backend::Message msg;
     if (cm.role == "user") {
@@ -33,8 +32,44 @@ std::string BashExpert::Handle(const std::string& input,
       msg.role = pu::backend::Message::Role::kSystem;
     }
     msg.content = cm.content;
-    initial_history.push_back(msg);
+    initial.push_back(msg);
   }
+  return initial;
+}
+
+void BashExpert::AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
+                                     size_t initial_size,
+                                     std::vector<ChatMessage>& turn_history) const {
+  for (size_t i = initial_size + 1; i < history.size(); ++i) {
+    const auto& msg = history[i];
+    ChatMessage cm;
+    cm.id = 0;
+    cm.timestamp = "";
+    if (msg.role == pu::backend::Message::Role::kAssistant) {
+      cm.role = "bash";
+      if (!msg.content.empty()) {
+        cm.content = msg.content;
+      } else {
+        std::ostringstream tool_summary;
+        for (const auto& tc : msg.tool_calls) {
+          tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
+        }
+        cm.content = tool_summary.str();
+      }
+    } else if (msg.role == pu::backend::Message::Role::kTool) {
+      cm.role = "tool_result";
+      cm.content = msg.content;
+    } else {
+      cm.role = "unknown";
+      cm.content = msg.content;
+    }
+    turn_history.push_back(cm);
+  }
+}
+
+std::string BashExpert::Handle(const std::string& input,
+                               pu::expert::ExpertContext& ctx) {
+  auto initial_history = BuildInitialHistory();
 
   std::vector<ChatMessage> turn_history;
   std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history, initial_history);
@@ -172,31 +207,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     }
   } while (tool_was_called);
 
-  for (size_t i = initial_history.size() + 1; i < history.size(); ++i) {
-    const auto& msg = history[i];
-    ChatMessage cm;
-    cm.id = 0;
-    cm.timestamp = "";
-    if (msg.role == pu::backend::Message::Role::kAssistant) {
-      cm.role = "bash";
-      if (!msg.content.empty()) {
-        cm.content = msg.content;
-      } else {
-        std::ostringstream tool_summary;
-        for (const auto& tc : msg.tool_calls) {
-          tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
-        }
-        cm.content = tool_summary.str();
-      }
-    } else if (msg.role == pu::backend::Message::Role::kTool) {
-      cm.role = "tool_result";
-      cm.content = msg.content;
-    } else {
-      cm.role = "unknown";
-      cm.content = msg.content;
-    }
-    turn_history.push_back(cm);
-  }
+  AppendTurnToHistory(history, initial_history.size(), turn_history);
 
   return final_response;
 }

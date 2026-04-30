@@ -19,6 +19,7 @@ struct ExpertContext {
   std::function<bool(const std::string& message)> request_confirmation;
   std::string working_dir;
   bool show_reasoning = false;
+  std::vector<ChatMessage> recent_panel_messages;
 };
 
 class BaseExpert {
@@ -32,7 +33,6 @@ class BaseExpert {
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
 
-  // Allow experts to silently observe a new panel message for proactive behaviour (future use)
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
 };
 
