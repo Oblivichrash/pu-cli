@@ -158,16 +158,7 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
-  auto router_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> router_backend;
-  try {
-    router_backend = pu::config::CreateBackend(current_entry->backend, std::move(router_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create router backend: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::expert::ExpertManager manager(std::move(router_backend));
+  pu::expert::ExpertManager manager;
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), current_entry->name));
 
@@ -375,10 +366,10 @@ int RunChatCommand(int argc, char* argv[]) {
       ++message_id,
       CurrentTimestamp(),
       "user",
-      user_content
+      user_content,
+      ""
     });
 
-    // Determine the actual expert that replied
     std::string reply_role;
     if (!input.empty() && input[0] == '@') {
       size_t space_pos = input.find(' ');
@@ -394,6 +385,14 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     }
 
+    // Prepare recent panel messages for context (last 20)
+    std::vector<pu::ChatMessage> recent_msgs;
+    size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+    for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+      recent_msgs.push_back(panel_messages[i]);
+    }
+    manager.SetRecentMessages(recent_msgs);
+
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {
@@ -401,7 +400,8 @@ int RunChatCommand(int argc, char* argv[]) {
           ++message_id,
           CurrentTimestamp(),
           reply_role,
-          response
+          response,
+          ""
         });
       }
     } catch (const std::exception& e) {

@@ -38,25 +38,24 @@ class BaseExpert {
 
 class ExpertManager {
  public:
-  explicit ExpertManager(std::unique_ptr<backend::Backend> router);
+  ExpertManager();
   void RegisterExpert(std::unique_ptr<BaseExpert> expert);
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
   void SetActiveExpert(const std::string& name);
   std::string GetActiveExpert() const;
-  backend::Backend& GetRouterBackend();
   void SetShowReasoning(bool enable);
+  void SetRecentMessages(const std::vector<ChatMessage>& messages);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
 
  private:
-  std::string RouteToExpert(const std::string& input);
-  std::unique_ptr<backend::Backend> router_;
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;
+  std::vector<ChatMessage> recent_messages_;
 };
 
 }  // namespace pu::expert

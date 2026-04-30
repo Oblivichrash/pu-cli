@@ -34,12 +34,13 @@ class BashExpert : public pu::expert::BaseExpert {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
- private:
+ protected:
   std::vector<pu::backend::Message> BuildInitialHistory() const;
   void AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
                            size_t initial_size,
                            std::vector<ChatMessage>& turn_history) const;
 
+ private:
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
                           std::vector<ChatMessage>& turn_history,
