@@ -59,7 +59,8 @@ void PrintHelp() {
             << "  /load <id>      Load a saved conversation\n"
             << "  /list           List saved conversations\n"
             << "  /export <id>    Export conversation to Markdown\n"
-            << "  --show-reasoning (startup flag) Show model reasoning\n";
+            << "  --show-reasoning (startup flag) Show model reasoning\n"
+            << "  --proactive     (startup flag) Enable proactive expert suggestions\n";
 }
 
 void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
@@ -94,11 +95,12 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
   bool show_reasoning = false;
+  bool proactive = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
+      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning] [--proactive]\n";
       return 0;
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
@@ -109,6 +111,8 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
+    } else if (arg == "--proactive") {
+      proactive = true;
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
@@ -136,49 +140,41 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
+  // Determine initial expert name
   std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  const pu::config::ExpertEntry* current_entry = nullptr;
+  bool initial_found = false;
+
+  pu::expert::ExpertManager manager;
   for (const auto& entry : config.experts) {
     if (entry.name == current_name) {
-      current_entry = &entry;
-      break;
+      initial_found = true;
+    }
+    if (entry.type == pu::config::ExpertType::kChat) {
+      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
+    } else if (entry.type == pu::config::ExpertType::kBash) {
+      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
+                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
     }
   }
-  if (!current_entry) {
+
+  if (!initial_found) {
     std::cerr << "Error: expert '" << current_name << "' not found\n";
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> chat_backend;
-  try {
-    chat_backend = pu::config::CreateBackend(current_entry->backend, std::move(chat_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create backend: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::expert::ExpertManager manager;
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), current_entry->name));
-
-  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> bash_backend;
-  try {
-    bash_backend = pu::config::CreateBackend(current_entry->backend, std::move(bash_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create bash backend: " << e.what() << "\n";
-    return 1;
-  }
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!initial_expert.empty()) {
-    manager.SetActiveExpert(initial_expert);
-  }
+  // Set initial active expert
+  manager.SetActiveExpert(current_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
+  }
+  if (proactive) {
+    manager.SetProactiveEnabled(true);
   }
 
   auto store_dir = std::filesystem::path(
@@ -188,9 +184,15 @@ int RunChatCommand(int argc, char* argv[]) {
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
 
-  std::cout << "[INFO] Connected to expert: " << current_entry->name;
-  if (!current_entry->description.empty()) {
-    std::cout << " (" << current_entry->description << ")";
+  std::cout << "[INFO] Connected to expert: " << current_name;
+  const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
+    for (const auto& e : config.experts) {
+      if (e.name == current_name) return &e;
+    }
+    return nullptr;
+  }();
+  if (entry_ptr && !entry_ptr->description.empty()) {
+    std::cout << " (" << entry_ptr->description << ")";
   }
   std::cout << "\nType /help for available commands.\n\n";
 
@@ -235,6 +237,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
+        // Verify expert exists in config
         const pu::config::ExpertEntry* new_entry = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == new_name) {
@@ -248,6 +251,7 @@ int RunChatCommand(int argc, char* argv[]) {
         }
 
         manager.SetActiveExpert(new_entry->name);
+        current_name = new_name;
         std::cout << "[INFO] Switched to expert: " << new_entry->name;
         if (!new_entry->description.empty()) {
           std::cout << " (" << new_entry->description << ")";
@@ -369,6 +373,7 @@ int RunChatCommand(int argc, char* argv[]) {
       user_content,
       ""
     });
+    manager.NotifyPanelMessage(panel_messages.back());
 
     std::string reply_role;
     if (!input.empty() && input[0] == '@') {
@@ -385,14 +390,6 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     }
 
-    // Prepare recent panel messages for context (last 20)
-    std::vector<pu::ChatMessage> recent_msgs;
-    size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-    for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-      recent_msgs.push_back(panel_messages[i]);
-    }
-    manager.SetRecentMessages(recent_msgs);
-
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {
@@ -403,6 +400,27 @@ int RunChatCommand(int argc, char* argv[]) {
           response,
           ""
         });
+        manager.NotifyPanelMessage(panel_messages.back());
+
+        // Check for proactive replies after the expert's response
+        std::vector<pu::ChatMessage> recent;
+        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+          recent.push_back(panel_messages[i]);
+        }
+        manager.SetRecentMessages(recent);
+        auto proactive_replies = manager.CollectProactiveReplies();
+        for (auto& [expert, text] : proactive_replies) {
+          panel_messages.push_back({
+            ++message_id,
+            CurrentTimestamp(),
+            expert,
+            text,
+            ""
+          });
+          std::cout << "\n[" << expert << "] " << text << std::endl;
+          manager.NotifyPanelMessage(panel_messages.back());
+        }
       }
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";

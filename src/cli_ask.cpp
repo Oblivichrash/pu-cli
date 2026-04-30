@@ -100,35 +100,34 @@ int RunAskCommand(int argc, char* argv[]) {
   }
 
   std::string target_name = expert_name.empty() ? config.default_expert : expert_name;
-  const pu::config::ExpertEntry* target_entry = nullptr;
+  bool target_found = false;
+
+  pu::expert::ExpertManager manager;
   for (const auto& entry : config.experts) {
     if (entry.name == target_name) {
-      target_entry = &entry;
-      break;
+      target_found = true;
+    }
+    if (entry.type == pu::config::ExpertType::kChat) {
+      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
+    } else if (entry.type == pu::config::ExpertType::kBash) {
+      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
+                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
     }
   }
-  if (!target_entry) {
+
+  if (!target_found) {
     std::cerr << "Error: expert '" << target_name << "' not found\n";
     PrintAvailableExperts(config);
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  auto chat_backend = pu::config::CreateBackend(target_entry->backend, std::move(chat_http));
-
-  pu::expert::ExpertManager manager;
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), target_entry->name));
-
-  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-  auto bash_backend = pu::config::CreateBackend(target_entry->backend, std::move(bash_http));
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!target_name.empty()) {
-    manager.SetActiveExpert(target_name);
-  }
+  manager.SetActiveExpert(target_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
   }

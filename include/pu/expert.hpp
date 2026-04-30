@@ -9,8 +9,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pu::expert {
 
@@ -34,6 +37,7 @@ class BaseExpert {
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
 
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
+  virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
 };
 
 class ExpertManager {
@@ -47,6 +51,9 @@ class ExpertManager {
   std::string GetActiveExpert() const;
   void SetShowReasoning(bool enable);
   void SetRecentMessages(const std::vector<ChatMessage>& messages);
+  void SetProactiveEnabled(bool enabled);
+  void NotifyPanelMessage(const ChatMessage& msg);
+  std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
@@ -56,6 +63,7 @@ class ExpertManager {
   std::string active_expert_;
   bool show_reasoning_ = false;
   std::vector<ChatMessage> recent_messages_;
+  bool proactive_enabled_ = false;
 };
 
 }  // namespace pu::expert
