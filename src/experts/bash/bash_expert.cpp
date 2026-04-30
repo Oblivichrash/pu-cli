@@ -20,23 +20,40 @@ void BashExpert::ResetSession() {
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
+  std::vector<pu::backend::Message> initial_history;
+  for (const auto& cm : history_) {
+    pu::backend::Message msg;
+    if (cm.role == "user") {
+      msg.role = pu::backend::Message::Role::kUser;
+    } else if (cm.role == "bash" || cm.role == "assistant") {
+      msg.role = pu::backend::Message::Role::kAssistant;
+    } else if (cm.role == "tool_result") {
+      msg.role = pu::backend::Message::Role::kTool;
+    } else {
+      msg.role = pu::backend::Message::Role::kSystem;
+    }
+    msg.content = cm.content;
+    initial_history.push_back(msg);
+  }
+
   std::vector<ChatMessage> turn_history;
-  std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history);
-  // Append the full turn history to persistent memory
+  std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history, initial_history);
+
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
 
 std::string BashExpert::RunToolLoop(const std::string& user_input,
                                     bool show_reasoning,
-                                    std::vector<ChatMessage>& turn_history) {
+                                    std::vector<ChatMessage>& turn_history,
+                                    const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
 
   using json = nlohmann::json;
 
-  std::vector<pu::backend::Message> history;
+  std::vector<pu::backend::Message> history = initial_history;
   history.push_back({pu::backend::Message::Role::kUser, user_input});
 
   pu::backend::ToolDefinition bash_tool;
@@ -74,7 +91,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
 
     if (!tool_was_called) {
       final_response = content_stream.str();
-      // Record assistant reply as a chat message (role 'bash')
       turn_history.push_back({0, "", "bash", final_response});
       break;
     }
@@ -112,7 +128,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       break;
     }
 
-    // Record the assistant message with tool calls
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;
@@ -157,16 +172,13 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     }
   } while (tool_was_called);
 
-  // Convert the full backend message history to ChatMessage for persistent memory
-  // Skip the very first user message because it will be recorded separately by the caller
-  for (size_t i = 1; i < history.size(); ++i) {
+  for (size_t i = initial_history.size() + 1; i < history.size(); ++i) {
     const auto& msg = history[i];
     ChatMessage cm;
     cm.id = 0;
     cm.timestamp = "";
     if (msg.role == pu::backend::Message::Role::kAssistant) {
       cm.role = "bash";
-      // Content might be empty if it only has tool_calls, which we represent as a summary
       if (!msg.content.empty()) {
         cm.content = msg.content;
       } else {

@@ -37,7 +37,8 @@ class BashExpert : public pu::expert::BaseExpert {
  private:
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
-                          std::vector<ChatMessage>& turn_history);
+                          std::vector<ChatMessage>& turn_history,
+                          const std::vector<pu::backend::Message>& initial_history = {});
 
   std::string name_;
   std::unique_ptr<pu::backend::Backend> backend_;
