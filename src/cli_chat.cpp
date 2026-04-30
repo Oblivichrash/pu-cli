@@ -140,47 +140,36 @@ int RunChatCommand(int argc, char* argv[]) {
     return 1;
   }
 
+  // Determine initial expert name
   std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  const pu::config::ExpertEntry* current_entry = nullptr;
+  bool initial_found = false;
+
+  pu::expert::ExpertManager manager;
   for (const auto& entry : config.experts) {
     if (entry.name == current_name) {
-      current_entry = &entry;
-      break;
+      initial_found = true;
+    }
+    if (entry.type == pu::config::ExpertType::kChat) {
+      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
+    } else if (entry.type == pu::config::ExpertType::kBash) {
+      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
+                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
     }
   }
-  if (!current_entry) {
+
+  if (!initial_found) {
     std::cerr << "Error: expert '" << current_name << "' not found\n";
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> chat_backend;
-  try {
-    chat_backend = pu::config::CreateBackend(current_entry->backend, std::move(chat_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create backend: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::expert::ExpertManager manager;
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), current_entry->name));
-
-  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> bash_backend;
-  try {
-    bash_backend = pu::config::CreateBackend(current_entry->backend, std::move(bash_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create bash backend: " << e.what() << "\n";
-    return 1;
-  }
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!initial_expert.empty()) {
-    manager.SetActiveExpert(initial_expert);
-  }
+  // Set initial active expert
+  manager.SetActiveExpert(current_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
   }
@@ -195,9 +184,15 @@ int RunChatCommand(int argc, char* argv[]) {
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
 
-  std::cout << "[INFO] Connected to expert: " << current_entry->name;
-  if (!current_entry->description.empty()) {
-    std::cout << " (" << current_entry->description << ")";
+  std::cout << "[INFO] Connected to expert: " << current_name;
+  const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
+    for (const auto& e : config.experts) {
+      if (e.name == current_name) return &e;
+    }
+    return nullptr;
+  }();
+  if (entry_ptr && !entry_ptr->description.empty()) {
+    std::cout << " (" << entry_ptr->description << ")";
   }
   std::cout << "\nType /help for available commands.\n\n";
 
@@ -242,6 +237,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
+        // Verify expert exists in config
         const pu::config::ExpertEntry* new_entry = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == new_name) {
@@ -255,6 +251,7 @@ int RunChatCommand(int argc, char* argv[]) {
         }
 
         manager.SetActiveExpert(new_entry->name);
+        current_name = new_name;
         std::cout << "[INFO] Switched to expert: " << new_entry->name;
         if (!new_entry->description.empty()) {
           std::cout << " (" << new_entry->description << ")";
