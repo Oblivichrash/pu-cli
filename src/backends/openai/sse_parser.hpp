@@ -52,10 +52,10 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
           has_content = true;
         }
         // Check for reasoning content under two possible field names
-        if (choice["delta"].contains("reasoning_content")) {
+        if (choice["delta"].contains("reasoning_content") && !choice["delta"]["reasoning_content"].is_null()) {
           token.reasoning = choice["delta"]["reasoning_content"];
           has_content = true;
-        } else if (choice["delta"].contains("reasoning")) {
+        } else if (choice["delta"].contains("reasoning") && !choice["delta"]["reasoning"].is_null()) {
           token.reasoning = choice["delta"]["reasoning"];
           has_content = true;
         }
