@@ -116,10 +116,7 @@ int RunAskCommand(int argc, char* argv[]) {
   auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
   auto chat_backend = pu::config::CreateBackend(target_entry->backend, std::move(chat_http));
 
-  auto router_http = std::make_unique<pu::http::CurlHttpClient>();
-  auto router_backend = pu::config::CreateBackend(target_entry->backend, std::move(router_http));
-
-  pu::expert::ExpertManager manager(std::move(router_backend));
+  pu::expert::ExpertManager manager;
   manager.RegisterExpert(
       std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), target_entry->name));
 
