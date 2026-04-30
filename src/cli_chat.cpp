@@ -59,7 +59,8 @@ void PrintHelp() {
             << "  /load <id>      Load a saved conversation\n"
             << "  /list           List saved conversations\n"
             << "  /export <id>    Export conversation to Markdown\n"
-            << "  --show-reasoning (startup flag) Show model reasoning\n";
+            << "  --show-reasoning (startup flag) Show model reasoning\n"
+            << "  --proactive     (startup flag) Enable proactive expert suggestions\n";
 }
 
 void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
@@ -94,11 +95,12 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
   bool show_reasoning = false;
+  bool proactive = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
+      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning] [--proactive]\n";
       return 0;
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
@@ -109,6 +111,8 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
+    } else if (arg == "--proactive") {
+      proactive = true;
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
@@ -179,6 +183,9 @@ int RunChatCommand(int argc, char* argv[]) {
   }
   if (show_reasoning) {
     manager.SetShowReasoning(true);
+  }
+  if (proactive) {
+    manager.SetProactiveEnabled(true);
   }
 
   auto store_dir = std::filesystem::path(
@@ -369,6 +376,7 @@ int RunChatCommand(int argc, char* argv[]) {
       user_content,
       ""
     });
+    manager.NotifyPanelMessage(panel_messages.back());
 
     std::string reply_role;
     if (!input.empty() && input[0] == '@') {
@@ -385,14 +393,6 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     }
 
-    // Prepare recent panel messages for context (last 20)
-    std::vector<pu::ChatMessage> recent_msgs;
-    size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-    for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-      recent_msgs.push_back(panel_messages[i]);
-    }
-    manager.SetRecentMessages(recent_msgs);
-
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {
@@ -403,6 +403,27 @@ int RunChatCommand(int argc, char* argv[]) {
           response,
           ""
         });
+        manager.NotifyPanelMessage(panel_messages.back());
+
+        // Check for proactive replies after the expert's response
+        std::vector<pu::ChatMessage> recent;
+        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+          recent.push_back(panel_messages[i]);
+        }
+        manager.SetRecentMessages(recent);
+        auto proactive_replies = manager.CollectProactiveReplies();
+        for (auto& [expert, text] : proactive_replies) {
+          panel_messages.push_back({
+            ++message_id,
+            CurrentTimestamp(),
+            expert,
+            text,
+            ""
+          });
+          std::cout << "\n[" << expert << "] " << text << std::endl;
+          manager.NotifyPanelMessage(panel_messages.back());
+        }
       }
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";

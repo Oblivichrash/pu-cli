@@ -34,6 +34,9 @@ class BashExpert : public pu::expert::BaseExpert {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
+  void OnPanelMessage(const ChatMessage& msg) override;
+  std::optional<std::string> ProactiveReply() override;
+
  protected:
   std::vector<pu::backend::Message> BuildInitialHistory() const;
   void AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
@@ -50,6 +53,7 @@ class BashExpert : public pu::expert::BaseExpert {
   std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
   std::vector<ChatMessage> history_;
+  bool error_detected_ = false;
 };
 
 }  // namespace pu::experts

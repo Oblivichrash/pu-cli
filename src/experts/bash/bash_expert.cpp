@@ -3,6 +3,7 @@
 #include "bash_expert.hpp"
 #include "pu/renderer.hpp"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -218,6 +219,25 @@ std::vector<ChatMessage> BashExpert::SaveState() const {
 
 void BashExpert::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
+}
+
+void BashExpert::OnPanelMessage(const ChatMessage& msg) {
+  std::string content_lower = msg.content;
+  std::transform(content_lower.begin(), content_lower.end(), content_lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  if (content_lower.find("error") != std::string::npos ||
+      content_lower.find("fail") != std::string::npos ||
+      content_lower.find("urgent") != std::string::npos) {
+    error_detected_ = true;
+  }
+}
+
+std::optional<std::string> BashExpert::ProactiveReply() {
+  if (error_detected_) {
+    error_detected_ = false;
+    return "I noticed a possible error. Would you like me to check the system logs or investigate?";
+  }
+  return std::nullopt;
 }
 
 }  // namespace pu::experts
