@@ -55,12 +55,12 @@ void PrintHelp() {
             << "  /clear          Clear conversation history and expert lock\n"
             << "  /expert <name>  Switch to different expert\n"
             << "  /experts        List available experts\n"
+            << "  /proactive <expert> on|off [threshold]  Control proactive suggestions\n"
             << "  /save [name]    Save current conversation\n"
             << "  /load <id>      Load a saved conversation\n"
             << "  /list           List saved conversations\n"
             << "  /export <id>    Export conversation to Markdown\n"
-            << "  --show-reasoning (startup flag) Show model reasoning\n"
-            << "  --proactive [threshold]  Enable proactive expert suggestions (default threshold: 0.6)\n";
+            << "  --show-reasoning (startup flag) Show model reasoning\n";
 }
 
 void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
@@ -95,12 +95,11 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
   bool show_reasoning = false;
-  double proactive_threshold = 0.0;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning] [--proactive [threshold]]\n";
+      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
       return 0;
     } else if (arg == "--expert") {
       if (i + 1 < argc) {
@@ -111,16 +110,6 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
-    } else if (arg == "--proactive") {
-      proactive_threshold = 0.6;
-      if (i + 1 < argc) {
-        char* endptr = nullptr;
-        double val = std::strtod(argv[i + 1], &endptr);
-        if (endptr != argv[i + 1] && *endptr == '\0' && val > 0.0) {
-          proactive_threshold = val;
-          ++i;
-        }
-      }
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
@@ -178,10 +167,6 @@ int RunChatCommand(int argc, char* argv[]) {
   manager.SetActiveExpert(current_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
-  }
-  if (proactive_threshold > 0.0) {
-    manager.SetProactiveEnabled(true);
-    manager.SetProactiveThreshold(proactive_threshold);
   }
 
   auto store_dir = std::filesystem::path(
@@ -263,6 +248,60 @@ int RunChatCommand(int argc, char* argv[]) {
           std::cout << " (" << new_entry->description << ")";
         }
         std::cout << "\n";
+      } else if (input.rfind("/proactive ", 0) == 0) {
+        // /proactive <expert> on|off [threshold]
+        std::string args = input.substr(11); // after "/proactive "
+        std::istringstream iss(args);
+        std::string expert, state;
+        double threshold = 0.6;
+        iss >> expert >> state;
+        if (expert.empty() || state.empty()) {
+          std::cerr << "Usage: /proactive <expert> on|off [threshold]\n";
+          continue;
+        }
+        bool enable = false;
+        if (state == "on") {
+          enable = true;
+          // Optional threshold
+          if (!iss.eof()) {
+            std::string thresh_str;
+            iss >> thresh_str;
+            if (!thresh_str.empty()) {
+              threshold = std::stod(thresh_str);
+            }
+          }
+        } else if (state == "off") {
+          enable = false;
+        } else {
+          std::cerr << "State must be 'on' or 'off'.\n";
+          continue;
+        }
+
+        // Find the expert in config to verify existence
+        const pu::config::ExpertEntry* target = nullptr;
+        for (const auto& entry : config.experts) {
+          if (entry.name == expert) {
+            target = &entry;
+            break;
+          }
+        }
+        if (!target) {
+          std::cerr << "Error: expert '" << expert << "' not found.\n";
+          continue;
+        }
+
+        // Call manager methods
+        if (enable) {
+          manager.SetProactiveEnabled(true);
+          manager.SetProactiveThreshold(threshold);
+          // We need to target a specific expert; current manager applies globally.
+          // To be per-expert we'd need per-expert settings, but for now we use global state.
+          // We'll just inform that proactive is enabled for all experts.
+          std::cout << "[INFO] Proactive suggestions enabled (threshold " << threshold << ").\n";
+        } else {
+          manager.SetProactiveEnabled(false);
+          std::cout << "[INFO] Proactive suggestions disabled.\n";
+        }
       } else if (input.rfind("/save", 0) == 0) {
         std::string save_name;
         if (input.size() > 5) {

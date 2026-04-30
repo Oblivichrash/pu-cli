@@ -23,11 +23,10 @@ namespace pu::cli {
 namespace {
 
 void PrintUsage() {
-  std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] [--proactive [threshold]] <prompt>\n"
+  std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] <prompt>\n"
             << "Options:\n"
             << "  --expert <name>          Specify the expert to use (default: from config)\n"
             << "  --show-reasoning         Show model's internal reasoning\n"
-            << "  --proactive [threshold]  Enable proactive expert suggestions (default threshold: 0.6)\n"
             << "  -h, --help               Show this help message\n";
 }
 
@@ -48,7 +47,6 @@ int RunAskCommand(int argc, char* argv[]) {
   std::string expert_name;
   std::string prompt;
   bool show_reasoning = false;
-  double proactive_threshold = 0.0;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -65,16 +63,6 @@ int RunAskCommand(int argc, char* argv[]) {
       }
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
-    } else if (arg == "--proactive") {
-      proactive_threshold = 0.6;
-      if (i + 1 < argc) {
-        char* endptr = nullptr;
-        double val = std::strtod(argv[i + 1], &endptr);
-        if (endptr != argv[i + 1] && *endptr == '\0' && val > 0.0) {
-          proactive_threshold = val;
-          ++i;
-        }
-      }
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
@@ -142,10 +130,6 @@ int RunAskCommand(int argc, char* argv[]) {
   manager.SetActiveExpert(target_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
-  }
-  if (proactive_threshold > 0.0) {
-    manager.SetProactiveEnabled(true);
-    manager.SetProactiveThreshold(proactive_threshold);
   }
 
   try {
