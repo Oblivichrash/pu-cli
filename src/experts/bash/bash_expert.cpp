@@ -253,7 +253,7 @@ std::optional<std::string> BashExpert::ProactiveReply() {
   if (!should_act) return std::nullopt;
 
   recent_scores_.clear();
-  return "I noticed some potentially troublesome messages. Would you like me to run diagnostics or check the logs?";
+  return "I noticed a possible error. Reply @bash check logs to investigate.";
 }
 
 void BashExpert::SetProactiveThreshold(double threshold) {
