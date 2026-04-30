@@ -1,0 +1,25 @@
+# Contributing
+
+## Pull Requests
+- Title format: `type: short description` (e.g. `feat: add tool calling to BashExpert`)
+- Include a bullet list of changes in the PR body
+- Use the sections `## Description`, `## Why`, `## Related Issue` (write N/A if none)
+
+## Commit Messages
+- Follow the same `type: description` convention
+- Keep the first line under 72 characters
+- Use imperative mood (e.g. `fix:` not `fixed:`)
+
+## Code Style
+- C++23 with Google C++ Style
+- SPDX license identifier (`// SPDX-License-Identifier: GPL-3.0-only`) in every source file
+- Remove decorative separator comments and self‑explanatory variable comments
+- Use `clang-format` for consistent formatting
+
+## Testing
+Run tests before submitting:
+```bash
+cmake -B build -DBUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```

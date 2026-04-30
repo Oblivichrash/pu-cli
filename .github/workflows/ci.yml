@@ -19,29 +19,23 @@ jobs:
 
     - name: Install dependencies (Linux)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev nlohmann-json3-dev
+      run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev nlohmann-json3-dev catch2
 
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
-      run: brew install curl nlohmann-json
+      run: brew install curl nlohmann-json catch2
 
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        vcpkg install curl nlohmann-json
+        vcpkg install curl nlohmann-json catch2
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
     - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
     - name: Build
       run: cmake --build build --config Release
 
-    - name: Test run
-      run: |
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          ./build/Release/pu.exe
-        else
-          ./build/pu
-        fi
-      shell: bash
+    - name: Test
+      run: ctest --test-dir build -C Release --output-on-failure
