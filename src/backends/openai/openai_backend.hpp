@@ -14,7 +14,10 @@ namespace pu::backends::openai {
 class OpenAIBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
-    std::string host = "https://api.openai.com";
+    // Base URL of the OpenAI-compatible API, e.g. "https://api.openai.com/v1"
+    // or "https://integrate.api.nvidia.com/v1". The path "/chat/completions"
+    // will be appended automatically.
+    std::string host = "https://api.openai.com/v1";
     std::string api_key;
 
     Config() = default;
