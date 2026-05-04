@@ -71,11 +71,14 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
           for (const auto& tc : delta["tool_calls"]) {
             ToolCallDelta tcd;
             tcd.index = tc.value("index", -1);
-            if (tc.contains("id")) tcd.id = tc["id"].get<std::string>();
+            if (tc.contains("id") && !tc["id"].is_null()) {
+              tcd.id = tc["id"].get<std::string>();
+            }
             if (tc.contains("function")) {
-              tcd.name = tc["function"].value("name", "");
-              if (tc["function"].contains("arguments")) {
-                tcd.arguments = tc["function"]["arguments"].get<std::string>();
+              auto& func = tc["function"];
+              tcd.name = func.value("name", "");
+              if (func.contains("arguments") && !func["arguments"].is_null()) {
+                tcd.arguments = func["arguments"].get<std::string>();
               }
             }
             token.tool_call_deltas.push_back(tcd);

@@ -3,9 +3,9 @@
 #include "openai_backend.hpp"
 #include "sse_parser.hpp"
 #include <nlohmann/json.hpp>
+#include <map>
 #include <stdexcept>
 #include <string>
-#include <map>
 #include <vector>
 
 namespace pu::backends::openai {
@@ -52,7 +52,30 @@ std::string OpenAIBackend::BuildRequestWithTools(
       case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
       case pu::backend::Message::Role::kTool: role = "tool"; break;
     }
-    messages.push_back({{"role", role}, {"content", msg.content}});
+    json m = {{"role", role}, {"content", msg.content}};
+    if (role == "tool") {
+      m["tool_call_id"] = msg.tool_name;
+    }
+    if (!msg.tool_calls.empty()) {
+      json tcs = json::array();
+      for (const auto& tc : msg.tool_calls) {
+        json func = {{"name", tc.name}};
+        if (!tc.arguments.empty()) {
+          try {
+            func["arguments"] = json::parse(tc.arguments);
+          } catch (...) {
+            func["arguments"] = tc.arguments;
+          }
+        }
+        json t;
+        t["id"] = tc.id;
+        t["type"] = "function";
+        t["function"] = func;
+        tcs.push_back(t);
+      }
+      m["tool_calls"] = tcs;
+    }
+    messages.push_back(m);
   }
   req["messages"] = messages;
 
@@ -66,7 +89,6 @@ std::string OpenAIBackend::BuildRequestWithTools(
     tools_json.push_back(t);
   }
   req["tools"] = tools_json;
-
   return req.dump();
 }
 
@@ -111,9 +133,7 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
       auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
         if (new_text.empty()) return new_text;
-        if (new_text.size() < accumulated.size()) {
-          accumulated.clear();
-        }
+        if (new_text.size() < accumulated.size()) accumulated.clear();
         if (accumulated.empty() ||
             new_text.compare(0, accumulated.size(), accumulated) != 0) {
           accumulated = new_text;
@@ -126,16 +146,11 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
       if (!token.reasoning.empty()) {
         std::string_view delta = extract_delta(token.reasoning, accumulated_reasoning);
-        if (!delta.empty()) {
-          cb(pu::backend::TokenType::kReasoning, delta, false);
-        }
+        if (!delta.empty()) cb(pu::backend::TokenType::kReasoning, delta, false);
       }
-
       if (!token.content.empty()) {
         std::string_view delta = extract_delta(token.content, accumulated_content);
-        if (!delta.empty()) {
-          cb(pu::backend::TokenType::kContent, delta, false);
-        }
+        if (!delta.empty()) cb(pu::backend::TokenType::kContent, delta, false);
       }
     }
     return total;
@@ -160,7 +175,7 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
   std::string line_buffer;
   std::string accumulated_content;
   std::string accumulated_reasoning;
-  std::map<int, internal::ToolCallDelta> pending_tools; // index -> delta accumulation
+  std::map<int, internal::ToolCallDelta> pending_tools;
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     line_buffer.append(ptr, total);
@@ -175,7 +190,6 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
       const auto& token = *token_opt;
       if (token.done) {
-        // flush all collected tool calls
         for (auto& [idx, delta] : pending_tools) {
           pu::backend::ToolCall call;
           call.id = delta.id;
@@ -194,14 +208,12 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
       if (!token.reasoning.empty()) {
         content_cb(pu::backend::TokenType::kReasoning, token.reasoning, false);
       }
-
-      // accumulate tool call deltas
       for (const auto& delta : token.tool_call_deltas) {
         if (delta.index < 0) continue;
         auto& acc = pending_tools[delta.index];
         if (!delta.id.empty()) acc.id = delta.id;
         if (!delta.name.empty()) acc.name = delta.name;
-        acc.arguments += delta.arguments; // arguments are incremental
+        acc.arguments += delta.arguments;
       }
     }
     return total;
