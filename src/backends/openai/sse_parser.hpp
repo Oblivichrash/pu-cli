@@ -10,13 +10,21 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace pu::backends::openai::internal {
+
+struct ToolCallDelta {
+  int index = -1;
+  std::string id;
+  std::string name;
+  std::string arguments;
+};
 
 struct SseToken {
   std::string content;
   std::string reasoning;
-  std::vector<backend::ToolCall> tool_calls;
+  std::vector<ToolCallDelta> tool_call_deltas;
   bool done = false;
 };
 
@@ -61,20 +69,16 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
         }
         if (delta.contains("tool_calls")) {
           for (const auto& tc : delta["tool_calls"]) {
-            backend::ToolCall call;
-            if (tc.contains("id")) call.id = tc["id"].get<std::string>();
+            ToolCallDelta tcd;
+            tcd.index = tc.value("index", -1);
+            if (tc.contains("id")) tcd.id = tc["id"].get<std::string>();
             if (tc.contains("function")) {
-              call.name = tc["function"].value("name", "");
+              tcd.name = tc["function"].value("name", "");
               if (tc["function"].contains("arguments")) {
-                const auto& args = tc["function"]["arguments"];
-                if (args.is_string()) {
-                  call.arguments = args.get<std::string>();
-                } else if (args.is_object() || args.is_array()) {
-                  call.arguments = args.dump();
-                }
+                tcd.arguments = tc["function"]["arguments"].get<std::string>();
               }
             }
-            token.tool_calls.push_back(call);
+            token.tool_call_deltas.push_back(tcd);
           }
           has_content = true;
         }
