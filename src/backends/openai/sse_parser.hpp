@@ -77,8 +77,13 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
             if (tc.contains("function")) {
               auto& func = tc["function"];
               tcd.name = func.value("name", "");
-              if (func.contains("arguments") && !func["arguments"].is_null()) {
-                tcd.arguments = func["arguments"].get<std::string>();
+              if (func.contains("arguments")) {
+                const auto& args = func["arguments"];
+                if (args.is_string()) {
+                  tcd.arguments = args.get<std::string>();
+                } else if (args.is_object() || args.is_array()) {
+                  tcd.arguments = args.dump();
+                }
               }
             }
             token.tool_call_deltas.push_back(tcd);
