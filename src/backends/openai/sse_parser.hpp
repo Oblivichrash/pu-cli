@@ -28,6 +28,11 @@ struct SseToken {
   bool done = false;
 };
 
+inline std::string SafeString(const nlohmann::json& j, const char* key) {
+  if (j.contains(key) && j[key].is_string()) return j[key].get<std::string>();
+  return "";
+}
+
 inline std::optional<SseToken> ParseSseLine(std::string_view line) {
   constexpr std::string_view kDataPrefix = "data: ";
 
@@ -56,33 +61,22 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
       auto& choice = j["choices"][0];
       if (choice.contains("delta") && choice["delta"].is_object()) {
         auto& delta = choice["delta"];
-        if (delta.contains("content") && delta["content"].is_string()) {
-          token.content = delta["content"].get<std::string>();
-          has_content = true;
-        }
-        if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
-          token.reasoning = delta["reasoning_content"].get<std::string>();
-          has_content = true;
-        } else if (delta.contains("reasoning") && delta["reasoning"].is_string()) {
-          token.reasoning = delta["reasoning"].get<std::string>();
-          has_content = true;
-        }
+        token.content = SafeString(delta, "content");
+        if (!token.content.empty()) has_content = true;
+
+        token.reasoning = SafeString(delta, "reasoning_content");
+        if (token.reasoning.empty()) token.reasoning = SafeString(delta, "reasoning");
+        if (!token.reasoning.empty()) has_content = true;
+
         if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
           for (const auto& tc : delta["tool_calls"]) {
             if (!tc.is_object()) continue;
             ToolCallDelta tcd;
             tcd.index = tc.value("index", -1);
-            if (tc.contains("id") && tc["id"].is_string()) {
-              tcd.id = tc["id"].get<std::string>();
-            }
+            tcd.id = SafeString(tc, "id");
             if (tc.contains("function") && tc["function"].is_object()) {
-              auto& func = tc["function"];
-              if (func.contains("name") && func["name"].is_string()) {
-                tcd.name = func["name"].get<std::string>();
-              }
-              if (func.contains("arguments") && func["arguments"].is_string()) {
-                tcd.arguments = func["arguments"].get<std::string>();
-              }
+              tcd.name = SafeString(tc["function"], "name");
+              tcd.arguments = SafeString(tc["function"], "arguments");
             }
             if (tcd.index >= 0) {
               token.tool_call_deltas.push_back(tcd);

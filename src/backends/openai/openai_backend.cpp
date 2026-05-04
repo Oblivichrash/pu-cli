@@ -12,49 +12,27 @@ namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
-std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
-  json req;
-  req["model"] = config_.model;
-  req["stream"] = true;
-  req["temperature"] = config_.temperature;
+namespace {
 
-  auto messages_history = BuildMessagesWithSystemPrompt(history);
-  json messages = json::array();
-  for (const auto& msg : messages_history) {
-    std::string role;
-    switch (msg.role) {
-      case pu::backend::Message::Role::kSystem: role = "system"; break;
-      case pu::backend::Message::Role::kUser: role = "user"; break;
-      case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
-      case pu::backend::Message::Role::kTool: role = "tool"; break;
-    }
-    messages.push_back({{"role", role}, {"content", msg.content}});
+std::string RoleToString(pu::backend::Message::Role role) {
+  switch (role) {
+    case pu::backend::Message::Role::kSystem: return "system";
+    case pu::backend::Message::Role::kUser: return "user";
+    case pu::backend::Message::Role::kAssistant: return "assistant";
+    case pu::backend::Message::Role::kTool: return "tool";
+    default: return "user";
   }
-  req["messages"] = messages;
-  return req.dump();
 }
 
-std::string OpenAIBackend::BuildRequestWithTools(
-    const std::vector<pu::backend::Message>& history,
-    const std::vector<pu::backend::ToolDefinition>& tools) const {
-  json req;
-  req["model"] = config_.model;
-  req["stream"] = true;
-  req["temperature"] = config_.temperature;
-
-  auto messages_history = BuildMessagesWithSystemPrompt(history);
+json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   json messages = json::array();
-  for (const auto& msg : messages_history) {
-    std::string role;
-    switch (msg.role) {
-      case pu::backend::Message::Role::kSystem: role = "system"; break;
-      case pu::backend::Message::Role::kUser: role = "user"; break;
-      case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
-      case pu::backend::Message::Role::kTool: role = "tool"; break;
-    }
-    json m = {{"role", role}, {"content", msg.content}};
-    if (role == "tool") {
-      m["tool_call_id"] = msg.tool_name;
+  for (const auto& msg : history) {
+    json j{
+      {"role", RoleToString(msg.role)},
+      {"content", msg.content}
+    };
+    if (msg.role == pu::backend::Message::Role::kTool) {
+      j["tool_call_id"] = msg.tool_name;
     }
     if (!msg.tool_calls.empty()) {
       json tcs = json::array();
@@ -67,26 +45,49 @@ std::string OpenAIBackend::BuildRequestWithTools(
             func["arguments"] = tc.arguments;
           }
         }
-        json t;
-        t["id"] = tc.id;
-        t["type"] = "function";
-        t["function"] = func;
-        tcs.push_back(t);
+        tcs.push_back({
+          {"id", tc.id},
+          {"type", "function"},
+          {"function", func}
+        });
       }
-      m["tool_calls"] = tcs;
+      j["tool_calls"] = tcs;
     }
-    messages.push_back(m);
+    messages.push_back(j);
   }
-  req["messages"] = messages;
+  return messages;
+}
+
+}  // namespace
+
+std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
+  json req;
+  req["model"] = config_.model;
+  req["stream"] = true;
+  req["temperature"] = config_.temperature;
+  req["messages"] = BuildMessagesJson(BuildMessagesWithSystemPrompt(history));
+  return req.dump();
+}
+
+std::string OpenAIBackend::BuildRequestWithTools(
+    const std::vector<pu::backend::Message>& history,
+    const std::vector<pu::backend::ToolDefinition>& tools) const {
+  json req;
+  req["model"] = config_.model;
+  req["stream"] = true;
+  req["temperature"] = config_.temperature;
+  req["messages"] = BuildMessagesJson(BuildMessagesWithSystemPrompt(history));
 
   json tools_json = json::array();
   for (const auto& tool : tools) {
-    json t;
-    t["type"] = "function";
-    t["function"]["name"] = tool.name;
-    t["function"]["description"] = tool.description;
-    t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
-    tools_json.push_back(t);
+    tools_json.push_back({
+      {"type", "function"},
+      {"function", {
+        {"name", tool.name},
+        {"description", tool.description},
+        {"parameters", json::parse(tool.parameters.raw_schema)}
+      }}
+    });
   }
   req["tools"] = tools_json;
   return req.dump();
