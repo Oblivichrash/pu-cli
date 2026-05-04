@@ -52,41 +52,41 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     token.done = false;
 
     bool has_content = false;
-    if (j.contains("choices") && !j["choices"].empty()) {
+    if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
-      if (choice.contains("delta")) {
+      if (choice.contains("delta") && choice["delta"].is_object()) {
         auto& delta = choice["delta"];
-        if (delta.contains("content") && !delta["content"].is_null()) {
+        if (delta.contains("content") && delta["content"].is_string()) {
           token.content = delta["content"].get<std::string>();
           has_content = true;
         }
-        if (delta.contains("reasoning_content") && !delta["reasoning_content"].is_null()) {
+        if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
           token.reasoning = delta["reasoning_content"].get<std::string>();
           has_content = true;
-        } else if (delta.contains("reasoning") && !delta["reasoning"].is_null()) {
+        } else if (delta.contains("reasoning") && delta["reasoning"].is_string()) {
           token.reasoning = delta["reasoning"].get<std::string>();
           has_content = true;
         }
-        if (delta.contains("tool_calls")) {
+        if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
           for (const auto& tc : delta["tool_calls"]) {
+            if (!tc.is_object()) continue;
             ToolCallDelta tcd;
             tcd.index = tc.value("index", -1);
-            if (tc.contains("id") && !tc["id"].is_null()) {
+            if (tc.contains("id") && tc["id"].is_string()) {
               tcd.id = tc["id"].get<std::string>();
             }
-            if (tc.contains("function")) {
+            if (tc.contains("function") && tc["function"].is_object()) {
               auto& func = tc["function"];
-              tcd.name = func.value("name", "");
-              if (func.contains("arguments")) {
-                const auto& args = func["arguments"];
-                if (args.is_string()) {
-                  tcd.arguments = args.get<std::string>();
-                } else if (args.is_object() || args.is_array()) {
-                  tcd.arguments = args.dump();
-                }
+              if (func.contains("name") && func["name"].is_string()) {
+                tcd.name = func["name"].get<std::string>();
+              }
+              if (func.contains("arguments") && func["arguments"].is_string()) {
+                tcd.arguments = func["arguments"].get<std::string>();
               }
             }
-            token.tool_call_deltas.push_back(tcd);
+            if (tcd.index >= 0) {
+              token.tool_call_deltas.push_back(tcd);
+            }
           }
           has_content = true;
         }

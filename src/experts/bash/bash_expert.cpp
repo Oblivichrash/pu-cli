@@ -203,7 +203,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
 
       pu::backend::Message tool_msg;
       tool_msg.role = pu::backend::Message::Role::kTool;
-      tool_msg.tool_name = call.name;
+      tool_msg.tool_name = call.id;
       tool_msg.content = result;
       history.push_back(tool_msg);
     }
