@@ -25,9 +25,9 @@ namespace {
 void PrintUsage() {
   std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] <prompt>\n"
             << "Options:\n"
-            << "  --expert <name>     Specify the expert to use (default: from config)\n"
-            << "  --show-reasoning    Show model's internal reasoning\n"
-            << "  -h, --help          Show this help message\n";
+            << "  --expert <name>          Specify the expert to use (default: from config)\n"
+            << "  --show-reasoning         Show model's internal reasoning\n"
+            << "  -h, --help               Show this help message\n";
 }
 
 void PrintAvailableExperts(const pu::config::ExpertsConfig& config) {

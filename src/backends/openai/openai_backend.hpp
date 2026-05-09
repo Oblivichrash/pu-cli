@@ -14,12 +14,8 @@ namespace pu::backends::openai {
 class OpenAIBackend : public pu::backend::Backend {
  public:
   struct Config : public pu::backend::Backend::Config {
-    // Base URL of the OpenAI-compatible API, e.g. "https://api.openai.com/v1"
-    // or "https://integrate.api.nvidia.com/v1". The path "/chat/completions"
-    // will be appended automatically.
     std::string host = "https://api.openai.com/v1";
     std::string api_key;
-
     Config() = default;
   };
 
@@ -35,8 +31,12 @@ class OpenAIBackend : public pu::backend::Backend {
             pu::backend::ChatCallback content_cb,
             pu::backend::ToolCallback tool_cb) override;
 
+  bool SupportsTools() const override { return true; }
+
  private:
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
+  std::string BuildRequestWithTools(const std::vector<pu::backend::Message>& history,
+                                    const std::vector<pu::backend::ToolDefinition>& tools) const;
 
   std::unique_ptr<pu::http::HttpClient> http_;
   std::string host_;
