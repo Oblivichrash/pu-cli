@@ -38,6 +38,8 @@ class BaseExpert {
 
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
   virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
+  virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
+  virtual void SetProactiveThreshold([[maybe_unused]] double threshold) {}
 };
 
 class ExpertManager {
@@ -52,6 +54,7 @@ class ExpertManager {
   void SetShowReasoning(bool enable);
   void SetRecentMessages(const std::vector<ChatMessage>& messages);
   void SetProactiveEnabled(bool enabled);
+  void SetProactiveThreshold(double threshold);
   void NotifyPanelMessage(const ChatMessage& msg);
   std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
 
@@ -64,6 +67,7 @@ class ExpertManager {
   bool show_reasoning_ = false;
   std::vector<ChatMessage> recent_messages_;
   bool proactive_enabled_ = false;
+  double proactive_threshold_ = 0.6;
 };
 
 }  // namespace pu::expert

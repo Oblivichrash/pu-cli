@@ -36,6 +36,8 @@ class BashExpert : public pu::expert::BaseExpert {
 
   void OnPanelMessage(const ChatMessage& msg) override;
   std::optional<std::string> ProactiveReply() override;
+  double EvaluateRelevance(const ChatMessage& msg) override;
+  void SetProactiveThreshold(double threshold) override;
 
  protected:
   std::vector<pu::backend::Message> BuildInitialHistory() const;
@@ -53,7 +55,8 @@ class BashExpert : public pu::expert::BaseExpert {
   std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
   std::vector<ChatMessage> history_;
-  bool error_detected_ = false;
+  std::vector<double> recent_scores_;
+  double proactive_threshold_ = 0.6;
 };
 
 }  // namespace pu::experts
