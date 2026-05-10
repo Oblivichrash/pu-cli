@@ -169,6 +169,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.temperature = cfg.temperature;
       ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
+      ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
           std::move(ollama_cfg), std::move(http));
     }

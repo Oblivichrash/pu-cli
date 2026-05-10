@@ -3,6 +3,7 @@
 #include "bash_expert.hpp"
 #include "pu/renderer.hpp"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -16,6 +17,7 @@ BashExpert::BashExpert(const std::string& name,
 
 void BashExpert::ResetSession() {
   history_.clear();
+  recent_scores_.clear();
 }
 
 std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
@@ -201,7 +203,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
 
       pu::backend::Message tool_msg;
       tool_msg.role = pu::backend::Message::Role::kTool;
-      tool_msg.tool_name = call.name;
+      tool_msg.tool_name = call.id;
       tool_msg.content = result;
       history.push_back(tool_msg);
     }
@@ -218,6 +220,44 @@ std::vector<ChatMessage> BashExpert::SaveState() const {
 
 void BashExpert::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
+}
+
+double BashExpert::EvaluateRelevance(const ChatMessage& msg) {
+  std::string lower = msg.content;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  double score = 0.0;
+  if (lower.find("error") != std::string::npos) score += 0.4;
+  if (lower.find("fail") != std::string::npos) score += 0.4;
+  if (lower.find("urgent") != std::string::npos) score += 0.5;
+  if (lower.find("crash") != std::string::npos) score += 0.5;
+  if (lower.find("timeout") != std::string::npos) score += 0.3;
+  return std::min(score, 1.0);
+}
+
+void BashExpert::OnPanelMessage(const ChatMessage& msg) {
+  double s = EvaluateRelevance(msg);
+  if (s > 0.0) {
+    recent_scores_.push_back(s);
+  }
+}
+
+std::optional<std::string> BashExpert::ProactiveReply() {
+  bool should_act = false;
+  for (double s : recent_scores_) {
+    if (s >= proactive_threshold_) {
+      should_act = true;
+      break;
+    }
+  }
+  if (!should_act) return std::nullopt;
+
+  recent_scores_.clear();
+  return "I noticed a possible error. Reply @bash check logs to investigate.";
+}
+
+void BashExpert::SetProactiveThreshold(double threshold) {
+  proactive_threshold_ = threshold;
 }
 
 }  // namespace pu::experts

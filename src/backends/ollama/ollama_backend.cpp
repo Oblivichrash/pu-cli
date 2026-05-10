@@ -37,12 +37,19 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
 
 OllamaBackend::OllamaBackend(Config config,
                              std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(std::move(config)), host_(std::move(config.host)), http_(std::move(http)) {}
+    : Backend(std::move(config)), host_(std::move(config.host)),
+      api_key_(std::move(config.api_key)), http_(std::move(http)) {}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {
   std::string body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
+
+  std::vector<std::string> headers;
+  headers.push_back("Content-Type: application/json");
+  if (!api_key_.empty()) {
+    headers.push_back("Authorization: Bearer " + api_key_);
+  }
 
   std::string line_buffer;
   std::string accumulated_content;
@@ -97,7 +104,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, {"Content-Type: application/json"}, write_cb);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
@@ -156,6 +163,12 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
   std::string body = req.dump();
   std::string url = host_ + "/api/chat";
 
+  std::vector<std::string> headers;
+  headers.push_back("Content-Type: application/json");
+  if (!api_key_.empty()) {
+    headers.push_back("Authorization: Bearer " + api_key_);
+  }
+
   std::string line_buffer;
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
@@ -188,7 +201,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, {"Content-Type: application/json"}, write_cb);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 }  // namespace pu::backends::ollama

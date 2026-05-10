@@ -37,6 +37,37 @@ void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) 
   recent_messages_ = messages;
 }
 
+void ExpertManager::SetProactiveEnabled(bool enabled) {
+  proactive_enabled_ = enabled;
+}
+
+void ExpertManager::SetProactiveThreshold(double threshold) {
+  proactive_threshold_ = threshold;
+  for (auto& [name, expert] : experts_) {
+    expert->SetProactiveThreshold(threshold);
+  }
+}
+
+void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
+  for (auto& [name, expert] : experts_) {
+    expert->OnPanelMessage(msg);
+  }
+}
+
+std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactiveReplies() {
+  std::vector<std::pair<std::string, std::string>> replies;
+  if (!proactive_enabled_) {
+    return replies;
+  }
+  for (auto& [name, expert] : experts_) {
+    auto reply = expert->ProactiveReply();
+    if (reply) {
+      replies.emplace_back(name, *reply);
+    }
+  }
+  return replies;
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";

@@ -9,8 +9,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pu::expert {
 
@@ -34,6 +37,9 @@ class BaseExpert {
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
 
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
+  virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
+  virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
+  virtual void SetProactiveThreshold([[maybe_unused]] double threshold) {}
 };
 
 class ExpertManager {
@@ -47,6 +53,10 @@ class ExpertManager {
   std::string GetActiveExpert() const;
   void SetShowReasoning(bool enable);
   void SetRecentMessages(const std::vector<ChatMessage>& messages);
+  void SetProactiveEnabled(bool enabled);
+  void SetProactiveThreshold(double threshold);
+  void NotifyPanelMessage(const ChatMessage& msg);
+  std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
@@ -56,6 +66,8 @@ class ExpertManager {
   std::string active_expert_;
   bool show_reasoning_ = false;
   std::vector<ChatMessage> recent_messages_;
+  bool proactive_enabled_ = false;
+  double proactive_threshold_ = 0.6;
 };
 
 }  // namespace pu::expert

@@ -10,15 +10,28 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace pu::backends::openai::internal {
+
+struct ToolCallDelta {
+  int index = -1;
+  std::string id;
+  std::string name;
+  std::string arguments;
+};
 
 struct SseToken {
   std::string content;
   std::string reasoning;
-  std::vector<backend::ToolCall> tool_calls;
+  std::vector<ToolCallDelta> tool_call_deltas;
   bool done = false;
 };
+
+inline std::string SafeString(const nlohmann::json& j, const char* key) {
+  if (j.contains(key) && j[key].is_string()) return j[key].get<std::string>();
+  return "";
+}
 
 inline std::optional<SseToken> ParseSseLine(std::string_view line) {
   constexpr std::string_view kDataPrefix = "data: ";
@@ -44,33 +57,30 @@ inline std::optional<SseToken> ParseSseLine(std::string_view line) {
     token.done = false;
 
     bool has_content = false;
-    if (j.contains("choices") && !j["choices"].empty()) {
+    if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
       auto& choice = j["choices"][0];
-      if (choice.contains("delta")) {
-        if (choice["delta"].contains("content")) {
-          token.content = choice["delta"]["content"];
-          has_content = true;
-        }
-        if (choice["delta"].contains("reasoning")) {
-          token.reasoning = choice["delta"]["reasoning"];
-          has_content = true;
-        }
-        if (choice["delta"].contains("tool_calls")) {
-          for (const auto& tc : choice["delta"]["tool_calls"]) {
-            backend::ToolCall call;
-            if (tc.contains("id")) call.id = tc["id"].get<std::string>();
-            if (tc.contains("function")) {
-              call.name = tc["function"].value("name", "");
-              if (tc["function"].contains("arguments")) {
-                const auto& args = tc["function"]["arguments"];
-                if (args.is_string()) {
-                  call.arguments = args.get<std::string>();
-                } else if (args.is_object() || args.is_array()) {
-                  call.arguments = args.dump();
-                }
-              }
+      if (choice.contains("delta") && choice["delta"].is_object()) {
+        auto& delta = choice["delta"];
+        token.content = SafeString(delta, "content");
+        if (!token.content.empty()) has_content = true;
+
+        token.reasoning = SafeString(delta, "reasoning_content");
+        if (token.reasoning.empty()) token.reasoning = SafeString(delta, "reasoning");
+        if (!token.reasoning.empty()) has_content = true;
+
+        if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+          for (const auto& tc : delta["tool_calls"]) {
+            if (!tc.is_object()) continue;
+            ToolCallDelta tcd;
+            tcd.index = tc.value("index", -1);
+            tcd.id = SafeString(tc, "id");
+            if (tc.contains("function") && tc["function"].is_object()) {
+              tcd.name = SafeString(tc["function"], "name");
+              tcd.arguments = SafeString(tc["function"], "arguments");
             }
-            token.tool_calls.push_back(call);
+            if (tcd.index >= 0) {
+              token.tool_call_deltas.push_back(tcd);
+            }
           }
           has_content = true;
         }

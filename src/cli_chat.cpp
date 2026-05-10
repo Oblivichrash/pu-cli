@@ -55,6 +55,7 @@ void PrintHelp() {
             << "  /clear          Clear conversation history and expert lock\n"
             << "  /expert <name>  Switch to different expert\n"
             << "  /experts        List available experts\n"
+            << "  /proactive <expert> on|off [threshold]  Control proactive suggestions\n"
             << "  /save [name]    Save current conversation\n"
             << "  /load <id>      Load a saved conversation\n"
             << "  /list           List saved conversations\n"
@@ -137,46 +138,33 @@ int RunChatCommand(int argc, char* argv[]) {
   }
 
   std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  const pu::config::ExpertEntry* current_entry = nullptr;
+  bool initial_found = false;
+
+  pu::expert::ExpertManager manager;
   for (const auto& entry : config.experts) {
     if (entry.name == current_name) {
-      current_entry = &entry;
-      break;
+      initial_found = true;
+    }
+    if (entry.type == pu::config::ExpertType::kChat) {
+      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
+    } else if (entry.type == pu::config::ExpertType::kBash) {
+      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
+      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
+      manager.RegisterExpert(
+          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
+                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
     }
   }
-  if (!current_entry) {
+
+  if (!initial_found) {
     std::cerr << "Error: expert '" << current_name << "' not found\n";
     return 1;
   }
 
-  auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> chat_backend;
-  try {
-    chat_backend = pu::config::CreateBackend(current_entry->backend, std::move(chat_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create backend: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::expert::ExpertManager manager;
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::ChatExpert>("chat", std::move(chat_backend), current_entry->name));
-
-  auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-  std::unique_ptr<pu::backend::Backend> bash_backend;
-  try {
-    bash_backend = pu::config::CreateBackend(current_entry->backend, std::move(bash_http));
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to create bash backend: " << e.what() << "\n";
-    return 1;
-  }
-  manager.RegisterExpert(
-      std::make_unique<pu::experts::BashExpert>("bash", std::move(bash_backend),
-                                                std::make_unique<pu::executor::CommandExecutor>(".")));
-
-  if (!initial_expert.empty()) {
-    manager.SetActiveExpert(initial_expert);
-  }
+  manager.SetActiveExpert(current_name);
   if (show_reasoning) {
     manager.SetShowReasoning(true);
   }
@@ -188,9 +176,15 @@ int RunChatCommand(int argc, char* argv[]) {
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
 
-  std::cout << "[INFO] Connected to expert: " << current_entry->name;
-  if (!current_entry->description.empty()) {
-    std::cout << " (" << current_entry->description << ")";
+  std::cout << "[INFO] Connected to expert: " << current_name;
+  const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
+    for (const auto& e : config.experts) {
+      if (e.name == current_name) return &e;
+    }
+    return nullptr;
+  }();
+  if (entry_ptr && !entry_ptr->description.empty()) {
+    std::cout << " (" << entry_ptr->description << ")";
   }
   std::cout << "\nType /help for available commands.\n\n";
 
@@ -248,11 +242,66 @@ int RunChatCommand(int argc, char* argv[]) {
         }
 
         manager.SetActiveExpert(new_entry->name);
+        current_name = new_name;
         std::cout << "[INFO] Switched to expert: " << new_entry->name;
         if (!new_entry->description.empty()) {
           std::cout << " (" << new_entry->description << ")";
         }
         std::cout << "\n";
+      } else if (input.rfind("/proactive ", 0) == 0) {
+        // /proactive <expert> on|off [threshold]
+        std::string args = input.substr(11); // after "/proactive "
+        std::istringstream iss(args);
+        std::string expert, state;
+        double threshold = 0.6;
+        iss >> expert >> state;
+        if (expert.empty() || state.empty()) {
+          std::cerr << "Usage: /proactive <expert> on|off [threshold]\n";
+          continue;
+        }
+        bool enable = false;
+        if (state == "on") {
+          enable = true;
+          // Optional threshold
+          if (!iss.eof()) {
+            std::string thresh_str;
+            iss >> thresh_str;
+            if (!thresh_str.empty()) {
+              threshold = std::stod(thresh_str);
+            }
+          }
+        } else if (state == "off") {
+          enable = false;
+        } else {
+          std::cerr << "State must be 'on' or 'off'.\n";
+          continue;
+        }
+
+        // Find the expert in config to verify existence
+        const pu::config::ExpertEntry* target = nullptr;
+        for (const auto& entry : config.experts) {
+          if (entry.name == expert) {
+            target = &entry;
+            break;
+          }
+        }
+        if (!target) {
+          std::cerr << "Error: expert '" << expert << "' not found.\n";
+          continue;
+        }
+
+        // Call manager methods
+        if (enable) {
+          manager.SetProactiveEnabled(true);
+          manager.SetProactiveThreshold(threshold);
+          // We need to target a specific expert; current manager applies globally.
+          // To be per-expert we'd need per-expert settings, but for now we use global state.
+          // We'll just inform that proactive is enabled for all experts.
+          std::cout << "[INFO] Proactive suggestions enabled (threshold " << threshold << ").\n";
+        } else {
+          manager.SetProactiveEnabled(false);
+          std::cout << "[INFO] Proactive suggestions disabled.\n";
+        }
       } else if (input.rfind("/save", 0) == 0) {
         std::string save_name;
         if (input.size() > 5) {
@@ -369,6 +418,7 @@ int RunChatCommand(int argc, char* argv[]) {
       user_content,
       ""
     });
+    manager.NotifyPanelMessage(panel_messages.back());
 
     std::string reply_role;
     if (!input.empty() && input[0] == '@') {
@@ -385,14 +435,6 @@ int RunChatCommand(int argc, char* argv[]) {
       }
     }
 
-    // Prepare recent panel messages for context (last 20)
-    std::vector<pu::ChatMessage> recent_msgs;
-    size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-    for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-      recent_msgs.push_back(panel_messages[i]);
-    }
-    manager.SetRecentMessages(recent_msgs);
-
     try {
       std::string response = manager.Dispatch(input);
       if (!response.empty()) {
@@ -403,6 +445,27 @@ int RunChatCommand(int argc, char* argv[]) {
           response,
           ""
         });
+        manager.NotifyPanelMessage(panel_messages.back());
+
+        // Check for proactive replies after the expert's response
+        std::vector<pu::ChatMessage> recent;
+        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+          recent.push_back(panel_messages[i]);
+        }
+        manager.SetRecentMessages(recent);
+        auto proactive_replies = manager.CollectProactiveReplies();
+        for (auto& [expert, text] : proactive_replies) {
+          panel_messages.push_back({
+            ++message_id,
+            CurrentTimestamp(),
+            expert,
+            text,
+            ""
+          });
+          std::cout << "\n[" << expert << "] " << text << std::endl;
+          manager.NotifyPanelMessage(panel_messages.back());
+        }
       }
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
