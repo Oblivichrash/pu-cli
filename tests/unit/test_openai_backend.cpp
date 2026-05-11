@@ -3,9 +3,11 @@
 #include "backends/openai/openai_backend.hpp"
 #include "backends/openai/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "pu/error_codes.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
 #include <nlohmann/json.hpp>
+#include <system_error>
 
 using namespace pu::backend;
 using namespace pu::backends::openai;
@@ -71,7 +73,9 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
     {pu::backend::Message::Role::kUser, "Hello"}
   };
 
-  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {});
+  std::error_code ec;
+  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {}, ec);
+  REQUIRE_FALSE(ec);
 
   auto body = nlohmann::json::parse(mock_ptr->last_body);
   REQUIRE(body["model"] == "gpt-4o-mini");
@@ -99,7 +103,9 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
   OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-  backend.Chat(history, [](auto&&...) {});
+  std::error_code ec;
+  backend.Chat(history, [](auto&&...) {}, ec);
+  REQUIRE_FALSE(ec);
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -127,7 +133,9 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
   mock_ptr->simulate_response = [&](const std::string&,
                                     const std::string&,
                                     const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb) {
+                                    pu::http::WriteCallback cb,
+                                    std::error_code& ec) {
+    ec.clear();
     for (const auto& chunk : chunks) {
       std::string data = chunk + "\n";
       cb(data.data(), data.size());
@@ -142,6 +150,7 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
 
   std::string accumulated;
   bool final_received = false;
+  std::error_code ec;
 
   backend.Chat(history, [&](pu::backend::TokenType type,
                             std::string_view token,
@@ -149,8 +158,9 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
     REQUIRE(type == pu::backend::TokenType::kContent);
     if (!token.empty()) accumulated += token;
     if (is_final) final_received = true;
-  });
+  }, ec);
 
+  REQUIRE_FALSE(ec);
   REQUIRE(accumulated == "Hello world");
   REQUIRE(final_received == true);
   REQUIRE(mock_ptr->last_url == "https://api.openai.com/v1/chat/completions");
@@ -167,19 +177,16 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
   mock_ptr->simulate_response = [&](const std::string&,
                                     const std::string&,
                                     const std::vector<std::string>&,
-                                    pu::http::WriteCallback) {
-    throw std::runtime_error("HTTP error: 401 Unauthorized");
+                                    pu::http::WriteCallback,
+                                    std::error_code& ec) {
+    ec = pu::HttpErrc::http_error;
   };
 
   OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-  
-  REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), std::runtime_error);
-
-  try {
-    backend.Chat(history, [](auto&&...) {});
-  } catch (const std::runtime_error& e) {
-    REQUIRE(std::string(e.what()).find("401 Unauthorized") != std::string::npos);
-  }
+  std::error_code ec;
+  backend.Chat(history, [](auto&&...) {}, ec);
+  REQUIRE(ec);
+  REQUIRE(ec == pu::HttpErrc::http_error);
 }

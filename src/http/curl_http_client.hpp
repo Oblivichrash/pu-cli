@@ -23,10 +23,18 @@ class CurlHttpClient : public HttpClient {
   void PostStream(const std::string& url,
                   const std::string& body,
                   const std::vector<std::string>& headers,
-                  WriteCallback write_cb) override;
+                  WriteCallback write_cb,
+                  std::error_code& ec) override;
+
+  void SetInterruptChecker(std::function<bool()> checker) override {
+    interrupt_checker_ = std::move(checker);
+  }
 
  private:
   CURL* handle_;
+  std::function<bool()> interrupt_checker_;
+  static int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
+                              curl_off_t ultotal, curl_off_t ulnow);
 };
 
 struct CurlSlist {

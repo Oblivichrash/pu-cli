@@ -5,7 +5,8 @@
 
 namespace pu::expert {
 
-ExpertManager::ExpertManager() {}
+ExpertManager::ExpertManager()
+    : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
 
 void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
   if (!expert) {
@@ -34,15 +35,15 @@ void ExpertManager::SetShowReasoning(bool enable) {
 }
 
 void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
-  recent_messages_ = messages;
+  proactive_engine_->SetRecentMessages(messages);
 }
 
 void ExpertManager::SetProactiveEnabled(bool enabled) {
-  proactive_enabled_ = enabled;
+  proactive_engine_->SetEnabled(enabled);
 }
 
 void ExpertManager::SetProactiveThreshold(double threshold) {
-  proactive_threshold_ = threshold;
+  proactive_engine_->SetThreshold(threshold);
   for (auto& [name, expert] : experts_) {
     expert->SetProactiveThreshold(threshold);
   }
@@ -56,7 +57,7 @@ void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
 
 std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactiveReplies() {
   std::vector<std::pair<std::string, std::string>> replies;
-  if (!proactive_enabled_) {
+  if (!proactive_engine_->IsEnabled()) {
     return replies;
   }
   for (auto& [name, expert] : experts_) {
@@ -66,6 +67,10 @@ std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactive
     }
   }
   return replies;
+}
+
+void ExpertManager::SetConfirmationCallback(ConfirmationCallback cb) {
+  confirmation_callback_ = std::move(cb);
 }
 
 std::string ExpertManager::Dispatch(const std::string& input) {
@@ -104,15 +109,23 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
   };
-  ctx.request_confirmation = [](const std::string& prompt) {
-    std::cout << "[CONFIRM] " << prompt << " [y/N] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    return (answer == "y" || answer == "Y");
-  };
+
+  // Use custom callback if set, otherwise default interactive prompt.
+  if (confirmation_callback_) {
+    ctx.request_confirmation = confirmation_callback_;
+  } else {
+    ctx.request_confirmation = [](const ConfirmationRequest& req) {
+      std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                              : ConfirmationChoice::kDeny;
+    };
+  }
+
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
-  ctx.recent_panel_messages = recent_messages_;
+  ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
 
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
@@ -128,6 +141,20 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
   };
+
+  // Use the same callback logic for sub-calls.
+  if (confirmation_callback_) {
+    ctx.request_confirmation = confirmation_callback_;
+  } else {
+    ctx.request_confirmation = [](const ConfirmationRequest& req) {
+      std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                              : ConfirmationChoice::kDeny;
+    };
+  }
+
   ctx.working_dir = ".";
   return it->second->Handle(input, ctx);
 }

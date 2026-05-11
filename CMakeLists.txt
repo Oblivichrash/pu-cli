@@ -43,6 +43,7 @@ add_library(pu_backend STATIC
     src/backends/openai/openai_backend.cpp
     src/expert_config.cpp
     src/conversation_store.cpp
+    src/error_codes.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -60,6 +61,8 @@ add_library(pu_expert STATIC
     src/experts/chat/chat_expert.cpp
     src/experts/bash/bash_expert.cpp
     src/executor/command_executor.cpp
+    src/expert_factory.cpp
+    src/proactive_engine.cpp
 )
 target_include_directories(pu_expert PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -76,6 +79,7 @@ add_executable(pu
     src/main.cpp
     src/cli_ask.cpp
     src/cli_chat.cpp
+    src/cli_app_setup.cpp
     src/renderer.cpp
 )
 target_include_directories(pu PRIVATE

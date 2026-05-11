@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/conversation_store.hpp"
+#include "pu/error_codes.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <stdexcept>
 
 namespace pu {
 
@@ -69,7 +69,8 @@ std::filesystem::path ConversationStore::PathFor(const std::string& id) const {
   return dir_ / (id + ".json");
 }
 
-void ConversationStore::Save(const Conversation& conv) {
+void ConversationStore::Save(const Conversation& conv, std::error_code& ec) {
+  ec.clear();
   json j;
   j["id"] = conv.id;
   j["created_at"] = conv.created_at;
@@ -84,22 +85,26 @@ void ConversationStore::Save(const Conversation& conv) {
 
   std::ofstream file(PathFor(conv.id));
   if (!file.is_open()) {
-    throw std::runtime_error("Failed to open conversation file for writing: " + conv.id);
+    ec = StoreErrc::write_failed;
+    return;
   }
   file << j.dump(2);
 }
 
-Conversation ConversationStore::Load(const std::string& id) const {
+Conversation ConversationStore::Load(const std::string& id, std::error_code& ec) const {
+  ec.clear();
   std::ifstream file(PathFor(id));
   if (!file.is_open()) {
-    throw std::runtime_error("Conversation not found: " + id);
+    ec = StoreErrc::not_found;
+    return {};
   }
 
   json j;
   try {
     file >> j;
-  } catch (const json::parse_error& e) {
-    throw std::runtime_error("Invalid conversation file: " + id);
+  } catch (const json::parse_error&) {
+    ec = StoreErrc::invalid_data;
+    return {};
   }
 
   Conversation conv;
@@ -110,22 +115,22 @@ Conversation ConversationStore::Load(const std::string& id) const {
   for (const auto& item : j["messages"]) {
     conv.messages.push_back(MessageFromJson(item));
   }
-
   if (j.contains("experts")) {
     conv.expert_histories = ExpertHistoriesFromJson(j["experts"]);
   }
-
   return conv;
 }
 
 std::vector<Conversation> ConversationStore::List() const {
   std::vector<Conversation> results;
+  std::error_code ignore;
   for (const auto& entry : std::filesystem::directory_iterator(dir_)) {
     if (entry.path().extension() == ".json") {
       auto id = entry.path().stem().string();
-      try {
-        results.push_back(Load(id));
-      } catch (...) {
+      auto conv = Load(id, ignore);
+      if (!ignore) {
+        results.push_back(std::move(conv));
+      } else {
         std::cerr << "Skipping invalid file: " << id << std::endl;
       }
     }
@@ -133,8 +138,11 @@ std::vector<Conversation> ConversationStore::List() const {
   return results;
 }
 
-std::string ConversationStore::ExportMarkdown(const std::string& id) const {
-  auto conv = Load(id);
+std::string ConversationStore::ExportMarkdown(const std::string& id, std::error_code& ec) const {
+  ec.clear();
+  auto conv = Load(id, ec);
+  if (ec) return {};
+
   std::ostringstream md;
   md << "# Conversation: " << conv.id << "\n\n";
   md << "Created: " << conv.created_at << "\n";

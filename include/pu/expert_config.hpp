@@ -8,14 +8,10 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <system_error>
 
-namespace pu::backend {
-class Backend;
-}  // namespace pu::backend
-
-namespace pu::http {
-class HttpClient;
-}  // namespace pu::http
+namespace pu::backend { class Backend; }
+namespace pu::http { class HttpClient; }
 
 namespace pu::config {
 
@@ -38,12 +34,19 @@ enum class ExpertType {
   kBash
 };
 
+enum class ConfirmationPolicy {
+  kAlwaysAsk,
+  kAutoSafe,
+  kNever
+};
+
 struct ExpertEntry {
   std::string name;
   ExpertType type = ExpertType::kChat;
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";
+  ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
 };
 
 struct ExpertsConfig {
@@ -52,10 +55,11 @@ struct ExpertsConfig {
 };
 
 std::string FindConfigPath();
-ExpertsConfig LoadExpertsConfig(const std::string& config_path);
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config);
+ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec);
+void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config, std::error_code& ec);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg,
-    std::unique_ptr<pu::http::HttpClient> http);
+    std::unique_ptr<pu::http::HttpClient> http,
+    std::error_code& ec);
 
 }  // namespace pu::config
