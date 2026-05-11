@@ -25,8 +25,15 @@ class CurlHttpClient : public HttpClient {
                   const std::vector<std::string>& headers,
                   WriteCallback write_cb) override;
 
+  void SetInterruptChecker(std::function<bool()> checker) override {
+    interrupt_checker_ = std::move(checker);
+  }
+
  private:
   CURL* handle_;
+  std::function<bool()> interrupt_checker_;
+  static int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
+                              curl_off_t ultotal, curl_off_t ulnow);
 };
 
 struct CurlSlist {

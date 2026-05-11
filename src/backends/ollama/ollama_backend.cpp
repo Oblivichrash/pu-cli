@@ -2,6 +2,8 @@
 
 #include "ollama_backend.hpp"
 #include "sse_parser.hpp"
+#include "pu/backend_helpers.hpp"
+#include "platform/platform.hpp"
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
@@ -17,7 +19,7 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = BuildMessagesWithSystemPrompt(history);
+  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -42,6 +44,8 @@ OllamaBackend::OllamaBackend(Config config,
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {
+  pu::platform::ClearInterruptFlag();
+
   std::string body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
 
@@ -111,12 +115,14 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
                          pu::backend::ToolCallback tool_cb) {
+  pu::platform::ClearInterruptFlag();
+
   json req;
   req["model"] = config_.model;
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = BuildMessagesWithSystemPrompt(history);
+  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;

@@ -19,18 +19,20 @@ void CurlSlist::append(const char* str) {
 CurlHttpClient::CurlHttpClient() {
   handle_ = curl_easy_init();
   if (!handle_) throw std::runtime_error("Failed to initialize libcurl");
+  interrupt_checker_ = [] { return pu::platform::IsInterrupted(); };
 }
 
 CurlHttpClient::~CurlHttpClient() {
   if (handle_) curl_easy_cleanup(handle_);
 }
 
-static int ProgressCallback(void* /*clientp*/,
-                            curl_off_t /*dltotal*/,
-                            curl_off_t /*dlnow*/,
-                            curl_off_t /*ultotal*/,
-                            curl_off_t /*ulnow*/) {
-  if (pu::platform::IsInterrupted()) {
+int CurlHttpClient::ProgressCallback(void* clientp,
+                                     curl_off_t /*dltotal*/,
+                                     curl_off_t /*dlnow*/,
+                                     curl_off_t /*ultotal*/,
+                                     curl_off_t /*ulnow*/) {
+  auto* self = static_cast<CurlHttpClient*>(clientp);
+  if (self->interrupt_checker_ && self->interrupt_checker_()) {
     return 1;
   }
   return 0;
@@ -59,10 +61,11 @@ void CurlHttpClient::PostStream(const std::string& url,
 
   curl_easy_setopt(handle_, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(handle_, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
+  curl_easy_setopt(handle_, CURLOPT_XFERINFODATA, this);
 
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
-    if (pu::platform::IsInterrupted()) {
+    if (interrupt_checker_ && interrupt_checker_()) {
       throw std::runtime_error("Request interrupted by user");
     }
     throw std::runtime_error(std::string("libcurl error: ") + curl_easy_strerror(res));

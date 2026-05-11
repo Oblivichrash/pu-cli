@@ -84,20 +84,6 @@ class Backend {
 
  protected:
   Config config_;
-
-  // Build a message list with the system prompt injected once, if configured and not already present.
-  std::vector<Message> BuildMessagesWithSystemPrompt(const std::vector<Message>& history) const {
-    std::vector<Message> messages;
-    if (config_.system_prompt &&
-        std::none_of(history.begin(), history.end(),
-                     [](const auto& m) { return m.role == Message::Role::kSystem; })) {
-      messages.push_back({Message::Role::kSystem, *config_.system_prompt});
-    }
-    for (const auto& msg : history) {
-      messages.push_back(msg);
-    }
-    return messages;
-  }
 };
 
 }  // namespace pu::backend

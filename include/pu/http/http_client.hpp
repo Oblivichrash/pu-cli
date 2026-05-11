@@ -20,6 +20,8 @@ class HttpClient {
                           const std::string& body,
                           const std::vector<std::string>& headers,
                           WriteCallback write_cb) = 0;
+
+  virtual void SetInterruptChecker([[maybe_unused]] std::function<bool()> checker) {}
 };
 
 }  // namespace pu::http

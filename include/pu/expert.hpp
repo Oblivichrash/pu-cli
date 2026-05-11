@@ -6,6 +6,7 @@
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
+#include "pu/proactive_engine.hpp"
 
 #include <functional>
 #include <memory>
@@ -65,9 +66,7 @@ class ExpertManager {
   std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;
-  std::vector<ChatMessage> recent_messages_;
-  bool proactive_enabled_ = false;
-  double proactive_threshold_ = 0.6;
+  std::unique_ptr<ProactiveEngine> proactive_engine_;
 };
 
 }  // namespace pu::expert

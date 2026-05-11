@@ -20,8 +20,6 @@ void ClearInterruptFlag() {
 }
 
 backend::ChatCallback StreamingRenderer::Create(bool show_reasoning) {
-  ClearInterruptFlag();
-
   bool first_reasoning = true;
 
   return [show_reasoning, first_reasoning](backend::TokenType type,

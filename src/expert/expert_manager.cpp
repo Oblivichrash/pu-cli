@@ -5,7 +5,8 @@
 
 namespace pu::expert {
 
-ExpertManager::ExpertManager() {}
+ExpertManager::ExpertManager()
+    : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
 
 void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
   if (!expert) {
@@ -34,15 +35,15 @@ void ExpertManager::SetShowReasoning(bool enable) {
 }
 
 void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
-  recent_messages_ = messages;
+  proactive_engine_->SetRecentMessages(messages);
 }
 
 void ExpertManager::SetProactiveEnabled(bool enabled) {
-  proactive_enabled_ = enabled;
+  proactive_engine_->SetEnabled(enabled);
 }
 
 void ExpertManager::SetProactiveThreshold(double threshold) {
-  proactive_threshold_ = threshold;
+  proactive_engine_->SetThreshold(threshold);
   for (auto& [name, expert] : experts_) {
     expert->SetProactiveThreshold(threshold);
   }
@@ -56,7 +57,7 @@ void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
 
 std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactiveReplies() {
   std::vector<std::pair<std::string, std::string>> replies;
-  if (!proactive_enabled_) {
+  if (!proactive_engine_->IsEnabled()) {
     return replies;
   }
   for (auto& [name, expert] : experts_) {
@@ -112,7 +113,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   };
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
-  ctx.recent_panel_messages = recent_messages_;
+  ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
 
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
