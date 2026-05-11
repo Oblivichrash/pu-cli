@@ -2,6 +2,7 @@
 
 #include "curl_http_client.hpp"
 #include "platform/platform.hpp"
+#include "pu/error_codes.hpp"
 
 #include <curl/curl.h>
 #include <stdexcept>
@@ -46,7 +47,9 @@ static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void
 void CurlHttpClient::PostStream(const std::string& url,
                                 const std::string& body,
                                 const std::vector<std::string>& headers,
-                                WriteCallback write_cb) {
+                                WriteCallback write_cb,
+                                std::error_code& ec) {
+  ec.clear();
   curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, body.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDSIZE_LARGE,
@@ -66,15 +69,18 @@ void CurlHttpClient::PostStream(const std::string& url,
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
     if (interrupt_checker_ && interrupt_checker_()) {
-      throw std::runtime_error("Request interrupted by user");
+      ec = HttpErrc::interrupted;
+    } else {
+      ec = HttpErrc::connection_failed;
     }
-    throw std::runtime_error(std::string("libcurl error: ") + curl_easy_strerror(res));
+    curl_easy_reset(handle_);
+    return;
   }
 
   long http_code = 0;
   curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
   if (http_code >= 400) {
-    throw std::runtime_error("HTTP error: " + std::to_string(http_code));
+    ec = HttpErrc::http_error;
   }
 
   curl_easy_reset(handle_);

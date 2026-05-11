@@ -43,6 +43,7 @@ add_library(pu_backend STATIC
     src/backends/openai/openai_backend.cpp
     src/expert_config.cpp
     src/conversation_store.cpp
+    src/error_codes.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

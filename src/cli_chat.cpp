@@ -284,11 +284,12 @@ int RunChatCommand(int argc, char* argv[]) {
         conv.messages = panel_messages;
         conv.expert_histories = manager.SnapshotExperts();
 
-        try {
-          store.Save(conv);
+        std::error_code ec;
+        store.Save(conv, ec);
+        if (ec) {
+          std::cerr << "Error: failed to save conversation: " << ec.message() << "\n";
+        } else {
           std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
         }
       } else if (input.rfind("/load ", 0) == 0) {
         std::string load_id = input.substr(6);
@@ -310,15 +311,16 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          auto conv = store.Load(load_id);
+        std::error_code ec;
+        auto conv = store.Load(load_id, ec);
+        if (ec) {
+          std::cerr << "Error: failed to load conversation: " << ec.message() << "\n";
+        } else {
           panel_messages = conv.messages;
           message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
           manager.RestoreExperts(conv.expert_histories);
           manager.SetActiveExpert("");
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
         }
       } else if (input == "/list") {
         auto convs = store.List();
@@ -343,18 +345,19 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          std::string markdown = store.ExportMarkdown(export_id);
-          std::string filename = "conversation_" + export_id + ".md";
-          std::ofstream out(filename);
-          if (!out) {
-            std::cerr << "Error: cannot write to " << filename << "\n";
-          } else {
-            out << markdown;
-            std::cout << "[INFO] Exported to " << filename << "\n";
-          }
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
+        std::error_code ec;
+        std::string markdown = store.ExportMarkdown(export_id, ec);
+        if (ec) {
+          std::cerr << "Error: failed to export conversation: " << ec.message() << "\n";
+          continue;
+        }
+        std::string filename = "conversation_" + export_id + ".md";
+        std::ofstream out(filename);
+        if (!out) {
+          std::cerr << "Error: cannot write to " << filename << "\n";
+        } else {
+          out << markdown;
+          std::cout << "[INFO] Exported to " << filename << "\n";
         }
       } else {
         std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";

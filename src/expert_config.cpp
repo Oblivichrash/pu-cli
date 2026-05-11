@@ -6,6 +6,7 @@
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/error_codes.hpp"
 
 #include <nlohmann/json.hpp>
 #include <cstdlib>
@@ -47,9 +48,14 @@ ExpertType ParseExpertType(const std::string& str) {
   throw std::runtime_error("Unknown expert type: '" + str + "'");
 }
 
-BackendConfig ParseBackendConfig(const json& j) {
+BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   BackendConfig cfg;
-  cfg.type = ParseBackendType(j.value("type", "ollama"));
+  try {
+    cfg.type = ParseBackendType(j.value("type", "ollama"));
+  } catch (const std::exception&) {
+    ec = ConfigErrc::backend_unknown;
+    return cfg;
+  }
   cfg.host = ExpandEnvVars(j.value("host", ""));
   cfg.model = ExpandEnvVars(j.value("model", ""));
   if (j.contains("api_key")) {
@@ -62,23 +68,33 @@ BackendConfig ParseBackendConfig(const json& j) {
   return cfg;
 }
 
-ExpertEntry ParseExpertEntry(const json& j) {
+ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
   ExpertEntry entry;
   entry.name = j.value("name", "");
   if (entry.name.empty()) {
-    throw std::runtime_error("Expert entry missing 'name'");
+    ec = ConfigErrc::missing_field;
+    return entry;
   }
   entry.description = j.value("description", "");
-  entry.type = ParseExpertType(j.value("type", "chat"));
-  if (!j.contains("backend") || !j["backend"].is_object()) {
-    throw std::runtime_error("Expert '" + entry.name + "' missing 'backend' block");
+  try {
+    entry.type = ParseExpertType(j.value("type", "chat"));
+  } catch (const std::exception&) {
+    ec = ConfigErrc::missing_field;
+    return entry;
   }
-  entry.backend = ParseBackendConfig(j["backend"]);
+  if (!j.contains("backend") || !j["backend"].is_object()) {
+    ec = ConfigErrc::missing_field;
+    return entry;
+  }
+  entry.backend = ParseBackendConfig(j["backend"], ec);
+  if (ec) return entry;
   if (entry.backend.host.empty()) {
-    throw std::runtime_error("Expert '" + entry.name + "': 'host' is required");
+    ec = ConfigErrc::missing_field;
+    return entry;
   }
   if (entry.backend.model.empty()) {
-    throw std::runtime_error("Expert '" + entry.name + "': 'model' is required");
+    ec = ConfigErrc::missing_field;
+    return entry;
   }
   if (entry.type == ExpertType::kBash && j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
@@ -100,32 +116,50 @@ std::string FindConfigPath() {
                            "Set PU_EXPERTS_CONFIG or place experts.json in current directory.");
 }
 
-ExpertsConfig LoadExpertsConfig(const std::string& config_path) {
+ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec) {
+  ec.clear();
+  ExpertsConfig result;
+
   std::ifstream file(config_path);
   if (!file.is_open()) {
-    throw std::runtime_error("Failed to open config file: " + config_path);
+    ec = ConfigErrc::file_not_found;
+    return result;
   }
+
   json j;
   try {
     file >> j;
   } catch (const json::parse_error& e) {
-    throw std::runtime_error("JSON parse error in " + config_path + ": " + e.what());
+    ec = ConfigErrc::parse_error;
+    return result;
   }
-  ExpertsConfig result;
+
   result.default_expert = j.value("default_expert", "");
   if (!j.contains("experts") || !j["experts"].is_array()) {
-    throw std::runtime_error("Config file missing 'experts' array");
+    ec = ConfigErrc::missing_field;
+    return result;
   }
+
   for (const auto& item : j["experts"]) {
-    result.experts.push_back(ParseExpertEntry(item));
+    std::error_code entry_ec;
+    auto entry = ParseExpertEntry(item, entry_ec);
+    if (entry_ec) {
+      ec = entry_ec;
+      return result;
+    }
+    result.experts.push_back(std::move(entry));
   }
+
   if (result.default_expert.empty() && !result.experts.empty()) {
     result.default_expert = result.experts[0].name;
   }
   return result;
 }
 
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config) {
+void SaveExpertsConfig(const std::string& config_path,
+                       const ExpertsConfig& config,
+                       std::error_code& ec) {
+  ec.clear();
   json j;
   j["default_expert"] = config.default_expert;
   json experts_array = json::array();
@@ -152,16 +186,20 @@ void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& conf
     experts_array.push_back(item);
   }
   j["experts"] = experts_array;
+
   std::ofstream file(config_path);
   if (!file.is_open()) {
-    throw std::runtime_error("Failed to open config file for writing: " + config_path);
+    ec = ConfigErrc::file_not_found;
+    return;
   }
   file << j.dump(2);
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg,
-    std::unique_ptr<pu::http::HttpClient> http) {
+    std::unique_ptr<pu::http::HttpClient> http,
+    std::error_code& ec) {
+  ec.clear();
   switch (cfg.type) {
     case BackendType::kOllama: {
       pu::backends::ollama::OllamaBackend::Config ollama_cfg;
@@ -184,7 +222,8 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
           std::move(openai_cfg), std::move(http));
     }
     default:
-      throw std::runtime_error("Unsupported backend type");
+      ec = ConfigErrc::backend_unknown;
+      return nullptr;
   }
 }
 

@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <system_error>
 
 namespace pu::backend {
 
@@ -73,12 +74,14 @@ class Backend {
   Backend& operator=(Backend&&) noexcept = default;
 
   virtual void Chat(const std::vector<Message>& history,
-                    ChatCallback cb) = 0;
+                    ChatCallback cb,
+                    std::error_code& ec) = 0;
 
   virtual void Chat(const std::vector<Message>& history,
                     const std::vector<ToolDefinition>& tools,
                     ChatCallback content_cb,
-                    ToolCallback tool_cb) = 0;
+                    ToolCallback tool_cb,
+                    std::error_code& ec) = 0;
 
   virtual bool SupportsTools() const { return false; }
 

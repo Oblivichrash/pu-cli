@@ -108,6 +108,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     std::vector<pu::backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
     auto renderer_cb = pu::StreamingRenderer::Create(show_reasoning);
+    std::error_code ec;
 
     backend_->Chat(history, tools,
       [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
@@ -123,8 +124,17 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       [&](const pu::backend::ToolCall& call) {
         tool_was_called = true;
         collected_calls.push_back(call);
-      }
+      },
+      ec
     );
+
+    if (ec) {
+      std::string error_msg = "Request failed: " + ec.message();
+      std::cerr << "\nError: " << error_msg << "\n";
+      final_response = error_msg;
+      turn_history.push_back({0, "", "bash", final_response, ""});
+      break;
+    }
 
     if (!tool_was_called) {
       final_response = content_stream.str();

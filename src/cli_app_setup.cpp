@@ -13,6 +13,7 @@ AppContext SetupAppContext(const std::string& requested_expert,
                           bool show_reasoning) {
   AppContext ctx;
 
+  // config path is still found with exception (fatal if not found)
   try {
     ctx.config_path = config::FindConfigPath();
   } catch (const std::exception& e) {
@@ -20,10 +21,10 @@ AppContext SetupAppContext(const std::string& requested_expert,
     std::exit(1);
   }
 
-  try {
-    ctx.config = config::LoadExpertsConfig(ctx.config_path);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load config: " << e.what() << "\n";
+  std::error_code ec;
+  ctx.config = config::LoadExpertsConfig(ctx.config_path, ec);
+  if (ec) {
+    std::cerr << "Error: failed to load config: " << ec.message() << "\n";
     std::exit(1);
   }
 
@@ -43,6 +44,8 @@ AppContext SetupAppContext(const std::string& requested_expert,
     }
 
     try {
+      // CreateExpert still uses the factory internally; it may throw
+      // if factory not found – keep that for now.
       auto expert = expert::ExpertRegistry::Instance().CreateExpert(entry);
       ctx.manager.RegisterExpert(std::move(expert));
     } catch (const std::exception& e) {

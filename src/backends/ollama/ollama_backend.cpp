@@ -43,8 +43,10 @@ OllamaBackend::OllamaBackend(Config config,
       api_key_(std::move(config.api_key)), http_(std::move(http)) {}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb) {
+                         pu::backend::ChatCallback cb,
+                         std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
+  ec.clear();
 
   std::string body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
@@ -108,14 +110,16 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, headers, write_cb);
+  http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb) {
+                         pu::backend::ToolCallback tool_cb,
+                         std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
+  ec.clear();
 
   json req;
   req["model"] = config_.model;
@@ -207,7 +211,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, headers, write_cb);
+  http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 }  // namespace pu::backends::ollama

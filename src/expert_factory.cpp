@@ -9,7 +9,7 @@
 #include "pu/expert_config.hpp"
 
 #include <memory>
-#include <stdexcept>
+#include <system_error>
 
 namespace pu::expert {
 
@@ -44,7 +44,12 @@ void ExpertRegistry::RegisterFactory(config::ExpertType type,
 
 std::unique_ptr<BaseExpert> ExpertRegistry::CreateExpert(const config::ExpertEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
-  auto backend = config::CreateBackend(entry.backend, std::move(http));
+
+  std::error_code ec;
+  auto backend = config::CreateBackend(entry.backend, std::move(http), ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create backend for expert '" + entry.name + "': " + ec.message());
+  }
 
   auto it = factories_.find(entry.type);
   if (it == factories_.end()) {
