@@ -76,6 +76,7 @@ add_executable(pu
     src/main.cpp
     src/cli_ask.cpp
     src/cli_chat.cpp
+    src/cli_app_setup.cpp
     src/renderer.cpp
 )
 target_include_directories(pu PRIVATE

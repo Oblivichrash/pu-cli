@@ -8,9 +8,8 @@
 #include "pu/http/http_client.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
+#include "pu/cli_app_setup.hpp"
 
-#include "experts/chat/chat_expert.hpp"
-#include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
 
 #include <chrono>
@@ -116,58 +115,11 @@ int RunChatCommand(int argc, char* argv[]) {
     }
   }
 
-  std::string config_path;
-  try {
-    config_path = pu::config::FindConfigPath();
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::config::ExpertsConfig config;
-  try {
-    config = pu::config::LoadExpertsConfig(config_path);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load config: " << e.what() << "\n";
-    return 1;
-  }
-
-  if (config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
-    return 1;
-  }
-
-  std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  bool initial_found = false;
-
-  pu::expert::ExpertManager manager;
-  for (const auto& entry : config.experts) {
-    if (entry.name == current_name) {
-      initial_found = true;
-    }
-    if (entry.type == pu::config::ExpertType::kChat) {
-      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
-    } else if (entry.type == pu::config::ExpertType::kBash) {
-      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
-                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
-    }
-  }
-
-  if (!initial_found) {
-    std::cerr << "Error: expert '" << current_name << "' not found\n";
-    return 1;
-  }
-
-  manager.SetActiveExpert(current_name);
-  if (show_reasoning) {
-    manager.SetShowReasoning(true);
-  }
+  // Initialize application context (loads config, experts, etc.)
+  auto ctx = SetupAppContext(initial_expert, show_reasoning);
+  const auto& config = ctx.config;
+  auto& manager = ctx.manager;
+  std::string current_name = manager.GetActiveExpert();
 
   auto store_dir = std::filesystem::path(
       std::getenv("HOME") ? std::getenv("HOME") : ".") / ".pu" / "conversations";
