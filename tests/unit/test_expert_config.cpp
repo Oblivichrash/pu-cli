@@ -3,11 +3,13 @@
 #include "pu/expert_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/backend.hpp"
+#include "pu/error_codes.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
 
 #ifdef _WIN32
 #include <cstring>
@@ -15,6 +17,7 @@
 
 using namespace pu::config;
 using namespace pu::tests;
+using namespace pu;
 
 namespace fs = std::filesystem;
 
@@ -87,7 +90,9 @@ TEST_CASE("LoadExpertsConfig parses valid JSON", "[expert_config]") {
 
   set_env("OPENAI_KEY", "test-key-123");
 
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string());
+  std::error_code ec;
+  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  REQUIRE_FALSE(ec);
 
   REQUIRE(config.default_expert == "chat");
   REQUIRE(config.experts.size() == 2);
@@ -103,14 +108,20 @@ TEST_CASE("LoadExpertsConfig parses valid JSON", "[expert_config]") {
   unset_env("OPENAI_KEY");
 }
 
-TEST_CASE("LoadExpertsConfig throws on missing file", "[expert_config]") {
-  REQUIRE_THROWS_AS(LoadExpertsConfig("/nonexistent/path/experts.json"), std::runtime_error);
+TEST_CASE("LoadExpertsConfig reports error on missing file", "[expert_config]") {
+  std::error_code ec;
+  LoadExpertsConfig("/nonexistent/path/experts.json", ec);
+  REQUIRE(ec);
+  REQUIRE(ec == ConfigErrc::file_not_found);
 }
 
-TEST_CASE("LoadExpertsConfig throws on invalid JSON", "[expert_config]") {
+TEST_CASE("LoadExpertsConfig reports error on invalid JSON", "[expert_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
-  REQUIRE_THROWS_AS(LoadExpertsConfig(tmp.path.string()), std::runtime_error);
+  std::error_code ec;
+  auto config = LoadExpertsConfig(tmp.path.string(), ec);
+  REQUIRE(ec);
+  REQUIRE(ec == ConfigErrc::parse_error);
 }
 
 TEST_CASE("LoadExpertsConfig defaults expert if empty", "[expert_config]") {
@@ -125,7 +136,9 @@ TEST_CASE("LoadExpertsConfig defaults expert if empty", "[expert_config]") {
     ]
   })";
   tmp.write(json);
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string());
+  std::error_code ec;
+  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(config.default_expert == "only");
 }
 
@@ -143,9 +156,12 @@ TEST_CASE("SaveExpertsConfig writes valid JSON", "[expert_config]") {
   entry.backend.api_key = "secret";
   original.experts.push_back(entry);
 
-  SaveExpertsConfig(tmp.path.string(), original);
+  std::error_code ec;
+  SaveExpertsConfig(tmp.path.string(), original, ec);
+  REQUIRE_FALSE(ec);
 
-  ExpertsConfig loaded = LoadExpertsConfig(tmp.path.string());
+  ExpertsConfig loaded = LoadExpertsConfig(tmp.path.string(), ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(loaded.default_expert == "test");
   REQUIRE(loaded.experts.size() == 1);
   REQUIRE(loaded.experts[0].name == "test");
@@ -164,7 +180,9 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[expert_config]") {
   cfg.system_prompt = "Be helpful.";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto backend = CreateBackend(cfg, std::move(mock_http));
+  std::error_code ec;
+  auto backend = CreateBackend(cfg, std::move(mock_http), ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }
 
@@ -176,7 +194,9 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[expert_config]") {
   cfg.api_key = "key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto backend = CreateBackend(cfg, std::move(mock_http));
+  std::error_code ec;
+  auto backend = CreateBackend(cfg, std::move(mock_http), ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }
 
@@ -197,7 +217,9 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[expert_config]") {
     ]
   })";
   tmp.write(json);
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string());
+  std::error_code ec;
+  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(config.experts[0].backend.system_prompt.has_value());
   REQUIRE(config.experts[0].backend.system_prompt->empty());
 }

@@ -8,9 +8,8 @@
 #include "pu/http/http_client.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
+#include "pu/cli_app_setup.hpp"
 
-#include "experts/chat/chat_expert.hpp"
-#include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
 
 #include <chrono>
@@ -25,6 +24,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <system_error>
 
 namespace pu::cli {
 
@@ -116,58 +116,11 @@ int RunChatCommand(int argc, char* argv[]) {
     }
   }
 
-  std::string config_path;
-  try {
-    config_path = pu::config::FindConfigPath();
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return 1;
-  }
-
-  pu::config::ExpertsConfig config;
-  try {
-    config = pu::config::LoadExpertsConfig(config_path);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load config: " << e.what() << "\n";
-    return 1;
-  }
-
-  if (config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
-    return 1;
-  }
-
-  std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  bool initial_found = false;
-
-  pu::expert::ExpertManager manager;
-  for (const auto& entry : config.experts) {
-    if (entry.name == current_name) {
-      initial_found = true;
-    }
-    if (entry.type == pu::config::ExpertType::kChat) {
-      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
-    } else if (entry.type == pu::config::ExpertType::kBash) {
-      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
-                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
-    }
-  }
-
-  if (!initial_found) {
-    std::cerr << "Error: expert '" << current_name << "' not found\n";
-    return 1;
-  }
-
-  manager.SetActiveExpert(current_name);
-  if (show_reasoning) {
-    manager.SetShowReasoning(true);
-  }
+  // Initialize application context (loads config, experts, etc.)
+  auto ctx = SetupAppContext(initial_expert, show_reasoning);
+  const auto& config = ctx.config;
+  auto& manager = ctx.manager;
+  std::string current_name = manager.GetActiveExpert();
 
   auto store_dir = std::filesystem::path(
       std::getenv("HOME") ? std::getenv("HOME") : ".") / ".pu" / "conversations";
@@ -175,6 +128,37 @@ int RunChatCommand(int argc, char* argv[]) {
 
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
+
+  // Confirmation state for bash command execution
+  struct ConfirmationState {
+    bool auto_approve_safe = false;
+    bool deny_all = false;
+  };
+  auto confirm_state = std::make_shared<ConfirmationState>();
+
+  manager.SetConfirmationCallback([confirm_state](const pu::expert::ConfirmationRequest& req) {
+    if (confirm_state->deny_all) return pu::expert::ConfirmationChoice::kDenyAll;
+    if (confirm_state->auto_approve_safe &&
+        req.highest_risk == pu::executor::RiskLevel::kSafe) {
+      return pu::expert::ConfirmationChoice::kApproveOnce;
+    }
+
+    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer == "a") {
+      confirm_state->auto_approve_safe = true;
+      return (req.highest_risk == pu::executor::RiskLevel::kSafe)
+                 ? pu::expert::ConfirmationChoice::kApproveOnce
+                 : pu::expert::ConfirmationChoice::kDeny;
+    }
+    if (answer == "s") {
+      confirm_state->deny_all = true;
+      return pu::expert::ConfirmationChoice::kDenyAll;
+    }
+    return (answer == "y" || answer == "Y") ? pu::expert::ConfirmationChoice::kApproveOnce
+                                            : pu::expert::ConfirmationChoice::kDeny;
+  });
 
   std::cout << "[INFO] Connected to expert: " << current_name;
   const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
@@ -207,6 +191,8 @@ int RunChatCommand(int argc, char* argv[]) {
         manager.ClearSessions();
         panel_messages.clear();
         message_id = 0;
+        confirm_state->auto_approve_safe = false;
+        confirm_state->deny_all = false;
         std::cout << "[INFO] Conversation history and expert lock cleared.\n";
       } else if (input == "/experts") {
         PrintExperts(config, manager.GetActiveExpert());
@@ -249,8 +235,7 @@ int RunChatCommand(int argc, char* argv[]) {
         }
         std::cout << "\n";
       } else if (input.rfind("/proactive ", 0) == 0) {
-        // /proactive <expert> on|off [threshold]
-        std::string args = input.substr(11); // after "/proactive "
+        std::string args = input.substr(11);
         std::istringstream iss(args);
         std::string expert, state;
         double threshold = 0.6;
@@ -262,7 +247,6 @@ int RunChatCommand(int argc, char* argv[]) {
         bool enable = false;
         if (state == "on") {
           enable = true;
-          // Optional threshold
           if (!iss.eof()) {
             std::string thresh_str;
             iss >> thresh_str;
@@ -277,7 +261,6 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Find the expert in config to verify existence
         const pu::config::ExpertEntry* target = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == expert) {
@@ -290,13 +273,9 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        // Call manager methods
         if (enable) {
           manager.SetProactiveEnabled(true);
           manager.SetProactiveThreshold(threshold);
-          // We need to target a specific expert; current manager applies globally.
-          // To be per-expert we'd need per-expert settings, but for now we use global state.
-          // We'll just inform that proactive is enabled for all experts.
           std::cout << "[INFO] Proactive suggestions enabled (threshold " << threshold << ").\n";
         } else {
           manager.SetProactiveEnabled(false);
@@ -332,11 +311,12 @@ int RunChatCommand(int argc, char* argv[]) {
         conv.messages = panel_messages;
         conv.expert_histories = manager.SnapshotExperts();
 
-        try {
-          store.Save(conv);
+        std::error_code ec;
+        store.Save(conv, ec);
+        if (ec) {
+          std::cerr << "Error: failed to save conversation: " << ec.message() << "\n";
+        } else {
           std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
         }
       } else if (input.rfind("/load ", 0) == 0) {
         std::string load_id = input.substr(6);
@@ -358,15 +338,18 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          auto conv = store.Load(load_id);
+        std::error_code ec;
+        auto conv = store.Load(load_id, ec);
+        if (ec) {
+          std::cerr << "Error: failed to load conversation: " << ec.message() << "\n";
+        } else {
           panel_messages = conv.messages;
           message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
           manager.RestoreExperts(conv.expert_histories);
           manager.SetActiveExpert("");
+          confirm_state->auto_approve_safe = false;
+          confirm_state->deny_all = false;
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
         }
       } else if (input == "/list") {
         auto convs = store.List();
@@ -391,18 +374,19 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          std::string markdown = store.ExportMarkdown(export_id);
-          std::string filename = "conversation_" + export_id + ".md";
-          std::ofstream out(filename);
-          if (!out) {
-            std::cerr << "Error: cannot write to " << filename << "\n";
-          } else {
-            out << markdown;
-            std::cout << "[INFO] Exported to " << filename << "\n";
-          }
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
+        std::error_code ec;
+        std::string markdown = store.ExportMarkdown(export_id, ec);
+        if (ec) {
+          std::cerr << "Error: failed to export conversation: " << ec.message() << "\n";
+          continue;
+        }
+        std::string filename = "conversation_" + export_id + ".md";
+        std::ofstream out(filename);
+        if (!out) {
+          std::cerr << "Error: cannot write to " << filename << "\n";
+        } else {
+          out << markdown;
+          std::cout << "[INFO] Exported to " << filename << "\n";
         }
       } else {
         std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
@@ -447,7 +431,6 @@ int RunChatCommand(int argc, char* argv[]) {
         });
         manager.NotifyPanelMessage(panel_messages.back());
 
-        // Check for proactive replies after the expert's response
         std::vector<pu::ChatMessage> recent;
         size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
         for (size_t i = start_idx; i < panel_messages.size(); ++i) {

@@ -3,6 +3,7 @@
 #include "pu/cli_ask.hpp"
 #include "pu/cli_chat.hpp"
 #include "pu/renderer.hpp"
+#include "pu/expert_factory.hpp"
 
 #include <curl/curl.h>
 #include <cstdlib>
@@ -15,6 +16,7 @@ int main(int argc, char* argv[]) {
   std::atexit(curl_global_cleanup);
 
   pu::SetupSignalHandler();
+  pu::expert::RegisterBuiltinFactories();
 
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"

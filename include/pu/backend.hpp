@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <system_error>
 
 namespace pu::backend {
 
@@ -73,31 +74,19 @@ class Backend {
   Backend& operator=(Backend&&) noexcept = default;
 
   virtual void Chat(const std::vector<Message>& history,
-                    ChatCallback cb) = 0;
+                    ChatCallback cb,
+                    std::error_code& ec) = 0;
 
   virtual void Chat(const std::vector<Message>& history,
                     const std::vector<ToolDefinition>& tools,
                     ChatCallback content_cb,
-                    ToolCallback tool_cb) = 0;
+                    ToolCallback tool_cb,
+                    std::error_code& ec) = 0;
 
   virtual bool SupportsTools() const { return false; }
 
  protected:
   Config config_;
-
-  // Build a message list with the system prompt injected once, if configured and not already present.
-  std::vector<Message> BuildMessagesWithSystemPrompt(const std::vector<Message>& history) const {
-    std::vector<Message> messages;
-    if (config_.system_prompt &&
-        std::none_of(history.begin(), history.end(),
-                     [](const auto& m) { return m.role == Message::Role::kSystem; })) {
-      messages.push_back({Message::Role::kSystem, *config_.system_prompt});
-    }
-    for (const auto& msg : history) {
-      messages.push_back(msg);
-    }
-    return messages;
-  }
 };
 
 }  // namespace pu::backend

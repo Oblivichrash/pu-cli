@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/conversation_store.hpp"
+#include "pu/error_codes.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
-#include <stdexcept>
+#include <system_error>
 
 using namespace pu;
 
@@ -49,9 +50,12 @@ TEST_CASE("ConversationStore save and load roundtrip", "[store]") {
   ConversationStore store(dir);
   auto original = MakeSampleConv();
 
-  REQUIRE_NOTHROW(store.Save(original));
+  std::error_code ec;
+  store.Save(original, ec);
+  REQUIRE_FALSE(ec);
 
-  auto loaded = store.Load(original.id);
+  auto loaded = store.Load(original.id, ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(loaded.id == original.id);
   REQUIRE(loaded.created_at == original.created_at);
   REQUIRE(loaded.updated_at == original.updated_at);
@@ -70,21 +74,30 @@ TEST_CASE("ConversationStore save and load roundtrip", "[store]") {
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("ConversationStore throws on non-existent id", "[store]") {
+TEST_CASE("ConversationStore reports error on non-existent id", "[store]") {
   auto dir = MakeTempDir();
   ConversationStore store(dir);
-  REQUIRE_THROWS_AS(store.Load("nonexistent"), std::runtime_error);
+
+  std::error_code ec;
+  auto conv = store.Load("nonexistent", ec);
+  REQUIRE(ec);
+  REQUIRE(ec == StoreErrc::not_found);
+
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("ConversationStore throws on invalid JSON", "[store]") {
+TEST_CASE("ConversationStore reports error on invalid JSON", "[store]") {
   auto dir = MakeTempDir();
   std::ofstream file(dir / "bad.json");
   file << "this is not json";
   file.close();
 
   ConversationStore store(dir);
-  REQUIRE_THROWS_AS(store.Load("bad"), std::runtime_error);
+  std::error_code ec;
+  auto conv = store.Load("bad", ec);
+  REQUIRE(ec);
+  REQUIRE(ec == StoreErrc::invalid_data);
+
   std::filesystem::remove_all(dir);
 }
 
@@ -96,8 +109,12 @@ TEST_CASE("ConversationStore list conversations", "[store]") {
   conv1.id = "conv1";
   auto conv2 = MakeSampleConv();
   conv2.id = "conv2";
-  store.Save(conv1);
-  store.Save(conv2);
+
+  std::error_code ec;
+  store.Save(conv1, ec);
+  REQUIRE_FALSE(ec);
+  store.Save(conv2, ec);
+  REQUIRE_FALSE(ec);
 
   auto list = store.List();
   REQUIRE(list.size() == 2);
@@ -119,9 +136,13 @@ TEST_CASE("ConversationStore ExportMarkdown contains messages", "[store]") {
 
   auto conv = MakeSampleConv();
   conv.id = "export-test";
-  store.Save(conv);
 
-  std::string md = store.ExportMarkdown("export-test");
+  std::error_code ec;
+  store.Save(conv, ec);
+  REQUIRE_FALSE(ec);
+
+  std::string md = store.ExportMarkdown("export-test", ec);
+  REQUIRE_FALSE(ec);
   REQUIRE(md.find("# Conversation: export-test") != std::string::npos);
   REQUIRE(md.find("user") != std::string::npos);
   REQUIRE(md.find("chat") != std::string::npos);

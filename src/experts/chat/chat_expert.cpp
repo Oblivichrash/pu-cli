@@ -34,26 +34,31 @@ std::string ChatExpert::Handle(const std::string& input,
   }
 
   std::ostringstream full_response;
-  try {
-    auto renderer_cb = pu::StreamingRenderer::Create(ctx.show_reasoning);
-    backend_->Chat(backend_history, [&](pu::backend::TokenType type,
-                                       std::string_view token,
-                                       bool is_final) {
-      if (type == pu::backend::TokenType::kContent) {
-        renderer_cb(type, token, is_final);
-        if (!is_final) {
-          full_response << token;
-        }
-      } else if (type == pu::backend::TokenType::kReasoning && ctx.show_reasoning) {
-        renderer_cb(type, token, is_final);
-      }
-    });
-  } catch (const std::exception& e) {
-    std::cerr << "\nError: " << e.what() << "\n";
+  std::error_code ec;
+  auto renderer_cb = pu::StreamingRenderer::Create(ctx.show_reasoning);
+  backend_->Chat(backend_history,
+                 [&](pu::backend::TokenType type,
+                     std::string_view token,
+                     bool is_final) {
+                   if (type == pu::backend::TokenType::kContent) {
+                     renderer_cb(type, token, is_final);
+                     if (!is_final) {
+                       full_response << token;
+                     }
+                   } else if (type == pu::backend::TokenType::kReasoning &&
+                              ctx.show_reasoning) {
+                     renderer_cb(type, token, is_final);
+                   }
+                 },
+                 ec);
+
+  if (ec) {
+    std::string error_msg = ec.message();
+    std::cerr << "\nError: " << error_msg << "\n";
     if (!history_.empty() && history_.back().role == "user") {
       history_.pop_back();
     }
-    return "Error: " + std::string(e.what());
+    return "Error: " + error_msg;
   }
 
   std::string response = full_response.str();

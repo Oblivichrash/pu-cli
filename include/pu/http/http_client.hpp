@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <system_error>
 
 namespace pu::http {
 
@@ -19,7 +20,10 @@ class HttpClient {
   virtual void PostStream(const std::string& url,
                           const std::string& body,
                           const std::vector<std::string>& headers,
-                          WriteCallback write_cb) = 0;
+                          WriteCallback write_cb,
+                          std::error_code& ec) = 0;
+
+  virtual void SetInterruptChecker([[maybe_unused]] std::function<bool()> checker) {}
 };
 
 }  // namespace pu::http

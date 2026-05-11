@@ -2,6 +2,8 @@
 
 #include "openai_backend.hpp"
 #include "sse_parser.hpp"
+#include "pu/backend_helpers.hpp"
+#include "platform/platform.hpp"
 #include <nlohmann/json.hpp>
 #include <map>
 #include <stdexcept>
@@ -65,7 +67,7 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(BuildMessagesWithSystemPrompt(history));
+  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
   return req.dump();
 }
 
@@ -76,7 +78,7 @@ std::string OpenAIBackend::BuildRequestWithTools(
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(BuildMessagesWithSystemPrompt(history));
+  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
 
   json tools_json = json::array();
   for (const auto& tool : tools) {
@@ -101,7 +103,11 @@ OpenAIBackend::OpenAIBackend(const Config& config,
       api_key_(config.api_key) {}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb) {
+                         pu::backend::ChatCallback cb,
+                         std::error_code& ec) {
+  pu::platform::ClearInterruptFlag();
+  ec.clear();
+
   std::string body = BuildRequest(history);
   std::string url = host_ + "/chat/completions";
 
@@ -157,13 +163,17 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, headers, write_cb);
+  http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb) {
+                         pu::backend::ToolCallback tool_cb,
+                         std::error_code& ec) {
+  pu::platform::ClearInterruptFlag();
+  ec.clear();
+
   std::string body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/chat/completions";
 
@@ -220,7 +230,7 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
     return total;
   };
 
-  http_->PostStream(url, body, headers, write_cb);
+  http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 }  // namespace pu::backends::openai
