@@ -34,12 +34,19 @@ enum class ExpertType {
   kBash
 };
 
+enum class ConfirmationPolicy {
+  kAlwaysAsk,
+  kAutoSafe,
+  kNever
+};
+
 struct ExpertEntry {
   std::string name;
   ExpertType type = ExpertType::kChat;
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";
+  ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
 };
 
 struct ExpertsConfig {

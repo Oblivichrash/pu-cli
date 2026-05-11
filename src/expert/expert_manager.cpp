@@ -69,6 +69,10 @@ std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactive
   return replies;
 }
 
+void ExpertManager::SetConfirmationCallback(ConfirmationCallback cb) {
+  confirmation_callback_ = std::move(cb);
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
@@ -105,12 +109,20 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
   };
-  ctx.request_confirmation = [](const std::string& prompt) {
-    std::cout << "[CONFIRM] " << prompt << " [y/N] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    return (answer == "y" || answer == "Y");
-  };
+
+  // Use custom callback if set, otherwise default interactive prompt.
+  if (confirmation_callback_) {
+    ctx.request_confirmation = confirmation_callback_;
+  } else {
+    ctx.request_confirmation = [](const ConfirmationRequest& req) {
+      std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                              : ConfirmationChoice::kDeny;
+    };
+  }
+
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
   ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
@@ -129,6 +141,20 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
   };
+
+  // Use the same callback logic for sub-calls.
+  if (confirmation_callback_) {
+    ctx.request_confirmation = confirmation_callback_;
+  } else {
+    ctx.request_confirmation = [](const ConfirmationRequest& req) {
+      std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                              : ConfirmationChoice::kDeny;
+    };
+  }
+
   ctx.working_dir = ".";
   return it->second->Handle(input, ctx);
 }

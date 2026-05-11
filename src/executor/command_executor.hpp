@@ -9,6 +9,17 @@
 
 namespace pu::executor {
 
+enum class RiskLevel {
+  kSafe,
+  kNeutral,
+  kDangerous
+};
+
+struct RiskAssessment {
+  RiskLevel level = RiskLevel::kSafe;
+  std::string reason;
+};
+
 struct ExecutionResult {
   int exit_code = 0;
   std::string stdout_content;
@@ -23,11 +34,12 @@ class CommandExecutor {
 
   ExecutionResult Execute(const std::string& command);
 
-  bool IsDangerous(const std::string& command, std::string* reason = nullptr) const;
+  RiskAssessment AssessRisk(const std::string& command) const;
 
  private:
   std::string sandbox_path_;
   static const std::vector<std::string> dangerous_patterns_;
+  static const std::vector<std::string> safe_commands_;
 };
 
 }  // namespace pu::executor

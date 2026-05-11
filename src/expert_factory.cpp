@@ -28,7 +28,8 @@ class BashExpertFactory : public ExpertFactory {
     auto executor = std::make_unique<executor::CommandExecutor>(entry.sandbox_path);
     return std::make_unique<experts::BashExpert>(entry.name,
                                                  std::move(backend),
-                                                 std::move(executor));
+                                                 std::move(executor),
+                                                 entry.confirmation_policy);
   }
 };
 

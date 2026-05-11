@@ -48,6 +48,12 @@ ExpertType ParseExpertType(const std::string& str) {
   throw std::runtime_error("Unknown expert type: '" + str + "'");
 }
 
+ConfirmationPolicy ParseConfirmationPolicy(const std::string& str) {
+  if (str == "auto_safe") return ConfirmationPolicy::kAutoSafe;
+  if (str == "never") return ConfirmationPolicy::kNever;
+  return ConfirmationPolicy::kAlwaysAsk;
+}
+
 BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   BackendConfig cfg;
   try {
@@ -98,6 +104,8 @@ ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
   }
   if (entry.type == ExpertType::kBash && j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
+    std::string policy_str = j["executor"].value("confirmation", "always");
+    entry.confirmation_policy = ParseConfirmationPolicy(policy_str);
   }
   return entry;
 }
@@ -181,7 +189,13 @@ void SaveExpertsConfig(const std::string& config_path,
     }
     item["backend"] = backend;
     if (entry.type == ExpertType::kBash) {
-      item["executor"] = {{"sandbox", entry.sandbox_path}};
+      json executor = {{"sandbox", entry.sandbox_path}};
+      switch (entry.confirmation_policy) {
+        case ConfirmationPolicy::kAutoSafe: executor["confirmation"] = "auto_safe"; break;
+        case ConfirmationPolicy::kNever: executor["confirmation"] = "never"; break;
+        default: executor["confirmation"] = "always";
+      }
+      item["executor"] = executor;
     }
     experts_array.push_back(item);
   }

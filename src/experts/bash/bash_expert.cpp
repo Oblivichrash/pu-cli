@@ -2,6 +2,7 @@
 
 #include "bash_expert.hpp"
 #include "pu/renderer.hpp"
+#include "pu/expert.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <iostream>
@@ -12,12 +13,15 @@ namespace pu::experts {
 
 BashExpert::BashExpert(const std::string& name,
                        std::unique_ptr<pu::backend::Backend> backend,
-                       std::unique_ptr<pu::executor::CommandExecutor> executor)
-    : name_(name), backend_(std::move(backend)), executor_(std::move(executor)) {}
+                       std::unique_ptr<pu::executor::CommandExecutor> executor,
+                       config::ConfirmationPolicy policy)
+    : name_(name), backend_(std::move(backend)), executor_(std::move(executor)),
+      confirmation_policy_(policy) {}
 
 void BashExpert::ResetSession() {
   history_.clear();
   recent_scores_.clear();
+  user_approved_all_safe_ = false;
 }
 
 std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
@@ -74,7 +78,7 @@ std::string BashExpert::Handle(const std::string& input,
   auto initial_history = BuildInitialHistory();
 
   std::vector<ChatMessage> turn_history;
-  std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history, initial_history);
+  std::string response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial_history);
 
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
@@ -83,6 +87,7 @@ std::string BashExpert::Handle(const std::string& input,
 std::string BashExpert::RunToolLoop(const std::string& user_input,
                                     bool show_reasoning,
                                     std::vector<ChatMessage>& turn_history,
+                                    pu::expert::ExpertContext& ctx,
                                     const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
@@ -156,23 +161,65 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     }
 
     if (commands.empty()) {
-      std::cout << "[CONFIRM] Execute tool calls? [y/N] ";
-    } else if (commands.size() == 1) {
-      std::cout << "[CONFIRM] Execute: " << commands[0] << "? [y/N] ";
-    } else {
-      std::cout << "[CONFIRM] Execute these commands?\n";
-      for (size_t i = 0; i < commands.size(); ++i) {
-        std::cout << "  " << (i + 1) << ". " << commands[i] << "\n";
+      if (confirmation_policy_ != config::ConfirmationPolicy::kNever &&
+          !(confirmation_policy_ == config::ConfirmationPolicy::kAutoSafe && user_approved_all_safe_)) {
+        pu::expert::ConfirmationRequest req;
+        req.highest_risk = pu::executor::RiskLevel::kNeutral;
+        req.description = "Execute tool calls?";
+        auto choice = ctx.request_confirmation(req);
+        if (choice == pu::expert::ConfirmationChoice::kDeny ||
+            choice == pu::expert::ConfirmationChoice::kDenyAll) {
+          final_response = "Command execution cancelled by user.";
+          turn_history.push_back({0, "", "bash", final_response, ""});
+          break;
+        }
+        if (choice == pu::expert::ConfirmationChoice::kApproveAllSafe) {
+          user_approved_all_safe_ = true;
+        }
       }
-      std::cout << "[y/N] ";
-    }
+    } else {
+      pu::executor::RiskLevel highest = pu::executor::RiskLevel::kSafe;
+      for (const auto& cmd : commands) {
+        auto risk = executor_->AssessRisk(cmd);
+        if (risk.level > highest) highest = risk.level;
+      }
 
-    std::string confirm;
-    std::getline(std::cin, confirm);
-    if (confirm != "y" && confirm != "Y") {
-      final_response = "Command execution cancelled by user.";
-      turn_history.push_back({0, "", "bash", final_response, ""});
-      break;
+      bool should_ask = true;
+      if (confirmation_policy_ == config::ConfirmationPolicy::kNever ||
+          (confirmation_policy_ == config::ConfirmationPolicy::kAutoSafe && highest == pu::executor::RiskLevel::kSafe) ||
+          (user_approved_all_safe_ && highest == pu::executor::RiskLevel::kSafe)) {
+        should_ask = false;
+      }
+
+      if (should_ask) {
+        pu::expert::ConfirmationRequest req;
+        req.highest_risk = highest;
+        std::ostringstream desc;
+        if (commands.size() == 1) {
+          desc << "Execute: " << commands[0];
+        } else {
+          desc << "Execute these commands?\n";
+          for (size_t i = 0; i < commands.size(); ++i) {
+            desc << "  " << (i + 1) << ". " << commands[i] << "\n";
+          }
+        }
+        req.description = desc.str();
+
+        auto choice = ctx.request_confirmation(req);
+        if (choice == pu::expert::ConfirmationChoice::kDenyAll) {
+          final_response = "All command execution denied by user.";
+          turn_history.push_back({0, "", "bash", final_response, ""});
+          break;
+        }
+        if (choice == pu::expert::ConfirmationChoice::kDeny) {
+          final_response = "Command execution cancelled by user.";
+          turn_history.push_back({0, "", "bash", final_response, ""});
+          break;
+        }
+        if (choice == pu::expert::ConfirmationChoice::kApproveAllSafe) {
+          user_approved_all_safe_ = true;
+        }
+      }
     }
 
     pu::backend::Message assistant_msg;
@@ -189,9 +236,9 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
           if (command.empty()) {
             result = "No command provided.";
           } else {
-            std::string reason;
-            if (executor_->IsDangerous(command, &reason)) {
-              result = "Blocked: " + reason;
+            auto risk = executor_->AssessRisk(command);
+            if (risk.level == pu::executor::RiskLevel::kDangerous) {
+              result = "Blocked: " + risk.reason;
             } else {
               auto exec_result = executor_->Execute(command);
               if (exec_result.was_intercepted) {
