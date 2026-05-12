@@ -195,3 +195,47 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
   REQUIRE(ec);
   REQUIRE(ec == pu::HttpErrc::http_error);
 }
+
+TEST_CASE("OpenAIBackend tool calling stream", "[openai][tools]") {
+  OpenAIBackend::Config config;
+  config.model = "gpt-4o-mini";
+  config.host = "https://api.openai.com/v1";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&,
+                                    const std::string&,
+                                    const std::vector<std::string>&,
+                                    pu::http::WriteCallback cb,
+                                    std::error_code& ec) {
+    ec.clear();
+    std::string chunk1 =
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"exec","arguments":"ls"}}]}}]})"
+        + std::string("\n");
+    std::string chunk2 = "data: [DONE]\n";
+    cb(chunk1.data(), chunk1.size());
+    cb(chunk2.data(), chunk2.size());
+  };
+
+  auto adapter = std::make_unique<OpenAITokenAdapter>();
+  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+
+  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list"}};
+  pu::backend::ToolDefinition tool;
+  tool.name = "exec";
+  tool.parameters.raw_schema = "{}";
+  std::vector<pu::backend::ToolDefinition> tools = {tool};
+
+  bool tool_fired = false;
+  std::error_code ec;
+  backend.Chat(history, tools,
+    [](TokenType, std::string_view, bool) {},
+    [&](const ToolCall& call) {
+      tool_fired = true;
+      REQUIRE(call.arguments == "ls");
+    },
+    ec);
+  REQUIRE_FALSE(ec);
+  REQUIRE(tool_fired);
+}
