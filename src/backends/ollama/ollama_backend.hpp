@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Ollama backend implementation.
-
 #pragma once
 
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/token_adapter.hpp"
 #include <memory>
 #include <string>
 
@@ -20,7 +18,8 @@ class OllamaBackend : public pu::backend::Backend {
   };
 
   explicit OllamaBackend(Config config,
-                         std::unique_ptr<pu::http::HttpClient> http);
+                         std::unique_ptr<pu::http::HttpClient> http,
+                         std::unique_ptr<ITokenAdapter> adapter);
   ~OllamaBackend() override = default;
 
   void Chat(const std::vector<pu::backend::Message>& history,
@@ -37,10 +36,13 @@ class OllamaBackend : public pu::backend::Backend {
 
  private:
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
+  std::string BuildRequestWithTools(const std::vector<pu::backend::Message>& history,
+                                    const std::vector<pu::backend::ToolDefinition>& tools) const;
 
   std::string host_;
   std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
+  std::unique_ptr<ITokenAdapter> adapter_;
 };
 
 }  // namespace pu::backends::ollama

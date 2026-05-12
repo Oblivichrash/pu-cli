@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/openai/openai_backend.hpp"
+#include "backends/openai/openai_token_adapter.hpp"
 #include "backends/openai/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error_codes.hpp"
@@ -67,7 +68,8 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(config, std::move(mock_http));
+  auto adapter = std::make_unique<OpenAITokenAdapter>();
+  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -100,7 +102,8 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(config, std::move(mock_http));
+  auto adapter = std::make_unique<OpenAITokenAdapter>();
+  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   std::error_code ec;
@@ -142,7 +145,8 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
     }
   };
 
-  OpenAIBackend backend(config, std::move(mock_http));
+  auto adapter = std::make_unique<OpenAITokenAdapter>();
+  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}
@@ -182,7 +186,8 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
     ec = pu::HttpErrc::http_error;
   };
 
-  OpenAIBackend backend(config, std::move(mock_http));
+  auto adapter = std::make_unique<OpenAITokenAdapter>();
+  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   std::error_code ec;

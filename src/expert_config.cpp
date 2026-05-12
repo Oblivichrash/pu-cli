@@ -7,6 +7,7 @@
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
 #include "pu/error_codes.hpp"
+#include "pu/token_adapter.hpp"
 
 #include <nlohmann/json.hpp>
 #include <cstdlib>
@@ -54,6 +55,12 @@ ConfirmationPolicy ParseConfirmationPolicy(const std::string& str) {
   return ConfirmationPolicy::kAlwaysAsk;
 }
 
+ToolCallStyle ParseToolCallStyle(const std::string& str) {
+  if (str == "openai") return ToolCallStyle::kOpenAI;
+  if (str == "phi4") return ToolCallStyle::kPhi4;
+  return ToolCallStyle::kDefault;
+}
+
 BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   BackendConfig cfg;
   try {
@@ -71,6 +78,7 @@ BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   if (j.contains("system_prompt")) {
     cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
   }
+  cfg.tool_call_style = ParseToolCallStyle(j.value("tool_call_style", "default"));
   return cfg;
 }
 
@@ -104,8 +112,7 @@ ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
   }
   if (entry.type == ExpertType::kBash && j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
-    std::string policy_str = j["executor"].value("confirmation", "always");
-    entry.confirmation_policy = ParseConfirmationPolicy(policy_str);
+    entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
   }
   return entry;
 }
@@ -114,12 +121,8 @@ ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
 
 std::string FindConfigPath() {
   const char* env = std::getenv("PU_EXPERTS_CONFIG");
-  if (env && env[0] != '\0') {
-    return env;
-  }
-  if (std::filesystem::exists("./experts.json")) {
-    return "./experts.json";
-  }
+  if (env && env[0] != '\0') return env;
+  if (std::filesystem::exists("./experts.json")) return "./experts.json";
   throw std::runtime_error("Configuration file not found. "
                            "Set PU_EXPERTS_CONFIG or place experts.json in current directory.");
 }
@@ -180,12 +183,14 @@ void SaveExpertsConfig(const std::string& config_path,
     backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
     backend["host"] = entry.backend.host;
     backend["model"] = entry.backend.model;
-    if (entry.backend.api_key) {
-      backend["api_key"] = *entry.backend.api_key;
-    }
+    if (entry.backend.api_key) backend["api_key"] = *entry.backend.api_key;
     backend["temperature"] = entry.backend.temperature;
-    if (entry.backend.system_prompt) {
-      backend["system_prompt"] = *entry.backend.system_prompt;
+    if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
+
+    switch (entry.backend.tool_call_style) {
+      case ToolCallStyle::kOpenAI: backend["tool_call_style"] = "openai"; break;
+      case ToolCallStyle::kPhi4: backend["tool_call_style"] = "phi4"; break;
+      default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
     if (entry.type == ExpertType::kBash) {
@@ -212,6 +217,7 @@ void SaveExpertsConfig(const std::string& config_path,
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg,
     std::unique_ptr<pu::http::HttpClient> http,
+    std::unique_ptr<pu::backends::ITokenAdapter> adapter,
     std::error_code& ec) {
   ec.clear();
   switch (cfg.type) {
@@ -223,7 +229,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
-          std::move(ollama_cfg), std::move(http));
+          std::move(ollama_cfg), std::move(http), std::move(adapter));
     }
     case BackendType::kOpenAI: {
       pu::backends::openai::OpenAIBackend::Config openai_cfg;
@@ -233,7 +239,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::openai::OpenAIBackend>(
-          std::move(openai_cfg), std::move(http));
+          std::move(openai_cfg), std::move(http), std::move(adapter));
     }
     default:
       ec = ConfigErrc::backend_unknown;

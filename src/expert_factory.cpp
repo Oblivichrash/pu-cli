@@ -7,6 +7,9 @@
 #include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
 #include "pu/expert_config.hpp"
+#include "pu/token_adapter.hpp"
+#include "backends/ollama/ollama_token_adapter.hpp"
+#include "backends/openai/openai_token_adapter.hpp"
 
 #include <memory>
 #include <system_error>
@@ -46,8 +49,19 @@ void ExpertRegistry::RegisterFactory(config::ExpertType type,
 std::unique_ptr<BaseExpert> ExpertRegistry::CreateExpert(const config::ExpertEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
 
+  std::unique_ptr<backends::ITokenAdapter> adapter;
+  switch (entry.backend.tool_call_style) {
+    case config::ToolCallStyle::kOpenAI:
+      adapter = std::make_unique<backends::openai::OpenAITokenAdapter>();
+      break;
+    case config::ToolCallStyle::kPhi4:
+    default:
+      adapter = std::make_unique<backends::ollama::OllamaTokenAdapter>();
+      break;
+  }
+
   std::error_code ec;
-  auto backend = config::CreateBackend(entry.backend, std::move(http), ec);
+  auto backend = config::CreateBackend(entry.backend, std::move(http), std::move(adapter), ec);
   if (ec) {
     throw std::runtime_error("Failed to create backend for expert '" + entry.name + "': " + ec.message());
   }

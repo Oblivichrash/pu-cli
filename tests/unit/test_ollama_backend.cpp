@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/ollama/ollama_backend.hpp"
+#include "backends/ollama/ollama_token_adapter.hpp"
 #include "backends/ollama/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -50,7 +51,8 @@ TEST_CASE("OllamaBackend request building", "[ollama]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  auto adapter = std::make_unique<OllamaTokenAdapter>();
+  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -95,7 +97,8 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
     }
   };
 
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  auto adapter = std::make_unique<OllamaTokenAdapter>();
+  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}

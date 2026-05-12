@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// OpenAI-compatible backend implementation.
-
 #pragma once
 
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/token_adapter.hpp"
 #include <memory>
 #include <string>
 
@@ -20,7 +18,8 @@ class OpenAIBackend : public pu::backend::Backend {
   };
 
   explicit OpenAIBackend(const Config& config,
-                         std::unique_ptr<pu::http::HttpClient> http);
+                         std::unique_ptr<pu::http::HttpClient> http,
+                         std::unique_ptr<ITokenAdapter> adapter);
   ~OpenAIBackend() override = default;
 
   void Chat(const std::vector<pu::backend::Message>& history,
@@ -43,6 +42,7 @@ class OpenAIBackend : public pu::backend::Backend {
   std::unique_ptr<pu::http::HttpClient> http_;
   std::string host_;
   std::string api_key_;
+  std::unique_ptr<ITokenAdapter> adapter_;
 };
 
 }  // namespace pu::backends::openai
