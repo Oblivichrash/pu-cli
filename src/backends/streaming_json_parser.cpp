@@ -17,41 +17,48 @@ void StreamingJsonParser::Feed(const char* data, size_t len) {
     if (pos == std::string::npos) break;
 
     std::string line = buffer_.substr(0, pos);
-    buffer_.erase(0, pos + 1);
-    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
 
-    if (line.empty()) continue;
+    if (line.empty()) {
+      buffer_.erase(0, pos + 1);
+      continue;
+    }
 
     if (IsPartialUtf8(line)) {
-      buffer_ = line + "\n" + buffer_;
+      // Incomplete multi‑byte sequence – keep the line in the buffer
+      // and wait for more data in a subsequent Feed call.
       break;
     }
 
+    buffer_.erase(0, pos + 1);
     on_line_(line);
   }
 }
 
 bool StreamingJsonParser::IsPartialUtf8(std::string_view str) {
   if (str.empty()) return false;
-  auto len = str.size();
-  auto c = static_cast<unsigned char>(str.back());
-  size_t expected = 0;
-  if ((c & 0x80) == 0) {
-    expected = 0;
-  } else if ((c & 0xE0) == 0xC0) {
-    expected = 2;
-  } else if ((c & 0xF0) == 0xE0) {
-    expected = 3;
-  } else if ((c & 0xF8) == 0xF0) {
-    expected = 4;
-  } else {
-    return false;
+
+  size_t i = str.size();
+  size_t remaining = 0;
+
+  while (i > 0) {
+    unsigned char c = static_cast<unsigned char>(str[--i]);
+
+    if ((c & 0xC0) == 0x80) {
+      ++remaining;
+    } else if ((c & 0x80) == 0x00) {
+      return false;
+    } else {
+      size_t expected = 1;
+      if      ((c & 0xE0) == 0xC0) expected = 2;
+      else if ((c & 0xF0) == 0xE0) expected = 3;
+      else if ((c & 0xF8) == 0xF0) expected = 4;
+      return remaining < (expected - 1);
+    }
   }
-  if (len < expected) return true;
-  for (size_t i = len - expected + 1; i < len; ++i) {
-    if ((static_cast<unsigned char>(str[i]) & 0xC0) != 0x80) return false;
-  }
-  return false;
+  return remaining > 0;
 }
 
 }  // namespace pu::backends

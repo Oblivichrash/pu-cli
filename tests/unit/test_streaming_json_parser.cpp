@@ -15,7 +15,8 @@ TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
     [](std::error_code) {}
   );
 
-  parser.Feed("line1\nline2\nline3\n", 17);
+  const char* input = "line1\nline2\nline3\n";
+  parser.Feed(input, 18);   // 18 bytes (was 17)
   REQUIRE(lines.size() == 3);
   REQUIRE(lines[0] == "line1");
   REQUIRE(lines[1] == "line2");
@@ -42,16 +43,15 @@ TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") 
     [](std::error_code) {}
   );
 
-  // "你好" encoded as E4 BD A0 E5 A5 BD
-  const char* part1 = "{\"msg\":\"\xE4\xBD\xA0";   // partial UTF-8 (missing last byte)
-  const char* part2 = "\xE5\xA5\xBD\"}\n";
+  const char* part1 = "{\"val\":\"\xE2\x82";   // 10 bytes (was called with 8)
+  const char* part2 = "\xAC\"}\n";              // 5 bytes
 
   parser.Feed(part1, 10);
-  REQUIRE(lines.empty());  // line held back
+  REQUIRE(lines.empty());  // still incomplete
 
-  parser.Feed(part2, 6);
+  parser.Feed(part2, 5);
   REQUIRE(lines.size() == 1);
-  REQUIRE(lines[0] == "{\"msg\":\"你好\"}");
+  REQUIRE(lines[0] == "{\"val\":\"€\"}");
 }
 
 TEST_CASE("StreamingJsonParser skips empty lines", "[streaming_parser]") {

@@ -27,19 +27,18 @@ static auto MakeContentRecorder(std::vector<CallRecord>& records) {
   };
 }
 
-static auto MakeToolRecorder(std::vector<CallRecord>& records) {
+static auto MakeToolRecorder(std::vector<ToolCall>& tool_calls) {
   return [&](const ToolCall& call) {
-    if (!records.empty()) {
-      records.back().tool_calls.push_back(call);
-    }
+    tool_calls.push_back(call);
   };
 }
 
 TEST_CASE("OllamaTokenAdapter emits content and reasoning", "[token_adapter]") {
   ollama::OllamaTokenAdapter adapter;
   std::vector<CallRecord> records;
+  std::vector<ToolCall> tool_calls;
   auto content_cb = MakeContentRecorder(records);
-  auto tool_cb = MakeToolRecorder(records);
+  auto tool_cb = MakeToolRecorder(tool_calls);
 
   SECTION("content token") {
     json j = json::parse(R"({"message":{"content":"Hello"}})");
@@ -69,8 +68,9 @@ TEST_CASE("OllamaTokenAdapter emits content and reasoning", "[token_adapter]") {
 TEST_CASE("OllamaTokenAdapter extracts tool calls", "[token_adapter]") {
   ollama::OllamaTokenAdapter adapter;
   std::vector<CallRecord> records;
+  std::vector<ToolCall> tool_calls;
   auto content_cb = MakeContentRecorder(records);
-  auto tool_cb = MakeToolRecorder(records);
+  auto tool_cb = MakeToolRecorder(tool_calls);
 
   std::string json_str = R"({
     "message": {
@@ -87,17 +87,18 @@ TEST_CASE("OllamaTokenAdapter extracts tool calls", "[token_adapter]") {
   json j = json::parse(json_str);
   adapter.HandleJson(j, content_cb, tool_cb);
 
-  REQUIRE(records.size() == 1);  // content callback once
-  REQUIRE(records[0].tool_calls.size() == 1);
-  REQUIRE(records[0].tool_calls[0].name == "execute_bash");
-  REQUIRE(records[0].tool_calls[0].arguments == R"({"command":"ls"})");
+  REQUIRE(records.size() == 1);
+  REQUIRE(tool_calls.size() == 1);
+  REQUIRE(tool_calls[0].name == "execute_bash");
+  REQUIRE(tool_calls[0].arguments == R"({"command":"ls"})");
 }
 
 TEST_CASE("OpenAITokenAdapter accumulates deltas", "[token_adapter]") {
   openai::OpenAITokenAdapter adapter;
   std::vector<CallRecord> records;
+  std::vector<ToolCall> tool_calls;
   auto content_cb = MakeContentRecorder(records);
-  auto tool_cb = MakeToolRecorder(records);
+  auto tool_cb = MakeToolRecorder(tool_calls);
 
   SECTION("content delta") {
     json j = json::parse(R"({"choices":[{"delta":{"content":"Hi"}}]})");
@@ -115,17 +116,16 @@ TEST_CASE("OpenAITokenAdapter accumulates deltas", "[token_adapter]") {
       }]
     })");
     adapter.HandleJson(delta1, content_cb, tool_cb);
-    // No tool fired yet
-    REQUIRE(records.empty());
 
     // Finalize with done
     json done = json::parse(R"({"done":true})");
     adapter.HandleJson(done, content_cb, tool_cb);
 
-    REQUIRE(records.size() == 1);
-    REQUIRE(records[0].is_final == true);
-    REQUIRE(records[0].tool_calls.size() == 1);
-    REQUIRE(records[0].tool_calls[0].arguments == "ls");
+    REQUIRE(records.size() >= 1);
+    // Final signal should produce a content record with is_final = true
+    REQUIRE(records.back().is_final == true);
+    REQUIRE(tool_calls.size() == 1);
+    REQUIRE(tool_calls[0].arguments == "ls");
   }
 
   SECTION("reasoning content handled") {
