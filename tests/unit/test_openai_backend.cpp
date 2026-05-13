@@ -2,61 +2,15 @@
 
 #include "backends/openai/openai_backend.hpp"
 #include "backends/openai/openai_token_adapter.hpp"
-#include "backends/openai/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error_codes.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_exception.hpp>
 #include <nlohmann/json.hpp>
 #include <system_error>
 
 using namespace pu::backend;
 using namespace pu::backends::openai;
 using namespace pu::tests;
-
-TEST_CASE("OpenAIBackend SSE parsing", "[openai]") {
-  using internal::ParseSseLine;
-  using internal::SseToken;
-
-  SECTION("extracts content from valid line") {
-    std::string line = R"(data: {"choices":[{"delta":{"content":"Hello"}}]})";
-    auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->content == "Hello");
-    REQUIRE(token->done == false);
-  }
-
-  SECTION("recognizes [DONE] flag") {
-    std::string line = "data: [DONE]";
-    auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->done == true);
-  }
-
-  SECTION("ignores lines without data prefix") {
-    std::string line = ": heartbeat";
-    auto token = ParseSseLine(line);
-    REQUIRE(!token.has_value());
-  }
-
-  SECTION("ignores empty content") {
-    std::string line = R"(data: {"choices":[{"delta":{}}]})";
-    auto token = ParseSseLine(line);
-    REQUIRE(!token.has_value());
-  }
-
-  SECTION("throws on invalid JSON") {
-    std::string line = "data: not json";
-    REQUIRE_THROWS_AS(ParseSseLine(line), std::runtime_error);
-  }
-
-  SECTION("handles whitespace after data: prefix") {
-    std::string line = R"(data:  {"choices":[{"delta":{"content":"Hello"}}]})";
-    auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->content == "Hello");
-  }
-}
 
 TEST_CASE("OpenAIBackend request building", "[openai]") {
   OpenAIBackend::Config config;

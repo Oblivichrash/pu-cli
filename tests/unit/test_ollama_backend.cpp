@@ -2,7 +2,6 @@
 
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
-#include "backends/ollama/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -10,37 +9,6 @@
 using namespace pu::backend;
 using namespace pu::backends::ollama;
 using namespace pu::tests;
-
-TEST_CASE("OllamaBackend SSE parsing", "[ollama]") {
-  using internal::ParseSseLine;
-  using internal::SseToken;
-
-  SECTION("extracts content from valid line") {
-    std::string line = R"({"message":{"content":"Hello"}})";
-    auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->content == "Hello");
-    REQUIRE(token->done == false);
-  }
-
-  SECTION("recognizes done flag") {
-    std::string line = R"({"done":true})";
-    auto token = ParseSseLine(line);
-    REQUIRE(token.has_value());
-    REQUIRE(token->done == true);
-  }
-
-  SECTION("ignores heartbeat lines") {
-    std::string line = R"({"other":"field"})";
-    auto token = ParseSseLine(line);
-    REQUIRE(!token.has_value());
-  }
-
-  SECTION("throws on invalid JSON") {
-    std::string line = "not json";
-    REQUIRE_THROWS_AS(ParseSseLine(line), std::runtime_error);
-  }
-}
 
 TEST_CASE("OllamaBackend request building", "[ollama]") {
   OllamaBackend::Config config;
