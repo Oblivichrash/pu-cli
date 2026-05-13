@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
+//
+// Expert framework base classes.
+
 #pragma once
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "pu/proactive_engine.hpp"
 #include "executor/command_executor.hpp"
+
 #include <functional>
 #include <memory>
 #include <optional>
@@ -15,7 +19,12 @@
 
 namespace pu::expert {
 
-enum class ConfirmationChoice { kDeny, kApproveOnce, kApproveAllSafe, kDenyAll };
+enum class ConfirmationChoice {
+  kDeny,
+  kApproveOnce,
+  kApproveAllSafe,
+  kDenyAll
+};
 
 struct ConfirmationRequest {
   std::string description;
@@ -25,11 +34,12 @@ struct ConfirmationRequest {
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
 struct ExpertContext {
-  std::function<std::string(const std::string&, const std::string&)> call_expert;
+  std::function<std::string(const std::string& name, const std::string& input)> call_expert;
   ConfirmationCallback request_confirmation;
   std::string working_dir;
   bool show_reasoning = false;
   std::vector<ChatMessage> recent_panel_messages;
+  std::optional<std::string> system_prompt;      // NEW
 };
 
 class BaseExpert {
@@ -42,6 +52,7 @@ class BaseExpert {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
+
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
   virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
   virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
@@ -65,6 +76,8 @@ class ExpertManager {
   std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
   void SetConfirmationCallback(ConfirmationCallback cb);
 
+  void SetSystemPrompt(const std::string& expert_name, const std::string& prompt); // NEW
+
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
 
@@ -74,6 +87,7 @@ class ExpertManager {
   bool show_reasoning_ = false;
   std::unique_ptr<ProactiveEngine> proactive_engine_;
   ConfirmationCallback confirmation_callback_;
+  std::unordered_map<std::string, std::string> system_prompts_;       // NEW
 };
 
 }  // namespace pu::expert
