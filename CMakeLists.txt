@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pu-cli VERSION 0.1.0 LANGUAGES CXX)
+project(pu-cli VERSION 0.3.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,6 +66,7 @@ add_library(pu_expert STATIC
     src/executor/command_executor.cpp
     src/expert_factory.cpp
     src/proactive_engine.cpp
+    src/renderer.cpp
 )
 target_include_directories(pu_expert PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
