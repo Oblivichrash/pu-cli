@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #pragma once
 
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
 #include "pu/expert_config.hpp"
-
 #include <memory>
 #include <unordered_map>
 
@@ -22,7 +20,6 @@ class ExpertFactory {
 class ExpertRegistry {
  public:
   static ExpertRegistry& Instance();
-
   void RegisterFactory(config::ExpertType type, std::unique_ptr<ExpertFactory> factory);
   std::unique_ptr<BaseExpert> CreateExpert(const config::ExpertEntry& entry);
 

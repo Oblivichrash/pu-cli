@@ -1,24 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "pu/error_codes.hpp"
 
 namespace pu {
 
 namespace {
-
 struct ConfigCategory : std::error_category {
   const char* name() const noexcept override { return "pu.config"; }
   std::string message(int ev) const override {
     switch (static_cast<ConfigErrc>(ev)) {
-      case ConfigErrc::file_not_found:  return "Configuration file not found";
-      case ConfigErrc::parse_error:     return "Configuration JSON parse error";
-      case ConfigErrc::missing_field:   return "Required field missing in configuration";
+      case ConfigErrc::file_not_found: return "Configuration file not found";
+      case ConfigErrc::parse_error:    return "Configuration JSON parse error";
+      case ConfigErrc::missing_field:  return "Required field missing in configuration";
       case ConfigErrc::backend_unknown: return "Unknown backend type";
       default: return "unknown config error";
     }
   }
 };
-
 struct HttpCategory : std::error_category {
   const char* name() const noexcept override { return "pu.http"; }
   std::string message(int ev) const override {
@@ -30,7 +27,6 @@ struct HttpCategory : std::error_category {
     }
   }
 };
-
 struct StoreCategory : std::error_category {
   const char* name() const noexcept override { return "pu.store"; }
   std::string message(int ev) const override {
@@ -43,20 +39,13 @@ struct StoreCategory : std::error_category {
   }
 };
 
-const ConfigCategory config_category{};
-const HttpCategory   http_category{};
-const StoreCategory  store_category{};
+const ConfigCategory kConfigCategory{};
+const HttpCategory   kHttpCategory{};
+const StoreCategory  kStoreCategory{};
+}  // namespace
 
-}  // anonymous namespace
-
-std::error_code make_error_code(ConfigErrc e) {
-  return {static_cast<int>(e), config_category};
-}
-std::error_code make_error_code(HttpErrc e) {
-  return {static_cast<int>(e), http_category};
-}
-std::error_code make_error_code(StoreErrc e) {
-  return {static_cast<int>(e), store_category};
-}
+std::error_code make_error_code(ConfigErrc e) { return {static_cast<int>(e), kConfigCategory}; }
+std::error_code make_error_code(HttpErrc e)   { return {static_cast<int>(e), kHttpCategory}; }
+std::error_code make_error_code(StoreErrc e)  { return {static_cast<int>(e), kStoreCategory}; }
 
 }  // namespace pu

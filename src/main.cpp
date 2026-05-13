@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "pu/cli_ask.hpp"
 #include "pu/cli_chat.hpp"
-#include "pu/renderer.hpp"
 #include "pu/expert_factory.hpp"
-
+#include "pu/renderer.hpp"
 #include <curl/curl.h>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
 #include <string>
 
@@ -20,19 +17,13 @@ int main(int argc, char* argv[]) {
 
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
-              << "Commands:\n"
-              << "  ask    Send a single prompt to a model\n"
+              << "Commands:\n  ask    Send a single prompt to a model\n"
               << "  chat   Start interactive conversation\n";
     return 1;
   }
-
   std::string cmd = argv[1];
-  if (cmd == "ask") {
-    return pu::cli::RunAskCommand(argc - 1, argv + 1);
-  } else if (cmd == "chat") {
-    return pu::cli::RunChatCommand(argc - 1, argv + 1);
-  } else {
-    std::cerr << "Unknown command: " << cmd << "\n";
-    return 1;
-  }
+  if (cmd == "ask") return pu::cli::RunAskCommand(argc - 1, argv + 1);
+  if (cmd == "chat") return pu::cli::RunChatCommand(argc - 1, argv + 1);
+  std::cerr << "Unknown command: " << cmd << "\n";
+  return 1;
 }

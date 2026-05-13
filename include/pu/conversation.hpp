@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Conversation storage structures.
-
 #pragma once
 
 #include <string>
@@ -13,9 +10,9 @@ namespace pu {
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
-  std::string role;      // "user", "chat", "bash", "system"
+  std::string role;
   std::string content;
-  std::string tool_name; // only used when role == "tool_result"
+  std::string tool_name;
 };
 
 struct Conversation {

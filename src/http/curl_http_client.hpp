@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// libcurl implementation of HttpClient.
-
 #pragma once
 
 #include "pu/http/http_client.hpp"
 #include <curl/curl.h>
 #include <functional>
-#include <stdexcept>
 #include <string>
 
 namespace pu::http {
@@ -16,19 +12,13 @@ class CurlHttpClient : public HttpClient {
  public:
   CurlHttpClient();
   ~CurlHttpClient() override;
-
   CurlHttpClient(const CurlHttpClient&) = delete;
   CurlHttpClient& operator=(const CurlHttpClient&) = delete;
 
-  void PostStream(const std::string& url,
-                  const std::string& body,
-                  const std::vector<std::string>& headers,
-                  WriteCallback write_cb,
+  void PostStream(const std::string& url, const std::string& body,
+                  const std::vector<std::string>& headers, WriteCallback write_cb,
                   std::error_code& ec) override;
-
-  void SetInterruptChecker(std::function<bool()> checker) override {
-    interrupt_checker_ = std::move(checker);
-  }
+  void SetInterruptChecker(std::function<bool()> checker) override;
 
  private:
   CURL* handle_;
