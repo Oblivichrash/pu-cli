@@ -6,7 +6,6 @@
 namespace pu::platform {
 
 int ExecuteCommand(const std::string& command, std::string& output);
-bool IsDangerous(const std::string& command, std::string* reason = nullptr);
 void SetupSignalHandler();
 bool IsInterrupted();
 void ClearInterruptFlag();
