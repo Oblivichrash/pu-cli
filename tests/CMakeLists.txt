@@ -6,6 +6,8 @@ add_executable(pu_tests
     unit/test_expert_config.cpp
     unit/test_conversation_store.cpp
     unit/test_expert_manager.cpp
+    unit/test_streaming_json_parser.cpp
+    unit/test_token_adapters.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

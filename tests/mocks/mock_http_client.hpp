@@ -6,6 +6,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <system_error>
 
 namespace pu::tests {
 
@@ -14,12 +15,15 @@ class MockHttpClient : public pu::http::HttpClient {
   void PostStream(const std::string& url,
                   const std::string& body,
                   const std::vector<std::string>& headers,
-                  pu::http::WriteCallback write_cb) override {
+                  pu::http::WriteCallback write_cb,
+                  std::error_code& ec) override {
     last_url = url;
     last_body = body;
     last_headers = headers;
     if (simulate_response) {
-      simulate_response(url, body, headers, write_cb);
+      simulate_response(url, body, headers, write_cb, ec);
+    } else {
+      ec.clear();
     }
   }
 
@@ -29,7 +33,8 @@ class MockHttpClient : public pu::http::HttpClient {
   std::function<void(const std::string&,
                      const std::string&,
                      const std::vector<std::string>&,
-                     pu::http::WriteCallback)> simulate_response;
+                     pu::http::WriteCallback,
+                     std::error_code&)> simulate_response;
 };
 
 }  // namespace pu::tests

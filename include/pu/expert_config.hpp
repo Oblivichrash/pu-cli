@@ -1,28 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Expert configuration loading and backend factory.
-
 #pragma once
 
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+#include <system_error>
 
-namespace pu::backend {
-class Backend;
-}  // namespace pu::backend
-
-namespace pu::http {
-class HttpClient;
-}  // namespace pu::http
+namespace pu::backend { class Backend; }
+namespace pu::http { class HttpClient; }
+namespace pu::backends { class ITokenAdapter; }
 
 namespace pu::config {
 
-enum class BackendType {
-  kOllama,
-  kOpenAI
-};
+enum class BackendType { kOllama, kOpenAI };
+enum class ExpertType { kChat, kBash };
+enum class ConfirmationPolicy { kAlwaysAsk, kAutoSafe, kNever };
+enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
 
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
@@ -31,11 +25,7 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-};
-
-enum class ExpertType {
-  kChat,
-  kBash
+  ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
 };
 
 struct ExpertEntry {
@@ -44,6 +34,7 @@ struct ExpertEntry {
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";
+  ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
 };
 
 struct ExpertsConfig {
@@ -52,10 +43,11 @@ struct ExpertsConfig {
 };
 
 std::string FindConfigPath();
-ExpertsConfig LoadExpertsConfig(const std::string& config_path);
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config);
+ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec);
+void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config,
+                       std::error_code& ec);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg,
-    std::unique_ptr<pu::http::HttpClient> http);
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
+    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec);
 
 }  // namespace pu::config
