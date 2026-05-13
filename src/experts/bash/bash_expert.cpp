@@ -65,7 +65,8 @@ void BashExpert::AppendTurnToHistory(const std::vector<pu::backend::Message>& hi
   }
 }
 
-std::string BashExpert::Handle(const std::string& input, pu::expert::ExpertContext& ctx) {
+std::string BashExpert::Handle(const std::string& input,
+                               pu::expert::ExpertContext& ctx) {
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
   auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
@@ -73,9 +74,8 @@ std::string BashExpert::Handle(const std::string& input, pu::expert::ExpertConte
   return response;
 }
 
-// RunToolLoop remains largely the same as before but uses auto where possible.
-// For brevity, I'll include the full function but shortened with auto.
-std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_reasoning,
+std::string BashExpert::RunToolLoop(const std::string& user_input,
+                                    bool show_reasoning,
                                     std::vector<ChatMessage>& turn_history,
                                     pu::expert::ExpertContext& ctx,
                                     const std::vector<pu::backend::Message>& initial_history) {
@@ -128,7 +128,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       break;
     }
 
-    // extract commands
     std::vector<std::string> commands;
     for (const auto& call : collected_calls) {
       if (call.name == "execute_bash") {
@@ -140,7 +139,6 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       }
     }
 
-    // risk assessment and confirmation
     auto should_ask = true;
     pu::executor::RiskLevel highest = pu::executor::RiskLevel::kSafe;
     for (const auto& cmd : commands) {
@@ -158,8 +156,9 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       pu::expert::ConfirmationRequest req;
       req.highest_risk = highest;
       std::ostringstream desc;
-      if (commands.size() == 1) desc << "Execute: " << commands[0];
-      else {
+      if (commands.size() == 1) {
+        desc << "Execute: " << commands[0];
+      } else {
         desc << "Execute these commands?\n";
         for (size_t i = 0; i < commands.size(); ++i)
           desc << "  " << (i + 1) << ". " << commands[i] << "\n";
@@ -180,11 +179,8 @@ std::string BashExpert::RunToolLoop(const std::string& user_input, bool show_rea
       if (choice == pu::expert::ConfirmationChoice::kApproveAllSafe) {
         user_approved_all_safe_ = true;
       }
-    } else if (commands.empty() && confirmation_policy_ != config::ConfirmationPolicy::kNever) {
-      // no commands but confirm anyway? Skip for cleanup.
     }
 
-    // execution
     pu::backend::Message assistant_msg;
     assistant_msg.role = pu::backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;

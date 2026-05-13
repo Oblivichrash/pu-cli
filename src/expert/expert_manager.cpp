@@ -4,7 +4,8 @@
 
 namespace pu::expert {
 
-ExpertManager::ExpertManager() : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
+ExpertManager::ExpertManager()
+    : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
 
 void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
   if (!expert) return;
@@ -21,27 +22,38 @@ void ExpertManager::SetActiveExpert(const std::string& name) {
 }
 
 std::string ExpertManager::GetActiveExpert() const { return active_expert_; }
+
 void ExpertManager::SetShowReasoning(bool enable) { show_reasoning_ = enable; }
+
 void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
   proactive_engine_->SetRecentMessages(messages);
 }
-void ExpertManager::SetProactiveEnabled(bool enabled) { proactive_engine_->SetEnabled(enabled); }
+
+void ExpertManager::SetProactiveEnabled(bool enabled) {
+  proactive_engine_->SetEnabled(enabled);
+}
+
 void ExpertManager::SetProactiveThreshold(double threshold) {
   proactive_engine_->SetThreshold(threshold);
-  for (auto& [name, expert] : experts_) expert->SetProactiveThreshold(threshold);
+  for (auto& [name, expert] : experts_)
+    expert->SetProactiveThreshold(threshold);
 }
+
 void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
-  for (auto& [name, expert] : experts_) expert->OnPanelMessage(msg);
+  for (auto& [name, expert] : experts_)
+    expert->OnPanelMessage(msg);
 }
+
 std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactiveReplies() {
   std::vector<std::pair<std::string, std::string>> replies;
   if (!proactive_engine_->IsEnabled()) return replies;
   for (auto& [name, expert] : experts_) {
-    auto reply = expert->ProactiveReply();
-    if (reply) replies.emplace_back(name, *reply);
+    if (auto reply = expert->ProactiveReply())
+      replies.emplace_back(name, *reply);
   }
   return replies;
 }
+
 void ExpertManager::SetConfirmationCallback(ConfirmationCallback cb) {
   confirmation_callback_ = std::move(cb);
 }
@@ -85,6 +97,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
   ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
+
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
 }
@@ -92,6 +105,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
 std::string ExpertManager::CallExpert(const std::string& expert_name, const std::string& input) {
   auto it = experts_.find(expert_name);
   if (it == experts_.end()) return "Expert not found: " + expert_name;
+
   ExpertContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
@@ -113,9 +127,10 @@ void ExpertManager::ClearSessions() {
   active_expert_.clear();
 }
 
-auto ExpertManager::SnapshotExperts() const -> std::unordered_map<std::string, std::vector<ChatMessage>> {
+std::unordered_map<std::string, std::vector<ChatMessage>> ExpertManager::SnapshotExperts() const {
   std::unordered_map<std::string, std::vector<ChatMessage>> result;
-  for (const auto& [name, expert] : experts_) result[name] = expert->SaveState();
+  for (const auto& [name, expert] : experts_)
+    result[name] = expert->SaveState();
   return result;
 }
 
