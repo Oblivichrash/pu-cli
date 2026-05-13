@@ -20,7 +20,9 @@ struct ExecutionResult {
 class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path);
-  ExecutionResult Execute(const std::string& command);
+  virtual ~CommandExecutor() = default;
+
+  virtual ExecutionResult Execute(const std::string& command);
   RiskAssessment AssessRisk(const std::string& command) const;
 
  private:
