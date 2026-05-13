@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "pu/cli_chat.hpp"
-
 #include "pu/backend.hpp"
 #include "pu/expert.hpp"
 #include "pu/expert_config.hpp"
 #include "pu/http/http_client.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
-
-#include "experts/chat/chat_expert.hpp"
-#include "experts/bash/bash_expert.hpp"
+#include "pu/cli_app_setup.hpp"
 #include "http/curl_http_client.hpp"
-
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -25,10 +20,18 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <system_error>
 
 namespace pu::cli {
 
 namespace {
+
+inline std::string Trim(const std::string& s) {
+  auto start = s.find_first_not_of(" \t");
+  if (start == std::string::npos) return {};
+  auto end = s.find_last_not_of(" \t");
+  return s.substr(start, end - start + 1);
+}
 
 std::string CurrentTimestamp() {
   auto now = std::chrono::system_clock::now();
@@ -40,9 +43,7 @@ std::string CurrentTimestamp() {
 
 std::string GenerateId() {
   auto now = std::chrono::high_resolution_clock::now();
-  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                   now.time_since_epoch())
-                   .count();
+  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
   std::ostringstream ss;
   ss << std::hex << nanos;
   return "conv-" + ss.str();
@@ -67,30 +68,20 @@ void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& cu
   std::cout << "Available experts:\n";
   for (const auto& entry : config.experts) {
     std::cout << "  " << entry.name;
-    if (!entry.description.empty()) {
-      std::cout << " - " << entry.description;
-    }
-    if (entry.name == current) {
-      std::cout << " [current]";
-    }
+    if (!entry.description.empty()) std::cout << " - " << entry.description;
+    if (entry.name == current) std::cout << " [current]";
     std::cout << "\n";
   }
 }
 
 void PrintConversationList(const std::vector<pu::Conversation>& convs) {
-  if (convs.empty()) {
-    std::cout << "No saved conversations.\n";
-    return;
-  }
-  for (const auto& c : convs) {
-    std::cout << "  " << c.id
-              << " (" << c.messages.size() << " messages)"
-              << " created: " << c.created_at
-              << "\n";
-  }
+  if (convs.empty()) { std::cout << "No saved conversations.\n"; return; }
+  for (const auto& c : convs)
+    std::cout << "  " << c.id << " (" << c.messages.size() << " messages)"
+              << " created: " << c.created_at << "\n";
 }
 
-}  // namespace
+}  // anonymous namespace
 
 int RunChatCommand(int argc, char* argv[]) {
   std::string initial_expert;
@@ -102,367 +93,167 @@ int RunChatCommand(int argc, char* argv[]) {
       std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
       return 0;
     } else if (arg == "--expert") {
-      if (i + 1 < argc) {
-        initial_expert = argv[++i];
-      } else {
-        std::cerr << "Error: --expert requires an argument\n";
-        return 1;
-      }
-    } else if (arg == "--show-reasoning") {
-      show_reasoning = true;
-    } else {
-      std::cerr << "Error: unexpected argument '" << arg << "'\n";
-      return 1;
-    }
+      if (i + 1 < argc) initial_expert = argv[++i];
+      else { std::cerr << "Error: --expert requires an argument\n"; return 1; }
+    } else if (arg == "--show-reasoning") { show_reasoning = true; }
+    else { std::cerr << "Error: unexpected argument '" << arg << "'\n"; return 1; }
   }
 
-  std::string config_path;
-  try {
-    config_path = pu::config::FindConfigPath();
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return 1;
-  }
+  auto ctx = SetupAppContext(initial_expert, show_reasoning);
+  const auto& config = ctx.config;
+  auto& manager = ctx.manager;
+  std::string current_name = manager.GetActiveExpert();
 
-  pu::config::ExpertsConfig config;
-  try {
-    config = pu::config::LoadExpertsConfig(config_path);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load config: " << e.what() << "\n";
-    return 1;
-  }
-
-  if (config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
-    return 1;
-  }
-
-  std::string current_name = initial_expert.empty() ? config.default_expert : initial_expert;
-  bool initial_found = false;
-
-  pu::expert::ExpertManager manager;
-  for (const auto& entry : config.experts) {
-    if (entry.name == current_name) {
-      initial_found = true;
-    }
-    if (entry.type == pu::config::ExpertType::kChat) {
-      auto chat_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto chat_backend = pu::config::CreateBackend(entry.backend, std::move(chat_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::ChatExpert>(entry.name, std::move(chat_backend), entry.name));
-    } else if (entry.type == pu::config::ExpertType::kBash) {
-      auto bash_http = std::make_unique<pu::http::CurlHttpClient>();
-      auto bash_backend = pu::config::CreateBackend(entry.backend, std::move(bash_http));
-      manager.RegisterExpert(
-          std::make_unique<pu::experts::BashExpert>(entry.name, std::move(bash_backend),
-                                                    std::make_unique<pu::executor::CommandExecutor>(entry.sandbox_path)));
-    }
-  }
-
-  if (!initial_found) {
-    std::cerr << "Error: expert '" << current_name << "' not found\n";
-    return 1;
-  }
-
-  manager.SetActiveExpert(current_name);
-  if (show_reasoning) {
-    manager.SetShowReasoning(true);
-  }
-
-  auto store_dir = std::filesystem::path(
-      std::getenv("HOME") ? std::getenv("HOME") : ".") / ".pu" / "conversations";
+  const char* home = std::getenv("HOME");
+  auto store_dir = std::filesystem::path(home ? home : ".") / ".pu" / "conversations";
   pu::ConversationStore store(store_dir);
-
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
 
-  std::cout << "[INFO] Connected to expert: " << current_name;
-  const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
-    for (const auto& e : config.experts) {
-      if (e.name == current_name) return &e;
+  struct ConfirmationState {
+    bool auto_approve_safe = false;
+    bool deny_all = false;
+  };
+  auto confirm_state = std::make_shared<ConfirmationState>();
+
+  manager.SetConfirmationCallback([confirm_state](const pu::expert::ConfirmationRequest& req) {
+    if (confirm_state->deny_all) return pu::expert::ConfirmationChoice::kDenyAll;
+    if (confirm_state->auto_approve_safe &&
+        req.highest_risk == pu::executor::RiskLevel::kSafe)
+      return pu::expert::ConfirmationChoice::kApproveOnce;
+    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer == "a") {
+      confirm_state->auto_approve_safe = true;
+      return req.highest_risk == pu::executor::RiskLevel::kSafe
+                 ? pu::expert::ConfirmationChoice::kApproveOnce
+                 : pu::expert::ConfirmationChoice::kDeny;
     }
-    return nullptr;
-  }();
-  if (entry_ptr && !entry_ptr->description.empty()) {
-    std::cout << " (" << entry_ptr->description << ")";
+    if (answer == "s") { confirm_state->deny_all = true; return pu::expert::ConfirmationChoice::kDenyAll; }
+    return (answer == "y" || answer == "Y") ? pu::expert::ConfirmationChoice::kApproveOnce
+                                            : pu::expert::ConfirmationChoice::kDeny;
+  });
+
+  std::cout << "[INFO] Connected to expert: " << current_name;
+  for (const auto& e : config.experts) {
+    if (e.name == current_name && !e.description.empty())
+      std::cout << " (" << e.description << ")";
   }
   std::cout << "\nType /help for available commands.\n\n";
 
   std::string input;
-  while (true) {
-    std::cout << "> " << std::flush;
-    if (!std::getline(std::cin, input)) {
-      break;
-    }
-    if (input.empty()) {
-      continue;
-    }
-
+  while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
+    if (input.empty()) continue;
     if (input[0] == '/') {
-      if (input == "/help") {
-        PrintHelp();
-      } else if (input == "/exit" || input == "/quit") {
-        break;
-      } else if (input == "/clear") {
+      if (input == "/help") PrintHelp();
+      else if (input == "/exit" || input == "/quit") break;
+      else if (input == "/clear") {
         manager.ClearSessions();
         panel_messages.clear();
         message_id = 0;
+        confirm_state->auto_approve_safe = false;
+        confirm_state->deny_all = false;
         std::cout << "[INFO] Conversation history and expert lock cleared.\n";
-      } else if (input == "/experts") {
-        PrintExperts(config, manager.GetActiveExpert());
-      } else if (input.rfind("/expert ", 0) == 0) {
-        std::string new_name = input.substr(8);
-        size_t start = new_name.find_first_not_of(" \t");
-        if (start != std::string::npos) {
-          new_name = new_name.substr(start);
-        } else {
-          new_name.clear();
-        }
-        size_t end = new_name.find_last_not_of(" \t");
-        if (end != std::string::npos) {
-          new_name = new_name.substr(0, end + 1);
-        } else {
-          new_name.clear();
-        }
-        if (new_name.empty()) {
-          std::cerr << "Error: expert name required.\n";
-          continue;
-        }
-
+      } else if (input == "/experts") PrintExperts(config, manager.GetActiveExpert());
+      else if (input.rfind("/expert ", 0) == 0) {
+        auto new_name = Trim(input.substr(8));
+        if (new_name.empty()) { std::cerr << "Error: expert name required.\n"; continue; }
         const pu::config::ExpertEntry* new_entry = nullptr;
         for (const auto& entry : config.experts) {
-          if (entry.name == new_name) {
-            new_entry = &entry;
-            break;
-          }
+          if (entry.name == new_name) { new_entry = &entry; break; }
         }
-        if (!new_entry) {
-          std::cerr << "Error: expert '" << new_name << "' not found.\n";
-          continue;
-        }
-
+        if (!new_entry) { std::cerr << "Error: expert '" << new_name << "' not found.\n"; continue; }
         manager.SetActiveExpert(new_entry->name);
         current_name = new_name;
         std::cout << "[INFO] Switched to expert: " << new_entry->name;
-        if (!new_entry->description.empty()) {
-          std::cout << " (" << new_entry->description << ")";
-        }
+        if (!new_entry->description.empty()) std::cout << " (" << new_entry->description << ")";
         std::cout << "\n";
       } else if (input.rfind("/proactive ", 0) == 0) {
-        // /proactive <expert> on|off [threshold]
-        std::string args = input.substr(11); // after "/proactive "
-        std::istringstream iss(args);
+        std::istringstream iss(input.substr(11));
         std::string expert, state;
         double threshold = 0.6;
         iss >> expert >> state;
         if (expert.empty() || state.empty()) {
-          std::cerr << "Usage: /proactive <expert> on|off [threshold]\n";
-          continue;
+          std::cerr << "Usage: /proactive <expert> on|off [threshold]\n"; continue;
         }
-        bool enable = false;
-        if (state == "on") {
-          enable = true;
-          // Optional threshold
-          if (!iss.eof()) {
-            std::string thresh_str;
-            iss >> thresh_str;
-            if (!thresh_str.empty()) {
-              threshold = std::stod(thresh_str);
-            }
-          }
-        } else if (state == "off") {
-          enable = false;
-        } else {
-          std::cerr << "State must be 'on' or 'off'.\n";
-          continue;
-        }
-
-        // Find the expert in config to verify existence
-        const pu::config::ExpertEntry* target = nullptr;
-        for (const auto& entry : config.experts) {
-          if (entry.name == expert) {
-            target = &entry;
-            break;
-          }
-        }
-        if (!target) {
-          std::cerr << "Error: expert '" << expert << "' not found.\n";
-          continue;
-        }
-
-        // Call manager methods
-        if (enable) {
-          manager.SetProactiveEnabled(true);
-          manager.SetProactiveThreshold(threshold);
-          // We need to target a specific expert; current manager applies globally.
-          // To be per-expert we'd need per-expert settings, but for now we use global state.
-          // We'll just inform that proactive is enabled for all experts.
-          std::cout << "[INFO] Proactive suggestions enabled (threshold " << threshold << ").\n";
-        } else {
-          manager.SetProactiveEnabled(false);
-          std::cout << "[INFO] Proactive suggestions disabled.\n";
-        }
+        bool enable = (state == "on");
+        if (!enable && state != "off") { std::cerr << "State must be 'on' or 'off'.\n"; continue; }
+        if (enable && !iss.eof()) { std::string t; iss >> t; if (!t.empty()) threshold = std::stod(t); }
+        bool found = false;
+        for (const auto& e : config.experts) if (e.name == expert) { found = true; break; }
+        if (!found) { std::cerr << "Error: expert '" << expert << "' not found.\n"; continue; }
+        if (enable) { manager.SetProactiveEnabled(true); manager.SetProactiveThreshold(threshold); }
+        else manager.SetProactiveEnabled(false);
+        std::cout << "[INFO] Proactive suggestions " << (enable ? "enabled" : "disabled") << ".\n";
       } else if (input.rfind("/save", 0) == 0) {
-        std::string save_name;
-        if (input.size() > 5) {
-          save_name = input.substr(6);
-          size_t s = save_name.find_first_not_of(" \t");
-          if (s != std::string::npos) {
-            save_name = save_name.substr(s);
-          } else {
-            save_name.clear();
-          }
-          size_t e = save_name.find_last_not_of(" \t");
-          if (e != std::string::npos) {
-            save_name = save_name.substr(0, e + 1);
-          } else {
-            save_name.clear();
-          }
-        }
-        if (save_name.empty()) {
-          save_name = GenerateId();
-        }
-
+        auto save_name = (input.size() > 5) ? Trim(input.substr(6)) : std::string{};
+        if (save_name.empty()) save_name = GenerateId();
         pu::Conversation conv;
         conv.id = save_name;
-        conv.created_at = panel_messages.empty()
-                              ? CurrentTimestamp()
-                              : panel_messages.front().timestamp;
+        conv.created_at = panel_messages.empty() ? CurrentTimestamp() : panel_messages.front().timestamp;
         conv.updated_at = CurrentTimestamp();
         conv.messages = panel_messages;
         conv.expert_histories = manager.SnapshotExperts();
-
-        try {
-          store.Save(conv);
-          std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
-        }
+        std::error_code ec;
+        store.Save(conv, ec);
+        if (ec) std::cerr << "Error: failed to save conversation: " << ec.message() << "\n";
+        else std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
       } else if (input.rfind("/load ", 0) == 0) {
-        std::string load_id = input.substr(6);
-        size_t s = load_id.find_first_not_of(" \t");
-        if (s != std::string::npos) {
-          load_id = load_id.substr(s);
-        } else {
-          load_id.clear();
-        }
-        size_t e = load_id.find_last_not_of(" \t");
-        if (e != std::string::npos) {
-          load_id = load_id.substr(0, e + 1);
-        } else {
-          load_id.clear();
-        }
-
-        if (load_id.empty()) {
-          std::cerr << "Error: conversation id required.\n";
-          continue;
-        }
-
-        try {
-          auto conv = store.Load(load_id);
+        auto load_id = Trim(input.substr(6));
+        if (load_id.empty()) { std::cerr << "Error: conversation id required.\n"; continue; }
+        std::error_code ec;
+        auto conv = store.Load(load_id, ec);
+        if (ec) std::cerr << "Error: failed to load conversation: " << ec.message() << "\n";
+        else {
           panel_messages = conv.messages;
           message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
           manager.RestoreExperts(conv.expert_histories);
           manager.SetActiveExpert("");
+          confirm_state->auto_approve_safe = false;
+          confirm_state->deny_all = false;
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
         }
-      } else if (input == "/list") {
-        auto convs = store.List();
-        PrintConversationList(convs);
-      } else if (input.rfind("/export ", 0) == 0) {
-        std::string export_id = input.substr(8);
-        size_t s = export_id.find_first_not_of(" \t");
-        if (s != std::string::npos) {
-          export_id = export_id.substr(s);
-        } else {
-          export_id.clear();
-        }
-        size_t e = export_id.find_last_not_of(" \t");
-        if (e != std::string::npos) {
-          export_id = export_id.substr(0, e + 1);
-        } else {
-          export_id.clear();
-        }
-
-        if (export_id.empty()) {
-          std::cerr << "Error: conversation id required.\n";
-          continue;
-        }
-
-        try {
-          std::string markdown = store.ExportMarkdown(export_id);
+      } else if (input == "/list") PrintConversationList(store.List());
+      else if (input.rfind("/export ", 0) == 0) {
+        auto export_id = Trim(input.substr(8));
+        if (export_id.empty()) { std::cerr << "Error: conversation id required.\n"; continue; }
+        std::error_code ec;
+        auto md = store.ExportMarkdown(export_id, ec);
+        if (ec) std::cerr << "Error: failed to export conversation: " << ec.message() << "\n";
+        else {
           std::string filename = "conversation_" + export_id + ".md";
           std::ofstream out(filename);
-          if (!out) {
-            std::cerr << "Error: cannot write to " << filename << "\n";
-          } else {
-            out << markdown;
-            std::cout << "[INFO] Exported to " << filename << "\n";
-          }
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
+          if (!out) std::cerr << "Error: cannot write to " << filename << "\n";
+          else { out << md; std::cout << "[INFO] Exported to " << filename << "\n"; }
         }
-      } else {
-        std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
-      }
+      } else std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
       continue;
     }
 
-    std::string user_content = input;
-    panel_messages.push_back({
-      ++message_id,
-      CurrentTimestamp(),
-      "user",
-      user_content,
-      ""
-    });
+    panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
     manager.NotifyPanelMessage(panel_messages.back());
 
-    std::string reply_role;
+    std::string reply_role = manager.GetActiveExpert();
     if (!input.empty() && input[0] == '@') {
-      size_t space_pos = input.find(' ');
-      if (space_pos != std::string::npos) {
-        reply_role = input.substr(1, space_pos - 1);
-      } else {
-        reply_role = "chat";
-      }
-    } else {
-      reply_role = manager.GetActiveExpert();
-      if (reply_role.empty()) {
-        reply_role = "chat";
-      }
+      auto space_pos = input.find(' ');
+      reply_role = (space_pos != std::string::npos) ? input.substr(1, space_pos - 1) : "chat";
     }
+    if (reply_role.empty()) reply_role = "chat";
 
     try {
-      std::string response = manager.Dispatch(input);
+      auto response = manager.Dispatch(input);
       if (!response.empty()) {
-        panel_messages.push_back({
-          ++message_id,
-          CurrentTimestamp(),
-          reply_role,
-          response,
-          ""
-        });
+        panel_messages.push_back({++message_id, CurrentTimestamp(), reply_role, response, ""});
         manager.NotifyPanelMessage(panel_messages.back());
 
-        // Check for proactive replies after the expert's response
         std::vector<pu::ChatMessage> recent;
-        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+        auto start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+        for (size_t i = start_idx; i < panel_messages.size(); ++i)
           recent.push_back(panel_messages[i]);
-        }
         manager.SetRecentMessages(recent);
-        auto proactive_replies = manager.CollectProactiveReplies();
-        for (auto& [expert, text] : proactive_replies) {
-          panel_messages.push_back({
-            ++message_id,
-            CurrentTimestamp(),
-            expert,
-            text,
-            ""
-          });
+        for (auto& [expert, text] : manager.CollectProactiveReplies()) {
+          panel_messages.push_back({++message_id, CurrentTimestamp(), expert, text, ""});
           std::cout << "\n[" << expert << "] " << text << std::endl;
           manager.NotifyPanelMessage(panel_messages.back());
         }
@@ -471,7 +262,6 @@ int RunChatCommand(int argc, char* argv[]) {
       std::cerr << "\nError: " << e.what() << "\n\n";
     }
   }
-
   std::cout << "\nGoodbye!\n";
   return 0;
 }

@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// BashExpert: executes safe system commands via native tool calling.
-
 #pragma once
 
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "executor/command_executor.hpp"
-
+#include "pu/expert_config.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,7 +16,8 @@ class BashExpert : public pu::expert::BaseExpert {
  public:
   BashExpert(const std::string& name,
              std::unique_ptr<pu::backend::Backend> backend,
-             std::unique_ptr<pu::executor::CommandExecutor> executor);
+             std::unique_ptr<pu::executor::CommandExecutor> executor,
+             config::ConfirmationPolicy policy = config::ConfirmationPolicy::kAlwaysAsk);
   ~BashExpert() override = default;
 
   std::string Name() const override { return name_; }
@@ -49,6 +47,7 @@ class BashExpert : public pu::expert::BaseExpert {
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
                           std::vector<ChatMessage>& turn_history,
+                          pu::expert::ExpertContext& ctx,
                           const std::vector<pu::backend::Message>& initial_history = {});
 
   std::string name_;
@@ -57,6 +56,8 @@ class BashExpert : public pu::expert::BaseExpert {
   std::vector<ChatMessage> history_;
   std::vector<double> recent_scores_;
   double proactive_threshold_ = 0.6;
+  config::ConfirmationPolicy confirmation_policy_;
+  bool user_approved_all_safe_ = false;
 };
 
 }  // namespace pu::experts
