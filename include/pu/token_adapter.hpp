@@ -9,11 +9,8 @@ namespace pu::backends {
 class ITokenAdapter {
  public:
   virtual ~ITokenAdapter() = default;
-
-  virtual void HandleJson(const nlohmann::json& j,
-                          backend::ChatCallback content_cb,
+  virtual void HandleJson(const nlohmann::json& j, backend::ChatCallback content_cb,
                           backend::ToolCallback tool_cb) = 0;
-
   virtual void Reset() {}
 };
 

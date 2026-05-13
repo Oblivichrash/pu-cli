@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/backend.hpp"
-#include "pu/token_adapter.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,11 +44,10 @@ struct ExpertsConfig {
 
 std::string FindConfigPath();
 ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec);
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config, std::error_code& ec);
+void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config,
+                       std::error_code& ec);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg,
-    std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter,
-    std::error_code& ec);
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
+    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec);
 
 }  // namespace pu::config

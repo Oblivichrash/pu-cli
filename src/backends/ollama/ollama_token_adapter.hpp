@@ -7,8 +7,7 @@ namespace pu::backends::ollama {
 
 class OllamaTokenAdapter : public ITokenAdapter {
  public:
-  void HandleJson(const nlohmann::json& j,
-                  backend::ChatCallback content_cb,
+  void HandleJson(const nlohmann::json& j, backend::ChatCallback content_cb,
                   backend::ToolCallback tool_cb) override;
 };
 

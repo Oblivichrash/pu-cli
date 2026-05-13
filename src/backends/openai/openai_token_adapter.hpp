@@ -10,18 +10,12 @@ namespace pu::backends::openai {
 
 class OpenAITokenAdapter : public ITokenAdapter {
  public:
-  void HandleJson(const nlohmann::json& j,
-                  backend::ChatCallback content_cb,
+  void HandleJson(const nlohmann::json& j, backend::ChatCallback content_cb,
                   backend::ToolCallback tool_cb) override;
-
   void Reset() override;
 
  private:
-  struct ToolCallAccumulator {
-    std::string id;
-    std::string name;
-    std::string arguments;
-  };
+  struct ToolCallAccumulator { std::string id, name, arguments; };
   std::map<int, ToolCallAccumulator> pending_tools_;
 };
 

@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "ollama_backend.hpp"
 #include "pu/backend_helpers.hpp"
 #include "platform/platform.hpp"
 #include "backends/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
-#include <stdexcept>
-#include <string>
-#include <vector>
 
 namespace pu::backends::ollama {
 
 using json = nlohmann::json;
 
+// BuildRequest / BuildRequestWithTools remain largely unchanged, but I'll include them for completeness
 std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
@@ -29,16 +26,15 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
       case pu::backend::Message::Role::kSystem: role = "system"; break;
       case pu::backend::Message::Role::kTool: role = "tool"; break;
     }
-    if (!role.empty()) {
-      messages.push_back({{"role", role}, {"content", msg.content}});
-    }
+    if (!role.empty()) messages.push_back({{"role", role}, {"content", msg.content}});
   }
   req["messages"] = messages;
   return req.dump();
 }
 
-std::string OllamaBackend::BuildRequestWithTools(const std::vector<pu::backend::Message>& history,
-                                                 const std::vector<pu::backend::ToolDefinition>& tools) const {
+std::string OllamaBackend::BuildRequestWithTools(
+    const std::vector<pu::backend::Message>& history,
+    const std::vector<pu::backend::ToolDefinition>& tools) const {
   json req;
   req["model"] = config_.model;
   req["stream"] = true;
@@ -55,19 +51,14 @@ std::string OllamaBackend::BuildRequestWithTools(const std::vector<pu::backend::
       case pu::backend::Message::Role::kTool: role = "tool"; break;
     }
     json m = {{"role", role}, {"content", msg.content}};
-    if (role == "tool") {
-      m["tool_name"] = msg.tool_name;
-    }
+    if (role == "tool") m["tool_name"] = msg.tool_name;
     if (!msg.tool_calls.empty()) {
       json tcs = json::array();
       for (const auto& tc : msg.tool_calls) {
         json func = {{"name", tc.name}};
         if (!tc.arguments.empty()) {
-          try {
-            func["arguments"] = json::parse(tc.arguments);
-          } catch (...) {
-            func["arguments"] = tc.arguments;
-          }
+          try { func["arguments"] = json::parse(tc.arguments); }
+          catch (...) { func["arguments"] = tc.arguments; }
         }
         tcs.push_back({{"function", func}});
       }
@@ -90,88 +81,65 @@ std::string OllamaBackend::BuildRequestWithTools(const std::vector<pu::backend::
   return req.dump();
 }
 
-OllamaBackend::OllamaBackend(Config config,
-                             std::unique_ptr<pu::http::HttpClient> http,
+OllamaBackend::OllamaBackend(Config config, std::unique_ptr<pu::http::HttpClient> http,
                              std::unique_ptr<ITokenAdapter> adapter)
     : Backend(std::move(config)), host_(std::move(config.host)),
       api_key_(std::move(config.api_key)), http_(std::move(http)),
       adapter_(std::move(adapter)) {}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb,
-                         std::error_code& ec) {
+                         pu::backend::ChatCallback cb, std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
   adapter_->Reset();
-
-  std::string body = BuildRequest(history);
+  auto body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
 
-  std::vector<std::string> headers;
-  headers.push_back("Content-Type: application/json");
-  if (!api_key_.empty()) {
-    headers.push_back("Authorization: Bearer " + api_key_);
-  }
+  std::vector<std::string> headers = {"Content-Type: application/json"};
+  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   StreamingJsonParser parser(
     [this, cb](std::string_view line) {
       try {
-        auto j = nlohmann::json::parse(line);
+        auto j = json::parse(line);
         adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
-      } catch (const std::exception&) {
-        // Ignore malformed lines
-      }
+      } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) {
-      if (!ec) ec = err;
-    }
+    [&ec](std::error_code err) { if (!ec) ec = err; }
   );
-
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-
   http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb,
-                         std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
   adapter_->Reset();
-
-  std::string body = BuildRequestWithTools(history, tools);
+  auto body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/api/chat";
 
-  std::vector<std::string> headers;
-  headers.push_back("Content-Type: application/json");
-  if (!api_key_.empty()) {
-    headers.push_back("Authorization: Bearer " + api_key_);
-  }
+  std::vector<std::string> headers = {"Content-Type: application/json"};
+  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   StreamingJsonParser parser(
     [this, content_cb, tool_cb](std::string_view line) {
       try {
-        auto j = nlohmann::json::parse(line);
+        auto j = json::parse(line);
         adapter_->HandleJson(j, content_cb, tool_cb);
-      } catch (const std::exception&) {
-        // Ignore malformed lines
-      }
+      } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) {
-      if (!ec) ec = err;
-    }
+    [&ec](std::error_code err) { if (!ec) ec = err; }
   );
-
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-
   http_->PostStream(url, body, headers, write_cb, ec);
 }
 
