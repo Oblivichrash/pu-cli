@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/ollama/ollama_backend.hpp"
+#include "backends/ollama/ollama_token_adapter.hpp"
 #include "backends/ollama/sse_parser.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -50,7 +51,8 @@ TEST_CASE("OllamaBackend request building", "[ollama]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  auto adapter = std::make_unique<OllamaTokenAdapter>();
+  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -95,7 +97,8 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
     }
   };
 
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  auto adapter = std::make_unique<OllamaTokenAdapter>();
+  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}
@@ -121,4 +124,48 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
   REQUIRE(accumulated == "Hello world");
   REQUIRE(final_received == true);
   REQUIRE(mock_ptr->last_url == "http://localhost:11434/api/chat");
+}
+
+TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
+  OllamaBackend::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&,
+                                    const std::string&,
+                                    const std::vector<std::string>&,
+                                    pu::http::WriteCallback cb,
+                                    std::error_code& ec) {
+    ec.clear();
+    std::string data =
+        R"({"message":{"content":"Running ls","tool_calls":[{"id":"1","function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})"
+        + std::string("\n");
+    std::string done = R"({"done":true})" + std::string("\n");
+    cb(data.data(), data.size());
+    cb(done.data(), done.size());
+  };
+
+  auto adapter = std::make_unique<OllamaTokenAdapter>();
+  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
+
+  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list files"}};
+  pu::backend::ToolDefinition tool;
+  tool.name = "execute_bash";
+  tool.parameters.raw_schema = "{}";
+  std::vector<pu::backend::ToolDefinition> tools = {tool};
+
+  bool tool_fired = false;
+  std::error_code ec;
+  backend.Chat(history, tools,
+    [](TokenType, std::string_view, bool) {},
+    [&](const ToolCall& call) {
+      tool_fired = true;
+      REQUIRE(call.name == "execute_bash");
+    },
+    ec);
+  REQUIRE_FALSE(ec);
+  REQUIRE(tool_fired);
 }

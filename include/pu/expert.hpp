@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Expert framework base classes.
-
 #pragma once
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "pu/proactive_engine.hpp"
 #include "executor/command_executor.hpp"
-
 #include <functional>
 #include <memory>
 #include <optional>
@@ -19,12 +15,7 @@
 
 namespace pu::expert {
 
-enum class ConfirmationChoice {
-  kDeny,
-  kApproveOnce,
-  kApproveAllSafe,
-  kDenyAll
-};
+enum class ConfirmationChoice { kDeny, kApproveOnce, kApproveAllSafe, kDenyAll };
 
 struct ConfirmationRequest {
   std::string description;
@@ -34,7 +25,7 @@ struct ConfirmationRequest {
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
 struct ExpertContext {
-  std::function<std::string(const std::string& name, const std::string& input)> call_expert;
+  std::function<std::string(const std::string&, const std::string&)> call_expert;
   ConfirmationCallback request_confirmation;
   std::string working_dir;
   bool show_reasoning = false;
@@ -51,7 +42,6 @@ class BaseExpert {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
-
   virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
   virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
   virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
@@ -73,7 +63,6 @@ class ExpertManager {
   void SetProactiveThreshold(double threshold);
   void NotifyPanelMessage(const ChatMessage& msg);
   std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
-
   void SetConfirmationCallback(ConfirmationCallback cb);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;

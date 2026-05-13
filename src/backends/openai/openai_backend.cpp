@@ -1,27 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "openai_backend.hpp"
-#include "sse_parser.hpp"
 #include "pu/backend_helpers.hpp"
 #include "platform/platform.hpp"
+#include "backends/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
-#include <map>
-#include <stdexcept>
-#include <string>
-#include <vector>
 
 namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
 namespace {
-
 std::string RoleToString(pu::backend::Message::Role role) {
   switch (role) {
-    case pu::backend::Message::Role::kSystem: return "system";
-    case pu::backend::Message::Role::kUser: return "user";
+    case pu::backend::Message::Role::kSystem:    return "system";
+    case pu::backend::Message::Role::kUser:      return "user";
     case pu::backend::Message::Role::kAssistant: return "assistant";
-    case pu::backend::Message::Role::kTool: return "tool";
+    case pu::backend::Message::Role::kTool:      return "tool";
     default: return "user";
   }
 }
@@ -29,29 +23,17 @@ std::string RoleToString(pu::backend::Message::Role role) {
 json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   json messages = json::array();
   for (const auto& msg : history) {
-    json j{
-      {"role", RoleToString(msg.role)},
-      {"content", msg.content}
-    };
-    if (msg.role == pu::backend::Message::Role::kTool) {
-      j["tool_call_id"] = msg.tool_name;
-    }
+    json j{{"role", RoleToString(msg.role)}, {"content", msg.content}};
+    if (msg.role == pu::backend::Message::Role::kTool) j["tool_call_id"] = msg.tool_name;
     if (!msg.tool_calls.empty()) {
       json tcs = json::array();
       for (const auto& tc : msg.tool_calls) {
         json func = {{"name", tc.name}};
         if (!tc.arguments.empty()) {
-          try {
-            func["arguments"] = json::parse(tc.arguments);
-          } catch (...) {
-            func["arguments"] = tc.arguments;
-          }
+          try { func["arguments"] = json::parse(tc.arguments); }
+          catch (...) { func["arguments"] = tc.arguments; }
         }
-        tcs.push_back({
-          {"id", tc.id},
-          {"type", "function"},
-          {"function", func}
-        });
+        tcs.push_back({{"id", tc.id}, {"type", "function"}, {"function", func}});
       }
       j["tool_calls"] = tcs;
     }
@@ -59,8 +41,7 @@ json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   }
   return messages;
 }
-
-}  // namespace
+}  // anonymous namespace
 
 std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
@@ -95,141 +76,84 @@ std::string OpenAIBackend::BuildRequestWithTools(
   return req.dump();
 }
 
-OpenAIBackend::OpenAIBackend(const Config& config,
-                             std::unique_ptr<pu::http::HttpClient> http)
-    : Backend(config),
-      http_(std::move(http)),
-      host_(config.host),
-      api_key_(config.api_key) {}
+OpenAIBackend::OpenAIBackend(const Config& config, std::unique_ptr<pu::http::HttpClient> http,
+                             std::unique_ptr<ITokenAdapter> adapter)
+    : Backend(config), http_(std::move(http)), host_(config.host),
+      api_key_(config.api_key), adapter_(std::move(adapter)) {}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb,
-                         std::error_code& ec) {
+                         pu::backend::ChatCallback cb, std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
-  ec.clear();
-
-  std::string body = BuildRequest(history);
+  adapter_->Reset();
+  auto body = BuildRequest(history);
   std::string url = host_ + "/chat/completions";
 
-  std::vector<std::string> headers;
-  headers.push_back("Content-Type: application/json");
-  if (!api_key_.empty()) {
-    headers.push_back("Authorization: Bearer " + api_key_);
-  }
+  std::vector<std::string> headers = {"Content-Type: application/json"};
+  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  std::string line_buffer;
-  std::string accumulated_content;
-  std::string accumulated_reasoning;
-
+  StreamingJsonParser parser(
+    [this, cb](std::string_view line) {
+      constexpr std::string_view kDataPrefix = "data: ";
+      auto start = line.find_first_not_of(" \t");
+      if (start == std::string_view::npos) return;
+      std::string_view trimmed = line.substr(start);
+      if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
+      std::string_view data = trimmed.substr(kDataPrefix.size());
+      if (data == "[DONE]") {
+        cb(backend::TokenType::kContent, "", true);
+        return;
+      }
+      try {
+        auto j = json::parse(data);
+        adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
+      } catch (const std::exception&) {}
+    },
+    [&ec](std::error_code err) { if (!ec) ec = err; }
+  );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
-    line_buffer.append(ptr, total);
-    size_t pos = 0;
-    while ((pos = line_buffer.find('\n')) != std::string::npos) {
-      std::string line = line_buffer.substr(0, pos);
-      line_buffer.erase(0, pos + 1);
-      if (!line.empty() && line.back() == '\r') line.pop_back();
-
-      auto token_opt = internal::ParseSseLine(line);
-      if (!token_opt) continue;
-
-      const auto& token = *token_opt;
-      if (token.done) {
-        cb(pu::backend::TokenType::kContent, "", true);
-        return total;
-      }
-
-      auto extract_delta = [](std::string_view new_text, std::string& accumulated) -> std::string_view {
-        if (new_text.empty()) return new_text;
-        if (new_text.size() < accumulated.size()) accumulated.clear();
-        if (accumulated.empty() ||
-            new_text.compare(0, accumulated.size(), accumulated) != 0) {
-          accumulated = new_text;
-          return new_text;
-        }
-        std::string_view delta = new_text.substr(accumulated.size());
-        accumulated = new_text;
-        return delta;
-      };
-
-      if (!token.reasoning.empty()) {
-        std::string_view delta = extract_delta(token.reasoning, accumulated_reasoning);
-        if (!delta.empty()) cb(pu::backend::TokenType::kReasoning, delta, false);
-      }
-      if (!token.content.empty()) {
-        std::string_view delta = extract_delta(token.content, accumulated_content);
-        if (!delta.empty()) cb(pu::backend::TokenType::kContent, delta, false);
-      }
-    }
+    parser.Feed(ptr, total);
+    if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-
   http_->PostStream(url, body, headers, write_cb, ec);
 }
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb,
-                         std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
-  ec.clear();
-
-  std::string body = BuildRequestWithTools(history, tools);
+  adapter_->Reset();
+  auto body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/chat/completions";
 
-  std::vector<std::string> headers;
-  headers.push_back("Content-Type: application/json");
-  if (!api_key_.empty()) {
-    headers.push_back("Authorization: Bearer " + api_key_);
-  }
+  std::vector<std::string> headers = {"Content-Type: application/json"};
+  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  std::string line_buffer;
-  std::string accumulated_content;
-  std::string accumulated_reasoning;
-  std::map<int, internal::ToolCallDelta> pending_tools;
-
+  StreamingJsonParser parser(
+    [this, content_cb, tool_cb](std::string_view line) {
+      constexpr std::string_view kDataPrefix = "data: ";
+      auto start = line.find_first_not_of(" \t");
+      if (start == std::string_view::npos) return;
+      std::string_view trimmed = line.substr(start);
+      if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
+      std::string_view data = trimmed.substr(kDataPrefix.size());
+      if (data == "[DONE]") {
+        adapter_->HandleJson({{"done", true}}, content_cb, tool_cb);
+        return;
+      }
+      try {
+        auto j = json::parse(data);
+        adapter_->HandleJson(j, content_cb, tool_cb);
+      } catch (const std::exception&) {}
+    },
+    [&ec](std::error_code err) { if (!ec) ec = err; }
+  );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
-    line_buffer.append(ptr, total);
-    size_t pos = 0;
-    while ((pos = line_buffer.find('\n')) != std::string::npos) {
-      std::string line = line_buffer.substr(0, pos);
-      line_buffer.erase(0, pos + 1);
-      if (!line.empty() && line.back() == '\r') line.pop_back();
-
-      auto token_opt = internal::ParseSseLine(line);
-      if (!token_opt) continue;
-
-      const auto& token = *token_opt;
-      if (token.done) {
-        for (auto& [idx, delta] : pending_tools) {
-          pu::backend::ToolCall call;
-          call.id = delta.id;
-          call.name = delta.name;
-          call.arguments = delta.arguments;
-          tool_cb(call);
-        }
-        pending_tools.clear();
-        content_cb(pu::backend::TokenType::kContent, "", true);
-        return total;
-      }
-
-      if (!token.content.empty()) {
-        content_cb(pu::backend::TokenType::kContent, token.content, false);
-      }
-      if (!token.reasoning.empty()) {
-        content_cb(pu::backend::TokenType::kReasoning, token.reasoning, false);
-      }
-      for (const auto& delta : token.tool_call_deltas) {
-        if (delta.index < 0) continue;
-        auto& acc = pending_tools[delta.index];
-        if (!delta.id.empty()) acc.id = delta.id;
-        if (!delta.name.empty()) acc.name = delta.name;
-        acc.arguments += delta.arguments;
-      }
-    }
+    parser.Feed(ptr, total);
+    if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-
   http_->PostStream(url, body, headers, write_cb, ec);
 }
 
