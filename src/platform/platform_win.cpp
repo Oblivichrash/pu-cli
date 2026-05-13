@@ -17,9 +17,6 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type) {
   if (ctrl_type == CTRL_C_EVENT) { interrupted = true; return TRUE; }
   return FALSE;
 }
-
-const std::vector<std::string> dangerous_patterns = {
-    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)" };
 }  // namespace
 
 void SetupSignalHandler() { SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE); }
@@ -37,19 +34,6 @@ int ExecuteCommand(const std::string& command, std::string& output) {
 
   int status = _pclose(pipe);
   return (status == -1) ? -1 : status;
-}
-
-bool IsDangerous(const std::string& command, std::string* reason) {
-  for (const auto& pattern : dangerous_patterns) {
-    try {
-      std::regex re(pattern, std::regex::icase);
-      if (std::regex_search(command, re)) {
-        if (reason) *reason = "Matches dangerous pattern: " + pattern;
-        return true;
-      }
-    } catch (const std::regex_error&) {}
-  }
-  return false;
 }
 
 }  // namespace pu::platform
