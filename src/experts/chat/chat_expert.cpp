@@ -6,20 +6,42 @@
 
 namespace pu::experts {
 
-ChatExpert::ChatExpert(const std::string& name, std::unique_ptr<pu::backend::Backend> backend,
+ChatExpert::ChatExpert(const std::string& name,
+                       std::unique_ptr<pu::backend::Backend> backend,
                        const std::string& model_id)
     : name_(name), model_id_(model_id), backend_(std::move(backend)) {}
 
-std::string ChatExpert::Handle(const std::string& input, pu::expert::ExpertContext& ctx) {
+std::string ChatExpert::Handle(const std::string& input,
+                               pu::expert::ExpertContext& ctx) {
+  // Inject system prompt if present and not already in history
+  if (ctx.system_prompt && !ctx.system_prompt->empty()) {
+    bool has_system = false;
+    for (const auto& cm : history_) {
+      if (cm.role == "system") {
+        has_system = true;
+        break;
+      }
+    }
+    if (!has_system) {
+      history_.insert(history_.begin(),
+                      {0, "", "system", *ctx.system_prompt, ""});
+    }
+  }
+
   history_.push_back({0, "", "user", input, ""});
 
   std::vector<pu::backend::Message> backend_history;
   for (const auto& cm : history_) {
     pu::backend::Message msg;
-    if (cm.role == "user") msg.role = pu::backend::Message::Role::kUser;
-    else if (cm.role == "chat" || cm.role == "assistant") msg.role = pu::backend::Message::Role::kAssistant;
-    else if (cm.role == "system") msg.role = pu::backend::Message::Role::kSystem;
-    else continue;
+    if (cm.role == "user") {
+      msg.role = pu::backend::Message::Role::kUser;
+    } else if (cm.role == "chat" || cm.role == "assistant") {
+      msg.role = pu::backend::Message::Role::kAssistant;
+    } else if (cm.role == "system") {
+      msg.role = pu::backend::Message::Role::kSystem;
+    } else {
+      continue;
+    }
     msg.content = cm.content;
     backend_history.push_back(msg);
   }
@@ -28,14 +50,17 @@ std::string ChatExpert::Handle(const std::string& input, pu::expert::ExpertConte
   std::error_code ec;
   auto renderer = pu::StreamingRenderer::Create(ctx.show_reasoning);
   backend_->Chat(backend_history,
-                 [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
+                 [&](pu::backend::TokenType type, std::string_view token,
+                     bool is_final) {
                    if (type == pu::backend::TokenType::kContent) {
                      renderer(type, token, is_final);
                      if (!is_final) full_response << token;
-                   } else if (type == pu::backend::TokenType::kReasoning && ctx.show_reasoning) {
+                   } else if (type == pu::backend::TokenType::kReasoning &&
+                              ctx.show_reasoning) {
                      renderer(type, token, is_final);
                    }
-                 }, ec);
+                 },
+                 ec);
   if (ec) {
     std::string err = ec.message();
     std::cerr << "\nError: " << err << "\n";
@@ -48,7 +73,10 @@ std::string ChatExpert::Handle(const std::string& input, pu::expert::ExpertConte
 }
 
 void ChatExpert::ResetSession() { history_.clear(); }
-auto ChatExpert::SaveState() const -> std::vector<ChatMessage> { return history_; }
-void ChatExpert::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
+
+std::vector<ChatMessage> ChatExpert::SaveState() const { return history_; }
+void ChatExpert::LoadState(const std::vector<ChatMessage>& messages) {
+  history_ = messages;
+}
 
 }  // namespace pu::experts
