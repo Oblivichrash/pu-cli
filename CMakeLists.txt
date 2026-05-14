@@ -47,6 +47,7 @@ add_library(pu_backend STATIC
     src/backends/streaming_json_parser.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
+    src/memory_manager.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

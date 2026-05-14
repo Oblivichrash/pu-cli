@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+
 #include "bash_expert.hpp"
 #include "pu/renderer.hpp"
 #include "pu/expert.hpp"
@@ -27,8 +28,12 @@ std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
   for (const auto& cm : history_) {
     pu::backend::Message msg;
     if (cm.role == "user") msg.role = pu::backend::Message::Role::kUser;
-    else if (cm.role == "bash" || cm.role == "assistant") msg.role = pu::backend::Message::Role::kAssistant;
-    else if (cm.role == "tool_result") msg.role = pu::backend::Message::Role::kTool;
+    else if (cm.role == "bash" || cm.role == "assistant")
+      msg.role = pu::backend::Message::Role::kAssistant;
+    else if (cm.role == "tool_result")
+      msg.role = pu::backend::Message::Role::kTool;
+    else if (cm.role == "system")
+      msg.role = pu::backend::Message::Role::kSystem;
     else msg.role = pu::backend::Message::Role::kSystem;
     msg.content = cm.content;
     initial.push_back(msg);
@@ -36,9 +41,9 @@ std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
   return initial;
 }
 
-void BashExpert::AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
-                                     size_t initial_size,
-                                     std::vector<ChatMessage>& turn_history) const {
+void BashExpert::AppendTurnToHistory(
+    const std::vector<pu::backend::Message>& history, size_t initial_size,
+    std::vector<ChatMessage>& turn_history) const {
   for (size_t i = initial_size + 1; i < history.size(); ++i) {
     const auto& msg = history[i];
     ChatMessage cm;
@@ -67,9 +72,25 @@ void BashExpert::AppendTurnToHistory(const std::vector<pu::backend::Message>& hi
 
 std::string BashExpert::Handle(const std::string& input,
                                pu::expert::ExpertContext& ctx) {
+  // Inject system prompt into panel history if not already present
+  if (ctx.system_prompt && !ctx.system_prompt->empty()) {
+    bool has_system = false;
+    for (const auto& cm : history_) {
+      if (cm.role == "system") {
+        has_system = true;
+        break;
+      }
+    }
+    if (!has_system) {
+      history_.insert(history_.begin(),
+                      {0, "", "system", *ctx.system_prompt, ""});
+    }
+  }
+
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
-  auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
+  auto response =
+      RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
