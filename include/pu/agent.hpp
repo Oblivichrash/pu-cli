@@ -72,7 +72,7 @@ class AgentManager {
  public:
   AgentManager();
 
-  void RegisterAgent(std::unique_ptr<BaseAgent> expert);
+  void RegisterAgent(std::unique_ptr<BaseAgent> agent);
   std::string Dispatch(const std::string& input);
   std::string CallAgent(const std::string& expert_name, const std::string& input);
   void ClearSessions();

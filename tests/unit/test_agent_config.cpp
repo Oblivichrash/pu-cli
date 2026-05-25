@@ -18,9 +18,8 @@
 #include <cstring>
 #endif
 
-
-using namespace pu::tests;
 using namespace pu::config;
+using namespace pu::tests;
 using namespace pu;
 
 namespace fs = std::filesystem;
@@ -46,7 +45,7 @@ static void unset_env(const char* name) {
 struct TempConfigFile {
   fs::path path;
   TempConfigFile() {
-    path = fs::temp_directory_path() / "pu_test_experts.json";
+    path = fs::temp_directory_path() / "pu_test_agents.json";
   }
   ~TempConfigFile() {
     std::error_code ec;
@@ -58,11 +57,11 @@ struct TempConfigFile {
   }
 };
 
-TEST_CASE("LoadAgentsConfig parses valid JSON", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_expert": "chat",
-    "experts": [
+    "default_agent": "chat",
+    "agents": [
       {
         "name": "chat",
         "type": "chat",
@@ -80,7 +79,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[expert_config]") {
         "description": "Command Runner",
         "backend": {
           "type": "openai",
-          "host": "https://api.openai.com",
+          "host": "https://api.openai.com/v1",
           "api_key": "${OPENAI_KEY}",
           "model": "gpt-4o-mini"
         },
@@ -112,14 +111,14 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[expert_config]") {
   unset_env("OPENAI_KEY");
 }
 
-TEST_CASE("LoadAgentsConfig reports error on missing file", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig reports error on missing file", "[agent_config]") {
   std::error_code ec;
-  LoadAgentsConfig("/nonexistent/path/experts.json", ec);
+  LoadAgentsConfig("/nonexistent/path/agents.json", ec);
   REQUIRE(ec);
   REQUIRE(ec == ConfigErrc::file_not_found);
 }
 
-TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
   std::error_code ec;
@@ -128,10 +127,11 @@ TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[expert_config]") {
   REQUIRE(ec == ConfigErrc::parse_error);
 }
 
-TEST_CASE("LoadAgentsConfig defaults agent if empty", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "experts": [
+    "default_agent": "only",
+    "agents": [
       {
         "name": "only",
         "type": "chat",
@@ -146,7 +146,7 @@ TEST_CASE("LoadAgentsConfig defaults agent if empty", "[expert_config]") {
   REQUIRE(config.default_expert == "only");
 }
 
-TEST_CASE("SaveAgentsConfig writes valid JSON", "[expert_config]") {
+TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   AgentsConfig original;
   original.default_expert = "test";
@@ -175,7 +175,7 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[expert_config]") {
   REQUIRE(loaded.experts[0].backend.api_key == "secret");
 }
 
-TEST_CASE("CreateBackend creates OllamaBackend", "[expert_config]") {
+TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
   BackendConfig cfg;
   cfg.type = BackendType::kOllama;
   cfg.host = "http://localhost:11434";
@@ -184,32 +184,33 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[expert_config]") {
   cfg.system_prompt = "Be helpful.";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<backends::ollama::OllamaTokenAdapter>();
+  auto adapter = std::make_unique<pu::backends::ollama::OllamaTokenAdapter>();
   std::error_code ec;
   auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }
 
-TEST_CASE("CreateBackend creates OpenAIBackend", "[expert_config]") {
+TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
   BackendConfig cfg;
   cfg.type = BackendType::kOpenAI;
-  cfg.host = "https://api.openai.com";
+  cfg.host = "https://api.openai.com/v1";
   cfg.model = "gpt-4o-mini";
   cfg.api_key = "key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<backends::openai::OpenAITokenAdapter>();
+  auto adapter = std::make_unique<pu::backends::openai::OpenAITokenAdapter>();
   std::error_code ec;
   auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }
 
-TEST_CASE("ExpandEnvVars warns on undefined variable", "[expert_config]") {
+TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "experts": [
+    "default_agent": "x",
+    "agents": [
       {
         "name": "x",
         "type": "chat",

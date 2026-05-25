@@ -96,9 +96,8 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
   if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  if (std::filesystem::exists("./experts.json")) return "./experts.json";
   throw std::runtime_error("Configuration file not found. "
-                           "Set PU_AGENTS_CONFIG or place agents.json/experts.json in current directory.");
+                           "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec) {
@@ -110,27 +109,18 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
   json j;
   try { file >> j; } catch (const json::parse_error&) { ec = ConfigErrc::parse_error; return result; }
 
-  // Read default agent name: prefer "default_agent", fallback to "default_expert"
-  std::string default_agent;
-  if (j.contains("default_agent") && j["default_agent"].is_string()) {
-    default_agent = j["default_agent"];
-  } else if (j.contains("default_expert") && j["default_expert"].is_string()) {
-    default_agent = j["default_expert"];
+  if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
+    ec = ConfigErrc::missing_field;
+    return result;
   }
-  result.default_expert = default_agent;
+  result.default_expert = j["default_agent"];
 
-  // Read agents list: prefer "agents", fallback to "experts"
-  json agents_array;
-  if (j.contains("agents") && j["agents"].is_array()) {
-    agents_array = j["agents"];
-  } else if (j.contains("experts") && j["experts"].is_array()) {
-    agents_array = j["experts"];
-  } else {
+  if (!j.contains("agents") || !j["agents"].is_array()) {
     ec = ConfigErrc::missing_field;
     return result;
   }
 
-  for (const auto& item : agents_array) {
+  for (const auto& item : j["agents"]) {
     std::error_code entry_ec;
     auto entry = ParseAgentEntry(item, entry_ec);
     if (entry_ec) { ec = entry_ec; return result; }
@@ -147,9 +137,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
                       std::error_code& ec) {
   ec.clear();
   json j;
-  // Write both new and old fields for compatibility
   j["default_agent"] = config.default_expert;
-  j["default_expert"] = config.default_expert;
 
   json agents_array = json::array();
   for (const auto& entry : config.experts) {
@@ -184,7 +172,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;
-  j["experts"] = agents_array;  // also write old field for backward compatibility
 
   std::ofstream file(config_path);
   if (!file.is_open()) { ec = ConfigErrc::file_not_found; return; }

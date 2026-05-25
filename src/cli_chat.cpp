@@ -60,7 +60,7 @@ void PrintHelp() {
             << "  /exit, /quit    Exit interactive mode\n"
             << "  /clear          Clear conversation history and agent lock\n"
             << "  /agent <name>  Switch to different agent\n"
-            << "  /experts        List available experts\n"
+            << "  /agents        List available agents\n"
             << "  /proactive <agent> on|off [threshold]  Control proactive suggestions\n"
             << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
             << "  /load <id>      Load a saved conversation\n"
@@ -75,7 +75,7 @@ void PrintHelp() {
 }
 
 void PrintExperts(const pu::config::AgentsConfig& config, const std::string& current) {
-  std::cout << "Available experts:\n";
+  std::cout << "Available agents:\n";
   for (const auto& entry : config.experts) {
     std::cout << "  " << entry.name;
     if (!entry.description.empty()) {
@@ -223,7 +223,7 @@ int RunChatCommand(int argc, char* argv[]) {
         confirm_state->auto_approve_safe = false;
         confirm_state->deny_all = false;
         std::cout << "[INFO] Conversation history and agent lock cleared.\n";
-      } else if (input == "/experts") {
+      } else if (input == "/agents") {
         PrintExperts(config, manager.GetActiveAgent());
       } else if (input.rfind("/agent ", 0) == 0) {
         std::string new_name = Trim(input.substr(8));
