@@ -10,20 +10,20 @@
 
 namespace pu::experts {
 
-BashExpert::BashExpert(const std::string& name,
+BashAgent::BashAgent(const std::string& name,
                        std::unique_ptr<pu::backend::Backend> backend,
                        std::unique_ptr<pu::executor::CommandExecutor> executor,
                        config::ConfirmationPolicy policy)
     : name_(name), backend_(std::move(backend)), executor_(std::move(executor)),
       confirmation_policy_(policy) {}
 
-void BashExpert::ResetSession() {
+void BashAgent::ResetSession() {
   history_.clear();
   recent_scores_.clear();
   user_approved_all_safe_ = false;
 }
 
-std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
+std::vector<pu::backend::Message> BashAgent::BuildInitialHistory() const {
   std::vector<pu::backend::Message> initial;
   for (const auto& cm : history_) {
     pu::backend::Message msg;
@@ -41,7 +41,7 @@ std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
   return initial;
 }
 
-void BashExpert::AppendTurnToHistory(
+void BashAgent::AppendTurnToHistory(
     const std::vector<pu::backend::Message>& history, size_t initial_size,
     std::vector<ChatMessage>& turn_history) const {
   for (size_t i = initial_size + 1; i < history.size(); ++i) {
@@ -70,8 +70,8 @@ void BashExpert::AppendTurnToHistory(
   }
 }
 
-std::string BashExpert::Handle(const std::string& input,
-                               pu::expert::ExpertContext& ctx) {
+std::string BashAgent::Handle(const std::string& input,
+                               pu::expert::AgentContext& ctx) {
   // Inject system prompt into panel history if not already present
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
@@ -95,10 +95,10 @@ std::string BashExpert::Handle(const std::string& input,
   return response;
 }
 
-std::string BashExpert::RunToolLoop(const std::string& user_input,
+std::string BashAgent::RunToolLoop(const std::string& user_input,
                                     bool show_reasoning,
                                     std::vector<ChatMessage>& turn_history,
-                                    pu::expert::ExpertContext& ctx,
+                                    pu::expert::AgentContext& ctx,
                                     const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
@@ -249,10 +249,10 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
   return final_response;
 }
 
-std::vector<ChatMessage> BashExpert::SaveState() const { return history_; }
-void BashExpert::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
+std::vector<ChatMessage> BashAgent::SaveState() const { return history_; }
+void BashAgent::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
 
-double BashExpert::EvaluateRelevance(const ChatMessage& msg) {
+double BashAgent::EvaluateRelevance(const ChatMessage& msg) {
   std::string lower = msg.content;
   std::transform(lower.begin(), lower.end(), lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
@@ -265,12 +265,12 @@ double BashExpert::EvaluateRelevance(const ChatMessage& msg) {
   return std::min(score, 1.0);
 }
 
-void BashExpert::OnPanelMessage(const ChatMessage& msg) {
+void BashAgent::OnPanelMessage(const ChatMessage& msg) {
   double s = EvaluateRelevance(msg);
   if (s > 0.0) recent_scores_.push_back(s);
 }
 
-std::optional<std::string> BashExpert::ProactiveReply() {
+std::optional<std::string> BashAgent::ProactiveReply() {
   if (std::any_of(recent_scores_.begin(), recent_scores_.end(),
                   [this](double s) { return s >= proactive_threshold_; })) {
     recent_scores_.clear();
@@ -279,6 +279,6 @@ std::optional<std::string> BashExpert::ProactiveReply() {
   return std::nullopt;
 }
 
-void BashExpert::SetProactiveThreshold(double threshold) { proactive_threshold_ = threshold; }
+void BashAgent::SetProactiveThreshold(double threshold) { proactive_threshold_ = threshold; }
 
 }  // namespace pu::experts

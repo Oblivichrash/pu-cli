@@ -33,7 +33,7 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   for (const auto& entry : ctx.config.experts) {
     if (entry.name == active_name) active_found = true;
     try {
-      ctx.manager.RegisterExpert(expert::ExpertRegistry::Instance().CreateExpert(entry));
+      ctx.manager.RegisterExpert(expert::AgentRegistry::Instance().CreateExpert(entry));
     } catch (const std::exception& e) {
       std::cerr << "Error: failed to create expert '" << entry.name << "': " << e.what() << "\n";
       std::exit(1);

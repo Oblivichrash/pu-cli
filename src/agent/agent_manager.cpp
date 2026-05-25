@@ -5,57 +5,57 @@
 
 namespace pu::expert {
 
-ExpertManager::ExpertManager()
+AgentManager::AgentManager()
     : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
 
-void ExpertManager::RegisterExpert(std::unique_ptr<BaseExpert> expert) {
+void AgentManager::RegisterExpert(std::unique_ptr<BaseAgent> expert) {
   if (!expert) {
     return;
   }
   std::string name = expert->Name();
   if (experts_.count(name)) {
-    std::cerr << "[ExpertManager] Duplicate expert name: " << name << "\n";
+    std::cerr << "[AgentManager] Duplicate expert name: " << name << "\n";
     return;
   }
   experts_[name] = std::move(expert);
 }
 
-void ExpertManager::SetActiveExpert(const std::string& name) {
+void AgentManager::SetActiveExpert(const std::string& name) {
   if (experts_.count(name)) {
     active_expert_ = name;
   }
 }
 
-std::string ExpertManager::GetActiveExpert() const {
+std::string AgentManager::GetActiveExpert() const {
   return active_expert_;
 }
 
-void ExpertManager::SetShowReasoning(bool enable) {
+void AgentManager::SetShowReasoning(bool enable) {
   show_reasoning_ = enable;
 }
 
-void ExpertManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
+void AgentManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
   proactive_engine_->SetRecentMessages(messages);
 }
 
-void ExpertManager::SetProactiveEnabled(bool enabled) {
+void AgentManager::SetProactiveEnabled(bool enabled) {
   proactive_engine_->SetEnabled(enabled);
 }
 
-void ExpertManager::SetProactiveThreshold(double threshold) {
+void AgentManager::SetProactiveThreshold(double threshold) {
   proactive_engine_->SetThreshold(threshold);
   for (auto& [name, expert] : experts_) {
     expert->SetProactiveThreshold(threshold);
   }
 }
 
-void ExpertManager::NotifyPanelMessage(const ChatMessage& msg) {
+void AgentManager::NotifyPanelMessage(const ChatMessage& msg) {
   for (auto& [name, expert] : experts_) {
     expert->OnPanelMessage(msg);
   }
 }
 
-std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactiveReplies() {
+std::vector<std::pair<std::string, std::string>> AgentManager::CollectProactiveReplies() {
   std::vector<std::pair<std::string, std::string>> replies;
   if (!proactive_engine_->IsEnabled()) {
     return replies;
@@ -69,25 +69,25 @@ std::vector<std::pair<std::string, std::string>> ExpertManager::CollectProactive
   return replies;
 }
 
-void ExpertManager::SetConfirmationCallback(ConfirmationCallback cb) {
+void AgentManager::SetConfirmationCallback(ConfirmationCallback cb) {
   confirmation_callback_ = std::move(cb);
 }
 
-void ExpertManager::SetSystemPrompt(const std::string& expert_name,
+void AgentManager::SetSystemPrompt(const std::string& expert_name,
                                     const std::string& prompt) {
   system_prompts_[expert_name] = prompt;
 }
 
-void ExpertManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
+void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
   global_ctx_ = std::move(ctx);
 }
 
-void ExpertManager::SetCallStack(std::shared_ptr<CallStack> stack) {
+void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
   call_stack_ = std::move(stack);
 }
 
-ExpertContext ExpertManager::PrepareContext(const std::string& agent_name) const {
-  ExpertContext ctx;
+AgentContext AgentManager::PrepareContext(const std::string& agent_name) const {
+  AgentContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
   };
@@ -111,7 +111,7 @@ ExpertContext ExpertManager::PrepareContext(const std::string& agent_name) const
   return ctx;
 }
 
-BaseExpert* ExpertManager::GetExpert(const std::string& name) const {
+BaseAgent* AgentManager::GetExpert(const std::string& name) const {
   auto it = experts_.find(name);
   if (it == experts_.end()) {
     return nullptr;
@@ -119,9 +119,9 @@ BaseExpert* ExpertManager::GetExpert(const std::string& name) const {
   return it->second.get();
 }
 
-std::string ExpertManager::ExecuteAgentWithContext(const std::string& agent_name,
+std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
                                                    const std::string& input,
-                                                   ExpertContext& ctx) {
+                                                   AgentContext& ctx) {
   auto it = experts_.find(agent_name);
   if (it == experts_.end()) {
     return "Expert not found: " + agent_name;
@@ -129,7 +129,7 @@ std::string ExpertManager::ExecuteAgentWithContext(const std::string& agent_name
   return it->second->Handle(input, ctx);
 }
 
-std::string ExpertManager::Dispatch(const std::string& input) {
+std::string AgentManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
   }
@@ -161,29 +161,29 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     active_expert_ = it->first;
   }
 
-  ExpertContext ctx = PrepareContext(it->first);
+  AgentContext ctx = PrepareContext(it->first);
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
 }
 
-std::string ExpertManager::CallExpert(const std::string& expert_name, const std::string& input) {
+std::string AgentManager::CallExpert(const std::string& expert_name, const std::string& input) {
   auto it = experts_.find(expert_name);
   if (it == experts_.end()) {
     return "Expert not found: " + expert_name;
   }
 
-  ExpertContext ctx = PrepareContext(expert_name);
+  AgentContext ctx = PrepareContext(expert_name);
   return it->second->Handle(input, ctx);
 }
 
-void ExpertManager::ClearSessions() {
+void AgentManager::ClearSessions() {
   for (auto& [name, expert] : experts_) {
     expert->ResetSession();
   }
   active_expert_.clear();
 }
 
-std::unordered_map<std::string, std::vector<ChatMessage>> ExpertManager::SnapshotExperts() const {
+std::unordered_map<std::string, std::vector<ChatMessage>> AgentManager::SnapshotExperts() const {
   std::unordered_map<std::string, std::vector<ChatMessage>> result;
   for (const auto& [name, expert] : experts_) {
     result[name] = expert->SaveState();
@@ -191,7 +191,7 @@ std::unordered_map<std::string, std::vector<ChatMessage>> ExpertManager::Snapsho
   return result;
 }
 
-void ExpertManager::RestoreExperts(
+void AgentManager::RestoreExperts(
     const std::unordered_map<std::string, std::vector<ChatMessage>>& states) {
   for (const auto& [name, messages] : states) {
     auto it = experts_.find(name);

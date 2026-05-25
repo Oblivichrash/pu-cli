@@ -8,7 +8,7 @@
 #include "pu/stack.hpp"
 
 namespace pu::expert {
-class ExpertManager;
+class AgentManager;
 }
 
 namespace pu {
@@ -17,7 +17,7 @@ class Orchestrator {
  public:
   Orchestrator(std::shared_ptr<GlobalContext> ctx,
                std::shared_ptr<CallStack> stack,
-               expert::ExpertManager& manager);
+               expert::AgentManager& manager);
 
   bool HandleCommand(const std::string& input, std::string& output);
   std::string Process(const std::string& input);
@@ -28,7 +28,7 @@ class Orchestrator {
  private:
   std::shared_ptr<GlobalContext> ctx_;
   std::shared_ptr<CallStack> stack_;
-  expert::ExpertManager& manager_;
+  expert::AgentManager& manager_;
 };
 
 }  // namespace pu

@@ -9,23 +9,23 @@
 
 namespace pu::expert {
 
-class ExpertFactory {
+class AgentFactory {
  public:
-  virtual ~ExpertFactory() = default;
-  virtual std::unique_ptr<BaseExpert> Create(
-      const config::ExpertEntry& entry,
+  virtual ~AgentFactory() = default;
+  virtual std::unique_ptr<BaseAgent> Create(
+      const config::AgentEntry& entry,
       std::unique_ptr<backend::Backend> backend) = 0;
 };
 
-class ExpertRegistry {
+class AgentRegistry {
  public:
-  static ExpertRegistry& Instance();
-  void RegisterFactory(config::ExpertType type, std::unique_ptr<ExpertFactory> factory);
-  std::unique_ptr<BaseExpert> CreateExpert(const config::ExpertEntry& entry);
+  static AgentRegistry& Instance();
+  void RegisterFactory(config::AgentType type, std::unique_ptr<AgentFactory> factory);
+  std::unique_ptr<BaseAgent> CreateExpert(const config::AgentEntry& entry);
 
  private:
-  ExpertRegistry() = default;
-  std::unordered_map<config::ExpertType, std::unique_ptr<ExpertFactory>> factories_;
+  AgentRegistry() = default;
+  std::unordered_map<config::AgentType, std::unique_ptr<AgentFactory>> factories_;
 };
 
 void RegisterBuiltinFactories();

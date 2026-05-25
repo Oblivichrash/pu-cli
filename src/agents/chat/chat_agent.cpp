@@ -6,13 +6,13 @@
 
 namespace pu::experts {
 
-ChatExpert::ChatExpert(const std::string& name,
+ChatAgent::ChatAgent(const std::string& name,
                        std::unique_ptr<pu::backend::Backend> backend,
                        const std::string& model_id)
     : name_(name), model_id_(model_id), backend_(std::move(backend)) {}
 
-std::string ChatExpert::Handle(const std::string& input,
-                               pu::expert::ExpertContext& ctx) {
+std::string ChatAgent::Handle(const std::string& input,
+                               pu::expert::AgentContext& ctx) {
   // Inject system prompt if present and not already in history
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
@@ -72,10 +72,10 @@ std::string ChatExpert::Handle(const std::string& input,
   return response;
 }
 
-void ChatExpert::ResetSession() { history_.clear(); }
+void ChatAgent::ResetSession() { history_.clear(); }
 
-std::vector<ChatMessage> ChatExpert::SaveState() const { return history_; }
-void ChatExpert::LoadState(const std::vector<ChatMessage>& messages) {
+std::vector<ChatMessage> ChatAgent::SaveState() const { return history_; }
+void ChatAgent::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
 }
 

@@ -12,13 +12,13 @@
 
 namespace pu::experts {
 
-class BashExpert : public pu::expert::BaseExpert {
+class BashAgent : public pu::expert::BaseAgent {
  public:
-  BashExpert(const std::string& name,
+  BashAgent(const std::string& name,
              std::unique_ptr<pu::backend::Backend> backend,
              std::unique_ptr<pu::executor::CommandExecutor> executor,
              config::ConfirmationPolicy policy = config::ConfirmationPolicy::kAlwaysAsk);
-  ~BashExpert() override = default;
+  ~BashAgent() override = default;
 
   std::string Name() const override { return name_; }
   std::string Description() const override {
@@ -26,7 +26,7 @@ class BashExpert : public pu::expert::BaseExpert {
            "Performs security review before execution.";
   }
 
-  std::string Handle(const std::string& input, pu::expert::ExpertContext& ctx) override;
+  std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
   void ResetSession() override;
 
   std::vector<ChatMessage> SaveState() const override;
@@ -47,7 +47,7 @@ class BashExpert : public pu::expert::BaseExpert {
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
                           std::vector<ChatMessage>& turn_history,
-                          pu::expert::ExpertContext& ctx,
+                          pu::expert::AgentContext& ctx,
                           const std::vector<pu::backend::Message>& initial_history = {});
 
   std::string name_;

@@ -14,34 +14,34 @@
 namespace pu::expert {
 
 namespace {
-class ChatExpertFactory : public ExpertFactory {
-  std::unique_ptr<BaseExpert> Create(const config::ExpertEntry& entry,
+class ChatExpertFactory : public AgentFactory {
+  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
                                      std::unique_ptr<backend::Backend> backend) override {
-    return std::make_unique<experts::ChatExpert>(entry.name, std::move(backend), entry.name);
+    return std::make_unique<experts::ChatAgent>(entry.name, std::move(backend), entry.name);
   }
 };
-class BashExpertFactory : public ExpertFactory {
-  std::unique_ptr<BaseExpert> Create(const config::ExpertEntry& entry,
+class BashExpertFactory : public AgentFactory {
+  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
                                      std::unique_ptr<backend::Backend> backend) override {
     auto executor = std::make_unique<executor::CommandExecutor>(entry.sandbox_path);
-    return std::make_unique<experts::BashExpert>(entry.name, std::move(backend),
+    return std::make_unique<experts::BashAgent>(entry.name, std::move(backend),
                                                  std::move(executor),
                                                  entry.confirmation_policy);
   }
 };
 }  // namespace
 
-ExpertRegistry& ExpertRegistry::Instance() {
-  static ExpertRegistry registry;
+AgentRegistry& AgentRegistry::Instance() {
+  static AgentRegistry registry;
   return registry;
 }
 
-void ExpertRegistry::RegisterFactory(config::ExpertType type,
-                                     std::unique_ptr<ExpertFactory> factory) {
+void AgentRegistry::RegisterFactory(config::AgentType type,
+                                     std::unique_ptr<AgentFactory> factory) {
   factories_[type] = std::move(factory);
 }
 
-std::unique_ptr<BaseExpert> ExpertRegistry::CreateExpert(const config::ExpertEntry& entry) {
+std::unique_ptr<BaseAgent> AgentRegistry::CreateExpert(const config::AgentEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
   std::unique_ptr<backends::ITokenAdapter> adapter;
   switch (entry.backend.tool_call_style) {
@@ -61,9 +61,9 @@ std::unique_ptr<BaseExpert> ExpertRegistry::CreateExpert(const config::ExpertEnt
 }
 
 void RegisterBuiltinFactories() {
-  ExpertRegistry::Instance().RegisterFactory(config::ExpertType::kChat,
+  AgentRegistry::Instance().RegisterFactory(config::AgentType::kChat,
                                              std::make_unique<ChatExpertFactory>());
-  ExpertRegistry::Instance().RegisterFactory(config::ExpertType::kBash,
+  AgentRegistry::Instance().RegisterFactory(config::AgentType::kBash,
                                              std::make_unique<BashExpertFactory>());
 }
 

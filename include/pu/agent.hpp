@@ -38,7 +38,7 @@ struct PendingAction {
   std::string input_path;
 };
 
-struct ExpertContext {
+struct AgentContext {
   std::function<std::string(const std::string&, const std::string&)> call_expert;
   ConfirmationCallback request_confirmation;
   std::string working_dir;
@@ -50,14 +50,14 @@ struct ExpertContext {
   PendingAction pending_action;
 };
 
-class BaseExpert {
+class BaseAgent {
  public:
-  virtual ~BaseExpert() = default;
+  virtual ~BaseAgent() = default;
 
   virtual std::string Name() const = 0;
   virtual std::string Description() const = 0;
 
-  virtual std::string Handle(const std::string& input, ExpertContext& ctx) = 0;
+  virtual std::string Handle(const std::string& input, AgentContext& ctx) = 0;
   virtual void ResetSession() = 0;
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
@@ -69,10 +69,10 @@ class BaseExpert {
   virtual void SetProactiveThreshold([[maybe_unused]] double threshold) {}
 };
 
-class ExpertManager {
+class AgentManager {
  public:
-  ExpertManager();
-  void RegisterExpert(std::unique_ptr<BaseExpert> expert);
+  AgentManager();
+  void RegisterExpert(std::unique_ptr<BaseAgent> expert);
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
   void ClearSessions();
@@ -88,17 +88,17 @@ class ExpertManager {
   void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
   void SetCallStack(std::shared_ptr<CallStack> stack);
-  ExpertContext PrepareContext(const std::string& agent_name) const;
-  BaseExpert* GetExpert(const std::string& name) const;
+  AgentContext PrepareContext(const std::string& agent_name) const;
+  BaseAgent* GetExpert(const std::string& name) const;
   std::string ExecuteAgentWithContext(const std::string& agent_name,
                                       const std::string& input,
-                                      ExpertContext& ctx);
+                                      AgentContext& ctx);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
 
  private:
-  std::unordered_map<std::string, std::unique_ptr<BaseExpert>> experts_;
+  std::unordered_map<std::string, std::unique_ptr<BaseAgent>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;
   std::unique_ptr<ProactiveEngine> proactive_engine_;

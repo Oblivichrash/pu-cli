@@ -74,7 +74,7 @@ void PrintHelp() {
             << "  --show-reasoning (startup flag) Show model reasoning\n";
 }
 
-void PrintExperts(const pu::config::ExpertsConfig& config, const std::string& current) {
+void PrintExperts(const pu::config::AgentsConfig& config, const std::string& current) {
   std::cout << "Available experts:\n";
   for (const auto& entry : config.experts) {
     std::cout << "  " << entry.name;
@@ -189,7 +189,7 @@ int RunChatCommand(int argc, char* argv[]) {
   }
 
   std::cout << "[INFO] Connected to expert: " << current_name;
-  const auto* entry_ptr = [&]() -> const pu::config::ExpertEntry* {
+  const auto* entry_ptr = [&]() -> const pu::config::AgentEntry* {
     for (const auto& e : config.experts) {
       if (e.name == current_name) return &e;
     }
@@ -232,7 +232,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        const pu::config::ExpertEntry* new_entry = nullptr;
+        const pu::config::AgentEntry* new_entry = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == new_name) {
             new_entry = &entry;
@@ -277,7 +277,7 @@ int RunChatCommand(int argc, char* argv[]) {
           continue;
         }
 
-        const pu::config::ExpertEntry* target = nullptr;
+        const pu::config::AgentEntry* target = nullptr;
         for (const auto& entry : config.experts) {
           if (entry.name == expert) {
             target = &entry;

@@ -10,18 +10,18 @@
 
 namespace pu::experts {
 
-class ChatExpert : public pu::expert::BaseExpert {
+class ChatAgent : public pu::expert::BaseAgent {
  public:
-  explicit ChatExpert(const std::string& name, std::unique_ptr<pu::backend::Backend> backend,
+  explicit ChatAgent(const std::string& name, std::unique_ptr<pu::backend::Backend> backend,
                       const std::string& model_id = "");
-  ~ChatExpert() override = default;
+  ~ChatAgent() override = default;
 
   std::string Name() const override { return name_; }
   std::string Description() const override {
     return model_id_.empty() ? "General conversational assistant"
                              : "General conversational assistant powered by " + model_id_;
   }
-  std::string Handle(const std::string& input, pu::expert::ExpertContext& ctx) override;
+  std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
   void ResetSession() override;
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
