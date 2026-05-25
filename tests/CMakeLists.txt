@@ -3,9 +3,9 @@ find_package(Catch2 3 REQUIRED)
 add_executable(pu_tests
     unit/test_ollama_backend.cpp
     unit/test_openai_backend.cpp
-    unit/test_expert_config.cpp
     unit/test_conversation_store.cpp
-    unit/test_expert_manager.cpp
+    unit/test_agent_manager.cpp
+    unit/test_agent_config.cpp
     unit/test_streaming_json_parser.cpp
     unit/test_token_adapters.cpp
     integration/test_bash_expert_integration.cpp

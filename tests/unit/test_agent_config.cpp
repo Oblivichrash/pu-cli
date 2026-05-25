@@ -57,7 +57,7 @@ struct TempConfigFile {
   }
 };
 
-TEST_CASE("LoadExpertsConfig parses valid JSON", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig parses valid JSON", "[expert_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "default_expert": "chat",
@@ -94,16 +94,16 @@ TEST_CASE("LoadExpertsConfig parses valid JSON", "[expert_config]") {
   set_env("OPENAI_KEY", "test-key-123");
 
   std::error_code ec;
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
 
   REQUIRE(config.default_expert == "chat");
   REQUIRE(config.experts.size() == 2);
   REQUIRE(config.experts[0].name == "chat");
-  REQUIRE(config.experts[0].type == ExpertType::kChat);
+  REQUIRE(config.experts[0].type == AgentType::kChat);
   REQUIRE(config.experts[0].backend.type == BackendType::kOllama);
   REQUIRE(config.experts[1].name == "bash");
-  REQUIRE(config.experts[1].type == ExpertType::kBash);
+  REQUIRE(config.experts[1].type == AgentType::kBash);
   REQUIRE(config.experts[1].backend.type == BackendType::kOpenAI);
   REQUIRE(config.experts[1].backend.api_key == "test-key-123");
   REQUIRE(config.experts[1].sandbox_path == "/tmp");
@@ -111,23 +111,23 @@ TEST_CASE("LoadExpertsConfig parses valid JSON", "[expert_config]") {
   unset_env("OPENAI_KEY");
 }
 
-TEST_CASE("LoadExpertsConfig reports error on missing file", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig reports error on missing file", "[expert_config]") {
   std::error_code ec;
-  LoadExpertsConfig("/nonexistent/path/experts.json", ec);
+  LoadAgentsConfig("/nonexistent/path/experts.json", ec);
   REQUIRE(ec);
   REQUIRE(ec == ConfigErrc::file_not_found);
 }
 
-TEST_CASE("LoadExpertsConfig reports error on invalid JSON", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[expert_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
   std::error_code ec;
-  auto config = LoadExpertsConfig(tmp.path.string(), ec);
+  auto config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE(ec);
   REQUIRE(ec == ConfigErrc::parse_error);
 }
 
-TEST_CASE("LoadExpertsConfig defaults expert if empty", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig defaults expert if empty", "[expert_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "experts": [
@@ -140,18 +140,18 @@ TEST_CASE("LoadExpertsConfig defaults expert if empty", "[expert_config]") {
   })";
   tmp.write(json);
   std::error_code ec;
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(config.default_expert == "only");
 }
 
-TEST_CASE("SaveExpertsConfig writes valid JSON", "[expert_config]") {
+TEST_CASE("SaveAgentsConfig writes valid JSON", "[expert_config]") {
   TempConfigFile tmp;
   ExpertsConfig original;
   original.default_expert = "test";
-  ExpertEntry entry;
+  AgentEntry entry;
   entry.name = "test";
-  entry.type = ExpertType::kChat;
+  entry.type = AgentType::kChat;
   entry.description = "desc";
   entry.backend.type = BackendType::kOpenAI;
   entry.backend.host = "https://api.test.com";
@@ -160,15 +160,15 @@ TEST_CASE("SaveExpertsConfig writes valid JSON", "[expert_config]") {
   original.experts.push_back(entry);
 
   std::error_code ec;
-  SaveExpertsConfig(tmp.path.string(), original, ec);
+  SaveAgentsConfig(tmp.path.string(), original, ec);
   REQUIRE_FALSE(ec);
 
-  ExpertsConfig loaded = LoadExpertsConfig(tmp.path.string(), ec);
+  ExpertsConfig loaded = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(loaded.default_expert == "test");
   REQUIRE(loaded.experts.size() == 1);
   REQUIRE(loaded.experts[0].name == "test");
-  REQUIRE(loaded.experts[0].type == ExpertType::kChat);
+  REQUIRE(loaded.experts[0].type == AgentType::kChat);
   REQUIRE(loaded.experts[0].backend.type == BackendType::kOpenAI);
   REQUIRE(loaded.experts[0].backend.host == "https://api.test.com");
   REQUIRE(loaded.experts[0].backend.api_key == "secret");
@@ -223,7 +223,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[expert_config]") {
   })";
   tmp.write(json);
   std::error_code ec;
-  ExpertsConfig config = LoadExpertsConfig(tmp.path.string(), ec);
+  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(config.experts[0].backend.system_prompt.has_value());
   REQUIRE(config.experts[0].backend.system_prompt->empty());
