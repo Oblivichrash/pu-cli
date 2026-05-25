@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Expert framework base classes.
-
 #pragma once
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "pu/proactive_engine.hpp"
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
 #include "executor/command_executor.hpp"
 
 #include <functional>
@@ -14,7 +13,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace pu::expert {
@@ -34,19 +32,23 @@ struct ConfirmationRequest {
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
 struct ExpertContext {
-  std::function<std::string(const std::string& name, const std::string& input)> call_expert;
+  std::function<std::string(const std::string&, const std::string&)> call_expert;
   ConfirmationCallback request_confirmation;
   std::string working_dir;
   bool show_reasoning = false;
   std::vector<ChatMessage> recent_panel_messages;
-  std::optional<std::string> system_prompt;      // NEW
+  std::optional<std::string> system_prompt;
+  std::shared_ptr<GlobalContext> global_ctx;
+  std::shared_ptr<CallStack> call_stack;
 };
 
 class BaseExpert {
  public:
   virtual ~BaseExpert() = default;
+
   virtual std::string Name() const = 0;
   virtual std::string Description() const = 0;
+
   virtual std::string Handle(const std::string& input, ExpertContext& ctx) = 0;
   virtual void ResetSession() = 0;
 
@@ -75,8 +77,9 @@ class ExpertManager {
   void NotifyPanelMessage(const ChatMessage& msg);
   std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
   void SetConfirmationCallback(ConfirmationCallback cb);
-
-  void SetSystemPrompt(const std::string& expert_name, const std::string& prompt); // NEW
+  void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
+  void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
+  void SetCallStack(std::shared_ptr<CallStack> stack);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
@@ -87,7 +90,9 @@ class ExpertManager {
   bool show_reasoning_ = false;
   std::unique_ptr<ProactiveEngine> proactive_engine_;
   ConfirmationCallback confirmation_callback_;
-  std::unordered_map<std::string, std::string> system_prompts_;       // NEW
+  std::unordered_map<std::string, std::string> system_prompts_;
+  std::shared_ptr<GlobalContext> global_ctx_;
+  std::shared_ptr<CallStack> call_stack_;
 };
 
 }  // namespace pu::expert

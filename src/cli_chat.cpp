@@ -171,6 +171,11 @@ int RunChatCommand(int argc, char* argv[]) {
                                             : pu::expert::ConfirmationChoice::kDeny;
   });
 
+  auto global_ctx = pu::GlobalContext::Create();
+  auto call_stack = std::make_shared<pu::CallStack>();
+  manager.SetGlobalContext(global_ctx);
+  manager.SetCallStack(call_stack);
+
   // Load long-term memory summaries for each expert
   for (const auto& entry : config.experts) {
     std::error_code ec;

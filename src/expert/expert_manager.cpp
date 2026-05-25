@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "pu/expert.hpp"
+
 #include <iostream>
 
 namespace pu::expert {
@@ -78,6 +78,14 @@ void ExpertManager::SetSystemPrompt(const std::string& expert_name,
   system_prompts_[expert_name] = prompt;
 }
 
+void ExpertManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
+  global_ctx_ = std::move(ctx);
+}
+
+void ExpertManager::SetCallStack(std::shared_ptr<CallStack> stack) {
+  call_stack_ = std::move(stack);
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
@@ -95,7 +103,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
       return "";
     }
   } else if (target.empty()) {
-    target = experts_.count("chat") ? "chat" : experts_.begin()->first;
+    target = "chat";
   }
 
   auto it = experts_.find(target);
@@ -125,8 +133,9 @@ std::string ExpertManager::Dispatch(const std::string& input) {
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
   ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
+  ctx.global_ctx = global_ctx_;
+  ctx.call_stack = call_stack_;
 
-  // Inject per‑expert system prompt if available
   auto prompt_it = system_prompts_.find(it->first);
   if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
     ctx.system_prompt = prompt_it->second;
@@ -155,8 +164,9 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
                                                   : ConfirmationChoice::kDeny;
         };
   ctx.working_dir = ".";
+  ctx.global_ctx = global_ctx_;
+  ctx.call_stack = call_stack_;
 
-  // Inject per‑expert system prompt if available
   auto prompt_it = system_prompts_.find(expert_name);
   if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
     ctx.system_prompt = prompt_it->second;
