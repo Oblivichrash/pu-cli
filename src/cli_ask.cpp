@@ -9,9 +9,9 @@ namespace pu::cli {
 
 namespace {
 void PrintUsage() {
-  std::cerr << "Usage: pu ask [--expert <name>] [--show-reasoning] <prompt>\n"
+  std::cerr << "Usage: pu ask [--agent <name>] [--show-reasoning] <prompt>\n"
             << "Options:\n"
-            << "  --expert <name>          Specify the expert to use\n"
+            << "  --agent <name>          Specify the agent to use\n"
             << "  --show-reasoning         Show model's internal reasoning\n"
             << "  -h, --help               Show this help message\n";
 }
@@ -25,9 +25,9 @@ int RunAskCommand(int argc, char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") { PrintUsage(); return 0; }
-    else if (arg == "--expert") {
+    else if (arg == "--agent") {
       if (i + 1 < argc) requested_expert = argv[++i];
-      else { std::cerr << "Error: --expert requires an argument\n"; PrintUsage(); return 1; }
+      else { std::cerr << "Error: --agent requires an argument\n"; PrintUsage(); return 1; }
     } else if (arg == "--show-reasoning") { show_reasoning = true; }
     else if (prompt.empty()) { prompt = arg; }
     else { std::cerr << "Error: unexpected argument '" << arg << "'\n"; PrintUsage(); return 1; }

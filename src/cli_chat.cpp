@@ -58,16 +58,16 @@ void PrintHelp() {
   std::cout << "Available commands:\n"
             << "  /help           Show this help\n"
             << "  /exit, /quit    Exit interactive mode\n"
-            << "  /clear          Clear conversation history and expert lock\n"
-            << "  /expert <name>  Switch to different expert\n"
+            << "  /clear          Clear conversation history and agent lock\n"
+            << "  /agent <name>  Switch to different agent\n"
             << "  /experts        List available experts\n"
-            << "  /proactive <expert> on|off [threshold]  Control proactive suggestions\n"
+            << "  /proactive <agent> on|off [threshold]  Control proactive suggestions\n"
             << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
             << "  /load <id>      Load a saved conversation\n"
             << "  /list           List saved conversations\n"
             << "  /export <id>    Export conversation to Markdown\n"
-            << "  /note add <text>  Add a note for current expert\n"
-            << "  /note show      Show notes for current expert\n"
+            << "  /note add <text>  Add a note for current agent\n"
+            << "  /note show      Show notes for current agent\n"
             << "  /push <agent>   Push agent onto call stack (experimental)\n"
             << "  /pop            Pop current agent from call stack\n"
             << "  /stack          Show call stack content\n"
@@ -110,13 +110,13 @@ int RunChatCommand(int argc, char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--expert <name>] [--show-reasoning]\n";
+      std::cout << "Usage: pu chat [--agent <name>] [--show-reasoning]\n";
       return 0;
-    } else if (arg == "--expert") {
+    } else if (arg == "--agent") {
       if (i + 1 < argc) {
         initial_expert = argv[++i];
       } else {
-        std::cerr << "Error: --expert requires an argument\n";
+        std::cerr << "Error: --agent requires an argument\n";
         return 1;
       }
     } else if (arg == "--show-reasoning") {
@@ -130,7 +130,7 @@ int RunChatCommand(int argc, char* argv[]) {
   auto ctx = SetupAppContext(initial_expert, show_reasoning);
   const auto& config = ctx.config;
   auto& manager = ctx.manager;
-  std::string current_name = manager.GetActiveExpert();
+  std::string current_name = manager.GetActiveAgent();
 
   const char* home = std::getenv("HOME");
   auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
@@ -188,7 +188,7 @@ int RunChatCommand(int argc, char* argv[]) {
     }
   }
 
-  std::cout << "[INFO] Connected to expert: " << current_name;
+  std::cout << "[INFO] Connected to agent: " << current_name;
   const auto* entry_ptr = [&]() -> const pu::config::AgentEntry* {
     for (const auto& e : config.experts) {
       if (e.name == current_name) return &e;
@@ -222,13 +222,13 @@ int RunChatCommand(int argc, char* argv[]) {
         message_id = 0;
         confirm_state->auto_approve_safe = false;
         confirm_state->deny_all = false;
-        std::cout << "[INFO] Conversation history and expert lock cleared.\n";
+        std::cout << "[INFO] Conversation history and agent lock cleared.\n";
       } else if (input == "/experts") {
-        PrintExperts(config, manager.GetActiveExpert());
-      } else if (input.rfind("/expert ", 0) == 0) {
+        PrintExperts(config, manager.GetActiveAgent());
+      } else if (input.rfind("/agent ", 0) == 0) {
         std::string new_name = Trim(input.substr(8));
         if (new_name.empty()) {
-          std::cerr << "Error: expert name required.\n";
+          std::cerr << "Error: agent name required.\n";
           continue;
         }
 
@@ -240,24 +240,24 @@ int RunChatCommand(int argc, char* argv[]) {
           }
         }
         if (!new_entry) {
-          std::cerr << "Error: expert '" << new_name << "' not found.\n";
+          std::cerr << "Error: agent '" << new_name << "' not found.\n";
           continue;
         }
 
-        manager.SetActiveExpert(new_entry->name);
+        manager.SetActiveAgent(new_entry->name);
         current_name = new_name;
-        std::cout << "[INFO] Switched to expert: " << new_entry->name;
+        std::cout << "[INFO] Switched to agent: " << new_entry->name;
         if (!new_entry->description.empty()) {
           std::cout << " (" << new_entry->description << ")";
         }
         std::cout << "\n";
       } else if (input.rfind("/proactive ", 0) == 0) {
         std::istringstream iss(input.substr(11));
-        std::string expert, state;
+        std::string agent, state;
         double threshold = 0.6;
-        iss >> expert >> state;
-        if (expert.empty() || state.empty()) {
-          std::cerr << "Usage: /proactive <expert> on|off [threshold]\n";
+        iss >> agent >> state;
+        if (agent.empty() || state.empty()) {
+          std::cerr << "Usage: /proactive <agent> on|off [threshold]\n";
           continue;
         }
         bool enable = false;
@@ -279,13 +279,13 @@ int RunChatCommand(int argc, char* argv[]) {
 
         const pu::config::AgentEntry* target = nullptr;
         for (const auto& entry : config.experts) {
-          if (entry.name == expert) {
+          if (entry.name == agent) {
             target = &entry;
             break;
           }
         }
         if (!target) {
-          std::cerr << "Error: expert '" << expert << "' not found.\n";
+          std::cerr << "Error: agent '" << agent << "' not found.\n";
           continue;
         }
 
@@ -317,7 +317,7 @@ int RunChatCommand(int argc, char* argv[]) {
                               : panel_messages.front().timestamp;
         conv.updated_at = CurrentTimestamp();
         conv.messages = panel_messages;
-        conv.expert_histories = manager.SnapshotExperts();
+        conv.expert_histories = manager.SnapshotAgents();
 
         std::error_code ec;
         store.Save(conv, ec);
@@ -337,7 +337,7 @@ int RunChatCommand(int argc, char* argv[]) {
           }
 
           try {
-            auto summary = manager.CallExpert(current_name, summary_prompt.str());
+            auto summary = manager.CallAgent(current_name, summary_prompt.str());
             if (!summary.empty()) {
               std::cout << "\n[Memory] Generated summary for '" << current_name << "':\n"
                         << summary << "\n\n"
@@ -371,8 +371,8 @@ int RunChatCommand(int argc, char* argv[]) {
         } else {
           panel_messages = conv.messages;
           message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
-          manager.RestoreExperts(conv.expert_histories);
-          manager.SetActiveExpert("");
+          manager.RestoreAgents(conv.expert_histories);
+          manager.SetActiveAgent("");
           confirm_state->auto_approve_safe = false;
           confirm_state->deny_all = false;
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
@@ -442,7 +442,7 @@ int RunChatCommand(int argc, char* argv[]) {
     if (!call_stack->IsEmpty()) {
       actual_agent = call_stack->Top().agent_name;
     } else {
-      actual_agent = manager.GetActiveExpert();
+      actual_agent = manager.GetActiveAgent();
       if (actual_agent.empty()) actual_agent = "chat";
     }
 
@@ -473,15 +473,15 @@ int RunChatCommand(int argc, char* argv[]) {
           recent.push_back(panel_messages[i]);
         }
         manager.SetRecentMessages(recent);
-        for (auto& [expert, text] : manager.CollectProactiveReplies()) {
+        for (auto& [agent, text] : manager.CollectProactiveReplies()) {
           panel_messages.push_back({
             ++message_id,
             CurrentTimestamp(),
-            expert,
+            agent,
             text,
             ""
           });
-          std::cout << "\n[" << expert << "] " << text << std::endl;
+          std::cout << "\n[" << agent << "] " << text << std::endl;
           manager.NotifyPanelMessage(panel_messages.back());
         }
       }

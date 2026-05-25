@@ -35,20 +35,20 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   for (const auto& entry : ctx.config.experts) {
     if (entry.name == active_name) active_found = true;
     try {
-      ctx.manager.RegisterExpert(expert::AgentRegistry::Instance().CreateExpert(entry));
+      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateExpert(entry));
     } catch (const std::exception& e) {
-      std::cerr << "Error: failed to create expert '" << entry.name << "': " << e.what() << "\n";
+      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
       std::exit(1);
     }
   }
 
   if (!active_found) {
-    std::cerr << "Error: expert '" << active_name << "' not found\nAvailable experts:\n";
+    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable experts:\n";
     for (const auto& e : ctx.config.experts) std::cerr << "  " << e.name << "\n";
     std::exit(1);
   }
 
-  ctx.manager.SetActiveExpert(active_name);
+  ctx.manager.SetActiveAgent(active_name);
   if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;
 }

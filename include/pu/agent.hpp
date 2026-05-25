@@ -72,12 +72,12 @@ class AgentManager {
  public:
   AgentManager();
 
-  void RegisterExpert(std::unique_ptr<BaseAgent> expert);
+  void RegisterAgent(std::unique_ptr<BaseAgent> expert);
   std::string Dispatch(const std::string& input);
-  std::string CallExpert(const std::string& expert_name, const std::string& input);
+  std::string CallAgent(const std::string& expert_name, const std::string& input);
   void ClearSessions();
-  void SetActiveExpert(const std::string& name);
-  std::string GetActiveExpert() const;
+  void SetActiveAgent(const std::string& name);
+  std::string GetActiveAgent() const;
   void SetShowReasoning(bool enable);
   void SetRecentMessages(const std::vector<ChatMessage>& messages);
   void SetProactiveEnabled(bool enabled);
@@ -95,12 +95,12 @@ class AgentManager {
                                       const std::string& input,
                                       AgentContext& ctx);
 
-  std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
-  void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
+  std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
+  void RestoreAgents(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
 
  private:
-  std::unordered_map<std::string, std::unique_ptr<BaseAgent>> experts_;
-  std::string active_expert_;
+  std::unordered_map<std::string, std::unique_ptr<BaseAgent>> agents_;
+  std::string active_agent_;
   bool show_reasoning_ = false;
   bool proactive_enabled_ = false;
   double proactive_threshold_ = 0.6;

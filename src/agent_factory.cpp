@@ -59,7 +59,7 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateExpert(const config::AgentEntry&
   auto backend = config::CreateBackend(entry.backend, std::move(http), std::move(adapter), ec);
   if (ec) throw std::runtime_error("Failed to create backend: " + ec.message());
   auto it = factories_.find(entry.type);
-  if (it == factories_.end()) throw std::runtime_error("No factory registered for expert type");
+  if (it == factories_.end()) throw std::runtime_error("No factory registered for agent type");
   return it->second->Create(entry, std::move(backend));
 }
 

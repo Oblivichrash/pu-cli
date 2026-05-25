@@ -7,26 +7,26 @@ namespace pu::agent {
 
 AgentManager::AgentManager() {}
 
-void AgentManager::RegisterExpert(std::unique_ptr<BaseAgent> expert) {
-  if (!expert) {
+void AgentManager::RegisterAgent(std::unique_ptr<BaseAgent> agent) {
+  if (!agent) {
     return;
   }
-  std::string name = expert->Name();
-  if (experts_.count(name)) {
-    std::cerr << "[AgentManager] Duplicate expert name: " << name << "\n";
+  std::string name = agent->Name();
+  if (agents_.count(name)) {
+    std::cerr << "[AgentManager] Duplicate agent name: " << name << "\n";
     return;
   }
-  experts_[name] = std::move(expert);
+  agents_[name] = std::move(agent);
 }
 
-void AgentManager::SetActiveExpert(const std::string& name) {
-  if (experts_.count(name)) {
-    active_expert_ = name;
+void AgentManager::SetActiveAgent(const std::string& name) {
+  if (agents_.count(name)) {
+    active_agent_ = name;
   }
 }
 
-std::string AgentManager::GetActiveExpert() const {
-  return active_expert_;
+std::string AgentManager::GetActiveAgent() const {
+  return active_agent_;
 }
 
 void AgentManager::SetShowReasoning(bool enable) {
@@ -43,14 +43,14 @@ void AgentManager::SetProactiveEnabled(bool enabled) {
 
 void AgentManager::SetProactiveThreshold(double threshold) {
   proactive_threshold_ = threshold;
-  for (auto& [name, expert] : experts_) {
-    expert->SetProactiveThreshold(threshold);
+  for (auto& [name, agent] : agents_) {
+    agent->SetProactiveThreshold(threshold);
   }
 }
 
 void AgentManager::NotifyPanelMessage(const ChatMessage& msg) {
-  for (auto& [name, expert] : experts_) {
-    expert->OnPanelMessage(msg);
+  for (auto& [name, agent] : agents_) {
+    agent->OnPanelMessage(msg);
   }
 }
 
@@ -59,8 +59,8 @@ std::vector<std::pair<std::string, std::string>> AgentManager::CollectProactiveR
   if (!proactive_enabled_) {
     return replies;
   }
-  for (auto& [name, expert] : experts_) {
-    auto reply = expert->ProactiveReply();
+  for (auto& [name, agent] : agents_) {
+    auto reply = agent->ProactiveReply();
     if (reply) {
       replies.emplace_back(name, *reply);
     }
@@ -88,7 +88,7 @@ void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
 AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
   AgentContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
-    return CallExpert(name, inp);
+    return CallAgent(name, inp);
   };
   ctx.request_confirmation = confirmation_callback_ ? confirmation_callback_
       : [](const ConfirmationRequest& req) {
@@ -111,8 +111,8 @@ AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
 }
 
 BaseAgent* AgentManager::GetExpert(const std::string& name) const {
-  auto it = experts_.find(name);
-  if (it == experts_.end()) {
+  auto it = agents_.find(name);
+  if (it == agents_.end()) {
     return nullptr;
   }
   return it->second.get();
@@ -121,19 +121,19 @@ BaseAgent* AgentManager::GetExpert(const std::string& name) const {
 std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
                                                   const std::string& input,
                                                   AgentContext& ctx) {
-  auto it = experts_.find(agent_name);
-  if (it == experts_.end()) {
+  auto it = agents_.find(agent_name);
+  if (it == agents_.end()) {
     return "Expert not found: " + agent_name;
   }
   return it->second->Handle(input, ctx);
 }
 
 std::string AgentManager::Dispatch(const std::string& input) {
-  if (experts_.empty()) {
+  if (agents_.empty()) {
     return "No experts available.";
   }
 
-  std::string target = active_expert_;
+  std::string target = active_agent_;
   std::string message = input;
 
   if (!input.empty() && input[0] == '@') {
@@ -148,16 +148,16 @@ std::string AgentManager::Dispatch(const std::string& input) {
     target = "chat";
   }
 
-  auto it = experts_.find(target);
-  if (it == experts_.end()) {
-    it = experts_.find("chat");
-    if (it == experts_.end()) {
-      it = experts_.begin();
+  auto it = agents_.find(target);
+  if (it == agents_.end()) {
+    it = agents_.find("chat");
+    if (it == agents_.end()) {
+      it = agents_.begin();
     }
   }
 
-  if (active_expert_.empty() && input[0] != '@') {
-    active_expert_ = it->first;
+  if (active_agent_.empty() && input[0] != '@') {
+    active_agent_ = it->first;
   }
 
   AgentContext ctx = PrepareContext(it->first);
@@ -165,9 +165,9 @@ std::string AgentManager::Dispatch(const std::string& input) {
   return it->second->Handle(message, ctx);
 }
 
-std::string AgentManager::CallExpert(const std::string& expert_name, const std::string& input) {
-  auto it = experts_.find(expert_name);
-  if (it == experts_.end()) {
+std::string AgentManager::CallAgent(const std::string& expert_name, const std::string& input) {
+  auto it = agents_.find(expert_name);
+  if (it == agents_.end()) {
     return "Expert not found: " + expert_name;
   }
 
@@ -176,25 +176,25 @@ std::string AgentManager::CallExpert(const std::string& expert_name, const std::
 }
 
 void AgentManager::ClearSessions() {
-  for (auto& [name, expert] : experts_) {
-    expert->ResetSession();
+  for (auto& [name, agent] : agents_) {
+    agent->ResetSession();
   }
-  active_expert_.clear();
+  active_agent_.clear();
 }
 
-std::unordered_map<std::string, std::vector<ChatMessage>> AgentManager::SnapshotExperts() const {
+std::unordered_map<std::string, std::vector<ChatMessage>> AgentManager::SnapshotAgents() const {
   std::unordered_map<std::string, std::vector<ChatMessage>> result;
-  for (const auto& [name, expert] : experts_) {
-    result[name] = expert->SaveState();
+  for (const auto& [name, agent] : agents_) {
+    result[name] = agent->SaveState();
   }
   return result;
 }
 
-void AgentManager::RestoreExperts(
+void AgentManager::RestoreAgents(
     const std::unordered_map<std::string, std::vector<ChatMessage>>& states) {
   for (const auto& [name, messages] : states) {
-    auto it = experts_.find(name);
-    if (it != experts_.end()) {
+    auto it = agents_.find(name);
+    if (it != agents_.end()) {
       it->second->LoadState(messages);
     }
   }

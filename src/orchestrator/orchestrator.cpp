@@ -9,7 +9,7 @@ namespace pu {
 
 Orchestrator::Orchestrator(std::shared_ptr<GlobalContext> ctx,
                            std::shared_ptr<CallStack> stack,
-                           expert::AgentManager& manager)
+                           agent::AgentManager& manager)
     : ctx_(std::move(ctx)), stack_(std::move(stack)), manager_(manager) {}
 
 bool Orchestrator::HandleCommand(const std::string& input, std::string& output) {
@@ -66,16 +66,16 @@ std::string Orchestrator::Process(const std::string& input) {
     const StackFrame& top = stack_->Top();
     std::string agent_name = top.agent_name;
 
-    expert::AgentContext ctx = manager_.PrepareContext(agent_name);
+    agent::AgentContext ctx = manager_.PrepareContext(agent_name);
     std::string response = manager_.ExecuteAgentWithContext(agent_name, current_input, ctx);
 
-    if (ctx.pending_action.type == expert::PendingAction::Type::kPush) {
+    if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
       Push(ctx.pending_action.agent_name);
       current_input = "";
       continue;
     }
 
-    if (ctx.pending_action.type == expert::PendingAction::Type::kPop) {
+    if (ctx.pending_action.type == agent::PendingAction::Type::kPop) {
       if (!stack_->IsEmpty()) {
         Pop();
       }
