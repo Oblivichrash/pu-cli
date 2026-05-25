@@ -14,7 +14,7 @@ namespace pu::backends { class ITokenAdapter; }
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ExpertType { kChat, kBash };
+enum class AgentType { kChat, kBash };
 enum class ConfirmationPolicy { kAlwaysAsk, kAutoSafe, kNever };
 enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
 
@@ -28,24 +28,24 @@ struct BackendConfig {
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
 };
 
-struct ExpertEntry {
+struct AgentEntry {
   std::string name;
-  ExpertType type = ExpertType::kChat;
+  AgentType type = AgentType::kChat;
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";
   ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
 };
 
-struct ExpertsConfig {
+struct AgentsConfig {
   std::string default_expert;
-  std::vector<ExpertEntry> experts;
+  std::vector<AgentEntry> experts;
 };
 
 std::string FindConfigPath();
-ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec);
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config,
-                       std::error_code& ec);
+AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec);
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
+                      std::error_code& ec);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
     std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec);

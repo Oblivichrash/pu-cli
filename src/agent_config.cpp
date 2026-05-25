@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
+
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
 #include "pu/error_codes.hpp"
 #include "pu/token_adapter.hpp"
+
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <fstream>
@@ -38,9 +40,9 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   return std::nullopt;
 }
 
-std::optional<ExpertType> ParseExpertType(const std::string& s) noexcept {
-  if (s == "chat") return ExpertType::kChat;
-  if (s == "bash") return ExpertType::kBash;
+std::optional<AgentType> ParseAgentType(const std::string& s) noexcept {
+  if (s == "chat") return AgentType::kChat;
+  if (s == "bash") return AgentType::kBash;
   return std::nullopt;
 }
 
@@ -70,19 +72,19 @@ BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   return cfg;
 }
 
-ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
-  ExpertEntry entry;
+AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
+  AgentEntry entry;
   entry.name = j.value("name", "");
   if (entry.name.empty()) { ec = ConfigErrc::missing_field; return entry; }
   entry.description = j.value("description", "");
-  auto etype = ParseExpertType(j.value("type", "chat"));
-  if (!etype) { ec = ConfigErrc::missing_field; return entry; }
-  entry.type = *etype;
+  auto atype = ParseAgentType(j.value("type", "chat"));
+  if (!atype) { ec = ConfigErrc::missing_field; return entry; }
+  entry.type = *atype;
   if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
   entry.backend = ParseBackendConfig(j["backend"], ec);
   if (ec) return entry;
   if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
-  if (entry.type == ExpertType::kBash && j.contains("executor") && j["executor"].is_object()) {
+  if (entry.type == AgentType::kBash && j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
     entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
   }
@@ -92,41 +94,58 @@ ExpertEntry ParseExpertEntry(const json& j, std::error_code& ec) {
 }  // namespace
 
 std::string FindConfigPath() {
-  if (auto* env = std::getenv("PU_EXPERTS_CONFIG")) return env;
-  if (std::filesystem::exists("./experts.json")) return "./experts.json";
-  throw std::runtime_error("Configuration file not found.");
+  if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
+  if (std::filesystem::exists("./agents.json")) return "./agents.json";
+  throw std::runtime_error("Configuration file not found. "
+                           "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
-ExpertsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec) {
+AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec) {
   ec.clear();
-  ExpertsConfig result;
+  AgentsConfig result;
   std::ifstream file(config_path);
   if (!file.is_open()) { ec = ConfigErrc::file_not_found; return result; }
+
   json j;
   try { file >> j; } catch (const json::parse_error&) { ec = ConfigErrc::parse_error; return result; }
-  result.default_expert = j.value("default_expert", "");
-  if (!j.contains("experts") || !j["experts"].is_array()) { ec = ConfigErrc::missing_field; return result; }
-  for (const auto& item : j["experts"]) {
+
+  if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
+    ec = ConfigErrc::missing_field;
+    return result;
+  }
+  result.default_expert = j["default_agent"];
+
+  if (!j.contains("agents") || !j["agents"].is_array()) {
+    ec = ConfigErrc::missing_field;
+    return result;
+  }
+
+  for (const auto& item : j["agents"]) {
     std::error_code entry_ec;
-    auto entry = ParseExpertEntry(item, entry_ec);
+    auto entry = ParseAgentEntry(item, entry_ec);
     if (entry_ec) { ec = entry_ec; return result; }
     result.experts.push_back(std::move(entry));
   }
-  if (result.default_expert.empty() && !result.experts.empty()) result.default_expert = result.experts[0].name;
+
+  if (result.default_expert.empty() && !result.experts.empty()) {
+    result.default_expert = result.experts[0].name;
+  }
   return result;
 }
 
-void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& config,
-                       std::error_code& ec) {
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
+                      std::error_code& ec) {
   ec.clear();
   json j;
-  j["default_expert"] = config.default_expert;
-  json experts_array = json::array();
+  j["default_agent"] = config.default_expert;
+
+  json agents_array = json::array();
   for (const auto& entry : config.experts) {
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
-    item["type"] = (entry.type == ExpertType::kChat) ? "chat" : "bash";
+    item["type"] = (entry.type == AgentType::kChat) ? "chat" : "bash";
+
     json backend;
     backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
     backend["host"] = entry.backend.host;
@@ -136,22 +155,24 @@ void SaveExpertsConfig(const std::string& config_path, const ExpertsConfig& conf
     if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
     switch (entry.backend.tool_call_style) {
       case ToolCallStyle::kOpenAI: backend["tool_call_style"] = "openai"; break;
-      case ToolCallStyle::kPhi4: backend["tool_call_style"] = "phi4"; break;
+      case ToolCallStyle::kPhi4:   backend["tool_call_style"] = "phi4"; break;
       default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
-    if (entry.type == ExpertType::kBash) {
+
+    if (entry.type == AgentType::kBash) {
       json executor = {{"sandbox", entry.sandbox_path}};
       switch (entry.confirmation_policy) {
         case ConfirmationPolicy::kAutoSafe: executor["confirmation"] = "auto_safe"; break;
-        case ConfirmationPolicy::kNever: executor["confirmation"] = "never"; break;
+        case ConfirmationPolicy::kNever:    executor["confirmation"] = "never"; break;
         default: executor["confirmation"] = "always";
       }
       item["executor"] = executor;
     }
-    experts_array.push_back(item);
+    agents_array.push_back(item);
   }
-  j["experts"] = experts_array;
+  j["agents"] = agents_array;
+
   std::ofstream file(config_path);
   if (!file.is_open()) { ec = ConfigErrc::file_not_found; return; }
   file << j.dump(2);
