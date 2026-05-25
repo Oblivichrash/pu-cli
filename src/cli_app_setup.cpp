@@ -17,7 +17,6 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   }
 
   std::error_code ec;
-  // 注意：这里仍使用 LoadAgentsConfig 函数名，但它返回 AgentsConfig
   ctx.config = config::LoadAgentsConfig(ctx.config_path, ec);
   if (ec) {
     std::cerr << "Error: failed to load config: " << ec.message() << "\n";
@@ -25,7 +24,7 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   }
 
   if (ctx.config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
+    std::cerr << "Error: no agents configured\n";
     std::exit(1);
   }
 
@@ -35,7 +34,7 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   for (const auto& entry : ctx.config.experts) {
     if (entry.name == active_name) active_found = true;
     try {
-      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateExpert(entry));
+      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
     } catch (const std::exception& e) {
       std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
       std::exit(1);
@@ -43,7 +42,7 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   }
 
   if (!active_found) {
-    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable experts:\n";
+    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
     for (const auto& e : ctx.config.experts) std::cerr << "  " << e.name << "\n";
     std::exit(1);
   }

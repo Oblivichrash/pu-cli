@@ -9,7 +9,7 @@ namespace pu::cli {
 
 struct AppContext {
   config::AgentsConfig config;
-  expert::AgentManager manager;
+  agent::AgentManager manager;
   std::string config_path;
 };
 

@@ -128,7 +128,7 @@ TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[expert_config]") {
   REQUIRE(ec == ConfigErrc::parse_error);
 }
 
-TEST_CASE("LoadAgentsConfig defaults expert if empty", "[expert_config]") {
+TEST_CASE("LoadAgentsConfig defaults agent if empty", "[expert_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "experts": [

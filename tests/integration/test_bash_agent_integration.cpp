@@ -16,7 +16,7 @@
 
 using namespace pu::backend;
 using namespace pu::backends::ollama;
-using namespace pu::experts;
+using namespace pu::agents;
 using namespace pu::executor;
 using namespace pu::config;
 using namespace pu::tests;
@@ -59,11 +59,11 @@ auto MakeBackend(MockHttpClient*& mock_out) {
 
 }  // namespace
 
-TEST_CASE("BashAgent safe command auto-approve", "[integration][bash]") {
+TEST_CASE("pu::agents::BashAgent safe command auto-approve", "[integration][bash]") {
   MockHttpClient* mock = nullptr;
   auto backend = MakeBackend(mock);
   auto executor = std::make_unique<FakeExecutor>(".");
-  BashAgent expert("bash", std::move(backend), std::move(executor),
+  pu::agents::BashAgent agent("bash", std::move(backend), std::move(executor),
                     ConfirmationPolicy::kAutoSafe);
 
   int call_count = 0;
@@ -90,16 +90,16 @@ TEST_CASE("BashAgent safe command auto-approve", "[integration][bash]") {
   };
   ctx.show_reasoning = false;
 
-  auto result = expert.Handle("list files", ctx);
+  auto result = agent.Handle("list files", ctx);
   REQUIRE_FALSE(asked);
   REQUIRE(result.find("fake output") != std::string::npos);
 }
 
-TEST_CASE("BashAgent dangerous command blocked", "[integration][bash]") {
+TEST_CASE("pu::agents::BashAgent dangerous command blocked", "[integration][bash]") {
   MockHttpClient* mock = nullptr;
   auto backend = MakeBackend(mock);
   auto executor = std::make_unique<FakeExecutor>(".");
-  BashAgent expert("bash", std::move(backend), std::move(executor),
+  pu::agents::BashAgent agent("bash", std::move(backend), std::move(executor),
                     ConfirmationPolicy::kAlwaysAsk);
 
   int call_count = 0;
@@ -125,16 +125,16 @@ TEST_CASE("BashAgent dangerous command blocked", "[integration][bash]") {
     return pu::agent::ConfirmationChoice::kApproveOnce;
   };
 
-  auto result = expert.Handle("remove all", ctx);
+  auto result = agent.Handle("remove all", ctx);
   REQUIRE(asked);
   REQUIRE(result.find("Blocked") != std::string::npos);
 }
 
-TEST_CASE("BashAgent neutral command confirmed", "[integration][bash]") {
+TEST_CASE("pu::agents::BashAgent neutral command confirmed", "[integration][bash]") {
   MockHttpClient* mock = nullptr;
   auto backend = MakeBackend(mock);
   auto executor = std::make_unique<FakeExecutor>(".");
-  BashAgent expert("bash", std::move(backend), std::move(executor),
+  pu::agents::BashAgent agent("bash", std::move(backend), std::move(executor),
                     ConfirmationPolicy::kAlwaysAsk);
 
   int call_count = 0;
@@ -160,16 +160,16 @@ TEST_CASE("BashAgent neutral command confirmed", "[integration][bash]") {
     return pu::agent::ConfirmationChoice::kApproveOnce;
   };
 
-  auto result = expert.Handle("search logs", ctx);
+  auto result = agent.Handle("search logs", ctx);
   REQUIRE(asked);
   REQUIRE(result.find("fake output") != std::string::npos);
 }
 
-TEST_CASE("BashAgent neutral command denied", "[integration][bash]") {
+TEST_CASE("pu::agents::BashAgent neutral command denied", "[integration][bash]") {
   MockHttpClient* mock = nullptr;
   auto backend = MakeBackend(mock);
   auto executor = std::make_unique<FakeExecutor>(".");
-  BashAgent expert("bash", std::move(backend), std::move(executor),
+  pu::agents::BashAgent agent("bash", std::move(backend), std::move(executor),
                     ConfirmationPolicy::kAlwaysAsk);
 
   int call_count = 0;
@@ -190,6 +190,6 @@ TEST_CASE("BashAgent neutral command denied", "[integration][bash]") {
     return pu::agent::ConfirmationChoice::kDeny;
   };
 
-  auto result = expert.Handle("disk usage", ctx);
+  auto result = agent.Handle("disk usage", ctx);
   REQUIRE(result.find("cancelled") != std::string::npos);
 }

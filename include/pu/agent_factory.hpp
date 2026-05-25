@@ -21,7 +21,7 @@ class AgentRegistry {
  public:
   static AgentRegistry& Instance();
   void RegisterFactory(config::AgentType type, std::unique_ptr<AgentFactory> factory);
-  std::unique_ptr<BaseAgent> CreateExpert(const config::AgentEntry& entry);
+  std::unique_ptr<BaseAgent> CreateAgent(const config::AgentEntry& entry);
 
  private:
   AgentRegistry() = default;

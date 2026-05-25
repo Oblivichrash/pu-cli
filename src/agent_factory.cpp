@@ -19,7 +19,7 @@ namespace {
 class ChatAgentFactory : public AgentFactory {
   std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
                                     std::unique_ptr<backend::Backend> backend) override {
-    return std::make_unique<experts::ChatAgent>(entry.name, std::move(backend), entry.name);
+    return std::make_unique<pu::agents::ChatAgent>(entry.name, std::move(backend), entry.name);
   }
 };
 
@@ -27,9 +27,9 @@ class BashAgentFactory : public AgentFactory {
   std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
                                     std::unique_ptr<backend::Backend> backend) override {
     auto executor = std::make_unique<executor::CommandExecutor>(entry.sandbox_path);
-    return std::make_unique<experts::BashAgent>(entry.name, std::move(backend),
-                                                std::move(executor),
-                                                entry.confirmation_policy);
+    return std::make_unique<pu::agents::BashAgent>(entry.name, std::move(backend),
+                                                   std::move(executor),
+                                                   entry.confirmation_policy);
   }
 };
 }  // namespace
@@ -44,7 +44,7 @@ void AgentRegistry::RegisterFactory(config::AgentType type,
   factories_[type] = std::move(factory);
 }
 
-std::unique_ptr<BaseAgent> AgentRegistry::CreateExpert(const config::AgentEntry& entry) {
+std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
   std::unique_ptr<backends::ITokenAdapter> adapter;
   switch (entry.backend.tool_call_style) {

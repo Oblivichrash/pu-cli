@@ -17,7 +17,7 @@ class Orchestrator {
  public:
   Orchestrator(std::shared_ptr<GlobalContext> ctx,
                std::shared_ptr<CallStack> stack,
-               expert::AgentManager& manager);
+               agent::AgentManager& manager);
 
   bool HandleCommand(const std::string& input, std::string& output);
   std::string Process(const std::string& input);
@@ -28,7 +28,7 @@ class Orchestrator {
  private:
   std::shared_ptr<GlobalContext> ctx_;
   std::shared_ptr<CallStack> stack_;
-  expert::AgentManager& manager_;
+  agent::AgentManager& manager_;
 };
 
 }  // namespace pu
