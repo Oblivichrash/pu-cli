@@ -41,13 +41,12 @@ add_library(pu::platform ALIAS pu_platform)
 add_library(pu_backend STATIC
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
-    src/expert_config.cpp
+    src/agent_config.cpp
     src/conversation_store.cpp
     src/error_codes.cpp
-    src/backends/streaming_json_parser.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
-    src/memory_manager.cpp
+    src/backends/streaming_json_parser.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -59,54 +58,67 @@ target_link_libraries(pu_backend
 )
 add_library(pu::backend ALIAS pu_backend)
 
-# Expert library
-add_library(pu_expert STATIC
-    src/expert/expert_manager.cpp
-    src/experts/chat/chat_expert.cpp
-    src/experts/bash/bash_expert.cpp
-    src/executor/command_executor.cpp
-    src/expert_factory.cpp
-    src/proactive_engine.cpp
-    src/renderer.cpp
+# Context and call stack library
+add_library(pu_context STATIC
+    src/context/global_context.cpp
+    src/orchestrator/call_stack.cpp
+    src/orchestrator/orchestrator.cpp
 )
-target_include_directories(pu_expert PRIVATE
+target_include_directories(pu_context PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_expert
-    PUBLIC  pu_backend_interface pu_platform
-    PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json
+target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)
+add_library(pu::context ALIAS pu_context)
+
+# Agent library (renamed from pu_expert)
+add_library(pu_agent STATIC
+    src/agent/agent_manager.cpp
+    src/agents/chat/chat_agent.cpp
+    src/agents/bash/bash_agent.cpp
+    src/executor/command_executor.cpp
+    src/agent_factory.cpp
+    src/renderer.cpp
+    src/cli_app_setup.cpp
 )
-add_library(pu::expert ALIAS pu_expert)
+target_include_directories(pu_agent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(pu_agent
+    PUBLIC  pu_backend_interface pu_platform
+    PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json pu_context
+)
+add_library(pu::agent ALIAS pu_agent)
 
 # Main executable
 add_executable(pu
     src/main.cpp
     src/cli_ask.cpp
     src/cli_chat.cpp
-    src/cli_app_setup.cpp
-    src/renderer.cpp
+    src/cli_learn.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu PRIVATE pu_expert pu_backend pu_http pu_platform)
+target_link_libraries(pu PRIVATE pu_agent pu_context pu_backend pu_http pu_platform)
 
 if(MSVC)
     target_compile_options(pu PRIVATE /W4)
     target_compile_options(pu_backend PRIVATE /W4)
     target_compile_options(pu_http PRIVATE /W4)
-    target_compile_options(pu_expert PRIVATE /W4)
+    target_compile_options(pu_agent PRIVATE /W4)
     target_compile_options(pu_platform PRIVATE /W4)
+    target_compile_options(pu_context PRIVATE /W4)
 else()
     target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_backend PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_http PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(pu_expert PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_platform PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_context PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Testing
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
     enable_testing()

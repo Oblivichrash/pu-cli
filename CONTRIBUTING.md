@@ -23,3 +23,13 @@ cmake -B build -DBUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+## Adding New Agents
+- Built-in agents are defined in `src/agents/`.
+- Generated agents are stored in `~/.pu/generated/agents/` and loaded via `/load-agent <name>` (planned).
+- Agent definitions follow JSON schema with `name`, `description`, `prompt_layers`, `input_schema`, `output_schema`.
+
+## Learning Module
+- `pu learn` analyzes conversations in `~/.pu/conversations/`.
+- To add a success marker, a conversation can be rated or marked via a future command.
+- Generated agents appear in `~/.pu/generated/agents/` and can be reviewed before loading.

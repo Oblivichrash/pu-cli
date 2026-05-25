@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/expert.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent.hpp"
+#include "pu/agent_config.hpp"
 #include <string>
 
 namespace pu::cli {
 
 struct AppContext {
-  config::ExpertsConfig config;
-  expert::ExpertManager manager;
+  config::AgentsConfig config;
+  agent::AgentManager manager;
   std::string config_path;
 };
 

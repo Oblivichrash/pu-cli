@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli_app_setup.hpp"
-#include "pu/expert_config.hpp"
-#include "pu/expert.hpp"
-#include "pu/expert_factory.hpp"
+#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
+#include "pu/agent_factory.hpp"
 #include <iostream>
 
 namespace pu::cli {
@@ -17,13 +17,14 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   }
 
   std::error_code ec;
-  ctx.config = config::LoadExpertsConfig(ctx.config_path, ec);
+  ctx.config = config::LoadAgentsConfig(ctx.config_path, ec);
   if (ec) {
     std::cerr << "Error: failed to load config: " << ec.message() << "\n";
     std::exit(1);
   }
+
   if (ctx.config.experts.empty()) {
-    std::cerr << "Error: no experts configured\n";
+    std::cerr << "Error: no agents configured\n";
     std::exit(1);
   }
 
@@ -33,19 +34,20 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
   for (const auto& entry : ctx.config.experts) {
     if (entry.name == active_name) active_found = true;
     try {
-      ctx.manager.RegisterExpert(expert::ExpertRegistry::Instance().CreateExpert(entry));
+      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
     } catch (const std::exception& e) {
-      std::cerr << "Error: failed to create expert '" << entry.name << "': " << e.what() << "\n";
+      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
       std::exit(1);
     }
   }
+
   if (!active_found) {
-    std::cerr << "Error: expert '" << active_name << "' not found\nAvailable experts:\n";
+    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
     for (const auto& e : ctx.config.experts) std::cerr << "  " << e.name << "\n";
     std::exit(1);
   }
 
-  ctx.manager.SetActiveExpert(active_name);
+  ctx.manager.SetActiveAgent(active_name);
   if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;
 }

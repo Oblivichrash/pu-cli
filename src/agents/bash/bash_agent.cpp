@@ -1,47 +1,48 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
-#include "bash_expert.hpp"
+#include "bash_agent.hpp"
 #include "pu/renderer.hpp"
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
-namespace pu::experts {
+namespace pu::agents {
 
-BashExpert::BashExpert(const std::string& name,
-                       std::unique_ptr<pu::backend::Backend> backend,
-                       std::unique_ptr<pu::executor::CommandExecutor> executor,
-                       config::ConfirmationPolicy policy)
+BashAgent::BashAgent(const std::string& name,
+                     std::unique_ptr<pu::backend::Backend> backend,
+                     std::unique_ptr<pu::executor::CommandExecutor> executor,
+                     config::ConfirmationPolicy policy)
     : name_(name), backend_(std::move(backend)), executor_(std::move(executor)),
       confirmation_policy_(policy) {}
 
-void BashExpert::ResetSession() {
+void BashAgent::ResetSession() {
   history_.clear();
   recent_scores_.clear();
   user_approved_all_safe_ = false;
 }
 
-std::vector<pu::backend::Message> BashExpert::BuildInitialHistory() const {
+std::vector<pu::backend::Message> BashAgent::BuildInitialHistory() const {
   std::vector<pu::backend::Message> initial;
   for (const auto& cm : history_) {
     pu::backend::Message msg;
-    if (cm.role == "user") msg.role = pu::backend::Message::Role::kUser;
-    else if (cm.role == "bash" || cm.role == "assistant")
+    if (cm.role == "user") {
+      msg.role = pu::backend::Message::Role::kUser;
+    } else if (cm.role == "bash" || cm.role == "assistant") {
       msg.role = pu::backend::Message::Role::kAssistant;
-    else if (cm.role == "tool_result")
+    } else if (cm.role == "tool_result") {
       msg.role = pu::backend::Message::Role::kTool;
-    else if (cm.role == "system")
+    } else {
       msg.role = pu::backend::Message::Role::kSystem;
-    else msg.role = pu::backend::Message::Role::kSystem;
+    }
     msg.content = cm.content;
     initial.push_back(msg);
   }
   return initial;
 }
 
-void BashExpert::AppendTurnToHistory(
+void BashAgent::AppendTurnToHistory(
     const std::vector<pu::backend::Message>& history, size_t initial_size,
     std::vector<ChatMessage>& turn_history) const {
   for (size_t i = initial_size + 1; i < history.size(); ++i) {
@@ -55,8 +56,9 @@ void BashExpert::AppendTurnToHistory(
         cm.content = msg.content;
       } else {
         std::ostringstream tool_summary;
-        for (const auto& tc : msg.tool_calls)
+        for (const auto& tc : msg.tool_calls) {
           tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
+        }
         cm.content = tool_summary.str();
       }
     } else if (msg.role == pu::backend::Message::Role::kTool) {
@@ -70,9 +72,8 @@ void BashExpert::AppendTurnToHistory(
   }
 }
 
-std::string BashExpert::Handle(const std::string& input,
-                               pu::expert::ExpertContext& ctx) {
-  // Inject system prompt into panel history if not already present
+std::string BashAgent::Handle(const std::string& input,
+                              pu::agent::AgentContext& ctx) {
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
     for (const auto& cm : history_) {
@@ -89,20 +90,20 @@ std::string BashExpert::Handle(const std::string& input,
 
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
-  auto response =
-      RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
+  auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
 
-std::string BashExpert::RunToolLoop(const std::string& user_input,
-                                    bool show_reasoning,
-                                    std::vector<ChatMessage>& turn_history,
-                                    pu::expert::ExpertContext& ctx,
-                                    const std::vector<pu::backend::Message>& initial_history) {
+std::string BashAgent::RunToolLoop(const std::string& user_input,
+                                   bool show_reasoning,
+                                   std::vector<ChatMessage>& turn_history,
+                                   pu::agent::AgentContext& ctx,
+                                   const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
+
   using json = nlohmann::json;
   auto history = initial_history;
   history.push_back({pu::backend::Message::Role::kUser, user_input});
@@ -115,6 +116,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
 
   std::string final_response;
   bool tool_was_called = false;
+
   do {
     tool_was_called = false;
     std::vector<pu::backend::ToolCall> collected_calls;
@@ -143,6 +145,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       turn_history.push_back({0, "", "bash", final_response, ""});
       break;
     }
+
     if (!tool_was_called) {
       final_response = content_stream.str();
       turn_history.push_back({0, "", "bash", final_response, ""});
@@ -160,13 +163,13 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       }
     }
 
-    auto should_ask = true;
-    pu::executor::RiskLevel highest = pu::executor::RiskLevel::kSafe;
+    auto highest = pu::executor::RiskLevel::kSafe;
     for (const auto& cmd : commands) {
       auto risk = executor_->AssessRisk(cmd);
       if (risk.level > highest) highest = risk.level;
     }
 
+    bool should_ask = true;
     if (confirmation_policy_ == config::ConfirmationPolicy::kNever ||
         (confirmation_policy_ == config::ConfirmationPolicy::kAutoSafe && highest == pu::executor::RiskLevel::kSafe) ||
         (user_approved_all_safe_ && highest == pu::executor::RiskLevel::kSafe)) {
@@ -174,12 +177,11 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
     }
 
     if (should_ask && !commands.empty()) {
-      pu::expert::ConfirmationRequest req;
+      pu::agent::ConfirmationRequest req;
       req.highest_risk = highest;
       std::ostringstream desc;
-      if (commands.size() == 1) {
-        desc << "Execute: " << commands[0];
-      } else {
+      if (commands.size() == 1) desc << "Execute: " << commands[0];
+      else {
         desc << "Execute these commands?\n";
         for (size_t i = 0; i < commands.size(); ++i)
           desc << "  " << (i + 1) << ". " << commands[i] << "\n";
@@ -187,17 +189,17 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       req.description = desc.str();
 
       auto choice = ctx.request_confirmation(req);
-      if (choice == pu::expert::ConfirmationChoice::kDenyAll) {
+      if (choice == pu::agent::ConfirmationChoice::kDenyAll) {
         final_response = "All command execution denied by user.";
         turn_history.push_back({0, "", "bash", final_response, ""});
         break;
       }
-      if (choice == pu::expert::ConfirmationChoice::kDeny) {
+      if (choice == pu::agent::ConfirmationChoice::kDeny) {
         final_response = "Command execution cancelled by user.";
         turn_history.push_back({0, "", "bash", final_response, ""});
         break;
       }
-      if (choice == pu::expert::ConfirmationChoice::kApproveAllSafe) {
+      if (choice == pu::agent::ConfirmationChoice::kApproveAllSafe) {
         user_approved_all_safe_ = true;
       }
     }
@@ -237,6 +239,7 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
       } else {
         result = "Unknown tool: " + call.name;
       }
+
       pu::backend::Message tool_msg;
       tool_msg.role = pu::backend::Message::Role::kTool;
       tool_msg.tool_name = call.id;
@@ -249,10 +252,10 @@ std::string BashExpert::RunToolLoop(const std::string& user_input,
   return final_response;
 }
 
-std::vector<ChatMessage> BashExpert::SaveState() const { return history_; }
-void BashExpert::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
+std::vector<ChatMessage> BashAgent::SaveState() const { return history_; }
+void BashAgent::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
 
-double BashExpert::EvaluateRelevance(const ChatMessage& msg) {
+double BashAgent::EvaluateRelevance(const ChatMessage& msg) {
   std::string lower = msg.content;
   std::transform(lower.begin(), lower.end(), lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
@@ -265,12 +268,12 @@ double BashExpert::EvaluateRelevance(const ChatMessage& msg) {
   return std::min(score, 1.0);
 }
 
-void BashExpert::OnPanelMessage(const ChatMessage& msg) {
+void BashAgent::OnPanelMessage(const ChatMessage& msg) {
   double s = EvaluateRelevance(msg);
   if (s > 0.0) recent_scores_.push_back(s);
 }
 
-std::optional<std::string> BashExpert::ProactiveReply() {
+std::optional<std::string> BashAgent::ProactiveReply() {
   if (std::any_of(recent_scores_.begin(), recent_scores_.end(),
                   [this](double s) { return s >= proactive_threshold_; })) {
     recent_scores_.clear();
@@ -279,6 +282,6 @@ std::optional<std::string> BashExpert::ProactiveReply() {
   return std::nullopt;
 }
 
-void BashExpert::SetProactiveThreshold(double threshold) { proactive_threshold_ = threshold; }
+void BashAgent::SetProactiveThreshold(double threshold) { proactive_threshold_ = threshold; }
 
-}  // namespace pu::experts
+}  // namespace pu::agents
