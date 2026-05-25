@@ -3,7 +3,6 @@
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
-#include "pu/proactive_engine.hpp"
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
 #include "executor/command_executor.hpp"
@@ -101,7 +100,9 @@ class AgentManager {
   std::unordered_map<std::string, std::unique_ptr<BaseAgent>> experts_;
   std::string active_expert_;
   bool show_reasoning_ = false;
-  std::unique_ptr<ProactiveEngine> proactive_engine_;
+  bool proactive_enabled_ = false;
+  double proactive_threshold_ = 0.6;
+  std::vector<ChatMessage> recent_messages_;
   ConfirmationCallback confirmation_callback_;
   std::unordered_map<std::string, std::string> system_prompts_;
   std::shared_ptr<GlobalContext> global_ctx_;

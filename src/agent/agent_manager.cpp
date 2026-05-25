@@ -6,7 +6,6 @@
 namespace pu::expert {
 
 AgentManager::AgentManager()
-    : proactive_engine_(std::make_unique<ProactiveEngine>()) {}
 
 void AgentManager::RegisterExpert(std::unique_ptr<BaseAgent> expert) {
   if (!expert) {
@@ -35,15 +34,15 @@ void AgentManager::SetShowReasoning(bool enable) {
 }
 
 void AgentManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
-  proactive_engine_->SetRecentMessages(messages);
+  recent_messages_ = messages;
 }
 
 void AgentManager::SetProactiveEnabled(bool enabled) {
-  proactive_engine_->SetEnabled(enabled);
+  proactive_enabled_ = enabled;
 }
 
 void AgentManager::SetProactiveThreshold(double threshold) {
-  proactive_engine_->SetThreshold(threshold);
+  proactive_threshold_ = threshold;
   for (auto& [name, expert] : experts_) {
     expert->SetProactiveThreshold(threshold);
   }
@@ -57,7 +56,7 @@ void AgentManager::NotifyPanelMessage(const ChatMessage& msg) {
 
 std::vector<std::pair<std::string, std::string>> AgentManager::CollectProactiveReplies() {
   std::vector<std::pair<std::string, std::string>> replies;
-  if (!proactive_engine_->IsEnabled()) {
+  if (!proactive_enabled_) {
     return replies;
   }
   for (auto& [name, expert] : experts_) {
@@ -101,7 +100,7 @@ AgentContext AgentManager::PrepareContext(const std::string& agent_name) const {
         };
   ctx.working_dir = ".";
   ctx.show_reasoning = show_reasoning_;
-  ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
+  ctx.recent_panel_messages = recent_messages_;
   ctx.global_ctx = global_ctx_;
   ctx.call_stack = call_stack_;
   auto prompt_it = system_prompts_.find(agent_name);
