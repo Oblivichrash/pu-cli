@@ -5,8 +5,8 @@
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
 #include "tests/mocks/mock_http_client.hpp"
-#include "pu/expert.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent.hpp"
+#include "pu/agent_config.hpp"
 #include "pu/http/http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -82,7 +82,7 @@ TEST_CASE("BashAgent safe command auto-approve", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::ExpertContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
   ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
@@ -118,7 +118,7 @@ TEST_CASE("BashAgent dangerous command blocked", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::ExpertContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
   ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
@@ -153,7 +153,7 @@ TEST_CASE("BashAgent neutral command confirmed", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::ExpertContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
   ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
@@ -185,7 +185,7 @@ TEST_CASE("BashAgent neutral command denied", "[integration][bash]") {
     }
   };
 
-  pu::agent::ExpertContext ctx;
+  pu::agent::AgentContext ctx;
   ctx.request_confirmation = [](const pu::agent::ConfirmationRequest&) {
     return pu::agent::ConfirmationChoice::kDeny;
   };

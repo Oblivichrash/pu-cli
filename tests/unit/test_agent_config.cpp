@@ -18,8 +18,9 @@
 #include <cstring>
 #endif
 
-using namespace pu::config;
+
 using namespace pu::tests;
+using namespace pu::config;
 using namespace pu;
 
 namespace fs = std::filesystem;
@@ -94,7 +95,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[expert_config]") {
   set_env("OPENAI_KEY", "test-key-123");
 
   std::error_code ec;
-  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
 
   REQUIRE(config.default_expert == "chat");
@@ -140,14 +141,14 @@ TEST_CASE("LoadAgentsConfig defaults expert if empty", "[expert_config]") {
   })";
   tmp.write(json);
   std::error_code ec;
-  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(config.default_expert == "only");
 }
 
 TEST_CASE("SaveAgentsConfig writes valid JSON", "[expert_config]") {
   TempConfigFile tmp;
-  ExpertsConfig original;
+  AgentsConfig original;
   original.default_expert = "test";
   AgentEntry entry;
   entry.name = "test";
@@ -163,7 +164,7 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[expert_config]") {
   SaveAgentsConfig(tmp.path.string(), original, ec);
   REQUIRE_FALSE(ec);
 
-  ExpertsConfig loaded = LoadAgentsConfig(tmp.path.string(), ec);
+  AgentsConfig loaded = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(loaded.default_expert == "test");
   REQUIRE(loaded.experts.size() == 1);
@@ -223,7 +224,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[expert_config]") {
   })";
   tmp.write(json);
   std::error_code ec;
-  ExpertsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(config.experts[0].backend.system_prompt.has_value());
   REQUIRE(config.experts[0].backend.system_prompt->empty());

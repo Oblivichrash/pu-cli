@@ -7,13 +7,13 @@
 #include <vector>
 
 using namespace pu;
-using namespace pu::expert;
+using namespace pu::agent;
 
 namespace {
 
-class MockExpert : public BaseExpert {
+class MockAgent : public BaseAgent {
  public:
-  explicit MockExpert(std::string name) : name_(std::move(name)) {}
+  explicit MockAgent(std::string name) : name_(std::move(name)) {}
 
   std::string Name() const override { return name_; }
   std::string Description() const override { return "Mock"; }
@@ -40,14 +40,14 @@ class MockExpert : public BaseExpert {
 
 }  // namespace
 
-TEST_CASE("ExpertManager SnapshotExperts collects all states", "[expert]") {
-  ExpertManager manager;
+TEST_CASE("AgentManager SnapshotExperts collects all states", "[expert]") {
+  AgentManager manager;
 
-  auto expert1 = std::make_unique<MockExpert>("mock1");
+  auto expert1 = std::make_unique<MockAgent>("mock1");
   expert1->AddFakeMessage({1, "", "user", "hello"});
   expert1->AddFakeMessage({2, "", "mock1", "hi"});
 
-  auto expert2 = std::make_unique<MockExpert>("mock2");
+  auto expert2 = std::make_unique<MockAgent>("mock2");
   expert2->AddFakeMessage({3, "", "user", "test"});
 
   manager.RegisterExpert(std::move(expert1));
@@ -60,10 +60,10 @@ TEST_CASE("ExpertManager SnapshotExperts collects all states", "[expert]") {
   REQUIRE(snapshot["mock1"][0].content == "hello");
 }
 
-TEST_CASE("ExpertManager RestoreExperts loads states", "[expert]") {
-  ExpertManager manager;
+TEST_CASE("AgentManager RestoreExperts loads states", "[expert]") {
+  AgentManager manager;
 
-  auto expert = std::make_unique<MockExpert>("mock1");
+  auto expert = std::make_unique<MockAgent>("mock1");
   manager.RegisterExpert(std::move(expert));
 
   std::unordered_map<std::string, std::vector<ChatMessage>> states;
@@ -78,8 +78,8 @@ TEST_CASE("ExpertManager RestoreExperts loads states", "[expert]") {
   REQUIRE(snapshot["mock1"][0].content == "restored message");
 }
 
-TEST_CASE("ExpertManager RestoreExperts ignores unknown experts", "[expert]") {
-  ExpertManager manager;
+TEST_CASE("AgentManager RestoreExperts ignores unknown experts", "[expert]") {
+  AgentManager manager;
 
   std::unordered_map<std::string, std::vector<ChatMessage>> states;
   states["nonexistent"] = {{1, "", "user", "nobody"}};
@@ -87,10 +87,10 @@ TEST_CASE("ExpertManager RestoreExperts ignores unknown experts", "[expert]") {
   REQUIRE_NOTHROW(manager.RestoreExperts(states));
 }
 
-TEST_CASE("ExpertManager ClearSessions resets all states", "[expert]") {
-  ExpertManager manager;
+TEST_CASE("AgentManager ClearSessions resets all states", "[expert]") {
+  AgentManager manager;
 
-  auto expert = std::make_unique<MockExpert>("mock1");
+  auto expert = std::make_unique<MockAgent>("mock1");
   expert->AddFakeMessage({1, "", "user", "data"});
   manager.RegisterExpert(std::move(expert));
 
