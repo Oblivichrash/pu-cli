@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 #include "pu/agent_config.hpp"
 #include <string>
 

@@ -71,6 +71,7 @@ class BaseAgent {
 class AgentManager {
  public:
   AgentManager();
+
   void RegisterExpert(std::unique_ptr<BaseAgent> expert);
   std::string Dispatch(const std::string& input);
   std::string CallExpert(const std::string& expert_name, const std::string& input);
@@ -87,7 +88,8 @@ class AgentManager {
   void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
   void SetCallStack(std::shared_ptr<CallStack> stack);
-  AgentContext PrepareContext(const std::stringAgentContext PrepareContext(const std::string& agent_name) const; agent_name);
+
+  AgentContext PrepareContext(const std::string& agent_name);
   BaseAgent* GetExpert(const std::string& name) const;
   std::string ExecuteAgentWithContext(const std::string& agent_name,
                                       const std::string& input,

@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "chat_expert.hpp"
+#include "chat_agent.hpp"
 #include "pu/renderer.hpp"
+
 #include <iostream>
 #include <sstream>
 
 namespace pu::experts {
 
 ChatAgent::ChatAgent(const std::string& name,
-                       std::unique_ptr<pu::backend::Backend> backend,
-                       const std::string& model_id)
+                     std::unique_ptr<pu::backend::Backend> backend,
+                     const std::string& model_id)
     : name_(name), model_id_(model_id), backend_(std::move(backend)) {}
 
 std::string ChatAgent::Handle(const std::string& input,
-                               pu::expert::AgentContext& ctx) {
+                              pu::expert::AgentContext& ctx) {
   // Inject system prompt if present and not already in history
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
@@ -50,13 +51,11 @@ std::string ChatAgent::Handle(const std::string& input,
   std::error_code ec;
   auto renderer = pu::StreamingRenderer::Create(ctx.show_reasoning);
   backend_->Chat(backend_history,
-                 [&](pu::backend::TokenType type, std::string_view token,
-                     bool is_final) {
+                 [&](pu::backend::TokenType type, std::string_view token, bool is_final) {
                    if (type == pu::backend::TokenType::kContent) {
                      renderer(type, token, is_final);
                      if (!is_final) full_response << token;
-                   } else if (type == pu::backend::TokenType::kReasoning &&
-                              ctx.show_reasoning) {
+                   } else if (type == pu::backend::TokenType::kReasoning && ctx.show_reasoning) {
                      renderer(type, token, is_final);
                    }
                  },

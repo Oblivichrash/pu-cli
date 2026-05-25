@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "experts/bash/bash_expert.hpp"
+#include "agents/bash/bash_agent.hpp"
 #include "executor/command_executor.hpp"
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
@@ -82,11 +82,11 @@ TEST_CASE("BashAgent safe command auto-approve", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::AgentContext ctx;
+  pu::expert::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
     asked = true;
-    return pu::agent::ConfirmationChoice::kDeny;
+    return pu::expert::ConfirmationChoice::kDeny;
   };
   ctx.show_reasoning = false;
 
@@ -118,11 +118,11 @@ TEST_CASE("BashAgent dangerous command blocked", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::AgentContext ctx;
+  pu::expert::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
     asked = true;
-    return pu::agent::ConfirmationChoice::kApproveOnce;
+    return pu::expert::ConfirmationChoice::kApproveOnce;
   };
 
   auto result = expert.Handle("remove all", ctx);
@@ -153,11 +153,11 @@ TEST_CASE("BashAgent neutral command confirmed", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::agent::AgentContext ctx;
+  pu::expert::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
     asked = true;
-    return pu::agent::ConfirmationChoice::kApproveOnce;
+    return pu::expert::ConfirmationChoice::kApproveOnce;
   };
 
   auto result = expert.Handle("search logs", ctx);
@@ -185,9 +185,9 @@ TEST_CASE("BashAgent neutral command denied", "[integration][bash]") {
     }
   };
 
-  pu::agent::AgentContext ctx;
-  ctx.request_confirmation = [](const pu::agent::ConfirmationRequest&) {
-    return pu::agent::ConfirmationChoice::kDeny;
+  pu::expert::AgentContext ctx;
+  ctx.request_confirmation = [](const pu::expert::ConfirmationRequest&) {
+    return pu::expert::ConfirmationChoice::kDeny;
   };
 
   auto result = expert.Handle("disk usage", ctx);

@@ -6,6 +6,7 @@
 #include "pu/conversation.hpp"
 #include "executor/command_executor.hpp"
 #include "pu/agent_config.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,9 +16,9 @@ namespace pu::experts {
 class BashAgent : public pu::expert::BaseAgent {
  public:
   BashAgent(const std::string& name,
-             std::unique_ptr<pu::backend::Backend> backend,
-             std::unique_ptr<pu::executor::CommandExecutor> executor,
-             config::ConfirmationPolicy policy = config::ConfirmationPolicy::kAlwaysAsk);
+            std::unique_ptr<pu::backend::Backend> backend,
+            std::unique_ptr<pu::executor::CommandExecutor> executor,
+            config::ConfirmationPolicy policy = config::ConfirmationPolicy::kAlwaysAsk);
   ~BashAgent() override = default;
 
   std::string Name() const override { return name_; }
@@ -29,31 +30,31 @@ class BashAgent : public pu::expert::BaseAgent {
   std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
   void ResetSession() override;
 
-  std::vector<ChatMessage> SaveState() const override;
-  void LoadState(const std::vector<ChatMessage>& messages) override;
+  std::vector<pu::ChatMessage> SaveState() const override;
+  void LoadState(const std::vector<pu::ChatMessage>& messages) override;
 
-  void OnPanelMessage(const ChatMessage& msg) override;
+  void OnPanelMessage(const pu::ChatMessage& msg) override;
   std::optional<std::string> ProactiveReply() override;
-  double EvaluateRelevance(const ChatMessage& msg) override;
+  double EvaluateRelevance(const pu::ChatMessage& msg) override;
   void SetProactiveThreshold(double threshold) override;
 
  protected:
   std::vector<pu::backend::Message> BuildInitialHistory() const;
   void AppendTurnToHistory(const std::vector<pu::backend::Message>& history,
                            size_t initial_size,
-                           std::vector<ChatMessage>& turn_history) const;
+                           std::vector<pu::ChatMessage>& turn_history) const;
 
  private:
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
-                          std::vector<ChatMessage>& turn_history,
+                          std::vector<pu::ChatMessage>& turn_history,
                           pu::expert::AgentContext& ctx,
                           const std::vector<pu::backend::Message>& initial_history = {});
 
   std::string name_;
   std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
-  std::vector<ChatMessage> history_;
+  std::vector<pu::ChatMessage> history_;
   std::vector<double> recent_scores_;
   double proactive_threshold_ = 0.6;
   config::ConfirmationPolicy confirmation_policy_;

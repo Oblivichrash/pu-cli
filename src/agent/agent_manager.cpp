@@ -5,7 +5,7 @@
 
 namespace pu::expert {
 
-AgentManager::AgentManager()
+AgentManager::AgentManager() {}
 
 void AgentManager::RegisterExpert(std::unique_ptr<BaseAgent> expert) {
   if (!expert) {
@@ -73,7 +73,7 @@ void AgentManager::SetConfirmationCallback(ConfirmationCallback cb) {
 }
 
 void AgentManager::SetSystemPrompt(const std::string& expert_name,
-                                    const std::string& prompt) {
+                                   const std::string& prompt) {
   system_prompts_[expert_name] = prompt;
 }
 
@@ -85,7 +85,7 @@ void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
   call_stack_ = std::move(stack);
 }
 
-AgentContext AgentManager::PrepareContext(const std::stringAgentContext AgentManager::PrepareContext(const std::string& agent_name) const { agent_name) {
+AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
   AgentContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);
@@ -119,8 +119,8 @@ BaseAgent* AgentManager::GetExpert(const std::string& name) const {
 }
 
 std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
-                                                   const std::string& input,
-                                                   AgentContext& ctx) {
+                                                  const std::string& input,
+                                                  AgentContext& ctx) {
   auto it = experts_.find(agent_name);
   if (it == experts_.end()) {
     return "Expert not found: " + agent_name;

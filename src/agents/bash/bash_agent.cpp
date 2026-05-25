@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
-#include "bash_expert.hpp"
+#include "bash_agent.hpp"
 #include "pu/renderer.hpp"
 #include "pu/agent.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace pu::experts {
 
 BashAgent::BashAgent(const std::string& name,
-                       std::unique_ptr<pu::backend::Backend> backend,
-                       std::unique_ptr<pu::executor::CommandExecutor> executor,
-                       config::ConfirmationPolicy policy)
+                     std::unique_ptr<pu::backend::Backend> backend,
+                     std::unique_ptr<pu::executor::CommandExecutor> executor,
+                     config::ConfirmationPolicy policy)
     : name_(name), backend_(std::move(backend)), executor_(std::move(executor)),
       confirmation_policy_(policy) {}
 
@@ -27,14 +27,15 @@ std::vector<pu::backend::Message> BashAgent::BuildInitialHistory() const {
   std::vector<pu::backend::Message> initial;
   for (const auto& cm : history_) {
     pu::backend::Message msg;
-    if (cm.role == "user") msg.role = pu::backend::Message::Role::kUser;
-    else if (cm.role == "bash" || cm.role == "assistant")
+    if (cm.role == "user") {
+      msg.role = pu::backend::Message::Role::kUser;
+    } else if (cm.role == "bash" || cm.role == "assistant") {
       msg.role = pu::backend::Message::Role::kAssistant;
-    else if (cm.role == "tool_result")
+    } else if (cm.role == "tool_result") {
       msg.role = pu::backend::Message::Role::kTool;
-    else if (cm.role == "system")
+    } else {
       msg.role = pu::backend::Message::Role::kSystem;
-    else msg.role = pu::backend::Message::Role::kSystem;
+    }
     msg.content = cm.content;
     initial.push_back(msg);
   }
@@ -55,8 +56,9 @@ void BashAgent::AppendTurnToHistory(
         cm.content = msg.content;
       } else {
         std::ostringstream tool_summary;
-        for (const auto& tc : msg.tool_calls)
+        for (const auto& tc : msg.tool_calls) {
           tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
+        }
         cm.content = tool_summary.str();
       }
     } else if (msg.role == pu::backend::Message::Role::kTool) {
@@ -71,8 +73,7 @@ void BashAgent::AppendTurnToHistory(
 }
 
 std::string BashAgent::Handle(const std::string& input,
-                               pu::expert::AgentContext& ctx) {
-  // Inject system prompt into panel history if not already present
+                              pu::expert::AgentContext& ctx) {
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
     for (const auto& cm : history_) {
@@ -89,20 +90,20 @@ std::string BashAgent::Handle(const std::string& input,
 
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
-  auto response =
-      RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
+  auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
 
 std::string BashAgent::RunToolLoop(const std::string& user_input,
-                                    bool show_reasoning,
-                                    std::vector<ChatMessage>& turn_history,
-                                    pu::expert::AgentContext& ctx,
-                                    const std::vector<pu::backend::Message>& initial_history) {
+                                   bool show_reasoning,
+                                   std::vector<ChatMessage>& turn_history,
+                                   pu::expert::AgentContext& ctx,
+                                   const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
   }
+
   using json = nlohmann::json;
   auto history = initial_history;
   history.push_back({pu::backend::Message::Role::kUser, user_input});
@@ -115,6 +116,7 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
 
   std::string final_response;
   bool tool_was_called = false;
+
   do {
     tool_was_called = false;
     std::vector<pu::backend::ToolCall> collected_calls;
@@ -143,6 +145,7 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       turn_history.push_back({0, "", "bash", final_response, ""});
       break;
     }
+
     if (!tool_was_called) {
       final_response = content_stream.str();
       turn_history.push_back({0, "", "bash", final_response, ""});
@@ -160,13 +163,13 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       }
     }
 
-    auto should_ask = true;
-    pu::executor::RiskLevel highest = pu::executor::RiskLevel::kSafe;
+    auto highest = pu::executor::RiskLevel::kSafe;
     for (const auto& cmd : commands) {
       auto risk = executor_->AssessRisk(cmd);
       if (risk.level > highest) highest = risk.level;
     }
 
+    bool should_ask = true;
     if (confirmation_policy_ == config::ConfirmationPolicy::kNever ||
         (confirmation_policy_ == config::ConfirmationPolicy::kAutoSafe && highest == pu::executor::RiskLevel::kSafe) ||
         (user_approved_all_safe_ && highest == pu::executor::RiskLevel::kSafe)) {
@@ -177,9 +180,8 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       pu::expert::ConfirmationRequest req;
       req.highest_risk = highest;
       std::ostringstream desc;
-      if (commands.size() == 1) {
-        desc << "Execute: " << commands[0];
-      } else {
+      if (commands.size() == 1) desc << "Execute: " << commands[0];
+      else {
         desc << "Execute these commands?\n";
         for (size_t i = 0; i < commands.size(); ++i)
           desc << "  " << (i + 1) << ". " << commands[i] << "\n";
@@ -237,6 +239,7 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       } else {
         result = "Unknown tool: " + call.name;
       }
+
       pu::backend::Message tool_msg;
       tool_msg.role = pu::backend::Message::Role::kTool;
       tool_msg.tool_name = call.id;

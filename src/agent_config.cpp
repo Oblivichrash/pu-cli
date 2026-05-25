@@ -97,7 +97,7 @@ std::string FindConfigPath() {
   throw std::runtime_error("Configuration file not found.");
 }
 
-AgentsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& ec) {
+AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec) {
   ec.clear();
   AgentsConfig result;
   std::ifstream file(config_path);
@@ -116,7 +116,7 @@ AgentsConfig LoadExpertsConfig(const std::string& config_path, std::error_code& 
   return result;
 }
 
-void SaveExpertsConfig(const std::string& config_path, const AgentsConfig& config,
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
                        std::error_code& ec) {
   ec.clear();
   json j;

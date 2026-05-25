@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 #include "pu/conversation.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <vector>
 
 using namespace pu;
-using namespace pu::agent;
+using namespace pu::expert;
 
 namespace {
 
@@ -17,7 +16,7 @@ class MockAgent : public BaseAgent {
 
   std::string Name() const override { return name_; }
   std::string Description() const override { return "Mock"; }
-  std::string Handle(const std::string&, ExpertContext&) override {
+  std::string Handle(const std::string&, AgentContext&) override {
     return "mock response";
   }
   void ResetSession() override { state_.clear(); }
@@ -43,15 +42,15 @@ class MockAgent : public BaseAgent {
 TEST_CASE("AgentManager SnapshotExperts collects all states", "[expert]") {
   AgentManager manager;
 
-  auto expert1 = std::make_unique<MockAgent>("mock1");
-  expert1->AddFakeMessage({1, "", "user", "hello"});
-  expert1->AddFakeMessage({2, "", "mock1", "hi"});
+  auto agent1 = std::make_unique<MockAgent>("mock1");
+  agent1->AddFakeMessage({1, "", "user", "hello"});
+  agent1->AddFakeMessage({2, "", "mock1", "hi"});
 
-  auto expert2 = std::make_unique<MockAgent>("mock2");
-  expert2->AddFakeMessage({3, "", "user", "test"});
+  auto agent2 = std::make_unique<MockAgent>("mock2");
+  agent2->AddFakeMessage({3, "", "user", "test"});
 
-  manager.RegisterExpert(std::move(expert1));
-  manager.RegisterExpert(std::move(expert2));
+  manager.RegisterExpert(std::move(agent1));
+  manager.RegisterExpert(std::move(agent2));
 
   auto snapshot = manager.SnapshotExperts();
   REQUIRE(snapshot.size() == 2);
@@ -63,8 +62,8 @@ TEST_CASE("AgentManager SnapshotExperts collects all states", "[expert]") {
 TEST_CASE("AgentManager RestoreExperts loads states", "[expert]") {
   AgentManager manager;
 
-  auto expert = std::make_unique<MockAgent>("mock1");
-  manager.RegisterExpert(std::move(expert));
+  auto agent = std::make_unique<MockAgent>("mock1");
+  manager.RegisterExpert(std::move(agent));
 
   std::unordered_map<std::string, std::vector<ChatMessage>> states;
   states["mock1"] = {
@@ -90,9 +89,9 @@ TEST_CASE("AgentManager RestoreExperts ignores unknown experts", "[expert]") {
 TEST_CASE("AgentManager ClearSessions resets all states", "[expert]") {
   AgentManager manager;
 
-  auto expert = std::make_unique<MockAgent>("mock1");
-  expert->AddFakeMessage({1, "", "user", "data"});
-  manager.RegisterExpert(std::move(expert));
+  auto agent = std::make_unique<MockAgent>("mock1");
+  agent->AddFakeMessage({1, "", "user", "data"});
+  manager.RegisterExpert(std::move(agent));
 
   manager.ClearSessions();
 

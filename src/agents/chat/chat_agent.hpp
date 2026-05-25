@@ -4,6 +4,7 @@
 #include "pu/agent.hpp"
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,8 +13,9 @@ namespace pu::experts {
 
 class ChatAgent : public pu::expert::BaseAgent {
  public:
-  explicit ChatAgent(const std::string& name, std::unique_ptr<pu::backend::Backend> backend,
-                      const std::string& model_id = "");
+  explicit ChatAgent(const std::string& name,
+                     std::unique_ptr<pu::backend::Backend> backend,
+                     const std::string& model_id = "");
   ~ChatAgent() override = default;
 
   std::string Name() const override { return name_; }
@@ -21,16 +23,18 @@ class ChatAgent : public pu::expert::BaseAgent {
     return model_id_.empty() ? "General conversational assistant"
                              : "General conversational assistant powered by " + model_id_;
   }
+
   std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
   void ResetSession() override;
-  std::vector<ChatMessage> SaveState() const override;
-  void LoadState(const std::vector<ChatMessage>& messages) override;
+
+  std::vector<pu::ChatMessage> SaveState() const override;
+  void LoadState(const std::vector<pu::ChatMessage>& messages) override;
 
  private:
   std::string name_;
   std::string model_id_;
   std::unique_ptr<pu::backend::Backend> backend_;
-  std::vector<ChatMessage> history_;
+  std::vector<pu::ChatMessage> history_;
 };
 
 }  // namespace pu::experts
