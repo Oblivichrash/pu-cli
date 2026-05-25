@@ -13,7 +13,7 @@
 #include <memory>
 #include <system_error>
 
-namespace pu::expert {
+namespace pu::agent {
 
 namespace {
 class ChatAgentFactory : public AgentFactory {
@@ -70,4 +70,4 @@ void RegisterBuiltinFactories() {
                                             std::make_unique<BashAgentFactory>());
 }
 
-}  // namespace pu::expert
+}  // namespace pu::agent

@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-namespace pu::experts {
+namespace pu::agents {
 
-class BashAgent : public pu::expert::BaseAgent {
+class BashAgent : public pu::agent::BaseAgent {
  public:
   BashAgent(const std::string& name,
             std::unique_ptr<pu::backend::Backend> backend,
@@ -27,7 +27,7 @@ class BashAgent : public pu::expert::BaseAgent {
            "Performs security review before execution.";
   }
 
-  std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
+  std::string Handle(const std::string& input, pu::agent::AgentContext& ctx) override;
   void ResetSession() override;
 
   std::vector<pu::ChatMessage> SaveState() const override;
@@ -48,7 +48,7 @@ class BashAgent : public pu::expert::BaseAgent {
   std::string RunToolLoop(const std::string& user_input,
                           bool show_reasoning,
                           std::vector<pu::ChatMessage>& turn_history,
-                          pu::expert::AgentContext& ctx,
+                          pu::agent::AgentContext& ctx,
                           const std::vector<pu::backend::Message>& initial_history = {});
 
   std::string name_;
@@ -61,4 +61,4 @@ class BashAgent : public pu::expert::BaseAgent {
   bool user_approved_all_safe_ = false;
 };
 
-}  // namespace pu::experts
+}  // namespace pu::agents

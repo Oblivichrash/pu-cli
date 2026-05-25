@@ -3,7 +3,7 @@
 
 #include <iostream>
 
-namespace pu::expert {
+namespace pu::agent {
 
 AgentManager::AgentManager() {}
 
@@ -200,4 +200,4 @@ void AgentManager::RestoreExperts(
   }
 }
 
-}  // namespace pu::expert
+}  // namespace pu::agent

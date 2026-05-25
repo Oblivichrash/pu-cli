@@ -8,7 +8,7 @@
 #include <sstream>
 #include <vector>
 
-namespace pu::experts {
+namespace pu::agents {
 
 BashAgent::BashAgent(const std::string& name,
                      std::unique_ptr<pu::backend::Backend> backend,
@@ -73,7 +73,7 @@ void BashAgent::AppendTurnToHistory(
 }
 
 std::string BashAgent::Handle(const std::string& input,
-                              pu::expert::AgentContext& ctx) {
+                              pu::agent::AgentContext& ctx) {
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
     for (const auto& cm : history_) {
@@ -98,7 +98,7 @@ std::string BashAgent::Handle(const std::string& input,
 std::string BashAgent::RunToolLoop(const std::string& user_input,
                                    bool show_reasoning,
                                    std::vector<ChatMessage>& turn_history,
-                                   pu::expert::AgentContext& ctx,
+                                   pu::agent::AgentContext& ctx,
                                    const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
     return "This backend does not support tool calling. Cannot execute commands.";
@@ -177,7 +177,7 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
     }
 
     if (should_ask && !commands.empty()) {
-      pu::expert::ConfirmationRequest req;
+      pu::agent::ConfirmationRequest req;
       req.highest_risk = highest;
       std::ostringstream desc;
       if (commands.size() == 1) desc << "Execute: " << commands[0];
@@ -189,17 +189,17 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       req.description = desc.str();
 
       auto choice = ctx.request_confirmation(req);
-      if (choice == pu::expert::ConfirmationChoice::kDenyAll) {
+      if (choice == pu::agent::ConfirmationChoice::kDenyAll) {
         final_response = "All command execution denied by user.";
         turn_history.push_back({0, "", "bash", final_response, ""});
         break;
       }
-      if (choice == pu::expert::ConfirmationChoice::kDeny) {
+      if (choice == pu::agent::ConfirmationChoice::kDeny) {
         final_response = "Command execution cancelled by user.";
         turn_history.push_back({0, "", "bash", final_response, ""});
         break;
       }
-      if (choice == pu::expert::ConfirmationChoice::kApproveAllSafe) {
+      if (choice == pu::agent::ConfirmationChoice::kApproveAllSafe) {
         user_approved_all_safe_ = true;
       }
     }
@@ -284,4 +284,4 @@ std::optional<std::string> BashAgent::ProactiveReply() {
 
 void BashAgent::SetProactiveThreshold(double threshold) { proactive_threshold_ = threshold; }
 
-}  // namespace pu::experts
+}  // namespace pu::agents

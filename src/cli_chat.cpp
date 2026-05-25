@@ -146,11 +146,11 @@ int RunChatCommand(int argc, char* argv[]) {
   };
   auto confirm_state = std::make_shared<ConfirmationState>();
 
-  manager.SetConfirmationCallback([confirm_state](const pu::expert::ConfirmationRequest& req) {
-    if (confirm_state->deny_all) return pu::expert::ConfirmationChoice::kDenyAll;
+  manager.SetConfirmationCallback([confirm_state](const pu::agent::ConfirmationRequest& req) {
+    if (confirm_state->deny_all) return pu::agent::ConfirmationChoice::kDenyAll;
     if (confirm_state->auto_approve_safe &&
         req.highest_risk == pu::executor::RiskLevel::kSafe) {
-      return pu::expert::ConfirmationChoice::kApproveOnce;
+      return pu::agent::ConfirmationChoice::kApproveOnce;
     }
 
     std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
@@ -159,15 +159,15 @@ int RunChatCommand(int argc, char* argv[]) {
     if (answer == "a") {
       confirm_state->auto_approve_safe = true;
       return (req.highest_risk == pu::executor::RiskLevel::kSafe)
-                 ? pu::expert::ConfirmationChoice::kApproveOnce
-                 : pu::expert::ConfirmationChoice::kDeny;
+                 ? pu::agent::ConfirmationChoice::kApproveOnce
+                 : pu::agent::ConfirmationChoice::kDeny;
     }
     if (answer == "s") {
       confirm_state->deny_all = true;
-      return pu::expert::ConfirmationChoice::kDenyAll;
+      return pu::agent::ConfirmationChoice::kDenyAll;
     }
-    return (answer == "y" || answer == "Y") ? pu::expert::ConfirmationChoice::kApproveOnce
-                                            : pu::expert::ConfirmationChoice::kDeny;
+    return (answer == "y" || answer == "Y") ? pu::agent::ConfirmationChoice::kApproveOnce
+                                            : pu::agent::ConfirmationChoice::kDeny;
   });
 
   auto global_ctx = pu::GlobalContext::Create(pu_dir);

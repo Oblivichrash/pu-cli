@@ -5,7 +5,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace pu::experts {
+namespace pu::agents {
 
 ChatAgent::ChatAgent(const std::string& name,
                      std::unique_ptr<pu::backend::Backend> backend,
@@ -13,7 +13,7 @@ ChatAgent::ChatAgent(const std::string& name,
     : name_(name), model_id_(model_id), backend_(std::move(backend)) {}
 
 std::string ChatAgent::Handle(const std::string& input,
-                              pu::expert::AgentContext& ctx) {
+                              pu::agent::AgentContext& ctx) {
   // Inject system prompt if present and not already in history
   if (ctx.system_prompt && !ctx.system_prompt->empty()) {
     bool has_system = false;
@@ -78,4 +78,4 @@ void ChatAgent::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
 }
 
-}  // namespace pu::experts
+}  // namespace pu::agents

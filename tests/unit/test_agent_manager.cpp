@@ -6,7 +6,7 @@
 #include <vector>
 
 using namespace pu;
-using namespace pu::expert;
+using namespace pu::agent;
 
 namespace {
 

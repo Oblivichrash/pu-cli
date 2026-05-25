@@ -7,7 +7,7 @@
 #include <memory>
 #include <unordered_map>
 
-namespace pu::expert {
+namespace pu::agent {
 
 class AgentFactory {
  public:
@@ -30,4 +30,4 @@ class AgentRegistry {
 
 void RegisterBuiltinFactories();
 
-}  // namespace pu::expert
+}  // namespace pu::agent

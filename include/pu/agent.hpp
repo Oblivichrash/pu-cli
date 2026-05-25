@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pu::expert {
+namespace pu::agent {
 
 enum class ConfirmationChoice {
   kDeny,
@@ -111,4 +111,4 @@ class AgentManager {
   std::shared_ptr<CallStack> call_stack_;
 };
 
-}  // namespace pu::expert
+}  // namespace pu::agent

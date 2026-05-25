@@ -82,11 +82,11 @@ TEST_CASE("BashAgent safe command auto-approve", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::expert::AgentContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
-    return pu::expert::ConfirmationChoice::kDeny;
+    return pu::agent::ConfirmationChoice::kDeny;
   };
   ctx.show_reasoning = false;
 
@@ -118,11 +118,11 @@ TEST_CASE("BashAgent dangerous command blocked", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::expert::AgentContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
-    return pu::expert::ConfirmationChoice::kApproveOnce;
+    return pu::agent::ConfirmationChoice::kApproveOnce;
   };
 
   auto result = expert.Handle("remove all", ctx);
@@ -153,11 +153,11 @@ TEST_CASE("BashAgent neutral command confirmed", "[integration][bash]") {
     ++call_count;
   };
 
-  pu::expert::AgentContext ctx;
+  pu::agent::AgentContext ctx;
   bool asked = false;
-  ctx.request_confirmation = [&](const pu::expert::ConfirmationRequest&) {
+  ctx.request_confirmation = [&](const pu::agent::ConfirmationRequest&) {
     asked = true;
-    return pu::expert::ConfirmationChoice::kApproveOnce;
+    return pu::agent::ConfirmationChoice::kApproveOnce;
   };
 
   auto result = expert.Handle("search logs", ctx);
@@ -185,9 +185,9 @@ TEST_CASE("BashAgent neutral command denied", "[integration][bash]") {
     }
   };
 
-  pu::expert::AgentContext ctx;
-  ctx.request_confirmation = [](const pu::expert::ConfirmationRequest&) {
-    return pu::expert::ConfirmationChoice::kDeny;
+  pu::agent::AgentContext ctx;
+  ctx.request_confirmation = [](const pu::agent::ConfirmationRequest&) {
+    return pu::agent::ConfirmationChoice::kDeny;
   };
 
   auto result = expert.Handle("disk usage", ctx);

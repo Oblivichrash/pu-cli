@@ -7,7 +7,7 @@
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
 
-namespace pu::expert {
+namespace pu::agent {
 class AgentManager;
 }
 

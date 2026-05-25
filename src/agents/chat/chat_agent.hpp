@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-namespace pu::experts {
+namespace pu::agents {
 
-class ChatAgent : public pu::expert::BaseAgent {
+class ChatAgent : public pu::agent::BaseAgent {
  public:
   explicit ChatAgent(const std::string& name,
                      std::unique_ptr<pu::backend::Backend> backend,
@@ -24,7 +24,7 @@ class ChatAgent : public pu::expert::BaseAgent {
                              : "General conversational assistant powered by " + model_id_;
   }
 
-  std::string Handle(const std::string& input, pu::expert::AgentContext& ctx) override;
+  std::string Handle(const std::string& input, pu::agent::AgentContext& ctx) override;
   void ResetSession() override;
 
   std::vector<pu::ChatMessage> SaveState() const override;
@@ -37,4 +37,4 @@ class ChatAgent : public pu::expert::BaseAgent {
   std::vector<pu::ChatMessage> history_;
 };
 
-}  // namespace pu::experts
+}  // namespace pu::agents
