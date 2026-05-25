@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-
 #include "pu/cli_chat.hpp"
 
 #include "pu/backend.hpp"
 #include "pu/expert.hpp"
 #include "pu/expert_config.hpp"
-#include "pu/http/http_client.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/cli_app_setup.hpp"
@@ -22,11 +20,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <system_error>
 
 namespace pu::cli {
 
@@ -71,6 +67,9 @@ void PrintHelp() {
             << "  /export <id>    Export conversation to Markdown\n"
             << "  /note add <text>  Add a note for current expert\n"
             << "  /note show      Show notes for current expert\n"
+            << "  /push <agent>   Push agent onto call stack (experimental)\n"
+            << "  /pop            Pop current agent from call stack\n"
+            << "  /stack          Show call stack content\n"
             << "  --show-reasoning (startup flag) Show model reasoning\n";
 }
 
@@ -141,7 +140,6 @@ int RunChatCommand(int argc, char* argv[]) {
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
 
-  // Confirmation state for bash commands
   struct ConfirmationState {
     bool auto_approve_safe = false;
     bool deny_all = false;
@@ -178,7 +176,6 @@ int RunChatCommand(int argc, char* argv[]) {
   manager.SetCallStack(call_stack);
   pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
-  // Load long-term memory summaries for each expert
   for (const auto& entry : config.experts) {
     std::error_code ec;
     auto summary = memory.LoadSummary(entry.name, ec);
@@ -200,11 +197,7 @@ int RunChatCommand(int argc, char* argv[]) {
   std::cout << "\nType /help for available commands.\n\n";
 
   std::string input;
-  while (true) {
-    std::cout << "> " << std::flush;
-    if (!std::getline(std::cin, input)) {
-      break;
-    }
+  while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) {
       continue;
     }
@@ -255,8 +248,7 @@ int RunChatCommand(int argc, char* argv[]) {
         }
         std::cout << "\n";
       } else if (input.rfind("/proactive ", 0) == 0) {
-        std::string args = input.substr(11);
-        std::istringstream iss(args);
+        std::istringstream iss(input.substr(11));
         std::string expert, state;
         double threshold = 0.6;
         iss >> expert >> state;
@@ -302,11 +294,10 @@ int RunChatCommand(int argc, char* argv[]) {
           std::cout << "[INFO] Proactive suggestions disabled.\n";
         }
       } else if (input.rfind("/save", 0) == 0) {
-        std::string args = input.substr(5); // after "/save"
+        std::string args = input.substr(5);
         bool no_summary = false;
         if (args.find("--no-summary") != std::string::npos) {
           no_summary = true;
-          // remove from args to leave the name
           size_t pos = args.find("--no-summary");
           args.erase(pos, 13);
         }
@@ -333,7 +324,6 @@ int RunChatCommand(int argc, char* argv[]) {
         std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
 
         if (!no_summary) {
-          // Build summary prompt from conversation
           std::ostringstream summary_prompt;
           summary_prompt << "Summarize the main tasks and decisions you handled in this session. Be concise (max 10 lines).\n\n";
           for (const auto& msg : panel_messages) {
@@ -396,7 +386,7 @@ int RunChatCommand(int argc, char* argv[]) {
         }
 
         std::error_code ec;
-        std::string markdown = store.ExportMarkdown(export_id, ec);
+        auto md = store.ExportMarkdown(export_id, ec);
         if (ec) {
           std::cerr << "Error: failed to export conversation: " << ec.message() << "\n";
           continue;
@@ -406,7 +396,7 @@ int RunChatCommand(int argc, char* argv[]) {
         if (!out) {
           std::cerr << "Error: cannot write to " << filename << "\n";
         } else {
-          out << markdown;
+          out << md;
           std::cout << "[INFO] Exported to " << filename << "\n";
         }
       } else if (input.rfind("/note", 0) == 0) {
@@ -432,7 +422,14 @@ int RunChatCommand(int argc, char* argv[]) {
       continue;
     }
 
-    // Regular message handling (unchanged)
+    std::string actual_agent;
+    if (!call_stack->IsEmpty()) {
+      actual_agent = call_stack->Top().agent_name;
+    } else {
+      actual_agent = manager.GetActiveExpert();
+      if (actual_agent.empty()) actual_agent = "chat";
+    }
+
     panel_messages.push_back({
       ++message_id,
       CurrentTimestamp(),
@@ -442,42 +439,25 @@ int RunChatCommand(int argc, char* argv[]) {
     });
     manager.NotifyPanelMessage(panel_messages.back());
 
-    std::string reply_role;
-    if (!input.empty() && input[0] == '@') {
-      size_t space_pos = input.find(' ');
-      if (space_pos != std::string::npos) {
-        reply_role = input.substr(1, space_pos - 1);
-      } else {
-        reply_role = "chat";
-      }
-    } else {
-      reply_role = manager.GetActiveExpert();
-      if (reply_role.empty()) {
-        reply_role = "chat";
-      }
-    }
-
     try {
-      std::string response = manager.Dispatch(input);
+      std::string response = orchestrator.Process(input);
       if (!response.empty()) {
         panel_messages.push_back({
           ++message_id,
           CurrentTimestamp(),
-          reply_role,
+          actual_agent,
           response,
           ""
         });
         manager.NotifyPanelMessage(panel_messages.back());
 
-        // Check for proactive replies
         std::vector<pu::ChatMessage> recent;
         size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
         for (size_t i = start_idx; i < panel_messages.size(); ++i) {
           recent.push_back(panel_messages[i]);
         }
         manager.SetRecentMessages(recent);
-        auto proactive_replies = manager.CollectProactiveReplies();
-        for (auto& [expert, text] : proactive_replies) {
+        for (auto& [expert, text] : manager.CollectProactiveReplies()) {
           panel_messages.push_back({
             ++message_id,
             CurrentTimestamp(),

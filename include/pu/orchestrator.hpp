@@ -20,6 +20,7 @@ class Orchestrator {
                expert::ExpertManager& manager);
 
   bool HandleCommand(const std::string& input, std::string& output);
+  std::string Process(const std::string& input);
   void Push(const std::string& agent_name);
   void Pop();
   std::string ShowStack() const;

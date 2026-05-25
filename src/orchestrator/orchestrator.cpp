@@ -53,6 +53,15 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
   return false;
 }
 
+std::string Orchestrator::Process(const std::string& input) {
+  if (stack_->IsEmpty()) {
+    return manager_.Dispatch(input);
+  }
+
+  const StackFrame& top = stack_->Top();
+  return manager_.CallExpert(top.agent_name, input);
+}
+
 void Orchestrator::Push(const std::string& agent_name) {
   StackFrame frame;
   frame.agent_name = agent_name;
