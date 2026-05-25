@@ -2,7 +2,7 @@
 #include "pu/cli_ask.hpp"
 #include "pu/cli_chat.hpp"
 #include "pu/cli_learn.hpp"
-#include "pu/expert_factory.hpp"
+#include "pu/agent_factory.hpp"
 #include "pu/renderer.hpp"
 #include <curl/curl.h>
 #include <cstdlib>

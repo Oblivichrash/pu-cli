@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli_app_setup.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include "pu/expert.hpp"
-#include "pu/expert_factory.hpp"
+#include "pu/agent_factory.hpp"
 #include <iostream>
 
 namespace pu::cli {

@@ -3,7 +3,7 @@
 
 #include "pu/expert.hpp"
 #include "pu/backend.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include <memory>
 #include <unordered_map>
 

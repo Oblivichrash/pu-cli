@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/expert.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include <string>
 
 namespace pu::cli {

@@ -5,7 +5,7 @@
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "executor/command_executor.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include <memory>
 #include <string>
 #include <vector>

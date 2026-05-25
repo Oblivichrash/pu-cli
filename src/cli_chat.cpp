@@ -3,7 +3,7 @@
 
 #include "pu/backend.hpp"
 #include "pu/expert.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/cli_app_setup.hpp"

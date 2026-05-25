@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/expert_factory.hpp"
+#include "pu/agent_factory.hpp"
 #include "executor/command_executor.hpp"
 #include "experts/chat/chat_expert.hpp"
 #include "experts/bash/bash_expert.hpp"
 #include "http/curl_http_client.hpp"
-#include "pu/expert_config.hpp"
+#include "pu/agent_config.hpp"
 #include "pu/token_adapter.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
 #include "backends/openai/openai_token_adapter.hpp"
