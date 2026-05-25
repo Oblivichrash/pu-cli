@@ -59,6 +59,14 @@ target_link_libraries(pu_backend
 )
 add_library(pu::backend ALIAS pu_backend)
 
+add_library(pu_context STATIC
+    src/context/global_context.cpp
+    src/orchestrator/call_stack.cpp
+)
+target_include_directories(pu_context PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)
+add_library(pu::context ALIAS pu_context)
+
 # Expert library
 add_library(pu_expert STATIC
     src/expert/expert_manager.cpp
@@ -74,7 +82,7 @@ target_include_directories(pu_expert PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(pu_expert
-    PUBLIC  pu_backend_interface pu_platform
+    PUBLIC  pu_backend_interface pu_platform pu_context
     PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json
 )
 add_library(pu::expert ALIAS pu_expert)
@@ -90,7 +98,7 @@ add_executable(pu
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu PRIVATE pu_expert pu_backend pu_http pu_platform)
+target_link_libraries(pu PRIVATE pu_expert pu_context pu_backend pu_http pu_platform)
 
 if(MSVC)
     target_compile_options(pu PRIVATE /W4)
