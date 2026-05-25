@@ -86,6 +86,49 @@ void ExpertManager::SetCallStack(std::shared_ptr<CallStack> stack) {
   call_stack_ = std::move(stack);
 }
 
+ExpertContext ExpertManager::PrepareContext(const std::string& agent_name) const {
+  ExpertContext ctx;
+  ctx.call_expert = [this](const std::string& name, const std::string& inp) {
+    return CallExpert(name, inp);
+  };
+  ctx.request_confirmation = confirmation_callback_ ? confirmation_callback_
+      : [](const ConfirmationRequest& req) {
+          std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+          std::string answer;
+          std::getline(std::cin, answer);
+          return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                                  : ConfirmationChoice::kDeny;
+        };
+  ctx.working_dir = ".";
+  ctx.show_reasoning = show_reasoning_;
+  ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
+  ctx.global_ctx = global_ctx_;
+  ctx.call_stack = call_stack_;
+  auto prompt_it = system_prompts_.find(agent_name);
+  if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
+    ctx.system_prompt = prompt_it->second;
+  }
+  return ctx;
+}
+
+BaseExpert* ExpertManager::GetExpert(const std::string& name) const {
+  auto it = experts_.find(name);
+  if (it == experts_.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
+std::string ExpertManager::ExecuteAgentWithContext(const std::string& agent_name,
+                                                   const std::string& input,
+                                                   ExpertContext& ctx) {
+  auto it = experts_.find(agent_name);
+  if (it == experts_.end()) {
+    return "Expert not found: " + agent_name;
+  }
+  return it->second->Handle(input, ctx);
+}
+
 std::string ExpertManager::Dispatch(const std::string& input) {
   if (experts_.empty()) {
     return "No experts available.";
@@ -118,29 +161,7 @@ std::string ExpertManager::Dispatch(const std::string& input) {
     active_expert_ = it->first;
   }
 
-  ExpertContext ctx;
-  ctx.call_expert = [this](const std::string& name, const std::string& inp) {
-    return CallExpert(name, inp);
-  };
-  ctx.request_confirmation = confirmation_callback_ ? confirmation_callback_
-      : [](const ConfirmationRequest& req) {
-          std::cout << "[CONFIRM] " << req.description << " [y/N] ";
-          std::string answer;
-          std::getline(std::cin, answer);
-          return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
-                                                  : ConfirmationChoice::kDeny;
-        };
-  ctx.working_dir = ".";
-  ctx.show_reasoning = show_reasoning_;
-  ctx.recent_panel_messages = proactive_engine_->GetRecentMessages();
-  ctx.global_ctx = global_ctx_;
-  ctx.call_stack = call_stack_;
-
-  auto prompt_it = system_prompts_.find(it->first);
-  if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
-    ctx.system_prompt = prompt_it->second;
-  }
-
+  ExpertContext ctx = PrepareContext(it->first);
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
 }
@@ -151,27 +172,7 @@ std::string ExpertManager::CallExpert(const std::string& expert_name, const std:
     return "Expert not found: " + expert_name;
   }
 
-  ExpertContext ctx;
-  ctx.call_expert = [this](const std::string& name, const std::string& inp) {
-    return CallExpert(name, inp);
-  };
-  ctx.request_confirmation = confirmation_callback_ ? confirmation_callback_
-      : [](const ConfirmationRequest& req) {
-          std::cout << "[CONFIRM] " << req.description << " [y/N] ";
-          std::string answer;
-          std::getline(std::cin, answer);
-          return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
-                                                  : ConfirmationChoice::kDeny;
-        };
-  ctx.working_dir = ".";
-  ctx.global_ctx = global_ctx_;
-  ctx.call_stack = call_stack_;
-
-  auto prompt_it = system_prompts_.find(expert_name);
-  if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
-    ctx.system_prompt = prompt_it->second;
-  }
-
+  ExpertContext ctx = PrepareContext(expert_name);
   return it->second->Handle(input, ctx);
 }
 

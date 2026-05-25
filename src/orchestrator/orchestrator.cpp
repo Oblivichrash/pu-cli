@@ -54,12 +54,45 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
 }
 
 std::string Orchestrator::Process(const std::string& input) {
-  if (stack_->IsEmpty()) {
-    return manager_.Dispatch(input);
+  std::string current_input = input;
+  std::string final_response;
+
+  while (true) {
+    if (stack_->IsEmpty()) {
+      final_response = manager_.Dispatch(current_input);
+      break;
+    }
+
+    const StackFrame& top = stack_->Top();
+    std::string agent_name = top.agent_name;
+
+    expert::ExpertContext ctx = manager_.PrepareContext(agent_name);
+    std::string response = manager_.ExecuteAgentWithContext(agent_name, current_input, ctx);
+
+    if (ctx.pending_action.type == expert::PendingAction::Type::kPush) {
+      Push(ctx.pending_action.agent_name);
+      current_input = "";
+      continue;
+    }
+
+    if (ctx.pending_action.type == expert::PendingAction::Type::kPop) {
+      if (!stack_->IsEmpty()) {
+        Pop();
+      }
+      if (stack_->IsEmpty()) {
+        final_response = response;
+        break;
+      } else {
+        current_input = response;
+        continue;
+      }
+    }
+
+    final_response = response;
+    break;
   }
 
-  const StackFrame& top = stack_->Top();
-  return manager_.CallExpert(top.agent_name, input);
+  return final_response;
 }
 
 void Orchestrator::Push(const std::string& agent_name) {

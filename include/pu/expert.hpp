@@ -31,6 +31,13 @@ struct ConfirmationRequest {
 
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
+struct PendingAction {
+  enum class Type { kNone, kPush, kPop };
+  Type type = Type::kNone;
+  std::string agent_name;
+  std::string input_path;
+};
+
 struct ExpertContext {
   std::function<std::string(const std::string&, const std::string&)> call_expert;
   ConfirmationCallback request_confirmation;
@@ -40,6 +47,7 @@ struct ExpertContext {
   std::optional<std::string> system_prompt;
   std::shared_ptr<GlobalContext> global_ctx;
   std::shared_ptr<CallStack> call_stack;
+  PendingAction pending_action;
 };
 
 class BaseExpert {
@@ -80,6 +88,11 @@ class ExpertManager {
   void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
   void SetCallStack(std::shared_ptr<CallStack> stack);
+  ExpertContext PrepareContext(const std::string& agent_name) const;
+  BaseExpert* GetExpert(const std::string& name) const;
+  std::string ExecuteAgentWithContext(const std::string& agent_name,
+                                      const std::string& input,
+                                      ExpertContext& ctx);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotExperts() const;
   void RestoreExperts(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
