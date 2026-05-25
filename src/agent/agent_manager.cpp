@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 
 #include <iostream>
 
@@ -85,7 +85,7 @@ void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
   call_stack_ = std::move(stack);
 }
 
-AgentContext AgentManager::PrepareContext(const std::string& agent_name) const {
+AgentContext AgentManager::PrepareContext(const std::stringAgentContext AgentManager::PrepareContext(const std::string& agent_name) const { agent_name) {
   AgentContext ctx;
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallExpert(name, inp);

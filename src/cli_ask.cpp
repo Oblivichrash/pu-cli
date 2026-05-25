@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli_ask.hpp"
 #include "pu/cli_app_setup.hpp"
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 #include <iostream>
 #include <string>
 

@@ -2,7 +2,7 @@
 #include "pu/cli_chat.hpp"
 
 #include "pu/backend.hpp"
-#include "pu/expert.hpp"
+#include "pu/agent.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"

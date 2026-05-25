@@ -46,6 +46,7 @@ add_library(pu_backend STATIC
     src/error_codes.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
+    src/backends/streaming_json_parser.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -63,7 +64,10 @@ add_library(pu_context STATIC
     src/orchestrator/call_stack.cpp
     src/orchestrator/orchestrator.cpp
 )
-target_include_directories(pu_context PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(pu_context PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)
 add_library(pu::context ALIAS pu_context)
 
@@ -74,8 +78,8 @@ add_library(pu_agent STATIC
     src/agents/bash/bash_agent.cpp
     src/executor/command_executor.cpp
     src/agent_factory.cpp
-    src/proactive_engine.cpp
     src/renderer.cpp
+    src/cli_app_setup.cpp
 )
 target_include_directories(pu_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -93,8 +97,6 @@ add_executable(pu
     src/cli_ask.cpp
     src/cli_chat.cpp
     src/cli_learn.cpp
-    src/cli_app_setup.cpp
-    src/renderer.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
