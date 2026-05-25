@@ -62,6 +62,7 @@ add_library(pu::backend ALIAS pu_backend)
 add_library(pu_context STATIC
     src/context/global_context.cpp
     src/orchestrator/call_stack.cpp
+    src/orchestrator/orchestrator.cpp
 )
 target_include_directories(pu_context PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)

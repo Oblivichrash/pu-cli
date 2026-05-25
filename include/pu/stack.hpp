@@ -21,6 +21,7 @@ class CallStack {
   StackFrame& Top();
   bool IsEmpty() const;
   size_t Size() const;
+  const std::vector<StackFrame>& GetFrames() const;
 
  private:
   std::vector<StackFrame> frames_;

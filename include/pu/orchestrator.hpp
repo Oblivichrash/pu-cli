@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#pragma once
+
+#include <memory>
+#include <string>
+
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
+
+namespace pu::expert {
+class ExpertManager;
+}
+
+namespace pu {
+
+class Orchestrator {
+ public:
+  Orchestrator(std::shared_ptr<GlobalContext> ctx,
+               std::shared_ptr<CallStack> stack,
+               expert::ExpertManager& manager);
+
+  bool HandleCommand(const std::string& input, std::string& output);
+  void Push(const std::string& agent_name);
+  void Pop();
+  std::string ShowStack() const;
+
+ private:
+  std::shared_ptr<GlobalContext> ctx_;
+  std::shared_ptr<CallStack> stack_;
+  expert::ExpertManager& manager_;
+};
+
+}  // namespace pu

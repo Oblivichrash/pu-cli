@@ -33,4 +33,8 @@ size_t CallStack::Size() const {
   return frames_.size();
 }
 
+const std::vector<StackFrame>& CallStack::GetFrames() const {
+  return frames_;
+}
+
 }  // namespace pu

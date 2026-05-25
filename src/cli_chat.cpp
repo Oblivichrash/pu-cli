@@ -10,6 +10,7 @@
 #include "pu/conversation_store.hpp"
 #include "pu/cli_app_setup.hpp"
 #include "pu/memory_manager.hpp"
+#include "pu/orchestrator.hpp"
 
 #include "http/curl_http_client.hpp"
 
@@ -175,6 +176,7 @@ int RunChatCommand(int argc, char* argv[]) {
   auto call_stack = std::make_shared<pu::CallStack>();
   manager.SetGlobalContext(global_ctx);
   manager.SetCallStack(call_stack);
+  pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
   // Load long-term memory summaries for each expert
   for (const auto& entry : config.experts) {
@@ -208,6 +210,11 @@ int RunChatCommand(int argc, char* argv[]) {
     }
 
     if (input[0] == '/') {
+      std::string cmd_output;
+      if (orchestrator.HandleCommand(input, cmd_output)) {
+        std::cout << cmd_output << "\n";
+        continue;
+      }
       if (input == "/help") {
         PrintHelp();
       } else if (input == "/exit" || input == "/quit") {
