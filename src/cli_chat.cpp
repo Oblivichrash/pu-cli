@@ -7,8 +7,9 @@
 #include "pu/renderer.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/cli_app_setup.hpp"
-#include "pu/memory_manager.hpp"
 #include "pu/orchestrator.hpp"
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
 
 #include "http/curl_http_client.hpp"
 
@@ -132,10 +133,9 @@ int RunChatCommand(int argc, char* argv[]) {
   std::string current_name = manager.GetActiveExpert();
 
   const char* home = std::getenv("HOME");
-  auto store_dir = std::filesystem::path(home ? home : ".") / ".pu" / "conversations";
+  auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
+  auto store_dir = pu_dir / "conversations";
   pu::ConversationStore store(store_dir);
-
-  pu::MemoryManager memory(std::filesystem::current_path());
 
   std::vector<pu::ChatMessage> panel_messages;
   int message_id = 0;
@@ -170,17 +170,21 @@ int RunChatCommand(int argc, char* argv[]) {
                                             : pu::expert::ConfirmationChoice::kDeny;
   });
 
-  auto global_ctx = pu::GlobalContext::Create();
+  auto global_ctx = pu::GlobalContext::Create(pu_dir);
+  global_ctx->Load();
+
   auto call_stack = std::make_shared<pu::CallStack>();
   manager.SetGlobalContext(global_ctx);
   manager.SetCallStack(call_stack);
   pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
   for (const auto& entry : config.experts) {
-    std::error_code ec;
-    auto summary = memory.LoadSummary(entry.name, ec);
-    if (!ec && !summary.empty()) {
-      manager.SetSystemPrompt(entry.name, summary);
+    auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
+    if (summary_opt && summary_opt->is_string()) {
+      std::string summary = summary_opt->get<std::string>();
+      if (!summary.empty()) {
+        manager.SetSystemPrompt(entry.name, summary);
+      }
     }
   }
 
@@ -341,14 +345,12 @@ int RunChatCommand(int argc, char* argv[]) {
               std::string user_input;
               std::getline(std::cin, user_input);
               if (user_input == "y" || user_input == "Y") {
-                memory.SaveSummary(current_name, summary, ec);
-                if (ec) std::cerr << "Error saving summary: " << ec.message() << "\n";
-                else std::cout << "[Memory] Summary saved.\n";
+                global_ctx->Write("memory/summaries/" + current_name + "/latest", summary);
+                std::cout << "[Memory] Summary saved.\n";
               } else if (!user_input.empty() && user_input != "n" && user_input != "N") {
                 auto final_summary = summary + "\n\nUser notes: " + user_input;
-                memory.SaveSummary(current_name, final_summary, ec);
-                if (ec) std::cerr << "Error saving summary: " << ec.message() << "\n";
-                else std::cout << "[Memory] Updated summary saved.\n";
+                global_ctx->Write("memory/summaries/" + current_name + "/latest", final_summary);
+                std::cout << "[Memory] Updated summary saved.\n";
               }
             }
           } catch (const std::exception& e) {
@@ -401,18 +403,32 @@ int RunChatCommand(int argc, char* argv[]) {
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {
-          std::error_code ec;
-          auto notes = memory.LoadNotes(current_name, ec);
-          if (ec) std::cerr << "Error loading notes: " << ec.message() << "\n";
-          else if (notes.empty()) std::cout << "No notes yet.\n";
-          else std::cout << "Notes for " << current_name << ":\n" << notes;
+          auto notes_opt = global_ctx->Read("memory/notes/" + current_name);
+          if (notes_opt && notes_opt->is_array()) {
+            std::cout << "Notes for " << current_name << ":\n";
+            for (const auto& note : *notes_opt) {
+              if (note.is_string()) {
+                std::cout << note.get<std::string>() << "\n";
+              }
+            }
+          } else {
+            std::cout << "No notes yet.\n";
+          }
         } else if (input.rfind("/note add ", 0) == 0) {
           auto text = Trim(input.substr(10));
-          if (text.empty()) { std::cerr << "Note text required.\n"; continue; }
-          std::error_code ec;
-          memory.AppendNote(current_name, "[" + CurrentTimestamp() + "] " + text, ec);
-          if (ec) std::cerr << "Error adding note: " << ec.message() << "\n";
-          else std::cout << "Note added.\n";
+          if (text.empty()) {
+            std::cerr << "Note text required.\n";
+            continue;
+          }
+          std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
+          auto notes_opt = global_ctx->Read("memory/notes/" + current_name);
+          json notes_array = json::array();
+          if (notes_opt && notes_opt->is_array()) {
+            notes_array = *notes_opt;
+          }
+          notes_array.push_back(timestamped_note);
+          global_ctx->Write("memory/notes/" + current_name, notes_array);
+          std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";
         }
@@ -474,6 +490,7 @@ int RunChatCommand(int argc, char* argv[]) {
     }
   }
 
+  global_ctx->Save();
   std::cout << "\nGoodbye!\n";
   return 0;
 }

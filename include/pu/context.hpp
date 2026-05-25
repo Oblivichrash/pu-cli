@@ -14,18 +14,22 @@ using json = nlohmann::json;
 
 class GlobalContext {
  public:
-  static std::shared_ptr<GlobalContext> Create();
+  static std::shared_ptr<GlobalContext> Create(const std::filesystem::path& base_dir = {});
 
   std::optional<json> Read(const std::string& path) const;
   void Write(const std::string& path, const json& value);
 
-  void LoadFromDisk(const std::filesystem::path& data_dir);
-  void SaveToDisk(const std::filesystem::path& data_dir) const;
+  void Load();
+  void Save() const;
 
  private:
   GlobalContext() = default;
+  void ImportLegacyMemory(const std::filesystem::path& memory_dir);
+  void EnsureLoaded();
 
-  json root_;
+  mutable json root_;
+  std::filesystem::path context_path_;
+  bool loaded_ = false;
 };
 
 }  // namespace pu
