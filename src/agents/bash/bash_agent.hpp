@@ -8,6 +8,7 @@
 #include "pu/agent_config.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -54,11 +55,13 @@ class BashAgent : public pu::agent::BaseAgent {
   std::string name_;
   std::unique_ptr<pu::backend::Backend> backend_;
   std::unique_ptr<pu::executor::CommandExecutor> executor_;
+  std::string sandbox_root_;
   std::vector<pu::ChatMessage> history_;
   std::vector<double> recent_scores_;
   double proactive_threshold_ = 0.6;
   config::ConfirmationPolicy confirmation_policy_;
   bool user_approved_all_safe_ = false;
+  static const std::string kDefaultSystemPrompt;
 };
 
 }  // namespace pu::agents

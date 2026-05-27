@@ -4,17 +4,24 @@
 #include "pu/agent.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <vector>
 
 namespace pu::agents {
 
+const std::string BashAgent::kDefaultSystemPrompt =
+    "You have a tool 'write_file' that can write text content to a file. "
+    "Prefer using 'write_file' over bash commands like 'cat >', 'echo >', or 'tee' for writing files. "
+    "Only use 'execute_bash' for commands that cannot be done by 'write_file'.";
+
 BashAgent::BashAgent(const std::string& name,
                      std::unique_ptr<pu::backend::Backend> backend,
                      std::unique_ptr<pu::executor::CommandExecutor> executor,
                      config::ConfirmationPolicy policy)
     : name_(name), backend_(std::move(backend)), executor_(std::move(executor)),
+      sandbox_root_("."),  // default, can be overridden
       confirmation_policy_(policy) {}
 
 void BashAgent::ResetSession() {
@@ -44,10 +51,10 @@ std::vector<pu::backend::Message> BashAgent::BuildInitialHistory() const {
 
 void BashAgent::AppendTurnToHistory(
     const std::vector<pu::backend::Message>& history, size_t initial_size,
-    std::vector<ChatMessage>& turn_history) const {
+    std::vector<pu::ChatMessage>& turn_history) const {
   for (size_t i = initial_size + 1; i < history.size(); ++i) {
     const auto& msg = history[i];
-    ChatMessage cm;
+    pu::ChatMessage cm;
     cm.id = 0;
     cm.timestamp = "";
     if (msg.role == pu::backend::Message::Role::kAssistant) {
@@ -89,7 +96,7 @@ std::string BashAgent::Handle(const std::string& input,
   }
 
   auto initial = BuildInitialHistory();
-  std::vector<ChatMessage> turn_history;
+  std::vector<pu::ChatMessage> turn_history;
   auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
@@ -97,7 +104,7 @@ std::string BashAgent::Handle(const std::string& input,
 
 std::string BashAgent::RunToolLoop(const std::string& user_input,
                                    bool show_reasoning,
-                                   std::vector<ChatMessage>& turn_history,
+                                   std::vector<pu::ChatMessage>& turn_history,
                                    pu::agent::AgentContext& ctx,
                                    const std::vector<pu::backend::Message>& initial_history) {
   if (!backend_->SupportsTools()) {
@@ -112,7 +119,20 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
   bash_tool.name = "execute_bash";
   bash_tool.description = "Execute a safe Linux bash command and return the output.";
   bash_tool.parameters.raw_schema = R"({"type":"object","properties":{"command":{"type":"string"}},"required":["command"]})";
-  std::vector<pu::backend::ToolDefinition> tools = {bash_tool};
+
+  pu::backend::ToolDefinition write_tool;
+  write_tool.name = "write_file";
+  write_tool.description = "Write text content to a file (overwrites if exists). Use this instead of bash redirections.";
+  write_tool.parameters.raw_schema = R"({
+    "type": "object",
+    "properties": {
+      "path": {"type": "string", "description": "File path (relative to current directory)"},
+      "content": {"type": "string", "description": "Text content to write"}
+    },
+    "required": ["path", "content"]
+  })";
+
+  std::vector<pu::backend::ToolDefinition> tools = {bash_tool, write_tool};
 
   std::string final_response;
   bool tool_was_called = false;
@@ -145,7 +165,6 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
       turn_history.push_back({0, "", "bash", final_response, ""});
       break;
     }
-
     if (!tool_was_called) {
       final_response = content_stream.str();
       turn_history.push_back({0, "", "bash", final_response, ""});
@@ -236,6 +255,32 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
         } catch (const std::exception& e) {
           result = std::string("Argument parse error: ") + e.what();
         }
+      } else if (call.name == "write_file") {
+        try {
+          auto args = json::parse(call.arguments);
+          std::string path = args.value("path", "");
+          std::string content = args.value("content", "");
+          if (path.empty()) {
+            result = "Error: 'path' is required";
+          } else {
+            std::filesystem::path full_path = std::filesystem::current_path() / path;
+            // Simple security: prevent directory traversal out of current directory
+            if (full_path.lexically_normal().string().find("..") != std::string::npos &&
+                full_path.lexically_normal().string().find(full_path.lexically_normal().string()) != 0) {
+              result = "Error: path traversal not allowed";
+            } else {
+              std::ofstream file(full_path);
+              if (!file.is_open()) {
+                result = "Error: cannot write to " + path;
+              } else {
+                file << content;
+                result = "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
+              }
+            }
+          }
+        } catch (const std::exception& e) {
+          result = std::string("Argument parse error: ") + e.what();
+        }
       } else {
         result = "Unknown tool: " + call.name;
       }
@@ -252,10 +297,10 @@ std::string BashAgent::RunToolLoop(const std::string& user_input,
   return final_response;
 }
 
-std::vector<ChatMessage> BashAgent::SaveState() const { return history_; }
-void BashAgent::LoadState(const std::vector<ChatMessage>& messages) { history_ = messages; }
+std::vector<pu::ChatMessage> BashAgent::SaveState() const { return history_; }
+void BashAgent::LoadState(const std::vector<pu::ChatMessage>& messages) { history_ = messages; }
 
-double BashAgent::EvaluateRelevance(const ChatMessage& msg) {
+double BashAgent::EvaluateRelevance(const pu::ChatMessage& msg) {
   std::string lower = msg.content;
   std::transform(lower.begin(), lower.end(), lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
@@ -268,7 +313,7 @@ double BashAgent::EvaluateRelevance(const ChatMessage& msg) {
   return std::min(score, 1.0);
 }
 
-void BashAgent::OnPanelMessage(const ChatMessage& msg) {
+void BashAgent::OnPanelMessage(const pu::ChatMessage& msg) {
   double s = EvaluateRelevance(msg);
   if (s > 0.0) recent_scores_.push_back(s);
 }
