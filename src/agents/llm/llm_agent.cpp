@@ -152,7 +152,14 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
     }
 
     agent::ToolContext tool_ctx;
-    tool_ctx.request_confirmation = ctx.request_confirmation;
+    tool_ctx.request_confirmation = [&ctx](const std::string& message) -> bool {
+      pu::agent::ConfirmationRequest req;
+      req.description = message;
+      req.highest_risk = pu::executor::RiskLevel::kNeutral;
+      auto choice = ctx.request_confirmation(req);
+      return (choice == pu::agent::ConfirmationChoice::kApproveOnce ||
+              choice == pu::agent::ConfirmationChoice::kApproveAllSafe);
+    };
     tool_ctx.sandbox_root = security_.sandbox_root;
     tool_ctx.allowed_paths = security_.allowed_paths;
     tool_ctx.max_command_length = security_.max_command_length;

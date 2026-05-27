@@ -84,6 +84,7 @@ add_library(pu_agent STATIC
     src/tools/execute_bash_tool_simple.cpp
     src/tools/python_tool.cpp
     src/tools/create_tool.cpp
+    src/tools/write_file_tool.cpp
 )
 target_include_directories(pu_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

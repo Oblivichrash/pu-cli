@@ -4,19 +4,19 @@
 #include "platform/platform.hpp"
 #include "backends/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
+#include <iostream>
 
 namespace pu::backends::ollama {
 
 using json = nlohmann::json;
 
-// BuildRequest / BuildRequestWithTools remain largely unchanged, but I'll include them for completeness
 std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -40,7 +40,7 @@ std::string OllamaBackend::BuildRequestWithTools(
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -74,7 +74,13 @@ std::string OllamaBackend::BuildRequestWithTools(
     t["type"] = "function";
     t["function"]["name"] = tool.name;
     t["function"]["description"] = tool.description;
-    t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
+    try {
+      t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
+    } catch (const std::exception& e) {
+      std::cerr << "[OllamaBackend] Failed to parse schema for tool '" << tool.name
+                << "': " << e.what() << std::endl;
+      continue;
+    }
     tools_json.push_back(t);
   }
   req["tools"] = tools_json;

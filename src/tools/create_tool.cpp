@@ -18,7 +18,7 @@ std::string CreateTool::Description() const {
 }
 
 std::string CreateTool::ParametersSchema() const {
-  return R"({
+  return R"JSON({
     "type": "object",
     "properties": {
       "name": {"type": "string", "description": "Unique tool name (alphanumeric, underscore allowed)"},
@@ -27,7 +27,7 @@ std::string CreateTool::ParametersSchema() const {
       "python_code": {"type": "string", "description": "Python code containing a 'run' function"}
     },
     "required": ["name", "description", "parameters_schema", "python_code"]
-  })";
+  })JSON";
 }
 
 static bool IsSafePythonCode(const std::string& code) {
@@ -44,6 +44,7 @@ static bool IsSafePythonCode(const std::string& code) {
 }
 
 std::string CreateTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+  (void)ctx;
   std::string name = args.value("name", "");
   std::string description = args.value("description", "");
   std::string parameters_schema = args.value("parameters_schema", "");

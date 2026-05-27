@@ -16,7 +16,7 @@ std::string ExecuteBashToolStandard::Description() const {
 }
 
 std::string ExecuteBashToolStandard::ParametersSchema() const {
-  return R"({
+  return R"##({
     "type": "object",
     "properties": {
       "command": {
@@ -25,10 +25,11 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
       }
     },
     "required": ["command"]
-  })";
+  })##";
 }
 
 std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+  (void)ctx;
   std::string command = args.value("command", "");
   if (command.empty()) {
     return "Error: 'command' parameter is required";

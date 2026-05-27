@@ -17,7 +17,7 @@ std::string ExecuteBashToolSimple::Description() const {
 }
 
 std::string ExecuteBashToolSimple::ParametersSchema() const {
-  return R"({
+  return R"##({
     "type": "object",
     "properties": {
       "command": {
@@ -26,13 +26,24 @@ std::string ExecuteBashToolSimple::ParametersSchema() const {
       }
     },
     "required": ["command"]
-  })";
+  })##";
 }
 
 std::string ExecuteBashToolSimple::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+  (void)ctx;
   std::string command = args.value("command", "");
   if (command.empty()) {
     return "Error: 'command' parameter is required";
+  }
+
+  if (ctx.max_command_length > 0 && command.size() > ctx.max_command_length) {
+    return "Error: command exceeds maximum allowed length (" + std::to_string(ctx.max_command_length) + ")";
+  }
+
+  for (const auto& pattern : ctx.forbidden_patterns) {
+    if (command.find(pattern) != std::string::npos) {
+      return "Blocked: command contains forbidden pattern '" + pattern + "'";
+    }
   }
 
   auto risk = executor_->AssessRisk(command);
