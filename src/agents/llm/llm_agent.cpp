@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <filesystem>
 
 namespace pu::agents {
 
@@ -13,7 +14,9 @@ LLMAgent::LLMAgent(const std::string& name,
                    std::unique_ptr<agent::ToolRegistry> tool_registry,
                    const config::SecurityPolicy& security)
     : name_(name), backend_(std::move(backend)), tool_registry_(std::move(tool_registry)),
-      security_(security) {}
+      security_(security) {
+  ReloadExternalTools();
+}
 
 void LLMAgent::ResetSession() {
   history_.clear();
@@ -219,7 +222,12 @@ void LLMAgent::SetProactiveThreshold(double threshold) {
 }
 
 void LLMAgent::ReloadExternalTools() {
-  // Phase 3 implementation
+  const char* home = std::getenv("HOME");
+  if (!home) return;
+  auto tools_dir = std::filesystem::path(home) / ".pu" / "tools";
+  if (tool_registry_) {
+    tool_registry_->ReloadExternalTools(tools_dir.string());
+  }
 }
 
 }  // namespace pu::agents

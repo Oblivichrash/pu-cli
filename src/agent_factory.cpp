@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_factory.hpp"
-
 #include "executor/command_executor.hpp"
-#include "agents/chat/chat_agent.hpp"
-#include "agents/bash/bash_agent.hpp"
+#include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/token_adapter.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
 #include "backends/openai/openai_token_adapter.hpp"
-
+#include "pu/tools/execute_bash_tool.hpp"
+#include "pu/tools/execute_bash_tool_simple.hpp"
+#include "pu/tools/write_file_tool.hpp"
 #include <memory>
 #include <system_error>
 
 namespace pu::agent {
 
 namespace {
-class ChatAgentFactory : public AgentFactory {
-  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry, std::unique_ptr<backend::Backend> backend) override {
+
+class LLMAgentFactory : public AgentFactory {
+  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
+                                    std::unique_ptr<backend::Backend> backend) override {
     auto tool_registry = std::make_unique<ToolRegistry>();
 
     for (const auto& tool_name : entry.tools) {
@@ -38,17 +40,11 @@ class ChatAgentFactory : public AgentFactory {
         tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
       }
     }
-};
 
-class BashAgentFactory : public AgentFactory {
-  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
-                                    std::unique_ptr<backend::Backend> backend) override {
-    auto executor = std::make_unique<executor::CommandExecutor>(entry.sandbox_path);
-    return std::make_unique<pu::agents::BashAgent>(entry.name, std::move(backend),
-                                                   std::move(executor),
-                                                   entry.confirmation_policy);
+    return std::make_unique<agents::LLMAgent>(entry.name, std::move(backend), std::move(tool_registry), entry.security);
   }
 };
+
 }  // namespace
 
 AgentRegistry& AgentRegistry::Instance() {
@@ -82,9 +78,9 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& 
 
 void RegisterBuiltinFactories() {
   AgentRegistry::Instance().RegisterFactory(config::AgentType::kChat,
-                                            std::make_unique<ChatAgentFactory>());
+                                            std::make_unique<LLMAgentFactory>());
   AgentRegistry::Instance().RegisterFactory(config::AgentType::kBash,
-                                            std::make_unique<BashAgentFactory>());
+                                            std::make_unique<LLMAgentFactory>());
 }
 
 }  // namespace pu::agent
