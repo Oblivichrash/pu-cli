@@ -17,10 +17,27 @@ namespace pu::agent {
 
 namespace {
 class ChatAgentFactory : public AgentFactory {
-  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry,
-                                    std::unique_ptr<backend::Backend> backend) override {
-    return std::make_unique<pu::agents::ChatAgent>(entry.name, std::move(backend), entry.name);
-  }
+  std::unique_ptr<BaseAgent> Create(const config::AgentEntry& entry, std::unique_ptr<backend::Backend> backend) override {
+    auto tool_registry = std::make_unique<ToolRegistry>();
+
+    for (const auto& tool_name : entry.tools) {
+      std::string variant = "standard";
+      auto it = entry.tool_variants.find(tool_name);
+      if (it != entry.tool_variants.end()) {
+        variant = it->second;
+      }
+
+      if (tool_name == "execute_bash") {
+        auto executor = std::make_unique<executor::CommandExecutor>(entry.sandbox_path);
+        if (variant == "simple") {
+          tool_registry->RegisterTool(std::make_unique<tools::ExecuteBashToolSimple>(std::move(executor)));
+        } else {
+          tool_registry->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(std::move(executor)));
+        }
+      } else if (tool_name == "write_file") {
+        tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
+      }
+    }
 };
 
 class BashAgentFactory : public AgentFactory {

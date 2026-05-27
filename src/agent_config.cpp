@@ -88,6 +88,13 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
     }
   }
+  if (j.contains("tool_variants") && j["tool_variants"].is_object()) {
+    for (auto& [key, value] : j["tool_variants"].items()) {
+      if (value.is_string()) {
+        entry.tool_variants[key] = value.get<std::string>();
+      }
+    }
+  }
   entry.backend = ParseBackendConfig(j["backend"], ec);
   if (ec) return entry;
   if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }

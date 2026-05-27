@@ -82,6 +82,8 @@ add_library(pu_agent STATIC
     src/cli_app_setup.cpp
     src/agent/tool_registry.cpp
     src/agents/llm/llm_agent.cpp
+    src/tools/execute_bash_tool.cpp
+    src/tools/execute_bash_tool_simple.cpp
 )
 target_include_directories(pu_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

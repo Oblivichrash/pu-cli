@@ -43,6 +43,7 @@ struct AgentEntry {
   std::string sandbox_path = ".";
   ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
   std::vector<std::string> tools;
+  std::unordered_map<std::string, std::string> tool_variants;
   SecurityPolicy security;
 };
 
