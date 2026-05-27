@@ -80,7 +80,14 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
   auto atype = ParseAgentType(j.value("type", "chat"));
   if (!atype) { ec = ConfigErrc::missing_field; return entry; }
   entry.type = *atype;
-  if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
+  if (!j.contains("backend") || !j["backend"].is_object()) {
+    ec = ConfigErrc::missing_field; return entry;
+  }
+  if (j.contains("tools") && j["tools"].is_array()) {
+    for (const auto& t : j["tools"]) {
+      if (t.is_string()) entry.tools.push_back(t.get<std::string>());
+    }
+  }
   entry.backend = ParseBackendConfig(j["backend"], ec);
   if (ec) return entry;
   if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }

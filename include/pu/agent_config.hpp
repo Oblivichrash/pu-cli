@@ -28,6 +28,13 @@ struct BackendConfig {
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
 };
 
+struct SecurityPolicy {
+  std::string sandbox_root;
+  std::vector<std::string> allowed_paths;
+  size_t max_command_length = 0;
+  std::vector<std::string> forbidden_patterns;
+};
+
 struct AgentEntry {
   std::string name;
   AgentType type = AgentType::kChat;
@@ -35,6 +42,8 @@ struct AgentEntry {
   BackendConfig backend;
   std::string sandbox_path = ".";
   ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
+  std::vector<std::string> tools;
+  SecurityPolicy security;
 };
 
 struct AgentsConfig {
