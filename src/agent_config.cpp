@@ -43,6 +43,7 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
 std::optional<AgentType> ParseAgentType(const std::string& s) noexcept {
   if (s == "chat") return AgentType::kChat;
   if (s == "bash") return AgentType::kBash;
+  if (s == "llm") return AgentType::kLLM;
   return std::nullopt;
 }
 
@@ -56,6 +57,27 @@ ToolCallStyle ParseToolCallStyle(const std::string& str) {
   if (str == "openai") return ToolCallStyle::kOpenAI;
   if (str == "phi4") return ToolCallStyle::kPhi4;
   return ToolCallStyle::kDefault;
+}
+
+SecurityPolicy ParseSecurityPolicy(const json& j) {
+  SecurityPolicy policy;
+  if (j.contains("sandbox_root") && j["sandbox_root"].is_string()) {
+    policy.sandbox_root = j["sandbox_root"];
+  }
+  if (j.contains("allowed_paths") && j["allowed_paths"].is_array()) {
+    for (const auto& p : j["allowed_paths"]) {
+      if (p.is_string()) policy.allowed_paths.push_back(p.get<std::string>());
+    }
+  }
+  if (j.contains("max_command_length") && j["max_command_length"].is_number()) {
+    policy.max_command_length = j["max_command_length"];
+  }
+  if (j.contains("forbidden_patterns") && j["forbidden_patterns"].is_array()) {
+    for (const auto& pat : j["forbidden_patterns"]) {
+      if (pat.is_string()) policy.forbidden_patterns.push_back(pat.get<std::string>());
+    }
+  }
+  return policy;
 }
 
 BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
@@ -80,9 +102,11 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
   auto atype = ParseAgentType(j.value("type", "chat"));
   if (!atype) { ec = ConfigErrc::missing_field; return entry; }
   entry.type = *atype;
-  if (!j.contains("backend") || !j["backend"].is_object()) {
-    ec = ConfigErrc::missing_field; return entry;
-  }
+  if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
+  entry.backend = ParseBackendConfig(j["backend"], ec);
+  if (ec) return entry;
+  if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
+
   if (j.contains("tools") && j["tools"].is_array()) {
     for (const auto& t : j["tools"]) {
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
@@ -95,9 +119,10 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
       }
     }
   }
-  entry.backend = ParseBackendConfig(j["backend"], ec);
-  if (ec) return entry;
-  if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
+  if (j.contains("security") && j["security"].is_object()) {
+    entry.security = ParseSecurityPolicy(j["security"]);
+  }
+
   if (entry.type == AgentType::kBash && j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
     entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
@@ -158,7 +183,19 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
-    item["type"] = (entry.type == AgentType::kChat) ? "chat" : "bash";
+    item["type"] = (entry.type == AgentType::kChat) ? "chat" : (entry.type == AgentType::kBash ? "bash" : "llm");
+    item["tools"] = entry.tools;
+    if (!entry.tool_variants.empty()) {
+      json tv = json::object();
+      for (const auto& [k, v] : entry.tool_variants) tv[k] = v;
+      item["tool_variants"] = tv;
+    }
+    json security;
+    security["sandbox_root"] = entry.security.sandbox_root;
+    security["allowed_paths"] = entry.security.allowed_paths;
+    security["max_command_length"] = entry.security.max_command_length;
+    security["forbidden_patterns"] = entry.security.forbidden_patterns;
+    item["security"] = security;
 
     json backend;
     backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
