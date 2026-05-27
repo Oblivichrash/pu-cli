@@ -36,6 +36,8 @@ class LLMAgentFactory : public AgentFactory {
         } else {
           tool_registry->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(std::move(executor)));
         }
+      } else if (tool_name == "create_tool") {
+        tool_registry->RegisterTool(std::make_unique<tools::CreateTool>());
       } else if (tool_name == "write_file") {
         tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
       }

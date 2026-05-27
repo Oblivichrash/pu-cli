@@ -74,8 +74,6 @@ add_library(pu::context ALIAS pu_context)
 # Agent library (renamed from pu_expert)
 add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
-    src/agents/chat/chat_agent.cpp
-    src/agents/bash/bash_agent.cpp
     src/executor/command_executor.cpp
     src/agent_factory.cpp
     src/renderer.cpp
@@ -85,6 +83,7 @@ add_library(pu_agent STATIC
     src/tools/execute_bash_tool.cpp
     src/tools/execute_bash_tool_simple.cpp
     src/tools/python_tool.cpp
+    src/tools/create_tool.cpp
 )
 target_include_directories(pu_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
