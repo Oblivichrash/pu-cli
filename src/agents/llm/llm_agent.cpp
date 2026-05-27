@@ -154,6 +154,9 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
     agent::ToolContext tool_ctx;
     tool_ctx.request_confirmation = ctx.request_confirmation;
     tool_ctx.sandbox_root = security_.sandbox_root;
+    tool_ctx.allowed_paths = security_.allowed_paths;
+    tool_ctx.max_command_length = security_.max_command_length;
+    tool_ctx.forbidden_patterns = security_.forbidden_patterns;
 
     for (const auto& call : collected_calls) {
       std::string result;

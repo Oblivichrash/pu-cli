@@ -2,14 +2,19 @@
 #pragma once
 
 #include "pu/backend.hpp"
+#include "pu/agent_config.hpp"
 #include <nlohmann/json.hpp>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace pu::agent {
 
 struct ToolContext {
   std::string sandbox_root;
+  std::vector<std::string> allowed_paths;
+  size_t max_command_length = 0;
+  std::vector<std::string> forbidden_patterns;
   std::function<bool(const std::string& message)> request_confirmation;
 };
 
