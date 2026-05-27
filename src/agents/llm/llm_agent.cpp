@@ -110,7 +110,8 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
   }
 
   auto history = initial_history;
-  history.push_back({backend::Message::Role::kUser, user_input});
+  // Note: user_input is already in initial_history (added in Handle()).
+  // Do NOT push another user message here.
 
   auto tools = tool_registry_->GetToolDefinitions();
   std::string final_response;
@@ -151,6 +152,15 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
       break;
     }
 
+    // Push assistant message with tool_calls BEFORE executing tools
+    backend::Message assistant_msg;
+    assistant_msg.role = backend::Message::Role::kAssistant;
+    assistant_msg.tool_calls = collected_calls;
+    history.push_back(assistant_msg);
+
+    // Also record in turn_history (without content)
+    turn_history.push_back({0, "", name_, "", ""});
+
     agent::ToolContext tool_ctx;
     tool_ctx.request_confirmation = [&ctx](const std::string& message) -> bool {
       pu::agent::ConfirmationRequest req;
@@ -181,11 +191,6 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
       history.push_back(tool_msg);
       turn_history.push_back({0, "", "tool_result", result, call.id});
     }
-
-    backend::Message assistant_msg;
-    assistant_msg.role = backend::Message::Role::kAssistant;
-    assistant_msg.tool_calls = collected_calls;
-    history.push_back(assistant_msg);
   } while (tool_was_called);
 
   AppendTurnToHistory(history, initial_history.size(), turn_history);

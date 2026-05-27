@@ -31,9 +31,22 @@ std::string WriteFileTool::Execute(const nlohmann::json& args, agent::ToolContex
   std::string content = args.value("content", "");
   if (path.empty()) return "Error: 'path' is required";
 
-  std::filesystem::path full_path = std::filesystem::current_path() / path;
-  if (full_path.lexically_normal().string().find("..") != std::string::npos) {
-    return "Error: path traversal not allowed";
+  std::error_code ec;
+  std::filesystem::path cwd = std::filesystem::current_path(ec);
+  if (ec) return "Error: cannot get current directory";
+
+  std::filesystem::path full_path = cwd / path;
+  full_path = std::filesystem::weakly_canonical(full_path, ec);
+  if (ec) return "Error: invalid path";
+
+  // Security: ensure the resolved path is still within current working directory
+  std::filesystem::path normalized_cwd = std::filesystem::weakly_canonical(cwd, ec);
+  if (ec) return "Error: cannot resolve current directory";
+
+  auto cwd_str = normalized_cwd.string();
+  auto target_str = full_path.string();
+  if (target_str.find(cwd_str) != 0) {
+    return "Error: path outside current directory (traversal not allowed)";
   }
 
   std::ofstream file(full_path);
