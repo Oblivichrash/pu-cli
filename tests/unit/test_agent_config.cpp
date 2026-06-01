@@ -64,7 +64,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
     "agents": [
       {
         "name": "chat",
-        "type": "chat",
+        "type": "llm",
         "description": "Local Chat",
         "backend": {
           "type": "ollama",
@@ -75,7 +75,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
       },
       {
         "name": "bash",
-        "type": "bash",
+        "type": "llm",
         "description": "Command Runner",
         "backend": {
           "type": "openai",
@@ -100,10 +100,8 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   REQUIRE(config.default_expert == "chat");
   REQUIRE(config.experts.size() == 2);
   REQUIRE(config.experts[0].name == "chat");
-  REQUIRE(config.experts[0].type == AgentType::kChat);
   REQUIRE(config.experts[0].backend.type == BackendType::kOllama);
   REQUIRE(config.experts[1].name == "bash");
-  REQUIRE(config.experts[1].type == AgentType::kBash);
   REQUIRE(config.experts[1].backend.type == BackendType::kOpenAI);
   REQUIRE(config.experts[1].backend.api_key == "test-key-123");
   REQUIRE(config.experts[1].sandbox_path == "/tmp");
@@ -134,7 +132,7 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
     "agents": [
       {
         "name": "only",
-        "type": "chat",
+        "type": "llm",
         "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
       }
     ]
@@ -152,7 +150,6 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   original.default_expert = "test";
   AgentEntry entry;
   entry.name = "test";
-  entry.type = AgentType::kChat;
   entry.description = "desc";
   entry.backend.type = BackendType::kOpenAI;
   entry.backend.host = "https://api.test.com";
@@ -169,7 +166,6 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   REQUIRE(loaded.default_expert == "test");
   REQUIRE(loaded.experts.size() == 1);
   REQUIRE(loaded.experts[0].name == "test");
-  REQUIRE(loaded.experts[0].type == AgentType::kChat);
   REQUIRE(loaded.experts[0].backend.type == BackendType::kOpenAI);
   REQUIRE(loaded.experts[0].backend.host == "https://api.test.com");
   REQUIRE(loaded.experts[0].backend.api_key == "secret");
@@ -213,7 +209,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
     "agents": [
       {
         "name": "x",
-        "type": "chat",
+        "type": "llm",
         "backend": {
           "type": "ollama",
           "host": "http://localhost:11434",
