@@ -8,10 +8,6 @@ namespace pu::backends::ollama {
 void OllamaTokenAdapter::HandleJson(const nlohmann::json& j,
                                     backend::ChatCallback content_cb,
                                     backend::ToolCallback tool_cb) {
-  if (j.contains("done") && j["done"].get<bool>()) {
-    content_cb(backend::TokenType::kContent, "", true);
-    return;
-  }
   if (j.contains("message")) {
     const auto& msg = j["message"];
     if (msg.contains("content") && msg["content"].is_string())
@@ -33,6 +29,10 @@ void OllamaTokenAdapter::HandleJson(const nlohmann::json& j,
         tool_cb(call);
       }
     }
+  }
+
+  if (j.contains("done") && j["done"].get<bool>()) {
+    content_cb(backend::TokenType::kContent, "", true);
   }
 }
 

@@ -24,43 +24,61 @@ PythonTool::PythonTool(const std::string& file_path) : file_path_(file_path) {
 void PythonTool::Parse(const std::string& content) {
   std::istringstream iss(content);
   std::string line;
-  bool in_code_block = false;
   std::ostringstream code_builder;
+  bool in_code = false;
 
   while (std::getline(iss, line)) {
-    if (!in_code_block) {
-      if (line.find("# tool:") == 0) {
-        name_ = line.substr(7);
+    // Trim leading/trailing whitespace for detection
+    std::string trimmed = line;
+    trimmed.erase(0, trimmed.find_first_not_of(" \t"));
+    trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
+
+    // Parse metadata lines (only before code starts)
+    if (!in_code) {
+      if (trimmed.find("# tool:") == 0) {
+        name_ = trimmed.substr(7);
         name_.erase(0, name_.find_first_not_of(" \t"));
         name_.erase(name_.find_last_not_of(" \t") + 1);
-      } else if (line.find("# description:") == 0) {
-        description_ = line.substr(14);
+        continue;
+      }
+      if (trimmed.find("# description:") == 0) {
+        description_ = trimmed.substr(14);
         description_.erase(0, description_.find_first_not_of(" \t"));
         description_.erase(description_.find_last_not_of(" \t") + 1);
-      } else if (line.find("# parameters:") == 0) {
-        parameters_schema_ = line.substr(13);
+        continue;
+      }
+      if (trimmed.find("# parameters:") == 0) {
+        parameters_schema_ = trimmed.substr(13);
         parameters_schema_.erase(0, parameters_schema_.find_first_not_of(" \t"));
         parameters_schema_.erase(parameters_schema_.find_last_not_of(" \t") + 1);
-      } else if (line.find("# timeout:") == 0) {
-        std::string val = line.substr(10);
+        continue;
+      }
+      if (trimmed.find("# timeout:") == 0) {
+        std::string val = trimmed.substr(10);
         val.erase(0, val.find_first_not_of(" \t"));
         timeout_seconds_ = std::stoi(val);
-      } else if (line.find("# output_limit:") == 0) {
-        std::string val = line.substr(15);
+        continue;
+      }
+      if (trimmed.find("# output_limit:") == 0) {
+        std::string val = trimmed.substr(15);
         val.erase(0, val.find_first_not_of(" \t"));
         output_limit_ = std::stoul(val);
-      } else if (line.find("def run(") != std::string::npos) {
-        in_code_block = true;
-        code_builder << line << "\n";
+        continue;
       }
-    } else {
-      code_builder << line << "\n";
     }
+
+    // Once we encounter the first non-metadata line, start collecting code
+    in_code = true;
+    code_builder << line << "\n";
   }
 
   python_code_ = code_builder.str();
   if (name_.empty() || description_.empty() || parameters_schema_.empty() || python_code_.empty()) {
     throw std::runtime_error("Invalid Python tool definition in " + file_path_);
+  }
+  // Ensure the code contains a 'run' function (basic check)
+  if (python_code_.find("def run(") == std::string::npos) {
+    throw std::runtime_error("Python tool missing 'run' function in " + file_path_);
   }
 }
 
