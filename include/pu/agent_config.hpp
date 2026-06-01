@@ -15,7 +15,7 @@ namespace pu::backends { class ITokenAdapter; }
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class AgentType { kChat, kBash, kLLM };
+enum class AgentType { kLLM };
 enum class ConfirmationPolicy { kAlwaysAsk, kAutoSafe, kNever };
 enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
 
@@ -38,7 +38,7 @@ struct BackendConfig {
 
 struct AgentEntry {
   std::string name;
-  AgentType type = AgentType::kChat;
+  AgentType type = AgentType::kLLM;
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";

@@ -116,12 +116,6 @@ AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
   return ctx;
 }
 
-BaseAgent* AgentManager::GetExpert(const std::string& name) const {
-  auto it = agents_.find(name);
-  if (it == agents_.end()) return nullptr;
-  return it->second.get();
-}
-
 std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
                                                   const std::string& input,
                                                   AgentContext& ctx) {

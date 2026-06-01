@@ -41,8 +41,6 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
 }
 
 std::optional<AgentType> ParseAgentType(const std::string& s) noexcept {
-  if (s == "chat") return AgentType::kChat;
-  if (s == "bash") return AgentType::kBash;
   if (s == "llm") return AgentType::kLLM;
   return std::nullopt;
 }
@@ -123,7 +121,7 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
 
-  if (entry.type == AgentType::kBash && j.contains("executor") && j["executor"].is_object()) {
+  if (j.contains("executor") && j["executor"].is_object()) {
     entry.sandbox_path = j["executor"].value("sandbox", ".");
     entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
   }
@@ -183,7 +181,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
-    item["type"] = (entry.type == AgentType::kChat) ? "chat" : (entry.type == AgentType::kBash ? "bash" : "llm");
+    item["type"] = "llm";
     item["tools"] = entry.tools;
     if (!entry.tool_variants.empty()) {
       json tv = json::object();
@@ -211,7 +209,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
     }
     item["backend"] = backend;
 
-    if (entry.type == AgentType::kBash) {
+    if (!entry.sandbox_path.empty()) {
       json executor = {{"sandbox", entry.sandbox_path}};
       switch (entry.confirmation_policy) {
         case ConfirmationPolicy::kAutoSafe: executor["confirmation"] = "auto_safe"; break;

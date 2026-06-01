@@ -91,10 +91,7 @@ class AgentManager {
   void SetCallStack(std::shared_ptr<CallStack> stack);
 
   AgentContext PrepareContext(const std::string& agent_name);
-  BaseAgent* GetExpert(const std::string& name) const; // deprecated, use GetAgent
-  std::string ExecuteAgentWithContext(const std::string& agent_name,
-                                      const std::string& input,
-                                      AgentContext& ctx);
+  std::string ExecuteAgentWithContext(const std::string& agent_name, const std::string& input, AgentContext& ctx);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
   void RestoreAgents(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);

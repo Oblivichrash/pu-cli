@@ -62,7 +62,7 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
     if (entry.path().extension() == ".py") {
       std::string tool_name = entry.path().stem().string();
       auto mod_time = fs::last_write_time(entry);
-      std::string time_str = std::to_string(mod_time.time_since_epoch().count());
+      std::string time_str = std::to_string(static_cast<unsigned long long>(mod_time.time_since_epoch().count()));
       current_files[tool_name] = time_str;
     }
   }
@@ -75,7 +75,6 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
         RemoveTool(name);
         RegisterTool(std::move(tool));
         tool_file_mtimes_[name] = mtime;
-        std::cout << "[ToolRegistry] Reloaded Python tool: " << name << "\n";
       } catch (const std::exception& e) {
         std::cerr << "[ToolRegistry] Failed to load tool " << name << ": " << e.what() << "\n";
       }
@@ -86,7 +85,6 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
     if (current_files.find(it->first) == current_files.end()) {
       RemoveTool(it->first);
       it = tool_file_mtimes_.erase(it);
-      std::cout << "[ToolRegistry] Removed Python tool: " << it->first << "\n";
     } else {
       ++it;
     }

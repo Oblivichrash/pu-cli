@@ -9,6 +9,11 @@
 #include <future>
 #include <regex>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace pu::tools {
 
 PythonTool::PythonTool(const std::string& file_path) : file_path_(file_path) {
@@ -111,11 +116,11 @@ std::string PythonTool::ExecutePython(const std::string& args_json) const {
   std::string cmd = "python3 " + script_path.string() + " '" + args_json + "' 2>&1";
 
   auto future = std::async(std::launch::async, [&]() -> std::string {
-    std::array<char, 256> buffer;
+    std::array<char, 512> buffer;
     std::string result;
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return "Error: failed to execute python";
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
       result += buffer.data();
     }
     int status = pclose(pipe);

@@ -80,10 +80,7 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& 
 }
 
 void RegisterBuiltinFactories() {
-  AgentRegistry::Instance().RegisterFactory(config::AgentType::kChat,
-                                            std::make_unique<LLMAgentFactory>());
-  AgentRegistry::Instance().RegisterFactory(config::AgentType::kBash,
-                                            std::make_unique<LLMAgentFactory>());
+  AgentRegistry::Instance().RegisterFactory(config::AgentType::kLLM, std::make_unique<LLMAgentFactory>());
 }
 
 }  // namespace pu::agent
