@@ -74,10 +74,11 @@ class AgentManager {
 
   void RegisterAgent(std::unique_ptr<BaseAgent> agent);
   std::string Dispatch(const std::string& input);
-  std::string CallAgent(const std::string& expert_name, const std::string& input);
+  std::string CallAgent(const std::string& agent_name, const std::string& input);
   void ClearSessions();
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
+  BaseAgent* GetAgent(const std::string& name) const;
   void SetShowReasoning(bool enable);
   void SetRecentMessages(const std::vector<ChatMessage>& messages);
   void SetProactiveEnabled(bool enabled);
@@ -85,15 +86,12 @@ class AgentManager {
   void NotifyPanelMessage(const ChatMessage& msg);
   std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
   void SetConfirmationCallback(ConfirmationCallback cb);
-  void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
+  void SetSystemPrompt(const std::string& agent_name, const std::string& prompt);
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
   void SetCallStack(std::shared_ptr<CallStack> stack);
 
   AgentContext PrepareContext(const std::string& agent_name);
-  BaseAgent* GetExpert(const std::string& name) const;
-  std::string ExecuteAgentWithContext(const std::string& agent_name,
-                                      const std::string& input,
-                                      AgentContext& ctx);
+  std::string ExecuteAgentWithContext(const std::string& agent_name, const std::string& input, AgentContext& ctx);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
   void RestoreAgents(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);

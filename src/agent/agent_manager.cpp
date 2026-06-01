@@ -29,6 +29,12 @@ std::string AgentManager::GetActiveAgent() const {
   return active_agent_;
 }
 
+BaseAgent* AgentManager::GetAgent(const std::string& name) const {
+  auto it = agents_.find(name);
+  if (it == agents_.end()) return nullptr;
+  return it->second.get();
+}
+
 void AgentManager::SetShowReasoning(bool enable) {
   show_reasoning_ = enable;
 }
@@ -72,9 +78,9 @@ void AgentManager::SetConfirmationCallback(ConfirmationCallback cb) {
   confirmation_callback_ = std::move(cb);
 }
 
-void AgentManager::SetSystemPrompt(const std::string& expert_name,
+void AgentManager::SetSystemPrompt(const std::string& agent_name,
                                    const std::string& prompt) {
-  system_prompts_[expert_name] = prompt;
+  system_prompts_[agent_name] = prompt;
 }
 
 void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
@@ -110,27 +116,19 @@ AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
   return ctx;
 }
 
-BaseAgent* AgentManager::GetExpert(const std::string& name) const {
-  auto it = agents_.find(name);
-  if (it == agents_.end()) {
-    return nullptr;
-  }
-  return it->second.get();
-}
-
 std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
                                                   const std::string& input,
                                                   AgentContext& ctx) {
   auto it = agents_.find(agent_name);
   if (it == agents_.end()) {
-    return "Expert not found: " + agent_name;
+    return "Agent not found: " + agent_name;
   }
   return it->second->Handle(input, ctx);
 }
 
 std::string AgentManager::Dispatch(const std::string& input) {
   if (agents_.empty()) {
-    return "No experts available.";
+    return "No agents available.";
   }
 
   std::string target = active_agent_;
@@ -165,13 +163,13 @@ std::string AgentManager::Dispatch(const std::string& input) {
   return it->second->Handle(message, ctx);
 }
 
-std::string AgentManager::CallAgent(const std::string& expert_name, const std::string& input) {
-  auto it = agents_.find(expert_name);
+std::string AgentManager::CallAgent(const std::string& agent_name, const std::string& input) {
+  auto it = agents_.find(agent_name);
   if (it == agents_.end()) {
-    return "Expert not found: " + expert_name;
+    return "Agent not found: " + agent_name;
   }
 
-  AgentContext ctx = PrepareContext(expert_name);
+  AgentContext ctx = PrepareContext(agent_name);
   return it->second->Handle(input, ctx);
 }
 

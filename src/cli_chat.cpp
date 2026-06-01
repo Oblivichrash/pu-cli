@@ -10,6 +10,7 @@
 #include "pu/orchestrator.hpp"
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
+#include "agents/llm/llm_agent.hpp"
 
 #include "http/curl_http_client.hpp"
 
@@ -59,8 +60,8 @@ void PrintHelp() {
             << "  /help           Show this help\n"
             << "  /exit, /quit    Exit interactive mode\n"
             << "  /clear          Clear conversation history and agent lock\n"
-            << "  /agent <name>  Switch to different agent\n"
-            << "  /agents        List available agents\n"
+            << "  /agent <name>   Switch to different agent\n"
+            << "  /agents         List available agents\n"
             << "  /proactive <agent> on|off [threshold]  Control proactive suggestions\n"
             << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
             << "  /load <id>      Load a saved conversation\n"
@@ -71,10 +72,11 @@ void PrintHelp() {
             << "  /push <agent>   Push agent onto call stack (experimental)\n"
             << "  /pop            Pop current agent from call stack\n"
             << "  /stack          Show call stack content\n"
+            << "  /reload-tools   Reload external Python tools\n"
             << "  --show-reasoning (startup flag) Show model reasoning\n";
 }
 
-void PrintExperts(const pu::config::AgentsConfig& config, const std::string& current) {
+void PrintAgents(const pu::config::AgentsConfig& config, const std::string& current) {
   std::cout << "Available agents:\n";
   for (const auto& entry : config.experts) {
     std::cout << "  " << entry.name;
@@ -104,7 +106,7 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
 }  // namespace
 
 int RunChatCommand(int argc, char* argv[]) {
-  std::string initial_expert;
+  std::string initial_agent;
   bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -114,7 +116,7 @@ int RunChatCommand(int argc, char* argv[]) {
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) {
-        initial_expert = argv[++i];
+        initial_agent = argv[++i];
       } else {
         std::cerr << "Error: --agent requires an argument\n";
         return 1;
@@ -127,7 +129,7 @@ int RunChatCommand(int argc, char* argv[]) {
     }
   }
 
-  auto ctx = SetupAppContext(initial_expert, show_reasoning);
+  auto ctx = SetupAppContext(initial_agent, show_reasoning);
   const auto& config = ctx.config;
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
@@ -224,9 +226,9 @@ int RunChatCommand(int argc, char* argv[]) {
         confirm_state->deny_all = false;
         std::cout << "[INFO] Conversation history and agent lock cleared.\n";
       } else if (input == "/agents") {
-        PrintExperts(config, manager.GetActiveAgent());
+        PrintAgents(config, manager.GetActiveAgent());
       } else if (input.rfind("/agent ", 0) == 0) {
-        std::string new_name = Trim(input.substr(8));
+        std::string new_name = Trim(input.substr(7));
         if (new_name.empty()) {
           std::cerr << "Error: agent name required.\n";
           continue;
@@ -431,6 +433,19 @@ int RunChatCommand(int argc, char* argv[]) {
           std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";
+        }
+      } else if (input == "/reload-tools") {
+        auto* agent = manager.GetAgent(manager.GetActiveAgent());
+        if (agent) {
+          auto* llm_agent = dynamic_cast<agents::LLMAgent*>(agent);
+          if (llm_agent) {
+            llm_agent->ReloadExternalTools();
+            std::cout << "[INFO] External tools reloaded.\n";
+          } else {
+            std::cout << "[INFO] Current agent does not support tool reload.\n";
+          }
+        } else {
+          std::cout << "[INFO] No active agent.\n";
         }
       } else {
         std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";

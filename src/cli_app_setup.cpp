@@ -47,6 +47,13 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
     std::exit(1);
   }
 
+  // Set default system prompt for BashAgent to encourage using write_file
+  // This only applies if an agent named "bash" exists
+  ctx.manager.SetSystemPrompt("bash",
+      "You have a tool 'write_file' that can write text content to a file. "
+      "Prefer using 'write_file' over bash commands like 'cat >', 'echo >', or 'tee' for writing files. "
+      "Only use 'execute_bash' for commands that cannot be done by 'write_file'.");
+
   ctx.manager.SetActiveAgent(active_name);
   if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;

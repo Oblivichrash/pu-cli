@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <system_error>
 
 namespace pu::backend { class Backend; }
@@ -14,9 +15,16 @@ namespace pu::backends { class ITokenAdapter; }
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class AgentType { kChat, kBash };
+enum class AgentType { kLLM };
 enum class ConfirmationPolicy { kAlwaysAsk, kAutoSafe, kNever };
 enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
+
+struct SecurityPolicy {
+  std::string sandbox_root;
+  std::vector<std::string> allowed_paths;
+  size_t max_command_length = 0;
+  std::vector<std::string> forbidden_patterns;
+};
 
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
@@ -30,11 +38,14 @@ struct BackendConfig {
 
 struct AgentEntry {
   std::string name;
-  AgentType type = AgentType::kChat;
+  AgentType type = AgentType::kLLM;
   std::string description;
   BackendConfig backend;
   std::string sandbox_path = ".";
   ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
+  std::vector<std::string> tools;
+  std::unordered_map<std::string, std::string> tool_variants;
+  SecurityPolicy security;
 };
 
 struct AgentsConfig {
