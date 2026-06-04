@@ -29,7 +29,7 @@ add_library(pu::http ALIAS pu_http)
 if(WIN32)
     set(PLATFORM_SRCS src/platform/platform_win.cpp)
 else()
-    set(PLATFORM_SRCS src/platform/platform_linux.cpp)
+    set(PLATFORM_SRCS src/platform/platform.cpp)
 endif()
 add_library(pu_platform STATIC ${PLATFORM_SRCS})
 target_include_directories(pu_platform PRIVATE
@@ -81,7 +81,6 @@ add_library(pu_agent STATIC
     src/agent/tool_registry.cpp
     src/agents/llm/llm_agent.cpp
     src/tools/execute_bash_tool.cpp
-    src/tools/execute_bash_tool_simple.cpp
     src/tools/python_tool.cpp
     src/tools/create_tool.cpp
     src/tools/write_file_tool.cpp

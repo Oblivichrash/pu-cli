@@ -110,13 +110,6 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
     }
   }
-  if (j.contains("tool_variants") && j["tool_variants"].is_object()) {
-    for (auto& [key, value] : j["tool_variants"].items()) {
-      if (value.is_string()) {
-        entry.tool_variants[key] = value.get<std::string>();
-      }
-    }
-  }
   if (j.contains("security") && j["security"].is_object()) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
@@ -183,11 +176,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
     item["description"] = entry.description;
     item["type"] = "llm";
     item["tools"] = entry.tools;
-    if (!entry.tool_variants.empty()) {
-      json tv = json::object();
-      for (const auto& [k, v] : entry.tool_variants) tv[k] = v;
-      item["tool_variants"] = tv;
-    }
+
     json security;
     security["sandbox_root"] = entry.security.sandbox_root;
     security["allowed_paths"] = entry.security.allowed_paths;
