@@ -40,12 +40,6 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   return std::nullopt;
 }
 
-ConfirmationPolicy ParseConfirmationPolicy(const std::string& str) {
-  if (str == "auto_safe") return ConfirmationPolicy::kAutoSafe;
-  if (str == "never") return ConfirmationPolicy::kNever;
-  return ConfirmationPolicy::kAlwaysAsk;
-}
-
 ToolCallStyle ParseToolCallStyle(const std::string& str) {
   if (str == "openai") return ToolCallStyle::kOpenAI;
   if (str == "phi4") return ToolCallStyle::kPhi4;
@@ -106,10 +100,6 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
 
-  if (j.contains("executor") && j["executor"].is_object()) {
-    entry.sandbox_path = j["executor"].value("sandbox", ".");
-    entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
-  }
   return entry;
 }
 
@@ -187,16 +177,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
       default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
-
-    if (!entry.sandbox_path.empty()) {
-      json executor = {{"sandbox", entry.sandbox_path}};
-      switch (entry.confirmation_policy) {
-        case ConfirmationPolicy::kAutoSafe: executor["confirmation"] = "auto_safe"; break;
-        case ConfirmationPolicy::kNever:    executor["confirmation"] = "never"; break;
-        default: executor["confirmation"] = "always";
-      }
-      item["executor"] = executor;
-    }
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;

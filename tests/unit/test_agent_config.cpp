@@ -83,8 +83,8 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
           "api_key": "${OPENAI_KEY}",
           "model": "gpt-4o-mini"
         },
-        "executor": {
-          "sandbox": "/tmp"
+        "security": {
+          "sandbox_root": "/tmp"
         }
       }
     ]
@@ -104,7 +104,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   REQUIRE(config.agents[1].name == "bash");
   REQUIRE(config.agents[1].backend.type == BackendType::kOpenAI);
   REQUIRE(config.agents[1].backend.api_key == "test-key-123");
-  REQUIRE(config.agents[1].sandbox_path == "/tmp");
+  REQUIRE(config.agents[1].security.sandbox_root == "/tmp");
 
   unset_env("OPENAI_KEY");
 }

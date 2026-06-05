@@ -26,28 +26,31 @@ std::string WriteFileTool::ParametersSchema() const {
 }
 
 std::string WriteFileTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
-  (void)ctx;
   std::string path = args.value("path", "");
   std::string content = args.value("content", "");
   if (path.empty()) return "Error: 'path' is required";
 
-  std::error_code ec;
-  std::filesystem::path cwd = std::filesystem::current_path(ec);
-  if (ec) return "Error: cannot get current directory";
+  if (!ctx.security) return "Error: security policy not set";
 
-  std::filesystem::path full_path = cwd / path;
+  std::error_code ec;
+  std::filesystem::path sandbox_root(ctx.security->sandbox_root);
+  auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
+  if (ec) return "Error: cannot resolve sandbox root: " + ctx.security->sandbox_root;
+
+  std::filesystem::path full_path = sandbox_canonical / path;
   full_path = std::filesystem::weakly_canonical(full_path, ec);
   if (ec) return "Error: invalid path";
 
-  // Security: ensure the resolved path is still within current working directory
-  std::filesystem::path normalized_cwd = std::filesystem::weakly_canonical(cwd, ec);
-  if (ec) return "Error: cannot resolve current directory";
-
-  auto cwd_str = normalized_cwd.string();
+  // Ensure the resolved path is within sandbox root
   auto target_str = full_path.string();
-  if (target_str.find(cwd_str) != 0) {
-    return "Error: path outside current directory (traversal not allowed)";
+  auto sandbox_str = sandbox_canonical.string();
+  if (target_str.find(sandbox_str) != 0) {
+    return "Error: path outside sandbox root (traversal not allowed)";
   }
+
+  // Create parent directories if needed
+  std::filesystem::create_directories(full_path.parent_path(), ec);
+  if (ec) return "Error: cannot create parent directories";
 
   std::ofstream file(full_path);
   if (!file.is_open()) return "Error: cannot write to " + path;

@@ -15,7 +15,6 @@ namespace pu::backends { class ITokenAdapter; }
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ConfirmationPolicy { kAlwaysAsk, kAutoSafe, kNever };
 enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
 
 struct SecurityPolicy {
@@ -39,8 +38,6 @@ struct AgentEntry {
   std::string name;
   std::string description;
   BackendConfig backend;
-  std::string sandbox_path = ".";
-  ConfirmationPolicy confirmation_policy = ConfirmationPolicy::kAlwaysAsk;
   std::vector<std::string> tools;
   SecurityPolicy security;
 };

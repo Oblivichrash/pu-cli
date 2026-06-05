@@ -11,10 +11,7 @@
 namespace pu::agent {
 
 struct ToolContext {
-  std::string sandbox_root;
-  std::vector<std::string> allowed_paths;
-  size_t max_command_length = 0;
-  std::vector<std::string> forbidden_patterns;
+  const config::SecurityPolicy* security = nullptr;
   std::function<bool(const std::string& message)> request_confirmation;
 };
 
