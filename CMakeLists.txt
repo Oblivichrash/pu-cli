@@ -71,13 +71,12 @@ target_include_directories(pu_context PRIVATE
 target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)
 add_library(pu::context ALIAS pu_context)
 
-# Agent library (renamed from pu_expert)
+# Agent library
 add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
     src/executor/command_executor.cpp
     src/agent_factory.cpp
     src/renderer.cpp
-    src/cli_app_setup.cpp
     src/agent/tool_registry.cpp
     src/agents/llm/llm_agent.cpp
     src/tools/execute_bash_tool.cpp
@@ -95,12 +94,10 @@ target_link_libraries(pu_agent
 )
 add_library(pu::agent ALIAS pu_agent)
 
-# Main executable
+# Main executable - unified CLI
 add_executable(pu
     src/main.cpp
-    src/cli_ask.cpp
-    src/cli_chat.cpp
-    src/cli_learn.cpp
+    src/cli.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

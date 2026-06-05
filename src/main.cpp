@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/cli_ask.hpp"
-#include "pu/cli_chat.hpp"
-#include "pu/cli_learn.hpp"
+#include "pu/cli.hpp"
 #include "pu/agent_factory.hpp"
 #include "pu/renderer.hpp"
 #include <curl/curl.h>
@@ -23,9 +21,9 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   std::string cmd = argv[1];
-  if (cmd == "ask") return pu::cli::RunAskCommand(argc - 1, argv + 1);
-  if (cmd == "chat") return pu::cli::RunChatCommand(argc - 1, argv + 1);
-  if (cmd == "learn") return pu::cli::RunLearnCommand(argc - 1, argv + 1);
+  if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1);
+  if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1);
+  if (cmd == "learn") return pu::cli::RunLearn(argc - 1, argv + 1);
   std::cerr << "Unknown command: " << cmd << "\n";
   return 1;
 }

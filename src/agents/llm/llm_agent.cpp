@@ -100,7 +100,7 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
   return response;
 }
 
-std::string LLMAgent::RunToolLoop(const std::string& user_input,
+std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input,
                                   bool show_reasoning,
                                   std::vector<ChatMessage>& turn_history,
                                   agent::AgentContext& ctx,
