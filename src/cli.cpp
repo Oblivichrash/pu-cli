@@ -37,7 +37,7 @@ struct AppContext {
   std::string config_path;
 };
 
-AppContext SetupAppContext(const std::string& requested_expert, bool show_reasoning) {
+AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning) {
   AppContext ctx;
   try {
     ctx.config_path = config::FindConfigPath();
@@ -53,15 +53,15 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
     std::exit(1);
   }
 
-  if (ctx.config.experts.empty()) {
+  if (ctx.config.agents.empty()) {
     std::cerr << "Error: no agents configured\n";
     std::exit(1);
   }
 
-  auto active_name = requested_expert.empty() ? ctx.config.default_expert : requested_expert;
+  auto active_name = requested_agent.empty() ? ctx.config.default_agent : requested_agent;
   bool active_found = false;
 
-  for (const auto& entry : ctx.config.experts) {
+  for (const auto& entry : ctx.config.agents) {
     if (entry.name == active_name) active_found = true;
     try {
       ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
@@ -73,7 +73,7 @@ AppContext SetupAppContext(const std::string& requested_expert, bool show_reason
 
   if (!active_found) {
     std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
-    for (const auto& e : ctx.config.experts) std::cerr << "  " << e.name << "\n";
+    for (const auto& e : ctx.config.agents) std::cerr << "  " << e.name << "\n";
     std::exit(1);
   }
 
@@ -107,7 +107,7 @@ std::string GenerateId() {
 
 void PrintAgents(const pu::config::AgentsConfig& config, const std::string& current) {
   std::cout << "Available agents:\n";
-  for (const auto& entry : config.experts) {
+  for (const auto& entry : config.agents) {
     std::cout << "  " << entry.name;
     if (!entry.description.empty()) {
       std::cout << " - " << entry.description;
@@ -148,7 +148,7 @@ void PrintChatHelp() {
 } // namespace
 
 int RunAsk(int argc, char* argv[]) {
-  std::string requested_expert;
+  std::string requested_agent;
   std::string prompt;
   bool show_reasoning = false;
 
@@ -162,7 +162,7 @@ int RunAsk(int argc, char* argv[]) {
                 << "  -h, --help              Show this help message\n";
       return 0;
     } else if (arg == "--agent") {
-      if (i + 1 < argc) requested_expert = argv[++i];
+      if (i + 1 < argc) requested_agent = argv[++i];
       else { std::cerr << "Error: --agent requires an argument\n"; return 1; }
     } else if (arg == "--show-reasoning") {
       show_reasoning = true;
@@ -179,7 +179,7 @@ int RunAsk(int argc, char* argv[]) {
     return 1;
   }
 
-  auto ctx = SetupAppContext(requested_expert, show_reasoning);
+  auto ctx = SetupAppContext(requested_agent, show_reasoning);
   try {
     ctx.manager.Dispatch(prompt);
   } catch (const std::exception& e) {
@@ -263,7 +263,7 @@ int RunChat(int argc, char* argv[]) {
   manager.SetCallStack(call_stack);
   pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
-  for (const auto& entry : config.experts) {
+  for (const auto& entry : config.agents) {
     auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
     if (summary_opt && summary_opt->is_string()) {
       std::string summary = summary_opt->get<std::string>();
@@ -275,7 +275,7 @@ int RunChat(int argc, char* argv[]) {
 
   std::cout << "[INFO] Connected to agent: " << current_name;
   const auto* entry_ptr = [&]() -> const pu::config::AgentEntry* {
-    for (const auto& e : config.experts) {
+    for (const auto& e : config.agents) {
       if (e.name == current_name) return &e;
     }
     return nullptr;
@@ -318,7 +318,7 @@ int RunChat(int argc, char* argv[]) {
         }
 
         const pu::config::AgentEntry* new_entry = nullptr;
-        for (const auto& entry : config.experts) {
+        for (const auto& entry : config.agents) {
           if (entry.name == new_name) {
             new_entry = &entry;
             break;

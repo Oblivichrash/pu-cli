@@ -12,7 +12,6 @@ int main(int argc, char* argv[]) {
   std::atexit(curl_global_cleanup);
 
   pu::SetupSignalHandler();
-  pu::agent::RegisterBuiltinFactories();
 
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
