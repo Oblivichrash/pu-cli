@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "curl_http_client.hpp"
+#include "http/curl_http_client.hpp"
 #include "platform/platform.hpp"
 #include "pu/error_codes.hpp"
 #include <curl/curl.h>
