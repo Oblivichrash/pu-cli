@@ -40,17 +40,6 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   return std::nullopt;
 }
 
-std::optional<AgentType> ParseAgentType(const std::string& s) noexcept {
-  if (s == "llm") return AgentType::kLLM;
-  return std::nullopt;
-}
-
-ConfirmationPolicy ParseConfirmationPolicy(const std::string& str) {
-  if (str == "auto_safe") return ConfirmationPolicy::kAutoSafe;
-  if (str == "never") return ConfirmationPolicy::kNever;
-  return ConfirmationPolicy::kAlwaysAsk;
-}
-
 ToolCallStyle ParseToolCallStyle(const std::string& str) {
   if (str == "openai") return ToolCallStyle::kOpenAI;
   if (str == "phi4") return ToolCallStyle::kPhi4;
@@ -95,11 +84,8 @@ BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
 AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) { ec = ConfigErrc::missing_field; return entry; }
+  if (entry.name.empty()) {ec = ConfigErrc::missing_field; return entry; }
   entry.description = j.value("description", "");
-  auto atype = ParseAgentType(j.value("type", "chat"));
-  if (!atype) { ec = ConfigErrc::missing_field; return entry; }
-  entry.type = *atype;
   if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
   entry.backend = ParseBackendConfig(j["backend"], ec);
   if (ec) return entry;
@@ -110,21 +96,10 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
     }
   }
-  if (j.contains("tool_variants") && j["tool_variants"].is_object()) {
-    for (auto& [key, value] : j["tool_variants"].items()) {
-      if (value.is_string()) {
-        entry.tool_variants[key] = value.get<std::string>();
-      }
-    }
-  }
   if (j.contains("security") && j["security"].is_object()) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
 
-  if (j.contains("executor") && j["executor"].is_object()) {
-    entry.sandbox_path = j["executor"].value("sandbox", ".");
-    entry.confirmation_policy = ParseConfirmationPolicy(j["executor"].value("confirmation", "always"));
-  }
   return entry;
 }
 
@@ -150,7 +125,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
     ec = ConfigErrc::missing_field;
     return result;
   }
-  result.default_expert = j["default_agent"];
+  result.default_agent = j["default_agent"];
 
   if (!j.contains("agents") || !j["agents"].is_array()) {
     ec = ConfigErrc::missing_field;
@@ -161,33 +136,27 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
     std::error_code entry_ec;
     auto entry = ParseAgentEntry(item, entry_ec);
     if (entry_ec) { ec = entry_ec; return result; }
-    result.experts.push_back(std::move(entry));
+    result.agents.push_back(std::move(entry));
   }
 
-  if (result.default_expert.empty() && !result.experts.empty()) {
-    result.default_expert = result.experts[0].name;
+  if (result.default_agent.empty() && !result.agents.empty()) {
+    result.default_agent = result.agents[0].name;
   }
   return result;
 }
 
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
-                      std::error_code& ec) {
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config, std::error_code& ec) {
   ec.clear();
   json j;
-  j["default_agent"] = config.default_expert;
+  j["default_agent"] = config.default_agent;
 
   json agents_array = json::array();
-  for (const auto& entry : config.experts) {
+  for (const auto& entry : config.agents) {
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
-    item["type"] = "llm";
     item["tools"] = entry.tools;
-    if (!entry.tool_variants.empty()) {
-      json tv = json::object();
-      for (const auto& [k, v] : entry.tool_variants) tv[k] = v;
-      item["tool_variants"] = tv;
-    }
+
     json security;
     security["sandbox_root"] = entry.security.sandbox_root;
     security["allowed_paths"] = entry.security.allowed_paths;
@@ -208,16 +177,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
       default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
-
-    if (!entry.sandbox_path.empty()) {
-      json executor = {{"sandbox", entry.sandbox_path}};
-      switch (entry.confirmation_policy) {
-        case ConfirmationPolicy::kAutoSafe: executor["confirmation"] = "auto_safe"; break;
-        case ConfirmationPolicy::kNever:    executor["confirmation"] = "never"; break;
-        default: executor["confirmation"] = "always";
-      }
-      item["executor"] = executor;
-    }
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;

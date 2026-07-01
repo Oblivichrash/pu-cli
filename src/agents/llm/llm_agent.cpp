@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "llm_agent.hpp"
+#include "agents/llm/llm_agent.hpp"
 #include "pu/renderer.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -100,7 +100,7 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
   return response;
 }
 
-std::string LLMAgent::RunToolLoop(const std::string& user_input,
+std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input,
                                   bool show_reasoning,
                                   std::vector<ChatMessage>& turn_history,
                                   agent::AgentContext& ctx,
@@ -162,6 +162,7 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
     turn_history.push_back({0, "", name_, "", ""});
 
     agent::ToolContext tool_ctx;
+    tool_ctx.security = &security_;
     tool_ctx.request_confirmation = [&ctx](const std::string& message) -> bool {
       pu::agent::ConfirmationRequest req;
       req.description = message;
@@ -170,10 +171,6 @@ std::string LLMAgent::RunToolLoop(const std::string& user_input,
       return (choice == pu::agent::ConfirmationChoice::kApproveOnce ||
               choice == pu::agent::ConfirmationChoice::kApproveAllSafe);
     };
-    tool_ctx.sandbox_root = security_.sandbox_root;
-    tool_ctx.allowed_paths = security_.allowed_paths;
-    tool_ctx.max_command_length = security_.max_command_length;
-    tool_ctx.forbidden_patterns = security_.forbidden_patterns;
 
     for (const auto& call : collected_calls) {
       std::string result;
