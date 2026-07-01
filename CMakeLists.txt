@@ -26,12 +26,7 @@ target_link_libraries(pu_http PUBLIC CURL::libcurl pu_platform)
 add_library(pu::http ALIAS pu_http)
 
 # Platform abstraction library
-if(WIN32)
-    set(PLATFORM_SRCS src/platform/platform_win.cpp)
-else()
-    set(PLATFORM_SRCS src/platform/platform_linux.cpp)
-endif()
-add_library(pu_platform STATIC ${PLATFORM_SRCS})
+add_library(pu_platform STATIC src/platform/platform.cpp)
 target_include_directories(pu_platform PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -41,12 +36,12 @@ add_library(pu::platform ALIAS pu_platform)
 add_library(pu_backend STATIC
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
-    src/agent_config.cpp
-    src/conversation_store.cpp
-    src/error_codes.cpp
+    src/config/agent_config.cpp
+    src/conversation/conversation_store.cpp
+    src/config/error_codes.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
-    src/backends/streaming_json_parser.cpp
+    src/backends/common/streaming_json_parser.cpp
 )
 target_include_directories(pu_backend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -71,17 +66,15 @@ target_include_directories(pu_context PRIVATE
 target_link_libraries(pu_context PUBLIC nlohmann_json::nlohmann_json)
 add_library(pu::context ALIAS pu_context)
 
-# Agent library (renamed from pu_expert)
+# Agent library
 add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
     src/executor/command_executor.cpp
-    src/agent_factory.cpp
-    src/renderer.cpp
-    src/cli_app_setup.cpp
+    src/agent/agent_factory.cpp
+    src/renderer/renderer.cpp
     src/agent/tool_registry.cpp
     src/agents/llm/llm_agent.cpp
     src/tools/execute_bash_tool.cpp
-    src/tools/execute_bash_tool_simple.cpp
     src/tools/python_tool.cpp
     src/tools/create_tool.cpp
     src/tools/write_file_tool.cpp
@@ -96,12 +89,10 @@ target_link_libraries(pu_agent
 )
 add_library(pu::agent ALIAS pu_agent)
 
-# Main executable
+# Main executable - unified CLI
 add_executable(pu
-    src/main.cpp
-    src/cli_ask.cpp
-    src/cli_chat.cpp
-    src/cli_learn.cpp
+    src/app/main.cpp
+    src/app/cli.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

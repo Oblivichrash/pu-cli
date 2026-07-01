@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "ollama_token_adapter.hpp"
+#include "backends/ollama/ollama_token_adapter.hpp"
 #include "pu/backend.hpp"
 #include <nlohmann/json.hpp>
 

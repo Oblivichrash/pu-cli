@@ -83,8 +83,8 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
           "api_key": "${OPENAI_KEY}",
           "model": "gpt-4o-mini"
         },
-        "executor": {
-          "sandbox": "/tmp"
+        "security": {
+          "sandbox_root": "/tmp"
         }
       }
     ]
@@ -97,14 +97,14 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
 
-  REQUIRE(config.default_expert == "chat");
-  REQUIRE(config.experts.size() == 2);
-  REQUIRE(config.experts[0].name == "chat");
-  REQUIRE(config.experts[0].backend.type == BackendType::kOllama);
-  REQUIRE(config.experts[1].name == "bash");
-  REQUIRE(config.experts[1].backend.type == BackendType::kOpenAI);
-  REQUIRE(config.experts[1].backend.api_key == "test-key-123");
-  REQUIRE(config.experts[1].sandbox_path == "/tmp");
+  REQUIRE(config.default_agent == "chat");
+  REQUIRE(config.agents.size() == 2);
+  REQUIRE(config.agents[0].name == "chat");
+  REQUIRE(config.agents[0].backend.type == BackendType::kOllama);
+  REQUIRE(config.agents[1].name == "bash");
+  REQUIRE(config.agents[1].backend.type == BackendType::kOpenAI);
+  REQUIRE(config.agents[1].backend.api_key == "test-key-123");
+  REQUIRE(config.agents[1].security.sandbox_root == "/tmp");
 
   unset_env("OPENAI_KEY");
 }
@@ -141,13 +141,13 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
   std::error_code ec;
   AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
-  REQUIRE(config.default_expert == "only");
+  REQUIRE(config.default_agent == "only");
 }
 
 TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   AgentsConfig original;
-  original.default_expert = "test";
+  original.default_agent = "test";
   AgentEntry entry;
   entry.name = "test";
   entry.description = "desc";
@@ -155,7 +155,7 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   entry.backend.host = "https://api.test.com";
   entry.backend.model = "test-model";
   entry.backend.api_key = "secret";
-  original.experts.push_back(entry);
+  original.agents.push_back(entry);
 
   std::error_code ec;
   SaveAgentsConfig(tmp.path.string(), original, ec);
@@ -163,12 +163,12 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
 
   AgentsConfig loaded = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
-  REQUIRE(loaded.default_expert == "test");
-  REQUIRE(loaded.experts.size() == 1);
-  REQUIRE(loaded.experts[0].name == "test");
-  REQUIRE(loaded.experts[0].backend.type == BackendType::kOpenAI);
-  REQUIRE(loaded.experts[0].backend.host == "https://api.test.com");
-  REQUIRE(loaded.experts[0].backend.api_key == "secret");
+  REQUIRE(loaded.default_agent == "test");
+  REQUIRE(loaded.agents.size() == 1);
+  REQUIRE(loaded.agents[0].name == "test");
+  REQUIRE(loaded.agents[0].backend.type == BackendType::kOpenAI);
+  REQUIRE(loaded.agents[0].backend.host == "https://api.test.com");
+  REQUIRE(loaded.agents[0].backend.api_key == "secret");
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
@@ -223,6 +223,6 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   std::error_code ec;
   AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
   REQUIRE_FALSE(ec);
-  REQUIRE(config.experts[0].backend.system_prompt.has_value());
-  REQUIRE(config.experts[0].backend.system_prompt->empty());
+  REQUIRE(config.agents[0].backend.system_prompt.has_value());
+  REQUIRE(config.agents[0].backend.system_prompt->empty());
 }

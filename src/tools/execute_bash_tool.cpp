@@ -35,11 +35,11 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, agent::
     return "Error: 'command' parameter is required";
   }
 
-  if (ctx.max_command_length > 0 && command.size() > ctx.max_command_length) {
-    return "Error: command exceeds maximum allowed length (" + std::to_string(ctx.max_command_length) + ")";
+  if (ctx.security && ctx.security->max_command_length > 0 && command.size() > ctx.security->max_command_length) {
+    return "Error: command exceeds maximum allowed length (" + std::to_string(ctx.security->max_command_length) + ")";
   }
 
-  for (const auto& pattern : ctx.forbidden_patterns) {
+  for (const auto& pattern : ctx.security->forbidden_patterns) {
     if (command.find(pattern) != std::string::npos) {
       return "Blocked: command contains forbidden pattern '" + pattern + "'";
     }

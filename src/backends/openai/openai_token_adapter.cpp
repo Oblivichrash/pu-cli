@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "openai_token_adapter.hpp"
+#include "backends/openai/openai_token_adapter.hpp"
 #include <nlohmann/json.hpp>
 
 namespace pu::backends::openai {

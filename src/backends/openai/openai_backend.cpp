@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "openai_backend.hpp"
+#include "backends/openai/openai_backend.hpp"
 #include "pu/backend_helpers.hpp"
 #include "platform/platform.hpp"
-#include "backends/streaming_json_parser.hpp"
+#include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
 
 namespace pu::backends::openai {
