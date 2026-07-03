@@ -2,6 +2,7 @@
 #pragma once
 
 #include "pu/token_adapter.hpp"
+#include <nlohmann/json_fwd.hpp>
 
 namespace pu::backends::ollama {
 

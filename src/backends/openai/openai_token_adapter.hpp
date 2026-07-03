@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/token_adapter.hpp"
-#include "pu/backend.hpp"
+#include <nlohmann/json_fwd.hpp>
 #include <map>
 #include <string>
 

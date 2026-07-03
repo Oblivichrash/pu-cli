@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/conversation_store.hpp"
-#include "pu/error_codes.hpp"
+#include "core/error.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/tool.hpp"
-#include "executor/command_executor.hpp"
+#include "core/system.hpp"
 #include <memory>
 
 namespace pu::tools {

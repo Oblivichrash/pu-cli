@@ -21,6 +21,7 @@ target_link_libraries(pu_tests PRIVATE
     pu::backend
     pu::agent
     pu::http
+    pu::system
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json
 )

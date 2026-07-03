@@ -10,7 +10,6 @@
 
 namespace pu::backend { class Backend; }
 namespace pu::http { class HttpClient; }
-namespace pu::backends { class ITokenAdapter; }
 
 namespace pu::config {
 
@@ -53,6 +52,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
                       std::error_code& ec);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec);
+    std::error_code& ec);
 
 }  // namespace pu::config

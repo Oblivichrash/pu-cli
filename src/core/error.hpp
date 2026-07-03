@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/error_codes.hpp"
+#pragma once
+
+#include <system_error>
+
+namespace pu {
+
+enum class ConfigErrc { file_not_found = 1, parse_error, missing_field, backend_unknown };
+enum class HttpErrc { connection_failed = 1, http_error, interrupted };
+enum class StoreErrc { not_found = 1, invalid_data, write_failed };
+
+}  // namespace pu
+
+namespace std {
+template <> struct is_error_code_enum<pu::ConfigErrc> : true_type {};
+template <> struct is_error_code_enum<pu::HttpErrc> : true_type {};
+template <> struct is_error_code_enum<pu::StoreErrc> : true_type {};
+}  // namespace std
 
 namespace pu {
 
@@ -38,14 +54,19 @@ struct StoreCategory : std::error_category {
     }
   }
 };
-
-const ConfigCategory kConfigCategory{};
-const HttpCategory   kHttpCategory{};
-const StoreCategory  kStoreCategory{};
 }  // namespace
 
-std::error_code make_error_code(ConfigErrc e) { return {static_cast<int>(e), kConfigCategory}; }
-std::error_code make_error_code(HttpErrc e)   { return {static_cast<int>(e), kHttpCategory}; }
-std::error_code make_error_code(StoreErrc e)  { return {static_cast<int>(e), kStoreCategory}; }
+inline std::error_code make_error_code(ConfigErrc e) {
+  static const ConfigCategory cat{};
+  return {static_cast<int>(e), cat};
+}
+inline std::error_code make_error_code(HttpErrc e) {
+  static const HttpCategory cat{};
+  return {static_cast<int>(e), cat};
+}
+inline std::error_code make_error_code(StoreErrc e) {
+  static const StoreCategory cat{};
+  return {static_cast<int>(e), cat};
+}
 
 }  // namespace pu

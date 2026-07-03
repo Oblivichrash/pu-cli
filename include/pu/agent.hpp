@@ -5,7 +5,7 @@
 #include "pu/conversation.hpp"
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
-#include "executor/command_executor.hpp"
+#include "core/system.hpp"
 
 #include <functional>
 #include <memory>

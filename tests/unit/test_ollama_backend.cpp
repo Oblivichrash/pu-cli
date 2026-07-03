@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "backends/ollama/ollama_backend.hpp"
-#include "backends/ollama/ollama_token_adapter.hpp"
+#include "backends/ollama/ollama.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -19,8 +18,7 @@ TEST_CASE("OllamaBackend request building", "[ollama]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  auto adapter = std::make_unique<OllamaTokenAdapter>();
-  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
+  OllamaBackend backend(std::move(config), std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -65,8 +63,7 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
     }
   };
 
-  auto adapter = std::make_unique<OllamaTokenAdapter>();
-  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
+  OllamaBackend backend(std::move(config), std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}
@@ -116,8 +113,7 @@ TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
     cb(done.data(), done.size());
   };
 
-  auto adapter = std::make_unique<OllamaTokenAdapter>();
-  OllamaBackend backend(std::move(config), std::move(mock_http), std::move(adapter));
+  OllamaBackend backend(std::move(config), std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list files"}};
   pu::backend::ToolDefinition tool;

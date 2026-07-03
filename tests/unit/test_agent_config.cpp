@@ -4,9 +4,6 @@
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/backend.hpp"
 #include "pu/error_codes.hpp"
-#include "pu/token_adapter.hpp"
-#include "backends/ollama/ollama_token_adapter.hpp"
-#include "backends/openai/openai_token_adapter.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -180,9 +177,8 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
   cfg.system_prompt = "Be helpful.";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<pu::backends::ollama::OllamaTokenAdapter>();
   std::error_code ec;
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
+  auto backend = CreateBackend(cfg, std::move(mock_http), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }
@@ -195,9 +191,8 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
   cfg.api_key = "key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<pu::backends::openai::OpenAITokenAdapter>();
   std::error_code ec;
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
+  auto backend = CreateBackend(cfg, std::move(mock_http), ec);
   REQUIRE_FALSE(ec);
   REQUIRE(backend != nullptr);
 }

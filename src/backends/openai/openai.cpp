@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "backends/openai/openai_backend.hpp"
+#include "openai.hpp"
 #include "pu/backend_helpers.hpp"
-#include "platform/platform.hpp"
+#include "core/system.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
 
@@ -9,8 +9,11 @@ namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
-namespace {
-std::string RoleToString(pu::backend::Message::Role role) {
+static std::string SafeString(const json& j, const char* key) {
+  return (j.contains(key) && j[key].is_string()) ? j[key].get<std::string>() : "";
+}
+
+static std::string RoleToString(pu::backend::Message::Role role) {
   switch (role) {
     case pu::backend::Message::Role::kSystem:    return "system";
     case pu::backend::Message::Role::kUser:      return "user";
@@ -20,7 +23,7 @@ std::string RoleToString(pu::backend::Message::Role role) {
   }
 }
 
-json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
+static json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   json messages = json::array();
   for (const auto& msg : history) {
     json j{{"role", RoleToString(msg.role)}, {"content", msg.content}};
@@ -41,14 +44,16 @@ json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   }
   return messages;
 }
-}  // anonymous namespace
+
+OpenAIBackend::OpenAIBackend(const Config& config, std::unique_ptr<pu::http::HttpClient> http)
+    : Backend(config), http_(std::move(http)), host_(config.host), api_key_(config.api_key) {}
 
 std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
+  req["messages"] = BuildMessagesJson(pu::backend::InjectSystemPrompt(history, config_.system_prompt));
   return req.dump();
 }
 
@@ -59,7 +64,7 @@ std::string OpenAIBackend::BuildRequestWithTools(
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
+  req["messages"] = BuildMessagesJson(pu::backend::InjectSystemPrompt(history, config_.system_prompt));
 
   json tools_json = json::array();
   for (const auto& tool : tools) {
@@ -76,15 +81,52 @@ std::string OpenAIBackend::BuildRequestWithTools(
   return req.dump();
 }
 
-OpenAIBackend::OpenAIBackend(const Config& config, std::unique_ptr<pu::http::HttpClient> http,
-                             std::unique_ptr<ITokenAdapter> adapter)
-    : Backend(config), http_(std::move(http)), host_(config.host),
-      api_key_(config.api_key), adapter_(std::move(adapter)) {}
+void OpenAIBackend::HandleJsonChunk(const json& j,
+                                    pu::backend::ChatCallback content_cb,
+                                    pu::backend::ToolCallback tool_cb) {
+  bool is_final = false;
+  if (j.contains("done") && j["done"].get<bool>()) is_final = true;
+
+  if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
+    const auto& delta = j["choices"][0].value("delta", json::object());
+    if (delta.is_object()) {
+      auto content = SafeString(delta, "content");
+      if (!content.empty()) content_cb(pu::backend::TokenType::kContent, content, false);
+      auto reasoning = SafeString(delta, "reasoning_content");
+      if (reasoning.empty()) reasoning = SafeString(delta, "reasoning");
+      if (!reasoning.empty()) content_cb(pu::backend::TokenType::kReasoning, reasoning, false);
+
+      if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+        for (const auto& tc : delta["tool_calls"]) {
+          if (!tc.is_object()) continue;
+          int idx = tc.value("index", -1);
+          if (idx < 0) continue;
+          auto& acc = pending_tools_[idx];
+          auto id = SafeString(tc, "id");
+          if (!id.empty()) acc.id = id;
+          if (tc.contains("function") && tc["function"].is_object()) {
+            auto name = SafeString(tc["function"], "name");
+            if (!name.empty()) acc.name = name;
+            acc.arguments += SafeString(tc["function"], "arguments");
+          }
+        }
+      }
+    }
+  }
+
+  if (is_final) {
+    for (auto& [idx, acc] : pending_tools_) {
+      tool_cb({acc.id, acc.name, acc.arguments});
+    }
+    pending_tools_.clear();
+    content_cb(pu::backend::TokenType::kContent, "", true);
+  }
+}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb, std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
-  adapter_->Reset();
+  pending_tools_.clear();
   auto body = BuildRequest(history);
   std::string url = host_ + "/chat/completions";
 
@@ -100,12 +142,12 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
       if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
       std::string_view data = trimmed.substr(kDataPrefix.size());
       if (data == "[DONE]") {
-        cb(backend::TokenType::kContent, "", true);
+        cb(pu::backend::TokenType::kContent, "", true);
         return;
       }
       try {
         auto j = json::parse(data);
-        adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
+        HandleJsonChunk(j, cb, [](const pu::backend::ToolCall&) {});
       } catch (const std::exception&) {}
     },
     [&ec](std::error_code err) { if (!ec) ec = err; }
@@ -121,9 +163,10 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb,
+                         std::error_code& ec) {
   pu::platform::ClearInterruptFlag();
-  adapter_->Reset();
+  pending_tools_.clear();
   auto body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/chat/completions";
 
@@ -139,12 +182,12 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
       if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
       std::string_view data = trimmed.substr(kDataPrefix.size());
       if (data == "[DONE]") {
-        adapter_->HandleJson({{"done", true}}, content_cb, tool_cb);
+        HandleJsonChunk({{"done", true}}, content_cb, tool_cb);
         return;
       }
       try {
         auto j = json::parse(data);
-        adapter_->HandleJson(j, content_cb, tool_cb);
+        HandleJsonChunk(j, content_cb, tool_cb);
       } catch (const std::exception&) {}
     },
     [&ec](std::error_code err) { if (!ec) ec = err; }

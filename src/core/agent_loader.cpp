@@ -1,27 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_config.hpp"
-
-#include "backends/ollama/ollama_backend.hpp"
-#include "backends/openai/openai_backend.hpp"
+#include "pu/agent_factory.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/error_codes.hpp"
-#include "pu/token_adapter.hpp"
-
+#include "backends/ollama/ollama.hpp"
+#include "backends/openai/openai.hpp"
+#include "core/system.hpp"
+#include "core/error.hpp"
+#include "agents/llm/llm_agent.hpp"
+#include "http/curl_http_client.hpp"
+#include "pu/tools/execute_bash_tool.hpp"
+#include "pu/tools/write_file_tool.hpp"
+#include "pu/tools/create_tool.hpp"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <regex>
 #include <stdexcept>
+#include <memory>
+#include <system_error>
 
 namespace pu::config {
 
+using pu::ConfigErrc;
+
 using json = nlohmann::json;
 
-namespace {
-
-std::string ExpandEnvVars(const std::string& input) {
+static std::string ExpandEnvVars(const std::string& input) {
   static const std::regex env_re(R"(\$\{([^}]+)\})");
   std::string result = input;
   std::smatch match;
@@ -34,40 +40,36 @@ std::string ExpandEnvVars(const std::string& input) {
   return result;
 }
 
-std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
+static std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   if (s == "openai") return BackendType::kOpenAI;
   if (s == "ollama") return BackendType::kOllama;
   return std::nullopt;
 }
 
-ToolCallStyle ParseToolCallStyle(const std::string& str) {
+static ToolCallStyle ParseToolCallStyle(const std::string& str) {
   if (str == "openai") return ToolCallStyle::kOpenAI;
   if (str == "phi4") return ToolCallStyle::kPhi4;
   return ToolCallStyle::kDefault;
 }
 
-SecurityPolicy ParseSecurityPolicy(const json& j) {
+static SecurityPolicy ParseSecurityPolicy(const json& j) {
   SecurityPolicy policy;
-  if (j.contains("sandbox_root") && j["sandbox_root"].is_string()) {
+  if (j.contains("sandbox_root") && j["sandbox_root"].is_string())
     policy.sandbox_root = j["sandbox_root"];
-  }
   if (j.contains("allowed_paths") && j["allowed_paths"].is_array()) {
-    for (const auto& p : j["allowed_paths"]) {
+    for (const auto& p : j["allowed_paths"])
       if (p.is_string()) policy.allowed_paths.push_back(p.get<std::string>());
-    }
   }
-  if (j.contains("max_command_length") && j["max_command_length"].is_number()) {
+  if (j.contains("max_command_length") && j["max_command_length"].is_number())
     policy.max_command_length = j["max_command_length"];
-  }
   if (j.contains("forbidden_patterns") && j["forbidden_patterns"].is_array()) {
-    for (const auto& pat : j["forbidden_patterns"]) {
+    for (const auto& pat : j["forbidden_patterns"])
       if (pat.is_string()) policy.forbidden_patterns.push_back(pat.get<std::string>());
-    }
   }
   return policy;
 }
 
-BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
+static BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   BackendConfig cfg;
   auto type = ParseBackendType(j.value("type", "ollama"));
   if (!type) { ec = ConfigErrc::backend_unknown; return cfg; }
@@ -81,10 +83,10 @@ BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   return cfg;
 }
 
-AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
+static AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) {ec = ConfigErrc::missing_field; return entry; }
+  if (entry.name.empty()) { ec = ConfigErrc::missing_field; return entry; }
   entry.description = j.value("description", "");
   if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
   entry.backend = ParseBackendConfig(j["backend"], ec);
@@ -92,18 +94,14 @@ AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
   if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
 
   if (j.contains("tools") && j["tools"].is_array()) {
-    for (const auto& t : j["tools"]) {
+    for (const auto& t : j["tools"])
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
-    }
   }
-  if (j.contains("security") && j["security"].is_object()) {
+  if (j.contains("security") && j["security"].is_object())
     entry.security = ParseSecurityPolicy(j["security"]);
-  }
 
   return entry;
 }
-
-}  // namespace
 
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
@@ -139,9 +137,8 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
     result.agents.push_back(std::move(entry));
   }
 
-  if (result.default_agent.empty() && !result.agents.empty()) {
+  if (result.default_agent.empty() && !result.agents.empty())
     result.default_agent = result.agents[0].name;
-  }
   return result;
 }
 
@@ -187,8 +184,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec) {
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http, std::error_code& ec) {
   ec.clear();
   switch (cfg.type) {
     case BackendType::kOllama: {
@@ -199,7 +195,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
-          std::move(ollama_cfg), std::move(http), std::move(adapter));
+          std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
       pu::backends::openai::OpenAIBackend::Config openai_cfg;
@@ -209,7 +205,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::openai::OpenAIBackend>(
-          std::move(openai_cfg), std::move(http), std::move(adapter));
+          std::move(openai_cfg), std::move(http));
     }
     default:
       ec = ConfigErrc::backend_unknown;
@@ -218,3 +214,37 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
 }
 
 }  // namespace pu::config
+
+namespace pu::agent {
+
+AgentRegistry& AgentRegistry::Instance() {
+  static AgentRegistry registry;
+  return registry;
+}
+
+std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& entry) {
+  auto http = std::make_unique<http::CurlHttpClient>();
+  std::error_code ec;
+  auto backend = config::CreateBackend(entry.backend, std::move(http), ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create backend: " + ec.message());
+  }
+
+  auto tool_registry = std::make_unique<ToolRegistry>();
+
+  for (const auto& tool_name : entry.tools) {
+    if (tool_name == "execute_bash") {
+      std::string sandbox = entry.security.sandbox_root.empty() ? "." : entry.security.sandbox_root;
+      auto executor = std::make_unique<executor::CommandExecutor>(sandbox);
+      tool_registry->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(std::move(executor)));
+    } else if (tool_name == "create_tool") {
+      tool_registry->RegisterTool(std::make_unique<tools::CreateTool>());
+    } else if (tool_name == "write_file") {
+      tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
+    }
+  }
+
+  return std::make_unique<agents::LLMAgent>(entry.name, std::move(backend), std::move(tool_registry), entry.security);
+}
+
+}  // namespace pu::agent

@@ -9,7 +9,6 @@
 #include "pu/context.hpp"
 #include "pu/orchestrator.hpp"
 #include "pu/stack.hpp"
-#include "pu/renderer.hpp"
 
 #include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
@@ -26,6 +25,25 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+namespace {
+pu::backend::ChatCallback CreateStreamingRenderer(bool show_reasoning) {
+  bool first_reasoning = true;
+  return [show_reasoning, first_reasoning](pu::backend::TokenType type, std::string_view token,
+                                           bool is_final) mutable {
+    if (type == pu::backend::TokenType::kReasoning && show_reasoning) {
+      if (first_reasoning) { std::cerr << "[Thinking] "; first_reasoning = false; }
+      std::cerr << token << std::flush;
+      if (is_final) std::cerr << std::endl;
+      return;
+    }
+    if (type == pu::backend::TokenType::kContent) {
+      std::cout << token << std::flush;
+      if (is_final) std::cout << std::endl;
+    }
+  };
+}
+}  // namespace
 
 namespace pu::cli {
 
