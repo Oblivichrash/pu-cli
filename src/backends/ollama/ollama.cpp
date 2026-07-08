@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ollama.hpp"
-#include "pu/backend_helpers.hpp"
 #include "core/system.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
@@ -50,7 +49,7 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -74,7 +73,7 @@ std::string OllamaBackend::BuildRequestWithTools(
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;

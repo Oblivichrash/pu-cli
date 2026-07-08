@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "openai.hpp"
-#include "pu/backend_helpers.hpp"
 #include "core/system.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
@@ -53,7 +52,7 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(pu::backend::InjectSystemPrompt(history, config_.system_prompt));
+  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
   return req.dump();
 }
 
@@ -64,7 +63,7 @@ std::string OpenAIBackend::BuildRequestWithTools(
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
-  req["messages"] = BuildMessagesJson(pu::backend::InjectSystemPrompt(history, config_.system_prompt));
+  req["messages"] = BuildMessagesJson(InjectSystemPrompt(history, config_.system_prompt));
 
   json tools_json = json::array();
   for (const auto& tool : tools) {
