@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ollama.hpp"
 #include "core/system.hpp"
+#include "core/error.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -121,7 +122,7 @@ std::string OllamaBackend::BuildRequestWithTools(
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb, std::error_code& ec) {
+                         pu::backend::ChatCallback cb) {
   pu::platform::ClearInterruptFlag();
   auto body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
@@ -136,20 +137,20 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
         HandleJsonChunk(j, cb, [](const pu::backend::ToolCall&) {});
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [](const std::string& msg) { throw pu::HttpError(msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb) {
   pu::platform::ClearInterruptFlag();
   auto body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/api/chat";
@@ -164,14 +165,14 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
         HandleJsonChunk(j, content_cb, tool_cb);
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [](const std::string& msg) { throw pu::HttpError(msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 }  // namespace pu::backends::ollama

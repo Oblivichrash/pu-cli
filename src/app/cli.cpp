@@ -64,10 +64,10 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
     std::exit(1);
   }
 
-  std::error_code ec;
-  ctx.config = config::LoadAgentsConfig(ctx.config_path, ec);
-  if (ec) {
-    std::cerr << "Error: failed to load config: " << ec.message() << "\n";
+  try {
+    ctx.config = config::LoadAgentsConfig(ctx.config_path);
+  } catch (const std::exception& e) {
+    std::cerr << "Error: failed to load config: " << e.what() << "\n";
     std::exit(1);
   }
 
@@ -374,13 +374,13 @@ int RunChat(int argc, char* argv[]) {
         conv.messages = panel_messages;
         conv.expert_histories = manager.SnapshotAgents();
 
-        std::error_code ec;
-        store.Save(conv, ec);
-        if (ec) {
-          std::cerr << "Error: failed to save conversation: " << ec.message() << "\n";
+        try {
+          store.Save(conv);
+          std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
+        } catch (const std::exception& e) {
+          std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
           continue;
         }
-        std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
 
         if (!no_summary) {
           std::ostringstream summary_prompt;
@@ -419,11 +419,8 @@ int RunChat(int argc, char* argv[]) {
           continue;
         }
 
-        std::error_code ec;
-        auto conv = store.Load(load_id, ec);
-        if (ec) {
-          std::cerr << "Error: failed to load conversation: " << ec.message() << "\n";
-        } else {
+        try {
+          auto conv = store.Load(load_id);
           panel_messages = conv.messages;
           message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
           manager.RestoreAgents(conv.expert_histories);
@@ -431,6 +428,8 @@ int RunChat(int argc, char* argv[]) {
           confirm_state->auto_approve_safe = false;
           confirm_state->deny_all = false;
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
+        } catch (const std::exception& e) {
+          std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
         }
       } else if (input == "/list") {
         auto convs = store.List();
@@ -442,19 +441,18 @@ int RunChat(int argc, char* argv[]) {
           continue;
         }
 
-        std::error_code ec;
-        auto md = store.ExportMarkdown(export_id, ec);
-        if (ec) {
-          std::cerr << "Error: failed to export conversation: " << ec.message() << "\n";
-          continue;
-        }
-        std::string filename = "conversation_" + export_id + ".md";
-        std::ofstream out(filename);
-        if (!out) {
-          std::cerr << "Error: cannot write to " << filename << "\n";
-        } else {
-          out << md;
-          std::cout << "[INFO] Exported to " << filename << "\n";
+        try {
+          auto md = store.ExportMarkdown(export_id);
+          std::string filename = "conversation_" + export_id + ".md";
+          std::ofstream out(filename);
+          if (!out) {
+            std::cerr << "Error: cannot write to " << filename << "\n";
+          } else {
+            out << md;
+            std::cout << "[INFO] Exported to " << filename << "\n";
+          }
+        } catch (const std::exception& e) {
+          std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {

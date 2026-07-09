@@ -19,11 +19,8 @@
 #include <regex>
 #include <stdexcept>
 #include <memory>
-#include <system_error>
 
 namespace pu::config {
-
-using pu::ConfigErrc;
 
 using json = nlohmann::json;
 
@@ -69,10 +66,10 @@ static SecurityPolicy ParseSecurityPolicy(const json& j) {
   return policy;
 }
 
-static BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
+static BackendConfig ParseBackendConfig(const json& j) {
   BackendConfig cfg;
   auto type = ParseBackendType(j.value("type", "ollama"));
-  if (!type) { ec = ConfigErrc::backend_unknown; return cfg; }
+  if (!type) throw ConfigError("Unknown backend type");
   cfg.type = *type;
   cfg.host = ExpandEnvVars(j.value("host", ""));
   cfg.model = ExpandEnvVars(j.value("model", ""));
@@ -83,15 +80,14 @@ static BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   return cfg;
 }
 
-static AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
+static AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) { ec = ConfigErrc::missing_field; return entry; }
+  if (entry.name.empty()) throw ConfigError("Missing required field: name");
   entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
-  entry.backend = ParseBackendConfig(j["backend"], ec);
-  if (ec) return entry;
-  if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
+  if (!j.contains("backend") || !j["backend"].is_object()) throw ConfigError("Missing required field: backend");
+  entry.backend = ParseBackendConfig(j["backend"]);
+  if (entry.backend.host.empty() || entry.backend.model.empty()) throw ConfigError("Missing required field: host or model");
 
   if (j.contains("tools") && j["tools"].is_array()) {
     for (const auto& t : j["tools"])
@@ -106,34 +102,29 @@ static AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
   if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  throw std::runtime_error("Configuration file not found. "
-                           "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
+  throw ConfigError("Configuration file not found. "
+                    "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
-AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec) {
-  ec.clear();
+AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) { ec = ConfigErrc::file_not_found; return result; }
+  if (!file.is_open()) throw ConfigError("Configuration file not found: " + config_path);
 
   json j;
-  try { file >> j; } catch (const json::parse_error&) { ec = ConfigErrc::parse_error; return result; }
+  try { file >> j; } catch (const json::parse_error&) { throw ConfigError("Configuration JSON parse error"); }
 
   if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
-    ec = ConfigErrc::missing_field;
-    return result;
+    throw ConfigError("Missing required field: default_agent");
   }
   result.default_agent = j["default_agent"];
 
   if (!j.contains("agents") || !j["agents"].is_array()) {
-    ec = ConfigErrc::missing_field;
-    return result;
+    throw ConfigError("Missing required field: agents");
   }
 
   for (const auto& item : j["agents"]) {
-    std::error_code entry_ec;
-    auto entry = ParseAgentEntry(item, entry_ec);
-    if (entry_ec) { ec = entry_ec; return result; }
+    auto entry = ParseAgentEntry(item);
     result.agents.push_back(std::move(entry));
   }
 
@@ -142,8 +133,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
   return result;
 }
 
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config, std::error_code& ec) {
-  ec.clear();
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config) {
   json j;
   j["default_agent"] = config.default_agent;
 
@@ -179,13 +169,12 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
   j["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open()) { ec = ConfigErrc::file_not_found; return; }
+  if (!file.is_open()) throw ConfigError("Failed to open config file for writing: " + config_path);
   file << j.dump(2);
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http, std::error_code& ec) {
-  ec.clear();
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
       pu::backends::ollama::OllamaBackend::Config ollama_cfg;
@@ -208,8 +197,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
           std::move(openai_cfg), std::move(http));
     }
     default:
-      ec = ConfigErrc::backend_unknown;
-      return nullptr;
+      throw ConfigError("Unknown backend type");
   }
 }
 
@@ -224,11 +212,7 @@ AgentRegistry& AgentRegistry::Instance() {
 
 std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
-  std::error_code ec;
-  auto backend = config::CreateBackend(entry.backend, std::move(http), ec);
-  if (ec) {
-    throw std::runtime_error("Failed to create backend: " + ec.message());
-  }
+  auto backend = config::CreateBackend(entry.backend, std::move(http));
 
   auto tool_registry = std::make_unique<ToolRegistry>();
 

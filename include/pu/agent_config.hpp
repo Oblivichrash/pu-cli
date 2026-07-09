@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <system_error>
 
 namespace pu::backend { class Backend; }
 namespace pu::http { class HttpClient; }
@@ -47,11 +46,9 @@ struct AgentsConfig {
 };
 
 std::string FindConfigPath();
-AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec);
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
-                      std::error_code& ec);
+AgentsConfig LoadAgentsConfig(const std::string& config_path);
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::error_code& ec);
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config

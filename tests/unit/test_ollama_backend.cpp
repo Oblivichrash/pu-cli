@@ -24,9 +24,7 @@ TEST_CASE("OllamaBackend request building", "[ollama]") {
     {pu::backend::Message::Role::kUser, "Hello"}
   };
 
-  std::error_code ec;
-  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {}, ec);
-  REQUIRE_FALSE(ec);
+  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {});
 
   auto body = nlohmann::json::parse(mock_ptr->last_body);
   REQUIRE(body["model"] == "llama3.2:1b");
@@ -54,9 +52,7 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
   mock_ptr->simulate_response = [&](const std::string&,
                                     const std::string&,
                                     const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb,
-                                    std::error_code& ec) {
-    ec.clear();
+                                    pu::http::WriteCallback cb) {
     for (const auto& chunk : chunks) {
       std::string data = chunk + "\n";
       cb(data.data(), data.size());
@@ -71,7 +67,6 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
 
   std::string accumulated;
   bool final_received = false;
-  std::error_code ec;
 
   backend.Chat(history, [&](pu::backend::TokenType type,
                             std::string_view token,
@@ -83,9 +78,8 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
     if (is_final) {
       final_received = true;
     }
-  }, ec);
+  });
 
-  REQUIRE_FALSE(ec);
   REQUIRE(accumulated == "Hello world");
   REQUIRE(final_received == true);
   REQUIRE(mock_ptr->last_url == "http://localhost:11434/api/chat");
@@ -102,9 +96,7 @@ TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
   mock_ptr->simulate_response = [&](const std::string&,
                                     const std::string&,
                                     const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb,
-                                    std::error_code& ec) {
-    ec.clear();
+                                    pu::http::WriteCallback cb) {
     std::string data =
         R"({"message":{"content":"Running ls","tool_calls":[{"id":"1","function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})"
         + std::string("\n");
@@ -122,14 +114,11 @@ TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
   std::vector<pu::backend::ToolDefinition> tools = {tool};
 
   bool tool_fired = false;
-  std::error_code ec;
   backend.Chat(history, tools,
     [](TokenType, std::string_view, bool) {},
     [&](const ToolCall& call) {
       tool_fired = true;
       REQUIRE(call.name == "execute_bash");
-    },
-    ec);
-  REQUIRE_FALSE(ec);
+    });
   REQUIRE(tool_fired);
 }

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <algorithm>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <system_error>
+#include <algorithm>
 
 namespace pu::backend {
 
@@ -63,31 +62,34 @@ class Backend {
   Backend& operator=(Backend&&) noexcept = default;
 
   virtual void Chat(const std::vector<Message>& history,
-                    ChatCallback cb, std::error_code& ec) = 0;
+                    ChatCallback cb) = 0;
   virtual void Chat(const std::vector<Message>& history,
                     const std::vector<ToolDefinition>& tools,
-                    ChatCallback content_cb, ToolCallback tool_cb,
-                    std::error_code& ec) = 0;
+                    ChatCallback content_cb, ToolCallback tool_cb) = 0;
   virtual bool SupportsTools() const { return false; }
 
  protected:
+  Config config_;
+
   static std::vector<Message> InjectSystemPrompt(
       const std::vector<Message>& history,
-      const std::optional<std::string>& system_prompt) {
-    if (!system_prompt) return history;
-    if (std::any_of(history.begin(), history.end(), [](const Message& m) {
-          return m.role == Message::Role::kSystem;
-        })) {
-      return history;
-    }
-    std::vector<Message> messages;
-    messages.reserve(history.size() + 1);
-    messages.emplace_back(Message::Role::kSystem, *system_prompt);
-    messages.insert(messages.end(), history.begin(), history.end());
-    return messages;
-  }
-
-  Config config_;
+      const std::optional<std::string>& system_prompt);
 };
+
+inline std::vector<Message> Backend::InjectSystemPrompt(
+    const std::vector<Message>& history,
+    const std::optional<std::string>& system_prompt) {
+  if (!system_prompt) return history;
+  if (std::any_of(history.begin(), history.end(), [](const Message& m) {
+        return m.role == Message::Role::kSystem;
+      })) {
+    return history;
+  }
+  std::vector<Message> messages;
+  messages.reserve(history.size() + 1);
+  messages.emplace_back(Message::Role::kSystem, *system_prompt);
+  messages.insert(messages.end(), history.begin(), history.end());
+  return messages;
+}
 
 }  // namespace pu::backend

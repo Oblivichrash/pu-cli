@@ -20,9 +20,14 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   std::string cmd = argv[1];
-  if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1);
-  if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1);
-  if (cmd == "learn") return pu::cli::RunLearn(argc - 1, argv + 1);
+  try {
+    if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1);
+    if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1);
+    if (cmd == "learn") return pu::cli::RunLearn(argc - 1, argv + 1);
+  } catch (const std::exception& e) {
+    std::cerr << "Fatal error: " << e.what() << "\n";
+    return 1;
+  }
   std::cerr << "Unknown command: " << cmd << "\n";
   return 1;
 }
