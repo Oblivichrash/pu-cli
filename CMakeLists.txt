@@ -78,7 +78,10 @@ add_library(pu::backend ALIAS pu_backend)
 
 add_executable(pu
     src/app/main.cpp
-    src/app/cli.cpp
+    src/app/commands/ask.cpp
+    src/app/commands/chat.cpp
+    src/app/commands/learn.cpp
+    src/app/commands/common.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

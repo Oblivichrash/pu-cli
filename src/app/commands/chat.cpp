@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
+#include "common.hpp"
 
-#include "pu/agent.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/agent_factory.hpp"
 #include "pu/backend.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/context.hpp"
@@ -11,201 +9,17 @@
 #include "pu/stack.hpp"
 
 #include "agents/llm/llm_agent.hpp"
-#include "http/curl_http_client.hpp"
 
-#include <chrono>
 #include <cstdlib>
-#include <cstring>
-#include <ctime>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
-namespace {
-pu::backend::ChatCallback CreateStreamingRenderer(bool show_reasoning) {
-  bool first_reasoning = true;
-  return [show_reasoning, first_reasoning](pu::backend::TokenType type, std::string_view token,
-                                           bool is_final) mutable {
-    if (type == pu::backend::TokenType::kReasoning && show_reasoning) {
-      if (first_reasoning) { std::cerr << "[Thinking] "; first_reasoning = false; }
-      std::cerr << token << std::flush;
-      if (is_final) std::cerr << std::endl;
-      return;
-    }
-    if (type == pu::backend::TokenType::kContent) {
-      std::cout << token << std::flush;
-      if (is_final) std::cout << std::endl;
-    }
-  };
-}
-}  // namespace
-
 namespace pu::cli {
-
-namespace {
-
-struct AppContext {
-  config::AgentsConfig config;
-  agent::AgentManager manager;
-  std::string config_path;
-};
-
-AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning) {
-  AppContext ctx;
-  try {
-    ctx.config_path = config::FindConfigPath();
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    std::exit(1);
-  }
-
-  try {
-    ctx.config = config::LoadAgentsConfig(ctx.config_path);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load config: " << e.what() << "\n";
-    std::exit(1);
-  }
-
-  if (ctx.config.agents.empty()) {
-    std::cerr << "Error: no agents configured\n";
-    std::exit(1);
-  }
-
-  auto active_name = requested_agent.empty() ? ctx.config.default_agent : requested_agent;
-  bool active_found = false;
-
-  for (const auto& entry : ctx.config.agents) {
-    if (entry.name == active_name) active_found = true;
-    try {
-      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
-    } catch (const std::exception& e) {
-      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
-      std::exit(1);
-    }
-  }
-
-  if (!active_found) {
-    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
-    for (const auto& e : ctx.config.agents) std::cerr << "  " << e.name << "\n";
-    std::exit(1);
-  }
-
-  ctx.manager.SetActiveAgent(active_name);
-  if (show_reasoning) ctx.manager.SetShowReasoning(true);
-  return ctx;
-}
-
-inline std::string Trim(const std::string& s) {
-  auto start = s.find_first_not_of(" \t");
-  if (start == std::string::npos) return {};
-  auto end = s.find_last_not_of(" \t");
-  return s.substr(start, end - start + 1);
-}
-
-std::string CurrentTimestamp() {
-  auto now = std::chrono::system_clock::now();
-  auto in_time_t = std::chrono::system_clock::to_time_t(now);
-  std::ostringstream ss;
-  ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
-  return ss.str();
-}
-
-std::string GenerateId() {
-  auto now = std::chrono::high_resolution_clock::now();
-  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-  std::ostringstream ss;
-  ss << std::hex << nanos;
-  return "conv-" + ss.str();
-}
-
-void PrintAgents(const pu::config::AgentsConfig& config, const std::string& current) {
-  std::cout << "Available agents:\n";
-  for (const auto& entry : config.agents) {
-    std::cout << "  " << entry.name;
-    if (!entry.description.empty()) {
-      std::cout << " - " << entry.description;
-    }
-    if (entry.name == current) {
-      std::cout << " [current]";
-    }
-    std::cout << "\n";
-  }
-}
-
-void PrintConversationList(const std::vector<pu::Conversation>& convs) {
-  if (convs.empty()) {
-    std::cout << "No saved conversations.\n";
-    return;
-  }
-  for (const auto& c : convs) {
-    std::cout << "  " << c.id << " (" << c.messages.size() << " messages) created: " << c.created_at << "\n";
-  }
-}
-
-void PrintChatHelp() {
-  std::cout << "Available commands:\n"
-            << "  /help           Show this help\n"
-            << "  /exit, /quit    Exit interactive mode\n"
-            << "  /clear          Clear conversation history and agent lock\n"
-            << "  /agent <name>   Switch to different agent\n"
-            << "  /agents         List available agents\n"
-            << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
-            << "  /load <id>      Load a saved conversation\n"
-            << "  /list           List saved conversations\n"
-            << "  /export <id>    Export conversation to Markdown\n"
-            << "  /note add <text>  Add a note for current agent\n"
-            << "  /note show      Show notes for current agent\n"
-            << "  /reload-tools   Reload external Python tools\n";
-}
-
-} // namespace
-
-int RunAsk(int argc, char* argv[]) {
-  std::string requested_agent;
-  std::string prompt;
-  bool show_reasoning = false;
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cerr << "Usage: pu ask [--agent <name>] [--show-reasoning] <prompt>\n"
-                << "Options:\n"
-                << "  --agent <name>          Specify the agent to use\n"
-                << "  --show-reasoning        Show model's internal reasoning\n"
-                << "  -h, --help              Show this help message\n";
-      return 0;
-    } else if (arg == "--agent") {
-      if (i + 1 < argc) requested_agent = argv[++i];
-      else { std::cerr << "Error: --agent requires an argument\n"; return 1; }
-    } else if (arg == "--show-reasoning") {
-      show_reasoning = true;
-    } else if (prompt.empty()) {
-      prompt = arg;
-    } else {
-      std::cerr << "Error: unexpected argument '" << arg << "'\n";
-      return 1;
-    }
-  }
-
-  if (prompt.empty()) {
-    std::cerr << "Error: prompt is required\n";
-    return 1;
-  }
-
-  auto ctx = SetupAppContext(requested_agent, show_reasoning);
-  try {
-    ctx.manager.Dispatch(prompt);
-  } catch (const std::exception& e) {
-    std::cerr << "\nError: " << e.what() << "\n";
-    return 1;
-  }
-  return 0;
-}
 
 int RunChat(int argc, char* argv[]) {
   std::string initial_agent;
@@ -540,58 +354,6 @@ int RunChat(int argc, char* argv[]) {
 
   global_ctx->Save();
   std::cout << "\nGoodbye!\n";
-  return 0;
-}
-
-int RunLearn(int argc, char* argv[]) {
-  double threshold = 0.6;
-  int max_sessions = 10;
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cerr << "Usage: pu learn [--threshold <0.0-1.0>] [--max-sessions <N>]\n"
-                << "  Analyze successful conversations and generate new agent definitions.\n"
-                << "  Generated agents are saved to ~/.pu/generated/agents/\n";
-      return 0;
-    } else if (arg == "--threshold") {
-      if (i + 1 < argc) {
-        threshold = std::stod(argv[++i]);
-      } else {
-        std::cerr << "Error: --threshold requires a value\n";
-        return 1;
-      }
-    } else if (arg == "--max-sessions") {
-      if (i + 1 < argc) {
-        max_sessions = std::stoi(argv[++i]);
-      } else {
-        std::cerr << "Error: --max-sessions requires a number\n";
-        return 1;
-      }
-    } else {
-      std::cerr << "Error: unknown argument '" << arg << "'\n";
-      return 1;
-    }
-  }
-
-  const char* home = std::getenv("HOME");
-  auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
-  auto conv_dir = pu_dir / "conversations";
-  auto generated_dir = pu_dir / "generated" / "agents";
-
-  if (!std::filesystem::exists(conv_dir)) {
-    std::cerr << "No conversations found in " << conv_dir << "\n";
-    return 0;
-  }
-
-  std::filesystem::create_directories(generated_dir);
-
-  // Placeholder: iterate conversations, analyze, generate agents.
-  std::cout << "[Learn] Scanning " << conv_dir << " for sessions (threshold=" << threshold
-            << ", max=" << max_sessions << ")\n";
-  std::cout << "[Learn] Generated agents will be saved to " << generated_dir << "\n";
-  std::cout << "[Learn] (Implementation in progress)\n";
-
   return 0;
 }
 
