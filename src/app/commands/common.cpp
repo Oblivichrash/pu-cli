@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "common.hpp"
 #include "pu/agent_factory.hpp"
-#include "pu/agent_config.hpp"
+#include "core/agent_config.hpp"
 #include <cstdlib>
 #include <iostream>
 
@@ -34,7 +34,7 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   for (const auto& entry : ctx.config.agents) {
     if (entry.name == active_name) active_found = true;
     try {
-      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
+      ctx.manager.RegisterAgent(agent::CreateAgent(entry));
     } catch (const std::exception& e) {
       std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
       std::exit(1);

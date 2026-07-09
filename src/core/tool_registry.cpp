@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tool_registry.hpp"
-#include "pu/tools/python_tool.hpp"
+#include "core/tool_registry.hpp"
+#include "tools/python_tool.hpp"
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_config.hpp"
+#include "core/agent_config.hpp"
 #include "pu/agent_factory.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
@@ -9,9 +9,9 @@
 #include "core/error.hpp"
 #include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
-#include "pu/tools/execute_bash_tool.hpp"
-#include "pu/tools/write_file_tool.hpp"
-#include "pu/tools/create_tool.hpp"
+#include "tools/execute_bash_tool.hpp"
+#include "tools/write_file_tool.hpp"
+#include "tools/create_tool.hpp"
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <fstream>
@@ -205,12 +205,8 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
 
 namespace pu::agent {
 
-AgentRegistry& AgentRegistry::Instance() {
-  static AgentRegistry registry;
-  return registry;
-}
 
-std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& entry) {
+std::unique_ptr<BaseAgent> CreateAgent(const config::AgentEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
   auto backend = config::CreateBackend(entry.backend, std::move(http));
 

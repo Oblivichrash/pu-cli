@@ -3,9 +3,9 @@
 
 #include "pu/agent.hpp"
 #include "pu/backend.hpp"
-#include "pu/tool_registry.hpp"
+#include "core/tool_registry.hpp"
 #include "pu/conversation.hpp"
-#include "pu/agent_config.hpp"
+#include "core/agent_config.hpp"
 #include <memory>
 #include <optional>
 #include <string>

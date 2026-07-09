@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/create_tool.hpp"
+#include "tools/create_tool.hpp"
 #include <fstream>
 #include <filesystem>
 #include <regex>

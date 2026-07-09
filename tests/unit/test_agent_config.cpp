@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/agent_config.hpp"
+#include "core/agent_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/backend.hpp"
 #include "core/error.hpp"

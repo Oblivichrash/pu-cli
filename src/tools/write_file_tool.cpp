@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/write_file_tool.hpp"
+#include "tools/write_file_tool.hpp"
 #include <fstream>
 #include <filesystem>
 #include <nlohmann/json.hpp>
