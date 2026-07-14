@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "backends/common/streaming_json_parser.hpp"
+#include "backends/streaming_json_parser.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 #include <string>

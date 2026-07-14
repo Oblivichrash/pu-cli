@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "backends/request_builder.hpp"
 #include "ollama.hpp"
 #include "core/system.hpp"
 #include "core/error.hpp"
-#include "backends/common/streaming_json_parser.hpp"
+#include "backends/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
 
@@ -44,87 +45,17 @@ OllamaBackend::OllamaBackend(Config config, std::unique_ptr<pu::http::HttpClient
     : Backend(std::move(config)), host_(std::move(config.host)),
       api_key_(std::move(config.api_key)), http_(std::move(http)) {}
 
-std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
-  json req;
-  req["model"] = config_.model;
-  req["stream"] = true;
-  req["options"]["temperature"] = config_.temperature;
-
-  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
-  json messages = json::array();
-  for (const auto& msg : messages_history) {
-    std::string role;
-    switch (msg.role) {
-      case pu::backend::Message::Role::kUser: role = "user"; break;
-      case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
-      case pu::backend::Message::Role::kSystem: role = "system"; break;
-      case pu::backend::Message::Role::kTool: role = "tool"; break;
-    }
-    if (!role.empty()) messages.push_back({{"role", role}, {"content", msg.content}});
-  }
-  req["messages"] = messages;
-  return req.dump();
-}
-
-std::string OllamaBackend::BuildRequestWithTools(
-    const std::vector<pu::backend::Message>& history,
-    const std::vector<pu::backend::ToolDefinition>& tools) const {
-  json req;
-  req["model"] = config_.model;
-  req["stream"] = true;
-  req["options"]["temperature"] = config_.temperature;
-
-  auto messages_history = InjectSystemPrompt(history, config_.system_prompt);
-  json messages = json::array();
-  for (const auto& msg : messages_history) {
-    std::string role;
-    switch (msg.role) {
-      case pu::backend::Message::Role::kSystem: role = "system"; break;
-      case pu::backend::Message::Role::kUser: role = "user"; break;
-      case pu::backend::Message::Role::kAssistant: role = "assistant"; break;
-      case pu::backend::Message::Role::kTool: role = "tool"; break;
-    }
-    json m = {{"role", role}, {"content", msg.content}};
-    if (role == "tool") m["tool_name"] = msg.tool_name;
-    if (!msg.tool_calls.empty()) {
-      json tcs = json::array();
-      for (const auto& tc : msg.tool_calls) {
-        json func = {{"name", tc.name}};
-        if (!tc.arguments.empty()) {
-          try { func["arguments"] = json::parse(tc.arguments); }
-          catch (...) { func["arguments"] = tc.arguments; }
-        }
-        tcs.push_back({{"function", func}});
-      }
-      m["tool_calls"] = tcs;
-    }
-    messages.push_back(m);
-  }
-  req["messages"] = messages;
-
-  json tools_json = json::array();
-  for (const auto& tool : tools) {
-    json t;
-    t["type"] = "function";
-    t["function"]["name"] = tool.name;
-    t["function"]["description"] = tool.description;
-    try {
-      t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
-    } catch (const std::exception& e) {
-      std::cerr << "[OllamaBackend] Failed to parse schema for tool '" << tool.name
-                << "': " << e.what() << std::endl;
-      continue;
-    }
-    tools_json.push_back(t);
-  }
-  req["tools"] = tools_json;
-  return req.dump();
-}
-
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback cb) {
   pu::platform::ClearInterruptFlag();
-  auto body = BuildRequest(history);
+  auto req = RequestBuilder::BuildChatRequest(
+      pu::backends::BackendFlavor::kOllama,
+      config_.model,
+      config_.temperature,
+      history,
+      config_.system_prompt
+  );
+  std::string body = req.dump();
   std::string url = host_ + "/api/chat";
 
   std::vector<std::string> headers = {"Content-Type: application/json"};
@@ -152,7 +83,15 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          pu::backend::ChatCallback content_cb,
                          pu::backend::ToolCallback tool_cb) {
   pu::platform::ClearInterruptFlag();
-  auto body = BuildRequestWithTools(history, tools);
+  auto req = RequestBuilder::BuildChatRequestWithTools(
+      pu::backends::BackendFlavor::kOllama,
+      config_.model,
+      config_.temperature,
+      history,
+      config_.system_prompt,
+      tools
+  );
+  std::string body = req.dump();
   std::string url = host_ + "/api/chat";
 
   std::vector<std::string> headers = {"Content-Type: application/json"};

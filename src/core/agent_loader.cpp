@@ -7,7 +7,7 @@
 #include "backends/openai/openai.hpp"
 #include "core/system.hpp"
 #include "core/error.hpp"
-#include "agents/llm/llm_agent.hpp"
+#include "core/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
 #include "tools/execute_bash_tool.hpp"
 #include "tools/write_file_tool.hpp"

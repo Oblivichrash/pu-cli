@@ -8,7 +8,7 @@
 #include "pu/orchestrator.hpp"
 #include "pu/stack.hpp"
 
-#include "agents/llm/llm_agent.hpp"
+#include "core/llm_agent.hpp"
 
 #include <cstdlib>
 #include <filesystem>

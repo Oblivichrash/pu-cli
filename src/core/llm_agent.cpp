@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "agents/llm/llm_agent.hpp"
+#include "core/llm_agent.hpp"
 #include "pu/renderer.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>

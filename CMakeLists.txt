@@ -38,7 +38,7 @@ add_library(pu_agent STATIC
     src/core/tool_registry.cpp
     src/core/orchestrator.cpp
     src/core/renderer.cpp
-    src/agents/llm/llm_agent.cpp
+    src/core/llm_agent.cpp
     src/tools/execute_bash_tool.cpp
     src/tools/python_tool.cpp
     src/tools/create_tool.cpp
@@ -58,7 +58,8 @@ add_library(pu::agent ALIAS pu_agent)
 add_library(pu_backend STATIC
     src/backends/ollama/ollama.cpp
     src/backends/openai/openai.cpp
-    src/backends/common/streaming_json_parser.cpp
+    src/backends/streaming_json_parser.cpp
+    src/backends/request_builder.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
     src/core/agent_loader.cpp
@@ -78,10 +79,10 @@ add_library(pu::backend ALIAS pu_backend)
 
 add_executable(pu
     src/app/main.cpp
-    src/app/commands/ask.cpp
-    src/app/commands/chat.cpp
-    src/app/commands/learn.cpp
-    src/app/commands/common.cpp
+    src/app/ask.cpp
+    src/app/chat.cpp
+    src/app/learn.cpp
+    src/app/common.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

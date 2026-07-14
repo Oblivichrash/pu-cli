@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "backends/common/streaming_json_parser.hpp"
+#include "backends/streaming_json_parser.hpp"
 
 namespace pu::backends {
 

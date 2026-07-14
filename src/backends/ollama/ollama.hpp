@@ -27,10 +27,6 @@ public:
   bool SupportsTools() const override { return true; }
 
 private:
-  std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
-  std::string BuildRequestWithTools(const std::vector<pu::backend::Message>& history,
-                                    const std::vector<pu::backend::ToolDefinition>& tools) const;
-
   std::string host_;
   std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
