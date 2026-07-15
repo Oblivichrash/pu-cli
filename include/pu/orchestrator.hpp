@@ -4,8 +4,10 @@
 #include <memory>
 #include <string>
 
-#include "pu/context.hpp"
-#include "pu/stack.hpp"
+namespace pu {
+class GlobalContext;
+class CallStack;
+}
 
 namespace pu::agent {
 class AgentManager;

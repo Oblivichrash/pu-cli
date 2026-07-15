@@ -3,8 +3,6 @@
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
-#include "pu/context.hpp"
-#include "pu/stack.hpp"
 #include "core/system.hpp"
 
 #include <functional>
@@ -13,6 +11,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+namespace pu {
+class GlobalContext;
+class CallStack;
+}
 
 namespace pu::agent {
 

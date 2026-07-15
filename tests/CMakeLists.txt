@@ -7,7 +7,6 @@ add_executable(pu_tests
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
     unit/test_streaming_json_parser.cpp
-    unit/test_token_adapters.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

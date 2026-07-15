@@ -61,8 +61,6 @@ add_library(pu_backend STATIC
     src/backends/openai/openai.cpp
     src/backends/streaming_json_parser.cpp
     src/backends/request_builder.cpp
-    src/backends/ollama/ollama_token_adapter.cpp
-    src/backends/openai/openai_token_adapter.cpp
     src/core/global_context.cpp
     src/core/call_stack.cpp
     src/core/conversation_store.cpp

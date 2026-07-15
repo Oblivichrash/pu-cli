@@ -5,6 +5,8 @@
 #include <sstream>
 
 #include "pu/agent.hpp"
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
 
 namespace pu {
 

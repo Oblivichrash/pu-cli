@@ -3,6 +3,8 @@
 
 #include <iostream>
 
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
 namespace pu::agent {
 
 AgentManager::AgentManager() {}
