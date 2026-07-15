@@ -84,7 +84,7 @@ int RunChat(int argc, char* argv[]) {
   manager.SetCallStack(call_stack);
   pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
-  // Helper: prepare a full AgentContext for CLI use
+  // Helper: prepare a full AgentContext for CLI use (for summary generation etc.)
   auto makeCliContext = [&](const std::string& agent_name) -> pu::agent::AgentContext {
     pu::agent::AgentContext actx;
     actx.call_expert = [&manager](const std::string& name, const std::string& inp) {
@@ -371,17 +371,9 @@ int RunChat(int argc, char* argv[]) {
     notifyPanelMessage(panel_messages.back());
 
     try {
-      // Build context with recent messages and call the agent
-      auto actx = makeCliContext(actual_agent);
-      // Set recent panel messages for proactive scoring
-      std::vector<pu::ChatMessage> recent;
-      size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-      for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-        recent.push_back(panel_messages[i]);
-      }
-      actx.recent_panel_messages = recent;
-
-      std::string response = manager.ExecuteAgentWithContext(actual_agent, input, actx);
+      // Use Orchestrator to handle push/pop and stack-based loops,
+      // passing show_reasoning so that stacked agents respect the setting.
+      std::string response = orchestrator.Process(input, show_reasoning);
       if (!response.empty()) {
         panel_messages.push_back({++message_id, CurrentTimestamp(), actual_agent, response, ""});
         notifyPanelMessage(panel_messages.back());

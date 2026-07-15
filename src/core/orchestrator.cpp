@@ -54,7 +54,7 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
   return false;
 }
 
-std::string Orchestrator::Process(const std::string& input) {
+std::string Orchestrator::Process(const std::string& input, bool show_reasoning) {
   std::string current_input = input;
   std::string final_response;
 
@@ -67,7 +67,7 @@ std::string Orchestrator::Process(const std::string& input) {
     const StackFrame& top = stack_->Top();
     std::string agent_name = top.agent_name;
 
-    // Build a minimal context for stack-based calls
+    // Build context for stack-based calls
     agent::AgentContext ctx;
     auto* mgr = &manager_;
     ctx.call_expert = [mgr](const std::string& name, const std::string& inp) {
@@ -81,7 +81,9 @@ std::string Orchestrator::Process(const std::string& input) {
                                               : agent::ConfirmationChoice::kDeny;
     };
     ctx.working_dir = ".";
-    ctx.show_reasoning = false;
+    ctx.show_reasoning = show_reasoning;
+    // We don't set global_ctx or call_stack here; they are not needed in stack context
+    // (the agent will use the ones set in AgentManager if needed)
 
     std::string response = manager_.ExecuteAgentWithContext(agent_name, current_input, ctx);
 

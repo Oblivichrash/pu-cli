@@ -20,7 +20,7 @@ class Orchestrator {
                agent::AgentManager& manager);
 
   bool HandleCommand(const std::string& input, std::string& output);
-  std::string Process(const std::string& input);
+  std::string Process(const std::string& input, bool show_reasoning = false);
   void Push(const std::string& agent_name);
   void Pop();
   std::string ShowStack() const;
