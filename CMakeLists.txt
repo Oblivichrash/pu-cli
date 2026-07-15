@@ -39,6 +39,7 @@ add_library(pu_agent STATIC
     src/core/orchestrator.cpp
     src/core/renderer.cpp
     src/core/llm_agent.cpp
+    src/core/agent_loader.cpp
     src/tools/execute_bash_tool.cpp
     src/tools/python_tool.cpp
     src/tools/create_tool.cpp
@@ -50,11 +51,11 @@ target_include_directories(pu_agent PRIVATE
 )
 target_link_libraries(pu_agent
     PUBLIC  pu_backend_interface pu_system
-    PRIVATE pu_http nlohmann_json::nlohmann_json
+    PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json
 )
 add_library(pu::agent ALIAS pu_agent)
 
-# Backend implementations - depends on pu_agent because agent_loader.cpp creates tool instances
+# Backend implementations - no longer depends on pu_agent
 add_library(pu_backend STATIC
     src/backends/ollama/ollama.cpp
     src/backends/openai/openai.cpp
@@ -62,7 +63,6 @@ add_library(pu_backend STATIC
     src/backends/request_builder.cpp
     src/backends/ollama/ollama_token_adapter.cpp
     src/backends/openai/openai_token_adapter.cpp
-    src/core/agent_loader.cpp
     src/core/global_context.cpp
     src/core/call_stack.cpp
     src/core/conversation_store.cpp
@@ -73,7 +73,7 @@ target_include_directories(pu_backend PRIVATE
 )
 target_link_libraries(pu_backend
     PUBLIC  pu_backend_interface
-    PRIVATE pu_agent pu_http nlohmann_json::nlohmann_json pu_system
+    PRIVATE pu_http nlohmann_json::nlohmann_json pu_system
 )
 add_library(pu::backend ALIAS pu_backend)
 

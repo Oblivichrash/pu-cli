@@ -35,85 +35,12 @@ BaseAgent* AgentManager::GetAgent(const std::string& name) const {
   return it->second.get();
 }
 
-void AgentManager::SetShowReasoning(bool enable) {
-  show_reasoning_ = enable;
-}
-
-void AgentManager::SetRecentMessages(const std::vector<ChatMessage>& messages) {
-  recent_messages_ = messages;
-}
-
-void AgentManager::SetProactiveEnabled(bool enabled) {
-  proactive_enabled_ = enabled;
-}
-
-void AgentManager::SetProactiveThreshold(double threshold) {
-  proactive_threshold_ = threshold;
-  for (auto& [name, agent] : agents_) {
-    agent->SetProactiveThreshold(threshold);
-  }
-}
-
-void AgentManager::NotifyPanelMessage(const ChatMessage& msg) {
-  for (auto& [name, agent] : agents_) {
-    agent->OnPanelMessage(msg);
-  }
-}
-
-std::vector<std::pair<std::string, std::string>> AgentManager::CollectProactiveReplies() {
-  std::vector<std::pair<std::string, std::string>> replies;
-  if (!proactive_enabled_) {
-    return replies;
-  }
-  for (auto& [name, agent] : agents_) {
-    auto reply = agent->ProactiveReply();
-    if (reply) {
-      replies.emplace_back(name, *reply);
-    }
-  }
-  return replies;
-}
-
-void AgentManager::SetConfirmationCallback(ConfirmationCallback cb) {
-  confirmation_callback_ = std::move(cb);
-}
-
-void AgentManager::SetSystemPrompt(const std::string& agent_name,
-                                   const std::string& prompt) {
-  system_prompts_[agent_name] = prompt;
-}
-
 void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
   global_ctx_ = std::move(ctx);
 }
 
 void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
   call_stack_ = std::move(stack);
-}
-
-AgentContext AgentManager::PrepareContext(const std::string& agent_name) {
-  AgentContext ctx;
-  ctx.call_expert = [this](const std::string& name, const std::string& inp) {
-    return CallAgent(name, inp);
-  };
-  ctx.request_confirmation = confirmation_callback_ ? confirmation_callback_
-      : [](const ConfirmationRequest& req) {
-          std::cout << "[CONFIRM] " << req.description << " [y/N] ";
-          std::string answer;
-          std::getline(std::cin, answer);
-          return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
-                                                  : ConfirmationChoice::kDeny;
-        };
-  ctx.working_dir = ".";
-  ctx.show_reasoning = show_reasoning_;
-  ctx.recent_panel_messages = recent_messages_;
-  ctx.global_ctx = global_ctx_;
-  ctx.call_stack = call_stack_;
-  auto prompt_it = system_prompts_.find(agent_name);
-  if (prompt_it != system_prompts_.end() && !prompt_it->second.empty()) {
-    ctx.system_prompt = prompt_it->second;
-  }
-  return ctx;
 }
 
 std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
@@ -124,6 +51,24 @@ std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
     return "Agent not found: " + agent_name;
   }
   return it->second->Handle(input, ctx);
+}
+
+// Helper to create a minimal default context for simple calls
+static AgentContext MakeDefaultContext(AgentManager* self) {
+  AgentContext ctx;
+  ctx.call_expert = [self](const std::string& name, const std::string& inp) {
+    return self->CallAgent(name, inp);
+  };
+  ctx.request_confirmation = [](const ConfirmationRequest& req) {
+    std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                            : ConfirmationChoice::kDeny;
+  };
+  ctx.working_dir = ".";
+  ctx.show_reasoning = false;
+  return ctx;
 }
 
 std::string AgentManager::Dispatch(const std::string& input) {
@@ -158,7 +103,7 @@ std::string AgentManager::Dispatch(const std::string& input) {
     active_agent_ = it->first;
   }
 
-  AgentContext ctx = PrepareContext(it->first);
+  AgentContext ctx = MakeDefaultContext(this);
   std::cout << "\n[" << it->first << "] " << std::flush;
   return it->second->Handle(message, ctx);
 }
@@ -169,7 +114,7 @@ std::string AgentManager::CallAgent(const std::string& agent_name, const std::st
     return "Agent not found: " + agent_name;
   }
 
-  AgentContext ctx = PrepareContext(agent_name);
+  AgentContext ctx = MakeDefaultContext(this);
   return it->second->Handle(input, ctx);
 }
 

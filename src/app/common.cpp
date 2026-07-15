@@ -9,6 +9,7 @@ namespace pu::cli {
 
 AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning) {
   AppContext ctx;
+  ctx.show_reasoning = show_reasoning;
   try {
     ctx.config_path = config::FindConfigPath();
   } catch (const std::exception& e) {
@@ -48,7 +49,6 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   }
 
   ctx.manager.SetActiveAgent(active_name);
-  if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;
 }
 

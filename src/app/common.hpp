@@ -18,6 +18,7 @@ struct AppContext {
     config::AgentsConfig config;
     agent::AgentManager manager;
     std::string config_path;
+    bool show_reasoning = false;
 };
 
 AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning);

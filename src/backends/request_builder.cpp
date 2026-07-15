@@ -11,22 +11,6 @@ namespace pu::backends {
 
 using json = nlohmann::json;
 
-static std::vector<pu::backend::Message> InjectSystemPrompt(
-    const std::vector<pu::backend::Message>& history,
-    const std::optional<std::string>& system_prompt) {
-  if (!system_prompt) return history;
-  if (std::any_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
-        return m.role == pu::backend::Message::Role::kSystem;
-      })) {
-    return history;
-  }
-  std::vector<pu::backend::Message> messages;
-  messages.reserve(history.size() + 1);
-  messages.emplace_back(pu::backend::Message::Role::kSystem, *system_prompt);
-  messages.insert(messages.end(), history.begin(), history.end());
-  return messages;
-}
-
 std::string RequestBuilder::RoleToString(pu::backend::Message::Role role) {
   switch (role) {
     case pu::backend::Message::Role::kSystem:    return "system";
@@ -146,7 +130,7 @@ json RequestBuilder::BuildChatRequest(
     req["temperature"] = temperature;
   }
 
-  auto messages_history = InjectSystemPrompt(history, system_prompt);
+  auto messages_history = pu::backend::Backend::InjectSystemPrompt(history, system_prompt);
 
   if (flavor == BackendFlavor::kOllama) {
     req["messages"] = BuildMessagesJsonOllama(messages_history);
@@ -175,7 +159,7 @@ json RequestBuilder::BuildChatRequestWithTools(
     req["temperature"] = temperature;
   }
 
-  auto messages_history = InjectSystemPrompt(history, system_prompt);
+  auto messages_history = pu::backend::Backend::InjectSystemPrompt(history, system_prompt);
 
   if (flavor == BackendFlavor::kOllama) {
     req["messages"] = BuildMessagesJsonOllama(messages_history);

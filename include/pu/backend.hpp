@@ -71,11 +71,14 @@ class Backend {
  protected:
   Config config_;
 
+  // Public static utility so RequestBuilder and Backend subclasses can both use it
+ public:
   static std::vector<Message> InjectSystemPrompt(
       const std::vector<Message>& history,
       const std::optional<std::string>& system_prompt);
 };
 
+// Shared implementation as a free function to avoid duplication
 inline std::vector<Message> Backend::InjectSystemPrompt(
     const std::vector<Message>& history,
     const std::optional<std::string>& system_prompt) {

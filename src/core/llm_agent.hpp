@@ -30,10 +30,11 @@ class LLMAgent : public agent::BaseAgent {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
-  void OnPanelMessage(const ChatMessage& msg) override;
-  std::optional<std::string> ProactiveReply() override;
-  double EvaluateRelevance(const ChatMessage& msg) override;
-  void SetProactiveThreshold(double threshold) override;
+  // LLMAgent-specific methods (non-virtual, not in BaseAgent interface)
+  void OnPanelMessage(const ChatMessage& msg);
+  std::optional<std::string> ProactiveReply();
+  double EvaluateRelevance(const ChatMessage& msg);
+  void SetProactiveThreshold(double threshold);
 
   void ReloadExternalTools();
 

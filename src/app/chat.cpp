@@ -64,46 +64,86 @@ int RunChat(int argc, char* argv[]) {
   };
   auto confirm_state = std::make_shared<ConfirmationState>();
 
-  manager.SetConfirmationCallback([confirm_state](const pu::agent::ConfirmationRequest& req) {
-    if (confirm_state->deny_all) return pu::agent::ConfirmationChoice::kDenyAll;
-    if (confirm_state->auto_approve_safe && req.highest_risk == pu::executor::RiskLevel::kSafe) {
-      return pu::agent::ConfirmationChoice::kApproveOnce;
-    }
-
-    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    if (answer == "a") {
-      confirm_state->auto_approve_safe = true;
-      return (req.highest_risk == pu::executor::RiskLevel::kSafe)
-                 ? pu::agent::ConfirmationChoice::kApproveOnce
-                 : pu::agent::ConfirmationChoice::kDeny;
-    }
-    if (answer == "s") {
-      confirm_state->deny_all = true;
-      return pu::agent::ConfirmationChoice::kDenyAll;
-    }
-    return (answer == "y" || answer == "Y") ? pu::agent::ConfirmationChoice::kApproveOnce
-                                            : pu::agent::ConfirmationChoice::kDeny;
-  });
-
+  // Build system prompts map from global context summaries
+  std::unordered_map<std::string, std::string> system_prompts;
   auto global_ctx = pu::GlobalContext::Create(pu_dir);
   global_ctx->Load();
-
-  auto call_stack = std::make_shared<pu::CallStack>();
-  manager.SetGlobalContext(global_ctx);
-  manager.SetCallStack(call_stack);
-  pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
   for (const auto& entry : config.agents) {
     auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
     if (summary_opt && summary_opt->is_string()) {
       std::string summary = summary_opt->get<std::string>();
       if (!summary.empty()) {
-        manager.SetSystemPrompt(entry.name, summary);
+        system_prompts[entry.name] = summary;
       }
     }
   }
+
+  auto call_stack = std::make_shared<pu::CallStack>();
+  manager.SetGlobalContext(global_ctx);
+  manager.SetCallStack(call_stack);
+  pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
+
+  // Helper: prepare a full AgentContext for CLI use
+  auto makeCliContext = [&](const std::string& agent_name) -> pu::agent::AgentContext {
+    pu::agent::AgentContext actx;
+    actx.call_expert = [&manager](const std::string& name, const std::string& inp) {
+      return manager.CallAgent(name, inp);
+    };
+    actx.request_confirmation = [confirm_state](const pu::agent::ConfirmationRequest& req) {
+      if (confirm_state->deny_all) return pu::agent::ConfirmationChoice::kDenyAll;
+      if (confirm_state->auto_approve_safe && req.highest_risk == pu::executor::RiskLevel::kSafe) {
+        return pu::agent::ConfirmationChoice::kApproveOnce;
+      }
+      std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      if (answer == "a") {
+        confirm_state->auto_approve_safe = true;
+        return (req.highest_risk == pu::executor::RiskLevel::kSafe)
+                   ? pu::agent::ConfirmationChoice::kApproveOnce
+                   : pu::agent::ConfirmationChoice::kDeny;
+      }
+      if (answer == "s") {
+        confirm_state->deny_all = true;
+        return pu::agent::ConfirmationChoice::kDenyAll;
+      }
+      return (answer == "y" || answer == "Y") ? pu::agent::ConfirmationChoice::kApproveOnce
+                                              : pu::agent::ConfirmationChoice::kDeny;
+    };
+    actx.working_dir = ".";
+    actx.show_reasoning = show_reasoning;
+
+    auto prompt_it = system_prompts.find(agent_name);
+    if (prompt_it != system_prompts.end() && !prompt_it->second.empty()) {
+      actx.system_prompt = prompt_it->second;
+    }
+    return actx;
+  };
+
+  // Helper: notify all LLMAgents of a panel message
+  auto notifyPanelMessage = [&](const pu::ChatMessage& msg) {
+    for (const auto& entry : config.agents) {
+      auto* ba = manager.GetAgent(entry.name);
+      if (!ba) continue;
+      auto* la = dynamic_cast<agents::LLMAgent*>(ba);
+      if (la) la->OnPanelMessage(msg);
+    }
+  };
+
+  // Helper: collect proactive replies from all LLMAgents
+  auto collectProactiveReplies = [&]() -> std::vector<std::pair<std::string, std::string>> {
+    std::vector<std::pair<std::string, std::string>> replies;
+    for (const auto& entry : config.agents) {
+      auto* ba = manager.GetAgent(entry.name);
+      if (!ba) continue;
+      auto* la = dynamic_cast<agents::LLMAgent*>(ba);
+      if (!la) continue;
+      auto opt = la->ProactiveReply();
+      if (opt) replies.emplace_back(entry.name, *opt);
+    }
+    return replies;
+  };
 
   std::cout << "[INFO] Connected to agent: " << current_name;
   const auto* entry_ptr = [&]() -> const pu::config::AgentEntry* {
@@ -206,7 +246,8 @@ int RunChat(int argc, char* argv[]) {
           }
 
           try {
-            auto summary = manager.CallAgent(current_name, summary_prompt.str());
+            auto actx = makeCliContext(current_name);
+            auto summary = manager.ExecuteAgentWithContext(current_name, summary_prompt.str(), actx);
             if (!summary.empty()) {
               std::cout << "\n[Memory] Generated summary for '" << current_name << "':\n"
                         << summary << "\n\n"
@@ -327,24 +368,28 @@ int RunChat(int argc, char* argv[]) {
     }
 
     panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
-    manager.NotifyPanelMessage(panel_messages.back());
+    notifyPanelMessage(panel_messages.back());
 
     try {
-      std::string response = orchestrator.Process(input);
+      // Build context with recent messages and call the agent
+      auto actx = makeCliContext(actual_agent);
+      // Set recent panel messages for proactive scoring
+      std::vector<pu::ChatMessage> recent;
+      size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
+      for (size_t i = start_idx; i < panel_messages.size(); ++i) {
+        recent.push_back(panel_messages[i]);
+      }
+      actx.recent_panel_messages = recent;
+
+      std::string response = manager.ExecuteAgentWithContext(actual_agent, input, actx);
       if (!response.empty()) {
         panel_messages.push_back({++message_id, CurrentTimestamp(), actual_agent, response, ""});
-        manager.NotifyPanelMessage(panel_messages.back());
+        notifyPanelMessage(panel_messages.back());
 
-        std::vector<pu::ChatMessage> recent;
-        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-          recent.push_back(panel_messages[i]);
-        }
-        manager.SetRecentMessages(recent);
-        for (auto& [agent, text] : manager.CollectProactiveReplies()) {
+        for (auto& [agent, text] : collectProactiveReplies()) {
           panel_messages.push_back({++message_id, CurrentTimestamp(), agent, text, ""});
           std::cout << "\n[" << agent << "] " << text << std::endl;
-          manager.NotifyPanelMessage(panel_messages.back());
+          notifyPanelMessage(panel_messages.back());
         }
       }
     } catch (const std::exception& e) {

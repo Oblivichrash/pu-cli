@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/orchestrator.hpp"
 
+#include <iostream>
 #include <sstream>
 
 #include "pu/agent.hpp"
@@ -66,7 +67,22 @@ std::string Orchestrator::Process(const std::string& input) {
     const StackFrame& top = stack_->Top();
     std::string agent_name = top.agent_name;
 
-    agent::AgentContext ctx = manager_.PrepareContext(agent_name);
+    // Build a minimal context for stack-based calls
+    agent::AgentContext ctx;
+    auto* mgr = &manager_;
+    ctx.call_expert = [mgr](const std::string& name, const std::string& inp) {
+      return mgr->CallAgent(name, inp);
+    };
+    ctx.request_confirmation = [](const agent::ConfirmationRequest& req) {
+      std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+      std::string answer;
+      std::getline(std::cin, answer);
+      return (answer == "y" || answer == "Y") ? agent::ConfirmationChoice::kApproveOnce
+                                              : agent::ConfirmationChoice::kDeny;
+    };
+    ctx.working_dir = ".";
+    ctx.show_reasoning = false;
+
     std::string response = manager_.ExecuteAgentWithContext(agent_name, current_input, ctx);
 
     if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
