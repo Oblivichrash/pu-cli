@@ -16,8 +16,7 @@ class CurlHttpClient : public HttpClient {
   CurlHttpClient& operator=(const CurlHttpClient&) = delete;
 
   void PostStream(const std::string& url, const std::string& body,
-                  const std::vector<std::string>& headers, WriteCallback write_cb,
-                  std::error_code& ec) override;
+                  const std::vector<std::string>& headers, WriteCallback write_cb) override;
   void SetInterruptChecker(std::function<bool()> checker) override;
 
  private:

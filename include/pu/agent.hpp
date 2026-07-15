@@ -3,9 +3,7 @@
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
-#include "pu/context.hpp"
-#include "pu/stack.hpp"
-#include "executor/command_executor.hpp"
+#include "core/system.hpp"
 
 #include <functional>
 #include <memory>
@@ -13,6 +11,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+namespace pu {
+class GlobalContext;
+class CallStack;
+}
 
 namespace pu::agent {
 
@@ -61,11 +64,6 @@ class BaseAgent {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
-
-  virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
-  virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
-  virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
-  virtual void SetProactiveThreshold([[maybe_unused]] double threshold) {}
 };
 
 class AgentManager {
@@ -74,26 +72,15 @@ class AgentManager {
 
   void RegisterAgent(std::unique_ptr<BaseAgent> agent);
   std::string Dispatch(const std::string& input);
-  std::string CallAgent(const std::string& expert_name, const std::string& input);
+  std::string CallAgent(const std::string& agent_name, const std::string& input);
   void ClearSessions();
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
-  void SetShowReasoning(bool enable);
-  void SetRecentMessages(const std::vector<ChatMessage>& messages);
-  void SetProactiveEnabled(bool enabled);
-  void SetProactiveThreshold(double threshold);
-  void NotifyPanelMessage(const ChatMessage& msg);
-  std::vector<std::pair<std::string, std::string>> CollectProactiveReplies();
-  void SetConfirmationCallback(ConfirmationCallback cb);
-  void SetSystemPrompt(const std::string& expert_name, const std::string& prompt);
+  BaseAgent* GetAgent(const std::string& name) const;
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
   void SetCallStack(std::shared_ptr<CallStack> stack);
 
-  AgentContext PrepareContext(const std::string& agent_name);
-  BaseAgent* GetExpert(const std::string& name) const;
-  std::string ExecuteAgentWithContext(const std::string& agent_name,
-                                      const std::string& input,
-                                      AgentContext& ctx);
+  std::string ExecuteAgentWithContext(const std::string& agent_name, const std::string& input, AgentContext& ctx);
 
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
   void RestoreAgents(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
@@ -101,12 +88,6 @@ class AgentManager {
  private:
   std::unordered_map<std::string, std::unique_ptr<BaseAgent>> agents_;
   std::string active_agent_;
-  bool show_reasoning_ = false;
-  bool proactive_enabled_ = false;
-  double proactive_threshold_ = 0.6;
-  std::vector<ChatMessage> recent_messages_;
-  ConfirmationCallback confirmation_callback_;
-  std::unordered_map<std::string, std::string> system_prompts_;
   std::shared_ptr<GlobalContext> global_ctx_;
   std::shared_ptr<CallStack> call_stack_;
 };

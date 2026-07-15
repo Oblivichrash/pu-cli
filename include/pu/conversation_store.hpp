@@ -5,17 +5,16 @@
 #include <filesystem>
 #include <string>
 #include <vector>
-#include <system_error>
 
 namespace pu {
 
 class ConversationStore {
  public:
   explicit ConversationStore(std::filesystem::path storage_dir);
-  void Save(const Conversation& conv, std::error_code& ec);
-  Conversation Load(const std::string& id, std::error_code& ec) const;
+  void Save(const Conversation& conv);
+  Conversation Load(const std::string& id) const;
   std::vector<Conversation> List() const;
-  std::string ExportMarkdown(const std::string& id, std::error_code& ec) const;
+  std::string ExportMarkdown(const std::string& id) const;
 
  private:
   std::filesystem::path dir_;

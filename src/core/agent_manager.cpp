@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#include "pu/agent.hpp"
+
+#include <iostream>
+
+#include "pu/context.hpp"
+#include "pu/stack.hpp"
+namespace pu::agent {
+
+AgentManager::AgentManager() {}
+
+void AgentManager::RegisterAgent(std::unique_ptr<BaseAgent> agent) {
+  if (!agent) {
+    return;
+  }
+  std::string name = agent->Name();
+  if (agents_.count(name)) {
+    std::cerr << "[AgentManager] Duplicate agent name: " << name << "\n";
+    return;
+  }
+  agents_[name] = std::move(agent);
+}
+
+void AgentManager::SetActiveAgent(const std::string& name) {
+  if (agents_.count(name)) {
+    active_agent_ = name;
+  }
+}
+
+std::string AgentManager::GetActiveAgent() const {
+  return active_agent_;
+}
+
+BaseAgent* AgentManager::GetAgent(const std::string& name) const {
+  auto it = agents_.find(name);
+  if (it == agents_.end()) return nullptr;
+  return it->second.get();
+}
+
+void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
+  global_ctx_ = std::move(ctx);
+}
+
+void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
+  call_stack_ = std::move(stack);
+}
+
+std::string AgentManager::ExecuteAgentWithContext(const std::string& agent_name,
+                                                  const std::string& input,
+                                                  AgentContext& ctx) {
+  auto it = agents_.find(agent_name);
+  if (it == agents_.end()) {
+    return "Agent not found: " + agent_name;
+  }
+  return it->second->Handle(input, ctx);
+}
+
+// Helper to create a minimal default context for simple calls
+static AgentContext MakeDefaultContext(AgentManager* self) {
+  AgentContext ctx;
+  ctx.call_expert = [self](const std::string& name, const std::string& inp) {
+    return self->CallAgent(name, inp);
+  };
+  ctx.request_confirmation = [](const ConfirmationRequest& req) {
+    std::cout << "[CONFIRM] " << req.description << " [y/N] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                            : ConfirmationChoice::kDeny;
+  };
+  ctx.working_dir = ".";
+  ctx.show_reasoning = false;
+  return ctx;
+}
+
+std::string AgentManager::Dispatch(const std::string& input) {
+  if (agents_.empty()) {
+    return "No agents available.";
+  }
+
+  std::string target = active_agent_;
+  std::string message = input;
+
+  if (!input.empty() && input[0] == '@') {
+    size_t space_pos = input.find(' ');
+    if (space_pos != std::string::npos) {
+      target = input.substr(1, space_pos - 1);
+      message = input.substr(space_pos + 1);
+    } else {
+      return "";
+    }
+  } else if (target.empty()) {
+    target = "chat";
+  }
+
+  auto it = agents_.find(target);
+  if (it == agents_.end()) {
+    it = agents_.find("chat");
+    if (it == agents_.end()) {
+      it = agents_.begin();
+    }
+  }
+
+  if (active_agent_.empty() && input[0] != '@') {
+    active_agent_ = it->first;
+  }
+
+  AgentContext ctx = MakeDefaultContext(this);
+  std::cout << "\n[" << it->first << "] " << std::flush;
+  return it->second->Handle(message, ctx);
+}
+
+std::string AgentManager::CallAgent(const std::string& agent_name, const std::string& input) {
+  auto it = agents_.find(agent_name);
+  if (it == agents_.end()) {
+    return "Agent not found: " + agent_name;
+  }
+
+  AgentContext ctx = MakeDefaultContext(this);
+  return it->second->Handle(input, ctx);
+}
+
+void AgentManager::ClearSessions() {
+  for (auto& [name, agent] : agents_) {
+    agent->ResetSession();
+  }
+  active_agent_.clear();
+}
+
+std::unordered_map<std::string, std::vector<ChatMessage>> AgentManager::SnapshotAgents() const {
+  std::unordered_map<std::string, std::vector<ChatMessage>> result;
+  for (const auto& [name, agent] : agents_) {
+    result[name] = agent->SaveState();
+  }
+  return result;
+}
+
+void AgentManager::RestoreAgents(
+    const std::unordered_map<std::string, std::vector<ChatMessage>>& states) {
+  for (const auto& [name, messages] : states) {
+    auto it = agents_.find(name);
+    if (it != agents_.end()) {
+      it->second->LoadState(messages);
+    }
+  }
+}
+
+}  // namespace pu::agent

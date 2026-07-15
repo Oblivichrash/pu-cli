@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "curl_http_client.hpp"
-#include "platform/platform.hpp"
-#include "pu/error_codes.hpp"
+#include "http/curl_http_client.hpp"
+#include "core/system.hpp"
+#include "core/error.hpp"
 #include <curl/curl.h>
 #include <stdexcept>
 
@@ -36,8 +36,7 @@ static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,
-                                WriteCallback write_cb, std::error_code& ec) {
-  ec.clear();
+                                WriteCallback write_cb) {
   curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, body.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
@@ -53,14 +52,16 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
 
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
-    ec = (interrupt_checker_ && interrupt_checker_()) ? HttpErrc::interrupted
-                                                      : HttpErrc::connection_failed;
-    curl_easy_reset(handle_);
-    return;
+    if (interrupt_checker_ && interrupt_checker_()) {
+      throw HttpError("Request interrupted");
+    }
+    throw HttpError(std::string("HTTP connection failed: ") + curl_easy_strerror(res));
   }
   long http_code = 0;
   curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
-  if (http_code >= 400) ec = HttpErrc::http_error;
+  if (http_code >= 400) {
+    throw HttpError(std::string("HTTP error response: ") + std::to_string(http_code));
+  }
   curl_easy_reset(handle_);
 }
 
