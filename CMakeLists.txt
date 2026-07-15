@@ -11,16 +11,8 @@ add_library(pu_backend_interface INTERFACE)
 target_include_directories(pu_backend_interface INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_link_libraries(pu_backend_interface INTERFACE nlohmann_json::nlohmann_json)
 add_library(pu::backend_interface ALIAS pu_backend_interface)
-
-add_library(pu_system STATIC
-    src/core/system.cpp
-)
-target_include_directories(pu_system PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-add_library(pu::system ALIAS pu_system)
 
 add_library(pu_http STATIC
     src/http/curl_http_client.cpp
@@ -32,7 +24,34 @@ target_include_directories(pu_http PRIVATE
 target_link_libraries(pu_http PUBLIC CURL::libcurl pu_system)
 add_library(pu::http ALIAS pu_http)
 
-# Tool implementations and agent core
+add_library(pu_system STATIC
+    src/core/system.cpp
+)
+target_include_directories(pu_system PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_library(pu::system ALIAS pu_system)
+
+add_library(pu_backend STATIC
+    src/backends/ollama/ollama.cpp
+    src/backends/openai/openai.cpp
+    src/backends/streaming_json_parser.cpp
+    src/backends/request_builder.cpp
+    src/core/global_context.cpp
+    src/core/call_stack.cpp
+    src/core/conversation_store.cpp
+)
+target_include_directories(pu_backend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(pu_backend
+    PUBLIC  pu_backend_interface
+    PRIVATE pu_http pu_system
+)
+add_library(pu::backend ALIAS pu_backend)
+
 add_library(pu_agent STATIC
     src/core/agent_manager.cpp
     src/core/tool_registry.cpp
@@ -51,29 +70,9 @@ target_include_directories(pu_agent PRIVATE
 )
 target_link_libraries(pu_agent
     PUBLIC  pu_backend_interface pu_system
-    PRIVATE pu_backend pu_http nlohmann_json::nlohmann_json
+    PRIVATE pu_backend pu_http
 )
 add_library(pu::agent ALIAS pu_agent)
-
-# Backend implementations - no longer depends on pu_agent
-add_library(pu_backend STATIC
-    src/backends/ollama/ollama.cpp
-    src/backends/openai/openai.cpp
-    src/backends/streaming_json_parser.cpp
-    src/backends/request_builder.cpp
-    src/core/global_context.cpp
-    src/core/call_stack.cpp
-    src/core/conversation_store.cpp
-)
-target_include_directories(pu_backend PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-target_link_libraries(pu_backend
-    PUBLIC  pu_backend_interface
-    PRIVATE pu_http nlohmann_json::nlohmann_json pu_system
-)
-add_library(pu::backend ALIAS pu_backend)
 
 add_executable(pu
     src/app/main.cpp
@@ -85,7 +84,6 @@ add_executable(pu
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-# Link order: dependents before dependencies
 target_link_libraries(pu PRIVATE pu_backend pu_agent pu_http pu_system)
 
 if(MSVC)
@@ -110,4 +108,3 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pu)
