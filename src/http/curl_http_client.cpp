@@ -29,15 +29,27 @@ int CurlHttpClient::ProgressCallback(void* clientp, curl_off_t, curl_off_t,
   return 0;
 }
 
+// Wrapper struct to pass both the user callback and response_body ref to curl
+struct WriteContext {
+  WriteCallback cb;
+  std::string* body;
+};
+
 static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userdata) {
-  auto& cb = *static_cast<WriteCallback*>(userdata);
-  return cb(ptr, size * nmemb);
+  auto* ctx = static_cast<WriteContext*>(userdata);
+  size_t bytes = size * nmemb;
+  // Also accumulate for error reporting
+  if (ctx->body) ctx->body->append(ptr, bytes);
+  return ctx->cb(ptr, bytes);
 }
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,
                                 WriteCallback write_cb, std::error_code& ec) {
   ec.clear();
+  error_detail_.clear();
+  response_body_.clear();
+
   curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, body.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
@@ -45,23 +57,44 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   CurlSlist slist;
   for (const auto& h : headers) slist.append(h.c_str());
   curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, slist.list);
+
+  WriteContext ctx{write_cb, &response_body_};
   curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, WriteCallbackTrampoline);
-  curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &write_cb);
+  curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &ctx);
   curl_easy_setopt(handle_, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(handle_, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
   curl_easy_setopt(handle_, CURLOPT_XFERINFODATA, this);
 
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
+    std::string detail;
+    if (response_body_.size() > 1024) {
+      detail = response_body_.substr(0, 1024) + "... [truncated]";
+    } else {
+      detail = response_body_;
+    }
     ec = (interrupt_checker_ && interrupt_checker_()) ? HttpErrc::interrupted
                                                       : HttpErrc::connection_failed;
+    error_detail_ = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res) +
+                    (detail.empty() ? "" : ", response: " + detail);
     curl_easy_reset(handle_);
     return;
   }
   long http_code = 0;
   curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
-  if (http_code >= 400) ec = HttpErrc::http_error;
+  if (http_code >= 400) {
+    std::string detail;
+    if (response_body_.size() > 1024) {
+      detail = response_body_.substr(0, 1024) + "... [truncated]";
+    } else {
+      detail = response_body_;
+    }
+    ec = HttpErrc::http_error;
+    error_detail_ = "HTTP error " + std::to_string(http_code) + ": " + detail;
+  }
   curl_easy_reset(handle_);
 }
+
+std::string CurlHttpClient::GetErrorDetail() const { return error_detail_; }
 
 }  // namespace pu::http

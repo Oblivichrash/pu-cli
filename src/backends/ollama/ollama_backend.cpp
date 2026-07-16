@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "backends/ollama/ollama_backend.hpp"
 #include "pu/backend_helpers.hpp"
+#include "pu/error_codes.hpp"
 #include "platform/platform.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
@@ -110,7 +111,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
         adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [&ec](const std::string& msg) { if (!ec) ec = pu::HttpErrc::http_error; }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
@@ -139,7 +140,7 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
         adapter_->HandleJson(j, content_cb, tool_cb);
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [&ec](const std::string& msg) { if (!ec) ec = pu::HttpErrc::http_error; }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);

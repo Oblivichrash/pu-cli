@@ -36,6 +36,7 @@ class OllamaBackend : public pu::backend::Backend {
   std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
   std::unique_ptr<ITokenAdapter> adapter_;
+  std::string error_detail_;
 };
 
 }  // namespace pu::backends::ollama

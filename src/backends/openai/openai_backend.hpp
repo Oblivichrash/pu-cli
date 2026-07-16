@@ -38,6 +38,7 @@ class OpenAIBackend : public pu::backend::Backend {
   std::string host_;
   std::string api_key_;
   std::unique_ptr<ITokenAdapter> adapter_;
+  std::string error_detail_;
 };
 
 }  // namespace pu::backends::openai

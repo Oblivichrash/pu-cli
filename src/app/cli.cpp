@@ -415,8 +415,12 @@ int RunChat(int argc, char* argv[]) {
           std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
         }
       } else if (input == "/list") {
-        auto convs = store.List();
+        std::vector<std::string> errors;
+        auto convs = store.List(errors);
         PrintConversationList(convs);
+        for (const auto& err : errors) {
+          std::cout << "  [Warning] " << err << "\n";
+        }
       } else if (input.rfind("/export ", 0) == 0) {
         std::string export_id = Trim(input.substr(8));
         if (export_id.empty()) {

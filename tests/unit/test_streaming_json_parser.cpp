@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/common/streaming_json_parser.hpp"
-#include "pu/error_codes.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 #include <string>
@@ -12,7 +11,7 @@ TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
   std::vector<std::string> lines;
   auto parser = StreamingJsonParser(
     [&](std::string_view line) { lines.emplace_back(line); },
-    [](std::error_code) {}
+    [](const std::string&) {}
   );
 
   const char* input = "line1\nline2\nline3\n";
@@ -27,7 +26,7 @@ TEST_CASE("StreamingJsonParser handles \\r\\n", "[streaming_parser]") {
   std::vector<std::string> lines;
   auto parser = StreamingJsonParser(
     [&](std::string_view line) { lines.emplace_back(line); },
-    [](std::error_code) {}
+    [](const std::string&) {}
   );
 
   parser.Feed("hello\r\nworld\r\n", 14);
@@ -40,7 +39,7 @@ TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") 
   std::vector<std::string> lines;
   auto parser = StreamingJsonParser(
     [&](std::string_view line) { lines.emplace_back(line); },
-    [](std::error_code) {}
+    [](const std::string&) {}
   );
 
   const char* part1 = "{\"val\":\"\xE2\x82";   // 10 bytes (was called with 8)
@@ -58,7 +57,7 @@ TEST_CASE("StreamingJsonParser skips empty lines", "[streaming_parser]") {
   std::vector<std::string> lines;
   auto parser = StreamingJsonParser(
     [&](std::string_view line) { lines.emplace_back(line); },
-    [](std::error_code) {}
+    [](const std::string&) {}
   );
 
   parser.Feed("\n\nhello\n\n", 9);

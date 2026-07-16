@@ -20,9 +20,14 @@ class CurlHttpClient : public HttpClient {
                   std::error_code& ec) override;
   void SetInterruptChecker(std::function<bool()> checker) override;
 
+  // Returns detailed error info (response body) from the last request
+  std::string GetErrorDetail() const;
+
  private:
   CURL* handle_;
   std::function<bool()> interrupt_checker_;
+  std::string response_body_;
+  std::string error_detail_;
   static int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                               curl_off_t ultotal, curl_off_t ulnow);
 };

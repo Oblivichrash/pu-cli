@@ -75,18 +75,27 @@ Conversation ConversationStore::Load(const std::string& id, std::error_code& ec)
   return conv;
 }
 
-std::vector<Conversation> ConversationStore::List() const {
+std::vector<Conversation> ConversationStore::List(std::vector<std::string>& errors) const {
+  errors.clear();
   std::vector<Conversation> results;
-  std::error_code ignore;
   for (const auto& entry : std::filesystem::directory_iterator(dir_)) {
     if (entry.path().extension() == ".json") {
       auto id = entry.path().stem().string();
-      auto conv = Load(id, ignore);
-      if (!ignore) results.push_back(std::move(conv));
-      else std::cerr << "Skipping invalid file: " << id << std::endl;
+      std::error_code ec;
+      auto conv = Load(id, ec);
+      if (ec) {
+        errors.push_back(id + ": " + ec.message());
+      } else {
+        results.push_back(std::move(conv));
+      }
     }
   }
   return results;
+}
+
+std::vector<Conversation> ConversationStore::List() const {
+  std::vector<std::string> ignored;
+  return List(ignored);
 }
 
 std::string ConversationStore::ExportMarkdown(const std::string& id, std::error_code& ec) const {

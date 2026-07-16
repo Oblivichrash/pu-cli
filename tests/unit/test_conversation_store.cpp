@@ -130,6 +130,62 @@ TEST_CASE("ConversationStore list conversations", "[store]") {
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("ConversationStore list with errors collects failures", "[store]") {
+  auto dir = MakeTempDir();
+  ConversationStore store(dir);
+
+  // Save one valid conversation
+  auto conv1 = MakeSampleConv();
+  conv1.id = "good";
+  std::error_code ec;
+  store.Save(conv1, ec);
+  REQUIRE_FALSE(ec);
+
+  // Create an invalid JSON file
+  std::ofstream bad_file(dir / "bad.json");
+  bad_file << "not valid json at all";
+  bad_file.close();
+
+  // Call List with errors vector
+  std::vector<std::string> errors;
+  auto list = store.List(errors);
+
+  // Should have loaded the good one
+  REQUIRE(list.size() == 1);
+  REQUIRE(list[0].id == "good");
+
+  // Should have collected the error for the bad file
+  REQUIRE(errors.size() == 1);
+  REQUIRE(errors[0].find("bad") != std::string::npos);
+  REQUIRE(errors[0].find("Invalid conversation data") != std::string::npos);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("ConversationStore list with errors is empty when all valid", "[store]") {
+  auto dir = MakeTempDir();
+  ConversationStore store(dir);
+
+  auto conv1 = MakeSampleConv();
+  conv1.id = "a";
+  auto conv2 = MakeSampleConv();
+  conv2.id = "b";
+
+  std::error_code ec;
+  store.Save(conv1, ec);
+  REQUIRE_FALSE(ec);
+  store.Save(conv2, ec);
+  REQUIRE_FALSE(ec);
+
+  std::vector<std::string> errors;
+  auto list = store.List(errors);
+
+  REQUIRE(list.size() == 2);
+  REQUIRE(errors.empty());
+
+  std::filesystem::remove_all(dir);
+}
+
 TEST_CASE("ConversationStore ExportMarkdown contains messages", "[store]") {
   auto dir = MakeTempDir();
   ConversationStore store(dir);
