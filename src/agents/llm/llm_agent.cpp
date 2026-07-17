@@ -122,24 +122,23 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
     std::vector<backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
     auto renderer = pu::StreamingRenderer::Create(show_reasoning);
-    std::error_code ec;
 
-    backend_->Chat(history, tools,
-      [&](backend::TokenType type, std::string_view token, bool is_final) {
-        if (type == backend::TokenType::kContent) {
-          renderer(type, token, is_final);
-          if (!is_final) content_stream << token;
-        } else if (type == backend::TokenType::kReasoning) {
-          renderer(type, token, is_final);
-        }
-      },
-      [&](const backend::ToolCall& call) {
-        tool_was_called = true;
-        collected_calls.push_back(call);
-      }, ec);
-
-    if (ec) {
-      auto err = "Request failed: " + ec.message();
+    try {
+      backend_->Chat(history, tools,
+        [&](backend::TokenType type, std::string_view token, bool is_final) {
+          if (type == backend::TokenType::kContent) {
+            renderer(type, token, is_final);
+            if (!is_final) content_stream << token;
+          } else if (type == backend::TokenType::kReasoning) {
+            renderer(type, token, is_final);
+          }
+        },
+        [&](const backend::ToolCall& call) {
+          tool_was_called = true;
+          collected_calls.push_back(call);
+        });
+    } catch (const std::exception& e) {
+      auto err = "Request failed: " + std::string(e.what());
       std::cerr << "\nError: " << err << "\n";
       final_response = err;
       turn_history.push_back({0, "", name_, final_response, ""});

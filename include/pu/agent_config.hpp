@@ -48,11 +48,10 @@ struct AgentsConfig {
 };
 
 std::string FindConfigPath();
-AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec);
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config,
-                      std::error_code& ec);
+AgentsConfig LoadAgentsConfig(const std::string& config_path);
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
 std::unique_ptr<pu::backend::Backend> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec);
+    std::unique_ptr<pu::backends::ITokenAdapter> adapter);
 
 }  // namespace pu::config

@@ -11,7 +11,6 @@
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
 #include <memory>
-#include <system_error>
 
 namespace pu::agent {
 
@@ -33,11 +32,7 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& 
       break;
   }
 
-  std::error_code ec;
-  auto backend = config::CreateBackend(entry.backend, std::move(http), std::move(adapter), ec);
-  if (ec) {
-    throw std::runtime_error("Failed to create backend: " + ec.message());
-  }
+  auto backend = config::CreateBackend(entry.backend, std::move(http), std::move(adapter));
 
   auto tool_registry = std::make_unique<ToolRegistry>();
 

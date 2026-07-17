@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "http/curl_http_client.hpp"
 #include "platform/platform.hpp"
-#include "pu/error_codes.hpp"
+#include "pu/error.hpp"
 #include <curl/curl.h>
 #include <stdexcept>
 
@@ -45,8 +45,7 @@ static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,
-                                WriteCallback write_cb, std::error_code& ec) {
-  ec.clear();
+                                WriteCallback write_cb) {
   error_detail_.clear();
   response_body_.clear();
 
@@ -67,30 +66,22 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
 
   CURLcode res = curl_easy_perform(handle_);
   if (res != CURLE_OK) {
-    std::string detail;
-    if (response_body_.size() > 1024) {
-      detail = response_body_.substr(0, 1024) + "... [truncated]";
-    } else {
-      detail = response_body_;
+    std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);
+    if (!response_body_.empty()) {
+      detail += "\nResponse: " + response_body_.substr(0, 1024);
     }
-    ec = (interrupt_checker_ && interrupt_checker_()) ? HttpErrc::interrupted
-                                                      : HttpErrc::connection_failed;
-    error_detail_ = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res) +
-                    (detail.empty() ? "" : ", response: " + detail);
-    curl_easy_reset(handle_);
-    return;
+    error_detail_ = detail;
+    throw HttpError(detail);
   }
   long http_code = 0;
   curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
   if (http_code >= 400) {
-    std::string detail;
-    if (response_body_.size() > 1024) {
-      detail = response_body_.substr(0, 1024) + "... [truncated]";
-    } else {
-      detail = response_body_;
+    std::string detail = "HTTP error " + std::to_string(http_code);
+    if (!response_body_.empty()) {
+      detail += "\nResponse: " + response_body_.substr(0, 1024);
     }
-    ec = HttpErrc::http_error;
-    error_detail_ = "HTTP error " + std::to_string(http_code) + ": " + detail;
+    error_detail_ = detail;
+    throw HttpError(detail);
   }
   curl_easy_reset(handle_);
 }

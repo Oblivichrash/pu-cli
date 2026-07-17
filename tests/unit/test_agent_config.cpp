@@ -3,7 +3,7 @@
 #include "pu/agent_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/backend.hpp"
-#include "pu/error_codes.hpp"
+#include "pu/error.hpp"
 #include "pu/token_adapter.hpp"
 #include "backends/ollama/ollama_token_adapter.hpp"
 #include "backends/openai/openai_token_adapter.hpp"
@@ -12,7 +12,6 @@
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <system_error>
 
 #ifdef _WIN32
 #include <cstring>
@@ -93,9 +92,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
 
   set_env("OPENAI_KEY", "test-key-123");
 
-  std::error_code ec;
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
-  REQUIRE_FALSE(ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
 
   REQUIRE(config.default_agent == "chat");
   REQUIRE(config.agents.size() == 2);
@@ -109,20 +106,14 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   unset_env("OPENAI_KEY");
 }
 
-TEST_CASE("LoadAgentsConfig reports error on missing file", "[agent_config]") {
-  std::error_code ec;
-  LoadAgentsConfig("/nonexistent/path/agents.json", ec);
-  REQUIRE(ec);
-  REQUIRE(ec == ConfigErrc::file_not_found);
+TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {
+  REQUIRE_THROWS_AS(LoadAgentsConfig("/nonexistent/path/agents.json"), std::runtime_error);
 }
 
-TEST_CASE("LoadAgentsConfig reports error on invalid JSON", "[agent_config]") {
+TEST_CASE("LoadAgentsConfig throws on invalid JSON", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
-  std::error_code ec;
-  auto config = LoadAgentsConfig(tmp.path.string(), ec);
-  REQUIRE(ec);
-  REQUIRE(ec == ConfigErrc::parse_error);
+  REQUIRE_THROWS_AS(LoadAgentsConfig(tmp.path.string()), std::runtime_error);
 }
 
 TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]") {
@@ -138,9 +129,7 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
     ]
   })";
   tmp.write(json);
-  std::error_code ec;
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
-  REQUIRE_FALSE(ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
   REQUIRE(config.default_agent == "only");
 }
 
@@ -157,12 +146,9 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   entry.backend.api_key = "secret";
   original.agents.push_back(entry);
 
-  std::error_code ec;
-  SaveAgentsConfig(tmp.path.string(), original, ec);
-  REQUIRE_FALSE(ec);
+  REQUIRE_NOTHROW(SaveAgentsConfig(tmp.path.string(), original));
 
-  AgentsConfig loaded = LoadAgentsConfig(tmp.path.string(), ec);
-  REQUIRE_FALSE(ec);
+  AgentsConfig loaded = LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.default_agent == "test");
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].name == "test");
@@ -181,9 +167,7 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto adapter = std::make_unique<pu::backends::ollama::OllamaTokenAdapter>();
-  std::error_code ec;
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
-  REQUIRE_FALSE(ec);
+  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter));
   REQUIRE(backend != nullptr);
 }
 
@@ -196,9 +180,7 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto adapter = std::make_unique<pu::backends::openai::OpenAITokenAdapter>();
-  std::error_code ec;
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter), ec);
-  REQUIRE_FALSE(ec);
+  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter));
   REQUIRE(backend != nullptr);
 }
 
@@ -220,9 +202,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
     ]
   })";
   tmp.write(json);
-  std::error_code ec;
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string(), ec);
-  REQUIRE_FALSE(ec);
+  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
   REQUIRE(config.agents[0].backend.system_prompt.has_value());
   REQUIRE(config.agents[0].backend.system_prompt->empty());
 }

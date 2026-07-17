@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend_helpers.hpp"
-#include "pu/error_codes.hpp"
+#include "pu/error.hpp"
 #include "platform/platform.hpp"
 #include "backends/common/streaming_json_parser.hpp"
 #include <nlohmann/json.hpp>
@@ -83,7 +83,7 @@ OpenAIBackend::OpenAIBackend(const Config& config, std::unique_ptr<pu::http::Htt
       api_key_(config.api_key), adapter_(std::move(adapter)) {}
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb, std::error_code& ec) {
+                         pu::backend::ChatCallback cb) {
   pu::platform::ClearInterruptFlag();
   adapter_->Reset();
   auto body = BuildRequest(history);
@@ -109,23 +109,20 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
       } catch (const std::exception&) {}
     },
-    [this, &ec](const std::string& msg) {
-      if (!ec) ec = pu::HttpErrc::http_error;
-      error_detail_ = "OpenAI streaming error: " + msg;
-    }
+    [](const std::string& msg) { throw HttpError("OpenAI streaming error: " + msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb) {
   pu::platform::ClearInterruptFlag();
   adapter_->Reset();
   auto body = BuildRequestWithTools(history, tools);
@@ -151,17 +148,14 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
         adapter_->HandleJson(j, content_cb, tool_cb);
       } catch (const std::exception&) {}
     },
-    [this, &ec](const std::string& msg) {
-      if (!ec) ec = pu::HttpErrc::http_error;
-      error_detail_ = "OpenAI streaming error: " + msg;
-    }
+    [](const std::string& msg) { throw HttpError("OpenAI streaming error: " + msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 }  // namespace pu::backends::openai
