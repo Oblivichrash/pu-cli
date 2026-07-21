@@ -55,6 +55,9 @@ add_library(pu_context STATIC
     src/context/global_context.cpp
     src/orchestrator/call_stack.cpp
     src/orchestrator/orchestrator.cpp
+    src/core/context.cpp
+    src/core/delegation.cpp
+    src/core/delegation_stack.cpp
 )
 target_include_directories(pu_context PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

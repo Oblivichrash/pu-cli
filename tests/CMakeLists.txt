@@ -7,6 +7,7 @@ add_executable(pu_tests
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
     unit/test_streaming_json_parser.cpp
+    unit/test_context.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -20,6 +21,7 @@ target_link_libraries(pu_tests PRIVATE
     pu::backend
     pu::agent
     pu::http
+    pu::context
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json
 )
