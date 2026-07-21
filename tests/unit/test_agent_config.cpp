@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/agent_config.hpp"
+#include "pu/agent_core.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/backend.hpp"
 #include "pu/error.hpp"
-#include "pu/token_adapter.hpp"
-#include "backends/ollama/ollama_token_adapter.hpp"
-#include "backends/openai/openai_token_adapter.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -17,15 +14,15 @@
 #include <cstring>
 #endif
 
-using namespace pu::config;
-using namespace pu::tests;
 using namespace pu;
+using namespace pu::agent;
+using namespace pu::tests;
 
 namespace fs = std::filesystem;
 
 #ifdef _WIN32
 static void set_env(const char* name, const char* value) {
-    std::string s = std::string(name) + "=" + value;
+    std::string s = std::string(name) + "=" + std::string(value);
     _putenv(s.c_str());
 }
 static void unset_env(const char* name) {
@@ -92,28 +89,28 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
 
   set_env("OPENAI_KEY", "test-key-123");
 
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
 
-  REQUIRE(config.default_agent == "chat");
-  REQUIRE(config.agents.size() == 2);
-  REQUIRE(config.agents[0].name == "chat");
-  REQUIRE(config.agents[0].backend.type == BackendType::kOllama);
-  REQUIRE(config.agents[1].name == "bash");
-  REQUIRE(config.agents[1].backend.type == BackendType::kOpenAI);
-  REQUIRE(config.agents[1].backend.api_key == "test-key-123");
-  REQUIRE(config.agents[1].security.sandbox_root == "/tmp");
+  REQUIRE(cfg.default_agent == "chat");
+  REQUIRE(cfg.agents.size() == 2);
+  REQUIRE(cfg.agents[0].name == "chat");
+  REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
+  REQUIRE(cfg.agents[1].name == "bash");
+  REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
+  REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
+  REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
 
   unset_env("OPENAI_KEY");
 }
 
 TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {
-  REQUIRE_THROWS_AS(LoadAgentsConfig("/nonexistent/path/agents.json"), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig("/nonexistent/path/agents.json"), std::runtime_error);
 }
 
 TEST_CASE("LoadAgentsConfig throws on invalid JSON", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
-  REQUIRE_THROWS_AS(LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
 }
 
 TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]") {
@@ -129,58 +126,56 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
     ]
   })";
   tmp.write(json);
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
-  REQUIRE(config.default_agent == "only");
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.default_agent == "only");
 }
 
 TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   TempConfigFile tmp;
-  AgentsConfig original;
+  config::AgentsConfig original;
   original.default_agent = "test";
-  AgentEntry entry;
+  config::AgentEntry entry;
   entry.name = "test";
   entry.description = "desc";
-  entry.backend.type = BackendType::kOpenAI;
+  entry.backend.type = config::BackendType::kOpenAI;
   entry.backend.host = "https://api.test.com";
   entry.backend.model = "test-model";
   entry.backend.api_key = "secret";
   original.agents.push_back(entry);
 
-  REQUIRE_NOTHROW(SaveAgentsConfig(tmp.path.string(), original));
+  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
 
-  AgentsConfig loaded = LoadAgentsConfig(tmp.path.string());
+  config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.default_agent == "test");
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].name == "test");
-  REQUIRE(loaded.agents[0].backend.type == BackendType::kOpenAI);
+  REQUIRE(loaded.agents[0].backend.type == config::BackendType::kOpenAI);
   REQUIRE(loaded.agents[0].backend.host == "https://api.test.com");
   REQUIRE(loaded.agents[0].backend.api_key == "secret");
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
-  BackendConfig cfg;
-  cfg.type = BackendType::kOllama;
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kOllama;
   cfg.host = "http://localhost:11434";
   cfg.model = "llama3.2";
   cfg.temperature = 0.5f;
   cfg.system_prompt = "Be helpful.";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<pu::backends::ollama::OllamaTokenAdapter>();
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter));
+  auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
 
 TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
-  BackendConfig cfg;
-  cfg.type = BackendType::kOpenAI;
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kOpenAI;
   cfg.host = "https://api.openai.com/v1";
   cfg.model = "gpt-4o-mini";
   cfg.api_key = "key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
-  auto adapter = std::make_unique<pu::backends::openai::OpenAITokenAdapter>();
-  auto backend = CreateBackend(cfg, std::move(mock_http), std::move(adapter));
+  auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
 
@@ -202,7 +197,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
     ]
   })";
   tmp.write(json);
-  AgentsConfig config = LoadAgentsConfig(tmp.path.string());
-  REQUIRE(config.agents[0].backend.system_prompt.has_value());
-  REQUIRE(config.agents[0].backend.system_prompt->empty());
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.agents[0].backend.system_prompt.has_value());
+  REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }

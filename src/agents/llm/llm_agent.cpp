@@ -12,7 +12,7 @@ namespace pu::agents {
 LLMAgent::LLMAgent(const std::string& name,
                    std::unique_ptr<backend::Backend> backend,
                    std::unique_ptr<agent::ToolRegistry> tool_registry,
-                   const config::SecurityPolicy& security)
+                   const agent::config::SecurityPolicy& security)
     : name_(name), backend_(std::move(backend)), tool_registry_(std::move(tool_registry)),
       security_(security) {
   ReloadExternalTools();

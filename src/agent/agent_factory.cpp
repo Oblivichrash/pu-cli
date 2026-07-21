@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_factory.hpp"
+#include "pu/agent_core.hpp"
 #include "executor/command_executor.hpp"
 #include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/token_adapter.hpp"
-#include "backends/ollama/ollama_token_adapter.hpp"
-#include "backends/openai/openai_token_adapter.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
@@ -21,18 +17,7 @@ AgentRegistry& AgentRegistry::Instance() {
 
 std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& entry) {
   auto http = std::make_unique<http::CurlHttpClient>();
-
-  std::unique_ptr<backends::ITokenAdapter> adapter;
-  switch (entry.backend.tool_call_style) {
-    case config::ToolCallStyle::kOpenAI:
-      adapter = std::make_unique<backends::openai::OpenAITokenAdapter>();
-      break;
-    default:
-      adapter = std::make_unique<backends::ollama::OllamaTokenAdapter>();
-      break;
-  }
-
-  auto backend = config::CreateBackend(entry.backend, std::move(http), std::move(adapter));
+  auto backend = config::CreateBackend(entry.backend, std::move(http));
 
   auto tool_registry = std::make_unique<ToolRegistry>();
 

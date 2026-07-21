@@ -6,11 +6,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <system_error>
-
-namespace pu::backend { class Backend; }
-namespace pu::http { class HttpClient; }
-namespace pu::backends { class ITokenAdapter; }
 
 namespace pu::config {
 
@@ -50,8 +45,5 @@ struct AgentsConfig {
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
-std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter);
 
 }  // namespace pu::config

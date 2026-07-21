@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "backends/openai/openai_backend.hpp"
-#include "backends/openai/openai_token_adapter.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -21,8 +20,7 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  auto adapter = std::make_unique<OpenAITokenAdapter>();
-  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hello"}
@@ -53,8 +51,7 @@ TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empt
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  auto adapter = std::make_unique<OpenAITokenAdapter>();
-  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   backend.Chat(history, [](auto&&...) {});
@@ -92,8 +89,7 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
     }
   };
 
-  auto adapter = std::make_unique<OpenAITokenAdapter>();
-  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {
     {pu::backend::Message::Role::kUser, "Hi"}
@@ -130,8 +126,7 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
     throw pu::HttpError("HTTP error 401: Unauthorized");
   };
 
-  auto adapter = std::make_unique<OpenAITokenAdapter>();
-  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
   REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), pu::HttpError);
@@ -157,8 +152,7 @@ TEST_CASE("OpenAIBackend tool calling stream", "[openai][tools]") {
     cb(chunk2.data(), chunk2.size());
   };
 
-  auto adapter = std::make_unique<OpenAITokenAdapter>();
-  OpenAIBackend backend(config, std::move(mock_http), std::move(adapter));
+  OpenAIBackend backend(config, std::move(mock_http));
 
   std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list"}};
   pu::backend::ToolDefinition tool;

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/orchestrator.hpp"
+#include "pu/executor.hpp"
 
 #include <sstream>
-
-#include "pu/agent.hpp"
 
 namespace pu {
 
@@ -56,18 +55,19 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
 std::string Orchestrator::Process(const std::string& input) {
   std::string current_input = input;
   std::string final_response;
+  agent::AgentExecutor executor(manager_);
 
   while (true) {
     if (stack_->IsEmpty()) {
-      final_response = manager_.Dispatch(current_input);
+      final_response = executor.Dispatch(current_input);
       break;
     }
 
     const StackFrame& top = stack_->Top();
     std::string agent_name = top.agent_name;
 
-    agent::AgentContext ctx = manager_.PrepareContext(agent_name);
-    std::string response = manager_.ExecuteAgentWithContext(agent_name, current_input, ctx);
+    agent::AgentContext ctx = executor.PrepareContext(agent_name);
+    std::string response = executor.Execute(agent_name, current_input, ctx);
 
     if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
       Push(ctx.pending_action.agent_name);

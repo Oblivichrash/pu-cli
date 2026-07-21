@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_config.hpp"
+#include "pu/agent_core.hpp"
 
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/token_adapter.hpp"
 
 #include <nlohmann/json.hpp>
 #include <cstdlib>
@@ -14,7 +13,7 @@
 #include <regex>
 #include <stdexcept>
 
-namespace pu::config {
+namespace pu::agent::config {
 
 using json = nlohmann::json;
 
@@ -138,12 +137,12 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   return result;
 }
 
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config) {
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
-  j["default_agent"] = config.default_agent;
+  j["default_agent"] = cfg.default_agent;
 
   json agents_array = json::array();
-  for (const auto& entry : config.agents) {
+  for (const auto& entry : cfg.agents) {
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
@@ -179,8 +178,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter) {
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
       pu::backends::ollama::OllamaBackend::Config ollama_cfg;
@@ -190,7 +188,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
-          std::move(ollama_cfg), std::move(http), std::move(adapter));
+          std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
       pu::backends::openai::OpenAIBackend::Config openai_cfg;
@@ -200,11 +198,11 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<pu::backends::openai::OpenAIBackend>(
-          std::move(openai_cfg), std::move(http), std::move(adapter));
+          openai_cfg, std::move(http));
     }
     default:
       throw std::runtime_error("Unknown backend type");
   }
 }
 
-}  // namespace pu::config
+}  // namespace pu::agent::config

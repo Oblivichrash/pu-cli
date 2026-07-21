@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/tool.hpp"
+#include "pu/agent_core.hpp"
 #include "executor/command_executor.hpp"
 #include <memory>
 

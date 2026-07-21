@@ -1,30 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "pu/agent.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/agent_factory.hpp"
-#include "pu/backend.hpp"
-#include "pu/conversation_store.hpp"
-#include "pu/context.hpp"
-#include "pu/orchestrator.hpp"
-#include "pu/stack.hpp"
-#include "pu/renderer.hpp"
-
 #include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
+#include "ui.hpp"
+#include "session.hpp"
+#include "pu/executor.hpp"
+#include "pu/orchestrator.hpp"
 
-#include <chrono>
 #include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
-#include <string>
 #include <vector>
 
 namespace pu::cli {
@@ -32,7 +20,7 @@ namespace pu::cli {
 namespace {
 
 struct AppContext {
-  config::AgentsConfig config;
+  agent::config::AgentsConfig agents_config;
   agent::AgentManager manager;
   std::string config_path;
 };
@@ -40,23 +28,23 @@ struct AppContext {
 AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning) {
   AppContext ctx;
   try {
-    ctx.config_path = config::FindConfigPath();
+    ctx.config_path = agent::config::FindConfigPath();
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << "\n";
     std::exit(1);
   }
 
-  ctx.config = config::LoadAgentsConfig(ctx.config_path);
+  ctx.agents_config = agent::config::LoadAgentsConfig(ctx.config_path);
 
-  if (ctx.config.agents.empty()) {
+  if (ctx.agents_config.agents.empty()) {
     std::cerr << "Error: no agents configured\n";
     std::exit(1);
   }
 
-  auto active_name = requested_agent.empty() ? ctx.config.default_agent : requested_agent;
+  auto active_name = requested_agent.empty() ? ctx.agents_config.default_agent : requested_agent;
   bool active_found = false;
 
-  for (const auto& entry : ctx.config.agents) {
+  for (const auto& entry : ctx.agents_config.agents) {
     if (entry.name == active_name) active_found = true;
     try {
       ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
@@ -68,76 +56,13 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
 
   if (!active_found) {
     std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
-    for (const auto& e : ctx.config.agents) std::cerr << "  " << e.name << "\n";
+    for (const auto& e : ctx.agents_config.agents) std::cerr << "  " << e.name << "\n";
     std::exit(1);
   }
 
   ctx.manager.SetActiveAgent(active_name);
   if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;
-}
-
-inline std::string Trim(const std::string& s) {
-  auto start = s.find_first_not_of(" \t");
-  if (start == std::string::npos) return {};
-  auto end = s.find_last_not_of(" \t");
-  return s.substr(start, end - start + 1);
-}
-
-std::string CurrentTimestamp() {
-  auto now = std::chrono::system_clock::now();
-  auto in_time_t = std::chrono::system_clock::to_time_t(now);
-  std::ostringstream ss;
-  ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
-  return ss.str();
-}
-
-std::string GenerateId() {
-  auto now = std::chrono::high_resolution_clock::now();
-  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-  std::ostringstream ss;
-  ss << std::hex << nanos;
-  return "conv-" + ss.str();
-}
-
-void PrintAgents(const pu::config::AgentsConfig& config, const std::string& current) {
-  std::cout << "Available agents:\n";
-  for (const auto& entry : config.agents) {
-    std::cout << "  " << entry.name;
-    if (!entry.description.empty()) {
-      std::cout << " - " << entry.description;
-    }
-    if (entry.name == current) {
-      std::cout << " [current]";
-    }
-    std::cout << "\n";
-  }
-}
-
-void PrintConversationList(const std::vector<pu::Conversation>& convs) {
-  if (convs.empty()) {
-    std::cout << "No saved conversations.\n";
-    return;
-  }
-  for (const auto& c : convs) {
-    std::cout << "  " << c.id << " (" << c.messages.size() << " messages) created: " << c.created_at << "\n";
-  }
-}
-
-void PrintChatHelp() {
-  std::cout << "Available commands:\n"
-            << "  /help           Show this help\n"
-            << "  /exit, /quit    Exit interactive mode\n"
-            << "  /clear          Clear conversation history and agent lock\n"
-            << "  /agent <name>   Switch to different agent\n"
-            << "  /agents         List available agents\n"
-            << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
-            << "  /load <id>      Load a saved conversation\n"
-            << "  /list           List saved conversations\n"
-            << "  /export <id>    Export conversation to Markdown\n"
-            << "  /note add <text>  Add a note for current agent\n"
-            << "  /note show      Show notes for current agent\n"
-            << "  /reload-tools   Reload external Python tools\n";
 }
 
 } // namespace
@@ -176,7 +101,8 @@ int RunAsk(int argc, char* argv[]) {
 
   auto ctx = SetupAppContext(requested_agent, show_reasoning);
   try {
-    ctx.manager.Dispatch(prompt);
+    agent::AgentExecutor executor(ctx.manager);
+    executor.Dispatch(prompt);
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what() << "\n";
     return 1;
@@ -209,56 +135,25 @@ int RunChat(int argc, char* argv[]) {
   }
 
   auto ctx = SetupAppContext(initial_agent, show_reasoning);
-  const auto& config = ctx.config;
+  const auto& agents_config = ctx.agents_config;
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
 
   const char* home = std::getenv("HOME");
   auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
   auto store_dir = pu_dir / "conversations";
-  pu::ConversationStore store(store_dir);
 
-  std::vector<pu::ChatMessage> panel_messages;
-  int message_id = 0;
-
-  struct ConfirmationState {
-    bool auto_approve_safe = false;
-    bool deny_all = false;
-  };
-  auto confirm_state = std::make_shared<ConfirmationState>();
-
-  manager.SetConfirmationCallback([confirm_state](const pu::agent::ConfirmationRequest& req) {
-    if (confirm_state->deny_all) return pu::agent::ConfirmationChoice::kDenyAll;
-    if (confirm_state->auto_approve_safe && req.highest_risk == pu::executor::RiskLevel::kSafe) {
-      return pu::agent::ConfirmationChoice::kApproveOnce;
-    }
-
-    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    if (answer == "a") {
-      confirm_state->auto_approve_safe = true;
-      return (req.highest_risk == pu::executor::RiskLevel::kSafe)
-                 ? pu::agent::ConfirmationChoice::kApproveOnce
-                 : pu::agent::ConfirmationChoice::kDeny;
-    }
-    if (answer == "s") {
-      confirm_state->deny_all = true;
-      return pu::agent::ConfirmationChoice::kDenyAll;
-    }
-    return (answer == "y" || answer == "Y") ? pu::agent::ConfirmationChoice::kApproveOnce
-                                            : pu::agent::ConfirmationChoice::kDeny;
-  });
-
-  auto global_ctx = pu::GlobalContext::Create(pu_dir);
+  auto global_ctx = GlobalContext::Create(pu_dir);
   global_ctx->Load();
 
-  auto call_stack = std::make_shared<pu::CallStack>();
+  auto call_stack = std::make_shared<CallStack>();
   manager.SetGlobalContext(global_ctx);
   manager.SetCallStack(call_stack);
-  pu::Orchestrator orchestrator(global_ctx, call_stack, manager);
 
-  for (const auto& entry : config.agents) {
+  SessionManager session(store_dir, manager);
+  Orchestrator orchestrator(global_ctx, call_stack, manager);
+
+  for (const auto& entry : agents_config.agents) {
     auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
     if (summary_opt && summary_opt->is_string()) {
       std::string summary = summary_opt->get<std::string>();
@@ -268,9 +163,38 @@ int RunChat(int argc, char* argv[]) {
     }
   }
 
+  struct ConfirmationState {
+    bool auto_approve_safe = false;
+    bool deny_all = false;
+  };
+  auto confirm_state = std::make_shared<ConfirmationState>();
+
+  manager.SetConfirmationCallback([confirm_state](const agent::ConfirmationRequest& req) {
+    if (confirm_state->deny_all) return agent::ConfirmationChoice::kDenyAll;
+    if (confirm_state->auto_approve_safe && req.highest_risk == executor::RiskLevel::kSafe) {
+      return agent::ConfirmationChoice::kApproveOnce;
+    }
+
+    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer == "a") {
+      confirm_state->auto_approve_safe = true;
+      return (req.highest_risk == executor::RiskLevel::kSafe)
+                 ? agent::ConfirmationChoice::kApproveOnce
+                 : agent::ConfirmationChoice::kDeny;
+    }
+    if (answer == "s") {
+      confirm_state->deny_all = true;
+      return agent::ConfirmationChoice::kDenyAll;
+    }
+    return (answer == "y" || answer == "Y") ? agent::ConfirmationChoice::kApproveOnce
+                                            : agent::ConfirmationChoice::kDeny;
+  });
+
   std::cout << "[INFO] Connected to agent: " << current_name;
-  const auto* entry_ptr = [&]() -> const pu::config::AgentEntry* {
-    for (const auto& e : config.agents) {
+  const auto* entry_ptr = [&]() -> const agent::config::AgentEntry* {
+    for (const auto& e : agents_config.agents) {
       if (e.name == current_name) return &e;
     }
     return nullptr;
@@ -280,11 +204,13 @@ int RunChat(int argc, char* argv[]) {
   }
   std::cout << "\nType /help for available commands.\n\n";
 
+  agent::AgentExecutor executor(manager);
+  std::vector<ChatMessage> panel_messages;
+  int message_id = 0;
+
   std::string input;
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
-    if (input.empty()) {
-      continue;
-    }
+    if (input.empty()) continue;
 
     if (input[0] == '/') {
       std::string cmd_output;
@@ -292,6 +218,7 @@ int RunChat(int argc, char* argv[]) {
         std::cout << cmd_output << "\n";
         continue;
       }
+
       if (input == "/help") {
         PrintChatHelp();
       } else if (input == "/exit" || input == "/quit") {
@@ -304,7 +231,7 @@ int RunChat(int argc, char* argv[]) {
         confirm_state->deny_all = false;
         std::cout << "[INFO] Conversation history and agent lock cleared.\n";
       } else if (input == "/agents") {
-        PrintAgents(config, manager.GetActiveAgent());
+        PrintAgents(agents_config, manager.GetActiveAgent());
       } else if (input.rfind("/agent ", 0) == 0) {
         std::string new_name = Trim(input.substr(7));
         if (new_name.empty()) {
@@ -312,8 +239,8 @@ int RunChat(int argc, char* argv[]) {
           continue;
         }
 
-        const pu::config::AgentEntry* new_entry = nullptr;
-        for (const auto& entry : config.agents) {
+        const agent::config::AgentEntry* new_entry = nullptr;
+        for (const auto& entry : agents_config.agents) {
           if (entry.name == new_name) {
             new_entry = &entry;
             break;
@@ -344,20 +271,7 @@ int RunChat(int argc, char* argv[]) {
           save_name = GenerateId();
         }
 
-        pu::Conversation conv;
-        conv.id = save_name;
-        conv.created_at = panel_messages.empty() ? CurrentTimestamp() : panel_messages.front().timestamp;
-        conv.updated_at = CurrentTimestamp();
-        conv.messages = panel_messages;
-        conv.expert_histories = manager.SnapshotAgents();
-
-        try {
-          store.Save(conv);
-          std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
-          continue;
-        }
+        session.SaveConversation(save_name, panel_messages, no_summary, *global_ctx);
 
         if (!no_summary) {
           std::ostringstream summary_prompt;
@@ -369,7 +283,8 @@ int RunChat(int argc, char* argv[]) {
           }
 
           try {
-            auto summary = manager.CallAgent(current_name, summary_prompt.str());
+            agent::AgentContext ctx = executor.PrepareContext(current_name);
+            auto summary = executor.Execute(current_name, summary_prompt.str(), ctx);
             if (!summary.empty()) {
               std::cout << "\n[Memory] Generated summary for '" << current_name << "':\n"
                         << summary << "\n\n"
@@ -396,25 +311,13 @@ int RunChat(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          auto conv = store.Load(load_id);
-          panel_messages = conv.messages;
-          message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
-          manager.RestoreAgents(conv.expert_histories);
-          manager.SetActiveAgent("");
-          confirm_state->auto_approve_safe = false;
-          confirm_state->deny_all = false;
-          std::cout << "[INFO] Loaded conversation '" << load_id << "'\n";
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
-        }
+        session.LoadConversation(load_id, panel_messages);
+        message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
+        confirm_state->auto_approve_safe = false;
+        confirm_state->deny_all = false;
       } else if (input == "/list") {
-        std::vector<std::string> errors;
-        auto convs = store.List(errors);
+        auto convs = session.ListConversations();
         PrintConversationList(convs);
-        for (const auto& err : errors) {
-          std::cout << "  [Warning] " << err << "\n";
-        }
       } else if (input.rfind("/export ", 0) == 0) {
         std::string export_id = Trim(input.substr(8));
         if (export_id.empty()) {
@@ -422,8 +325,8 @@ int RunChat(int argc, char* argv[]) {
           continue;
         }
 
-        try {
-          auto md = store.ExportMarkdown(export_id);
+        auto md = session.ExportMarkdown(export_id);
+        if (!md.empty()) {
           std::string filename = "conversation_" + export_id + ".md";
           std::ofstream out(filename);
           if (!out) {
@@ -432,21 +335,17 @@ int RunChat(int argc, char* argv[]) {
             out << md;
             std::cout << "[INFO] Exported to " << filename << "\n";
           }
-        } catch (const std::exception& e) {
-          std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {
-          auto notes_opt = global_ctx->Read("memory/notes/" + current_name);
-          if (notes_opt && notes_opt->is_array()) {
-            std::cout << "Notes for " << current_name << ":\n";
-            for (const auto& note : *notes_opt) {
-              if (note.is_string()) {
-                std::cout << note.get<std::string>() << "\n";
-              }
-            }
-          } else {
+          auto notes = session.ShowNotes(current_name, *global_ctx);
+          if (notes.empty()) {
             std::cout << "No notes yet.\n";
+          } else {
+            std::cout << "Notes for " << current_name << ":\n";
+            for (const auto& note : notes) {
+              std::cout << note << "\n";
+            }
           }
         } else if (input.rfind("/note add ", 0) == 0) {
           auto text = Trim(input.substr(10));
@@ -454,14 +353,7 @@ int RunChat(int argc, char* argv[]) {
             std::cerr << "Note text required.\n";
             continue;
           }
-          std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
-          auto notes_opt = global_ctx->Read("memory/notes/" + current_name);
-          json notes_array = json::array();
-          if (notes_opt && notes_opt->is_array()) {
-            notes_array = *notes_opt;
-          }
-          notes_array.push_back(timestamped_note);
-          global_ctx->Write("memory/notes/" + current_name, notes_array);
+          session.AddNote(current_name, text, *global_ctx);
           std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";
@@ -494,25 +386,11 @@ int RunChat(int argc, char* argv[]) {
     }
 
     panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
-    manager.NotifyPanelMessage(panel_messages.back());
 
     try {
       std::string response = orchestrator.Process(input);
       if (!response.empty()) {
         panel_messages.push_back({++message_id, CurrentTimestamp(), actual_agent, response, ""});
-        manager.NotifyPanelMessage(panel_messages.back());
-
-        std::vector<pu::ChatMessage> recent;
-        size_t start_idx = panel_messages.size() > 20 ? panel_messages.size() - 20 : 0;
-        for (size_t i = start_idx; i < panel_messages.size(); ++i) {
-          recent.push_back(panel_messages[i]);
-        }
-        manager.SetRecentMessages(recent);
-        for (auto& [agent, text] : manager.CollectProactiveReplies()) {
-          panel_messages.push_back({++message_id, CurrentTimestamp(), agent, text, ""});
-          std::cout << "\n[" << agent << "] " << text << std::endl;
-          manager.NotifyPanelMessage(panel_messages.back());
-        }
       }
     } catch (const std::exception& e) {
       std::cerr << "\nError: " << e.what() << "\n\n";
@@ -567,7 +445,6 @@ int RunLearn(int argc, char* argv[]) {
 
   std::filesystem::create_directories(generated_dir);
 
-  // Placeholder: iterate conversations, analyze, generate agents.
   std::cout << "[Learn] Scanning " << conv_dir << " for sessions (threshold=" << threshold
             << ", max=" << max_sessions << ")\n";
   std::cout << "[Learn] Generated agents will be saved to " << generated_dir << "\n";

@@ -6,10 +6,7 @@
 
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
-
-namespace pu::agent {
-class AgentManager;
-}
+#include "pu/agent_core.hpp"
 
 namespace pu {
 

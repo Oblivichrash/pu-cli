@@ -3,7 +3,8 @@
 
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/token_adapter.hpp"
+#include <nlohmann/json.hpp>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -17,8 +18,7 @@ class OpenAIBackend : public pu::backend::Backend {
   };
 
   explicit OpenAIBackend(const Config& config,
-                         std::unique_ptr<pu::http::HttpClient> http,
-                         std::unique_ptr<ITokenAdapter> adapter);
+                         std::unique_ptr<pu::http::HttpClient> http);
   ~OpenAIBackend() override = default;
 
   void Chat(const std::vector<pu::backend::Message>& history,
@@ -33,10 +33,16 @@ class OpenAIBackend : public pu::backend::Backend {
   std::string BuildRequest(const std::vector<pu::backend::Message>& history) const;
   std::string BuildRequestWithTools(const std::vector<pu::backend::Message>& history,
                                     const std::vector<pu::backend::ToolDefinition>& tools) const;
+  void HandleJsonToken(const nlohmann::json& j, pu::backend::ChatCallback content_cb,
+                       pu::backend::ToolCallback tool_cb);
+  void ResetAccumulators();
+
   std::unique_ptr<pu::http::HttpClient> http_;
   std::string host_;
   std::string api_key_;
-  std::unique_ptr<ITokenAdapter> adapter_;
+
+  struct ToolCallAccumulator { std::string id, name, arguments; };
+  std::map<int, ToolCallAccumulator> pending_tools_;
 };
 
 }  // namespace pu::backends::openai
