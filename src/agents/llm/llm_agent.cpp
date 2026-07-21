@@ -20,7 +20,6 @@ LLMAgent::LLMAgent(const std::string& name,
 
 void LLMAgent::ResetSession() {
   history_.clear();
-  recent_scores_.clear();
 }
 
 std::vector<backend::Message> LLMAgent::BuildInitialHistory() const {
@@ -199,37 +198,6 @@ std::vector<ChatMessage> LLMAgent::SaveState() const {
 
 void LLMAgent::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
-}
-
-double LLMAgent::EvaluateRelevance(const ChatMessage& msg) {
-  std::string lower = msg.content;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  double score = 0.0;
-  if (lower.find("error") != std::string::npos) score += 0.4;
-  if (lower.find("fail") != std::string::npos) score += 0.4;
-  if (lower.find("urgent") != std::string::npos) score += 0.5;
-  if (lower.find("crash") != std::string::npos) score += 0.5;
-  if (lower.find("timeout") != std::string::npos) score += 0.3;
-  return std::min(score, 1.0);
-}
-
-void LLMAgent::OnPanelMessage(const ChatMessage& msg) {
-  double s = EvaluateRelevance(msg);
-  if (s > 0.0) recent_scores_.push_back(s);
-}
-
-std::optional<std::string> LLMAgent::ProactiveReply() {
-  if (std::any_of(recent_scores_.begin(), recent_scores_.end(),
-                  [this](double s) { return s >= proactive_threshold_; })) {
-    recent_scores_.clear();
-    return "I noticed a possible error. Reply @" + name_ + " to investigate.";
-  }
-  return std::nullopt;
-}
-
-void LLMAgent::SetProactiveThreshold(double threshold) {
-  proactive_threshold_ = threshold;
 }
 
 void LLMAgent::ReloadExternalTools() {

@@ -15,6 +15,8 @@ SessionManager::SessionManager(std::filesystem::path store_dir, agent::AgentMana
 
 bool SessionManager::SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
                                      bool no_summary, GlobalContext& global_ctx) {
+  (void)no_summary;   // placeholder for future summary control
+  (void)global_ctx;   // reserved for future use
   Conversation conv;
   conv.id = name;
   conv.created_at = messages.empty() ? CurrentTimestamp() : messages.front().timestamp;

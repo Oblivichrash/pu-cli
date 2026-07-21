@@ -135,15 +135,6 @@ class BaseAgent {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
-
-  [[deprecated("Proactive features removed")]]
-  virtual void OnPanelMessage([[maybe_unused]] const ChatMessage& msg) {}
-  [[deprecated("Proactive features removed")]]
-  virtual std::optional<std::string> ProactiveReply() { return std::nullopt; }
-  [[deprecated("Proactive features removed")]]
-  virtual double EvaluateRelevance([[maybe_unused]] const ChatMessage& msg) { return 0.0; }
-  [[deprecated("Proactive features removed")]]
-  virtual void SetProactiveThreshold([[maybe_unused]] double threshold) {}
 };
 
 class AgentRegistry {

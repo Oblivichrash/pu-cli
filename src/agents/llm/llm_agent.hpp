@@ -28,11 +28,6 @@ class LLMAgent : public agent::BaseAgent {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
-  void OnPanelMessage(const ChatMessage& msg) override;
-  std::optional<std::string> ProactiveReply() override;
-  double EvaluateRelevance(const ChatMessage& msg) override;
-  void SetProactiveThreshold(double threshold) override;
-
   void ReloadExternalTools();
 
  private:
@@ -53,8 +48,6 @@ class LLMAgent : public agent::BaseAgent {
   std::unique_ptr<agent::ToolRegistry> tool_registry_;
   agent::config::SecurityPolicy security_;
   std::vector<ChatMessage> history_;
-  std::vector<double> recent_scores_;
-  double proactive_threshold_ = 0.6;
 };
 
 }  // namespace pu::agents
