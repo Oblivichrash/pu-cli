@@ -12,6 +12,7 @@
 #include "pu/conversation.hpp"
 #include "pu/context.hpp"
 #include "pu/stack.hpp"
+#include "pu/core/context.hpp"
 #include "pu/http/http_client.hpp"
 #include "executor/command_executor.hpp"
 
@@ -112,14 +113,33 @@ struct PendingAction {
 };
 
 struct AgentContext {
+
+  std::shared_ptr<core::Context> context;
+
+  [[deprecated("Use context->GetVar() and context->Append() instead")]]
   std::function<std::string(const std::string&, const std::string&)> call_expert;
+
+  [[deprecated("Use context->GetVar('confirmation_callback') instead")]]
   ConfirmationCallback request_confirmation;
+
+  [[deprecated("Use context->GetVar('working_dir') instead")]]
   std::string working_dir;
+
+  [[deprecated("Use context->GetVar('show_reasoning') instead")]]
   bool show_reasoning = false;
+
+  [[deprecated("Use context->GetHistory() instead")]]
   std::vector<ChatMessage> recent_panel_messages;
+
+  [[deprecated("Use context->GetVar('system_prompt') instead")]]
   std::optional<std::string> system_prompt;
+
+  [[deprecated("Use context->GetVar('global_ctx') instead")]]
   std::shared_ptr<GlobalContext> global_ctx;
+
+  [[deprecated("Use context->GetVar('call_stack') instead")]]
   std::shared_ptr<CallStack> call_stack;
+
   PendingAction pending_action;
 };
 

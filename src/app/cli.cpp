@@ -7,6 +7,9 @@
 #include "session.hpp"
 #include "pu/executor.hpp"
 #include "pu/orchestrator.hpp"
+#include "pu/core/context.hpp"
+#include "pu/core/delegation.hpp"
+#include "pu/core/delegation_stack.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -146,12 +149,21 @@ int RunChat(int argc, char* argv[]) {
   auto global_ctx = GlobalContext::Create(pu_dir);
   global_ctx->Load();
 
+  auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
+  std::filesystem::create_directories(root_context_path.parent_path());
+  auto root_context = core::Context::LoadOrCreate(root_context_path);
+  auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
+
   auto call_stack = std::make_shared<CallStack>();
   manager.SetGlobalContext(global_ctx);
   manager.SetCallStack(call_stack);
 
   SessionManager session(store_dir, manager);
   Orchestrator orchestrator(global_ctx, call_stack, manager);
+  orchestrator.SetDelegationStack(delegation_stack);
+
+  agent::AgentExecutor executor(manager);
+  executor.SetRootContext(root_context);
 
   for (const auto& entry : agents_config.agents) {
     auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
@@ -204,7 +216,6 @@ int RunChat(int argc, char* argv[]) {
   }
   std::cout << "\nType /help for available commands.\n\n";
 
-  agent::AgentExecutor executor(manager);
   std::vector<ChatMessage> panel_messages;
   int message_id = 0;
 
@@ -271,7 +282,7 @@ int RunChat(int argc, char* argv[]) {
           save_name = GenerateId();
         }
 
-        session.SaveConversation(save_name, panel_messages, no_summary, *global_ctx);
+        session.SaveConversation(save_name, panel_messages, no_summary, *global_ctx, root_context);
 
         if (!no_summary) {
           std::ostringstream summary_prompt;
@@ -283,8 +294,8 @@ int RunChat(int argc, char* argv[]) {
           }
 
           try {
-            agent::AgentContext ctx = executor.PrepareContext(current_name);
-            auto summary = executor.Execute(current_name, summary_prompt.str(), ctx);
+            agent::AgentContext exec_ctx = executor.PrepareContext(current_name);
+            auto summary = executor.Execute(current_name, summary_prompt.str(), exec_ctx);
             if (!summary.empty()) {
               std::cout << "\n[Memory] Generated summary for '" << current_name << "':\n"
                         << summary << "\n\n"

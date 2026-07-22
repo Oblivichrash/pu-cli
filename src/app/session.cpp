@@ -14,7 +14,8 @@ SessionManager::SessionManager(std::filesystem::path store_dir, agent::AgentMana
     : store_(store_dir), manager_(manager) {}
 
 bool SessionManager::SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
-                                     bool no_summary, GlobalContext& global_ctx) {
+                                     bool no_summary, GlobalContext& global_ctx,
+                                     std::shared_ptr<core::Context> root_context) {
   (void)no_summary;   // placeholder for future summary control
   (void)global_ctx;   // reserved for future use
   Conversation conv;
@@ -30,6 +31,13 @@ bool SessionManager::SaveConversation(const std::string& name, const std::vector
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
     return false;
+  }
+
+  if (root_context) {
+    const char* home = std::getenv("HOME");
+    auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
+    auto context_path = pu_dir / "contexts" / "active" / "root.json";
+    root_context->Save(context_path);
   }
 
   return true;

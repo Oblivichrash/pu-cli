@@ -11,6 +11,13 @@ Orchestrator::Orchestrator(std::shared_ptr<GlobalContext> ctx,
                            agent::AgentManager& manager)
     : ctx_(std::move(ctx)), stack_(std::move(stack)), manager_(manager) {}
 
+void Orchestrator::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
+  delegation_stack_ = std::move(stack);
+  if (delegation_stack_) {
+    root_context_ = delegation_stack_->GetRootContext();
+  }
+}
+
 bool Orchestrator::HandleCommand(const std::string& input, std::string& output) {
   if (input.rfind("/push ", 0) == 0) {
     std::string agent_name = input.substr(6);
@@ -57,14 +64,13 @@ std::string Orchestrator::Process(const std::string& input) {
   std::string final_response;
   agent::AgentExecutor executor(manager_);
 
-  while (true) {
-    if (stack_->IsEmpty()) {
-      final_response = executor.Dispatch(current_input);
-      break;
-    }
+  if (root_context_) {
+    executor.SetRootContext(root_context_);
+  }
 
-    const StackFrame& top = stack_->Top();
-    std::string agent_name = top.agent_name;
+  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
+    const auto& frame = delegation_stack_->Current();
+    std::string agent_name = frame.delegation.agent_name;
 
     agent::AgentContext ctx = executor.PrepareContext(agent_name);
     std::string response = executor.Execute(agent_name, current_input, ctx);
@@ -72,24 +78,58 @@ std::string Orchestrator::Process(const std::string& input) {
     if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
       Push(ctx.pending_action.agent_name);
       current_input = "";
-      continue;
+      return Process(current_input);
     }
 
     if (ctx.pending_action.type == agent::PendingAction::Type::kPop) {
-      if (!stack_->IsEmpty()) {
-        Pop();
+      if (!delegation_stack_->IsEmpty()) {
+        PopDelegation();
       }
-      if (stack_->IsEmpty()) {
+      if (delegation_stack_->IsEmpty()) {
         final_response = response;
-        break;
       } else {
         current_input = response;
-        continue;
+        return Process(current_input);
       }
     }
 
     final_response = response;
-    break;
+  } else {
+    // Fallback to legacy dispatch
+    while (true) {
+      if (stack_->IsEmpty()) {
+        final_response = executor.Dispatch(current_input);
+        break;
+      }
+
+      const StackFrame& top = stack_->Top();
+      std::string agent_name = top.agent_name;
+
+      agent::AgentContext ctx = executor.PrepareContext(agent_name);
+      std::string response = executor.Execute(agent_name, current_input, ctx);
+
+      if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
+        Push(ctx.pending_action.agent_name);
+        current_input = "";
+        continue;
+      }
+
+      if (ctx.pending_action.type == agent::PendingAction::Type::kPop) {
+        if (!stack_->IsEmpty()) {
+          Pop();
+        }
+        if (stack_->IsEmpty()) {
+          final_response = response;
+          break;
+        } else {
+          current_input = response;
+          continue;
+        }
+      }
+
+      final_response = response;
+      break;
+    }
   }
 
   return final_response;
@@ -119,6 +159,29 @@ std::string Orchestrator::ShowStack() const {
     oss << "  " << it->agent_name << " (" << it->invocation_id << ")\n";
   }
   return oss.str();
+}
+
+bool Orchestrator::PushDelegation(const std::string& agent_name, const std::string& goal) {
+  if (!delegation_stack_) return false;
+
+  core::Delegation deleg(goal, agent_name, {}, static_cast<int>(delegation_stack_->Depth()));
+  deleg.id = core::Delegation::GenerateId();
+  deleg.created_at = std::chrono::steady_clock::now();
+
+  deleg.deadline = deleg.created_at + std::chrono::seconds(30);
+
+  delegation_stack_->Push(deleg);
+  return true;
+}
+
+core::SummaryReport Orchestrator::PopDelegation() {
+  if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
+    core::SummaryReport report;
+    report.status = core::SummaryReport::Status::kFailed;
+    report.summary = "No active delegation to pop";
+    return report;
+  }
+  return delegation_stack_->Pop();
 }
 
 }  // namespace pu

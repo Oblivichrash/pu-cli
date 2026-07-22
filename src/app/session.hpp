@@ -8,6 +8,7 @@
 #include "pu/agent_core.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/context.hpp"
+#include "pu/core/context.hpp"
 
 namespace pu::cli {
 
@@ -18,7 +19,8 @@ class SessionManager {
 
   /// Save current panel messages as a conversation
   bool SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
-                        bool no_summary, GlobalContext& global_ctx);
+                        bool no_summary, GlobalContext& global_ctx,
+                        std::shared_ptr<core::Context> root_context = nullptr);
 
   /// Load a conversation into panel messages
   bool LoadConversation(const std::string& id, std::vector<ChatMessage>& messages);

@@ -7,8 +7,23 @@ namespace pu::agent {
 
 AgentExecutor::AgentExecutor(AgentManager& manager) : manager_(manager) {}
 
+void AgentExecutor::SetRootContext(std::shared_ptr<core::Context> root_context) {
+  root_context_ = std::move(root_context);
+  if (root_context_) {
+    stack_ = std::make_shared<core::DelegationStack>(root_context_);
+  }
+}
+
 AgentContext AgentExecutor::PrepareContext(const std::string& agent_name) {
   AgentContext ctx;
+
+  if (!root_context_) {
+    root_context_ = std::make_shared<core::Context>("root");
+    stack_ = std::make_shared<core::DelegationStack>(root_context_);
+  }
+
+  ctx.context = root_context_;
+
   ctx.call_expert = [this](const std::string& name, const std::string& inp) {
     return CallAgent(name, inp);
   };
@@ -80,9 +95,19 @@ std::string AgentExecutor::Dispatch(const std::string& input) {
     manager_.SetActiveAgent(target);
   }
 
+  if (root_context_) {
+    root_context_->Append("user", message);
+  }
+
   AgentContext ctx = PrepareContext(target);
   std::cout << "\n[" << target << "] " << std::flush;
-  return Execute(target, message, ctx);
+  std::string response = Execute(target, message, ctx);
+
+  if (root_context_ && !response.empty()) {
+    root_context_->Append(target, response);
+  }
+
+  return response;
 }
 
 }  // namespace pu::agent
