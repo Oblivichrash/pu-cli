@@ -83,14 +83,21 @@ std::string OpenAIBackend::BuildRequestWithTools(
 
   json tools_json = json::array();
   for (const auto& tool : tools) {
-    tools_json.push_back({
-      {"type", "function"},
-      {"function", {
-        {"name", tool.name},
-        {"description", tool.description},
-        {"parameters", json::parse(tool.parameters.raw_schema)}
-      }}
-    });
+    json params_json;
+    try {
+      params_json = json::parse(tool.parameters.raw_schema);
+    } catch (const std::exception&) {
+      params_json = json::object();
+    }
+
+    json function_obj = {
+      {"name", tool.name},
+      {"description", tool.description}
+    };
+
+    function_obj["parameters"] = params_json.dump();
+
+    tools_json.push_back({{"type", "function"}, {"function", function_obj}});
   }
   req["tools"] = tools_json;
   return req.dump();
