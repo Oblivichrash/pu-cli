@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/write_file_tool.hpp"
-#include <fstream>
-#include <filesystem>
+
 #include <nlohmann/json.hpp>
+
+#include <filesystem>
+#include <fstream>
 
 namespace pu::tools {
 
@@ -41,14 +43,12 @@ std::string WriteFileTool::Execute(const nlohmann::json& args, agent::ToolContex
   full_path = std::filesystem::weakly_canonical(full_path, ec);
   if (ec) return "Error: invalid path";
 
-  // Ensure the resolved path is within sandbox root
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
     return "Error: path outside sandbox root (traversal not allowed)";
   }
 
-  // Create parent directories if needed
   std::filesystem::create_directories(full_path.parent_path(), ec);
   if (ec) return "Error: cannot create parent directories";
 

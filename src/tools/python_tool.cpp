@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/python_tool.hpp"
-#include <fstream>
-#include <sstream>
+
+#include <nlohmann/json.hpp>
+
+#include <array>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <chrono>
-#include <thread>
+#include <fstream>
 #include <future>
 #include <regex>
+#include <sstream>
+#include <thread>
 
 #ifdef _WIN32
 #define popen _popen
@@ -33,12 +37,10 @@ void PythonTool::Parse(const std::string& content) {
   bool in_code = false;
 
   while (std::getline(iss, line)) {
-    // Trim leading/trailing whitespace for detection
     std::string trimmed = line;
     trimmed.erase(0, trimmed.find_first_not_of(" \t"));
     trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
 
-    // Parse metadata lines (only before code starts)
     if (!in_code) {
       if (trimmed.find("# tool:") == 0) {
         name_ = trimmed.substr(7);
@@ -72,7 +74,6 @@ void PythonTool::Parse(const std::string& content) {
       }
     }
 
-    // Once we encounter the first non-metadata line, start collecting code
     in_code = true;
     code_builder << line << "\n";
   }
@@ -81,7 +82,6 @@ void PythonTool::Parse(const std::string& content) {
   if (name_.empty() || description_.empty() || parameters_schema_.empty() || python_code_.empty()) {
     throw std::runtime_error("Invalid Python tool definition in " + file_path_);
   }
-  // Ensure the code contains a 'run' function (basic check)
   if (python_code_.find("def run(") == std::string::npos) {
     throw std::runtime_error("Python tool missing 'run' function in " + file_path_);
   }

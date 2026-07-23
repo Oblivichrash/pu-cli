@@ -3,10 +3,11 @@
 
 #include "ui.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
 
 namespace pu::cli {
 
@@ -16,8 +17,8 @@ SessionManager::SessionManager(std::filesystem::path store_dir, agent::AgentMana
 bool SessionManager::SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
                                      bool no_summary, GlobalContext& global_ctx,
                                      std::shared_ptr<core::Context> root_context) {
-  (void)no_summary;   // placeholder for future summary control
-  (void)global_ctx;   // reserved for future use
+  (void)no_summary;
+  (void)global_ctx;
   Conversation conv;
   conv.id = name;
   conv.created_at = messages.empty() ? CurrentTimestamp() : messages.front().timestamp;
@@ -29,7 +30,7 @@ bool SessionManager::SaveConversation(const std::string& name, const std::vector
     store_.Save(conv);
     std::cout << "[INFO] Conversation saved as '" << conv.id << "'\n";
   } catch (const std::exception& e) {
-    std::cerr << "Error: failed to save conversation: " << e.what() << "\n";
+    std::cerr << "Error: failed to save conversation: " << e.what() << '\n';
     return false;
   }
 
@@ -52,7 +53,7 @@ bool SessionManager::LoadConversation(const std::string& id, std::vector<ChatMes
     std::cout << "[INFO] Loaded conversation '" << id << "'\n";
     return true;
   } catch (const std::exception& e) {
-    std::cerr << "Error: failed to load conversation: " << e.what() << "\n";
+    std::cerr << "Error: failed to load conversation: " << e.what() << '\n';
     return false;
   }
 }
@@ -61,7 +62,7 @@ std::vector<Conversation> SessionManager::ListConversations() const {
   std::vector<std::string> errors;
   auto convs = store_.List(errors);
   for (const auto& err : errors) {
-    std::cout << "  [Warning] " << err << "\n";
+    std::cout << "  [Warning] " << err << '\n';
   }
   return convs;
 }
@@ -70,7 +71,7 @@ std::string SessionManager::ExportMarkdown(const std::string& id) const {
   try {
     return store_.ExportMarkdown(id);
   } catch (const std::exception& e) {
-    std::cerr << "Error: failed to export conversation: " << e.what() << "\n";
+    std::cerr << "Error: failed to export conversation: " << e.what() << '\n';
     return "";
   }
 }

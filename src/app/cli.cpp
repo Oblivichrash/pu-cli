@@ -3,15 +3,17 @@
 
 #include "agents/llm/llm_agent.hpp"
 #include "http/curl_http_client.hpp"
-#include "ui.hpp"
 #include "session.hpp"
-#include "pu/executor.hpp"
-#include "pu/orchestrator.hpp"
+#include "ui.hpp"
+
 #include "pu/core/context.hpp"
 #include "pu/core/delegation.hpp"
 #include "pu/core/delegation_stack.hpp"
+#include "pu/executor.hpp"
+#include "pu/orchestrator.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -33,7 +35,7 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   try {
     ctx.config_path = agent::config::FindConfigPath();
   } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << "\n";
+    std::cerr << "Error: " << e.what() << '\n';
     std::exit(1);
   }
 
@@ -52,14 +54,14 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
     try {
       ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
     } catch (const std::exception& e) {
-      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << "\n";
+      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << '\n';
       std::exit(1);
     }
   }
 
   if (!active_found) {
     std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
-    for (const auto& e : ctx.agents_config.agents) std::cerr << "  " << e.name << "\n";
+    for (const auto& e : ctx.agents_config.agents) std::cerr << "  " << e.name << '\n';
     std::exit(1);
   }
 
@@ -68,7 +70,7 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   return ctx;
 }
 
-} // namespace
+}  // namespace
 
 int RunAsk(int argc, char* argv[]) {
   std::string requested_agent;
@@ -107,7 +109,7 @@ int RunAsk(int argc, char* argv[]) {
     agent::AgentExecutor executor(ctx.manager);
     executor.Dispatch(prompt);
   } catch (const std::exception& e) {
-    std::cerr << "\nError: " << e.what() << "\n";
+    std::cerr << "\nError: " << e.what() << '\n';
     return 1;
   }
   return 0;
@@ -226,7 +228,7 @@ int RunChat(int argc, char* argv[]) {
     if (input[0] == '/') {
       std::string cmd_output;
       if (orchestrator.HandleCommand(input, cmd_output)) {
-        std::cout << cmd_output << "\n";
+        std::cout << cmd_output << '\n';
         continue;
       }
 
@@ -268,7 +270,7 @@ int RunChat(int argc, char* argv[]) {
         if (!new_entry->description.empty()) {
           std::cout << " (" << new_entry->description << ")";
         }
-        std::cout << "\n";
+        std::cout << '\n';
       } else if (input.rfind("/save", 0) == 0) {
         std::string args = input.substr(5);
         bool no_summary = false;
@@ -312,7 +314,7 @@ int RunChat(int argc, char* argv[]) {
               }
             }
           } catch (const std::exception& e) {
-            std::cerr << "Error generating summary: " << e.what() << "\n";
+            std::cerr << "Error generating summary: " << e.what() << '\n';
           }
         }
       } else if (input.rfind("/load ", 0) == 0) {
@@ -341,10 +343,10 @@ int RunChat(int argc, char* argv[]) {
           std::string filename = "conversation_" + export_id + ".md";
           std::ofstream out(filename);
           if (!out) {
-            std::cerr << "Error: cannot write to " << filename << "\n";
+            std::cerr << "Error: cannot write to " << filename << '\n';
           } else {
             out << md;
-            std::cout << "[INFO] Exported to " << filename << "\n";
+            std::cout << "[INFO] Exported to " << filename << '\n';
           }
         }
       } else if (input.rfind("/note", 0) == 0) {
@@ -355,7 +357,7 @@ int RunChat(int argc, char* argv[]) {
           } else {
             std::cout << "Notes for " << current_name << ":\n";
             for (const auto& note : notes) {
-              std::cout << note << "\n";
+              std::cout << note << '\n';
             }
           }
         } else if (input.rfind("/note add ", 0) == 0) {
@@ -450,7 +452,7 @@ int RunLearn(int argc, char* argv[]) {
   auto generated_dir = pu_dir / "generated" / "agents";
 
   if (!std::filesystem::exists(conv_dir)) {
-    std::cerr << "No conversations found in " << conv_dir << "\n";
+    std::cerr << "No conversations found in " << conv_dir << '\n';
     return 0;
   }
 
@@ -458,10 +460,10 @@ int RunLearn(int argc, char* argv[]) {
 
   std::cout << "[Learn] Scanning " << conv_dir << " for sessions (threshold=" << threshold
             << ", max=" << max_sessions << ")\n";
-  std::cout << "[Learn] Generated agents will be saved to " << generated_dir << "\n";
+  std::cout << "[Learn] Generated agents will be saved to " << generated_dir << '\n';
   std::cout << "[Learn] (Implementation in progress)\n";
 
   return 0;
 }
 
-} // namespace pu::cli
+}  // namespace pu::cli

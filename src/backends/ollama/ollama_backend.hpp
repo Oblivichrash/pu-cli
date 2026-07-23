@@ -3,8 +3,9 @@
 
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
-#include <nlohmann/json.hpp>
+
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 
 namespace pu::backends::ollama {

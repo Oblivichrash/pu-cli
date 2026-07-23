@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "agents/llm/llm_agent.hpp"
+
 #include "pu/renderer.hpp"
+
 #include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
-#include <filesystem>
 
 namespace pu::agents {
 
@@ -109,8 +112,6 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
   }
 
   auto history = initial_history;
-  // Note: user_input is already in initial_history (added in Handle()).
-  // Do NOT push another user message here.
 
   auto tools = tool_registry_->GetToolDefinitions();
   std::string final_response;
@@ -138,7 +139,7 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
         });
     } catch (const std::exception& e) {
       auto err = "Request failed: " + std::string(e.what());
-      std::cerr << "\nError: " << err << "\n";
+      std::cerr << "\nError: " << err << '\n';
       final_response = err;
       turn_history.push_back({0, "", name_, final_response, ""});
       break;
@@ -150,13 +151,11 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
       break;
     }
 
-    // Push assistant message with tool_calls BEFORE executing tools
     backend::Message assistant_msg;
     assistant_msg.role = backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;
     history.push_back(assistant_msg);
 
-    // Also record in turn_history (without content)
     turn_history.push_back({0, "", name_, "", ""});
 
     agent::ToolContext tool_ctx;

@@ -13,7 +13,7 @@ void AgentManager::RegisterAgent(std::unique_ptr<BaseAgent> agent) {
   }
   std::string name = agent->Name();
   if (agents_.count(name)) {
-    std::cerr << "[AgentManager] Duplicate agent name: " << name << "\n";
+    std::cerr << "[AgentManager] Duplicate agent name: " << name << '\n';
     return;
   }
   agents_[name] = std::move(agent);

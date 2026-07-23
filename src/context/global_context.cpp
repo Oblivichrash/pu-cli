@@ -29,7 +29,7 @@ void GlobalContext::EnsureLoaded() {
       try {
         file >> root_;
       } catch (const std::exception& e) {
-        std::cerr << "[GlobalContext] Failed to parse " << context_path_ << ": " << e.what() << "\n";
+        std::cerr << "[GlobalContext] Failed to parse " << context_path_ << ": " << e.what() << '\n';
       }
     }
   } else {
@@ -85,7 +85,7 @@ void GlobalContext::Save() const {
   if (file.is_open()) {
     file << root_.dump(2);
   } else {
-    std::cerr << "[GlobalContext] Failed to save to " << context_path_ << "\n";
+    std::cerr << "[GlobalContext] Failed to save to " << context_path_ << '\n';
   }
 }
 

@@ -42,7 +42,7 @@ void PrintAgents(const agent::config::AgentsConfig& cfg, const std::string& curr
     if (entry.name == current) {
       std::cout << " [current]";
     }
-    std::cout << "\n";
+    std::cout << '\n';
   }
 }
 
@@ -52,7 +52,7 @@ void PrintConversationList(const std::vector<pu::Conversation>& convs) {
     return;
   }
   for (const auto& c : convs) {
-    std::cout << "  " << c.id << " (" << c.messages.size() << " messages) created: " << c.created_at << "\n";
+    std::cout << "  " << c.id << " (" << c.messages.size() << " messages) created: " << c.created_at << '\n';
   }
 }
 

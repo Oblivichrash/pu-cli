@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/core/fact.hpp"
 #include "pu/conversation.hpp"
 
 #include <filesystem>
-#include <nlohmann/json.hpp>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "pu/core/fact.hpp"
 
 namespace pu::core {
 

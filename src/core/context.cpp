@@ -10,13 +10,17 @@
 
 namespace pu::core {
 
-static std::string CurrentTimestamp() {
+namespace {
+
+std::string CurrentTimestamp() {
   auto now = std::chrono::system_clock::now();
   auto in_time_t = std::chrono::system_clock::to_time_t(now);
   std::ostringstream ss;
   ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
   return ss.str();
 }
+
+}  // namespace
 
 Context::Context(std::string id) : id_(std::move(id)) {}
 

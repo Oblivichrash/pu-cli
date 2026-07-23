@@ -38,6 +38,8 @@ class Orchestrator {
   core::SummaryReport GenerateSummary(const std::shared_ptr<core::Context>& child_ctx,
                                       const core::Delegation& delegation);
 
+  void InjectSummaryIntoParent(const core::SummaryReport& report);
+
   std::shared_ptr<GlobalContext> ctx_;
   std::shared_ptr<CallStack> stack_;
   std::shared_ptr<core::DelegationStack> delegation_stack_;

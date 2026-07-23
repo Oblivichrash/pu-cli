@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/conversation_store.hpp"
+
 #include "pu/error.hpp"
+
 #include <nlohmann/json.hpp>
+
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -11,6 +14,7 @@ namespace pu {
 using json = nlohmann::json;
 
 namespace {
+
 json MessageToJson(const ChatMessage& msg) {
   return {{"id", msg.id}, {"timestamp", msg.timestamp}, {"role", msg.role},
           {"content", msg.content}, {"tool_name", msg.tool_name}};
@@ -37,6 +41,7 @@ auto ExpertHistoriesFromJson(const json& j) {
   }
   return result;
 }
+
 }  // namespace
 
 ConversationStore::ConversationStore(std::filesystem::path storage_dir)

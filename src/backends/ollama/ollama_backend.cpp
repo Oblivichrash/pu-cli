@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "backends/ollama/ollama_backend.hpp"
+
 #include "backends/common/streaming_json_parser.hpp"
-#include "pu/error.hpp"
 #include "platform/platform.hpp"
+#include "pu/error.hpp"
+
 #include <nlohmann/json.hpp>
 #include <iostream>
 
@@ -16,7 +18,6 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  // Inject system prompt
   auto messages_history = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
         return m.role == pu::backend::Message::Role::kSystem;
@@ -93,7 +94,7 @@ std::string OllamaBackend::BuildRequestWithTools(
       t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
     } catch (const std::exception& e) {
       std::cerr << "[OllamaBackend] Failed to parse schema for tool '" << tool.name
-                << "': " << e.what() << std::endl;
+                << "': " << e.what() << '\n';
       continue;
     }
     tools_json.push_back(t);

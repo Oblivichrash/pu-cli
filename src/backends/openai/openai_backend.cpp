@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "backends/openai/openai_backend.hpp"
-#include "pu/error.hpp"
-#include "platform/platform.hpp"
+
 #include "backends/common/streaming_json_parser.hpp"
+#include "platform/platform.hpp"
+#include "pu/error.hpp"
+
 #include <nlohmann/json.hpp>
 
 namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
-static std::string RoleToString(pu::backend::Message::Role role) {
+namespace {
+
+std::string RoleToString(pu::backend::Message::Role role) {
   switch (role) {
     case pu::backend::Message::Role::kSystem:    return "system";
     case pu::backend::Message::Role::kUser:      return "user";
@@ -19,7 +23,7 @@ static std::string RoleToString(pu::backend::Message::Role role) {
   }
 }
 
-static json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
+json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   json messages = json::array();
   for (const auto& msg : history) {
     json j{{"role", RoleToString(msg.role)}, {"content", msg.content}};
@@ -41,9 +45,11 @@ static json BuildMessagesJson(const std::vector<pu::backend::Message>& history) 
   return messages;
 }
 
-static std::string SafeString(const json& j, const char* key) {
+std::string SafeString(const json& j, const char* key) {
   return (j.contains(key) && j[key].is_string()) ? j[key].get<std::string>() : "";
 }
+
+}  // namespace
 
 std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>& history) const {
   json req;

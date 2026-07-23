@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_core.hpp"
+
 #include "pu/tools/python_tool.hpp"
+
 #include <nlohmann/json.hpp>
+
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <chrono>
 
 namespace pu::agent {
 
@@ -76,7 +79,7 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
         RegisterTool(std::move(tool));
         tool_file_mtimes_[name] = mtime;
       } catch (const std::exception& e) {
-        std::cerr << "[ToolRegistry] Failed to load tool " << name << ": " << e.what() << "\n";
+        std::cerr << "[ToolRegistry] Failed to load tool " << name << ": " << e.what() << '\n';
       }
     }
   }

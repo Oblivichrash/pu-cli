@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "pu/orchestrator.hpp"
+
 #include "pu/stack.hpp"
 
 #include <stdexcept>

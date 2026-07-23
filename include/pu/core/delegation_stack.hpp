@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/core/delegation.hpp"
 #include "pu/core/context.hpp"
+#include "pu/core/delegation.hpp"
 
 #include <memory>
 #include <vector>

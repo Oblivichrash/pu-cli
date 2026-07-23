@@ -2,6 +2,7 @@
 #pragma once
 
 #include "pu/http/http_client.hpp"
+
 #include <curl/curl.h>
 #include <functional>
 #include <string>
@@ -19,7 +20,6 @@ class CurlHttpClient : public HttpClient {
                   const std::vector<std::string>& headers, WriteCallback write_cb) override;
   void SetInterruptChecker(std::function<bool()> checker) override;
 
-  // Returns detailed error info (response body) from the last request
   std::string GetErrorDetail() const;
 
  private:

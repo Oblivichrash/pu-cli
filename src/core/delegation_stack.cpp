@@ -28,7 +28,6 @@ SummaryReport DelegationStack::Pop() {
   frames_.pop_back();
 
   if (!frame.delegation.result.has_value()) {
-    // Generate a default result if none was set
     SummaryReport report;
     report.status = SummaryReport::Status::kCompleted;
     report.summary = "[Delegation completed without explicit result]";

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "http/curl_http_client.hpp"
+
 #include "platform/platform.hpp"
 #include "pu/error.hpp"
+
 #include <curl/curl.h>
 #include <stdexcept>
 
@@ -29,19 +31,21 @@ int CurlHttpClient::ProgressCallback(void* clientp, curl_off_t, curl_off_t,
   return 0;
 }
 
-// Wrapper struct to pass both the user callback and response_body ref to curl
+namespace {
+
 struct WriteContext {
   WriteCallback cb;
   std::string* body;
 };
 
-static size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userdata) {
+size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userdata) {
   auto* ctx = static_cast<WriteContext*>(userdata);
   size_t bytes = size * nmemb;
-  // Also accumulate for error reporting
   if (ctx->body) ctx->body->append(ptr, bytes);
   return ctx->cb(ptr, bytes);
 }
+
+}  // namespace
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,

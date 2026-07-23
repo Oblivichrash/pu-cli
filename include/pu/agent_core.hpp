@@ -11,9 +11,9 @@
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
 #include "pu/context.hpp"
-#include "pu/stack.hpp"
 #include "pu/core/context.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/stack.hpp"
 #include "executor/command_executor.hpp"
 
 namespace pu::agent {
@@ -113,7 +113,6 @@ struct PendingAction {
 };
 
 struct AgentContext {
-
   std::shared_ptr<core::Context> context;
 
   [[deprecated("Use context->GetVar() and context->Append() instead")]]

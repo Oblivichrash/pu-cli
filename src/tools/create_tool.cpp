@@ -1,12 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/create_tool.hpp"
-#include <fstream>
-#include <filesystem>
-#include <regex>
-#include <iostream>
+
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <regex>
+
 namespace pu::tools {
+
+namespace {
+
+bool IsSafePythonCode(const std::string& code) {
+  std::vector<std::string> dangerous_patterns = {
+    "os.system", "subprocess", "eval(", "exec(", "__import__", "open(", "file(",
+    "execfile", "compile(", "globals()", "locals()", "__builtins__"
+  };
+  for (const auto& pat : dangerous_patterns) {
+    if (code.find(pat) != std::string::npos) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 std::string CreateTool::Name() const {
   return "create_tool";
@@ -28,19 +47,6 @@ std::string CreateTool::ParametersSchema() const {
     },
     "required": ["name", "description", "parameters_schema", "python_code"]
   })JSON";
-}
-
-static bool IsSafePythonCode(const std::string& code) {
-  std::vector<std::string> dangerous_patterns = {
-    "os.system", "subprocess", "eval(", "exec(", "__import__", "open(", "file(",
-    "execfile", "compile(", "globals()", "locals()", "__builtins__"
-  };
-  for (const auto& pat : dangerous_patterns) {
-    if (code.find(pat) != std::string::npos) {
-      return false;
-    }
-  }
-  return true;
 }
 
 std::string CreateTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {

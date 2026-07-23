@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_core.hpp"
-#include "executor/command_executor.hpp"
+
 #include "agents/llm/llm_agent.hpp"
+#include "executor/command_executor.hpp"
 #include "http/curl_http_client.hpp"
+
+#include "pu/tools/create_tool.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
-#include "pu/tools/create_tool.hpp"
+
 #include <memory>
 
 namespace pu::agent {
@@ -31,7 +34,6 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& 
     } else if (tool_name == "write_file") {
       tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
     }
-    // External Python tools are auto-loaded, unknown names are ignored.
   }
 
   return std::make_unique<agents::LLMAgent>(entry.name, std::move(backend), std::move(tool_registry), entry.security);

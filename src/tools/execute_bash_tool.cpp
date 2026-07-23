@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/execute_bash_tool.hpp"
+
 #include <nlohmann/json.hpp>
 
 namespace pu::tools {
