@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "agents/llm/llm_agent.hpp"
-#include "http/curl_http_client.hpp"
+#include "agent/llm_agent.hpp"
+#include "infra/curl_http_client.hpp"
 #include "session.hpp"
 #include "ui.hpp"
 
@@ -156,12 +156,10 @@ int RunChat(int argc, char* argv[]) {
   auto root_context = core::Context::LoadOrCreate(root_context_path);
   auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
 
-  auto call_stack = std::make_shared<CallStack>();
   manager.SetGlobalContext(global_ctx);
-  manager.SetCallStack(call_stack);
 
   SessionManager session(store_dir, manager);
-  Orchestrator orchestrator(global_ctx, call_stack, manager);
+  Orchestrator orchestrator(global_ctx, manager);
   orchestrator.SetDelegationStack(delegation_stack);
 
   agent::AgentExecutor executor(manager);
@@ -390,13 +388,8 @@ int RunChat(int argc, char* argv[]) {
       continue;
     }
 
-    std::string actual_agent;
-    if (!call_stack->IsEmpty()) {
-      actual_agent = call_stack->Top().agent_name;
-    } else {
-      actual_agent = manager.GetActiveAgent();
-      if (actual_agent.empty()) actual_agent = "chat";
-    }
+    std::string actual_agent = manager.GetActiveAgent();
+    if (actual_agent.empty()) actual_agent = "chat";
 
     panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "executor/command_executor.hpp"
+#include "tools/command_executor.hpp"
 
-#include "platform/platform.hpp"
+#include "infra/platform.hpp"
 
 #include <algorithm>
 #include <regex>

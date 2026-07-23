@@ -38,7 +38,6 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name) {
   ctx.working_dir = ".";
   ctx.show_reasoning = manager_.GetShowReasoning();
   ctx.global_ctx = manager_.GetGlobalContext();
-  ctx.call_stack = manager_.GetCallStack();
 
   auto prompt = manager_.GetSystemPrompt(agent_name);
   if (prompt) {
@@ -75,7 +74,6 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
   ctx.working_dir = ".";
   ctx.show_reasoning = manager_.GetShowReasoning();
   ctx.global_ctx = manager_.GetGlobalContext();
-  ctx.call_stack = manager_.GetCallStack();
 
   auto prompt = manager_.GetSystemPrompt(agent_name);
   if (prompt) {

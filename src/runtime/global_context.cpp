@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/context.hpp"
+#include "pu/global_context.hpp"
 
 #include <fstream>
 #include <iostream>

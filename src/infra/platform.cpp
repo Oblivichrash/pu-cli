@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "platform/platform.hpp"
+#include "infra/platform.hpp"
 
 #include <array>
 #include <atomic>

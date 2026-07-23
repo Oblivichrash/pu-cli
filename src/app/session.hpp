@@ -7,7 +7,7 @@
 
 #include "pu/agent_core.hpp"
 #include "pu/conversation_store.hpp"
-#include "pu/context.hpp"
+#include "pu/global_context.hpp"
 #include "pu/core/context.hpp"
 
 namespace pu::cli {

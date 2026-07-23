@@ -11,9 +11,8 @@
 namespace pu {
 
 Orchestrator::Orchestrator(std::shared_ptr<GlobalContext> ctx,
-                           std::shared_ptr<CallStack> stack,
                            agent::AgentManager& manager)
-    : ctx_(std::move(ctx)), stack_(std::move(stack)), manager_(manager) {}
+    : ctx_(std::move(ctx)), manager_(manager) {}
 
 void Orchestrator::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
   delegation_stack_ = std::move(stack);
@@ -210,69 +209,11 @@ std::string Orchestrator::Process(const std::string& input) {
 
     final_response = response;
   } else {
-    while (true) {
-      if (stack_->IsEmpty()) {
-        final_response = executor.Dispatch(current_input);
-        break;
-      }
-
-      const StackFrame& top = stack_->Top();
-      std::string agent_name = top.agent_name;
-
-      agent::AgentContext ctx = executor.PrepareContext(agent_name);
-      std::string response = executor.Execute(agent_name, current_input, ctx);
-
-      if (ctx.pending_action.type == agent::PendingAction::Type::kPush) {
-        Push(ctx.pending_action.agent_name);
-        current_input = "";
-        continue;
-      }
-
-      if (ctx.pending_action.type == agent::PendingAction::Type::kPop) {
-        if (!stack_->IsEmpty()) {
-          Pop();
-        }
-        if (stack_->IsEmpty()) {
-          final_response = response;
-          break;
-        } else {
-          current_input = response;
-          continue;
-        }
-      }
-
-      final_response = response;
-      break;
-    }
+    // No delegation stack active; dispatch as normal conversation
+    final_response = executor.Dispatch(current_input);
   }
 
   return final_response;
-}
-
-void Orchestrator::Push(const std::string& agent_name) {
-  StackFrame frame;
-  frame.agent_name = agent_name;
-  frame.invocation_id = "manual_" + std::to_string(stack_->Size() + 1);
-  stack_->Push(frame);
-}
-
-void Orchestrator::Pop() {
-  if (!stack_->IsEmpty()) {
-    stack_->Pop();
-  }
-}
-
-std::string Orchestrator::ShowStack() const {
-  if (stack_->IsEmpty()) {
-    return "Stack is empty";
-  }
-  std::ostringstream oss;
-  oss << "Stack (top to bottom):\n";
-  const auto& frames = stack_->GetFrames();
-  for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
-    oss << "  " << it->agent_name << " (" << it->invocation_id << ")\n";
-  }
-  return oss.str();
 }
 
 bool Orchestrator::PushDelegation(const std::string& agent_name, const std::string& goal) {

@@ -2,7 +2,7 @@
 #include "backends/openai/openai_backend.hpp"
 
 #include "backends/common/streaming_json_parser.hpp"
-#include "platform/platform.hpp"
+#include "infra/platform.hpp"
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
@@ -23,22 +23,23 @@ std::string RoleToString(pu::backend::Message::Role role) {
   }
 }
 
-json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
+static json BuildMessagesJson(const std::vector<pu::backend::Message>& history) {
   json messages = json::array();
   for (const auto& msg : history) {
     json j{{"role", RoleToString(msg.role)}, {"content", msg.content}};
-    if (msg.role == pu::backend::Message::Role::kTool) j["tool_call_id"] = msg.tool_name;
+    if (msg.role == pu::backend::Message::Role::kTool) {
+        j["tool_call_id"] = msg.tool_name;
+    }
     if (!msg.tool_calls.empty()) {
-      json tcs = json::array();
-      for (const auto& tc : msg.tool_calls) {
-        json func = {{"name", tc.name}};
-        if (!tc.arguments.empty()) {
-          try { func["arguments"] = json::parse(tc.arguments); }
-          catch (...) { func["arguments"] = tc.arguments; }
+        json tcs = json::array();
+        for (const auto& tc : msg.tool_calls) {
+            json func = {{"name", tc.name}};
+            if (!tc.arguments.empty()) {
+                func["arguments"] = tc.arguments;
+            }
+            tcs.push_back({{"id", tc.id}, {"type", "function"}, {"function", func}});
         }
-        tcs.push_back({{"id", tc.id}, {"type", "function"}, {"function", func}});
-      }
-      j["tool_calls"] = tcs;
+        j["tool_calls"] = tcs;
     }
     messages.push_back(j);
   }
@@ -101,7 +102,7 @@ std::string OpenAIBackend::BuildRequestWithTools(
       {"description", tool.description}
     };
 
-    function_obj["parameters"] = params_json.dump();
+    function_obj["parameters"] = params_json;
 
     tools_json.push_back({{"type", "function"}, {"function", function_obj}});
   }

@@ -69,10 +69,6 @@ void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
   global_ctx_ = std::move(ctx);
 }
 
-void AgentManager::SetCallStack(std::shared_ptr<CallStack> stack) {
-  call_stack_ = std::move(stack);
-}
-
 void AgentManager::ClearSessions() {
   for (auto& [name, agent] : agents_) {
     agent->ResetSession();

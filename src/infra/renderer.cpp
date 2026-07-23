@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/renderer.hpp"
 
-#include "platform/platform.hpp"
+#include "infra/platform.hpp"
 
 #include <iostream>
 

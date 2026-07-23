@@ -2,7 +2,7 @@
 #include "backends/ollama/ollama_backend.hpp"
 
 #include "backends/common/streaming_json_parser.hpp"
-#include "platform/platform.hpp"
+#include "infra/platform.hpp"
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>

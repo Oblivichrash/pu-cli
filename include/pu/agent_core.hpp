@@ -10,11 +10,10 @@
 
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
-#include "pu/context.hpp"
+#include "pu/global_context.hpp"
 #include "pu/core/context.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/stack.hpp"
-#include "executor/command_executor.hpp"
+#include "tools/command_executor.hpp"
 
 namespace pu::agent {
 
@@ -115,29 +114,19 @@ struct PendingAction {
 struct AgentContext {
   std::shared_ptr<core::Context> context;
 
-  [[deprecated("Use context->GetVar() and context->Append() instead")]]
   std::function<std::string(const std::string&, const std::string&)> call_expert;
 
-  [[deprecated("Use context->GetVar('confirmation_callback') instead")]]
   ConfirmationCallback request_confirmation;
 
-  [[deprecated("Use context->GetVar('working_dir') instead")]]
   std::string working_dir;
 
-  [[deprecated("Use context->GetVar('show_reasoning') instead")]]
   bool show_reasoning = false;
 
-  [[deprecated("Use context->GetHistory() instead")]]
   std::vector<ChatMessage> recent_panel_messages;
 
-  [[deprecated("Use context->GetVar('system_prompt') instead")]]
   std::optional<std::string> system_prompt;
 
-  [[deprecated("Use context->GetVar('global_ctx') instead")]]
   std::shared_ptr<GlobalContext> global_ctx;
-
-  [[deprecated("Use context->GetVar('call_stack') instead")]]
-  std::shared_ptr<CallStack> call_stack;
 
   PendingAction pending_action;
 };
@@ -179,14 +168,12 @@ class AgentManager {
   ConfirmationCallback GetConfirmationCallback() const { return confirmation_callback_; }
   bool GetShowReasoning() const { return show_reasoning_; }
   std::shared_ptr<GlobalContext> GetGlobalContext() const { return global_ctx_; }
-  std::shared_ptr<CallStack> GetCallStack() const { return call_stack_; }
   std::optional<std::string> GetSystemPrompt(const std::string& agent_name) const;
 
   void SetConfirmationCallback(ConfirmationCallback cb);
   void SetShowReasoning(bool enable);
   void SetSystemPrompt(const std::string& agent_name, const std::string& prompt);
   void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
-  void SetCallStack(std::shared_ptr<CallStack> stack);
 
   void ClearSessions();
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
@@ -199,7 +186,6 @@ class AgentManager {
   ConfirmationCallback confirmation_callback_;
   std::unordered_map<std::string, std::string> system_prompts_;
   std::shared_ptr<GlobalContext> global_ctx_;
-  std::shared_ptr<CallStack> call_stack_;
 };
 
 }  // namespace pu::agent

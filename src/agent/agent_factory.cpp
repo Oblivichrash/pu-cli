@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_core.hpp"
 
-#include "agents/llm/llm_agent.hpp"
-#include "executor/command_executor.hpp"
-#include "http/curl_http_client.hpp"
+#include "agent/llm_agent.hpp"
+#include "tools/command_executor.hpp"
+#include "infra/curl_http_client.hpp"
 
 #include "pu/tools/create_tool.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
