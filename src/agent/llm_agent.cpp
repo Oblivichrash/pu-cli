@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "agent/llm_agent.hpp"
+#include "pu/core/context.hpp"
+#include "tools/command_executor.hpp"
 
 #include "pu/renderer.hpp"
 
@@ -79,7 +81,10 @@ void LLMAgent::AppendTurnToHistory(const std::vector<backend::Message>& history,
 }
 
 std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx) {
-  if (ctx.system_prompt && !ctx.system_prompt->empty()) {
+  // Read system_prompt from context vars
+  auto system_prompt_var = ctx.context->GetVar("system_prompt");
+  if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
+    std::string prompt = system_prompt_var->get<std::string>();
     bool has_system = false;
     for (const auto& cm : history_) {
       if (cm.role == "system") {
@@ -89,7 +94,7 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
     }
     if (!has_system) {
       history_.insert(history_.begin(),
-                      {0, "", "system", *ctx.system_prompt, ""});
+                      {0, "", "system", prompt, ""});
     }
   }
 
@@ -97,7 +102,15 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
 
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
-  auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
+
+  // Read show_reasoning from context vars
+  bool show_reasoning = false;
+  auto show_reasoning_var = ctx.context->GetVar("show_reasoning");
+  if (show_reasoning_var && show_reasoning_var->is_boolean()) {
+    show_reasoning = show_reasoning_var->get<bool>();
+  }
+
+  auto response = RunToolLoop(input, show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
@@ -160,13 +173,14 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
 
     agent::ToolContext tool_ctx;
     tool_ctx.security = &security_;
-    tool_ctx.request_confirmation = [&ctx](const std::string& message) -> bool {
-      pu::agent::ConfirmationRequest req;
+    tool_ctx.request_confirmation = [this](const std::string& message) -> bool {
+      if (!confirmation_callback_) return true;
+      agent::ConfirmationRequest req;
       req.description = message;
       req.highest_risk = pu::executor::RiskLevel::kNeutral;
-      auto choice = ctx.request_confirmation(req);
-      return (choice == pu::agent::ConfirmationChoice::kApproveOnce ||
-              choice == pu::agent::ConfirmationChoice::kApproveAllSafe);
+      auto choice = confirmation_callback_(req);
+      return (choice == agent::ConfirmationChoice::kApproveOnce ||
+              choice == agent::ConfirmationChoice::kApproveAllSafe);
     };
 
     for (const auto& call : collected_calls) {

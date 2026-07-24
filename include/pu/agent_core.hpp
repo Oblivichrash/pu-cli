@@ -8,12 +8,24 @@
 #include <unordered_map>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
+// Forward declarations to reduce include dependencies
+namespace pu {
+class GlobalContext;
+namespace core {
+class Context;
+}
+namespace http {
+class HttpClient;
+}
+namespace executor {
+enum class RiskLevel : int;
+}
+}  // namespace pu
+
 #include "pu/backend.hpp"
 #include "pu/conversation.hpp"
-#include "pu/global_context.hpp"
-#include "pu/core/context.hpp"
-#include "pu/http/http_client.hpp"
-#include "tools/command_executor.hpp"
 
 namespace pu::agent {
 
@@ -113,21 +125,6 @@ struct PendingAction {
 
 struct AgentContext {
   std::shared_ptr<core::Context> context;
-
-  std::function<std::string(const std::string&, const std::string&)> call_expert;
-
-  ConfirmationCallback request_confirmation;
-
-  std::string working_dir;
-
-  bool show_reasoning = false;
-
-  std::vector<ChatMessage> recent_panel_messages;
-
-  std::optional<std::string> system_prompt;
-
-  std::shared_ptr<GlobalContext> global_ctx;
-
   PendingAction pending_action;
 };
 
@@ -143,6 +140,9 @@ class BaseAgent {
 
   virtual std::vector<ChatMessage> SaveState() const { return {}; }
   virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
+
+  virtual ConfirmationCallback GetConfirmationCallback() const { return nullptr; }
+  virtual void SetConfirmationCallback(ConfirmationCallback cb) { (void)cb; }
 };
 
 class AgentRegistry {

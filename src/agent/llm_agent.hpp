@@ -29,6 +29,9 @@ class LLMAgent : public agent::BaseAgent {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
+  agent::ConfirmationCallback GetConfirmationCallback() const override { return confirmation_callback_; }
+  void SetConfirmationCallback(agent::ConfirmationCallback cb) override { confirmation_callback_ = std::move(cb); }
+
   void ReloadExternalTools();
 
  private:
@@ -48,6 +51,7 @@ class LLMAgent : public agent::BaseAgent {
   std::unique_ptr<backend::Backend> backend_;
   std::unique_ptr<agent::ToolRegistry> tool_registry_;
   agent::config::SecurityPolicy security_;
+  agent::ConfirmationCallback confirmation_callback_;
   std::vector<ChatMessage> history_;
 };
 

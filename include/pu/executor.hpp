@@ -18,9 +18,8 @@ class AgentExecutor {
 
   std::shared_ptr<core::DelegationStack> GetDelegationStack() const { return stack_; }
 
-  AgentContext PrepareContext(const std::string& agent_name);
   AgentContext PrepareContext(const std::string& agent_name,
-                              std::shared_ptr<core::Context> external_ctx);
+                              std::shared_ptr<core::Context> external_ctx = nullptr);
   std::string Execute(const std::string& agent_name, const std::string& input, AgentContext& ctx);
   std::string Dispatch(const std::string& input);
 

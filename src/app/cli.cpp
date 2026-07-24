@@ -11,6 +11,7 @@
 #include "pu/core/delegation_stack.hpp"
 #include "pu/executor.hpp"
 #include "pu/orchestrator.hpp"
+#include "tools/command_executor.hpp"
 
 #include <cstdlib>
 #include <filesystem>
