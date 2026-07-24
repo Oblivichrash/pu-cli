@@ -22,7 +22,7 @@ std::string ExecuteBashToolStandard::Name() const {
 }
 
 std::string ExecuteBashToolStandard::Description() const {
-  return "Execute a safe Linux bash command and return the output. Use this tool for any command-line operation.";
+  return "Execute a bash command and return output.";
 }
 
 std::string ExecuteBashToolStandard::ParametersSchema() const {
@@ -79,14 +79,14 @@ std::string WriteFileTool::Name() const {
 }
 
 std::string WriteFileTool::Description() const {
-  return "Write text content to a file (overwrites if exists). Use this instead of bash redirections.";
+  return "Write text content to a file (overwrites if exists).";
 }
 
 std::string WriteFileTool::ParametersSchema() const {
   return R"##({
     "type": "object",
     "properties": {
-      "path": {"type": "string", "description": "File path (relative to current directory)"},
+      "path": {"type": "string", "description": "File path (relative to current dir)"},
       "content": {"type": "string", "description": "Text content to write"}
     },
     "required": ["path", "content"]
@@ -148,18 +148,17 @@ std::string CreateTool::Name() const {
 }
 
 std::string CreateTool::Description() const {
-  return "Create a new Python tool. Provide name, description, parameters schema, and Python code. "
-         "The tool will be saved and immediately available for use.";
+  return "Create a new Python tool with name, schema, and code.";
 }
 
 std::string CreateTool::ParametersSchema() const {
   return R"JSON({
     "type": "object",
     "properties": {
-      "name": {"type": "string", "description": "Unique tool name (alphanumeric, underscore allowed)"},
-      "description": {"type": "string", "description": "Brief description of what the tool does"},
+      "name": {"type": "string", "description": "Unique tool name (alphanumeric, underscore)"},
+      "description": {"type": "string", "description": "Brief description of the tool"},
       "parameters_schema": {"type": "string", "description": "JSON Schema for tool parameters"},
-      "python_code": {"type": "string", "description": "Python code containing a 'run' function"}
+      "python_code": {"type": "string", "description": "Python code with a 'run' function"}
     },
     "required": ["name", "description", "parameters_schema", "python_code"]
   })JSON";

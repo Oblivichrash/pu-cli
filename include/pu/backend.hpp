@@ -50,6 +50,8 @@ class Backend {
     std::string model;
     float temperature = 0.7f;
     std::optional<std::string> system_prompt;
+    bool parameters_as_string = false;
+    int max_tokens = 2048;
   };
 
   explicit Backend(Config c) : config_(std::move(c)) {}

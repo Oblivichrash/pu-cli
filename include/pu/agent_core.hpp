@@ -49,6 +49,8 @@ struct BackendConfig {
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
+  bool parameters_as_string = false;
+  int max_tokens = 2048;
 };
 
 struct AgentEntry {

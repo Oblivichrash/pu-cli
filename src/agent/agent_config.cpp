@@ -78,6 +78,8 @@ BackendConfig ParseBackendConfig(const json& j) {
   cfg.temperature = j.value("temperature", 0.7f);
   if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
   cfg.tool_call_style = ParseToolCallStyle(j.value("tool_call_style", "default"));
+  cfg.parameters_as_string = j.value("parameters_as_string", false);
+  cfg.max_tokens = j.value("max_tokens", 2048);
   return cfg;
 }
 
@@ -189,6 +191,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
+      ollama_cfg.max_tokens = cfg.max_tokens;
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
           std::move(ollama_cfg), std::move(http));
     }
@@ -199,6 +202,8 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.system_prompt = cfg.system_prompt;
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
+      openai_cfg.parameters_as_string = cfg.parameters_as_string;
+      openai_cfg.max_tokens = cfg.max_tokens;
       return std::make_unique<pu::backends::openai::OpenAIBackend>(
           openai_cfg, std::move(http));
     }

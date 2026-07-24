@@ -57,6 +57,7 @@ std::string OpenAIBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
+  req["max_tokens"] = config_.max_tokens;
 
   auto messages_history = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
@@ -77,6 +78,7 @@ std::string OpenAIBackend::BuildRequestWithTools(
   req["model"] = config_.model;
   req["stream"] = true;
   req["temperature"] = config_.temperature;
+  req["max_tokens"] = config_.max_tokens;
 
   auto messages_history = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
@@ -102,7 +104,11 @@ std::string OpenAIBackend::BuildRequestWithTools(
       {"description", tool.description}
     };
 
-    function_obj["parameters"] = params_json;
+    if (config_.parameters_as_string) {
+      function_obj["parameters"] = params_json.dump();
+    } else {
+      function_obj["parameters"] = params_json;
+    }
 
     tools_json.push_back({{"type", "function"}, {"function", function_obj}});
   }
