@@ -50,7 +50,7 @@ bool SessionManager::LoadConversation(const std::string& id, std::vector<ChatMes
     messages = conv.messages;
     manager_.RestoreAgents(conv.expert_histories);
     manager_.SetActiveAgent("");
-    std::cout << "[INFO] Loaded conversation '" << id << "'\n";
+    std::cout << "[+] Loaded conversation '" << id << "'\n";
     return true;
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to load conversation: " << e.what() << '\n';
@@ -62,7 +62,7 @@ std::vector<Conversation> SessionManager::ListConversations() const {
   std::vector<std::string> errors;
   auto convs = store_.List(errors);
   for (const auto& err : errors) {
-    std::cout << "  [Warning] " << err << '\n';
+    std::cout << "  [!] " << err << '\n';
   }
   return convs;
 }
@@ -81,7 +81,6 @@ void SessionManager::AddNote(const std::string& agent_name, const std::string& t
                              std::shared_ptr<core::Context> root_context) {
   std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
 
-  // --- 原有 GlobalContext 写入（保留） ---
   auto notes_opt = global_ctx.Read("memory/notes/" + agent_name);
   nlohmann::json notes_array = nlohmann::json::array();
   if (notes_opt && notes_opt->is_array()) {
@@ -90,7 +89,7 @@ void SessionManager::AddNote(const std::string& agent_name, const std::string& t
   notes_array.push_back(timestamped_note);
   global_ctx.Write("memory/notes/" + agent_name, notes_array);
 
-  // --- 新增：写入 core::Context ---
+  // Dual-write to core::Context during migration; GlobalContext will be removed later.
   if (root_context) {
     std::string var_key = "notes/" + agent_name;
     auto existing = root_context->GetVar(var_key);
@@ -107,7 +106,7 @@ std::vector<std::string> SessionManager::ShowNotes(const std::string& agent_name
                                                     std::shared_ptr<core::Context> root_context) const {
   std::vector<std::string> notes;
 
-  // 优先从 core::Context 读取
+  // Prefer core::Context, fallback to GlobalContext for backward compatibility.
   if (root_context) {
     std::string var_key = "notes/" + agent_name;
     auto val = root_context->GetVar(var_key);
@@ -115,11 +114,10 @@ std::vector<std::string> SessionManager::ShowNotes(const std::string& agent_name
       for (const auto& item : *val) {
         if (item.is_string()) notes.push_back(item.get<std::string>());
       }
-      return notes;  // 有数据则直接返回
+      return notes;
     }
   }
 
-  // 回退到 GlobalContext（向后兼容）
   auto notes_opt = global_ctx.Read("memory/notes/" + agent_name);
   if (notes_opt && notes_opt->is_array()) {
     for (const auto& note : *notes_opt) {
