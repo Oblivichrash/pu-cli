@@ -11,7 +11,7 @@ namespace pu::backends {
 class StreamingJsonParser {
  public:
   using LineCallback = std::function<void(std::string_view)>;
-  using ErrorCallback = std::function<void(std::error_code)>;
+  using ErrorCallback = std::function<void(const std::string&)>;
 
   StreamingJsonParser(LineCallback on_line, ErrorCallback on_error);
   void Feed(const char* data, size_t len);

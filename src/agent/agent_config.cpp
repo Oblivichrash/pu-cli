@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_config.hpp"
+#include "pu/agent_core.hpp"
 
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend.hpp"
 #include "pu/http/http_client.hpp"
-#include "pu/error_codes.hpp"
-#include "pu/token_adapter.hpp"
 
 #include <nlohmann/json.hpp>
+
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <regex>
 #include <stdexcept>
 
-namespace pu::config {
+namespace pu::agent::config {
 
 using json = nlohmann::json;
 
@@ -28,7 +28,7 @@ std::string ExpandEnvVars(const std::string& input) {
   while (std::regex_search(result, match, env_re)) {
     const char* env_val = std::getenv(match[1].str().c_str());
     std::string replacement = env_val ? env_val : "";
-    if (!env_val) std::cerr << "[WARN] Environment variable not set: " << match[1].str() << "\n";
+    if (!env_val) std::cerr << "[WARN] Environment variable not set: " << match[1].str() << '\n';
     result.replace(match.position(0), match.length(0), replacement);
   }
   return result;
@@ -67,10 +67,10 @@ SecurityPolicy ParseSecurityPolicy(const json& j) {
   return policy;
 }
 
-BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
+BackendConfig ParseBackendConfig(const json& j) {
   BackendConfig cfg;
   auto type = ParseBackendType(j.value("type", "ollama"));
-  if (!type) { ec = ConfigErrc::backend_unknown; return cfg; }
+  if (!type) throw std::runtime_error("Unknown backend type");
   cfg.type = *type;
   cfg.host = ExpandEnvVars(j.value("host", ""));
   cfg.model = ExpandEnvVars(j.value("model", ""));
@@ -78,18 +78,19 @@ BackendConfig ParseBackendConfig(const json& j, std::error_code& ec) {
   cfg.temperature = j.value("temperature", 0.7f);
   if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
   cfg.tool_call_style = ParseToolCallStyle(j.value("tool_call_style", "default"));
+  cfg.parameters_as_string = j.value("parameters_as_string", false);
+  cfg.max_tokens = j.value("max_tokens", 2048);
   return cfg;
 }
 
-AgentEntry ParseAgentEntry(const json& j, std::error_code& ec) {
+AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) {ec = ConfigErrc::missing_field; return entry; }
+  if (entry.name.empty()) throw std::runtime_error("Missing agent name field");
   entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object()) { ec = ConfigErrc::missing_field; return entry; }
-  entry.backend = ParseBackendConfig(j["backend"], ec);
-  if (ec) return entry;
-  if (entry.backend.host.empty() || entry.backend.model.empty()) { ec = ConfigErrc::missing_field; return entry; }
+  if (!j.contains("backend") || !j["backend"].is_object()) { throw std::runtime_error("Missing backend field"); }
+  entry.backend = ParseBackendConfig(j["backend"]);
+  if (entry.backend.host.empty() || entry.backend.model.empty()) { throw std::runtime_error("Missing host or model in backend config"); }
 
   if (j.contains("tools") && j["tools"].is_array()) {
     for (const auto& t : j["tools"]) {
@@ -112,30 +113,25 @@ std::string FindConfigPath() {
                            "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
-AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& ec) {
-  ec.clear();
+AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) { ec = ConfigErrc::file_not_found; return result; }
+  if (!file.is_open()) { throw std::runtime_error("Configuration file not found: " + config_path); }
 
   json j;
-  try { file >> j; } catch (const json::parse_error&) { ec = ConfigErrc::parse_error; return result; }
+  try { file >> j; } catch (const json::parse_error&) { throw std::runtime_error("Failed to parse configuration JSON"); }
 
   if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
-    ec = ConfigErrc::missing_field;
-    return result;
+    throw std::runtime_error("Missing default_agent field in config");
   }
   result.default_agent = j["default_agent"];
 
   if (!j.contains("agents") || !j["agents"].is_array()) {
-    ec = ConfigErrc::missing_field;
-    return result;
+    throw std::runtime_error("Missing agents array in config");
   }
 
   for (const auto& item : j["agents"]) {
-    std::error_code entry_ec;
-    auto entry = ParseAgentEntry(item, entry_ec);
-    if (entry_ec) { ec = entry_ec; return result; }
+    auto entry = ParseAgentEntry(item);
     result.agents.push_back(std::move(entry));
   }
 
@@ -145,13 +141,12 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path, std::error_code& e
   return result;
 }
 
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config, std::error_code& ec) {
-  ec.clear();
+void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
-  j["default_agent"] = config.default_agent;
+  j["default_agent"] = cfg.default_agent;
 
   json agents_array = json::array();
-  for (const auto& entry : config.agents) {
+  for (const auto& entry : cfg.agents) {
     json item;
     item["name"] = entry.name;
     item["description"] = entry.description;
@@ -182,14 +177,12 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config
   j["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open()) { ec = ConfigErrc::file_not_found; return; }
+  if (!file.is_open()) { throw std::runtime_error("Failed to open config file for writing: " + config_path); }
   file << j.dump(2);
 }
 
 std::unique_ptr<pu::backend::Backend> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http,
-    std::unique_ptr<pu::backends::ITokenAdapter> adapter, std::error_code& ec) {
-  ec.clear();
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
       pu::backends::ollama::OllamaBackend::Config ollama_cfg;
@@ -198,8 +191,9 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
+      ollama_cfg.max_tokens = cfg.max_tokens;
       return std::make_unique<pu::backends::ollama::OllamaBackend>(
-          std::move(ollama_cfg), std::move(http), std::move(adapter));
+          std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
       pu::backends::openai::OpenAIBackend::Config openai_cfg;
@@ -208,13 +202,14 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.system_prompt = cfg.system_prompt;
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
+      openai_cfg.parameters_as_string = cfg.parameters_as_string;
+      openai_cfg.max_tokens = cfg.max_tokens;
       return std::make_unique<pu::backends::openai::OpenAIBackend>(
-          std::move(openai_cfg), std::move(http), std::move(adapter));
+          openai_cfg, std::move(http));
     }
     default:
-      ec = ConfigErrc::backend_unknown;
-      return nullptr;
+      throw std::runtime_error("Unknown backend type");
   }
 }
 
-}  // namespace pu::config
+}  // namespace pu::agent::config

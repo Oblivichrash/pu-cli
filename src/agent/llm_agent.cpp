@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "agents/llm/llm_agent.hpp"
+#include "agent/llm_agent.hpp"
+#include "pu/core/context.hpp"
+#include "tools/command_executor.hpp"
+
 #include "pu/renderer.hpp"
+
 #include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
-#include <filesystem>
 
 namespace pu::agents {
 
 LLMAgent::LLMAgent(const std::string& name,
                    std::unique_ptr<backend::Backend> backend,
                    std::unique_ptr<agent::ToolRegistry> tool_registry,
-                   const config::SecurityPolicy& security)
+                   const agent::config::SecurityPolicy& security)
     : name_(name), backend_(std::move(backend)), tool_registry_(std::move(tool_registry)),
       security_(security) {
   ReloadExternalTools();
@@ -20,7 +25,6 @@ LLMAgent::LLMAgent(const std::string& name,
 
 void LLMAgent::ResetSession() {
   history_.clear();
-  recent_scores_.clear();
 }
 
 std::vector<backend::Message> LLMAgent::BuildInitialHistory() const {
@@ -77,7 +81,10 @@ void LLMAgent::AppendTurnToHistory(const std::vector<backend::Message>& history,
 }
 
 std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx) {
-  if (ctx.system_prompt && !ctx.system_prompt->empty()) {
+  // Read system_prompt from context vars
+  auto system_prompt_var = ctx.context->GetVar("system_prompt");
+  if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
+    std::string prompt = system_prompt_var->get<std::string>();
     bool has_system = false;
     for (const auto& cm : history_) {
       if (cm.role == "system") {
@@ -87,7 +94,7 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
     }
     if (!has_system) {
       history_.insert(history_.begin(),
-                      {0, "", "system", *ctx.system_prompt, ""});
+                      {0, "", "system", prompt, ""});
     }
   }
 
@@ -95,7 +102,15 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
 
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
-  auto response = RunToolLoop(input, ctx.show_reasoning, turn_history, ctx, initial);
+
+  // Read show_reasoning from context vars
+  bool show_reasoning = false;
+  auto show_reasoning_var = ctx.context->GetVar("show_reasoning");
+  if (show_reasoning_var && show_reasoning_var->is_boolean()) {
+    show_reasoning = show_reasoning_var->get<bool>();
+  }
+
+  auto response = RunToolLoop(input, show_reasoning, turn_history, ctx, initial);
   history_.insert(history_.end(), turn_history.begin(), turn_history.end());
   return response;
 }
@@ -110,8 +125,6 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
   }
 
   auto history = initial_history;
-  // Note: user_input is already in initial_history (added in Handle()).
-  // Do NOT push another user message here.
 
   auto tools = tool_registry_->GetToolDefinitions();
   std::string final_response;
@@ -122,25 +135,24 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
     std::vector<backend::ToolCall> collected_calls;
     std::ostringstream content_stream;
     auto renderer = pu::StreamingRenderer::Create(show_reasoning);
-    std::error_code ec;
 
-    backend_->Chat(history, tools,
-      [&](backend::TokenType type, std::string_view token, bool is_final) {
-        if (type == backend::TokenType::kContent) {
-          renderer(type, token, is_final);
-          if (!is_final) content_stream << token;
-        } else if (type == backend::TokenType::kReasoning) {
-          renderer(type, token, is_final);
-        }
-      },
-      [&](const backend::ToolCall& call) {
-        tool_was_called = true;
-        collected_calls.push_back(call);
-      }, ec);
-
-    if (ec) {
-      auto err = "Request failed: " + ec.message();
-      std::cerr << "\nError: " << err << "\n";
+    try {
+      backend_->Chat(history, tools,
+        [&](backend::TokenType type, std::string_view token, bool is_final) {
+          if (type == backend::TokenType::kContent) {
+            renderer(type, token, is_final);
+            if (!is_final) content_stream << token;
+          } else if (type == backend::TokenType::kReasoning) {
+            renderer(type, token, is_final);
+          }
+        },
+        [&](const backend::ToolCall& call) {
+          tool_was_called = true;
+          collected_calls.push_back(call);
+        });
+    } catch (const std::exception& e) {
+      auto err = "Request failed: " + std::string(e.what());
+      std::cerr << "\nError: " << err << '\n';
       final_response = err;
       turn_history.push_back({0, "", name_, final_response, ""});
       break;
@@ -152,24 +164,23 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
       break;
     }
 
-    // Push assistant message with tool_calls BEFORE executing tools
     backend::Message assistant_msg;
     assistant_msg.role = backend::Message::Role::kAssistant;
     assistant_msg.tool_calls = collected_calls;
     history.push_back(assistant_msg);
 
-    // Also record in turn_history (without content)
     turn_history.push_back({0, "", name_, "", ""});
 
     agent::ToolContext tool_ctx;
     tool_ctx.security = &security_;
-    tool_ctx.request_confirmation = [&ctx](const std::string& message) -> bool {
-      pu::agent::ConfirmationRequest req;
+    tool_ctx.request_confirmation = [this](const std::string& message) -> bool {
+      if (!confirmation_callback_) return true;
+      agent::ConfirmationRequest req;
       req.description = message;
       req.highest_risk = pu::executor::RiskLevel::kNeutral;
-      auto choice = ctx.request_confirmation(req);
-      return (choice == pu::agent::ConfirmationChoice::kApproveOnce ||
-              choice == pu::agent::ConfirmationChoice::kApproveAllSafe);
+      auto choice = confirmation_callback_(req);
+      return (choice == agent::ConfirmationChoice::kApproveOnce ||
+              choice == agent::ConfirmationChoice::kApproveAllSafe);
     };
 
     for (const auto& call : collected_calls) {
@@ -200,37 +211,6 @@ std::vector<ChatMessage> LLMAgent::SaveState() const {
 
 void LLMAgent::LoadState(const std::vector<ChatMessage>& messages) {
   history_ = messages;
-}
-
-double LLMAgent::EvaluateRelevance(const ChatMessage& msg) {
-  std::string lower = msg.content;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  double score = 0.0;
-  if (lower.find("error") != std::string::npos) score += 0.4;
-  if (lower.find("fail") != std::string::npos) score += 0.4;
-  if (lower.find("urgent") != std::string::npos) score += 0.5;
-  if (lower.find("crash") != std::string::npos) score += 0.5;
-  if (lower.find("timeout") != std::string::npos) score += 0.3;
-  return std::min(score, 1.0);
-}
-
-void LLMAgent::OnPanelMessage(const ChatMessage& msg) {
-  double s = EvaluateRelevance(msg);
-  if (s > 0.0) recent_scores_.push_back(s);
-}
-
-std::optional<std::string> LLMAgent::ProactiveReply() {
-  if (std::any_of(recent_scores_.begin(), recent_scores_.end(),
-                  [this](double s) { return s >= proactive_threshold_; })) {
-    recent_scores_.clear();
-    return "I noticed a possible error. Reply @" + name_ + " to investigate.";
-  }
-  return std::nullopt;
-}
-
-void LLMAgent::SetProactiveThreshold(double threshold) {
-  proactive_threshold_ = threshold;
 }
 
 void LLMAgent::ReloadExternalTools() {

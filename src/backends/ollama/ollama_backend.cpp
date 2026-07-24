@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "backends/ollama/ollama_backend.hpp"
-#include "pu/backend_helpers.hpp"
-#include "platform/platform.hpp"
+
 #include "backends/common/streaming_json_parser.hpp"
+#include "infra/platform.hpp"
+#include "pu/error.hpp"
+
 #include <nlohmann/json.hpp>
 #include <iostream>
 
@@ -16,7 +18,14 @@ std::string OllamaBackend::BuildRequest(const std::vector<pu::backend::Message>&
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = history;
+  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
+        return m.role == pu::backend::Message::Role::kSystem;
+      })) {
+    messages_history.insert(messages_history.begin(),
+        pu::backend::Message{pu::backend::Message::Role::kSystem, *config_.system_prompt});
+  }
+
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -40,7 +49,14 @@ std::string OllamaBackend::BuildRequestWithTools(
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
 
-  auto messages_history = pu::backend::InjectSystemPrompt(history, config_.system_prompt);
+  auto messages_history = history;
+  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const pu::backend::Message& m) {
+        return m.role == pu::backend::Message::Role::kSystem;
+      })) {
+    messages_history.insert(messages_history.begin(),
+        pu::backend::Message{pu::backend::Message::Role::kSystem, *config_.system_prompt});
+  }
+
   json messages = json::array();
   for (const auto& msg : messages_history) {
     std::string role;
@@ -78,7 +94,7 @@ std::string OllamaBackend::BuildRequestWithTools(
       t["function"]["parameters"] = json::parse(tool.parameters.raw_schema);
     } catch (const std::exception& e) {
       std::cerr << "[OllamaBackend] Failed to parse schema for tool '" << tool.name
-                << "': " << e.what() << std::endl;
+                << "': " << e.what() << '\n';
       continue;
     }
     tools_json.push_back(t);
@@ -87,16 +103,44 @@ std::string OllamaBackend::BuildRequestWithTools(
   return req.dump();
 }
 
-OllamaBackend::OllamaBackend(Config config, std::unique_ptr<pu::http::HttpClient> http,
-                             std::unique_ptr<ITokenAdapter> adapter)
+OllamaBackend::OllamaBackend(Config config, std::unique_ptr<pu::http::HttpClient> http)
     : Backend(std::move(config)), host_(std::move(config.host)),
-      api_key_(std::move(config.api_key)), http_(std::move(http)),
-      adapter_(std::move(adapter)) {}
+      api_key_(std::move(config.api_key)), http_(std::move(http)) {}
+
+void OllamaBackend::HandleJsonToken(const nlohmann::json& j,
+                                    backend::ChatCallback content_cb,
+                                    backend::ToolCallback tool_cb) {
+  if (j.contains("message")) {
+    const auto& msg = j["message"];
+    if (msg.contains("content") && msg["content"].is_string())
+      content_cb(backend::TokenType::kContent, msg["content"].get<std::string>(), false);
+    if (msg.contains("thinking") && msg["thinking"].is_string())
+      content_cb(backend::TokenType::kReasoning, msg["thinking"].get<std::string>(), false);
+    if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
+      for (const auto& tc : msg["tool_calls"]) {
+        backend::ToolCall call;
+        if (tc.contains("id")) call.id = tc["id"].get<std::string>();
+        if (tc.contains("function")) {
+          call.name = tc["function"].value("name", "");
+          if (tc["function"].contains("arguments")) {
+            const auto& args = tc["function"]["arguments"];
+            if (args.is_string()) call.arguments = args.get<std::string>();
+            else if (args.is_object() || args.is_array()) call.arguments = args.dump();
+          }
+        }
+        tool_cb(call);
+      }
+    }
+  }
+
+  if (j.contains("done") && j["done"].get<bool>()) {
+    content_cb(backend::TokenType::kContent, "", true);
+  }
+}
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
-                         pu::backend::ChatCallback cb, std::error_code& ec) {
+                         pu::backend::ChatCallback cb) {
   pu::platform::ClearInterruptFlag();
-  adapter_->Reset();
   auto body = BuildRequest(history);
   std::string url = host_ + "/api/chat";
 
@@ -107,25 +151,24 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     [this, cb](std::string_view line) {
       try {
         auto j = json::parse(line);
-        adapter_->HandleJson(j, cb, [](const backend::ToolCall&) {});
+        HandleJsonToken(j, cb, [](const backend::ToolCall&) {});
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [](const std::string& msg) { throw HttpError("Streaming error: " + msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
                          const std::vector<pu::backend::ToolDefinition>& tools,
                          pu::backend::ChatCallback content_cb,
-                         pu::backend::ToolCallback tool_cb, std::error_code& ec) {
+                         pu::backend::ToolCallback tool_cb) {
   pu::platform::ClearInterruptFlag();
-  adapter_->Reset();
   auto body = BuildRequestWithTools(history, tools);
   std::string url = host_ + "/api/chat";
 
@@ -136,17 +179,17 @@ void OllamaBackend::Chat(const std::vector<pu::backend::Message>& history,
     [this, content_cb, tool_cb](std::string_view line) {
       try {
         auto j = json::parse(line);
-        adapter_->HandleJson(j, content_cb, tool_cb);
+        HandleJsonToken(j, content_cb, tool_cb);
       } catch (const std::exception&) {}
     },
-    [&ec](std::error_code err) { if (!ec) ec = err; }
+    [](const std::string& msg) { throw HttpError("Streaming error: " + msg); }
   );
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (pu::platform::IsInterrupted()) return 0;
     return total;
   };
-  http_->PostStream(url, body, headers, write_cb, ec);
+  http_->PostStream(url, body, headers, write_cb);
 }
 
 }  // namespace pu::backends::ollama

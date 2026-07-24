@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/agent.hpp"
+#include "pu/agent_core.hpp"
 #include "pu/backend.hpp"
-#include "pu/tool_registry.hpp"
 #include "pu/conversation.hpp"
-#include "pu/agent_config.hpp"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -18,7 +17,7 @@ class LLMAgent : public agent::BaseAgent {
   LLMAgent(const std::string& name,
            std::unique_ptr<backend::Backend> backend,
            std::unique_ptr<agent::ToolRegistry> tool_registry,
-           const config::SecurityPolicy& security = {});
+           const agent::config::SecurityPolicy& security = {});
 
   std::string Name() const override { return name_; }
   std::string Description() const override { return description_; }
@@ -30,10 +29,8 @@ class LLMAgent : public agent::BaseAgent {
   std::vector<ChatMessage> SaveState() const override;
   void LoadState(const std::vector<ChatMessage>& messages) override;
 
-  void OnPanelMessage(const ChatMessage& msg) override;
-  std::optional<std::string> ProactiveReply() override;
-  double EvaluateRelevance(const ChatMessage& msg) override;
-  void SetProactiveThreshold(double threshold) override;
+  agent::ConfirmationCallback GetConfirmationCallback() const override { return confirmation_callback_; }
+  void SetConfirmationCallback(agent::ConfirmationCallback cb) override { confirmation_callback_ = std::move(cb); }
 
   void ReloadExternalTools();
 
@@ -53,10 +50,9 @@ class LLMAgent : public agent::BaseAgent {
   std::string description_;
   std::unique_ptr<backend::Backend> backend_;
   std::unique_ptr<agent::ToolRegistry> tool_registry_;
-  config::SecurityPolicy security_;
+  agent::config::SecurityPolicy security_;
+  agent::ConfirmationCallback confirmation_callback_;
   std::vector<ChatMessage> history_;
-  std::vector<double> recent_scores_;
-  double proactive_threshold_ = 0.6;
 };
 
 }  // namespace pu::agents

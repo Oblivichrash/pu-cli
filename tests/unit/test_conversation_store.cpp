@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/conversation_store.hpp"
-#include "pu/error_codes.hpp"
+#include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
-#include <system_error>
 
 using namespace pu;
 
@@ -50,12 +49,9 @@ TEST_CASE("ConversationStore save and load roundtrip", "[store]") {
   ConversationStore store(dir);
   auto original = MakeSampleConv();
 
-  std::error_code ec;
-  store.Save(original, ec);
-  REQUIRE_FALSE(ec);
+  REQUIRE_NOTHROW(store.Save(original));
 
-  auto loaded = store.Load(original.id, ec);
-  REQUIRE_FALSE(ec);
+  auto loaded = store.Load(original.id);
   REQUIRE(loaded.id == original.id);
   REQUIRE(loaded.created_at == original.created_at);
   REQUIRE(loaded.updated_at == original.updated_at);
@@ -74,29 +70,23 @@ TEST_CASE("ConversationStore save and load roundtrip", "[store]") {
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("ConversationStore reports error on non-existent id", "[store]") {
+TEST_CASE("ConversationStore throws on non-existent id", "[store]") {
   auto dir = MakeTempDir();
   ConversationStore store(dir);
 
-  std::error_code ec;
-  auto conv = store.Load("nonexistent", ec);
-  REQUIRE(ec);
-  REQUIRE(ec == StoreErrc::not_found);
+  REQUIRE_THROWS_AS(store.Load("nonexistent"), StoreError);
 
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("ConversationStore reports error on invalid JSON", "[store]") {
+TEST_CASE("ConversationStore throws on invalid JSON", "[store]") {
   auto dir = MakeTempDir();
   std::ofstream file(dir / "bad.json");
   file << "this is not json";
   file.close();
 
   ConversationStore store(dir);
-  std::error_code ec;
-  auto conv = store.Load("bad", ec);
-  REQUIRE(ec);
-  REQUIRE(ec == StoreErrc::invalid_data);
+  REQUIRE_THROWS_AS(store.Load("bad"), StoreError);
 
   std::filesystem::remove_all(dir);
 }
@@ -110,11 +100,8 @@ TEST_CASE("ConversationStore list conversations", "[store]") {
   auto conv2 = MakeSampleConv();
   conv2.id = "conv2";
 
-  std::error_code ec;
-  store.Save(conv1, ec);
-  REQUIRE_FALSE(ec);
-  store.Save(conv2, ec);
-  REQUIRE_FALSE(ec);
+  store.Save(conv1);
+  store.Save(conv2);
 
   auto list = store.List();
   REQUIRE(list.size() == 2);
@@ -130,6 +117,57 @@ TEST_CASE("ConversationStore list conversations", "[store]") {
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("ConversationStore list with errors collects failures", "[store]") {
+  auto dir = MakeTempDir();
+  ConversationStore store(dir);
+
+  // Save one valid conversation
+  auto conv1 = MakeSampleConv();
+  conv1.id = "good";
+  store.Save(conv1);
+
+  // Create an invalid JSON file
+  std::ofstream bad_file(dir / "bad.json");
+  bad_file << "not valid json at all";
+  bad_file.close();
+
+  // Call List with errors vector
+  std::vector<std::string> errors;
+  auto list = store.List(errors);
+
+  // Should have loaded the good one
+  REQUIRE(list.size() == 1);
+  REQUIRE(list[0].id == "good");
+
+  // Should have collected the error for the bad file
+  REQUIRE(errors.size() == 1);
+  REQUIRE(errors[0].find("bad") != std::string::npos);
+  REQUIRE(errors[0].find("Invalid conversation data") != std::string::npos);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("ConversationStore list with errors is empty when all valid", "[store]") {
+  auto dir = MakeTempDir();
+  ConversationStore store(dir);
+
+  auto conv1 = MakeSampleConv();
+  conv1.id = "a";
+  auto conv2 = MakeSampleConv();
+  conv2.id = "b";
+
+  store.Save(conv1);
+  store.Save(conv2);
+
+  std::vector<std::string> errors;
+  auto list = store.List(errors);
+
+  REQUIRE(list.size() == 2);
+  REQUIRE(errors.empty());
+
+  std::filesystem::remove_all(dir);
+}
+
 TEST_CASE("ConversationStore ExportMarkdown contains messages", "[store]") {
   auto dir = MakeTempDir();
   ConversationStore store(dir);
@@ -137,12 +175,9 @@ TEST_CASE("ConversationStore ExportMarkdown contains messages", "[store]") {
   auto conv = MakeSampleConv();
   conv.id = "export-test";
 
-  std::error_code ec;
-  store.Save(conv, ec);
-  REQUIRE_FALSE(ec);
+  store.Save(conv);
 
-  std::string md = store.ExportMarkdown("export-test", ec);
-  REQUIRE_FALSE(ec);
+  std::string md = store.ExportMarkdown("export-test");
   REQUIRE(md.find("# Conversation: export-test") != std::string::npos);
   REQUIRE(md.find("user") != std::string::npos);
   REQUIRE(md.find("chat") != std::string::npos);
