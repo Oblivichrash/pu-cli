@@ -22,7 +22,10 @@ target_include_directories(pu_http PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_http PUBLIC CURL::libcurl pu_platform)
+target_link_libraries(pu_http
+    PUBLIC CURL::libcurl pu_platform
+    PRIVATE nlohmann_json::nlohmann_json
+)
 add_library(pu::http ALIAS pu_http)
 
 # Platform abstraction library

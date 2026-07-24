@@ -57,7 +57,7 @@ void Context::SetVar(const std::string& key, const json& value) {
 std::optional<json> Context::GetVar(const std::string& key) const {
   auto it = vars_.find(key);
   if (it == vars_.end()) return std::nullopt;
-  return it->second;
+  return std::optional<json>(it->second);
 }
 
 bool Context::HasVar(const std::string& key) const {
