@@ -6,7 +6,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <system_error>
 
 namespace pu::backend {
 
@@ -51,6 +50,8 @@ class Backend {
     std::string model;
     float temperature = 0.7f;
     std::optional<std::string> system_prompt;
+    bool parameters_as_string = false;
+    int max_tokens = 2048;
   };
 
   explicit Backend(Config c) : config_(std::move(c)) {}
@@ -62,11 +63,10 @@ class Backend {
   Backend& operator=(Backend&&) noexcept = default;
 
   virtual void Chat(const std::vector<Message>& history,
-                    ChatCallback cb, std::error_code& ec) = 0;
+                    ChatCallback cb) = 0;
   virtual void Chat(const std::vector<Message>& history,
                     const std::vector<ToolDefinition>& tools,
-                    ChatCallback content_cb, ToolCallback tool_cb,
-                    std::error_code& ec) = 0;
+                    ChatCallback content_cb, ToolCallback tool_cb) = 0;
   virtual bool SupportsTools() const { return false; }
 
  protected:

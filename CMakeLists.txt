@@ -16,17 +16,20 @@ add_library(pu::backend_interface ALIAS pu_backend_interface)
 
 # HTTP abstraction library
 add_library(pu_http STATIC
-    src/http/curl_http_client.cpp
+    src/infra/curl_http_client.cpp
 )
 target_include_directories(pu_http PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(pu_http PUBLIC CURL::libcurl pu_platform)
+target_link_libraries(pu_http
+    PUBLIC CURL::libcurl pu_platform
+    PRIVATE nlohmann_json::nlohmann_json
+)
 add_library(pu::http ALIAS pu_http)
 
 # Platform abstraction library
-add_library(pu_platform STATIC src/platform/platform.cpp)
+add_library(pu_platform STATIC src/infra/platform.cpp)
 target_include_directories(pu_platform PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -36,11 +39,8 @@ add_library(pu::platform ALIAS pu_platform)
 add_library(pu_backend STATIC
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
-    src/config/agent_config.cpp
+    src/agent/agent_config.cpp
     src/conversation/conversation_store.cpp
-    src/config/error_codes.cpp
-    src/backends/ollama/ollama_token_adapter.cpp
-    src/backends/openai/openai_token_adapter.cpp
     src/backends/common/streaming_json_parser.cpp
 )
 target_include_directories(pu_backend PRIVATE
@@ -53,10 +53,12 @@ target_link_libraries(pu_backend
 )
 add_library(pu::backend ALIAS pu_backend)
 
-# Context and call stack library
+# Context and delegation stack library
 add_library(pu_context STATIC
-    src/context/global_context.cpp
-    src/orchestrator/call_stack.cpp
+    src/runtime/global_context.cpp
+    src/runtime/context.cpp
+    src/runtime/delegation.cpp
+    src/runtime/delegation_stack.cpp
     src/orchestrator/orchestrator.cpp
 )
 target_include_directories(pu_context PRIVATE
@@ -69,15 +71,14 @@ add_library(pu::context ALIAS pu_context)
 # Agent library
 add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
-    src/executor/command_executor.cpp
+    src/agent/agent_executor.cpp
     src/agent/agent_factory.cpp
-    src/renderer/renderer.cpp
     src/agent/tool_registry.cpp
-    src/agents/llm/llm_agent.cpp
-    src/tools/execute_bash_tool.cpp
+    src/agent/llm_agent.cpp
+    src/tools/command_executor.cpp
+    src/infra/renderer.cpp
+    src/tools/builtin_tools.cpp
     src/tools/python_tool.cpp
-    src/tools/create_tool.cpp
-    src/tools/write_file_tool.cpp
 )
 target_include_directories(pu_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -93,9 +94,12 @@ add_library(pu::agent ALIAS pu_agent)
 add_executable(pu
     src/app/main.cpp
     src/app/cli.cpp
+    src/app/ui.cpp
+    src/app/session.cpp
 )
 target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 target_link_libraries(pu PRIVATE pu_agent pu_context pu_backend pu_http pu_platform)
 

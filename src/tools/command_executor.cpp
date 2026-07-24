@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "executor/command_executor.hpp"
-#include "platform/platform.hpp"
+#include "tools/command_executor.hpp"
+
+#include "infra/platform.hpp"
+
 #include <algorithm>
 #include <regex>
 
@@ -16,8 +18,10 @@ const std::vector<std::string> CommandExecutor::safe_commands_ = {
     "find .", "grep", "awk", "sed", "diff", "file",
     "stat", "du", "df", "free", "ps", "top -n", "pgrep" };
 
-static bool MatchAnyPattern(const std::string& command, const std::vector<std::string>& patterns,
-                            std::string* matched = nullptr) {
+namespace {
+
+bool MatchAnyPattern(const std::string& command, const std::vector<std::string>& patterns,
+                     std::string* matched = nullptr) {
   for (const auto& pattern : patterns) {
     try {
       if (std::regex_search(command, std::regex(pattern, std::regex::icase))) {
@@ -28,6 +32,8 @@ static bool MatchAnyPattern(const std::string& command, const std::vector<std::s
   }
   return false;
 }
+
+}  // namespace
 
 CommandExecutor::CommandExecutor(std::string sandbox_path) : sandbox_path_(std::move(sandbox_path)) {}
 

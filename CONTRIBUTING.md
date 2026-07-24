@@ -16,6 +16,13 @@
 - Remove decorative separator comments and self‑explanatory variable comments
 - Use `clang-format` for consistent formatting
 
+### Comments & Self-Documenting Code
+- **Code should be self-explanatory**: name functions and variables clearly.
+- Comments should explain **why**, not **what**.
+- Avoid decorative separators (e.g., `// ====`, `// -----`).
+- Use English for all comments.
+- When in doubt, write clearer code instead of adding comments.
+
 ## Testing
 Run tests before submitting:
 ```bash

@@ -17,7 +17,7 @@ void StreamingJsonParser::Feed(const char* data, size_t len) {
       buffer_.erase(0, pos + 1);
       continue;
     }
-    if (IsPartialUtf8(line)) break;  // wait for more data
+    if (IsPartialUtf8(line)) break;
     buffer_.erase(0, pos + 1);
     on_line_(line);
   }
