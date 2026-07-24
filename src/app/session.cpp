@@ -76,8 +76,12 @@ std::string SessionManager::ExportMarkdown(const std::string& id) const {
   }
 }
 
-void SessionManager::AddNote(const std::string& agent_name, const std::string& text, GlobalContext& global_ctx) {
+void SessionManager::AddNote(const std::string& agent_name, const std::string& text,
+                             GlobalContext& global_ctx,
+                             std::shared_ptr<core::Context> root_context) {
   std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
+
+  // --- 原有 GlobalContext 写入（保留） ---
   auto notes_opt = global_ctx.Read("memory/notes/" + agent_name);
   nlohmann::json notes_array = nlohmann::json::array();
   if (notes_opt && notes_opt->is_array()) {
@@ -85,16 +89,41 @@ void SessionManager::AddNote(const std::string& agent_name, const std::string& t
   }
   notes_array.push_back(timestamped_note);
   global_ctx.Write("memory/notes/" + agent_name, notes_array);
+
+  // --- 新增：写入 core::Context ---
+  if (root_context) {
+    std::string var_key = "notes/" + agent_name;
+    auto existing = root_context->GetVar(var_key);
+    nlohmann::json new_notes = existing.has_value() ? *existing : nlohmann::json::array();
+    if (new_notes.is_array()) {
+      new_notes.push_back(timestamped_note);
+      root_context->SetVar(var_key, new_notes);
+    }
+  }
 }
 
-std::vector<std::string> SessionManager::ShowNotes(const std::string& agent_name, GlobalContext& global_ctx) const {
+std::vector<std::string> SessionManager::ShowNotes(const std::string& agent_name,
+                                                    GlobalContext& global_ctx,
+                                                    std::shared_ptr<core::Context> root_context) const {
   std::vector<std::string> notes;
+
+  // 优先从 core::Context 读取
+  if (root_context) {
+    std::string var_key = "notes/" + agent_name;
+    auto val = root_context->GetVar(var_key);
+    if (val.has_value() && val->is_array()) {
+      for (const auto& item : *val) {
+        if (item.is_string()) notes.push_back(item.get<std::string>());
+      }
+      return notes;  // 有数据则直接返回
+    }
+  }
+
+  // 回退到 GlobalContext（向后兼容）
   auto notes_opt = global_ctx.Read("memory/notes/" + agent_name);
   if (notes_opt && notes_opt->is_array()) {
     for (const auto& note : *notes_opt) {
-      if (note.is_string()) {
-        notes.push_back(note.get<std::string>());
-      }
+      if (note.is_string()) notes.push_back(note.get<std::string>());
     }
   }
   return notes;
