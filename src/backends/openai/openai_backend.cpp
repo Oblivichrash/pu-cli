@@ -6,12 +6,31 @@
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
+#include <fstream>
+#include <chrono>
+#include <mutex>
 
 namespace pu::backends::openai {
 
 using json = nlohmann::json;
 
 namespace {
+
+static bool IsTraceEnabled() {
+  static const char* env = std::getenv("PU_TRACE");
+  return env && (std::string(env) == "1" || std::string(env) == "true");
+}
+
+static std::ofstream& GetTraceLog() {
+  static std::ofstream log;
+  static std::once_flag flag;
+  std::call_once(flag, []() {
+    const char* path = std::getenv("PU_TRACE_LOG");
+    if (!path) path = "/tmp/pu_trace.jsonl";
+    log.open(path, std::ios::app);
+  });
+  return log;
+}
 
 std::string RoleToString(pu::backend::Message::Role role) {
   switch (role) {
@@ -155,6 +174,20 @@ void OpenAIBackend::HandleJsonToken(const json& j,
     }
   }
 
+  // Log token usage when present
+  if (j.contains("usage") && j["usage"].is_object()) {
+    if (IsTraceEnabled()) {
+      auto usage = j["usage"];
+      nlohmann::json usage_log;
+      usage_log["trace_id"] = current_trace_id_;
+      usage_log["model"] = config_.model;
+      usage_log["input_tokens"] = usage.value("prompt_tokens", 0);
+      usage_log["output_tokens"] = usage.value("completion_tokens", 0);
+      usage_log["total_tokens"] = usage.value("total_tokens", 0);
+      GetTraceLog() << usage_log.dump() << std::endl;
+    }
+  }
+
   if (is_final) {
     for (auto& [idx, acc] : pending_tools_) {
       tool_cb({acc.id, acc.name, acc.arguments});
@@ -173,6 +206,9 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
+
+  current_trace_id_ = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
 
   StreamingJsonParser parser(
     [this, cb](std::string_view line) {
@@ -212,6 +248,9 @@ void OpenAIBackend::Chat(const std::vector<pu::backend::Message>& history,
 
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
+
+  current_trace_id_ = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
 
   StreamingJsonParser parser(
     [this, content_cb, tool_cb](std::string_view line) {

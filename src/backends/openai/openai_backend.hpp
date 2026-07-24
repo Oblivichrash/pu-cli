@@ -44,6 +44,8 @@ class OpenAIBackend : public pu::backend::Backend {
 
   struct ToolCallAccumulator { std::string id, name, arguments; };
   std::map<int, ToolCallAccumulator> pending_tools_;
+
+  std::string current_trace_id_;
 };
 
 }  // namespace pu::backends::openai

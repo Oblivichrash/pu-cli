@@ -6,8 +6,28 @@
 
 #include <curl/curl.h>
 #include <stdexcept>
+#include <fstream>
+#include <chrono>
+#include <mutex>
+#include <nlohmann/json.hpp>
 
 namespace pu::http {
+
+static bool IsTraceEnabled() {
+  static const char* env = std::getenv("PU_TRACE");
+  return env && (std::string(env) == "1" || std::string(env) == "true");
+}
+
+static std::ofstream& GetTraceLog() {
+  static std::ofstream log;
+  static std::once_flag flag;
+  std::call_once(flag, []() {
+    const char* path = std::getenv("PU_TRACE_LOG");
+    if (!path) path = "/tmp/pu_trace.jsonl";
+    log.open(path, std::ios::app);
+  });
+  return log;
+}
 
 CurlSlist::~CurlSlist() { if (list) curl_slist_free_all(list); }
 void CurlSlist::append(const char* str) { list = curl_slist_append(list, str); }
@@ -50,6 +70,19 @@ size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userd
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,
                                 WriteCallback write_cb) {
+  auto start = std::chrono::steady_clock::now();
+  std::string trace_id = std::to_string(start.time_since_epoch().count());
+
+  if (IsTraceEnabled()) {
+    nlohmann::json req_log;
+    req_log["trace_id"] = trace_id;
+    req_log["timestamp"] = std::chrono::system_clock::now().time_since_epoch().count();
+    req_log["url"] = url;
+    req_log["body"] = body;
+    req_log["method"] = "POST";
+    GetTraceLog() << req_log.dump() << std::endl;
+  }
+
   error_detail_.clear();
   response_body_.clear();
 
@@ -69,6 +102,21 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   curl_easy_setopt(handle_, CURLOPT_XFERINFODATA, this);
 
   CURLcode res = curl_easy_perform(handle_);
+  long http_code = 0;
+  curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
+
+  if (IsTraceEnabled()) {
+    auto end = std::chrono::steady_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    nlohmann::json resp_log;
+    resp_log["trace_id"] = trace_id;
+    resp_log["duration_ms"] = duration_ms;
+    resp_log["http_code"] = http_code;
+
+    GetTraceLog() << resp_log.dump() << std::endl;
+  }
+
   if (res != CURLE_OK) {
     std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);
     if (!response_body_.empty()) {
@@ -77,8 +125,6 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
     error_detail_ = detail;
     throw HttpError(detail);
   }
-  long http_code = 0;
-  curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
   if (http_code >= 400) {
     std::string detail = "HTTP error " + std::to_string(http_code);
     if (!response_body_.empty()) {
