@@ -59,7 +59,7 @@ add_library(pu_context STATIC
     src/runtime/context.cpp
     src/runtime/delegation.cpp
     src/runtime/delegation_stack.cpp
-    src/orchestrator/orchestrator.cpp
+    src/runtime/orchestrator.cpp
 )
 target_include_directories(pu_context PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -71,12 +71,12 @@ add_library(pu::context ALIAS pu_context)
 # Agent library
 add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
-    src/agent/agent_executor.cpp
+    src/agent/executor.cpp
     src/agent/agent_factory.cpp
     src/agent/tool_registry.cpp
     src/agent/llm_agent.cpp
     src/tools/command_executor.cpp
-    src/infra/renderer.cpp
+    src/app/renderer.cpp
     src/tools/builtin_tools.cpp
     src/tools/python_tool.cpp
 )
