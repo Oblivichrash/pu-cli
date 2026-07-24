@@ -19,10 +19,7 @@ target_include_directories(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu::backend
-    pu::agent
-    pu::http
-    pu::context
+    pu_agent pu_core
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json
 )
