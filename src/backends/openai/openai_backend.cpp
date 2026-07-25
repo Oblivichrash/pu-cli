@@ -174,7 +174,7 @@ void OpenAIBackend::HandleJsonToken(const json& j,
     }
   }
 
-  // Log token usage when present
+
   if (j.contains("usage") && j["usage"].is_object()) {
     if (IsTraceEnabled()) {
       auto usage = j["usage"];

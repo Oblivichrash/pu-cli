@@ -161,9 +161,9 @@ int RunChat(int argc, char* argv[]) {
   agent::AgentExecutor executor(manager);
   executor.SetRootContext(root_context);
 
-  // Summaries are now stored via core::Context; previously they used GlobalContext.
-  // For backward compatibility, we skip loading old summaries from GlobalContext.
-  // Users can re-generate summaries via /save.
+
+
+
 
   struct ConfirmationState {
     bool auto_approve_safe = false;
@@ -391,7 +391,7 @@ int RunChat(int argc, char* argv[]) {
               std::string user_input;
               std::getline(std::cin, user_input);
               if (user_input == "y" || user_input == "Y") {
-                // Store summary in core::Context
+
                 if (root_context) {
                   root_context->SetVar("summaries/" + current_name + "/latest", summary);
                 }
@@ -496,7 +496,7 @@ int RunChat(int argc, char* argv[]) {
     }
   }
 
-  // core::Context persists automatically; no need for global_ctx->Save()
+
   if (root_context) {
     root_context->Save(root_context_path);
   }

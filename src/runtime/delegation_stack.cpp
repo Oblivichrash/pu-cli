@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/delegation_stack.hpp"
 
+#include "pu/error.hpp"
 #include <stdexcept>
 
 namespace pu::core {
@@ -21,7 +22,7 @@ void DelegationStack::Push(const Delegation& delegation) {
 
 SummaryReport DelegationStack::Pop() {
   if (frames_.empty()) {
-    throw std::runtime_error("DelegationStack::Pop() on empty stack");
+    throw pu::Error("DelegationStack::Pop() on empty stack");
   }
 
   Frame frame = std::move(frames_.back());
@@ -39,14 +40,14 @@ SummaryReport DelegationStack::Pop() {
 
 DelegationStack::Frame& DelegationStack::Current() {
   if (frames_.empty()) {
-    throw std::runtime_error("DelegationStack::Current() on empty stack");
+    throw pu::Error("DelegationStack::Current() on empty stack");
   }
   return frames_.back();
 }
 
 const DelegationStack::Frame& DelegationStack::Current() const {
   if (frames_.empty()) {
-    throw std::runtime_error("DelegationStack::Current() on empty stack");
+    throw pu::Error("DelegationStack::Current() on empty stack");
   }
   return frames_.back();
 }

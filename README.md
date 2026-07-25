@@ -56,7 +56,6 @@ Analyzes successful conversations and generates new agent definitions in `~/.pu/
 - **DelegationStack**: Stack-based delegation model supporting PUSH/POP for nested agent calls with isolated or shared contexts.
 - **Orchestrator**: Executes agents based on stack top, handles pending actions (push/pop) requested by agents.
 - **AgentManager**: Manages agent lifecycle, configuration loading, and state snapshots.
-- **GlobalContext** (legacy): Flat key-value persistence layer, being migrated to core::Context.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 

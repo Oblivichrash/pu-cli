@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_core.hpp"
 
+#include "pu/error.hpp"
 #include "pu/tools/python_tool.hpp"
 
 #include <nlohmann/json.hpp>
@@ -17,7 +18,7 @@ void ToolRegistry::RegisterTool(std::unique_ptr<Tool> tool) {
   if (!tool) return;
   std::string name = tool->Name();
   if (tools_.find(name) != tools_.end()) {
-    throw std::runtime_error("Tool already registered: " + name);
+    throw pu::Error("Tool already registered: " + name);
   }
   tools_[name] = std::move(tool);
 }

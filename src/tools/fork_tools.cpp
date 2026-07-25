@@ -54,7 +54,7 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolCont
     return "Error: 'goal' is required";
   }
 
-  // Build result JSON
+
   nlohmann::json result;
   result["action"] = "fork";
   result["agent_name"] = agent_name;
@@ -133,9 +133,9 @@ std::string ListForksTool::Execute(const nlohmann::json& args, agent::ToolContex
   (void)args;
   (void)ctx;
 
-  // Note: actual fork listing requires access to the current context
-  // which is managed by the Orchestrator. This tool signals the orchestrator
-  // to display the fork tree.
+
+
+
   return "List forks requested. Use '/fork list' command to see all contexts.";
 }
 

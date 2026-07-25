@@ -12,7 +12,6 @@
 
 namespace pu::tools {
 
-// ─── ExecuteBashToolStandard ────────────────────────────────────────────────
 
 ExecuteBashToolStandard::ExecuteBashToolStandard(std::unique_ptr<executor::CommandExecutor> executor)
     : executor_(std::move(executor)) {}
@@ -72,7 +71,6 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, agent::
   }
 }
 
-// ─── WriteFileTool ──────────────────────────────────────────────────────────
 
 std::string WriteFileTool::Name() const {
   return "write_file";
@@ -124,7 +122,6 @@ std::string WriteFileTool::Execute(const nlohmann::json& args, agent::ToolContex
   return "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
 }
 
-// ─── CreateTool ─────────────────────────────────────────────────────────────
 
 namespace {
 

@@ -79,7 +79,7 @@ void SessionManager::AddNote(const std::string& agent_name, const std::string& t
                              std::shared_ptr<core::Context> root_context) {
   std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
 
-  // Write to core::Context (now the only storage)
+
   if (root_context) {
     std::string var_key = "notes/" + agent_name;
     auto existing = root_context->GetVar(var_key);

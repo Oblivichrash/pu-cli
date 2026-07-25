@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent_core.hpp"
 
+#include "pu/error.hpp"
 #include "backends/ollama/ollama_backend.hpp"
 #include "backends/openai/openai_backend.hpp"
 #include "pu/backend.hpp"
@@ -70,7 +71,7 @@ SecurityPolicy ParseSecurityPolicy(const json& j) {
 BackendConfig ParseBackendConfig(const json& j) {
   BackendConfig cfg;
   auto type = ParseBackendType(j.value("type", "ollama"));
-  if (!type) throw std::runtime_error("Unknown backend type");
+  if (!type) throw pu::Error("Unknown backend type");
   cfg.type = *type;
   cfg.host = ExpandEnvVars(j.value("host", ""));
   cfg.model = ExpandEnvVars(j.value("model", ""));
@@ -86,11 +87,11 @@ BackendConfig ParseBackendConfig(const json& j) {
 AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) throw std::runtime_error("Missing agent name field");
+  if (entry.name.empty()) throw pu::Error("Missing agent name field");
   entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object()) { throw std::runtime_error("Missing backend field"); }
+  if (!j.contains("backend") || !j["backend"].is_object()) { throw pu::Error("Missing backend field"); }
   entry.backend = ParseBackendConfig(j["backend"]);
-  if (entry.backend.host.empty() || entry.backend.model.empty()) { throw std::runtime_error("Missing host or model in backend config"); }
+  if (entry.backend.host.empty() || entry.backend.model.empty()) { throw pu::Error("Missing host or model in backend config"); }
 
   if (j.contains("tools") && j["tools"].is_array()) {
     for (const auto& t : j["tools"]) {
@@ -109,25 +110,25 @@ AgentEntry ParseAgentEntry(const json& j) {
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
   if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  throw std::runtime_error("Configuration file not found. "
+  throw pu::Error("Configuration file not found. "
                            "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) { throw std::runtime_error("Configuration file not found: " + config_path); }
+  if (!file.is_open()) { throw pu::Error("Configuration file not found. " + config_path); }
 
   json j;
-  try { file >> j; } catch (const json::parse_error&) { throw std::runtime_error("Failed to parse configuration JSON"); }
+  try { file >> j; } catch (const json::parse_error&) { throw pu::Error("Failed to parse configuration JSON"); }
 
   if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
-    throw std::runtime_error("Missing default_agent field in config");
+    throw pu::Error("Missing default_agent field in config");
   }
   result.default_agent = j["default_agent"];
 
   if (!j.contains("agents") || !j["agents"].is_array()) {
-    throw std::runtime_error("Missing agents array in config");
+    throw pu::Error("Missing agents array in config");
   }
 
   for (const auto& item : j["agents"]) {
@@ -177,7 +178,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   j["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open()) { throw std::runtime_error("Failed to open config file for writing: " + config_path); }
+  if (!file.is_open()) { throw pu::Error("Failed to open config file for writing: " + config_path); }
   file << j.dump(2);
 }
 
@@ -208,7 +209,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
           openai_cfg, std::move(http));
     }
     default:
-      throw std::runtime_error("Unknown backend type");
+      throw pu::Error("Unknown backend type");
   }
 }
 

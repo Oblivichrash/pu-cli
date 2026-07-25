@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/context.hpp"
 
+#include "pu/error.hpp"
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -153,7 +154,7 @@ void Context::Save(const std::filesystem::path& path) const {
   }
   j["facts"] = facts_arr;
 
-  // Fork-Merge metadata
+  
   j["branch_name"] = branch_name_;
   j["state"] = static_cast<int>(state_);
   j["is_merge_commit"] = is_merge_commit_;
@@ -213,7 +214,7 @@ std::shared_ptr<Context> Context::Load(const std::filesystem::path& path) {
     }
   }
 
-  // Load Fork-Merge metadata
+
   ctx->branch_name_ = j.value("branch_name", "main");
   ctx->state_ = static_cast<State>(j.value("state", 0));
   ctx->is_merge_commit_ = j.value("is_merge_commit", false);
@@ -232,21 +233,21 @@ std::shared_ptr<Context> Context::LoadOrCreate(const std::filesystem::path& path
   return ctx;
 }
 
-// Fork-Merge Implementation
+
 
 std::shared_ptr<Context> Context::Fork(const std::string& branch_name) {
   if (state_ != State::kActive) {
-    throw std::runtime_error("Cannot fork: context '" + id_ + "' is not active (state=" +
+    throw pu::Error("Cannot fork: context '" + id_ + "' is not active (state=" +
                              std::to_string(static_cast<int>(state_)) + ")");
   }
 
-  // Generate unique branch name if not provided
+
   std::string actual_branch = branch_name;
   if (actual_branch.empty()) {
     actual_branch = "fork_" + GenerateForkId();
   }
 
-  // Create child context with deep copy of vars and facts
+
   auto child = std::make_shared<Context>("ctx-" + actual_branch);
   child->branch_name_ = actual_branch;
   child->parent_ = shared_from_this();
@@ -254,10 +255,9 @@ std::shared_ptr<Context> Context::Fork(const std::string& branch_name) {
   child->facts_ = facts_;       // Deep copy facts
   child->max_history_size_ = max_history_size_;
 
-  // Register as child
+
   children_.push_back(child);
 
-  // Add system message to child indicating fork
   child->Append("system", "Forked from '" + id_ + "' (branch: " + actual_branch + ")");
 
   return child;
@@ -266,22 +266,22 @@ std::shared_ptr<Context> Context::Fork(const std::string& branch_name) {
 std::shared_ptr<Context> Context::Merge(const std::shared_ptr<Context>& child,
                                          const std::string& message) {
   if (!child) {
-    throw std::runtime_error("Merge: child context is null");
+    throw pu::Error("Merge: child context is null");
   }
 
   if (child->state_ != State::kActive) {
-    throw std::runtime_error("Cannot merge: child context '" + child->id_ +
+    throw pu::Error("Cannot merge: child context '" + child->id_ +
                              "' is not active (state=" + std::to_string(static_cast<int>(child->state_)) + ")");
   }
 
-  // Verify this context is the child's parent
+
   auto child_parent = child->parent_.lock();
   if (child_parent.get() != this) {
-    throw std::runtime_error("Cannot merge: context '" + child->id_ +
+    throw pu::Error("Cannot merge: context '" + child->id_ +
                              "' is not a child of '" + id_ + "'");
   }
 
-  // Create a new merge context (like a Git merge commit)
+
   auto merge_ctx = std::make_shared<Context>("merge-" + child->id_);
   merge_ctx->is_merge_commit_ = true;
   merge_ctx->branch_name_ = branch_name_;
@@ -291,30 +291,29 @@ std::shared_ptr<Context> Context::Merge(const std::shared_ptr<Context>& child,
   merge_ctx->parent_ = parent_;    // Merge context belongs to parent's lineage
   merge_ctx->max_history_size_ = max_history_size_;
 
-  // Record merge parents
+
   merge_ctx->merge_parents_.push_back(shared_from_this());
   merge_ctx->merge_parents_.push_back(child);
 
-  // Copy parent history
+
   for (const auto& msg : history_) {
     merge_ctx->Append(msg);
   }
 
-  // Append merge summary message
+
   merge_ctx->Append("system", "[Merge] " + message);
 
-  // Copy child's facts into merge context
+
   merge_ctx->AddFacts(child->GetFacts());
 
-  // Copy child's vars (child vars override parent vars on conflict)
+
   for (const auto& [key, val] : child->vars_) {
     merge_ctx->vars_[key] = val;
   }
 
-  // Mark child as merged
+
   child->state_ = State::kMerged;
 
-  // Add merge reference to parent's history
   Append("system", "[Child '" + child->id_ + "' merged] " + message);
 
   return merge_ctx;
@@ -350,7 +349,7 @@ size_t Context::GetTokenCount() const {
   for (const auto& msg : history_) {
     total_chars += msg.content.size();
   }
-  // Rough estimate: ~4 chars per token
+
   return total_chars / 4;
 }
 

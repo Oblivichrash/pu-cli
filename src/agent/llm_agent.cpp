@@ -81,7 +81,7 @@ void LLMAgent::AppendTurnToHistory(const std::vector<backend::Message>& history,
 }
 
 std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx) {
-  // Read system_prompt from context vars
+
   auto system_prompt_var = ctx.context->GetVar("system_prompt");
   if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
     std::string prompt = system_prompt_var->get<std::string>();
@@ -103,7 +103,7 @@ std::string LLMAgent::Handle(const std::string& input, agent::AgentContext& ctx)
   auto initial = BuildInitialHistory();
   std::vector<ChatMessage> turn_history;
 
-  // Read show_reasoning from context vars
+
   bool show_reasoning = false;
   auto show_reasoning_var = ctx.context->GetVar("show_reasoning");
   if (show_reasoning_var && show_reasoning_var->is_boolean()) {

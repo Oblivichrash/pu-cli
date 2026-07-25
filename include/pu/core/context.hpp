@@ -65,7 +65,7 @@ class Context : public std::enable_shared_from_this<Context> {
   /// Get estimated token count (rough: sum of content lengths / 4)
   size_t GetTokenCount() const;
 
-  // Fork-Merge Accessors
+  
 
   std::shared_ptr<Context> GetParent() const { return parent_.lock(); }
   const std::vector<std::shared_ptr<Context>>& GetChildren() const { return children_; }
@@ -74,8 +74,8 @@ class Context : public std::enable_shared_from_this<Context> {
   bool IsMergeCommit() const { return is_merge_commit_; }
   std::vector<std::shared_ptr<Context>> GetMergeParents() const;
 
-  // Remove all child contexts that have been merged.
-  // Returns the number of children removed.
+
+
   size_t RemoveMergedChildren();
 
  private:
@@ -85,17 +85,17 @@ class Context : public std::enable_shared_from_this<Context> {
   FactList facts_;
   size_t max_history_size_ = 1000;
 
-  // Fork-Merge Fields
+
   std::weak_ptr<Context> parent_;
   std::vector<std::shared_ptr<Context>> children_;
   std::string branch_name_ = "main";
 
-  // Merge Fields
+
   bool is_merge_commit_ = false;
   std::vector<std::weak_ptr<Context>> merge_parents_;
   std::optional<std::string> merge_message_;
 
-  // State
+
   State state_ = State::kActive;
 };
 
