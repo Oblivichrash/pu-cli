@@ -52,17 +52,11 @@ class Context : public std::enable_shared_from_this<Context> {
 
   enum class State { kActive, kMerged, kAbandoned };
 
-  /// Create an isolated child context that inherits all data from parent
-  /// but has independent history.
   std::shared_ptr<Context> Fork(const std::string& branch_name);
 
-  /// Merge a child context back into this parent.
-  /// Creates a new merge context that combines histories.
-  /// Returns the merge context.
   std::shared_ptr<Context> Merge(const std::shared_ptr<Context>& child,
                                   const std::string& message);
 
-  /// Get estimated token count (rough: sum of content lengths / 4)
   size_t GetTokenCount() const;
 
   

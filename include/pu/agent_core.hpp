@@ -10,7 +10,6 @@
 
 #include <nlohmann/json.hpp>
 
-// Forward declarations to reduce include dependencies
 namespace pu {
 namespace core {
 class Context;
