@@ -149,32 +149,21 @@ int RunChat(int argc, char* argv[]) {
   auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
   auto store_dir = pu_dir / "conversations";
 
-  auto global_ctx = GlobalContext::Create(pu_dir);
-  global_ctx->Load();
-
   auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
   std::filesystem::create_directories(root_context_path.parent_path());
   auto root_context = core::Context::LoadOrCreate(root_context_path);
   auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
 
-  manager.SetGlobalContext(global_ctx);
-
   SessionManager session(store_dir, manager);
-  Orchestrator orchestrator(global_ctx, manager);
+  Orchestrator orchestrator(manager);
   orchestrator.SetDelegationStack(delegation_stack);
 
   agent::AgentExecutor executor(manager);
   executor.SetRootContext(root_context);
 
-  for (const auto& entry : agents_config.agents) {
-    auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
-    if (summary_opt && summary_opt->is_string()) {
-      std::string summary = summary_opt->get<std::string>();
-      if (!summary.empty()) {
-        manager.SetSystemPrompt(entry.name, summary);
-      }
-    }
-  }
+
+
+
 
   struct ConfirmationState {
     bool auto_approve_safe = false;
@@ -226,6 +215,104 @@ int RunChat(int argc, char* argv[]) {
 
     if (input[0] == '/') {
       std::string cmd_output;
+
+      if (input.rfind("/fork ", 0) == 0) {
+        std::string agent_name = Trim(input.substr(5));
+        bool is_subcommand = (agent_name == "list" || agent_name.rfind("show", 0) == 0 || agent_name.rfind("prune", 0) == 0);
+        if (!is_subcommand && !agent_name.empty()) {
+          auto child = orchestrator.ForkContext(agent_name, "Exploration", "");
+          if (child) {
+            delegation_stack->Push(core::Delegation("exploration", agent_name, {}, 0), child);
+            std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+                      << " (agent: " << agent_name << ")\n";
+            std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
+          } else {
+            std::cout << "Error: failed to fork.\n";
+          }
+          continue;
+        }
+      }
+
+      if (input == "/fork") {
+        std::string current_agent = manager.GetActiveAgent();
+        if (current_agent.empty()) current_agent = "chat";
+        auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
+        if (child) {
+          delegation_stack->Push(core::Delegation("exploration", current_agent, {}, 0), child);
+          std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+                    << " (agent: " << current_agent << ")\n";
+          std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
+        } else {
+          std::cout << "Error: failed to fork.\n";
+        }
+        continue;
+      }
+
+      if (input.rfind("/explore", 0) == 0) {
+        std::string goal = Trim(input.substr(8));
+        if (goal.empty()) {
+          std::cout << "Usage: /explore <goal>\n";
+          continue;
+        }
+        try {
+          auto response = orchestrator.Process(goal);
+          if (!response.empty()) {
+            std::cout << response << "\n";
+          }
+        } catch (const std::exception& e) {
+          std::cout << "Error: " << e.what() << "\n";
+        }
+        continue;
+      }
+
+      if (input == "/merge" || input.rfind("/merge ", 0) == 0) {
+        bool full = (input.find("--full") != std::string::npos);
+        if (full) {
+          auto report = orchestrator.MergeContext("Merged with full history", "merge");
+          std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
+        } else {
+          auto current = delegation_stack->CurrentContext();
+          if (!current) {
+            std::cout << "Error: no active context to merge.\n";
+            continue;
+          }
+          std::cout << "\xf0\x9f\x93\x8b Merge Strategy\n";
+          std::cout << "   Branch: " << current->GetBranchName() << "\n";
+          std::cout << "   History: " << current->HistorySize() << " messages, ~"
+                    << current->GetTokenCount() << " tokens\n";
+          auto parent = current->GetParent();
+          std::cout << "   Parent: " << (parent ? parent->GetBranchName() : "root") << "\n";
+          std::cout << "\n";
+          std::cout << "   [s] Squash: Only summary (~50 tokens)\n";
+          std::cout << "   [f] Full: Keep all history (~" << current->GetTokenCount() << " tokens)\n";
+          std::cout << "   [c] Cancel: Discard this branch\n";
+          std::cout << "\n   Choose strategy: " << std::flush;
+          std::string choice;
+          std::getline(std::cin, choice);
+          if (choice == "s" || choice == "S") {
+            auto report = orchestrator.MergeContext("Merged with squash", "squash");
+            std::cout << "\xf0\x9f\x91\x8d Squash merged: " << report.summary << "\n";
+          } else if (choice == "f" || choice == "F") {
+            auto report = orchestrator.MergeContext("Merged with full history", "merge");
+            std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
+          } else {
+            std::cout << "\xe2\x9d\x8c Merge cancelled. Branch remains open.\n";
+          }
+        }
+        continue;
+      }
+
+      if (input == "/exit" || input == "/quit") {
+        break;
+      }
+
+      if (input.rfind("/push", 0) == 0) {
+        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/push' is deprecated. Please use '/fork <agent>' instead.\n";
+      }
+
+      if (input == "/pop") {
+        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/pop' is deprecated. Please use '/merge' instead.\n";
+      }
       if (orchestrator.HandleCommand(input, cmd_output)) {
         std::cout << cmd_output << '\n';
         continue;
@@ -283,7 +370,7 @@ int RunChat(int argc, char* argv[]) {
           save_name = GenerateId();
         }
 
-        session.SaveConversation(save_name, panel_messages, no_summary, *global_ctx, root_context);
+        session.SaveConversation(save_name, panel_messages, no_summary, root_context);
 
         if (!no_summary) {
           std::ostringstream summary_prompt;
@@ -304,11 +391,16 @@ int RunChat(int argc, char* argv[]) {
               std::string user_input;
               std::getline(std::cin, user_input);
               if (user_input == "y" || user_input == "Y") {
-                global_ctx->Write("memory/summaries/" + current_name + "/latest", summary);
+
+                if (root_context) {
+                  root_context->SetVar("summaries/" + current_name + "/latest", summary);
+                }
                 std::cout << "[Memory] Summary saved.\n";
               } else if (!user_input.empty() && user_input != "n" && user_input != "N") {
                 auto final_summary = summary + "\n\nUser notes: " + user_input;
-                global_ctx->Write("memory/summaries/" + current_name + "/latest", final_summary);
+                if (root_context) {
+                  root_context->SetVar("summaries/" + current_name + "/latest", final_summary);
+                }
                 std::cout << "[Memory] Updated summary saved.\n";
               }
             }
@@ -350,7 +442,7 @@ int RunChat(int argc, char* argv[]) {
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {
-          auto notes = session.ShowNotes(current_name, *global_ctx, root_context);
+          auto notes = session.ShowNotes(current_name, root_context);
           if (notes.empty()) {
             std::cout << "No notes yet.\n";
           } else {
@@ -365,7 +457,7 @@ int RunChat(int argc, char* argv[]) {
             std::cerr << "Note text required.\n";
             continue;
           }
-          session.AddNote(current_name, text, *global_ctx, root_context);
+          session.AddNote(current_name, text, root_context);
           std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";
@@ -404,7 +496,10 @@ int RunChat(int argc, char* argv[]) {
     }
   }
 
-  global_ctx->Save();
+
+  if (root_context) {
+    root_context->Save(root_context_path);
+  }
   std::cout << "\nGoodbye!\n";
   return 0;
 }

@@ -65,10 +65,6 @@ void AgentManager::SetSystemPrompt(const std::string& agent_name,
   system_prompts_[agent_name] = prompt;
 }
 
-void AgentManager::SetGlobalContext(std::shared_ptr<GlobalContext> ctx) {
-  global_ctx_ = std::move(ctx);
-}
-
 void AgentManager::ClearSessions() {
   for (auto& [name, agent] : agents_) {
     agent->ResetSession();

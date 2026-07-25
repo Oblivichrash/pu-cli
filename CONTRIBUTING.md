@@ -1,5 +1,9 @@
 # Contributing
 
+## Documentation
+
+For architecture overview and design decisions, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Pull Requests
 - Title format: `type: short description` (e.g. `feat: add tool calling to BashExpert`)
 - Include a bullet list of changes in the PR body

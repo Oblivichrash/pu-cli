@@ -17,7 +17,7 @@ namespace pu::core {
 
 using json = nlohmann::json;
 
-class Context {
+class Context : public std::enable_shared_from_this<Context> {
  public:
   Context() = default;
   explicit Context(std::string id);
@@ -50,12 +50,47 @@ class Context {
   static std::shared_ptr<Context> Load(const std::filesystem::path& path);
   static std::shared_ptr<Context> LoadOrCreate(const std::filesystem::path& path);
 
+  enum class State { kActive, kMerged, kAbandoned };
+
+  std::shared_ptr<Context> Fork(const std::string& branch_name);
+
+  std::shared_ptr<Context> Merge(const std::shared_ptr<Context>& child,
+                                  const std::string& message);
+
+  size_t GetTokenCount() const;
+
+  
+
+  std::shared_ptr<Context> GetParent() const { return parent_.lock(); }
+  const std::vector<std::shared_ptr<Context>>& GetChildren() const { return children_; }
+  const std::string& GetBranchName() const { return branch_name_; }
+  State GetState() const { return state_; }
+  bool IsMergeCommit() const { return is_merge_commit_; }
+  std::vector<std::shared_ptr<Context>> GetMergeParents() const;
+
+
+
+  size_t RemoveMergedChildren();
+
  private:
   std::string id_;
   std::vector<ChatMessage> history_;
   std::unordered_map<std::string, json> vars_;
   FactList facts_;
   size_t max_history_size_ = 1000;
+
+
+  std::weak_ptr<Context> parent_;
+  std::vector<std::shared_ptr<Context>> children_;
+  std::string branch_name_ = "main";
+
+
+  bool is_merge_commit_ = false;
+  std::vector<std::weak_ptr<Context>> merge_parents_;
+  std::optional<std::string> merge_message_;
+
+
+  State state_ = State::kActive;
 };
 
 }  // namespace pu::core

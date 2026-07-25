@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/context.hpp"
 
+#include "pu/error.hpp"
 #include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace pu::core {
 
@@ -17,6 +19,14 @@ std::string CurrentTimestamp() {
   auto in_time_t = std::chrono::system_clock::to_time_t(now);
   std::ostringstream ss;
   ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
+  return ss.str();
+}
+
+std::string GenerateForkId() {
+  auto now = std::chrono::system_clock::now();
+  auto in_time_t = std::chrono::system_clock::to_time_t(now);
+  std::ostringstream ss;
+  ss << std::put_time(std::gmtime(&in_time_t), "%Y%m%d_%H%M%S");
   return ss.str();
 }
 
@@ -144,6 +154,14 @@ void Context::Save(const std::filesystem::path& path) const {
   }
   j["facts"] = facts_arr;
 
+  
+  j["branch_name"] = branch_name_;
+  j["state"] = static_cast<int>(state_);
+  j["is_merge_commit"] = is_merge_commit_;
+  if (merge_message_.has_value()) {
+    j["merge_message"] = merge_message_.value();
+  }
+
   std::filesystem::create_directories(path.parent_path());
   std::ofstream file(path);
   if (file.is_open()) {
@@ -196,6 +214,14 @@ std::shared_ptr<Context> Context::Load(const std::filesystem::path& path) {
     }
   }
 
+
+  ctx->branch_name_ = j.value("branch_name", "main");
+  ctx->state_ = static_cast<State>(j.value("state", 0));
+  ctx->is_merge_commit_ = j.value("is_merge_commit", false);
+  if (j.contains("merge_message")) {
+    ctx->merge_message_ = j["merge_message"].get<std::string>();
+  }
+
   return ctx;
 }
 
@@ -205,6 +231,126 @@ std::shared_ptr<Context> Context::LoadOrCreate(const std::filesystem::path& path
     ctx = std::make_shared<Context>(path.stem().string());
   }
   return ctx;
+}
+
+
+
+std::shared_ptr<Context> Context::Fork(const std::string& branch_name) {
+  if (state_ != State::kActive) {
+    throw pu::Error("Cannot fork: context '" + id_ + "' is not active (state=" +
+                             std::to_string(static_cast<int>(state_)) + ")");
+  }
+
+
+  std::string actual_branch = branch_name;
+  if (actual_branch.empty()) {
+    actual_branch = "fork_" + GenerateForkId();
+  }
+
+
+  auto child = std::make_shared<Context>("ctx-" + actual_branch);
+  child->branch_name_ = actual_branch;
+  child->parent_ = shared_from_this();
+  child->vars_ = vars_;         // Deep copy vars
+  child->facts_ = facts_;       // Deep copy facts
+  child->max_history_size_ = max_history_size_;
+
+
+  children_.push_back(child);
+
+  child->Append("system", "Forked from '" + id_ + "' (branch: " + actual_branch + ")");
+
+  return child;
+}
+
+std::shared_ptr<Context> Context::Merge(const std::shared_ptr<Context>& child,
+                                         const std::string& message) {
+  if (!child) {
+    throw pu::Error("Merge: child context is null");
+  }
+
+  if (child->state_ != State::kActive) {
+    throw pu::Error("Cannot merge: child context '" + child->id_ +
+                             "' is not active (state=" + std::to_string(static_cast<int>(child->state_)) + ")");
+  }
+
+
+  auto child_parent = child->parent_.lock();
+  if (child_parent.get() != this) {
+    throw pu::Error("Cannot merge: context '" + child->id_ +
+                             "' is not a child of '" + id_ + "'");
+  }
+
+
+  auto merge_ctx = std::make_shared<Context>("merge-" + child->id_);
+  merge_ctx->is_merge_commit_ = true;
+  merge_ctx->branch_name_ = branch_name_;
+  merge_ctx->merge_message_ = message;
+  merge_ctx->vars_ = vars_;        // Inherit parent vars
+  merge_ctx->facts_ = facts_;      // Inherit parent facts
+  merge_ctx->parent_ = parent_;    // Merge context belongs to parent's lineage
+  merge_ctx->max_history_size_ = max_history_size_;
+
+
+  merge_ctx->merge_parents_.push_back(shared_from_this());
+  merge_ctx->merge_parents_.push_back(child);
+
+
+  for (const auto& msg : history_) {
+    merge_ctx->Append(msg);
+  }
+
+
+  merge_ctx->Append("system", "[Merge] " + message);
+
+
+  merge_ctx->AddFacts(child->GetFacts());
+
+
+  for (const auto& [key, val] : child->vars_) {
+    merge_ctx->vars_[key] = val;
+  }
+
+
+  child->state_ = State::kMerged;
+
+  Append("system", "[Child '" + child->id_ + "' merged] " + message);
+
+  return merge_ctx;
+}
+
+std::vector<std::shared_ptr<Context>> Context::GetMergeParents() const {
+  std::vector<std::shared_ptr<Context>> result;
+  for (const auto& wp : merge_parents_) {
+    auto sp = wp.lock();
+    if (sp) {
+      result.push_back(sp);
+    }
+  }
+  return result;
+}
+
+size_t Context::RemoveMergedChildren() {
+  size_t removed = 0;
+  auto it = children_.begin();
+  while (it != children_.end()) {
+    if ((*it)->state_ == State::kMerged) {
+      it = children_.erase(it);
+      ++removed;
+    } else {
+      ++it;
+    }
+  }
+  return removed;
+}
+
+size_t Context::GetTokenCount() const {
+  size_t total_chars = 0;
+  for (const auto& msg : history_) {
+    total_chars += msg.content.size();
+  }
+
+  return total_chars / 4;
 }
 
 }  // namespace pu::core

@@ -9,6 +9,7 @@ add_executable(pu_tests
     unit/test_streaming_json_parser.cpp
     unit/test_context.cpp
     unit/test_delegation.cpp
+    unit/test_fork_merge.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

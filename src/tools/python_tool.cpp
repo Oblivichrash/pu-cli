@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/python_tool.hpp"
 
+#include "pu/error.hpp"
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -23,7 +24,7 @@ namespace pu::tools {
 PythonTool::PythonTool(const std::string& file_path) : file_path_(file_path) {
   std::ifstream file(file_path);
   if (!file.is_open()) {
-    throw std::runtime_error("Cannot open Python tool file: " + file_path);
+    throw pu::Error("Cannot open Python tool file: " + file_path);
   }
   std::string content((std::istreambuf_iterator<char>(file)),
                        std::istreambuf_iterator<char>());
@@ -80,10 +81,10 @@ void PythonTool::Parse(const std::string& content) {
 
   python_code_ = code_builder.str();
   if (name_.empty() || description_.empty() || parameters_schema_.empty() || python_code_.empty()) {
-    throw std::runtime_error("Invalid Python tool definition in " + file_path_);
+    throw pu::Error("Invalid Python tool definition in " + file_path_);
   }
   if (python_code_.find("def run(") == std::string::npos) {
-    throw std::runtime_error("Python tool missing 'run' function in " + file_path_);
+    throw pu::Error("Python tool missing 'run' function in " + file_path_);
   }
 }
 

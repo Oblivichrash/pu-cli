@@ -2,9 +2,9 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
-#include "pu/global_context.hpp"
 #include "pu/agent_core.hpp"
 #include "pu/core/delegation_stack.hpp"
 #include "pu/core/context.hpp"
@@ -13,8 +13,7 @@ namespace pu {
 
 class Orchestrator {
  public:
-  Orchestrator(std::shared_ptr<GlobalContext> ctx,
-               agent::AgentManager& manager);
+  Orchestrator(agent::AgentManager& manager);
 
   void SetDelegationStack(std::shared_ptr<core::DelegationStack> stack);
 
@@ -26,6 +25,21 @@ class Orchestrator {
 
   void SetMaxDepth(int depth) { max_depth_ = depth; }
 
+
+
+  std::shared_ptr<core::Context> ForkContext(
+      const std::string& agent_name,
+      const std::string& goal,
+      const std::string& branch_name = "");
+
+  core::SummaryReport MergeContext(
+      const std::string& message,
+      const std::string& strategy = "merge");
+
+  void PrintForkTree(std::ostream& os);
+
+  size_t PruneMergedForks();
+
  private:
   core::FactList ExtractFacts(const std::shared_ptr<core::Context>& ctx,
                               const std::string& goal);
@@ -35,7 +49,6 @@ class Orchestrator {
 
   void InjectSummaryIntoParent(const core::SummaryReport& report);
 
-  std::shared_ptr<GlobalContext> ctx_;
   std::shared_ptr<core::DelegationStack> delegation_stack_;
   std::shared_ptr<core::Context> root_context_;
   agent::AgentManager& manager_;

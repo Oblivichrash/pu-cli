@@ -6,7 +6,7 @@
 
 namespace pu {
 
-// Base class for uniform exception handling across all pu modules.
+
 class Error : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

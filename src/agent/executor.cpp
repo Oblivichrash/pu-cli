@@ -30,7 +30,7 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
     ctx.context = root_context_;
   }
 
-  // Store configuration in context vars instead of AgentContext fields
+
   ctx.context->SetVar("show_reasoning", json(manager_.GetShowReasoning()));
   ctx.context->SetVar("working_dir", json("."));
 
@@ -39,7 +39,7 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
     ctx.context->SetVar("system_prompt", json(*prompt));
   }
 
-  // Set confirmation callback on the agent if it supports it
+
   auto* agent = manager_.GetAgent(agent_name);
   if (agent) {
     auto cb = manager_.GetConfirmationCallback();
