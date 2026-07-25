@@ -50,7 +50,7 @@ bool SessionManager::LoadConversation(const std::string& id, std::vector<ChatMes
     messages = conv.messages;
     manager_.RestoreAgents(conv.expert_histories);
     manager_.SetActiveAgent("");
-    std::cout << "[+] Loaded conversation '" << id << "'\n";
+    std::cout << "[INFO] Loaded conversation '" << id << "'\n";
     return true;
   } catch (const std::exception& e) {
     std::cerr << "Error: failed to load conversation: " << e.what() << '\n';
@@ -62,7 +62,7 @@ std::vector<Conversation> SessionManager::ListConversations() const {
   std::vector<std::string> errors;
   auto convs = store_.List(errors);
   for (const auto& err : errors) {
-    std::cout << "  [!] " << err << '\n';
+    std::cout << "  [Warning] " << err << '\n';
   }
   return convs;
 }
