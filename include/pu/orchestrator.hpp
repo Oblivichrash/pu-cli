@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-#include "pu/global_context.hpp"
 #include "pu/agent_core.hpp"
 #include "pu/core/delegation_stack.hpp"
 #include "pu/core/context.hpp"
@@ -13,8 +12,7 @@ namespace pu {
 
 class Orchestrator {
  public:
-  Orchestrator(std::shared_ptr<GlobalContext> ctx,
-               agent::AgentManager& manager);
+  Orchestrator(agent::AgentManager& manager);
 
   void SetDelegationStack(std::shared_ptr<core::DelegationStack> stack);
 
@@ -35,7 +33,6 @@ class Orchestrator {
 
   void InjectSummaryIntoParent(const core::SummaryReport& report);
 
-  std::shared_ptr<GlobalContext> ctx_;
   std::shared_ptr<core::DelegationStack> delegation_stack_;
   std::shared_ptr<core::Context> root_context_;
   agent::AgentManager& manager_;

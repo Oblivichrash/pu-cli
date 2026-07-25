@@ -149,32 +149,21 @@ int RunChat(int argc, char* argv[]) {
   auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
   auto store_dir = pu_dir / "conversations";
 
-  auto global_ctx = GlobalContext::Create(pu_dir);
-  global_ctx->Load();
-
   auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
   std::filesystem::create_directories(root_context_path.parent_path());
   auto root_context = core::Context::LoadOrCreate(root_context_path);
   auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
 
-  manager.SetGlobalContext(global_ctx);
-
   SessionManager session(store_dir, manager);
-  Orchestrator orchestrator(global_ctx, manager);
+  Orchestrator orchestrator(manager);
   orchestrator.SetDelegationStack(delegation_stack);
 
   agent::AgentExecutor executor(manager);
   executor.SetRootContext(root_context);
 
-  for (const auto& entry : agents_config.agents) {
-    auto summary_opt = global_ctx->Read("memory/summaries/" + entry.name + "/latest");
-    if (summary_opt && summary_opt->is_string()) {
-      std::string summary = summary_opt->get<std::string>();
-      if (!summary.empty()) {
-        manager.SetSystemPrompt(entry.name, summary);
-      }
-    }
-  }
+  // Summaries are now stored via core::Context; previously they used GlobalContext.
+  // For backward compatibility, we skip loading old summaries from GlobalContext.
+  // Users can re-generate summaries via /save.
 
   struct ConfirmationState {
     bool auto_approve_safe = false;
@@ -283,7 +272,7 @@ int RunChat(int argc, char* argv[]) {
           save_name = GenerateId();
         }
 
-        session.SaveConversation(save_name, panel_messages, no_summary, *global_ctx, root_context);
+        session.SaveConversation(save_name, panel_messages, no_summary, root_context);
 
         if (!no_summary) {
           std::ostringstream summary_prompt;
@@ -304,11 +293,16 @@ int RunChat(int argc, char* argv[]) {
               std::string user_input;
               std::getline(std::cin, user_input);
               if (user_input == "y" || user_input == "Y") {
-                global_ctx->Write("memory/summaries/" + current_name + "/latest", summary);
+                // Store summary in core::Context
+                if (root_context) {
+                  root_context->SetVar("summaries/" + current_name + "/latest", summary);
+                }
                 std::cout << "[Memory] Summary saved.\n";
               } else if (!user_input.empty() && user_input != "n" && user_input != "N") {
                 auto final_summary = summary + "\n\nUser notes: " + user_input;
-                global_ctx->Write("memory/summaries/" + current_name + "/latest", final_summary);
+                if (root_context) {
+                  root_context->SetVar("summaries/" + current_name + "/latest", final_summary);
+                }
                 std::cout << "[Memory] Updated summary saved.\n";
               }
             }
@@ -350,7 +344,7 @@ int RunChat(int argc, char* argv[]) {
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {
-          auto notes = session.ShowNotes(current_name, *global_ctx, root_context);
+          auto notes = session.ShowNotes(current_name, root_context);
           if (notes.empty()) {
             std::cout << "No notes yet.\n";
           } else {
@@ -365,7 +359,7 @@ int RunChat(int argc, char* argv[]) {
             std::cerr << "Note text required.\n";
             continue;
           }
-          session.AddNote(current_name, text, *global_ctx, root_context);
+          session.AddNote(current_name, text, root_context);
           std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";
@@ -404,7 +398,10 @@ int RunChat(int argc, char* argv[]) {
     }
   }
 
-  global_ctx->Save();
+  // core::Context persists automatically; no need for global_ctx->Save()
+  if (root_context) {
+    root_context->Save(root_context_path);
+  }
   std::cout << "\nGoodbye!\n";
   return 0;
 }

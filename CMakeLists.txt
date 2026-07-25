@@ -14,7 +14,6 @@ add_library(pu_core STATIC
     src/runtime/context.cpp
     src/runtime/delegation.cpp
     src/runtime/delegation_stack.cpp
-    src/runtime/global_context.cpp
     src/runtime/orchestrator.cpp
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp

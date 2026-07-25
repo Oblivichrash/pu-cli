@@ -10,9 +10,8 @@
 
 namespace pu {
 
-Orchestrator::Orchestrator(std::shared_ptr<GlobalContext> ctx,
-                           agent::AgentManager& manager)
-    : ctx_(std::move(ctx)), manager_(manager) {}
+Orchestrator::Orchestrator(agent::AgentManager& manager)
+    : manager_(manager) {}
 
 void Orchestrator::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
   delegation_stack_ = std::move(stack);

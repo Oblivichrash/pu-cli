@@ -12,7 +12,6 @@
 
 // Forward declarations to reduce include dependencies
 namespace pu {
-class GlobalContext;
 namespace core {
 class Context;
 }
@@ -169,13 +168,11 @@ class AgentManager {
 
   ConfirmationCallback GetConfirmationCallback() const { return confirmation_callback_; }
   bool GetShowReasoning() const { return show_reasoning_; }
-  std::shared_ptr<GlobalContext> GetGlobalContext() const { return global_ctx_; }
   std::optional<std::string> GetSystemPrompt(const std::string& agent_name) const;
 
   void SetConfirmationCallback(ConfirmationCallback cb);
   void SetShowReasoning(bool enable);
   void SetSystemPrompt(const std::string& agent_name, const std::string& prompt);
-  void SetGlobalContext(std::shared_ptr<GlobalContext> ctx);
 
   void ClearSessions();
   std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
@@ -187,7 +184,6 @@ class AgentManager {
   bool show_reasoning_ = false;
   ConfirmationCallback confirmation_callback_;
   std::unordered_map<std::string, std::string> system_prompts_;
-  std::shared_ptr<GlobalContext> global_ctx_;
 };
 
 }  // namespace pu::agent
