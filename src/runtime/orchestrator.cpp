@@ -103,10 +103,72 @@ std::shared_ptr<core::Context> Orchestrator::ForkContext(
   return child;
 }
 
+void Orchestrator::PrintForkTree(std::ostream& os) {
+  if (!root_context_) {
+    os << "No root context available.\n";
+    return;
+  }
+
+  os << "=== Fork Tree ===\n";
+  std::function<void(const std::shared_ptr<core::Context>&, int, bool)> print_node;
+  print_node = [&](const std::shared_ptr<core::Context>& ctx, int depth, bool is_last) {
+    std::string icon;
+    if (ctx == root_context_) {
+      icon = "\xf0\x9f\x8c\xbf";
+    } else if (ctx->GetState() == core::Context::State::kMerged) {
+      icon = "\xe2\x9c\x85";
+    } else if (ctx->GetState() == core::Context::State::kActive) {
+      icon = "\xf0\x9f\x8c\xb1";
+    } else {
+      icon = "\xf0\x9f\x9a\xab";
+    }
+
+    std::string indent;
+    for (int i = 0; i < depth; ++i) {
+      indent += "   ";
+    }
+    if (depth > 0) {
+      indent = indent.substr(0, indent.length() - 3) + (is_last ? "\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 " : "\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 ");
+    }
+
+    os << indent << icon << " " << ctx->GetBranchName()
+       << " (" << ctx->HistorySize() << " msgs, ~" << ctx->GetTokenCount() << " tokens";
+    if (ctx->GetState() == core::Context::State::kMerged) {
+      os << ", merged";
+    }
+    os << ")\n";
+
+    const auto& children = ctx->GetChildren();
+    for (size_t i = 0; i < children.size(); ++i) {
+      print_node(children[i], depth + 1, i == children.size() - 1);
+    }
+  };
+
+  print_node(root_context_, 0, true);
+}
+
+size_t Orchestrator::PruneMergedForks() {
+  if (!root_context_) return 0;
+
+  size_t total_removed = 0;
+  std::function<void(std::shared_ptr<core::Context>&)> prune_recursive;
+  prune_recursive = [&](std::shared_ptr<core::Context>& ctx) {
+    if (!ctx) return;
+    total_removed += ctx->RemoveMergedChildren();
+    auto children = ctx->GetChildren();
+    for (auto& child : children) {
+      auto mutable_child = std::const_pointer_cast<core::Context>(child);
+      prune_recursive(mutable_child);
+    }
+  };
+
+  prune_recursive(root_context_);
+  return total_removed;
+}
+
 core::SummaryReport Orchestrator::MergeContext(
     const std::string& message,
     const std::string& strategy) {
-  (void)strategy;
   if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
     core::SummaryReport report;
     report.status = core::SummaryReport::Status::kFailed;
@@ -119,18 +181,37 @@ core::SummaryReport Orchestrator::MergeContext(
   if (!parent) {
     return PopDelegation();
   }
-  auto merge_ctx = parent->Merge(child, message);
+
+  std::shared_ptr<core::Context> merge_ctx;
   core::SummaryReport report;
   report.status = core::SummaryReport::Status::kCompleted;
-  report.summary = message;
+
+  if (strategy == "squash") {
+    auto summary = GenerateSummary(child, frame.delegation);
+    merge_ctx = parent->Merge(child, message);
+    merge_ctx->ClearHistory();
+    merge_ctx->Append("system", "[Squash Merge] " + message);
+    merge_ctx->Append("system", "Summary: " + summary.summary);
+    merge_ctx->AddFacts(child->GetFacts());
+    for (const auto& [key, val] : child->GetAllVars()) {
+      merge_ctx->SetVar(key, val);
+    }
+    report.summary = "[Squash] " + summary.summary;
+  } else {
+    merge_ctx = parent->Merge(child, message);
+    report.summary = message;
+  }
+
   report.key_discoveries = child->GetFacts();
   delegation_stack_->Pop();
+
   if (!delegation_stack_->IsEmpty()) {
     delegation_stack_->Current().context = merge_ctx;
   }
   if (delegation_stack_->IsEmpty()) {
     root_context_ = merge_ctx;
   }
+
   return report;
 }
 
@@ -142,34 +223,8 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
     else args.clear();
 
     if (args.empty() || args == "list") {
-      auto ctx = root_context_;
-      if (!ctx) { output = "No root context available."; return true; }
       std::ostringstream oss;
-      oss << "=== Context Tree ===\n";
-      auto st = ctx->GetState();
-      oss << "Root: " << ctx->GetId() << " [branch: " << ctx->GetBranchName()
-          << ", state: " << (st == core::Context::State::kActive ? "active" :
-                             st == core::Context::State::kMerged ? "merged" : "abandoned")
-          << "]\n";
-      std::function<void(const std::shared_ptr<core::Context>&, int)> print_children;
-      print_children = [&](const std::shared_ptr<core::Context>& node, int depth) {
-        for (const auto& child : node->GetChildren()) {
-          for (int i = 0; i < depth; i++) oss << "  ";
-          auto cs = child->GetState();
-          oss << "  +- " << child->GetId()
-              << " [branch: " << child->GetBranchName()
-              << ", state: " << (cs == core::Context::State::kActive ? "active" :
-                                 cs == core::Context::State::kMerged ? "merged" : "abandoned")
-              << ", history: " << child->HistorySize() << " msgs"
-              << ", tokens: ~" << child->GetTokenCount() << "]\n";
-          print_children(child, depth + 2);
-        }
-      };
-      print_children(ctx, 0);
-      if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
-        oss << "\nCurrent context: " << delegation_stack_->CurrentContext()->GetId()
-            << " (depth " << delegation_stack_->Depth() << ")\n";
-      }
+      PrintForkTree(oss);
       output = oss.str();
       return true;
     }
@@ -219,11 +274,27 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
       output = oss.str();
       return true;
     }
-    output = "Usage: /fork list  |  /fork show <id>";
+    if (args.rfind("prune", 0) == 0) {
+      bool confirmed = (args.find("--yes") != std::string::npos ||
+                        args.find("-y") != std::string::npos);
+      size_t count = PruneMergedForks();
+      std::ostringstream oss;
+      if (confirmed) {
+        oss << "Pruned " << count << " merged branch(es).\n";
+      } else {
+        oss << "Found " << count << " merged branch(es). "
+            << "Use /fork prune --yes to remove them.\n";
+      }
+      output = oss.str();
+      return true;
+    }
+
+    output = "Usage: /fork [<agent>] | /fork list | /fork show <id> | /fork prune";
     return true;
   }
 
   if (input.rfind("/push ", 0) == 0) {
+    output = "\xe2\x9a\xa0\xef\xb8\x8f '/push' is deprecated. Please use '/fork <agent>' instead.\n";
     std::string args = input.substr(6);
     size_t space = args.find(' ');
     if (space == std::string::npos) {
@@ -266,6 +337,7 @@ bool Orchestrator::HandleCommand(const std::string& input, std::string& output) 
   }
 
   if (input == "/pop") {
+    output = "\xe2\x9a\xa0\xef\xb8\x8f '/pop' is deprecated. Please use '/merge' instead.\n";
     if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
       output = "Error: no active delegation to pop";
       return true;

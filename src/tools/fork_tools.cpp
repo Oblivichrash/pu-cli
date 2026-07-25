@@ -8,8 +8,6 @@
 
 namespace pu::tools {
 
-// ─── ForkContextTool ─────────────────────────────────────────────────────────
-
 std::string ForkContextTool::Name() const {
   return "fork_context";
 }
@@ -70,8 +68,6 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolCont
          "Result: " + result.dump();
 }
 
-// ─── MergeContextTool ────────────────────────────────────────────────────────
-
 std::string MergeContextTool::Name() const {
   return "merge_context";
 }
@@ -120,8 +116,6 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, agent::ToolCon
          "Use /pop command to complete the sub-task and merge results.\n"
          "Result: " + result.dump();
 }
-
-// ─── ListForksTool ──────────────────────────────────────────────────────────
 
 std::string ListForksTool::Name() const {
   return "list_forks";

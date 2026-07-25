@@ -2,6 +2,7 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
 #include "pu/agent_core.hpp"
@@ -24,7 +25,7 @@ class Orchestrator {
 
   void SetMaxDepth(int depth) { max_depth_ = depth; }
 
-  // ===== Fork-Merge Methods =====
+  // Fork-Merge Methods
 
   /// Fork a new context for sub-task execution.
   /// Returns the child context.
@@ -38,6 +39,12 @@ class Orchestrator {
   core::SummaryReport MergeContext(
       const std::string& message,
       const std::string& strategy = "merge");
+
+  /// Print ASCII fork tree to output stream
+  void PrintForkTree(std::ostream& os);
+
+  /// Remove all merged forks from the tree
+  size_t PruneMergedForks();
 
  private:
   core::FactList ExtractFacts(const std::shared_ptr<core::Context>& ctx,

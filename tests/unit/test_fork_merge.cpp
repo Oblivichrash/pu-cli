@@ -163,3 +163,17 @@ TEST_CASE("Fork-Merge tree structure", "[fork_merge]") {
   REQUIRE(child3->GetState() == Context::State::kActive);
   REQUIRE(merge1->IsMergeCommit());
 }
+
+TEST_CASE("Context::RemoveMergedChildren removes merged children", "[fork_merge]") {
+  auto parent = std::make_shared<Context>("parent");
+  auto active = parent->Fork("active");
+  auto merged = parent->Fork("merged");
+  parent->Merge(merged, "merge it");
+
+  REQUIRE(parent->GetChildren().size() == 2);
+
+  size_t removed = parent->RemoveMergedChildren();
+  REQUIRE(removed == 1);
+  REQUIRE(parent->GetChildren().size() == 1);
+  REQUIRE(parent->GetChildren()[0] == active);
+}

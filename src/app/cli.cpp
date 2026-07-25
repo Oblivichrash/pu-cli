@@ -215,6 +215,104 @@ int RunChat(int argc, char* argv[]) {
 
     if (input[0] == '/') {
       std::string cmd_output;
+
+      if (input.rfind("/fork ", 0) == 0) {
+        std::string agent_name = Trim(input.substr(5));
+        bool is_subcommand = (agent_name == "list" || agent_name.rfind("show", 0) == 0 || agent_name.rfind("prune", 0) == 0);
+        if (!is_subcommand && !agent_name.empty()) {
+          auto child = orchestrator.ForkContext(agent_name, "Exploration", "");
+          if (child) {
+            delegation_stack->Push(core::Delegation("exploration", agent_name, {}, 0), child);
+            std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+                      << " (agent: " << agent_name << ")\n";
+            std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
+          } else {
+            std::cout << "Error: failed to fork.\n";
+          }
+          continue;
+        }
+      }
+
+      if (input == "/fork") {
+        std::string current_agent = manager.GetActiveAgent();
+        if (current_agent.empty()) current_agent = "chat";
+        auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
+        if (child) {
+          delegation_stack->Push(core::Delegation("exploration", current_agent, {}, 0), child);
+          std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+                    << " (agent: " << current_agent << ")\n";
+          std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
+        } else {
+          std::cout << "Error: failed to fork.\n";
+        }
+        continue;
+      }
+
+      if (input.rfind("/explore", 0) == 0) {
+        std::string goal = Trim(input.substr(8));
+        if (goal.empty()) {
+          std::cout << "Usage: /explore <goal>\n";
+          continue;
+        }
+        try {
+          auto response = orchestrator.Process(goal);
+          if (!response.empty()) {
+            std::cout << response << "\n";
+          }
+        } catch (const std::exception& e) {
+          std::cout << "Error: " << e.what() << "\n";
+        }
+        continue;
+      }
+
+      if (input == "/merge" || input.rfind("/merge ", 0) == 0) {
+        bool full = (input.find("--full") != std::string::npos);
+        if (full) {
+          auto report = orchestrator.MergeContext("Merged with full history", "merge");
+          std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
+        } else {
+          auto current = delegation_stack->CurrentContext();
+          if (!current) {
+            std::cout << "Error: no active context to merge.\n";
+            continue;
+          }
+          std::cout << "\xf0\x9f\x93\x8b Merge Strategy\n";
+          std::cout << "   Branch: " << current->GetBranchName() << "\n";
+          std::cout << "   History: " << current->HistorySize() << " messages, ~"
+                    << current->GetTokenCount() << " tokens\n";
+          auto parent = current->GetParent();
+          std::cout << "   Parent: " << (parent ? parent->GetBranchName() : "root") << "\n";
+          std::cout << "\n";
+          std::cout << "   [s] Squash: Only summary (~50 tokens)\n";
+          std::cout << "   [f] Full: Keep all history (~" << current->GetTokenCount() << " tokens)\n";
+          std::cout << "   [c] Cancel: Discard this branch\n";
+          std::cout << "\n   Choose strategy: " << std::flush;
+          std::string choice;
+          std::getline(std::cin, choice);
+          if (choice == "s" || choice == "S") {
+            auto report = orchestrator.MergeContext("Merged with squash", "squash");
+            std::cout << "\xf0\x9f\x91\x8d Squash merged: " << report.summary << "\n";
+          } else if (choice == "f" || choice == "F") {
+            auto report = orchestrator.MergeContext("Merged with full history", "merge");
+            std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
+          } else {
+            std::cout << "\xe2\x9d\x8c Merge cancelled. Branch remains open.\n";
+          }
+        }
+        continue;
+      }
+
+      if (input == "/exit" || input == "/quit") {
+        break;
+      }
+
+      if (input.rfind("/push", 0) == 0) {
+        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/push' is deprecated. Please use '/fork <agent>' instead.\n";
+      }
+
+      if (input == "/pop") {
+        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/pop' is deprecated. Please use '/merge' instead.\n";
+      }
       if (orchestrator.HandleCommand(input, cmd_output)) {
         std::cout << cmd_output << '\n';
         continue;

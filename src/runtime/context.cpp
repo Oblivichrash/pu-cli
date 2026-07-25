@@ -232,7 +232,7 @@ std::shared_ptr<Context> Context::LoadOrCreate(const std::filesystem::path& path
   return ctx;
 }
 
-// ===== Fork-Merge Implementation =====
+// Fork-Merge Implementation
 
 std::shared_ptr<Context> Context::Fork(const std::string& branch_name) {
   if (state_ != State::kActive) {
@@ -329,6 +329,20 @@ std::vector<std::shared_ptr<Context>> Context::GetMergeParents() const {
     }
   }
   return result;
+}
+
+size_t Context::RemoveMergedChildren() {
+  size_t removed = 0;
+  auto it = children_.begin();
+  while (it != children_.end()) {
+    if ((*it)->state_ == State::kMerged) {
+      it = children_.erase(it);
+      ++removed;
+    } else {
+      ++it;
+    }
+  }
+  return removed;
 }
 
 size_t Context::GetTokenCount() const {
