@@ -17,7 +17,7 @@ namespace pu::core {
 
 using json = nlohmann::json;
 
-class Context {
+class Context : public std::enable_shared_from_this<Context> {
  public:
   Context() = default;
   explicit Context(std::string id);
@@ -50,12 +50,51 @@ class Context {
   static std::shared_ptr<Context> Load(const std::filesystem::path& path);
   static std::shared_ptr<Context> LoadOrCreate(const std::filesystem::path& path);
 
+  // ===== Fork-Merge Methods (Git DAG model) =====
+
+  enum class State { kActive, kMerged, kAbandoned };
+
+  /// Create an isolated child context that inherits all data from parent
+  /// but has independent history.
+  std::shared_ptr<Context> Fork(const std::string& branch_name);
+
+  /// Merge a child context back into this parent.
+  /// Creates a new merge context that combines histories.
+  /// Returns the merge context.
+  std::shared_ptr<Context> Merge(const std::shared_ptr<Context>& child,
+                                  const std::string& message);
+
+  /// Get estimated token count (rough: sum of content lengths / 4)
+  size_t GetTokenCount() const;
+
+  // ===== Fork-Merge Accessors =====
+
+  std::shared_ptr<Context> GetParent() const { return parent_.lock(); }
+  const std::vector<std::shared_ptr<Context>>& GetChildren() const { return children_; }
+  const std::string& GetBranchName() const { return branch_name_; }
+  State GetState() const { return state_; }
+  bool IsMergeCommit() const { return is_merge_commit_; }
+  std::vector<std::shared_ptr<Context>> GetMergeParents() const;
+
  private:
   std::string id_;
   std::vector<ChatMessage> history_;
   std::unordered_map<std::string, json> vars_;
   FactList facts_;
   size_t max_history_size_ = 1000;
+
+  // ===== Fork-Merge Fields (Git DAG model) =====
+  std::weak_ptr<Context> parent_;                    // Parent context
+  std::vector<std::shared_ptr<Context>> children_;   // Child contexts
+  std::string branch_name_ = "main";                 // "main", "fork_<id>", etc.
+
+  // ===== Merge Fields (Phase 1: basic) =====
+  bool is_merge_commit_ = false;                     // Is this a merge context?
+  std::vector<std::weak_ptr<Context>> merge_parents_; // Sources of merge
+  std::optional<std::string> merge_message_;         // Merge description
+
+  // ===== State =====
+  State state_ = State::kActive;
 };
 
 }  // namespace pu::core

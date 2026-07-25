@@ -33,6 +33,7 @@ add_library(pu_agent STATIC
     src/agent/llm_agent.cpp
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
+    src/tools/fork_tools.cpp          # ← NEW: Fork-Merge tools
     src/tools/python_tool.cpp
     src/conversation/conversation_store.cpp
 )

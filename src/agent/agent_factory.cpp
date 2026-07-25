@@ -8,6 +8,7 @@
 #include "pu/tools/create_tool.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
+#include "pu/tools/fork_tools.hpp"
 
 #include <memory>
 
@@ -33,6 +34,12 @@ std::unique_ptr<BaseAgent> AgentRegistry::CreateAgent(const config::AgentEntry& 
       tool_registry->RegisterTool(std::make_unique<tools::CreateTool>());
     } else if (tool_name == "write_file") {
       tool_registry->RegisterTool(std::make_unique<tools::WriteFileTool>());
+    } else if (tool_name == "fork_context") {
+      tool_registry->RegisterTool(std::make_unique<tools::ForkContextTool>());
+    } else if (tool_name == "merge_context") {
+      tool_registry->RegisterTool(std::make_unique<tools::MergeContextTool>());
+    } else if (tool_name == "list_forks") {
+      tool_registry->RegisterTool(std::make_unique<tools::ListForksTool>());
     }
   }
 

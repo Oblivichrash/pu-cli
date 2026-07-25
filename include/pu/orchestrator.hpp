@@ -24,6 +24,21 @@ class Orchestrator {
 
   void SetMaxDepth(int depth) { max_depth_ = depth; }
 
+  // ===== Fork-Merge Methods =====
+
+  /// Fork a new context for sub-task execution.
+  /// Returns the child context.
+  std::shared_ptr<core::Context> ForkContext(
+      const std::string& agent_name,
+      const std::string& goal,
+      const std::string& branch_name = "");
+
+  /// Merge a child context back to parent.
+  /// Returns the merge summary report.
+  core::SummaryReport MergeContext(
+      const std::string& message,
+      const std::string& strategy = "merge");
+
  private:
   core::FactList ExtractFacts(const std::shared_ptr<core::Context>& ctx,
                               const std::string& goal);
