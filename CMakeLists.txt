@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 
-# ===== 1. pu_core (基础库：HTTP + 平台 + Context + Backend 接口) =====
+# Core library: HTTP client, platform utilities, Context/Delegation, and LLM backends
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
@@ -24,7 +24,7 @@ target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include $
 target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json)
 add_library(pu::core ALIAS pu_core)
 
-# ===== 2. pu_agent (Agent + 工具 + 执行器) =====
+# Agent library: Agent manager, executor, tools, tool registry, and conversation store
 add_library(pu_agent STATIC
     src/agent/agent_config.cpp
     src/agent/agent_manager.cpp
@@ -41,7 +41,7 @@ target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include 
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json)
 add_library(pu::agent ALIAS pu_agent)
 
-# ===== 3. pu_app (CLI 主程序 + UI) =====
+# CLI application: entry point, chat/ask/learn commands, UI helpers, session management
 add_executable(pu
     src/app/main.cpp
     src/app/cli.cpp
