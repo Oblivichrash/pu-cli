@@ -27,9 +27,11 @@ class SessionManager {
 
   std::string ExportMarkdown(const std::string& id) const;
 
-  void AddNote(const std::string& agent_name, const std::string& text, GlobalContext& global_ctx);
+  void AddNote(const std::string& agent_name, const std::string& text, GlobalContext& global_ctx,
+               std::shared_ptr<core::Context> root_context = nullptr);
 
-  std::vector<std::string> ShowNotes(const std::string& agent_name, GlobalContext& global_ctx) const;
+  std::vector<std::string> ShowNotes(const std::string& agent_name, GlobalContext& global_ctx,
+                                     std::shared_ptr<core::Context> root_context = nullptr) const;
 
  private:
   ConversationStore store_;

@@ -1,6 +1,6 @@
 # pu-cli
 
-> “朴散则为器”——《老子》
+> "朴散则为器"——《老子》
 
 A minimalist, extensible CLI orchestrator for large language models, now with **Turing-machine-like multi-agent system** supporting nested subtasks, shared context, and self-learning.
 
@@ -25,24 +25,24 @@ cmake --build build
 ```
 
 ### Configure
-Create `experts.json` in the project or current directory (same format as before, see [examples/](examples/)).
+Create `agents.json` in the project or current directory (see [examples/](examples/)).
 
 ## Usage
 
 ### Interactive chat with agent stack
 ```bash
-./build/pu chat --expert chat
+./build/pu chat --agent chat
 ```
 
-**Stack commands** (experimental):
-- `/push <agent>` – Push a new agent onto the call stack
-- `/pop` – Pop the current agent
-- `/stack` – Show current call stack
+**Stack commands**:
+- `/push <agent>` – Push a new agent onto the delegation stack
+- `/pop` – Pop the current agent from the stack
+- `/stack` – Show current delegation stack
 
 **Memory commands**:
-- `/note add <text>` – Add a note for current expert
-- `/note show` – Show notes for current expert
-- `/save [name]` – Save conversation and generate summary (stored in global context)
+- `/note add <text>` – Add a note for current agent
+- `/note show` – Show notes for current agent
+- `/save [name]` – Save conversation and persist context
 
 ### Learning from conversations
 ```bash
@@ -52,13 +52,16 @@ Analyzes successful conversations and generates new agent definitions in `~/.pu/
 
 ## Architecture
 
-- **GlobalContext**: shared structured memory (tape) with JSON storage and automatic persistence.
-- **CallStack**: stack frames for nested agent calls, supporting PUSH/POP/HALT.
-- **Orchestrator**: executes agents based on stack top, handles pending actions (push/pop) requested by agents.
-- **Agent** (renamed from Expert): each agent is a Turing machine state with its own system prompt and capabilities.
-- **Learning module**: offline analysis to generate new agents from successful traces.
+- **core::Context**: Hierarchical key-value store with parent-child isolation, used for structured memory and delegation scoping.
+- **DelegationStack**: Stack-based delegation model supporting PUSH/POP for nested agent calls with isolated or shared contexts.
+- **Orchestrator**: Executes agents based on stack top, handles pending actions (push/pop) requested by agents.
+- **AgentManager**: Manages agent lifecycle, configuration loading, and state snapshots.
+- **GlobalContext** (legacy): Flat key-value persistence layer, being migrated to core::Context.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+
+### Telemetry
+Set `PU_TRACE=1` to enable detailed execution traces for debugging delegation and tool calls.
 
 ## Testing
 ```bash

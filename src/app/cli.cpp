@@ -350,7 +350,7 @@ int RunChat(int argc, char* argv[]) {
         }
       } else if (input.rfind("/note", 0) == 0) {
         if (input == "/note show") {
-          auto notes = session.ShowNotes(current_name, *global_ctx);
+          auto notes = session.ShowNotes(current_name, *global_ctx, root_context);
           if (notes.empty()) {
             std::cout << "No notes yet.\n";
           } else {
@@ -365,7 +365,7 @@ int RunChat(int argc, char* argv[]) {
             std::cerr << "Note text required.\n";
             continue;
           }
-          session.AddNote(current_name, text, *global_ctx);
+          session.AddNote(current_name, text, *global_ctx, root_context);
           std::cout << "Note added.\n";
         } else {
           std::cerr << "Usage: /note add <text> | /note show\n";

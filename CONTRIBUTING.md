@@ -31,9 +31,34 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Module Testing Requirements
+
+### core::Context
+- Test parent-child isolation (child can read parent, but not vice versa)
+- Test SetVar/GetVar roundtrip for all JSON types
+- Test Save/Load persistence
+
+### DelegationStack
+- Test push/pop with explicit and implicit contexts
+- Test depth tracking and max depth enforcement
+- Test Clear and GetRootContext
+
+## Directory Structure
+```
+src/
+  agent/         Agent lifecycle, factory, executor, tool registry
+  app/           CLI, UI, session manager, renderer
+  backends/      LLM backend implementations (Ollama, OpenAI)
+  conversation/  Conversation store (save/load/export)
+  infra/         HTTP client, platform utilities
+  runtime/       Context, delegation stack, orchestrator, global context
+  tools/         Built-in tools, command executor, Python tool
+include/pu/      Public headers
+tests/unit/      Unit tests
+```
+
 ## Adding New Agents
-- Built-in agents are defined in `src/agents/`.
-- Generated agents are stored in `~/.pu/generated/agents/` and loaded via `/load-agent <name>` (planned).
+- Built-in agents are defined in `agents.json`.
 - Agent definitions follow JSON schema with `name`, `description`, `prompt_layers`, `input_schema`, `output_schema`.
 
 ## Learning Module
