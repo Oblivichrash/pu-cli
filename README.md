@@ -34,12 +34,6 @@ Create `agents.json` in the project or current directory (see [examples/](exampl
 ./build/pu chat --agent chat
 ```
 
-### Learning from conversations
-```bash
-./build/pu learn --threshold 0.6 --max-sessions 10
-```
-Analyzes successful conversations and generates new agent definitions in `~/.pu/generated/agents/`.
-
 For architecture details, CLI command reference, and configuration guide,
 see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
