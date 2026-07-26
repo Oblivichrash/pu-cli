@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/fork_merge_service.hpp"
+#include "pu/core/fact_extractor.hpp"
+#include "pu/core/summary_generator.hpp"
 #include "pu/agent_core.hpp"
 #include "pu/executor.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <functional>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 
@@ -23,7 +24,12 @@ ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_nam
                                                      const std::string& goal,
                                                      const std::string& branch_name) {
   ForkResult result;
-  auto parent = delegation_stack_ ? delegation_stack_->CurrentContext() : root_context_;
+  std::shared_ptr<Context> parent;
+  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
+    parent = delegation_stack_->CurrentContext();
+  } else {
+    parent = root_context_;
+  }
   if (!parent) {
     result.message = "Error: Failed to fork context (no parent context)";
     return result;
@@ -59,7 +65,8 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
   result.report.status = SummaryReport::Status::kCompleted;
 
   if (strategy == "squash") {
-    auto summary = GenerateSummary(child, frame.delegation);
+    SummaryGenerator summary_gen(manager_);
+    auto summary = summary_gen.Generate(child, frame.delegation);
     merge_ctx = parent->Merge(child, message);
     merge_ctx->ClearHistory();
     merge_ctx->Append("system", "[Squash Merge] " + message);
@@ -173,56 +180,14 @@ size_t ForkMergeService::PruneMerged() {
 
 core::FactList ForkMergeService::ExtractFacts(const std::shared_ptr<Context>& ctx,
                                                const std::string& goal) {
-  core::FactList facts;
-  if (!ctx) return facts;
-  (void)goal;
-  auto history = ctx->Recent(20);
-  for (const auto& msg : history) {
-    const std::string& text = msg.content;
-    static std::regex file_re(R"((/[^\s]+\.\w+)|([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+))");
-    std::smatch match;
-    if (std::regex_search(text, match, file_re)) {
-      facts.emplace_back(core::Fact::Type::kFilePath, match.str(), msg.role);
-    }
-    if (text.find("error") != std::string::npos ||
-        text.find("fail") != std::string::npos) {
-      facts.emplace_back(core::Fact::Type::kErrorMsg, text.substr(0, 200), msg.role);
-    }
-  }
-  std::sort(facts.begin(), facts.end(),
-            [](const core::Fact& a, const core::Fact& b) { return a.content < b.content; });
-  facts.erase(std::unique(facts.begin(), facts.end(),
-                          [](const core::Fact& a, const core::Fact& b) {
-                            return a.content == b.content;
-                          }), facts.end());
-  return facts;
+  FactExtractor extractor;
+  return extractor.Extract(ctx, goal);
 }
 
 core::SummaryReport ForkMergeService::GenerateSummary(const std::shared_ptr<Context>& child_ctx,
                                                        const core::Delegation& delegation) {
-  core::SummaryReport report;
-  report.status = core::SummaryReport::Status::kCompleted;
-  if (!child_ctx) {
-    report.status = core::SummaryReport::Status::kFailed;
-    report.summary = "Child context missing";
-    return report;
-  }
-  std::string prompt = "Summarize the following conversation in 3-5 sentences. "
-                       "Focus on key findings and decisions. End with 'DONE'.\n\n";
-  auto history = child_ctx->GetHistory();
-  for (const auto& msg : history) {
-    prompt += msg.role + ": " + msg.content + "\n";
-  }
-  agent::AgentExecutor executor(manager_);
-  auto ctx = executor.PrepareContext(delegation.agent_name, child_ctx);
-  std::string summary_text = executor.Execute(delegation.agent_name, prompt, ctx);
-  size_t done_pos = summary_text.find("DONE");
-  if (done_pos != std::string::npos) {
-    summary_text = summary_text.substr(0, done_pos);
-  }
-  report.summary = summary_text;
-  report.key_discoveries = child_ctx->GetFacts();
-  return report;
+  SummaryGenerator summary_gen(manager_);
+  return summary_gen.Generate(child_ctx, delegation);
 }
 
 void ForkMergeService::InjectSummaryIntoParent(const core::SummaryReport& report) {

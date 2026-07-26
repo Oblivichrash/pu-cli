@@ -182,6 +182,7 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
       return (choice == agent::ConfirmationChoice::kApproveOnce ||
               choice == agent::ConfirmationChoice::kApproveAllSafe);
     };
+    tool_ctx.fork_service = ctx.fork_service;
 
     for (const auto& call : collected_calls) {
       std::string result;

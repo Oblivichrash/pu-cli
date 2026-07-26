@@ -8,6 +8,13 @@
 #include "pu/agent_core.hpp"
 #include "pu/core/delegation_stack.hpp"
 #include "pu/core/context.hpp"
+#include "pu/core/fork_merge_service.hpp"
+
+namespace pu {
+namespace core {
+class CommandHandler;
+}
+}  // namespace pu::core
 
 namespace pu {
 
@@ -25,8 +32,7 @@ class Orchestrator {
 
   void SetMaxDepth(int depth) { max_depth_ = depth; }
 
-
-
+  // Delegated to ForkMergeService
   std::shared_ptr<core::Context> ForkContext(
       const std::string& agent_name,
       const std::string& goal,
@@ -52,6 +58,8 @@ class Orchestrator {
   std::shared_ptr<core::DelegationStack> delegation_stack_;
   std::shared_ptr<core::Context> root_context_;
   agent::AgentManager& manager_;
+  std::shared_ptr<core::ForkMergeService> fork_service_;
+  std::shared_ptr<core::CommandHandler> command_handler_;
 
   int max_depth_ = 5;
 };

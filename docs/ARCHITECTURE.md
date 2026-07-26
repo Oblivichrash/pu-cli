@@ -31,11 +31,32 @@ Manages nested agent calls:
 - `Pop`: Complete and merge back
 - Max depth: 5 (configurable)
 
+### ForkMergeService
+Central service for fork/merge operations, extracted from the Orchestrator:
+- `Fork()`: Create a new child context
+- `Merge()`: Merge a child context back to parent
+- `PrintTree()`: Display the fork tree
+- `FindContext()`: Look up a context by ID or branch name
+- `PruneMerged()`: Remove merged branches
+- `ExtractFacts()`: Extract facts from context history
+- `GenerateSummary()`: Generate LLM summary for squash merges
+- `PopDelegation()`: Pop and summarize a delegation
+
+### CommandHandler
+Handles all slash-commands (`/fork`, `/push`, `/pop`, `/stack`), extracted from the Orchestrator to reduce its responsibilities.
+
+### SummaryGenerator
+Handles LLM-based summary generation for squash merges, extracted from ForkMergeService.
+
+### FactExtractor
+Handles rule-based fact extraction (regex matching for file paths, error messages), extracted from ForkMergeService.
+
 ### Orchestrator
 Central execution engine:
-- Processes CLI commands
+- Coordinates between CLI, agents, and core services
 - Manages `DelegationStack`
 - Routes tasks to appropriate agents
+- Delegates fork/merge commands to `CommandHandler` and `ForkMergeService`
 
 ### Agents
 Agents are defined in `agents.json`:
@@ -55,6 +76,12 @@ Agents are defined in `agents.json`:
 | `/fork show <id>` | Show detailed branch info |
 | `/fork prune` | Preview merged branches |
 | `/fork prune --yes` | Remove merged branches |
+| `/help` | Show available commands |
+| `/clear` | Clear conversation history |
+| `/agent <name>` | Switch to a different agent |
+| `/save [name]` | Save conversation |
+| `/load <id>` | Load conversation |
+| `/list` | List saved conversations |
 | `/exit` | Exit pu chat |
 
 ## Configuration
@@ -100,12 +127,47 @@ src/
   app/           CLI, UI, session manager, renderer
   backends/      LLM backend implementations (Ollama, OpenAI)
   conversation/  Conversation store (save/load/export)
+  core/          ForkMergeService, CommandHandler, SummaryGenerator, FactExtractor
   infra/         HTTP client, platform utilities
   runtime/       Context, delegation stack, orchestrator
   tools/         Built-in tools, command executor, Python tool
 include/pu/      Public headers
 tests/           Unit tests
 ```
+
+## Core Components
+
+### ForkMergeService (`src/core/fork_merge_service.cpp`)
+Extracted from Orchestrator, this service contains all fork/merge logic:
+- Creates child contexts (forks)
+- Merges contexts back to parents (squash or full)
+- Prints the fork tree
+- Finds contexts by ID or branch name
+- Prunes merged branches
+
+### CommandHandler (`src/core/command_handler.cpp`)
+Extracted from Orchestrator, handles slash-commands:
+- `/fork`, `/fork list`, `/fork show`, `/fork prune`
+- `/push` (deprecated, delegates to fork)
+- `/pop` (deprecated, delegates to merge)
+- `/stack`
+
+### SummaryGenerator (`src/core/summary_generator.cpp`)
+Handles LLM-based summary generation:
+- Used by ForkMergeService for squash merges
+- Calls the agent's LLM to generate concise summaries
+
+### FactExtractor (`src/core/fact_extractor.cpp`)
+Rule-based fact extraction:
+- Regex matching for file paths
+- Error/failure message detection
+- Deduplication of facts
+
+## Tool System
+
+Tools are C++ classes implementing `agent::Tool` interface. The fork-related tools
+(`fork_context`, `merge_context`, `list_forks`) now use `ForkMergeService` to
+perform real operations instead of returning placeholder values.
 
 ## Extension Guide
 

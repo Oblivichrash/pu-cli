@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
+#include "pu/core/fork_merge_service.hpp"
 
 #include <iostream>
 
@@ -30,6 +31,10 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
     ctx.context = root_context_;
   }
 
+  // Create ForkMergeService for this context
+  if (stack_ && root_context_) {
+    ctx.fork_service = std::make_shared<core::ForkMergeService>(manager_, stack_, root_context_);
+  }
 
   ctx.context->SetVar("show_reasoning", json(manager_.GetShowReasoning()));
   ctx.context->SetVar("working_dir", json("."));
@@ -38,7 +43,6 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
   if (prompt) {
     ctx.context->SetVar("system_prompt", json(*prompt));
   }
-
 
   auto* agent = manager_.GetAgent(agent_name);
   if (agent) {

@@ -13,6 +13,7 @@
 namespace pu {
 namespace core {
 class Context;
+class ForkMergeService;
 }
 namespace http {
 class HttpClient;
@@ -75,6 +76,7 @@ std::unique_ptr<backend::Backend> CreateBackend(
 struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
   std::function<bool(const std::string& message)> request_confirmation;
+  std::shared_ptr<core::ForkMergeService> fork_service;
 };
 
 class Tool {
@@ -126,6 +128,7 @@ struct PendingAction {
 struct AgentContext {
   std::shared_ptr<core::Context> context;
   PendingAction pending_action;
+  std::shared_ptr<core::ForkMergeService> fork_service;
 };
 
 class BaseAgent {
