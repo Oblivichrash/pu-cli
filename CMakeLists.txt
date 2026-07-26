@@ -15,6 +15,7 @@ add_library(pu_core STATIC
     src/runtime/delegation.cpp
     src/runtime/delegation_stack.cpp
     src/runtime/orchestrator.cpp
+    src/core/fork_merge_service.cpp
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
     src/backends/common/streaming_json_parser.cpp
@@ -33,7 +34,7 @@ add_library(pu_agent STATIC
     src/agent/llm_agent.cpp
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
-    src/tools/fork_tools.cpp          # ← NEW: Fork-Merge tools
+    src/tools/fork_tools.cpp
     src/tools/python_tool.cpp
     src/conversation/conversation_store.cpp
 )
