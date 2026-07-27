@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_core.hpp"
+#include "pu/tools/toolbox.hpp"
 
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
@@ -13,9 +13,9 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace pu::agent {
+namespace pu {
 
-void ToolRegistry::RegisterTool(std::unique_ptr<Tool> tool) {
+void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   if (!tool) return;
   std::string name = tool->Name();
   if (tools_.find(name) != tools_.end()) {
@@ -24,31 +24,31 @@ void ToolRegistry::RegisterTool(std::unique_ptr<Tool> tool) {
   tools_[name] = std::move(tool);
 }
 
-void ToolRegistry::RemoveTool(const std::string& name) {
+void Toolbox::RemoveTool(const std::string& name) {
   tools_.erase(name);
 }
 
-Tool* ToolRegistry::GetTool(const std::string& name) const {
+Tool* Toolbox::GetTool(const std::string& name) const {
   auto it = tools_.find(name);
   if (it == tools_.end()) return nullptr;
   return it->second.get();
 }
 
-std::vector<backend::ToolDefinition> ToolRegistry::GetToolDefinitions() const {
-  std::vector<backend::ToolDefinition> defs;
+std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
+  std::vector<ToolDefinition> defs;
   for (const auto& [name, tool] : tools_) {
-    backend::ToolDefinition def;
+    ToolDefinition def;
     def.name = tool->Name();
     def.description = tool->Description();
-    def.parameters.raw_schema = tool->ParametersSchema();
+    def.parameters_schema = tool->ParametersSchema();
     defs.push_back(def);
   }
   return defs;
 }
 
-std::string ToolRegistry::ExecuteTool(const std::string& name,
-                                      const nlohmann::json& args,
-                                      ToolContext& ctx) {
+std::string Toolbox::ExecuteTool(const std::string& name,
+                                 const nlohmann::json& args,
+                                 ToolContext& ctx) {
   Tool* tool = GetTool(name);
   if (!tool) {
     return "Tool not found: " + name;
@@ -56,7 +56,7 @@ std::string ToolRegistry::ExecuteTool(const std::string& name,
   return tool->Execute(args, ctx);
 }
 
-void ToolRegistry::ReloadExternalTools(const std::string& directory) {
+void Toolbox::ReloadExternalTools(const std::string& directory) {
   namespace fs = std::filesystem;
   if (!fs::exists(directory) || !fs::is_directory(directory)) {
     return;
@@ -81,7 +81,7 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
         RegisterTool(std::move(tool));
         tool_file_mtimes_[name] = mtime;
       } catch (const std::exception& e) {
-        std::cerr << "[ToolRegistry] Failed to load tool " << name << ": " << e.what() << '\n';
+        std::cerr << "[Toolbox] Failed to load tool " << name << ": " << e.what() << '\n';
       }
     }
   }
@@ -96,4 +96,4 @@ void ToolRegistry::ReloadExternalTools(const std::string& directory) {
   }
 }
 
-}  // namespace pu::agent
+}  // namespace pu

@@ -2,9 +2,9 @@
 #include "pu/agent_core.hpp"
 
 #include "pu/error.hpp"
-#include "backends/ollama/ollama_backend.hpp"
-#include "backends/openai/openai_backend.hpp"
-#include "pu/backend.hpp"
+#include "pu/llm/providers/ollama_provider.hpp"
+#include "pu/llm/providers/openai_provider.hpp"
+#include "pu/llm/llm_provider.hpp"
 #include "pu/http/http_client.hpp"
 
 #include <nlohmann/json.hpp>
@@ -182,22 +182,22 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   file << j.dump(2);
 }
 
-std::unique_ptr<pu::backend::Backend> CreateBackend(
+std::unique_ptr<pu::LLMProvider> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
-      pu::backends::ollama::OllamaBackend::Config ollama_cfg;
+      OllamaProvider::Config ollama_cfg;
       ollama_cfg.model = cfg.model;
       ollama_cfg.temperature = cfg.temperature;
       ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       ollama_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<pu::backends::ollama::OllamaBackend>(
+      return std::make_unique<OllamaProvider>(
           std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
-      pu::backends::openai::OpenAIBackend::Config openai_cfg;
+      OpenAIProvider::Config openai_cfg;
       openai_cfg.model = cfg.model;
       openai_cfg.temperature = cfg.temperature;
       openai_cfg.system_prompt = cfg.system_prompt;
@@ -205,7 +205,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.api_key = cfg.api_key.value_or("");
       openai_cfg.parameters_as_string = cfg.parameters_as_string;
       openai_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<pu::backends::openai::OpenAIBackend>(
+      return std::make_unique<OpenAIProvider>(
           openai_cfg, std::move(http));
     }
     default:

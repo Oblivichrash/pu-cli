@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "agent/llm_agent.hpp"
+// #include "agent/llm_agent.hpp" - removed in refactor
 #include "infra/curl_http_client.hpp"
 #include "session.hpp"
 #include "ui.hpp"
@@ -465,18 +465,7 @@ int RunChat(int argc, char* argv[]) {
           std::cerr << "Usage: /note add <text> | /note show\n";
         }
       } else if (input == "/reload-tools") {
-        auto* agent = manager.GetAgent(manager.GetActiveAgent());
-        if (agent) {
-          auto* llm_agent = dynamic_cast<agents::LLMAgent*>(agent);
-          if (llm_agent) {
-            llm_agent->ReloadExternalTools();
-            std::cout << "[INFO] External tools reloaded.\n";
-          } else {
-            std::cout << "[INFO] Current agent does not support tool reload.\n";
-          }
-        } else {
-          std::cout << "[INFO] No active agent.\n";
-        }
+        std::cout << "[INFO] Tool reload not yet implemented.\n";
       } else {
         std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
       }

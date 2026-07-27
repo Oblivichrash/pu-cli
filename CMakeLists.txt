@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 
-# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, and LLM backends
+# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, and LLM providers
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
@@ -22,6 +22,11 @@ add_library(pu_core STATIC
     src/runtime/orchestrator.cpp
     src/core/command_handler.cpp
     src/core/fact_extractor.cpp
+    src/core/fork_merge_service.cpp
+    src/core/summary_generator.cpp
+    src/llm/providers/ollama_provider.cpp
+    src/llm/providers/openai_provider.cpp
+    src/llm/common/streaming_json_parser.cpp
     src/backends/ollama/ollama_backend.cpp
     src/backends/openai/openai_backend.cpp
     src/backends/common/streaming_json_parser.cpp
@@ -30,16 +35,14 @@ target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include $
 target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json)
 add_library(pu::core ALIAS pu_core)
 
-# Agent library: Agent manager, executor, tools, tool registry, and conversation store
+# Agent library: Agent manager, executor, tools, toolbox, and conversation store
 add_library(pu_agent STATIC
     src/agent/agent_config.cpp
     src/agent/agent_manager.cpp
     src/agent/executor.cpp
+    src/executor/executor.cpp
+    src/tools/toolbox.cpp
     src/agent/agent_factory.cpp
-    src/agent/tool_registry.cpp
-    src/agent/llm_agent.cpp
-    src/core/fork_merge_service.cpp
-    src/core/summary_generator.cpp
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
     src/tools/fork_tools.cpp

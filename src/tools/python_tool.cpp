@@ -92,7 +92,7 @@ std::string PythonTool::Name() const { return name_; }
 std::string PythonTool::Description() const { return description_; }
 std::string PythonTool::ParametersSchema() const { return parameters_schema_; }
 
-std::string PythonTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string PythonTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   (void)ctx;
   std::string args_json = args.dump();
   return ExecutePython(args_json);

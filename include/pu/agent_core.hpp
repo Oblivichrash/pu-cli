@@ -10,6 +10,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include "pu/conversation.hpp"
+#include "pu/backend.hpp"
+#include "pu/tools/toolbox.hpp"
+
 namespace pu {
 class Workspace;
 class ForkMergeService;
@@ -20,9 +24,6 @@ namespace executor {
 enum class RiskLevel : int;
 }
 }  // namespace pu
-
-#include "pu/backend.hpp"
-#include "pu/conversation.hpp"
 
 namespace pu::agent {
 
@@ -66,41 +67,12 @@ struct AgentsConfig {
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg);
-std::unique_ptr<backend::Backend> CreateBackend(
+std::unique_ptr<LLMProvider> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace config
 
-struct ToolContext {
-  const config::SecurityPolicy* security = nullptr;
-  std::function<bool(const std::string& message)> request_confirmation;
-  std::shared_ptr<pu::ForkMergeService> fork_service;
-};
-
-class Tool {
- public:
-  virtual ~Tool() = default;
-  virtual std::string Name() const = 0;
-  virtual std::string Description() const = 0;
-  virtual std::string ParametersSchema() const = 0;
-  virtual std::string Execute(const nlohmann::json& args, ToolContext& ctx) = 0;
-};
-
-class ToolRegistry {
- public:
-  void RegisterTool(std::unique_ptr<Tool> tool);
-  void RemoveTool(const std::string& name);
-  Tool* GetTool(const std::string& name) const;
-  std::vector<backend::ToolDefinition> GetToolDefinitions() const;
-  std::string ExecuteTool(const std::string& name,
-                          const nlohmann::json& args,
-                          ToolContext& ctx);
-  void ReloadExternalTools(const std::string& directory);
-
- private:
-  std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  std::unordered_map<std::string, std::string> tool_file_mtimes_;
-};
+// Removed: Tool, ToolContext, ToolRegistry - now in pu/tools/toolbox.hpp
 
 enum class ConfirmationChoice {
   kDeny,

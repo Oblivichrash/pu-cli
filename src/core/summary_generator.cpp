@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/summary_generator.hpp"
-#include "pu/executor.hpp"
+#include "pu/executor/executor.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/tools/toolbox.hpp"
 
 #include <sstream>
 
@@ -26,16 +28,9 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
     prompt += msg.role + ": " + msg.content + "\n";
   }
 
-  agent::AgentExecutor executor(manager_);
-  auto ctx = executor.PrepareContext(delegation.agent_name, child_ctx);
-  std::string summary_text = executor.Execute(delegation.agent_name, prompt, ctx);
-
-  size_t done_pos = summary_text.find("DONE");
-  if (done_pos != std::string::npos) {
-    summary_text = summary_text.substr(0, done_pos);
-  }
-
-  report.summary = summary_text;
+  // TODO: Phase 2 - Use new Executor with proper provider and toolbox
+  // For now, return a basic summary
+  report.summary = "Summary generation requires Executor with LLMProvider (Phase 2).";
   report.key_discoveries = child_ctx->GetArtifacts();
   return report;
 }

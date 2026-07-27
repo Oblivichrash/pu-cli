@@ -41,7 +41,7 @@ std::string ForkContextTool::ParametersSchema() const {
   })schema";
 }
 
-std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string ForkContextTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string agent_name = args.value("agent_name", "");
   std::string goal = args.value("goal", "");
   std::string branch_name = args.value("branch_name", "");
@@ -101,7 +101,7 @@ std::string MergeContextTool::ParametersSchema() const {
   })schema";
 }
 
-std::string MergeContextTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string message = args.value("message", "");
   std::string strategy = args.value("strategy", "merge");
 
@@ -138,7 +138,7 @@ std::string ListForksTool::ParametersSchema() const {
   return R"({"type": "object", "properties": {}})";
 }
 
-std::string ListForksTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string ListForksTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   (void)args;
 
   if (!ctx.fork_service) {
