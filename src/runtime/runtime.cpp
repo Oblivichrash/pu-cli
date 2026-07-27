@@ -27,6 +27,7 @@ void Runtime::Initialize(const std::string& config_path) {
   // Load agent config metadata so that /backend and /agents work
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
+  // Extract default backend config and security policy
   const agent::config::AgentEntry* default_entry = nullptr;
   for (const auto& entry : agents_cfg.agents) {
     if (entry.name == agents_cfg.default_agent) {
@@ -48,6 +49,19 @@ void Runtime::Initialize(const std::string& config_path) {
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_);
   toolbox_ = std::make_unique<Toolbox>();
   executor_ = std::make_unique<Executor>(toolbox_.get());
+
+  // Inject security policy from the default agent (if found)
+  if (default_entry) {
+    executor_->SetSecurityPolicy(default_entry->security);
+  } else {
+    // Fallback: allow all (with warning)
+    agent::config::SecurityPolicy fallback_policy;
+    fallback_policy.sandbox_root = ".";
+    fallback_policy.max_command_length = 0;
+    fallback_policy.forbidden_patterns = {};
+    executor_->SetSecurityPolicy(fallback_policy);
+    std::cerr << "[Warning] No default agent found for security policy. Using permissive fallback.\n";
+  }
 
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       std::make_unique<executor::CommandExecutor>(".")));

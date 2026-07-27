@@ -18,6 +18,10 @@ using json = nlohmann::json;
 Executor::Executor(Toolbox* toolbox)
     : toolbox_(toolbox) {}
 
+void Executor::SetSecurityPolicy(const agent::config::SecurityPolicy& policy) {
+  security_policy_ = policy;
+}
+
 std::string Executor::Execute(const std::string& input,
                               Workspace& workspace,
                               LLMProvider* provider) {
@@ -42,7 +46,7 @@ std::string Executor::Execute(const std::string& input,
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
-                                                LLMProvider* provider) {
+                                               LLMProvider* provider) {
   ToolLoopResult result;
 
   if (!provider->SupportsTools()) {
@@ -100,8 +104,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         chat_history,
         tools,
         [&](const std::string& token) {
-          // For rendering - we use the old-style callback
-          // Since StreamingRenderer expects backend::ChatCallback, we adapt
           std::cout << token << std::flush;
           content_stream << token;
         },
@@ -145,10 +147,17 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       workspace.Append(assistant_msg);
     }
 
-    // Execute each tool
+    // Prepare ToolContext with security policy
     ToolContext tool_ctx;
-    auto security_policy_var = workspace.GetVar("security_policy");
-    // Security context is handled outside for now
+    if (security_policy_.has_value()) {
+      tool_ctx.security = &security_policy_.value();
+    } else {
+      // Fallback: use a default empty policy (allow all, but log a warning)
+      static agent::config::SecurityPolicy empty_policy;
+      tool_ctx.security = &empty_policy;
+      std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
+    }
+    // request_confirmation and fork_service are not yet used, keep null
 
     for (const auto& call : collected_calls) {
       std::string tool_result;
@@ -170,4 +179,4 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   return result;
 }
 
-}  // namespace pu
+} // namespace pu
