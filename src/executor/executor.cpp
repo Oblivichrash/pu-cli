@@ -25,19 +25,15 @@ void Executor::SetSecurityPolicy(const agent::config::SecurityPolicy& policy) {
 std::string Executor::Execute(const std::string& input,
                               Workspace& workspace,
                               LLMProvider* provider) {
-  // 1. Append user message to workspace
   workspace.Append("user", input);
 
-  // 2. Check provider supports tools
   auto tools = toolbox_->GetToolDefinitions();
   if (!provider->SupportsTools() && !tools.empty()) {
     workspace.Compact();
   }
 
-  // 3. Run tool loop
   auto result = RunToolLoop(workspace, provider);
 
-  // 4. Append final response to workspace
   if (!result.final_response.empty()) {
     workspace.Append("assistant", result.final_response);
   }
@@ -61,16 +57,12 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   do {
     tool_was_called = false;
 
-    // Get history from workspace
     auto history = workspace.GetHistory();
-
-    // Build ChatMessage history for the provider
     std::vector<ChatMessage> chat_history;
     for (const auto& msg : history) {
       chat_history.push_back(msg);
     }
 
-    // Check for system prompt in workspace variables
     auto system_prompt_var = workspace.GetVar("system_prompt");
     if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
       bool has_system = false;
@@ -88,7 +80,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
     }
 
-    // Check show_reasoning
     bool show_reasoning = false;
     auto show_reasoning_var = workspace.GetVar("show_reasoning");
     if (show_reasoning_var && show_reasoning_var->is_boolean()) {
@@ -125,39 +116,33 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       break;
     }
 
-    // Add assistant message with tool calls to workspace
     if (!collected_calls.empty()) {
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
       assistant_msg.content = "";
 
-      // Serialize tool_calls to JSON
       json j_calls = json::array();
       for (const auto& tc : collected_calls) {
         json jc;
-        jc["name"] = tc.name;
-        if (tc.arguments.is_string()) {
-          jc["arguments"] = tc.arguments.get<std::string>();
-        } else {
-          jc["arguments"] = tc.arguments;
-        }
+        // Generate a unique id for each tool call (required by OpenAI)
+        jc["id"] = "call_" + std::to_string(++next_tool_call_id_);
+        jc["type"] = "function";
+        jc["function"]["name"] = tc.name;
+        jc["function"]["arguments"] = tc.arguments;
         j_calls.push_back(jc);
       }
       assistant_msg.tool_calls_json = j_calls.dump();
       workspace.Append(assistant_msg);
     }
 
-    // Prepare ToolContext with security policy
     ToolContext tool_ctx;
     if (security_policy_.has_value()) {
       tool_ctx.security = &security_policy_.value();
     } else {
-      // Fallback: use a default empty policy (allow all, but log a warning)
       static agent::config::SecurityPolicy empty_policy;
       tool_ctx.security = &empty_policy;
       std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
     }
-    // request_confirmation and fork_service are not yet used, keep null
 
     for (const auto& call : collected_calls) {
       std::string tool_result;

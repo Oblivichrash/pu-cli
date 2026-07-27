@@ -11,7 +11,7 @@
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
 #include "pu/conversation.hpp"
-#include "pu/agent_core.hpp"   // for agent::config::SecurityPolicy
+#include "pu/agent_core.hpp"
 
 namespace pu {
 
@@ -19,7 +19,6 @@ class Executor {
 public:
   explicit Executor(Toolbox* toolbox);
 
-  // Set the security policy to be used for all tool executions.
   void SetSecurityPolicy(const agent::config::SecurityPolicy& policy);
 
   std::string Execute(const std::string& input,
@@ -35,6 +34,7 @@ private:
 
   Toolbox* toolbox_;
   std::optional<agent::config::SecurityPolicy> security_policy_;
+  int next_tool_call_id_ = 0;   // for generating unique tool call IDs
 };
 
 } // namespace pu
