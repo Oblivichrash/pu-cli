@@ -5,17 +5,17 @@
 #include <string>
 #include <vector>
 
-#include "pu/core/context.hpp"
-#include "pu/core/fact.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/artifact.hpp"
 
-namespace pu::core {
+namespace pu {
 
 class FactExtractor {
  public:
   FactExtractor() = default;
 
-  FactList Extract(const std::shared_ptr<Context>& ctx,
+  std::vector<Artifact> Extract(const std::shared_ptr<Workspace>& ctx,
                    const std::string& goal);
 };
 
-}  // namespace pu::core
+}  // namespace pu

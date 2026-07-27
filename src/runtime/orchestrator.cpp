@@ -13,20 +13,20 @@ namespace pu {
 Orchestrator::Orchestrator(agent::AgentManager& manager)
     : manager_(manager) {}
 
-void Orchestrator::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
+void Orchestrator::SetDelegationStack(std::shared_ptr<CallStack> stack) {
   delegation_stack_ = std::move(stack);
   if (delegation_stack_) {
     root_context_ = delegation_stack_->GetRootContext();
-    command_handler_ = std::make_shared<core::CommandHandler>(
+    command_handler_ = std::make_shared<CommandHandler>(
         manager_,
-        delegation_stack_->GetForkMergeService(),  // from DelegationStack
+        delegation_stack_->GetForkMergeService(),
         delegation_stack_,
         root_context_);
   }
 }
 
-core::FactList Orchestrator::ExtractFacts(
-    const std::shared_ptr<core::Context>& ctx,
+std::vector<Artifact> Orchestrator::ExtractFacts(
+    const std::shared_ptr<Workspace>& ctx,
     const std::string& goal) {
   auto fms = delegation_stack_ ? delegation_stack_->GetForkMergeService() : nullptr;
   if (fms) {
@@ -35,27 +35,27 @@ core::FactList Orchestrator::ExtractFacts(
   return {};
 }
 
-core::SummaryReport Orchestrator::GenerateSummary(
-    const std::shared_ptr<core::Context>& child_ctx,
-    const core::Delegation& delegation) {
+HandoffReceipt Orchestrator::GenerateSummary(
+    const std::shared_ptr<Workspace>& child_ctx,
+    const Assignment& delegation) {
   auto fms = delegation_stack_ ? delegation_stack_->GetForkMergeService() : nullptr;
   if (fms) {
     return fms->GenerateSummary(child_ctx, delegation);
   }
-  core::SummaryReport report;
-  report.status = core::SummaryReport::Status::kFailed;
+  HandoffReceipt report;
+  report.status = HandoffReceipt::Status::kFailed;
   report.summary = "ForkMergeService not initialized";
   return report;
 }
 
-void Orchestrator::InjectSummaryIntoParent(const core::SummaryReport& report) {
+void Orchestrator::InjectSummaryIntoParent(const HandoffReceipt& report) {
   auto fms = delegation_stack_ ? delegation_stack_->GetForkMergeService() : nullptr;
   if (fms) {
     fms->InjectSummaryIntoParent(report);
   }
 }
 
-std::shared_ptr<core::Context> Orchestrator::ForkContext(
+std::shared_ptr<Workspace> Orchestrator::ForkContext(
     const std::string& agent_name,
     const std::string& goal,
     const std::string& branch_name) {
@@ -84,7 +84,7 @@ size_t Orchestrator::PruneMergedForks() {
   return 0;
 }
 
-core::SummaryReport Orchestrator::MergeContext(
+HandoffReceipt Orchestrator::MergeContext(
     const std::string& message,
     const std::string& strategy) {
   auto fms = delegation_stack_ ? delegation_stack_->GetForkMergeService() : nullptr;
@@ -92,8 +92,8 @@ core::SummaryReport Orchestrator::MergeContext(
     auto result = fms->Merge(message, strategy);
     return result.report;
   }
-  core::SummaryReport report;
-  report.status = core::SummaryReport::Status::kFailed;
+  HandoffReceipt report;
+  report.status = HandoffReceipt::Status::kFailed;
   report.summary = "ForkMergeService not initialized";
   return report;
 }
@@ -113,7 +113,7 @@ std::string Orchestrator::Process(const std::string& input) {
   if (delegation_stack_) executor.SetDelegationStack(delegation_stack_);
   if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
     const auto& frame = delegation_stack_->Current();
-    std::string agent_name = frame.delegation.agent_name;
+    std::string agent_name = frame.assignment.agent_name;
     auto child_ctx = frame.context;
     agent::AgentContext ctx = executor.PrepareContext(agent_name, child_ctx);
     std::string response = executor.Execute(agent_name, current_input, ctx);
@@ -146,29 +146,31 @@ std::string Orchestrator::Process(const std::string& input) {
 bool Orchestrator::PushDelegation(
     const std::string& agent_name, const std::string& goal) {
   if (!delegation_stack_) return false;
-  core::Delegation deleg(goal, agent_name, {},
-      static_cast<int>(delegation_stack_->Depth()));
-  deleg.id = core::Delegation::GenerateId();
+  Assignment deleg;
+  deleg.goal = goal;
+  deleg.agent_name = agent_name;
+  deleg.depth = static_cast<int>(delegation_stack_->Depth());
+  deleg.id = Assignment::GenerateId();
   deleg.created_at = std::chrono::steady_clock::now();
   deleg.deadline = deleg.created_at + std::chrono::seconds(30);
   delegation_stack_->Push(deleg);
   return true;
 }
 
-core::SummaryReport Orchestrator::PopDelegation() {
+HandoffReceipt Orchestrator::PopDelegation() {
   auto fms = delegation_stack_ ? delegation_stack_->GetForkMergeService() : nullptr;
   if (fms) {
     return fms->PopDelegation();
   }
   if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
-    core::SummaryReport report;
-    report.status = core::SummaryReport::Status::kFailed;
+    HandoffReceipt report;
+    report.status = HandoffReceipt::Status::kFailed;
     report.summary = "No active delegation to pop";
     return report;
   }
   auto& frame = delegation_stack_->Current();
-  auto report = GenerateSummary(frame.context, frame.delegation);
-  frame.delegation.result = report;
+  auto report = GenerateSummary(frame.context, frame.assignment);
+  frame.assignment.result = report;
   delegation_stack_->Pop();
   return report;
 }

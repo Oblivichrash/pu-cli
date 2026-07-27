@@ -16,7 +16,7 @@ SessionManager::SessionManager(std::filesystem::path store_dir, agent::AgentMana
 
 bool SessionManager::SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
                                      bool no_summary,
-                                     std::shared_ptr<core::Context> root_context) {
+                                     std::shared_ptr<Workspace> root_context) {
   (void)no_summary;
   Conversation conv;
   conv.id = name;
@@ -75,7 +75,7 @@ std::string SessionManager::ExportMarkdown(const std::string& id) const {
 }
 
 void SessionManager::AddNote(const std::string& agent_name, const std::string& text,
-                             std::shared_ptr<core::Context> root_context) {
+                             std::shared_ptr<Workspace> root_context) {
   std::string timestamped_note = "[" + CurrentTimestamp() + "] " + text;
 
 
@@ -91,7 +91,7 @@ void SessionManager::AddNote(const std::string& agent_name, const std::string& t
 }
 
 std::vector<std::string> SessionManager::ShowNotes(const std::string& agent_name,
-                                                    std::shared_ptr<core::Context> root_context) const {
+                                                    std::shared_ptr<Workspace> root_context) const {
   std::vector<std::string> notes;
 
   if (!root_context) return notes;

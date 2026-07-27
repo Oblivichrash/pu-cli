@@ -11,10 +11,8 @@
 #include <nlohmann/json.hpp>
 
 namespace pu {
-namespace core {
-class Context;
+class Workspace;
 class ForkMergeService;
-}
 namespace http {
 class HttpClient;
 }
@@ -76,7 +74,7 @@ std::unique_ptr<backend::Backend> CreateBackend(
 struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
   std::function<bool(const std::string& message)> request_confirmation;
-  std::shared_ptr<core::ForkMergeService> fork_service;
+  std::shared_ptr<pu::ForkMergeService> fork_service;
 };
 
 class Tool {
@@ -126,9 +124,9 @@ struct PendingAction {
 };
 
 struct AgentContext {
-  std::shared_ptr<core::Context> context;
+  std::shared_ptr<pu::Workspace> context;
   PendingAction pending_action;
-  std::shared_ptr<core::ForkMergeService> fork_service;
+  std::shared_ptr<pu::ForkMergeService> fork_service;
 };
 
 class BaseAgent {

@@ -5,17 +5,17 @@
 #include <string>
 
 #include "pu/agent_core.hpp"
-#include "pu/core/delegation_stack.hpp"
+#include "pu/session/call_stack.hpp"
 #include "pu/core/fork_merge_service.hpp"
 
-namespace pu::core {
+namespace pu {
 
 class CommandHandler {
  public:
   CommandHandler(agent::AgentManager& manager,
-                 std::shared_ptr<core::ForkMergeService> fork_service,
-                 std::shared_ptr<core::DelegationStack> delegation_stack,
-                 std::shared_ptr<core::Context> root_context);
+                 std::shared_ptr<ForkMergeService> fork_service,
+                 std::shared_ptr<CallStack> delegation_stack,
+                 std::shared_ptr<Workspace> root_context);
 
   bool Handle(const std::string& input, std::string& output);
 
@@ -34,18 +34,18 @@ class CommandHandler {
   // Stack command
   bool HandleStack(std::string& output);
 
-  // Delegation helpers
-  core::FactList ExtractFacts(const std::shared_ptr<core::Context>& ctx,
+  // Assignment helpers
+  std::vector<Artifact> ExtractFacts(const std::shared_ptr<Workspace>& ctx,
                               const std::string& goal);
-  core::SummaryReport GenerateSummary(const std::shared_ptr<core::Context>& child_ctx,
-                                      const core::Delegation& delegation);
-  void InjectSummaryIntoParent(const core::SummaryReport& report);
+  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
+                                      const Assignment& delegation);
+  void InjectSummaryIntoParent(const HandoffReceipt& report);
 
   agent::AgentManager& manager_;
-  std::shared_ptr<core::ForkMergeService> fork_service_;
-  std::shared_ptr<core::DelegationStack> delegation_stack_;
-  std::shared_ptr<core::Context> root_context_;
+  std::shared_ptr<ForkMergeService> fork_service_;
+  std::shared_ptr<CallStack> delegation_stack_;
+  std::shared_ptr<Workspace> root_context_;
   int max_depth_ = 5;
 };
 
-}  // namespace pu::core
+}  // namespace pu

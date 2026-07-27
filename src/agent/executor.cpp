@@ -10,28 +10,28 @@ using json = nlohmann::json;
 
 AgentExecutor::AgentExecutor(AgentManager& manager) : manager_(manager) {}
 
-void AgentExecutor::SetRootContext(std::shared_ptr<core::Context> root_context) {
+void AgentExecutor::SetRootContext(std::shared_ptr<Workspace> root_context) {
   root_context_ = std::move(root_context);
 }
 
-void AgentExecutor::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
+void AgentExecutor::SetDelegationStack(std::shared_ptr<CallStack> stack) {
   stack_ = std::move(stack);
 }
 
 AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
-                                           std::shared_ptr<core::Context> external_ctx) {
+                                           std::shared_ptr<Workspace> external_ctx) {
   AgentContext ctx;
 
   if (external_ctx) {
     ctx.context = external_ctx;
   } else {
     if (!root_context_) {
-      root_context_ = std::make_shared<core::Context>("root");
+      root_context_ = std::make_shared<Workspace>("root");
     }
     ctx.context = root_context_;
   }
 
-  // Get ForkMergeService from DelegationStack (no longer creating per request)
+  // Get ForkMergeService from CallStack
   if (stack_) {
     ctx.fork_service = stack_->GetForkMergeService();
   }

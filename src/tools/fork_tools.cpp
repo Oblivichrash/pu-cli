@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/fork_tools.hpp"
-#include "pu/core/context.hpp"
+#include "pu/session/workspace.hpp"
 #include "pu/core/fork_merge_service.hpp"
 
 #include <nlohmann/json.hpp>
@@ -64,9 +64,10 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolCont
   }
 
   // Push the fork onto the delegation stack
-  ctx.fork_service->GetDelegationStack()->Push(
-      core::Delegation("exploration", agent_name, {}, 0),
-      result.child_context);
+  Assignment asgn;
+  asgn.goal = "exploration";
+  asgn.agent_name = agent_name;
+  ctx.fork_service->GetDelegationStack()->Push(asgn, result.child_context);
 
   return result.message;
 }

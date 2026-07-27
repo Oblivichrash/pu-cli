@@ -6,9 +6,9 @@
 #include "session.hpp"
 #include "ui.hpp"
 
-#include "pu/core/context.hpp"
-#include "pu/core/delegation.hpp"
-#include "pu/core/delegation_stack.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/assignment.hpp"
+#include "pu/session/call_stack.hpp"
 #include "pu/executor.hpp"
 #include "pu/orchestrator.hpp"
 #include "pu/path_utils.hpp"
@@ -151,8 +151,8 @@ int RunChat(int argc, char* argv[]) {
 
   auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
   std::filesystem::create_directories(root_context_path.parent_path());
-  auto root_context = core::Context::LoadOrCreate(root_context_path);
-  auto delegation_stack = core::DelegationStack::Create(root_context, manager);
+  auto root_context = Workspace::LoadOrCreate(root_context_path);
+  auto delegation_stack = CallStack::Create(root_context, manager);
 
   SessionManager session(store_dir, manager);
   Orchestrator orchestrator(manager);
@@ -160,10 +160,6 @@ int RunChat(int argc, char* argv[]) {
 
   agent::AgentExecutor executor(manager);
   executor.SetRootContext(root_context);
-
-
-
-
 
   struct ConfirmationState {
     bool auto_approve_safe = false;
@@ -222,7 +218,10 @@ int RunChat(int argc, char* argv[]) {
         if (!is_subcommand && !agent_name.empty()) {
           auto child = orchestrator.ForkContext(agent_name, "Exploration", "");
           if (child) {
-            delegation_stack->Push(core::Delegation("exploration", agent_name, {}, 0), child);
+            Assignment asgn;
+            asgn.goal = "exploration";
+            asgn.agent_name = agent_name;
+            delegation_stack->Push(asgn, child);
             std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
                       << " (agent: " << agent_name << ")\n";
             std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
@@ -238,7 +237,10 @@ int RunChat(int argc, char* argv[]) {
         if (current_agent.empty()) current_agent = "chat";
         auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
         if (child) {
-          delegation_stack->Push(core::Delegation("exploration", current_agent, {}, 0), child);
+          Assignment asgn;
+          asgn.goal = "exploration";
+          asgn.agent_name = current_agent;
+          delegation_stack->Push(asgn, child);
           std::cout << "\xf0\x9f\x91\x48 Forked to branch: " << child->GetBranchName()
                     << " (agent: " << current_agent << ")\n";
           std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
@@ -496,13 +498,11 @@ int RunChat(int argc, char* argv[]) {
     }
   }
 
-
   if (root_context) {
     root_context->Save(root_context_path);
   }
   std::cout << "\nGoodbye!\n";
   return 0;
 }
-
 
 }  // namespace pu::cli

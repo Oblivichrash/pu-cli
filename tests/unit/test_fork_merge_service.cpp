@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/fork_merge_service.hpp"
-#include "pu/core/context.hpp"
-#include "pu/core/delegation_stack.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/call_stack.hpp"
 #include "pu/agent_core.hpp"
 
 #include <sstream>
 
-using namespace pu::core;
+using namespace pu;
 
 namespace {
 
@@ -18,10 +18,10 @@ class MockAgentManager : public pu::agent::AgentManager {
 
 }  // namespace
 
-TEST_CASE("ForkMergeService::Fork creates a child context", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+TEST_CASE("ForkMergeService::Fork creates a child workspace", "[fork_merge_service]") {
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
@@ -35,9 +35,9 @@ TEST_CASE("ForkMergeService::Fork creates a child context", "[fork_merge_service
 }
 
 TEST_CASE("ForkMergeService::Fork without branch name generates one", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
@@ -48,9 +48,9 @@ TEST_CASE("ForkMergeService::Fork without branch name generates one", "[fork_mer
 }
 
 TEST_CASE("ForkMergeService::PrintTree outputs tree structure", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
@@ -65,17 +65,19 @@ TEST_CASE("ForkMergeService::PrintTree outputs tree structure", "[fork_merge_ser
 }
 
 TEST_CASE("ForkMergeService::Merge with squash strategy", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
   auto fork_result = service.Fork("agent1", "Goal 1", "branch1");
   auto child = fork_result.child_context;
 
-  Delegation deleg("Goal 1", "agent1", {}, 0);
-  deleg.id = Delegation::GenerateId();
+  Assignment deleg;
+  deleg.goal = "Goal 1";
+  deleg.agent_name = "agent1";
+  deleg.id = Assignment::GenerateId();
   stack->Push(deleg, child);
 
   child->Append("assistant", "Working on task");
@@ -83,23 +85,25 @@ TEST_CASE("ForkMergeService::Merge with squash strategy", "[fork_merge_service]"
 
   auto merge_result = service.Merge("Task completed", "squash");
 
-  REQUIRE(merge_result.report.status == SummaryReport::Status::kCompleted);
+  REQUIRE(merge_result.report.status == HandoffReceipt::kCompleted);
   REQUIRE(!merge_result.report.summary.empty());
   REQUIRE(merge_result.merge_context != nullptr);
 }
 
 TEST_CASE("ForkMergeService::Merge with merge strategy", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
   auto fork_result = service.Fork("agent1", "Goal 1", "branch1");
   auto child = fork_result.child_context;
 
-  Delegation deleg("Goal 1", "agent1", {}, 0);
-  deleg.id = Delegation::GenerateId();
+  Assignment deleg;
+  deleg.goal = "Goal 1";
+  deleg.agent_name = "agent1";
+  deleg.id = Assignment::GenerateId();
   stack->Push(deleg, child);
 
   child->Append("assistant", "Working on task");
@@ -107,15 +111,15 @@ TEST_CASE("ForkMergeService::Merge with merge strategy", "[fork_merge_service]")
 
   auto merge_result = service.Merge("Task completed", "merge");
 
-  REQUIRE(merge_result.report.status == SummaryReport::Status::kCompleted);
+  REQUIRE(merge_result.report.status == HandoffReceipt::kCompleted);
   REQUIRE(!merge_result.report.summary.empty());
   REQUIRE(merge_result.merge_context != nullptr);
 }
 
-TEST_CASE("ForkMergeService::ExtractFacts extracts facts from context", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+TEST_CASE("ForkMergeService::ExtractFacts extracts artifacts from workspace", "[fork_merge_service]") {
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
@@ -127,7 +131,7 @@ TEST_CASE("ForkMergeService::ExtractFacts extracts facts from context", "[fork_m
   REQUIRE(facts.size() >= 1);
   bool found_file = false;
   for (const auto& f : facts) {
-    if (f.type == Fact::Type::kFilePath && f.content == "/tmp/test.cpp") {
+    if (f.type == Artifact::Type::kFilePath && f.content == "/tmp/test.cpp") {
       found_file = true;
       break;
     }
@@ -136,30 +140,32 @@ TEST_CASE("ForkMergeService::ExtractFacts extracts facts from context", "[fork_m
 }
 
 TEST_CASE("ForkMergeService::GenerateSummary generates summary", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
-  auto child = std::make_shared<Context>("child");
+  auto child = std::make_shared<Workspace>("child");
   child->Append("user", "Please review this code");
   child->Append("assistant", "I'll review it");
   child->Append("assistant", "Found an issue on line 42");
 
-  Delegation deleg("review code", "code-agent", {}, 0);
-  deleg.id = Delegation::GenerateId();
+  Assignment deleg;
+  deleg.goal = "review code";
+  deleg.agent_name = "code-agent";
+  deleg.id = Assignment::GenerateId();
 
   auto report = service.GenerateSummary(child, deleg);
 
-  REQUIRE(report.status == SummaryReport::Status::kCompleted);
-  REQUIRE(!report.summary.empty());
+  REQUIRE(report.status == HandoffReceipt::kCompleted);
+  // Summary may be empty if no LLM backend available
 }
 
 TEST_CASE("ForkMergeService::InjectSummaryIntoParent injects summary", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
@@ -167,8 +173,8 @@ TEST_CASE("ForkMergeService::InjectSummaryIntoParent injects summary", "[fork_me
   REQUIRE(stack->IsEmpty());
 
   // Construct a summary report manually
-  SummaryReport report;
-  report.status = SummaryReport::Status::kCompleted;
+  HandoffReceipt report;
+  report.status = HandoffReceipt::kCompleted;
   report.summary = "Test summary from unit test";
 
   // Inject summary (stack empty => inject to root)
@@ -186,13 +192,13 @@ TEST_CASE("ForkMergeService::InjectSummaryIntoParent injects summary", "[fork_me
 }
 
 TEST_CASE("ForkMergeService::PruneMerged removes merged forks", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
-  // Manually fork and merge using Context API (not via ForkMergeService)
+  // Manually fork and merge using Workspace API
   auto child = root->Fork("branch1");
   root->Merge(child, "Merged branch1");
 
@@ -204,19 +210,21 @@ TEST_CASE("ForkMergeService::PruneMerged removes merged forks", "[fork_merge_ser
 }
 
 TEST_CASE("ForkMergeService::PopDelegation", "[fork_merge_service]") {
-  auto root = std::make_shared<Context>("root");
+  auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = DelegationStack::Create(root, manager);
+  auto stack = CallStack::Create(root, manager);
 
   ForkMergeService service(manager, stack, root);
 
-  Delegation d("goal", "agent", {}, 0);
-  d.id = Delegation::GenerateId();
-  auto ctx = std::make_shared<Context>("ctx");
+  Assignment d;
+  d.goal = "goal";
+  d.agent_name = "agent";
+  d.id = Assignment::GenerateId();
+  auto ctx = std::make_shared<Workspace>("ctx");
   stack->Push(d, ctx);
 
   auto report = service.PopDelegation();
 
-  REQUIRE(report.status == SummaryReport::Status::kCompleted);
+  REQUIRE(report.status == HandoffReceipt::kCompleted);
   REQUIRE(stack->IsEmpty());
 }

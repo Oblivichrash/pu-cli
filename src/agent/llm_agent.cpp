@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "agent/llm_agent.hpp"
-#include "pu/core/context.hpp"
+#include "pu/session/workspace.hpp"
 #include "tools/command_executor.hpp"
 
 #include "pu/renderer.hpp"

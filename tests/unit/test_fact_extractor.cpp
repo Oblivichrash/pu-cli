@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/fact_extractor.hpp"
-#include "pu/core/context.hpp"
+#include "pu/session/workspace.hpp"
 
-using namespace pu::core;
+using namespace pu;
 
 TEST_CASE("FactExtractor extracts file paths from messages", "[fact_extractor]") {
-  auto ctx = std::make_shared<Context>("test");
+  auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Check /home/user/project/main.cpp for issues");
   ctx->Append("assistant", "Looking at src/utils/helper.h");
@@ -20,7 +20,7 @@ TEST_CASE("FactExtractor extracts file paths from messages", "[fact_extractor]")
   bool found_main = false;
   bool found_helper = false;
   for (const auto& f : facts) {
-    if (f.type == Fact::Type::kFilePath) {
+    if (f.type == Artifact::Type::kFilePath) {
       if (f.content.find("main.cpp") != std::string::npos) found_main = true;
       if (f.content.find("helper.h") != std::string::npos) found_helper = true;
     }
@@ -31,7 +31,7 @@ TEST_CASE("FactExtractor extracts file paths from messages", "[fact_extractor]")
 }
 
 TEST_CASE("FactExtractor extracts error messages", "[fact_extractor]") {
-  auto ctx = std::make_shared<Context>("test");
+  auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "The build failed with an error");
   ctx->Append("assistant", "I found a compile error in the code");
@@ -42,7 +42,7 @@ TEST_CASE("FactExtractor extracts error messages", "[fact_extractor]") {
 
   bool found_error = false;
   for (const auto& f : facts) {
-    if (f.type == Fact::Type::kErrorMsg) {
+    if (f.type == Artifact::Type::kErrorMsg) {
       found_error = true;
       break;
     }
@@ -52,7 +52,7 @@ TEST_CASE("FactExtractor extracts error messages", "[fact_extractor]") {
 }
 
 TEST_CASE("FactExtractor deduplicates facts", "[fact_extractor]") {
-  auto ctx = std::make_shared<Context>("test");
+  auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Check /tmp/file.cpp");
   ctx->Append("assistant", "Check /tmp/file.cpp again");
@@ -70,7 +70,7 @@ TEST_CASE("FactExtractor deduplicates facts", "[fact_extractor]") {
 }
 
 TEST_CASE("FactExtractor returns empty for empty context", "[fact_extractor]") {
-  auto ctx = std::make_shared<Context>("test");
+  auto ctx = std::make_shared<Workspace>("test");
 
   FactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
@@ -86,7 +86,7 @@ TEST_CASE("FactExtractor returns empty for null context", "[fact_extractor]") {
 }
 
 TEST_CASE("FactExtractor handles mixed content", "[fact_extractor]") {
-  auto ctx = std::make_shared<Context>("test");
+  auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Found error in /var/log/syslog");
   ctx->Append("assistant", "The application crashed with a segmentation fault");
@@ -100,8 +100,8 @@ TEST_CASE("FactExtractor handles mixed content", "[fact_extractor]") {
   bool has_file_path = false;
   bool has_error_msg = false;
   for (const auto& f : facts) {
-    if (f.type == Fact::Type::kFilePath) has_file_path = true;
-    if (f.type == Fact::Type::kErrorMsg) has_error_msg = true;
+    if (f.type == Artifact::Type::kFilePath) has_file_path = true;
+    if (f.type == Artifact::Type::kErrorMsg) has_error_msg = true;
   }
 
   REQUIRE(has_file_path);

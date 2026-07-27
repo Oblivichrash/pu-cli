@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#include "pu/session/transcript.hpp"
+#include <algorithm>
+
+namespace pu {
+
+void Transcript::Append(const ChatMessage& msg) {
+  messages_.push_back(msg);
+  if (messages_.size() > COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) {
+    Compact();
+  }
+}
+
+std::vector<ChatMessage> Transcript::GetHistory() const {
+  return messages_;
+}
+
+std::vector<ChatMessage> Transcript::Recent(int n) const {
+  if (n <= 0) return {};
+  if (static_cast<size_t>(n) >= messages_.size()) return messages_;
+  return std::vector<ChatMessage>(messages_.end() - n, messages_.end());
+}
+
+void Transcript::Compact() {
+  if (messages_.size() <= COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) return;
+  const size_t keep_first = COMPACT_KEEP_HEAD;
+  const size_t keep_last = COMPACT_KEEP_TAIL;
+  if (messages_.size() <= keep_first + keep_last) return;
+
+  std::vector<ChatMessage> compressed;
+  compressed.reserve(keep_first + 1 + keep_last);
+
+  compressed.insert(compressed.end(), messages_.begin(), messages_.begin() + keep_first);
+
+  ChatMessage summary;
+  summary.id = static_cast<int>(compressed.size()) + 1;
+  summary.timestamp = "";
+  summary.role = "system";
+  summary.content = "[Compressed: " + std::to_string(messages_.size() - keep_first - keep_last) + " messages omitted]";
+  compressed.push_back(summary);
+
+  compressed.insert(compressed.end(), messages_.end() - keep_last, messages_.end());
+
+  messages_ = std::move(compressed);
+}
+
+bool Transcript::HasPendingToolCalls() const {
+  if (messages_.empty()) return false;
+  const auto& last = messages_.back();
+  // Check if the last message is from assistant with non-empty tool_calls_json
+  if (last.role == "assistant" && !last.tool_calls_json.empty()) {
+    try {
+      auto j = nlohmann::json::parse(last.tool_calls_json);
+      return j.is_array() && !j.empty();
+    } catch (...) {
+      return false;
+    }
+  }
+  return false;
+}
+
+nlohmann::json Transcript::Serialize() const {
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& msg : messages_) {
+    arr.push_back({
+      {"id", msg.id},
+      {"timestamp", msg.timestamp},
+      {"role", msg.role},
+      {"content", msg.content},
+      {"tool_name", msg.tool_name},
+      {"tool_calls_json", msg.tool_calls_json}
+    });
+  }
+  return arr;
+}
+
+Transcript Transcript::Deserialize(const nlohmann::json& j) {
+  Transcript t;
+  if (j.is_array()) {
+    for (const auto& item : j) {
+      ChatMessage msg;
+      msg.id = item.value("id", 0);
+      msg.timestamp = item.value("timestamp", "");
+      msg.role = item.value("role", "");
+      msg.content = item.value("content", "");
+      msg.tool_name = item.value("tool_name", "");
+      msg.tool_calls_json = item.value("tool_calls_json", "");
+      t.messages_.push_back(msg);
+    }
+  }
+  return t;
+}
+
+} // namespace pu

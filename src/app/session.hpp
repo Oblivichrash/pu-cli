@@ -7,7 +7,7 @@
 
 #include "pu/agent_core.hpp"
 #include "pu/conversation_store.hpp"
-#include "pu/core/context.hpp"
+#include "pu/session/workspace.hpp"
 #include "pu/path_utils.hpp"
 
 namespace pu::cli {
@@ -19,7 +19,7 @@ class SessionManager {
 
   bool SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
                         bool no_summary,
-                        std::shared_ptr<core::Context> root_context = nullptr);
+                        std::shared_ptr<Workspace> root_context = nullptr);
 
   bool LoadConversation(const std::string& id, std::vector<ChatMessage>& messages);
 
@@ -28,10 +28,10 @@ class SessionManager {
   std::string ExportMarkdown(const std::string& id) const;
 
   void AddNote(const std::string& agent_name, const std::string& text,
-               std::shared_ptr<core::Context> root_context);
+               std::shared_ptr<Workspace> root_context);
 
   std::vector<std::string> ShowNotes(const std::string& agent_name,
-                                     std::shared_ptr<core::Context> root_context) const;
+                                     std::shared_ptr<Workspace> root_context) const;
 
  private:
   ConversationStore store_;

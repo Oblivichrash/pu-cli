@@ -6,15 +6,13 @@
 #include <string>
 
 #include "pu/agent_core.hpp"
-#include "pu/core/delegation_stack.hpp"
-#include "pu/core/context.hpp"
+#include "pu/session/call_stack.hpp"
+#include "pu/session/workspace.hpp"
 
 namespace pu {
-namespace core {
 class CommandHandler;
 class ForkMergeService;
 }
-}  // namespace pu::core
 
 namespace pu {
 
@@ -22,23 +20,23 @@ class Orchestrator {
  public:
   Orchestrator(agent::AgentManager& manager);
 
-  void SetDelegationStack(std::shared_ptr<core::DelegationStack> stack);
+  void SetDelegationStack(std::shared_ptr<CallStack> stack);
 
   bool HandleCommand(const std::string& input, std::string& output);
   std::string Process(const std::string& input);
 
   bool PushDelegation(const std::string& agent_name, const std::string& goal);
-  core::SummaryReport PopDelegation();
+  HandoffReceipt PopDelegation();
 
   void SetMaxDepth(int depth) { max_depth_ = depth; }
 
-  // Delegated to ForkMergeService (via DelegationStack)
-  std::shared_ptr<core::Context> ForkContext(
+  // Delegated to ForkMergeService (via CallStack)
+  std::shared_ptr<Workspace> ForkContext(
       const std::string& agent_name,
       const std::string& goal,
       const std::string& branch_name = "");
 
-  core::SummaryReport MergeContext(
+  HandoffReceipt MergeContext(
       const std::string& message,
       const std::string& strategy = "merge");
 
@@ -47,18 +45,18 @@ class Orchestrator {
   size_t PruneMergedForks();
 
  private:
-  core::FactList ExtractFacts(const std::shared_ptr<core::Context>& ctx,
+  std::vector<Artifact> ExtractFacts(const std::shared_ptr<Workspace>& ctx,
                               const std::string& goal);
 
-  core::SummaryReport GenerateSummary(const std::shared_ptr<core::Context>& child_ctx,
-                                      const core::Delegation& delegation);
+  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
+                                      const Assignment& delegation);
 
-  void InjectSummaryIntoParent(const core::SummaryReport& report);
+  void InjectSummaryIntoParent(const HandoffReceipt& report);
 
-  std::shared_ptr<core::DelegationStack> delegation_stack_;
-  std::shared_ptr<core::Context> root_context_;
+  std::shared_ptr<CallStack> delegation_stack_;
+  std::shared_ptr<Workspace> root_context_;
   agent::AgentManager& manager_;
-  std::shared_ptr<core::CommandHandler> command_handler_;
+  std::shared_ptr<CommandHandler> command_handler_;
 
   int max_depth_ = 5;
 };

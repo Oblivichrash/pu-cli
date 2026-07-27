@@ -7,13 +7,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 
-# Core library: HTTP client, platform utilities, Context/Delegation, and LLM backends
+# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, and LLM backends
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
-    src/runtime/context.cpp
-    src/runtime/delegation.cpp
-    src/runtime/delegation_stack.cpp
+    src/session/workspace.cpp
+    src/session/transcript.cpp
+    src/session/memory.cpp
+    src/session/revision_graph.cpp
+    src/session/artifact.cpp
+    src/session/assignment.cpp
+    src/session/handoff_receipt.cpp
+    src/session/call_stack.cpp
     src/runtime/orchestrator.cpp
     src/core/command_handler.cpp
     src/core/fact_extractor.cpp

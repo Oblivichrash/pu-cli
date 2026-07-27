@@ -7,12 +7,12 @@
 #include <functional>
 #include <sstream>
 
-namespace pu::core {
+namespace pu {
 
 CommandHandler::CommandHandler(agent::AgentManager& manager,
-                               std::shared_ptr<core::ForkMergeService> fork_service,
-                               std::shared_ptr<core::DelegationStack> delegation_stack,
-                               std::shared_ptr<core::Context> root_context)
+                               std::shared_ptr<ForkMergeService> fork_service,
+                               std::shared_ptr<CallStack> delegation_stack,
+                               std::shared_ptr<Workspace> root_context)
     : manager_(manager),
       fork_service_(std::move(fork_service)),
       delegation_stack_(std::move(delegation_stack)),
@@ -75,12 +75,11 @@ bool CommandHandler::HandleForkShow(const std::string& fork_id, std::string& out
   auto st = found->GetState();
   oss << "=== Context: " << found->GetId() << " ===\n";
   oss << "  Branch: " << found->GetBranchName() << "\n";
-  oss << "  State: " << (st == core::Context::State::kActive ? "active" :
-                         st == core::Context::State::kMerged ? "merged" : "abandoned") << "\n";
+  oss << "  State: " << (st == Workspace::State::kActive ? "active" :
+                         st == Workspace::State::kMerged ? "merged" : "abandoned") << "\n";
   oss << "  History: " << found->HistorySize() << " messages\n";
   oss << "  Tokens: ~" << found->GetTokenCount() << "\n";
-  oss << "  Facts: " << found->GetFacts().size() << "\n";
-  oss << "  Vars: " << found->GetAllVars().size() << "\n";
+  oss << "  Artifacts: " << found->GetArtifacts().size() << "\n";
   if (found->IsMergeCommit()) {
     oss << "  Merge commit: yes\n";
     oss << "  Parents: " << found->GetMergeParents().size() << "\n";
@@ -137,21 +136,29 @@ bool CommandHandler::HandlePush(const std::string& args, std::string& output) {
              + std::to_string(max_depth_) + ")";
     return true;
   }
-  auto facts = ExtractFacts(root_context_, goal);
-  core::Delegation deleg(goal, agent_name, facts, current_depth);
-  deleg.id = core::Delegation::GenerateId();
+  auto artifacts = ExtractFacts(root_context_, goal);
+  Assignment deleg;
+  deleg.goal = goal;
+  deleg.agent_name = agent_name;
+  deleg.seeded_artifacts = artifacts;
+  deleg.depth = current_depth;
+  deleg.id = Assignment::GenerateId();
   deleg.created_at = std::chrono::steady_clock::now();
   deleg.deadline = deleg.created_at + std::chrono::seconds(60);
   auto parent = delegation_stack_
       ? delegation_stack_->CurrentContext() : root_context_;
-  std::shared_ptr<core::Context> child_ctx;
+  std::shared_ptr<Workspace> child_ctx;
   if (parent) {
     child_ctx = parent->Fork("deleg-" + deleg.id);
-    child_ctx->AddFacts(facts);
+    for (const auto& a : artifacts) {
+      child_ctx->AddArtifact(a);
+    }
     child_ctx->Append("system", "Delegation started: " + goal);
   } else {
-    child_ctx = std::make_shared<core::Context>("ctx-" + deleg.id);
-    child_ctx->AddFacts(facts);
+    child_ctx = std::make_shared<Workspace>("ctx-" + deleg.id);
+    for (const auto& a : artifacts) {
+      child_ctx->AddArtifact(a);
+    }
     child_ctx->Append("system", "Delegation started: " + goal);
   }
   delegation_stack_->Push(deleg, child_ctx);
@@ -184,10 +191,10 @@ bool CommandHandler::HandlePop(std::string& output) {
 bool CommandHandler::HandleStack(std::string& output) {
   if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
     std::ostringstream oss;
-    oss << "Delegation stack (depth " << delegation_stack_->Depth() << "):\n";
+    oss << "Assignment stack (depth " << delegation_stack_->Depth() << "):\n";
     for (const auto& frame : delegation_stack_->GetFrames()) {
-      oss << "  " << frame.delegation.agent_name
-          << " [" << frame.delegation.id << "]\n";
+      oss << "  " << frame.assignment.agent_name
+          << " [" << frame.assignment.id << "]\n";
       if (frame.context) {
         oss << "    Context: " << frame.context->GetId()
             << " [branch: " << frame.context->GetBranchName() << "]\n";
@@ -195,14 +202,14 @@ bool CommandHandler::HandleStack(std::string& output) {
     }
     output = oss.str();
   } else if (delegation_stack_) {
-    output = "Delegation stack is empty (depth 0)";
+    output = "Assignment stack is empty (depth 0)";
   } else {
     output = "No delegation stack active";
   }
   return true;
 }
 
-core::FactList CommandHandler::ExtractFacts(const std::shared_ptr<core::Context>& ctx,
+std::vector<Artifact> CommandHandler::ExtractFacts(const std::shared_ptr<Workspace>& ctx,
                                             const std::string& goal) {
   if (fork_service_) {
     return fork_service_->ExtractFacts(ctx, goal);
@@ -210,22 +217,22 @@ core::FactList CommandHandler::ExtractFacts(const std::shared_ptr<core::Context>
   return {};
 }
 
-core::SummaryReport CommandHandler::GenerateSummary(
-    const std::shared_ptr<core::Context>& child_ctx,
-    const core::Delegation& delegation) {
+HandoffReceipt CommandHandler::GenerateSummary(
+    const std::shared_ptr<Workspace>& child_ctx,
+    const Assignment& delegation) {
   if (fork_service_) {
     return fork_service_->GenerateSummary(child_ctx, delegation);
   }
-  core::SummaryReport report;
-  report.status = core::SummaryReport::Status::kFailed;
+  HandoffReceipt report;
+  report.status = HandoffReceipt::Status::kFailed;
   report.summary = "ForkMergeService not initialized";
   return report;
 }
 
-void CommandHandler::InjectSummaryIntoParent(const core::SummaryReport& report) {
+void CommandHandler::InjectSummaryIntoParent(const HandoffReceipt& report) {
   if (fork_service_) {
     fork_service_->InjectSummaryIntoParent(report);
   }
 }
 
-}  // namespace pu::core
+}  // namespace pu

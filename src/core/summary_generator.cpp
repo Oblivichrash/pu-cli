@@ -4,17 +4,17 @@
 
 #include <sstream>
 
-namespace pu::core {
+namespace pu {
 
 SummaryGenerator::SummaryGenerator(agent::AgentManager& manager)
     : manager_(manager) {}
 
-SummaryReport SummaryGenerator::Generate(const std::shared_ptr<Context>& child_ctx,
-                                          const Delegation& delegation) {
-  SummaryReport report;
-  report.status = SummaryReport::Status::kCompleted;
+HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
+                                          const Assignment& delegation) {
+  HandoffReceipt report;
+  report.status = HandoffReceipt::Status::kCompleted;
   if (!child_ctx) {
-    report.status = SummaryReport::Status::kFailed;
+    report.status = HandoffReceipt::Status::kFailed;
     report.summary = "Child context missing";
     return report;
   }
@@ -36,8 +36,8 @@ SummaryReport SummaryGenerator::Generate(const std::shared_ptr<Context>& child_c
   }
 
   report.summary = summary_text;
-  report.key_discoveries = child_ctx->GetFacts();
+  report.key_discoveries = child_ctx->GetArtifacts();
   return report;
 }
 
-}  // namespace pu::core
+}  // namespace pu
