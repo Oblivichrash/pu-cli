@@ -74,8 +74,9 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& args, Session& se
       << "  /fork show <id>        Show details of a branch\n"
       << "  /fork prune            Remove merged branches\n"
       << "  /merge [--full]        Merge the current branch back\n"
-      << "  /backend <type> [model] Switch backend (ollama/openai)\n"
-      << "  /agent <name>          Switch agent\n"
+      << "  /backend <agent_name>  Switch to a predefined agent\n"
+      << "  /backend <type> <model> [host] [api_key]  Manually set backend\n"
+      << "  /agent <name>          Switch agent (same as /backend)\n"
       << "  /agents                List available agents\n"
       << "  /save [name]           Save conversation\n"
       << "  /load <id>             Load conversation\n"
@@ -243,58 +244,83 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
 }
 
 bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
+  // No arguments: display current backend
   if (args.empty()) {
     const auto& cfg = session.GetRuntimeSpec().backend;
-    output = "Current backend: " + cfg.type + 
-             " (model: " + cfg.model + 
+    output = "Current backend: " + cfg.type +
+             " (model: " + cfg.model +
              ", host: " + cfg.host + ")";
+    return true;
+  }
+
+  // 1. Try to interpret as agent name
+  const agent::config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
+  if (agent_config) {
+    BackendConfig new_cfg;
+    new_cfg.type = (agent_config->backend.type == agent::config::BackendType::kOllama) ? "ollama" : "openai";
+    new_cfg.host = agent_config->backend.host;
+    new_cfg.model = agent_config->backend.model;
+    new_cfg.api_key = agent_config->backend.api_key.value_or("");
+    new_cfg.temperature = agent_config->backend.temperature;
+    new_cfg.max_tokens = agent_config->backend.max_tokens;
+    new_cfg.parameters_as_string = agent_config->backend.parameters_as_string;
+    try {
+      session.SwitchBackend(new_cfg);
+      output = "Switched to agent: " + args[0] + " (" + new_cfg.type + "/" + new_cfg.model + ")";
+    } catch (const std::exception& e) {
+      output = "Error: " + std::string(e.what());
+    }
+    return true;
+  }
+
+  // 2. Manual mode: /backend <type> <model> [host] [api_key]
+  if (args.size() < 2) {
+    output = "Usage: /backend <agent_name> | /backend <type> <model> [host] [api_key]";
     return true;
   }
 
   BackendConfig new_cfg;
   new_cfg.type = args[0];
-  
-  if (args.size() > 1) {
-    new_cfg.model = args[1];
-  }
+  new_cfg.model = args[1];
   if (args.size() > 2) {
     new_cfg.host = args[2];
+  } else {
+    // Provide default hosts
+    if (new_cfg.type == "ollama") {
+      new_cfg.host = "http://localhost:11434";
+    } else if (new_cfg.type == "openai") {
+      new_cfg.host = "https://api.openai.com/v1";
+    } else {
+      output = "Unknown type: " + new_cfg.type + ". Use 'ollama' or 'openai'.";
+      return true;
+    }
+  }
+  // Optional api_key
+  if (args.size() > 3) {
+    new_cfg.api_key = args[3];
   }
 
   try {
     session.SwitchBackend(new_cfg);
-    output = "Switched backend to: " + new_cfg.type + " (model: " + new_cfg.model + ")";
+    output = "Switched backend to: " + new_cfg.type + " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
+    if (!new_cfg.api_key.empty()) {
+      output += " (API key set)";
+    }
   } catch (const std::exception& e) {
-    output = std::string("Error: ") + e.what();
+    output = "Error: " + std::string(e.what());
   }
   return true;
 }
 
 bool CommandRouter::HandleAgent(const std::vector<std::string>& args, Session& session, std::string& output) {
+  // Delegate to HandleBackend for consistency (agent name = backend preset)
   if (args.empty()) {
     output = "Current agent: " + session.GetRuntimeSpec().agent_name;
     return true;
   }
-
-  std::string agent_name = args[0];
-  auto* agent = manager_.GetAgent(agent_name);
-  if (!agent) {
-    output = "Error: agent '" + agent_name + "' not found.";
-    return true;
-  }
-
-  try {
-    session.SwitchAgent(agent_name);
-    manager_.SetActiveAgent(agent_name);
-    output = "Switched to agent: " + agent_name;
-    auto desc = agent->Description();
-    if (!desc.empty()) {
-      output += " (" + desc + ")";
-    }
-  } catch (const std::exception& e) {
-    output = std::string("Error: ") + e.what();
-  }
-  return true;
+  // Reuse the same logic: treat the first argument as agent name and switch backend
+  std::vector<std::string> backend_args = {args[0]};
+  return HandleBackend(backend_args, session, output);
 }
 
 bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output) {
@@ -305,9 +331,10 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& 
   for (const auto& name : names) {
     oss << "  " << name;
     if (name == current) oss << " (active)";
-    auto* agent = manager_.GetAgent(name);
-    if (agent && !agent->Description().empty()) {
-      oss << " - " << agent->Description();
+    // Try to get description from config
+    const auto* cfg = manager_.GetAgentConfig(name);
+    if (cfg && !cfg->description.empty()) {
+      oss << " - " << cfg->description;
     }
     oss << "\n";
   }

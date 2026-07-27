@@ -125,6 +125,12 @@ class AgentManager {
   BaseAgent* GetAgent(const std::string& name) const;
   std::vector<std::string> GetAgentNames() const;
 
+  // New: Load agent config metadata (for backend switching, listing, etc.)
+  void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs);
+
+  // New: Look up an agent config by name
+  const config::AgentEntry* GetAgentConfig(const std::string& name) const;
+
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
 
@@ -146,6 +152,9 @@ class AgentManager {
   bool show_reasoning_ = false;
   ConfirmationCallback confirmation_callback_;
   std::unordered_map<std::string, std::string> system_prompts_;
+
+  // Agent config metadata (from agents.json)
+  std::vector<config::AgentEntry> agent_configs_;
 };
 
 }  // namespace pu::agent

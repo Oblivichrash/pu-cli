@@ -20,12 +20,34 @@ void AgentManager::RegisterAgent(std::unique_ptr<BaseAgent> agent) {
 }
 
 std::vector<std::string> AgentManager::GetAgentNames() const {
+  // Return names from configs (not from registered agents) so that
+  // /agents works even when no agent instances are created (Phase 3).
+  if (!agent_configs_.empty()) {
+    std::vector<std::string> names;
+    names.reserve(agent_configs_.size());
+    for (const auto& entry : agent_configs_) {
+      names.push_back(entry.name);
+    }
+    return names;
+  }
+  // Fallback: return names from registered agents
   std::vector<std::string> names;
   names.reserve(agents_.size());
   for (const auto& [name, agent] : agents_) {
     names.push_back(name);
   }
   return names;
+}
+
+void AgentManager::LoadAgentConfigs(const std::vector<config::AgentEntry>& configs) {
+  agent_configs_ = configs;
+}
+
+const config::AgentEntry* AgentManager::GetAgentConfig(const std::string& name) const {
+  for (const auto& entry : agent_configs_) {
+    if (entry.name == name) return &entry;
+  }
+  return nullptr;
 }
 
 void AgentManager::SetActiveAgent(const std::string& name) {

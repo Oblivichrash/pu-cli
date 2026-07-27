@@ -24,6 +24,8 @@ void Runtime::Initialize(const std::string& config_path) {
 
   agent_manager_ = std::make_unique<agent::AgentManager>();
   agent_manager_->SetActiveAgent(agents_cfg.default_agent);
+  // Load agent config metadata so that /backend and /agents work
+  agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
   const agent::config::AgentEntry* default_entry = nullptr;
   for (const auto& entry : agents_cfg.agents) {
