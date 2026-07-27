@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-// #include "agent/llm_agent.hpp" - removed in refactor
 #include "infra/curl_http_client.hpp"
 #include "session.hpp"
 #include "ui.hpp"
 
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/assignment.hpp"
 #include "pu/session/call_stack.hpp"
-#include "pu/executor.hpp"
-#include "pu/orchestrator.hpp"
 #include "pu/path_utils.hpp"
 #include "tools/command_executor.hpp"
 
@@ -51,14 +49,10 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   auto active_name = requested_agent.empty() ? ctx.agents_config.default_agent : requested_agent;
   bool active_found = false;
 
+  // In Phase 3, agents are managed via metadata in the config.
+  // BaseAgent instances are not created here - the Runtime manages sessions.
   for (const auto& entry : ctx.agents_config.agents) {
     if (entry.name == active_name) active_found = true;
-    try {
-      ctx.manager.RegisterAgent(agent::AgentRegistry::Instance().CreateAgent(entry));
-    } catch (const std::exception& e) {
-      std::cerr << "Error: failed to create agent '" << entry.name << "': " << e.what() << '\n';
-      std::exit(1);
-    }
   }
 
   if (!active_found) {
@@ -108,8 +102,22 @@ int RunAsk(int argc, char* argv[]) {
 
   auto ctx = SetupAppContext(requested_agent, show_reasoning);
   try {
-    agent::AgentExecutor executor(ctx.manager);
-    executor.Dispatch(prompt);
+    auto& runtime = Runtime::Instance();
+    runtime.Initialize();
+    
+    // Create a session and process the prompt
+    auto session = runtime.GetDefaultSession();
+    if (!session) {
+      std::cerr << "Error: could not create session\n";
+      return 1;
+    }
+    
+    std::string output;
+    bool is_command = false;
+    runtime.ProcessInput(session->GetId(), prompt, output, is_command);
+    std::cout << output << "\n";
+    
+    runtime.Shutdown();
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what() << '\n';
     return 1;
@@ -146,20 +154,18 @@ int RunChat(int argc, char* argv[]) {
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
 
-  auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "conversations";
+  auto& runtime = Runtime::Instance();
+  runtime.Initialize();
 
-  auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
-  std::filesystem::create_directories(root_context_path.parent_path());
-  auto root_context = Workspace::LoadOrCreate(root_context_path);
-  auto delegation_stack = CallStack::Create(root_context, manager);
+  // Get default session
+  auto session = runtime.GetDefaultSession();
+  if (!session) {
+    std::cerr << "Error: could not create session\n";
+    return 1;
+  }
+  auto session_id = session->GetId();
 
-  SessionManager session(store_dir, manager);
-  Orchestrator orchestrator(manager);
-  orchestrator.SetDelegationStack(delegation_stack);
-
-  agent::AgentExecutor executor(manager);
-  executor.SetRootContext(root_context);
+  std::cout << "[INFO] Connected to session: " << session_id << "\n";
 
   struct ConfirmationState {
     bool auto_approve_safe = false;
@@ -209,287 +215,29 @@ int RunChat(int argc, char* argv[]) {
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) continue;
 
-    if (input[0] == '/') {
-      std::string cmd_output;
-
-      if (input.rfind("/fork ", 0) == 0) {
-        std::string agent_name = Trim(input.substr(5));
-        bool is_subcommand = (agent_name == "list" || agent_name.rfind("show", 0) == 0 || agent_name.rfind("prune", 0) == 0);
-        if (!is_subcommand && !agent_name.empty()) {
-          auto child = orchestrator.ForkContext(agent_name, "Exploration", "");
-          if (child) {
-            Assignment asgn;
-            asgn.goal = "exploration";
-            asgn.agent_name = agent_name;
-            delegation_stack->Push(asgn, child);
-            std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
-                      << " (agent: " << agent_name << ")\n";
-            std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
-          } else {
-            std::cout << "Error: failed to fork.\n";
-          }
-          continue;
-        }
-      }
-
-      if (input == "/fork") {
-        std::string current_agent = manager.GetActiveAgent();
-        if (current_agent.empty()) current_agent = "chat";
-        auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
-        if (child) {
-          Assignment asgn;
-          asgn.goal = "exploration";
-          asgn.agent_name = current_agent;
-          delegation_stack->Push(asgn, child);
-          std::cout << "\xf0\x9f\x91\x48 Forked to branch: " << child->GetBranchName()
-                    << " (agent: " << current_agent << ")\n";
-          std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
-        } else {
-          std::cout << "Error: failed to fork.\n";
-        }
-        continue;
-      }
-
-      if (input.rfind("/explore", 0) == 0) {
-        std::string goal = Trim(input.substr(8));
-        if (goal.empty()) {
-          std::cout << "Usage: /explore <goal>\n";
-          continue;
-        }
-        try {
-          auto response = orchestrator.Process(goal);
-          if (!response.empty()) {
-            std::cout << response << "\n";
-          }
-        } catch (const std::exception& e) {
-          std::cout << "Error: " << e.what() << "\n";
-        }
-        continue;
-      }
-
-      if (input == "/merge" || input.rfind("/merge ", 0) == 0) {
-        bool full = (input.find("--full") != std::string::npos);
-        if (full) {
-          auto report = orchestrator.MergeContext("Merged with full history", "merge");
-          std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
-        } else {
-          auto current = delegation_stack->CurrentContext();
-          if (!current) {
-            std::cout << "Error: no active context to merge.\n";
-            continue;
-          }
-          std::cout << "\xf0\x9f\x93\x8b Merge Strategy\n";
-          std::cout << "   Branch: " << current->GetBranchName() << "\n";
-          std::cout << "   History: " << current->HistorySize() << " messages, ~"
-                    << current->GetTokenCount() << " tokens\n";
-          auto parent = current->GetParent();
-          std::cout << "   Parent: " << (parent ? parent->GetBranchName() : "root") << "\n";
-          std::cout << "\n";
-          std::cout << "   [s] Squash: Only summary (~50 tokens)\n";
-          std::cout << "   [f] Full: Keep all history (~" << current->GetTokenCount() << " tokens)\n";
-          std::cout << "   [c] Cancel: Discard this branch\n";
-          std::cout << "\n   Choose strategy: " << std::flush;
-          std::string choice;
-          std::getline(std::cin, choice);
-          if (choice == "s" || choice == "S") {
-            auto report = orchestrator.MergeContext("Merged with squash", "squash");
-            std::cout << "\xf0\x9f\x91\x8d Squash merged: " << report.summary << "\n";
-          } else if (choice == "f" || choice == "F") {
-            auto report = orchestrator.MergeContext("Merged with full history", "merge");
-            std::cout << "\xf0\x9f\x91\x8d Merged: " << report.summary << "\n";
-          } else {
-            std::cout << "\xe2\x9d\x8c Merge cancelled. Branch remains open.\n";
-          }
-        }
-        continue;
-      }
-
-      if (input == "/exit" || input == "/quit") {
-        break;
-      }
-
-      if (input.rfind("/push", 0) == 0) {
-        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/push' is deprecated. Please use '/fork <agent>' instead.\n";
-      }
-
-      if (input == "/pop") {
-        std::cout << "\xe2\x9a\xa0\xef\xb8\x8f '/pop' is deprecated. Please use '/merge' instead.\n";
-      }
-      if (orchestrator.HandleCommand(input, cmd_output)) {
-        std::cout << cmd_output << '\n';
-        continue;
-      }
-
-      if (input == "/help") {
-        PrintChatHelp();
-      } else if (input == "/exit" || input == "/quit") {
-        break;
-      } else if (input == "/clear") {
-        manager.ClearSessions();
-        panel_messages.clear();
-        message_id = 0;
-        confirm_state->auto_approve_safe = false;
-        confirm_state->deny_all = false;
-        std::cout << "[INFO] Conversation history and agent lock cleared.\n";
-      } else if (input == "/agents") {
-        PrintAgents(agents_config, manager.GetActiveAgent());
-      } else if (input.rfind("/agent ", 0) == 0) {
-        std::string new_name = Trim(input.substr(7));
-        if (new_name.empty()) {
-          std::cerr << "Error: agent name required.\n";
-          continue;
-        }
-
-        const agent::config::AgentEntry* new_entry = nullptr;
-        for (const auto& entry : agents_config.agents) {
-          if (entry.name == new_name) {
-            new_entry = &entry;
-            break;
-          }
-        }
-        if (!new_entry) {
-          std::cerr << "Error: agent '" << new_name << "' not found.\n";
-          continue;
-        }
-
-        manager.SetActiveAgent(new_entry->name);
-        current_name = new_name;
-        std::cout << "[INFO] Switched to agent: " << new_entry->name;
-        if (!new_entry->description.empty()) {
-          std::cout << " (" << new_entry->description << ")";
-        }
-        std::cout << '\n';
-      } else if (input.rfind("/save", 0) == 0) {
-        std::string args = input.substr(5);
-        bool no_summary = false;
-        if (args.find("--no-summary") != std::string::npos) {
-          no_summary = true;
-          size_t pos = args.find("--no-summary");
-          args.erase(pos, 13);
-        }
-        std::string save_name = Trim(args);
-        if (save_name.empty()) {
-          save_name = GenerateId();
-        }
-
-        session.SaveConversation(save_name, panel_messages, no_summary, root_context);
-
-        if (!no_summary) {
-          std::ostringstream summary_prompt;
-          summary_prompt << "Summarize the main tasks and decisions you handled in this session. Be concise (max 10 lines).\n\n";
-          for (const auto& msg : panel_messages) {
-            if (msg.role == "user" || msg.role == current_name) {
-              summary_prompt << "[" << msg.role << "]: " << msg.content << "\n";
-            }
-          }
-
-          try {
-            agent::AgentContext exec_ctx = executor.PrepareContext(current_name);
-            auto summary = executor.Execute(current_name, summary_prompt.str(), exec_ctx);
-            if (!summary.empty()) {
-              std::cout << "\n[Memory] Generated summary for '" << current_name << "':\n"
-                        << summary << "\n\n"
-                        << "Accept this summary? [y/N] or enter additional text: ";
-              std::string user_input;
-              std::getline(std::cin, user_input);
-              if (user_input == "y" || user_input == "Y") {
-
-                if (root_context) {
-                  root_context->SetVar("summaries/" + current_name + "/latest", summary);
-                }
-                std::cout << "[Memory] Summary saved.\n";
-              } else if (!user_input.empty() && user_input != "n" && user_input != "N") {
-                auto final_summary = summary + "\n\nUser notes: " + user_input;
-                if (root_context) {
-                  root_context->SetVar("summaries/" + current_name + "/latest", final_summary);
-                }
-                std::cout << "[Memory] Updated summary saved.\n";
-              }
-            }
-          } catch (const std::exception& e) {
-            std::cerr << "Error generating summary: " << e.what() << '\n';
-          }
-        }
-      } else if (input.rfind("/load ", 0) == 0) {
-        std::string load_id = Trim(input.substr(6));
-        if (load_id.empty()) {
-          std::cerr << "Error: conversation id required.\n";
-          continue;
-        }
-
-        session.LoadConversation(load_id, panel_messages);
-        message_id = panel_messages.empty() ? 0 : panel_messages.back().id;
-        confirm_state->auto_approve_safe = false;
-        confirm_state->deny_all = false;
-      } else if (input == "/list") {
-        auto convs = session.ListConversations();
-        PrintConversationList(convs);
-      } else if (input.rfind("/export ", 0) == 0) {
-        std::string export_id = Trim(input.substr(8));
-        if (export_id.empty()) {
-          std::cerr << "Error: conversation id required.\n";
-          continue;
-        }
-
-        auto md = session.ExportMarkdown(export_id);
-        if (!md.empty()) {
-          std::string filename = "conversation_" + export_id + ".md";
-          std::ofstream out(filename);
-          if (!out) {
-            std::cerr << "Error: cannot write to " << filename << '\n';
-          } else {
-            out << md;
-            std::cout << "[INFO] Exported to " << filename << '\n';
-          }
-        }
-      } else if (input.rfind("/note", 0) == 0) {
-        if (input == "/note show") {
-          auto notes = session.ShowNotes(current_name, root_context);
-          if (notes.empty()) {
-            std::cout << "No notes yet.\n";
-          } else {
-            std::cout << "Notes for " << current_name << ":\n";
-            for (const auto& note : notes) {
-              std::cout << note << '\n';
-            }
-          }
-        } else if (input.rfind("/note add ", 0) == 0) {
-          auto text = Trim(input.substr(10));
-          if (text.empty()) {
-            std::cerr << "Note text required.\n";
-            continue;
-          }
-          session.AddNote(current_name, text, root_context);
-          std::cout << "Note added.\n";
-        } else {
-          std::cerr << "Usage: /note add <text> | /note show\n";
-        }
-      } else if (input == "/reload-tools") {
-        std::cout << "[INFO] Tool reload not yet implemented.\n";
-      } else {
-        std::cerr << "Unknown command: " << input << "\nType /help for available commands.\n";
-      }
-      continue;
+    if (input == "/exit" || input == "/quit") {
+      break;
     }
 
-    std::string actual_agent = manager.GetActiveAgent();
-    if (actual_agent.empty()) actual_agent = "chat";
-
-    panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
-
-    try {
-      std::string response = orchestrator.Process(input);
-      if (!response.empty()) {
-        panel_messages.push_back({++message_id, CurrentTimestamp(), actual_agent, response, ""});
+    // Use Runtime to process all input (commands and messages)
+    std::string output;
+    bool is_command = false;
+    if (runtime.ProcessInput(session_id, input, output, is_command)) {
+      if (!output.empty()) {
+        std::cout << output << "\n";
       }
-    } catch (const std::exception& e) {
-      std::cerr << "\nError: " << e.what() << "\n\n";
+      
+      // For regular messages, update panel messages
+      if (!is_command && !output.empty()) {
+        panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
+        panel_messages.push_back({++message_id, CurrentTimestamp(), current_name, output, ""});
+      }
+    } else {
+      std::cerr << "Error: " << output << "\n";
     }
   }
 
-  if (root_context) {
-    root_context->Save(root_context_path);
-  }
+  runtime.Shutdown();
   std::cout << "\nGoodbye!\n";
   return 0;
 }

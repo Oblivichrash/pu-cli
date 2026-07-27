@@ -3,7 +3,6 @@
 #include "pu/core/fact_extractor.hpp"
 #include "pu/core/summary_generator.hpp"
 #include "pu/agent_core.hpp"
-#include "pu/executor.hpp"
 
 #include <algorithm>
 #include <chrono>

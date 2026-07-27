@@ -19,17 +19,15 @@ add_library(pu_core STATIC
     src/session/assignment.cpp
     src/session/handoff_receipt.cpp
     src/session/call_stack.cpp
-    src/runtime/orchestrator.cpp
-    src/core/command_handler.cpp
+    src/session/runtime_spec.cpp
+    src/session/session.cpp
+    src/storage/session_store.cpp
     src/core/fact_extractor.cpp
     src/core/fork_merge_service.cpp
     src/core/summary_generator.cpp
     src/llm/providers/ollama_provider.cpp
     src/llm/providers/openai_provider.cpp
     src/llm/common/streaming_json_parser.cpp
-    src/backends/ollama/ollama_backend.cpp
-    src/backends/openai/openai_backend.cpp
-    src/backends/common/streaming_json_parser.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json)
@@ -39,15 +37,15 @@ add_library(pu::core ALIAS pu_core)
 add_library(pu_agent STATIC
     src/agent/agent_config.cpp
     src/agent/agent_manager.cpp
-    src/agent/executor.cpp
     src/executor/executor.cpp
     src/tools/toolbox.cpp
-    src/agent/agent_factory.cpp
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
     src/tools/fork_tools.cpp
     src/tools/python_tool.cpp
     src/conversation/conversation_store.cpp
+    src/runtime/runtime.cpp
+    src/runtime/command_router.cpp
 )
 target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json)

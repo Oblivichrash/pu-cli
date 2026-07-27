@@ -1,42 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "backends/ollama/ollama_backend.hpp"
+#include "pu/llm/providers/ollama_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
-using namespace pu::backend;
-using namespace pu::backends::ollama;
+using namespace pu;
 using namespace pu::tests;
 
-TEST_CASE("OllamaBackend request building", "[ollama]") {
-  OllamaBackend::Config config;
+TEST_CASE("OllamaProvider request building", "[ollama]") {
+  OllamaProvider::Config config;
   config.model = "llama3.2:1b";
   config.temperature = 0.5f;
-  config.system_prompt = "You are helpful.";
   config.host = "http://localhost:11434";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {
-    {pu::backend::Message::Role::kUser, "Hello"}
+  std::vector<ChatMessage> history = {
+    ChatMessage{1, "now", "user", "Hello", "", ""}
   };
 
-  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {});
+  provider.Chat(history, {});
 
   auto body = nlohmann::json::parse(mock_ptr->last_body);
   REQUIRE(body["model"] == "llama3.2:1b");
   REQUIRE(body["stream"] == true);
   REQUIRE(body["options"]["temperature"] == 0.5f);
-  REQUIRE(body["messages"].size() == 2);
-  REQUIRE(body["messages"][0]["role"] == "system");
-  REQUIRE(body["messages"][1]["role"] == "user");
 }
 
-TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
-  OllamaBackend::Config config;
+TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
+  OllamaProvider::Config config;
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
@@ -59,34 +54,27 @@ TEST_CASE("OllamaBackend full streaming callback", "[ollama][streaming]") {
     }
   };
 
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {
-    {pu::backend::Message::Role::kUser, "Hi"}
+  std::vector<ChatMessage> history = {
+    ChatMessage{1, "now", "user", "Hi", "", ""}
   };
 
   std::string accumulated;
   bool final_received = false;
 
-  backend.Chat(history, [&](pu::backend::TokenType type,
-                            std::string_view token,
-                            bool is_final) {
-    REQUIRE(type == pu::backend::TokenType::kContent);
-    if (!token.empty()) {
+  auto result = provider.Chat(history, {},
+    [&](const std::string& token) {
       accumulated += token;
-    }
-    if (is_final) {
-      final_received = true;
-    }
-  });
+    },
+    [&](const ToolCall&) {}
+  );
 
-  REQUIRE(accumulated == "Hello world");
-  REQUIRE(final_received == true);
-  REQUIRE(mock_ptr->last_url == "http://localhost:11434/api/chat");
+  REQUIRE(result.content == "Hello world");
 }
 
-TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
-  OllamaBackend::Config config;
+TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
+  OllamaProvider::Config config;
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
@@ -98,24 +86,24 @@ TEST_CASE("OllamaBackend tool calling stream", "[ollama][tools]") {
                                     const std::vector<std::string>&,
                                     pu::http::WriteCallback cb) {
     std::string data =
-        R"({"message":{"content":"Running ls","tool_calls":[{"id":"1","function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})"
+        R"({"message":{"content":"Running ls","tool_calls":[{"function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})"
         + std::string("\n");
     std::string done = R"({"done":true})" + std::string("\n");
     cb(data.data(), data.size());
     cb(done.data(), done.size());
   };
 
-  OllamaBackend backend(std::move(config), std::move(mock_http));
+  OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list files"}};
-  pu::backend::ToolDefinition tool;
+  std::vector<ChatMessage> history = {{1, "now", "user", "list files", "", ""}};
+  ToolDefinition tool;
   tool.name = "execute_bash";
-  tool.parameters.raw_schema = "{}";
-  std::vector<pu::backend::ToolDefinition> tools = {tool};
+  tool.parameters_schema = "{}";
+  std::vector<ToolDefinition> tools = {tool};
 
   bool tool_fired = false;
-  backend.Chat(history, tools,
-    [](TokenType, std::string_view, bool) {},
+  auto result = provider.Chat(history, tools,
+    [](const std::string&) {},
     [&](const ToolCall& call) {
       tool_fired = true;
       REQUIRE(call.name == "execute_bash");

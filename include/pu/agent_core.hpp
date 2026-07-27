@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
+#include "pu/llm/llm_provider.hpp"
 
 #include <functional>
 #include <memory>
@@ -72,8 +73,6 @@ std::unique_ptr<LLMProvider> CreateBackend(
 
 }  // namespace config
 
-// Removed: Tool, ToolContext, ToolRegistry - now in pu/tools/toolbox.hpp
-
 enum class ConfirmationChoice {
   kDeny,
   kApproveOnce,
@@ -88,6 +87,23 @@ struct ConfirmationRequest {
 
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
+class BaseAgent {
+ public:
+  virtual ~BaseAgent() = default;
+
+  virtual std::string Name() const = 0;
+  virtual std::string Description() const = 0;
+
+  virtual std::string Handle(const std::string& input, class AgentContext& ctx) = 0;
+  virtual void ResetSession() = 0;
+
+  virtual std::vector<ChatMessage> SaveState() const { return {}; }
+  virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
+
+  virtual ConfirmationCallback GetConfirmationCallback() const { return nullptr; }
+  virtual void SetConfirmationCallback(ConfirmationCallback cb) { (void)cb; }
+};
+
 struct PendingAction {
   enum class Type { kNone, kPush, kPop };
   Type type = Type::kNone;
@@ -99,32 +115,6 @@ struct AgentContext {
   std::shared_ptr<pu::Workspace> context;
   PendingAction pending_action;
   std::shared_ptr<pu::ForkMergeService> fork_service;
-};
-
-class BaseAgent {
- public:
-  virtual ~BaseAgent() = default;
-
-  virtual std::string Name() const = 0;
-  virtual std::string Description() const = 0;
-
-  virtual std::string Handle(const std::string& input, AgentContext& ctx) = 0;
-  virtual void ResetSession() = 0;
-
-  virtual std::vector<ChatMessage> SaveState() const { return {}; }
-  virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
-
-  virtual ConfirmationCallback GetConfirmationCallback() const { return nullptr; }
-  virtual void SetConfirmationCallback(ConfirmationCallback cb) { (void)cb; }
-};
-
-class AgentRegistry {
- public:
-  static AgentRegistry& Instance();
-  std::unique_ptr<BaseAgent> CreateAgent(const config::AgentEntry& entry);
-
- private:
-  AgentRegistry() = default;
 };
 
 class AgentManager {
