@@ -1,13 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/delegation_stack.hpp"
+#include "pu/core/fork_merge_service.hpp"
+#include "pu/agent_core.hpp"
 
 #include "pu/error.hpp"
 #include <stdexcept>
 
 namespace pu::core {
 
-DelegationStack::DelegationStack(std::shared_ptr<Context> root_context)
-    : root_context_(std::move(root_context)) {}
+std::shared_ptr<DelegationStack> DelegationStack::Create(
+    std::shared_ptr<Context> root_context,
+    agent::AgentManager& manager) {
+  auto stack = std::make_shared<DelegationStack>(std::move(root_context));
+  stack->Initialize(manager);
+  return stack;
+}
+
+void DelegationStack::Initialize(agent::AgentManager& manager) {
+  fork_service_ = std::make_shared<ForkMergeService>(
+      manager, shared_from_this(), root_context_);
+}
 
 void DelegationStack::Push(const Delegation& delegation, std::shared_ptr<Context> context) {
   Frame frame;

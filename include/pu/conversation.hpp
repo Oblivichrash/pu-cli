@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace pu {
 
@@ -13,6 +14,7 @@ struct ChatMessage {
   std::string role;
   std::string content;
   std::string tool_name;
+  std::string tool_calls_json;  // Serialized tool_calls for assistant messages
 };
 
 struct Conversation {

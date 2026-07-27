@@ -2,6 +2,7 @@
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
+#include "pu/path_utils.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -180,10 +181,10 @@ std::string CreateTool::Execute(const nlohmann::json& args, agent::ToolContext& 
     return "Error: Python code contains unsafe operations (os.system, subprocess, eval, etc.)";
   }
 
-  const char* home = std::getenv("HOME");
-  if (!home) return "Error: HOME environment variable not set";
-  std::filesystem::path tools_dir = std::filesystem::path(home) / ".pu" / "tools";
-  std::filesystem::create_directories(tools_dir);
+  auto tools_dir = pu::path::GetDataDir() / "tools";
+  if (!std::filesystem::exists(tools_dir)) {
+    std::filesystem::create_directories(tools_dir);
+  }
 
   std::filesystem::path file_path = tools_dir / (name + ".py");
 

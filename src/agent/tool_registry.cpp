@@ -2,6 +2,7 @@
 #include "pu/agent_core.hpp"
 
 #include "pu/error.hpp"
+#include "pu/path_utils.hpp"
 #include "pu/tools/python_tool.hpp"
 
 #include <nlohmann/json.hpp>

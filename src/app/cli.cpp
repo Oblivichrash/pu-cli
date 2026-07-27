@@ -11,6 +11,7 @@
 #include "pu/core/delegation_stack.hpp"
 #include "pu/executor.hpp"
 #include "pu/orchestrator.hpp"
+#include "pu/path_utils.hpp"
 #include "tools/command_executor.hpp"
 
 #include <cstdlib>
@@ -145,14 +146,13 @@ int RunChat(int argc, char* argv[]) {
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
 
-  const char* home = std::getenv("HOME");
-  auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
+  auto pu_dir = pu::path::GetDataDir();
   auto store_dir = pu_dir / "conversations";
 
   auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
   std::filesystem::create_directories(root_context_path.parent_path());
   auto root_context = core::Context::LoadOrCreate(root_context_path);
-  auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
+  auto delegation_stack = core::DelegationStack::Create(root_context, manager);
 
   SessionManager session(store_dir, manager);
   Orchestrator orchestrator(manager);
@@ -239,7 +239,7 @@ int RunChat(int argc, char* argv[]) {
         auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
         if (child) {
           delegation_stack->Push(core::Delegation("exploration", current_agent, {}, 0), child);
-          std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+          std::cout << "\xf0\x9f\x91\x48 Forked to branch: " << child->GetBranchName()
                     << " (agent: " << current_agent << ")\n";
           std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
         } else {
