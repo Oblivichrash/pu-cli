@@ -2,7 +2,7 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist, extensible CLI orchestrator for large language models, now with **Turing-machine-like multi-agent system** supporting nested subtasks, shared context, and self-learning.
+A minimalist, extensible CLI orchestrator for large language models, with a **Git-inspired fork-merge memory system** supporting nested subtasks, shared context, and tool-based execution.
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ cmake --build build
 ```
 
 ### Configure
-Create `agents.json` in the project or current directory (see [examples/](examples/)).
+Create `agents.json` in the project or current directory (see examples/).
 
 ## Usage
 
@@ -34,11 +34,25 @@ Create `agents.json` in the project or current directory (see [examples/](exampl
 ./build/pu chat --agent chat
 ```
 
-### Learning from conversations
-```bash
-./build/pu learn --threshold 0.6 --max-sessions 10
-```
-Analyzes successful conversations and generates new agent definitions in `~/.pu/generated/agents/`.
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/fork [agent]` | Create isolated branch (uses current agent if omitted) |
+| `/explore <goal>` | Execute task on current branch (multi-turn) |
+| `/merge` | Interactive merge strategy selection |
+| `/merge --full` | Merge with full history |
+| `/fork list` | Show ASCII branch tree |
+| `/fork show <id>` | Show detailed branch info |
+| `/fork prune` | Preview merged branches |
+| `/fork prune --yes` | Remove merged branches |
+| `/help` | Show available commands |
+| `/clear` | Clear conversation history |
+| `/agent <name>` | Switch to a different agent |
+| `/save [name]` | Save conversation |
+| `/load <id>` | Load conversation |
+| `/list` | List saved conversations |
+| `/exit` | Exit pu chat |
 
 For architecture details, CLI command reference, and configuration guide,
 see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

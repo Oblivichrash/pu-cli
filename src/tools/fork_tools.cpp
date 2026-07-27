@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/fork_tools.hpp"
 #include "pu/core/context.hpp"
+#include "pu/core/fork_merge_service.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -41,8 +42,6 @@ std::string ForkContextTool::ParametersSchema() const {
 }
 
 std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
-  (void)ctx;
-
   std::string agent_name = args.value("agent_name", "");
   std::string goal = args.value("goal", "");
   std::string branch_name = args.value("branch_name", "");
@@ -54,18 +53,22 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, agent::ToolCont
     return "Error: 'goal' is required";
   }
 
-
-  nlohmann::json result;
-  result["action"] = "fork";
-  result["agent_name"] = agent_name;
-  result["goal"] = goal;
-  if (!branch_name.empty()) {
-    result["branch_name"] = branch_name;
+  if (!ctx.fork_service) {
+    return "Error: ForkMergeService not available in this context. "
+           "Please use /fork command instead.";
   }
 
-  return "Fork requested: agent='" + agent_name + "', goal='" + goal + "'\n"
-         "Use /push command to execute the sub-task in a forked context.\n"
-         "Result: " + result.dump();
+  auto result = ctx.fork_service->Fork(agent_name, goal, branch_name);
+  if (!result.child_context) {
+    return "Error: " + result.message;
+  }
+
+  // Push the fork onto the delegation stack
+  ctx.fork_service->GetDelegationStack()->Push(
+      core::Delegation("exploration", agent_name, {}, 0),
+      result.child_context);
+
+  return result.message;
 }
 
 std::string MergeContextTool::Name() const {
@@ -98,8 +101,6 @@ std::string MergeContextTool::ParametersSchema() const {
 }
 
 std::string MergeContextTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
-  (void)ctx;
-
   std::string message = args.value("message", "");
   std::string strategy = args.value("strategy", "merge");
 
@@ -107,14 +108,21 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, agent::ToolCon
     return "Error: 'message' is required";
   }
 
-  nlohmann::json result;
-  result["action"] = "merge";
-  result["message"] = message;
-  result["strategy"] = strategy;
+  if (!ctx.fork_service) {
+    return "Error: ForkMergeService not available in this context. "
+           "Please use /merge command instead.";
+  }
 
-  return "Merge requested: message='" + message + "', strategy='" + strategy + "'\n"
-         "Use /pop command to complete the sub-task and merge results.\n"
-         "Result: " + result.dump();
+  // Ask for confirmation first
+  if (ctx.request_confirmation) {
+    std::string confirm_msg = "Merge current branch with strategy '" + strategy + "'?";
+    if (!ctx.request_confirmation(confirm_msg)) {
+      return "Merge cancelled by user.";
+    }
+  }
+
+  auto result = ctx.fork_service->Merge(message, strategy);
+  return result.message;
 }
 
 std::string ListForksTool::Name() const {
@@ -131,12 +139,15 @@ std::string ListForksTool::ParametersSchema() const {
 
 std::string ListForksTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
   (void)args;
-  (void)ctx;
 
+  if (!ctx.fork_service) {
+    return "Error: ForkMergeService not available in this context. "
+           "Please use '/fork list' command to see all contexts.";
+  }
 
-
-
-  return "List forks requested. Use '/fork list' command to see all contexts.";
+  std::ostringstream oss;
+  ctx.fork_service->PrintTree(oss);
+  return oss.str();
 }
 
 }  // namespace pu::tools

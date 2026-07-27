@@ -17,11 +17,13 @@ namespace {
 
 json MessageToJson(const ChatMessage& msg) {
   return {{"id", msg.id}, {"timestamp", msg.timestamp}, {"role", msg.role},
-          {"content", msg.content}, {"tool_name", msg.tool_name}};
+          {"content", msg.content}, {"tool_name", msg.tool_name},
+          {"tool_calls_json", msg.tool_calls_json}};
 }
 ChatMessage MessageFromJson(const json& j) {
   return {j.value("id", 0), j.value("timestamp", ""), j.value("role", ""),
-          j.value("content", ""), j.value("tool_name", "")};
+          j.value("content", ""), j.value("tool_name", ""),
+          j.value("tool_calls_json", "")};
 }
 json ExpertHistoriesToJson(const auto& histories) {
   json obj = json::object();

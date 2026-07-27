@@ -44,6 +44,23 @@ std::vector<backend::Message> LLMAgent::BuildInitialHistory() const {
     }
     msg.content = cm.content;
     msg.tool_name = cm.tool_name;
+
+    // Restore tool_calls from serialized JSON
+    if ((cm.role == "assistant" || cm.role == name_) && !cm.tool_calls_json.empty()) {
+      try {
+        auto j_calls = nlohmann::json::parse(cm.tool_calls_json);
+        for (const auto& jc : j_calls) {
+          backend::ToolCall tc;
+          tc.id = jc.value("id", "");
+          tc.name = jc.value("name", "");
+          tc.arguments = jc.value("arguments", "");
+          msg.tool_calls.push_back(tc);
+        }
+      } catch (const std::exception&) {
+        // Ignore parse errors, keep content
+      }
+    }
+
     initial.push_back(msg);
   }
   return initial;
@@ -67,6 +84,18 @@ void LLMAgent::AppendTurnToHistory(const std::vector<backend::Message>& history,
           tool_summary << "[ToolCall: " << tc.name << "(" << tc.arguments << ")]";
         }
         cm.content = tool_summary.str();
+      }
+      // Serialize tool_calls
+      if (!msg.tool_calls.empty()) {
+        nlohmann::json j_calls = nlohmann::json::array();
+        for (const auto& tc : msg.tool_calls) {
+          j_calls.push_back({
+            {"id", tc.id},
+            {"name", tc.name},
+            {"arguments", tc.arguments}
+          });
+        }
+        cm.tool_calls_json = j_calls.dump();
       }
     } else if (msg.role == backend::Message::Role::kTool) {
       cm.role = "tool_result";
@@ -169,7 +198,24 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
     assistant_msg.tool_calls = collected_calls;
     history.push_back(assistant_msg);
 
-    turn_history.push_back({0, "", name_, "", ""});
+    // Add assistant turn_history with serialized tool_calls
+    {
+      ChatMessage assistant_cm;
+      assistant_cm.role = name_;
+      assistant_cm.content = "";
+      if (!collected_calls.empty()) {
+        nlohmann::json j_calls = nlohmann::json::array();
+        for (const auto& tc : collected_calls) {
+          j_calls.push_back({
+            {"id", tc.id},
+            {"name", tc.name},
+            {"arguments", tc.arguments}
+          });
+        }
+        assistant_cm.tool_calls_json = j_calls.dump();
+      }
+      turn_history.push_back(assistant_cm);
+    }
 
     agent::ToolContext tool_ctx;
     tool_ctx.security = &security_;
@@ -182,6 +228,7 @@ std::string LLMAgent::RunToolLoop([[maybe_unused]] const std::string& user_input
       return (choice == agent::ConfirmationChoice::kApproveOnce ||
               choice == agent::ConfirmationChoice::kApproveAllSafe);
     };
+    tool_ctx.fork_service = ctx.fork_service;
 
     for (const auto& call : collected_calls) {
       std::string result;

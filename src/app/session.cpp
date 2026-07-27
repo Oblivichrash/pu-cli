@@ -34,8 +34,7 @@ bool SessionManager::SaveConversation(const std::string& name, const std::vector
   }
 
   if (root_context) {
-    const char* home = std::getenv("HOME");
-    auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
+    auto pu_dir = pu::path::GetDataDir();
     auto context_path = pu_dir / "contexts" / "active" / "root.json";
     root_context->Save(context_path);
   }

@@ -4,97 +4,114 @@
 #include "pu/core/delegation_stack.hpp"
 #include "pu/core/context.hpp"
 #include "pu/core/fact.hpp"
+#include "pu/agent_core.hpp"
 
 using namespace pu::core;
 
+namespace {
+
+class MockAgentManager : public pu::agent::AgentManager {
+ public:
+  MockAgentManager() : pu::agent::AgentManager() {}
+  // Minimal mock - just enough to construct DelegationStack
+};
+
+}  // namespace
+
 TEST_CASE("DelegationStack push and pop", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
-  REQUIRE(stack.IsEmpty());
-  REQUIRE(stack.Depth() == 0);
+  REQUIRE(stack->IsEmpty());
+  REQUIRE(stack->Depth() == 0);
 
   Delegation d1("goal1", "agent1", {}, 0);
   d1.id = Delegation::GenerateId();
   auto ctx1 = std::make_shared<Context>("ctx1");
-  stack.Push(d1, ctx1);
+  stack->Push(d1, ctx1);
 
-  REQUIRE(!stack.IsEmpty());
-  REQUIRE(stack.Depth() == 1);
-  REQUIRE(stack.Current().delegation.goal == "goal1");
-  REQUIRE(stack.CurrentContext() == ctx1);
+  REQUIRE(!stack->IsEmpty());
+  REQUIRE(stack->Depth() == 1);
+  REQUIRE(stack->Current().delegation.goal == "goal1");
+  REQUIRE(stack->CurrentContext() == ctx1);
 
   Delegation d2("goal2", "agent2", {}, 1);
   d2.id = Delegation::GenerateId();
   auto ctx2 = std::make_shared<Context>("ctx2");
-  stack.Push(d2, ctx2);
+  stack->Push(d2, ctx2);
 
-  REQUIRE(stack.Depth() == 2);
-  REQUIRE(stack.Current().delegation.agent_name == "agent2");
+  REQUIRE(stack->Depth() == 2);
+  REQUIRE(stack->Current().delegation.agent_name == "agent2");
 
-  auto report = stack.Pop();
-  REQUIRE(stack.Depth() == 1);
+  auto report = stack->Pop();
+  REQUIRE(stack->Depth() == 1);
   REQUIRE(report.status == SummaryReport::Status::kCompleted);
 
-  stack.Pop();
-  REQUIRE(stack.IsEmpty());
+  stack->Pop();
+  REQUIRE(stack->IsEmpty());
 }
 
 TEST_CASE("DelegationStack push without explicit context creates one", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   Delegation d("goal", "agent", {}, 0);
   d.id = Delegation::GenerateId();
-  stack.Push(d);
+  stack->Push(d);
 
-  REQUIRE(stack.Depth() == 1);
-  REQUIRE(stack.CurrentContext() != nullptr);
-  REQUIRE(stack.CurrentContext() != root);
+  REQUIRE(stack->Depth() == 1);
+  REQUIRE(stack->CurrentContext() != nullptr);
+  REQUIRE(stack->CurrentContext() != root);
 }
 
 TEST_CASE("DelegationStack pop on empty throws", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
-  REQUIRE_THROWS_AS(stack.Pop(), std::runtime_error);
+  REQUIRE_THROWS_AS(stack->Pop(), std::runtime_error);
 }
 
 TEST_CASE("DelegationStack Current on empty throws", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
-  REQUIRE_THROWS_AS(stack.Current(), std::runtime_error);
-  REQUIRE_THROWS_AS(stack.CurrentContext(), std::runtime_error);
+  REQUIRE_THROWS_AS(stack->Current(), std::runtime_error);
+  REQUIRE_THROWS_AS(stack->CurrentContext(), std::runtime_error);
 }
 
 TEST_CASE("DelegationStack Clear", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   Delegation d("goal", "agent", {}, 0);
   d.id = Delegation::GenerateId();
-  stack.Push(d);
-  stack.Push(d);
-  REQUIRE(stack.Depth() == 2);
+  stack->Push(d);
+  stack->Push(d);
+  REQUIRE(stack->Depth() == 2);
 
-  stack.Clear();
-  REQUIRE(stack.IsEmpty());
+  stack->Clear();
+  REQUIRE(stack->IsEmpty());
 }
 
 TEST_CASE("DelegationStack GetFrames", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   Delegation d1("goal1", "agent1", {}, 0);
   d1.id = Delegation::GenerateId();
-  stack.Push(d1);
+  stack->Push(d1);
 
   Delegation d2("goal2", "agent2", {}, 1);
   d2.id = Delegation::GenerateId();
-  stack.Push(d2);
+  stack->Push(d2);
 
-  const auto& frames = stack.GetFrames();
+  const auto& frames = stack->GetFrames();
   REQUIRE(frames.size() == 2);
   REQUIRE(frames[0].delegation.goal == "goal1");
   REQUIRE(frames[1].delegation.goal == "goal2");
@@ -122,33 +139,35 @@ TEST_CASE("Delegation IsTimeout", "[delegation]") {
 
 TEST_CASE("DelegationStack pop with explicit result", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   Delegation d("goal", "agent", {}, 0);
   d.id = Delegation::GenerateId();
   auto ctx = std::make_shared<Context>("ctx");
-  stack.Push(d, ctx);
+  stack->Push(d, ctx);
 
   SummaryReport expected;
   expected.status = SummaryReport::Status::kCompleted;
   expected.summary = "Task completed successfully";
-  stack.Current().delegation.result = expected;
+  stack->Current().delegation.result = expected;
 
-  auto report = stack.Pop();
+  auto report = stack->Pop();
   REQUIRE(report.status == SummaryReport::Status::kCompleted);
   REQUIRE(report.summary == "Task completed successfully");
 }
 
 TEST_CASE("DelegationStack pop without explicit result gets default", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   Delegation d("goal", "agent", {}, 0);
   d.id = Delegation::GenerateId();
   auto ctx = std::make_shared<Context>("ctx");
-  stack.Push(d, ctx);
+  stack->Push(d, ctx);
 
-  auto report = stack.Pop();
+  auto report = stack->Pop();
   REQUIRE(report.status == SummaryReport::Status::kCompleted);
   REQUIRE(!report.summary.empty());
 }
@@ -209,33 +228,44 @@ TEST_CASE("Context isolation between parent and child", "[delegation]") {
 
 TEST_CASE("DelegationStack depth tracking", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
   for (int i = 0; i < 5; ++i) {
     Delegation d("goal" + std::to_string(i), "agent", {}, i);
     d.id = Delegation::GenerateId();
-    stack.Push(d);
-    REQUIRE(stack.Depth() == static_cast<size_t>(i + 1));
-    REQUIRE(stack.Current().delegation.depth == i);
+    stack->Push(d);
+    REQUIRE(stack->Depth() == static_cast<size_t>(i + 1));
+    REQUIRE(stack->Current().delegation.depth == i);
   }
 
   for (int i = 4; i >= 0; --i) {
-    REQUIRE(stack.Depth() == static_cast<size_t>(i + 1));
-    stack.Pop();
+    REQUIRE(stack->Depth() == static_cast<size_t>(i + 1));
+    stack->Pop();
   }
-  REQUIRE(stack.IsEmpty());
+  REQUIRE(stack->IsEmpty());
 }
 
 TEST_CASE("DelegationStack GetRootContext", "[delegation]") {
   auto root = std::make_shared<Context>("root");
-  DelegationStack stack(root);
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
 
-  REQUIRE(stack.GetRootContext() == root);
+  REQUIRE(stack->GetRootContext() == root);
 
   Delegation d("goal", "agent", {}, 0);
   d.id = Delegation::GenerateId();
-  stack.Push(d);
+  stack->Push(d);
 
-  REQUIRE(stack.GetRootContext() == root);
-  REQUIRE(stack.CurrentContext() != root);
+  REQUIRE(stack->GetRootContext() == root);
+  REQUIRE(stack->CurrentContext() != root);
+}
+
+TEST_CASE("DelegationStack GetForkMergeService", "[delegation]") {
+  auto root = std::make_shared<Context>("root");
+  MockAgentManager manager;
+  auto stack = DelegationStack::Create(root, manager);
+
+  auto fms = stack->GetForkMergeService();
+  REQUIRE(fms != nullptr);
 }

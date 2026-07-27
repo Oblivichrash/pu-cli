@@ -15,6 +15,7 @@ class AgentExecutor {
   explicit AgentExecutor(AgentManager& manager);
 
   void SetRootContext(std::shared_ptr<core::Context> root_context);
+  void SetDelegationStack(std::shared_ptr<core::DelegationStack> stack);
 
   std::shared_ptr<core::DelegationStack> GetDelegationStack() const { return stack_; }
 

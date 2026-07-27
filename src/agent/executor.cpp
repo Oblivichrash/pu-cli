@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
+#include "pu/core/fork_merge_service.hpp"
 
 #include <iostream>
 
@@ -11,9 +12,10 @@ AgentExecutor::AgentExecutor(AgentManager& manager) : manager_(manager) {}
 
 void AgentExecutor::SetRootContext(std::shared_ptr<core::Context> root_context) {
   root_context_ = std::move(root_context);
-  if (root_context_) {
-    stack_ = std::make_shared<core::DelegationStack>(root_context_);
-  }
+}
+
+void AgentExecutor::SetDelegationStack(std::shared_ptr<core::DelegationStack> stack) {
+  stack_ = std::move(stack);
 }
 
 AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
@@ -25,11 +27,14 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
   } else {
     if (!root_context_) {
       root_context_ = std::make_shared<core::Context>("root");
-      stack_ = std::make_shared<core::DelegationStack>(root_context_);
     }
     ctx.context = root_context_;
   }
 
+  // Get ForkMergeService from DelegationStack (no longer creating per request)
+  if (stack_) {
+    ctx.fork_service = stack_->GetForkMergeService();
+  }
 
   ctx.context->SetVar("show_reasoning", json(manager_.GetShowReasoning()));
   ctx.context->SetVar("working_dir", json("."));
@@ -38,7 +43,6 @@ AgentContext AgentExecutor::PrepareContext(const std::string& agent_name,
   if (prompt) {
     ctx.context->SetVar("system_prompt", json(*prompt));
   }
-
 
   auto* agent = manager_.GetAgent(agent_name);
   if (agent) {

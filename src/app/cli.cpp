@@ -11,6 +11,7 @@
 #include "pu/core/delegation_stack.hpp"
 #include "pu/executor.hpp"
 #include "pu/orchestrator.hpp"
+#include "pu/path_utils.hpp"
 #include "tools/command_executor.hpp"
 
 #include <cstdlib>
@@ -145,14 +146,13 @@ int RunChat(int argc, char* argv[]) {
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
 
-  const char* home = std::getenv("HOME");
-  auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
+  auto pu_dir = pu::path::GetDataDir();
   auto store_dir = pu_dir / "conversations";
 
   auto root_context_path = pu_dir / "contexts" / "active" / "root.json";
   std::filesystem::create_directories(root_context_path.parent_path());
   auto root_context = core::Context::LoadOrCreate(root_context_path);
-  auto delegation_stack = std::make_shared<core::DelegationStack>(root_context);
+  auto delegation_stack = core::DelegationStack::Create(root_context, manager);
 
   SessionManager session(store_dir, manager);
   Orchestrator orchestrator(manager);
@@ -239,7 +239,7 @@ int RunChat(int argc, char* argv[]) {
         auto child = orchestrator.ForkContext(current_agent, "Exploration", "");
         if (child) {
           delegation_stack->Push(core::Delegation("exploration", current_agent, {}, 0), child);
-          std::cout << "\xf0\x9f\x91\x8d Forked to branch: " << child->GetBranchName()
+          std::cout << "\xf0\x9f\x91\x48 Forked to branch: " << child->GetBranchName()
                     << " (agent: " << current_agent << ")\n";
           std::cout << "   Type /explore <goal> to explore, /merge to close.\n";
         } else {
@@ -504,55 +504,5 @@ int RunChat(int argc, char* argv[]) {
   return 0;
 }
 
-int RunLearn(int argc, char* argv[]) {
-  double threshold = 0.6;
-  int max_sessions = 10;
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cerr << "Usage: pu learn [--threshold <0.0-1.0>] [--max-sessions <N>]\n"
-                << "  Analyze successful conversations and generate new agent definitions.\n"
-                << "  Generated agents are saved to ~/.pu/generated/agents/\n";
-      return 0;
-    } else if (arg == "--threshold") {
-      if (i + 1 < argc) {
-        threshold = std::stod(argv[++i]);
-      } else {
-        std::cerr << "Error: --threshold requires a value\n";
-        return 1;
-      }
-    } else if (arg == "--max-sessions") {
-      if (i + 1 < argc) {
-        max_sessions = std::stoi(argv[++i]);
-      } else {
-        std::cerr << "Error: --max-sessions requires a number\n";
-        return 1;
-      }
-    } else {
-      std::cerr << "Error: unknown argument '" << arg << "'\n";
-      return 1;
-    }
-  }
-
-  const char* home = std::getenv("HOME");
-  auto pu_dir = std::filesystem::path(home ? home : ".") / ".pu";
-  auto conv_dir = pu_dir / "conversations";
-  auto generated_dir = pu_dir / "generated" / "agents";
-
-  if (!std::filesystem::exists(conv_dir)) {
-    std::cerr << "No conversations found in " << conv_dir << '\n';
-    return 0;
-  }
-
-  std::filesystem::create_directories(generated_dir);
-
-  std::cout << "[Learn] Scanning " << conv_dir << " for sessions (threshold=" << threshold
-            << ", max=" << max_sessions << ")\n";
-  std::cout << "[Learn] Generated agents will be saved to " << generated_dir << '\n';
-  std::cout << "[Learn] (Implementation in progress)\n";
-
-  return 0;
-}
 
 }  // namespace pu::cli

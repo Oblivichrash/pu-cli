@@ -8,6 +8,7 @@
 #include "pu/agent_core.hpp"
 #include "pu/conversation_store.hpp"
 #include "pu/core/context.hpp"
+#include "pu/path_utils.hpp"
 
 namespace pu::cli {
 
