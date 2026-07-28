@@ -2,66 +2,104 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist, extensible CLI orchestrator for large language models, with a **Git-inspired fork-merge memory system** supporting nested subtasks, shared context, and tool-based execution.
+A minimalist CLI orchestrator for LLMs with **multi-session isolation**, **Git-style fork-merge branching**, and **dynamic backend switching**.
+
+---
 
 ## Quick Start
 
-### Install dependencies
-```bash
-# Ubuntu
-sudo apt install libcurl4-openssl-dev nlohmann-json3-dev catch2
-
-# macOS
-brew install curl nlohmann-json catch2
-
-# Windows (vcpkg)
-vcpkg install curl nlohmann-json catch2
-```
-
 ### Build
+
 ```bash
 cmake -B build -DBUILD_TESTS=ON
-cmake --build build
+cmake --build build -j$(nproc)
 ```
 
 ### Configure
-Create `agents.json` in the project or current directory (see examples/).
 
-## Usage
+Create `agents.json` in current directory or `~/.pu/`:
 
-### Interactive chat with agent stack
-```bash
-./build/pu chat --agent chat
+```json
+{
+  "default_agent": "local-assistant",
+  "agents": [
+    {
+      "name": "local-assistant",
+      "backend": {
+        "type": "ollama",
+        "host": "http://localhost:11434",
+        "model": "qwen3.5:2b"
+      },
+      "tools": ["execute_bash", "write_file"]
+    }
+  ]
+}
 ```
 
-### Commands
+### Usage
+
+```bash
+./build/pu chat
+> /backend deepseek-pro    # switch to predefined agent
+> /fork experiment         # create branch
+> /merge                   # merge back
+```
+
+---
+
+## Core Commands
 
 | Command | Description |
 |---------|-------------|
-| `/fork [agent]` | Create isolated branch (uses current agent if omitted) |
-| `/explore <goal>` | Execute task on current branch (multi-turn) |
-| `/merge` | Interactive merge strategy selection |
-| `/merge --full` | Merge with full history |
-| `/fork list` | Show ASCII branch tree |
-| `/fork show <id>` | Show detailed branch info |
-| `/fork prune` | Preview merged branches |
-| `/fork prune --yes` | Remove merged branches |
-| `/help` | Show available commands |
-| `/clear` | Clear conversation history |
-| `/agent <name>` | Switch to a different agent |
-| `/save [name]` | Save conversation |
-| `/load <id>` | Load conversation |
-| `/list` | List saved conversations |
-| `/exit` | Exit pu chat |
+| `/backend <agent>` | Switch to predefined agent |
+| `/backend <type> <model>` | Manual backend switch |
+| `/fork [<agent>]` | Fork new branch |
+| `/fork list` | Show branch tree |
+| `/merge` | Merge current branch |
+| `/save [name]` | Save session |
+| `/load <id>` | Load session |
+| `/list` | List saved sessions |
+| `/clear` | Clear history |
+| `/exit` | Exit |
 
-For architecture details, CLI command reference, and configuration guide,
-see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+---
 
-## Testing
-```bash
-cmake --build build --target test
-ctest --test-dir build --output-on-failure
+## Configuration
+
+### `agents.json`
+
+```json
+{
+  "default_agent": "chat",
+  "agents": [
+    {
+      "name": "chat",
+      "backend": {
+        "type": "ollama",
+        "host": "http://localhost:11434",
+        "model": "qwen3.5:4b",
+        "temperature": 0.7,
+        "max_tokens": 4096
+      },
+      "tools": ["execute_bash", "write_file"],
+      "security": {
+        "sandbox_root": ".",
+        "forbidden_patterns": ["rm -rf", "sudo"]
+      }
+    }
+  ]
+}
 ```
 
+### Environment
+
+| Variable | Purpose |
+|----------|---------|
+| `PU_AGENTS_CONFIG` | Path to agents.json |
+| `PU_HOME` | Data directory (default `~/.pu/`) |
+
+---
+
 ## License
-GPL-3.0 – see [LICENSE](./LICENSE).
+
+GPL-3.0 — see [LICENSE](LICENSE)
