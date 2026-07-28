@@ -2,6 +2,7 @@
 #include "pu/tools/python_tool.hpp"
 
 #include "pu/error.hpp"
+#include "pu/infra/platform.hpp"
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -13,11 +14,6 @@
 #include <regex>
 #include <sstream>
 #include <thread>
-
-#ifdef _WIN32
-#define popen _popen
-#define pclose _pclose
-#endif
 
 namespace pu::tools {
 
@@ -114,21 +110,15 @@ std::string PythonTool::ExecutePython(const std::string& args_json) const {
   script << "    print(result)\n";
   script.close();
 
-  std::string cmd = "python3 " + script_path.string() + " '" + args_json + "' 2>&1";
+  std::string cmd = "python3 " + script_path.string() + " '" + args_json + "'";
 
   auto future = std::async(std::launch::async, [&]() -> std::string {
-    std::array<char, 512> buffer;
-    std::string result;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "Error: failed to execute python";
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-      result += buffer.data();
-    }
-    int status = pclose(pipe);
-    if (status != 0 && result.empty()) {
+    std::string output;
+    int status = platform::ExecuteCommandSafe(cmd, output);
+    if (status != 0 && output.empty()) {
       return "Python script failed (exit " + std::to_string(status) + ")";
     }
-    return result;
+    return output;
   });
 
   if (future.wait_for(std::chrono::seconds(timeout_seconds_)) != std::future_status::ready) {
