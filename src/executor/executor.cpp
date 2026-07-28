@@ -111,6 +111,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     if (!collected_calls.empty()) {
+      // Record the assistant message containing tool calls.
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
       assistant_msg.content = "";
@@ -118,7 +119,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       json j_calls = json::array();
       for (const auto& tc : collected_calls) {
         json jc;
-        // Generate a unique id for each tool call (required by OpenAI)
         jc["id"] = "call_" + std::to_string(++next_tool_call_id_);
         jc["type"] = "function";
         jc["function"]["name"] = tc.name;
@@ -127,32 +127,48 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
       assistant_msg.tool_calls_json = j_calls.dump();
       workspace.Append(assistant_msg);
-    }
 
-    ToolContext tool_ctx;
-    if (security_policy_.has_value()) {
-      tool_ctx.security = &security_policy_.value();
-    } else {
-      static config::SecurityPolicy empty_policy;
-      tool_ctx.security = &empty_policy;
-      std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
-    }
-
-    for (const auto& call : collected_calls) {
-      std::string tool_result;
-      try {
-        tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
-      } catch (const std::exception& e) {
-        tool_result = std::string("Tool execution error: ") + e.what();
+      // Execute each tool and append results.
+      ToolContext tool_ctx;
+      if (security_policy_.has_value()) {
+        tool_ctx.security = &security_policy_.value();
+      } else {
+        static config::SecurityPolicy empty_policy;
+        tool_ctx.security = &empty_policy;
+        std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
       }
 
-      ChatMessage tool_msg;
-      tool_msg.role = "tool_result";
-      tool_msg.content = tool_result;
-      tool_msg.tool_name = call.name;
-      workspace.Append(tool_msg);
+      for (const auto& call : collected_calls) {
+        ++result.tool_call_count;
+        std::string tool_result;
+        try {
+          tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
+        } catch (const std::exception& e) {
+          tool_result = std::string("Tool execution error: ") + e.what();
+        }
+
+        ChatMessage tool_msg;
+        tool_msg.role = "tool";
+        tool_msg.content = tool_result;
+        tool_msg.tool_name = call.name;
+        workspace.Append(tool_msg);
+      }
     }
   } while (tool_was_called);
+
+  // If tools were used but the LLM returned empty final response, use the last tool result.
+  if (result.tool_call_count > 0 && final_response.empty()) {
+    auto history = workspace.GetHistory();
+    for (auto it = history.rbegin(); it != history.rend(); ++it) {
+      if (it->role == "tool") {
+        final_response = it->content;
+        break;
+      }
+    }
+    if (final_response.empty()) {
+      final_response = "Tool executed successfully.";
+    }
+  }
 
   result.final_response = final_response;
   return result;

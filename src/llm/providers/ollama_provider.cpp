@@ -19,7 +19,7 @@ OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClie
 
 std::string OllamaProvider::RoleToString(const std::string& role) const {
   if (role == "user") return "user";
-  if (role == "assistant" || role == "tool_result") return "assistant";
+  if (role == "assistant") return "assistant";
   if (role == "system") return "system";
   if (role == "tool") return "tool";
   return "user";
@@ -96,7 +96,6 @@ std::string OllamaProvider::BuildRequestWithTools(
     if (!msg.tool_calls_json.empty()) {
       try {
         auto tool_calls = json::parse(msg.tool_calls_json);
-        // Convert from our stored format to Ollama format
         json tcs = json::array();
         for (const auto& tc : tool_calls) {
           json func = {{"name", tc.value("name", "")}};
@@ -147,20 +146,23 @@ void OllamaProvider::HandleJsonToken(const json& j,
     const auto& msg = j["message"];
     if (msg.contains("content") && msg["content"].is_string())
       if (content_cb) content_cb(msg["content"].get<std::string>());
-    // Ignore "thinking" field - reasoning content is not forwarded
+
+    // Parse tool calls, skipping any that lack a name.
     if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
       for (const auto& tc : msg["tool_calls"]) {
+        if (!tc.contains("function")) continue;
+        std::string tool_name = tc["function"].value("name", "");
+        if (tool_name.empty()) continue;   // malformed call
+
         ToolCall call;
-        if (tc.contains("function")) {
-          call.name = tc["function"].value("name", "");
-          if (tc["function"].contains("arguments")) {
-            const auto& args = tc["function"]["arguments"];
-            if (args.is_string()) {
-              try { call.arguments = json::parse(args.get<std::string>()); }
-              catch (...) { call.arguments = args.get<std::string>(); }
-            } else if (args.is_object() || args.is_array()) {
-              call.arguments = args;
-            }
+        call.name = tool_name;
+        if (tc["function"].contains("arguments")) {
+          const auto& args = tc["function"]["arguments"];
+          if (args.is_string()) {
+            try { call.arguments = json::parse(args.get<std::string>()); }
+            catch (...) { call.arguments = args.get<std::string>(); }
+          } else if (args.is_object() || args.is_array()) {
+            call.arguments = args;
           }
         }
         if (tool_cb) tool_cb(call);
@@ -189,7 +191,6 @@ ChatResult OllamaProvider::Chat(
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   std::ostringstream content_stream;
-  std::vector<ToolCall> collected_calls;
 
   llm::StreamingJsonParser parser(
     [&](std::string_view line) {
@@ -197,29 +198,10 @@ ChatResult OllamaProvider::Chat(
         auto j = json::parse(line);
         HandleJsonToken(j, content_callback, tool_callback);
 
-        // Also collect locally for the result
         if (j.contains("message")) {
           const auto& msg = j["message"];
           if (msg.contains("content") && msg["content"].is_string()) {
             content_stream << msg["content"].get<std::string>();
-          }
-          if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
-            for (const auto& tc : msg["tool_calls"]) {
-              ToolCall call;
-              if (tc.contains("function")) {
-                call.name = tc["function"].value("name", "");
-                if (tc["function"].contains("arguments")) {
-                  const auto& args = tc["function"]["arguments"];
-                  if (args.is_string()) {
-                    try { call.arguments = json::parse(args.get<std::string>()); }
-                    catch (...) { call.arguments = args.get<std::string>(); }
-                  } else if (args.is_object() || args.is_array()) {
-                    call.arguments = args;
-                  }
-                }
-              }
-              collected_calls.push_back(std::move(call));
-            }
           }
         }
       } catch (const std::exception&) {}
@@ -236,7 +218,6 @@ ChatResult OllamaProvider::Chat(
   http_->PostStream(url, body, headers, write_cb);
 
   result.content = content_stream.str();
-  result.tool_calls = std::move(collected_calls);
   return result;
 }
 

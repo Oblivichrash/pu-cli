@@ -18,6 +18,10 @@ namespace pu {
 void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   if (!tool) return;
   std::string name = tool->Name();
+  // Empty name would cause ambiguous lookup and potential security issues.
+  if (name.empty()) {
+    throw pu::Error("Tool name cannot be empty");
+  }
   if (tools_.find(name) != tools_.end()) {
     throw pu::Error("Tool already registered: " + name);
   }
@@ -49,6 +53,11 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
 std::string Toolbox::ExecuteTool(const std::string& name,
                                  const nlohmann::json& args,
                                  ToolContext& ctx) {
+  // Final safety net: reject empty names even if they bypass earlier checks.
+  if (name.empty()) {
+    std::cerr << "[ERROR] Attempted to execute tool with empty name\n";
+    return "Error: tool name is empty";
+  }
   Tool* tool = GetTool(name);
   if (!tool) {
     return "Tool not found: " + name;
