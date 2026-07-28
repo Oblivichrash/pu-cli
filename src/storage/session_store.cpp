@@ -3,6 +3,7 @@
 #include "pu/error.hpp"
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 namespace pu {
 
@@ -85,6 +86,25 @@ std::vector<SessionMetadata> SessionStore::ListAllMetadata() const {
     }
   }
   return result;
+}
+
+std::string SessionStore::ExportMarkdown(const std::string& id) const {
+  try {
+    auto session = LoadSession(id);
+    if (!session) {
+      return "";
+    }
+    std::ostringstream md;
+    md << "# Conversation: " << session->GetId() << "\n\n";
+    auto history = session->GetWorkspace().GetHistory();
+    for (const auto& msg : history) {
+      md << "**" << msg.role << "** (" << msg.timestamp << "):\n\n" << msg.content << "\n\n---\n\n";
+    }
+    return md.str();
+  } catch (const std::exception& e) {
+    std::cerr << "Error: failed to export conversation: " << e.what() << '\n';
+    return "";
+  }
 }
 
 } // namespace pu

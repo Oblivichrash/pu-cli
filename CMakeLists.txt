@@ -55,7 +55,6 @@ add_executable(pu
     src/app/main.cpp
     src/app/cli.cpp
     src/app/ui.cpp
-    src/app/session.cpp
     src/app/renderer.cpp
 )
 target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)

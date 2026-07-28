@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "infra/curl_http_client.hpp"
-#include "session.hpp"
 #include "ui.hpp"
 
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/assignment.hpp"
 #include "pu/session/call_stack.hpp"
+#include "pu/agent_config.hpp"
 #include "pu/path_utils.hpp"
-#include "tools/command_executor.hpp"
+#include "pu/conversation.hpp"
+#include "pu/renderer.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -26,8 +26,8 @@ namespace {
 
 struct AppContext {
   config::AgentsConfig agents_config;
-  AgentManager manager;
   std::string config_path;
+  std::string active_agent;
 };
 
 AppContext SetupAppContext(const std::string& requested_agent) {
@@ -49,8 +49,6 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   auto active_name = requested_agent.empty() ? ctx.agents_config.default_agent : requested_agent;
   bool active_found = false;
 
-  // In Phase 3, agents are managed via metadata in the config.
-  // BaseAgent instances are not created here - the Runtime manages sessions.
   for (const auto& entry : ctx.agents_config.agents) {
     if (entry.name == active_name) active_found = true;
   }
@@ -61,7 +59,7 @@ AppContext SetupAppContext(const std::string& requested_agent) {
     std::exit(1);
   }
 
-  ctx.manager.SetActiveAgent(active_name);
+  ctx.active_agent = active_name;
   return ctx;
 }
 
@@ -98,26 +96,24 @@ int RunAsk(int argc, char* argv[]) {
   auto ctx = SetupAppContext(requested_agent);
   try {
     auto& runtime = Runtime::Instance();
-    
-    // B.3: Pass requested agent to runtime before initialization
+
     if (!requested_agent.empty()) {
       runtime.SetDefaultAgent(requested_agent);
     }
-    
+
     runtime.Initialize();
-    
-    // Create a session and process the prompt
+
     auto session = runtime.GetDefaultSession();
     if (!session) {
       std::cerr << "Error: could not create session\n";
       return 1;
     }
-    
+
     std::string output;
     bool is_command = false;
     runtime.ProcessInput(session->GetId(), prompt, output, is_command);
     std::cout << output << "\n";
-    
+
     runtime.Shutdown();
   } catch (const std::exception& e) {
     std::cerr << "\nError: " << e.what() << '\n';
@@ -149,19 +145,16 @@ int RunChat(int argc, char* argv[]) {
 
   auto ctx = SetupAppContext(initial_agent);
   const auto& agents_config = ctx.agents_config;
-  auto& manager = ctx.manager;
-  std::string current_name = manager.GetActiveAgent();
+  std::string current_name = ctx.active_agent;
 
   auto& runtime = Runtime::Instance();
-  
-  // B.3: Pass initial agent to runtime before initialization
+
   if (!initial_agent.empty()) {
     runtime.SetDefaultAgent(initial_agent);
   }
-  
+
   runtime.Initialize();
 
-  // Get default session
   auto session = runtime.GetDefaultSession();
   if (!session) {
     std::cerr << "Error: could not create session\n";
@@ -170,36 +163,6 @@ int RunChat(int argc, char* argv[]) {
   auto session_id = session->GetId();
 
   std::cout << "[INFO] Connected to session: " << session_id << "\n";
-
-  struct ConfirmationState {
-    bool auto_approve_safe = false;
-    bool deny_all = false;
-  };
-  auto confirm_state = std::make_shared<ConfirmationState>();
-
-  manager.SetConfirmationCallback([confirm_state](const ConfirmationRequest& req) {
-    if (confirm_state->deny_all) return ConfirmationChoice::kDenyAll;
-    if (confirm_state->auto_approve_safe && req.highest_risk == executor::RiskLevel::kSafe) {
-      return ConfirmationChoice::kApproveOnce;
-    }
-
-    std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    if (answer == "a") {
-      confirm_state->auto_approve_safe = true;
-      return (req.highest_risk == executor::RiskLevel::kSafe)
-                 ? ConfirmationChoice::kApproveOnce
-                 : ConfirmationChoice::kDeny;
-    }
-    if (answer == "s") {
-      confirm_state->deny_all = true;
-      return ConfirmationChoice::kDenyAll;
-    }
-    return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
-                                            : ConfirmationChoice::kDeny;
-  });
-
   std::cout << "[INFO] Connected to agent: " << current_name;
   const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
@@ -212,9 +175,6 @@ int RunChat(int argc, char* argv[]) {
   }
   std::cout << "\nType /help for available commands.\n\n";
 
-  std::vector<ChatMessage> panel_messages;
-  int message_id = 0;
-
   std::string input;
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) continue;
@@ -223,18 +183,11 @@ int RunChat(int argc, char* argv[]) {
       break;
     }
 
-    // Use Runtime to process all input (commands and messages)
     std::string output;
     bool is_command = false;
     if (runtime.ProcessInput(session_id, input, output, is_command)) {
       if (!output.empty()) {
         std::cout << output << "\n";
-      }
-      
-      // For regular messages, update panel messages
-      if (!is_command && !output.empty()) {
-        panel_messages.push_back({++message_id, CurrentTimestamp(), "user", input, ""});
-        panel_messages.push_back({++message_id, CurrentTimestamp(), current_name, output, ""});
       }
     } else {
       std::cerr << "Error: " << output << "\n";
