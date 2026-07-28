@@ -32,7 +32,7 @@ std::string GenerateId() {
   return "conv-" + ss.str();
 }
 
-void PrintAgents(const agent::config::AgentsConfig& cfg, const std::string& current) {
+void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
   std::cout << "Available agents:\n";
   for (const auto& entry : cfg.agents) {
     std::cout << "  " << entry.name;

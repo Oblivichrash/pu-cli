@@ -6,10 +6,11 @@
 #include <string>
 #include "pu/session/session.hpp"
 #include "pu/storage/session_store.hpp"
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 #include "pu/runtime/command_router.hpp"
 #include "pu/executor/executor.hpp"
 #include "pu/tools/toolbox.hpp"
+#include "pu/agent_config.hpp"
 
 namespace pu {
 
@@ -50,7 +51,7 @@ private:
 
   bool is_initialized_ = false;
   bool is_running_ = false;
-  std::unique_ptr<agent::AgentManager> agent_manager_;
+  std::unique_ptr<AgentManager> agent_manager_;
   std::unique_ptr<SessionStore> session_store_;
   std::unique_ptr<CommandRouter> command_router_;
   std::unique_ptr<Toolbox> toolbox_;

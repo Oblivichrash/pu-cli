@@ -18,7 +18,7 @@ using json = nlohmann::json;
 Executor::Executor(Toolbox* toolbox)
     : toolbox_(toolbox) {}
 
-void Executor::SetSecurityPolicy(const agent::config::SecurityPolicy& policy) {
+void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
@@ -80,15 +80,9 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
     }
 
-    bool show_reasoning = false;
-    auto show_reasoning_var = workspace.GetVar("show_reasoning");
-    if (show_reasoning_var && show_reasoning_var->is_boolean()) {
-      show_reasoning = show_reasoning_var->get<bool>();
-    }
-
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;
-    auto renderer = pu::StreamingRenderer::Create(show_reasoning);
+    auto renderer = pu::StreamingRenderer::Create();
 
     try {
       auto chat_result = provider->Chat(
@@ -139,7 +133,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     if (security_policy_.has_value()) {
       tool_ctx.security = &security_policy_.value();
     } else {
-      static agent::config::SecurityPolicy empty_policy;
+      static config::SecurityPolicy empty_policy;
       tool_ctx.security = &empty_policy;
       std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
     }

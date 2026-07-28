@@ -2,7 +2,7 @@
 #include "pu/llm/providers/ollama_provider.hpp"
 
 #include "pu/llm/common/streaming_json_parser.hpp"
-#include "infra/platform.hpp"
+#include "pu/infra/platform.hpp"
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
@@ -147,8 +147,7 @@ void OllamaProvider::HandleJsonToken(const json& j,
     const auto& msg = j["message"];
     if (msg.contains("content") && msg["content"].is_string())
       if (content_cb) content_cb(msg["content"].get<std::string>());
-    if (msg.contains("thinking") && msg["thinking"].is_string())
-      if (content_cb) content_cb(msg["thinking"].get<std::string>());
+    // Ignore "thinking" field - reasoning content is not forwarded
     if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
       for (const auto& tc : msg["tool_calls"]) {
         ToolCall call;
@@ -176,7 +175,7 @@ ChatResult OllamaProvider::Chat(
     std::function<void(const std::string&)> content_callback,
     std::function<void(const ToolCall&)> tool_callback) {
   ChatResult result;
-  pu::platform::ClearInterruptFlag();
+  platform::ClearInterruptFlag();
 
   std::string body;
   if (tools.empty()) {
@@ -230,7 +229,7 @@ ChatResult OllamaProvider::Chat(
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
-    if (pu::platform::IsInterrupted()) return 0;
+    if (platform::IsInterrupted()) return 0;
     return total;
   };
 

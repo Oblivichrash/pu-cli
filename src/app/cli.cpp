@@ -25,21 +25,21 @@ namespace pu::cli {
 namespace {
 
 struct AppContext {
-  agent::config::AgentsConfig agents_config;
-  agent::AgentManager manager;
+  config::AgentsConfig agents_config;
+  AgentManager manager;
   std::string config_path;
 };
 
-AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoning) {
+AppContext SetupAppContext(const std::string& requested_agent) {
   AppContext ctx;
   try {
-    ctx.config_path = agent::config::FindConfigPath();
+    ctx.config_path = config::FindConfigPath();
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << '\n';
     std::exit(1);
   }
 
-  ctx.agents_config = agent::config::LoadAgentsConfig(ctx.config_path);
+  ctx.agents_config = config::LoadAgentsConfig(ctx.config_path);
 
   if (ctx.agents_config.agents.empty()) {
     std::cerr << "Error: no agents configured\n";
@@ -62,7 +62,6 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
   }
 
   ctx.manager.SetActiveAgent(active_name);
-  if (show_reasoning) ctx.manager.SetShowReasoning(true);
   return ctx;
 }
 
@@ -71,22 +70,18 @@ AppContext SetupAppContext(const std::string& requested_agent, bool show_reasoni
 int RunAsk(int argc, char* argv[]) {
   std::string requested_agent;
   std::string prompt;
-  bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cerr << "Usage: pu ask [--agent <name>] [--show-reasoning] <prompt>\n"
+      std::cerr << "Usage: pu ask [--agent <name>] <prompt>\n"
                 << "Options:\n"
                 << "  --agent <name>          Specify the agent to use\n"
-                << "  --show-reasoning        Show model's internal reasoning\n"
                 << "  -h, --help              Show this help message\n";
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) requested_agent = argv[++i];
       else { std::cerr << "Error: --agent requires an argument\n"; return 1; }
-    } else if (arg == "--show-reasoning") {
-      show_reasoning = true;
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
@@ -100,7 +95,7 @@ int RunAsk(int argc, char* argv[]) {
     return 1;
   }
 
-  auto ctx = SetupAppContext(requested_agent, show_reasoning);
+  auto ctx = SetupAppContext(requested_agent);
   try {
     auto& runtime = Runtime::Instance();
     runtime.Initialize();
@@ -127,12 +122,11 @@ int RunAsk(int argc, char* argv[]) {
 
 int RunChat(int argc, char* argv[]) {
   std::string initial_agent;
-  bool show_reasoning = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--agent <name>] [--show-reasoning]\n";
+      std::cout << "Usage: pu chat [--agent <name>]\n";
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) {
@@ -141,15 +135,13 @@ int RunChat(int argc, char* argv[]) {
         std::cerr << "Error: --agent requires an argument\n";
         return 1;
       }
-    } else if (arg == "--show-reasoning") {
-      show_reasoning = true;
     } else {
       std::cerr << "Error: unexpected argument '" << arg << "'\n";
       return 1;
     }
   }
 
-  auto ctx = SetupAppContext(initial_agent, show_reasoning);
+  auto ctx = SetupAppContext(initial_agent);
   const auto& agents_config = ctx.agents_config;
   auto& manager = ctx.manager;
   std::string current_name = manager.GetActiveAgent();
@@ -173,10 +165,10 @@ int RunChat(int argc, char* argv[]) {
   };
   auto confirm_state = std::make_shared<ConfirmationState>();
 
-  manager.SetConfirmationCallback([confirm_state](const agent::ConfirmationRequest& req) {
-    if (confirm_state->deny_all) return agent::ConfirmationChoice::kDenyAll;
+  manager.SetConfirmationCallback([confirm_state](const ConfirmationRequest& req) {
+    if (confirm_state->deny_all) return ConfirmationChoice::kDenyAll;
     if (confirm_state->auto_approve_safe && req.highest_risk == executor::RiskLevel::kSafe) {
-      return agent::ConfirmationChoice::kApproveOnce;
+      return ConfirmationChoice::kApproveOnce;
     }
 
     std::cout << "[CONFIRM] " << req.description << " [y/N/a(all safe)/s(deny all)] ";
@@ -185,19 +177,19 @@ int RunChat(int argc, char* argv[]) {
     if (answer == "a") {
       confirm_state->auto_approve_safe = true;
       return (req.highest_risk == executor::RiskLevel::kSafe)
-                 ? agent::ConfirmationChoice::kApproveOnce
-                 : agent::ConfirmationChoice::kDeny;
+                 ? ConfirmationChoice::kApproveOnce
+                 : ConfirmationChoice::kDeny;
     }
     if (answer == "s") {
       confirm_state->deny_all = true;
-      return agent::ConfirmationChoice::kDenyAll;
+      return ConfirmationChoice::kDenyAll;
     }
-    return (answer == "y" || answer == "Y") ? agent::ConfirmationChoice::kApproveOnce
-                                            : agent::ConfirmationChoice::kDeny;
+    return (answer == "y" || answer == "Y") ? ConfirmationChoice::kApproveOnce
+                                            : ConfirmationChoice::kDeny;
   });
 
   std::cout << "[INFO] Connected to agent: " << current_name;
-  const auto* entry_ptr = [&]() -> const agent::config::AgentEntry* {
+  const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
       if (e.name == current_name) return &e;
     }

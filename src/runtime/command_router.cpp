@@ -3,7 +3,7 @@
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
 #include "pu/core/fork_merge_service.hpp"
-#include "pu/conversation_store.hpp"
+#include "pu/storage/session_store.hpp"
 #include "pu/path_utils.hpp"
 
 #include <algorithm>
@@ -17,7 +17,7 @@
 
 namespace pu {
 
-CommandRouter::CommandRouter(agent::AgentManager& manager)
+CommandRouter::CommandRouter(AgentManager& manager)
     : manager_(manager) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
@@ -252,10 +252,10 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   }
 
   // 1. Try to interpret as agent name
-  const agent::config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
+  const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
     BackendConfig new_cfg;
-    new_cfg.type = (agent_config->backend.type == agent::config::BackendType::kOllama) ? "ollama" : "openai";
+    new_cfg.type = (agent_config->backend.type == config::BackendType::kOllama) ? "ollama" : "openai";
     new_cfg.host = agent_config->backend.host;
     new_cfg.model = agent_config->backend.model;
     new_cfg.api_key = agent_config->backend.api_key.value_or("");
@@ -350,20 +350,26 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
     save_name = ss.str();
   }
 
-  // Save conversation to conversation store
+  // Save conversation using SessionStore directly
   auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "conversations";
-  ConversationStore store(store_dir);
+  auto store_dir = pu_dir / "sessions";
+  SessionStore store(store_dir);
   
-  Conversation conv;
-  conv.id = save_name;
-  conv.created_at = "";
-  conv.updated_at = "";
-  conv.messages = session.GetWorkspace().GetHistory();
-  conv.expert_histories = {};
+  auto session_copy = Session(save_name, "cli");
+  auto history = session.GetWorkspace().GetHistory();
+  for (const auto& msg : history) {
+    ChatMessage session_msg;
+    session_msg.id = msg.id;
+    session_msg.timestamp = msg.timestamp;
+    session_msg.role = msg.role;
+    session_msg.content = msg.content;
+    session_msg.tool_name = msg.tool_name;
+    session_msg.tool_calls_json = msg.tool_calls_json;
+    session_copy.GetWorkspace().Append(session_msg);
+  }
   
   try {
-    store.Save(conv);
+    store.SaveSession(session_copy);
     output = "Conversation saved as '" + save_name + "'";
   } catch (const std::exception& e) {
     output = std::string("Error saving conversation: ") + e.what();
@@ -378,14 +384,19 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
   }
 
   auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "conversations";
-  ConversationStore store(store_dir);
+  auto store_dir = pu_dir / "sessions";
+  SessionStore store(store_dir);
   
   try {
-    auto conv = store.Load(args[0]);
+    auto loaded = store.LoadSession(args[0]);
+    if (!loaded) {
+      output = "Error: session not found: " + args[0];
+      return true;
+    }
     auto& ws = session.GetWorkspace();
     // Clear existing and load
-    for (const auto& msg : conv.messages) {
+    auto history = loaded->GetWorkspace().GetHistory();
+    for (const auto& msg : history) {
       ws.Append(msg);
     }
     output = "Loaded conversation '" + args[0] + "'";
@@ -397,24 +408,18 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
 
 bool CommandRouter::HandleList(const std::vector<std::string>& args, Session& session, std::string& output) {
   auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "conversations";
-  ConversationStore store(store_dir);
+  auto store_dir = pu_dir / "sessions";
+  SessionStore store(store_dir);
   
-  std::vector<std::string> errors;
-  auto convs = store.List(errors);
+  auto metadata = store.ListAllMetadata();
   
   std::ostringstream oss;
-  if (convs.empty()) {
+  if (metadata.empty()) {
     oss << "No saved conversations.";
   } else {
     oss << "Saved conversations:\n";
-    for (const auto& conv : convs) {
-      oss << "  " << conv.id << " (" << conv.messages.size() << " messages)\n";
-    }
-  }
-  if (!errors.empty()) {
-    for (const auto& err : errors) {
-      oss << "  [Warning] " << err << "\n";
+    for (const auto& meta : metadata) {
+      oss << "  " << meta.id << " (created: " << meta.created_at << ")\n";
     }
   }
   output = oss.str();
@@ -428,17 +433,26 @@ bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& 
   }
 
   auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "conversations";
-  ConversationStore store(store_dir);
+  auto store_dir = pu_dir / "sessions";
+  SessionStore store(store_dir);
   
   try {
-    auto md = store.ExportMarkdown(args[0]);
+    auto loaded = store.LoadSession(args[0]);
+    if (!loaded) {
+      output = "Error: session not found: " + args[0];
+      return true;
+    }
+    
     std::string filename = "conversation_" + args[0] + ".md";
     std::ofstream out(filename);
     if (!out) {
       output = "Error: cannot write to " + filename;
     } else {
-      out << md;
+      out << "# Conversation: " << loaded->GetId() << "\n\n";
+      auto history = loaded->GetWorkspace().GetHistory();
+      for (const auto& msg : history) {
+        out << "**" << msg.role << "** (" << msg.timestamp << "):\n\n" << msg.content << "\n\n---\n\n";
+      }
       output = "Exported to " + filename;
     }
   } catch (const std::exception& e) {

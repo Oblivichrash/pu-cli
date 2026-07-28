@@ -10,11 +10,7 @@
 namespace pu {
 
 class ForkMergeService;
-
-// Forward declare AgentManager from pu::agent
-namespace agent {
 class AgentManager;
-}
 
 class CallStack {
 public:
@@ -43,7 +39,7 @@ public:
   // Static factory to create a CallStack with ForkMergeService
   static std::shared_ptr<CallStack> Create(
     std::shared_ptr<Workspace> root_context,
-    agent::AgentManager& manager);
+    AgentManager& manager);
 
   nlohmann::json Serialize() const;
   static CallStack Deserialize(const nlohmann::json& j);

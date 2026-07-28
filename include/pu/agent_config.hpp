@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "pu/llm/llm_provider.hpp"
+#include "pu/http/http_client.hpp"
 
 namespace pu::config {
 
@@ -25,6 +29,8 @@ struct BackendConfig {
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
+  bool parameters_as_string = false;
+  int max_tokens = 2048;
 };
 
 struct AgentEntry {
@@ -43,5 +49,7 @@ struct AgentsConfig {
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
+std::unique_ptr<pu::LLMProvider> CreateBackend(
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config

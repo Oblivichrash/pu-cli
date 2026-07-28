@@ -2,7 +2,7 @@
 #include "pu/llm/providers/openai_provider.hpp"
 
 #include "pu/llm/common/streaming_json_parser.hpp"
-#include "infra/platform.hpp"
+#include "pu/infra/platform.hpp"
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
@@ -147,9 +147,7 @@ void OpenAIProvider::HandleJsonToken(const json& j,
     if (delta.is_object()) {
       auto content = SafeString(delta, "content");
       if (!content.empty() && content_cb) content_cb(content);
-      auto reasoning = SafeString(delta, "reasoning_content");
-      if (reasoning.empty()) reasoning = SafeString(delta, "reasoning");
-      if (!reasoning.empty() && content_cb) content_cb(reasoning);
+      // Ignore reasoning_content and reasoning fields - reasoning content is not forwarded
 
       if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
         for (const auto& tc : delta["tool_calls"]) {
@@ -205,7 +203,7 @@ ChatResult OpenAIProvider::Chat(
     std::function<void(const std::string&)> content_callback,
     std::function<void(const ToolCall&)> tool_callback) {
   ChatResult result;
-  pu::platform::ClearInterruptFlag();
+  platform::ClearInterruptFlag();
   ResetAccumulators();
 
   std::string body;
@@ -258,7 +256,7 @@ ChatResult OpenAIProvider::Chat(
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
-    if (pu::platform::IsInterrupted()) return 0;
+    if (platform::IsInterrupted()) return 0;
     return total;
   };
 

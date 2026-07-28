@@ -4,15 +4,15 @@
 #include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/artifact.hpp"
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 
 using namespace pu;
 
 namespace {
 
-class MockAgentManager : public pu::agent::AgentManager {
+class MockAgentManager : public pu::AgentManager {
  public:
-  MockAgentManager() : pu::agent::AgentManager() {}
+  MockAgentManager() : pu::AgentManager() {}
 };
 
 }  // namespace

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_config.hpp"
 
 #include "pu/error.hpp"
 #include "pu/llm/providers/ollama_provider.hpp"
@@ -16,7 +17,7 @@
 #include <regex>
 #include <stdexcept>
 
-namespace pu::agent::config {
+namespace pu::config {
 
 using json = nlohmann::json;
 
@@ -213,4 +214,4 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
   }
 }
 
-}  // namespace pu::agent::config
+}  // namespace pu::config

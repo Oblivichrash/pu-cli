@@ -33,7 +33,7 @@ target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include $
 target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json)
 add_library(pu::core ALIAS pu_core)
 
-# Agent library: Agent manager, executor, tools, toolbox, and conversation store
+# Agent library: Agent manager, executor, tools, toolbox
 add_library(pu_agent STATIC
     src/agent/agent_config.cpp
     src/agent/agent_manager.cpp
@@ -43,7 +43,6 @@ add_library(pu_agent STATIC
     src/tools/builtin_tools.cpp
     src/tools/fork_tools.cpp
     src/tools/python_tool.cpp
-    src/conversation/conversation_store.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp
 )

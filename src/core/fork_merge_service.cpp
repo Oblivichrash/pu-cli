@@ -2,7 +2,7 @@
 #include "pu/core/fork_merge_service.hpp"
 #include "pu/core/fact_extractor.hpp"
 #include "pu/core/summary_generator.hpp"
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -12,7 +12,7 @@
 
 namespace pu {
 
-ForkMergeService::ForkMergeService(agent::AgentManager& manager,
+ForkMergeService::ForkMergeService(AgentManager& manager,
                                     std::shared_ptr<CallStack> delegation_stack,
                                     std::shared_ptr<Workspace> root_context)
     : manager_(manager),

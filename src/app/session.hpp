@@ -5,17 +5,18 @@
 #include <string>
 #include <vector>
 
-#include "pu/agent_core.hpp"
-#include "pu/conversation_store.hpp"
+#include "pu/agent/agent_manager.hpp"
+#include "pu/storage/session_store.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/path_utils.hpp"
+#include "pu/conversation.hpp"
 
 namespace pu::cli {
 
 /// Manages session state: conversations, notes, and global context.
 class SessionManager {
  public:
-  SessionManager(std::filesystem::path store_dir, agent::AgentManager& manager);
+  SessionManager(std::filesystem::path store_dir, pu::AgentManager& manager);
 
   bool SaveConversation(const std::string& name, const std::vector<ChatMessage>& messages,
                         bool no_summary,
@@ -34,8 +35,8 @@ class SessionManager {
                                      std::shared_ptr<Workspace> root_context) const;
 
  private:
-  ConversationStore store_;
-  agent::AgentManager& manager_;
+  std::shared_ptr<pu::SessionStore> store_;
+  pu::AgentManager& manager_;
 };
 
 }  // namespace pu::cli

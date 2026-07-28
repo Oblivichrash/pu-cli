@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 #include "pu/conversation.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include "tools/command_executor.hpp"
@@ -8,7 +8,6 @@
 #include <string>
 
 using namespace pu;
-using namespace pu::agent;
 
 TEST_CASE("AgentManager GetAgentNames returns names from configs", "[agent]") {
   AgentManager manager;
@@ -72,14 +71,4 @@ TEST_CASE("AgentManager confirmation callback works", "[agent]") {
   auto result = cb(req);
   REQUIRE(called);
   REQUIRE(result == ConfirmationChoice::kApproveOnce);
-}
-
-TEST_CASE("AgentManager show reasoning flag", "[agent]") {
-  AgentManager manager;
-
-  REQUIRE(manager.GetShowReasoning() == false);
-  manager.SetShowReasoning(true);
-  REQUIRE(manager.GetShowReasoning() == true);
-  manager.SetShowReasoning(false);
-  REQUIRE(manager.GetShowReasoning() == false);
 }

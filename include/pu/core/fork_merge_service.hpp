@@ -3,7 +3,7 @@
 
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 
 #include <memory>
 #include <ostream>
@@ -30,7 +30,7 @@ class ForkMergeService {
     std::string message;
   };
 
-  ForkMergeService(agent::AgentManager& manager,
+  ForkMergeService(AgentManager& manager,
                    std::shared_ptr<CallStack> delegation_stack,
                    std::shared_ptr<Workspace> root_context);
 
@@ -73,7 +73,7 @@ class ForkMergeService {
  private:
   void PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const;
 
-  agent::AgentManager& manager_;
+  AgentManager& manager_;
   std::shared_ptr<CallStack> delegation_stack_;
   std::shared_ptr<Workspace> root_context_;
 };

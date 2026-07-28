@@ -8,7 +8,7 @@
 
 namespace pu {
 
-SummaryGenerator::SummaryGenerator(agent::AgentManager& manager)
+SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
 HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,

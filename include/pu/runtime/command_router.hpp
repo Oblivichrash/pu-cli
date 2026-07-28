@@ -3,14 +3,14 @@
 
 #include <string>
 #include <vector>
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
 
 class CommandRouter {
 public:
-  explicit CommandRouter(agent::AgentManager& manager);
+  explicit CommandRouter(AgentManager& manager);
 
   bool Route(const std::string& input, Session& session, std::string& output);
 
@@ -29,7 +29,7 @@ private:
   bool HandleReloadTools(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleStack(const std::vector<std::string>& args, Session& session, std::string& output);
 
-  agent::AgentManager& manager_;
+  AgentManager& manager_;
   int max_depth_ = 5;
 };
 

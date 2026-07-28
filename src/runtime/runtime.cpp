@@ -19,16 +19,16 @@ Runtime& Runtime::Instance() {
 void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
 
-  auto cfg_path = config_path.empty() ? agent::config::FindConfigPath() : config_path;
-  auto agents_cfg = agent::config::LoadAgentsConfig(cfg_path);
+  auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
+  auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
-  agent_manager_ = std::make_unique<agent::AgentManager>();
+  agent_manager_ = std::make_unique<AgentManager>();
   agent_manager_->SetActiveAgent(agents_cfg.default_agent);
   // Load agent config metadata so that /backend and /agents work
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
   // Extract default backend config and security policy
-  const agent::config::AgentEntry* default_entry = nullptr;
+  const config::AgentEntry* default_entry = nullptr;
   for (const auto& entry : agents_cfg.agents) {
     if (entry.name == agents_cfg.default_agent) {
       default_entry = &entry;
@@ -36,13 +36,11 @@ void Runtime::Initialize(const std::string& config_path) {
     }
   }
   if (default_entry) {
-    default_backend_config_.type = (default_entry->backend.type == agent::config::BackendType::kOllama) ? "ollama" : "openai";
+    default_backend_config_.type = (default_entry->backend.type == config::BackendType::kOllama) ? "ollama" : "openai";
     default_backend_config_.host = default_entry->backend.host;
     default_backend_config_.model = default_entry->backend.model;
     default_backend_config_.api_key = default_entry->backend.api_key.value_or("");
     default_backend_config_.temperature = default_entry->backend.temperature;
-    default_backend_config_.max_tokens = default_entry->backend.max_tokens;
-    default_backend_config_.parameters_as_string = default_entry->backend.parameters_as_string;
   }
 
   session_store_ = std::make_unique<SessionStore>();
@@ -55,7 +53,7 @@ void Runtime::Initialize(const std::string& config_path) {
     executor_->SetSecurityPolicy(default_entry->security);
   } else {
     // Fallback: allow all (with warning)
-    agent::config::SecurityPolicy fallback_policy;
+    config::SecurityPolicy fallback_policy;
     fallback_policy.sandbox_root = ".";
     fallback_policy.max_command_length = 0;
     fallback_policy.forbidden_patterns = {};

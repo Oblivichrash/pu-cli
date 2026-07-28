@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_core.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
