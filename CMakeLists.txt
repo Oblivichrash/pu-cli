@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
+find_package(spdlog REQUIRED)
 
 # Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, and LLM providers
 add_library(pu_core STATIC
@@ -22,6 +23,7 @@ add_library(pu_core STATIC
     src/session/runtime_spec.cpp
     src/session/session.cpp
     src/storage/session_store.cpp
+    src/core/logging.cpp
     src/core/fact_extractor.cpp
     src/core/fork_merge_service.cpp
     src/core/summary_generator.cpp
@@ -30,7 +32,7 @@ add_library(pu_core STATIC
     src/llm/common/streaming_json_parser.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::core ALIAS pu_core)
 
 # Agent library: Agent manager, executor, tools, toolbox
@@ -47,7 +49,7 @@ add_library(pu_agent STATIC
     src/runtime/command_router.cpp
 )
 target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json)
+target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
 # CLI application: entry point, chat/ask/learn commands, UI helpers, session management
@@ -58,7 +60,7 @@ add_executable(pu
     src/app/renderer.cpp
 )
 target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu PRIVATE pu_agent pu_core)
+target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
 
 # Compiler warnings
 if(MSVC)

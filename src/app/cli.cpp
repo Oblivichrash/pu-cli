@@ -12,6 +12,8 @@
 #include "pu/conversation.hpp"
 #include "pu/renderer.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -35,14 +37,14 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   try {
     ctx.config_path = config::FindConfigPath();
   } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << '\n';
+    spdlog::error("{}", e.what());
     std::exit(1);
   }
 
   ctx.agents_config = config::LoadAgentsConfig(ctx.config_path);
 
   if (ctx.agents_config.agents.empty()) {
-    std::cerr << "Error: no agents configured\n";
+    spdlog::error("no agents configured");
     std::exit(1);
   }
 
@@ -54,8 +56,8 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   }
 
   if (!active_found) {
-    std::cerr << "Error: agent '" << active_name << "' not found\nAvailable agents:\n";
-    for (const auto& e : ctx.agents_config.agents) std::cerr << "  " << e.name << '\n';
+    spdlog::error("agent '{}' not found", active_name);
+    for (const auto& e : ctx.agents_config.agents) spdlog::info("  {}", e.name);
     std::exit(1);
   }
 
@@ -72,24 +74,25 @@ int RunAsk(int argc, char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      std::cerr << "Usage: pu ask [--agent <name>] <prompt>\n"
+      // Help output goes to stdout (std::cout), not stderr (spdlog).
+      std::cout << "Usage: pu ask [--agent <name>] <prompt>\n"
                 << "Options:\n"
                 << "  --agent <name>          Specify the agent to use\n"
                 << "  -h, --help              Show this help message\n";
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) requested_agent = argv[++i];
-      else { std::cerr << "Error: --agent requires an argument\n"; return 1; }
+      else { spdlog::error("--agent requires an argument"); return 1; }
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
-      std::cerr << "Error: unexpected argument '" << arg << "'\n";
+      spdlog::error("unexpected argument '{}'", arg);
       return 1;
     }
   }
 
   if (prompt.empty()) {
-    std::cerr << "Error: prompt is required\n";
+    spdlog::error("prompt is required");
     return 1;
   }
 
@@ -105,7 +108,7 @@ int RunAsk(int argc, char* argv[]) {
 
     auto session = runtime.GetDefaultSession();
     if (!session) {
-      std::cerr << "Error: could not create session\n";
+      spdlog::error("could not create session");
       return 1;
     }
 
@@ -116,7 +119,7 @@ int RunAsk(int argc, char* argv[]) {
 
     runtime.Shutdown();
   } catch (const std::exception& e) {
-    std::cerr << "\nError: " << e.what() << '\n';
+    spdlog::error("{}", e.what());
     return 1;
   }
   return 0;
@@ -128,17 +131,18 @@ int RunChat(int argc, char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
+      // Help output goes to stdout.
       std::cout << "Usage: pu chat [--agent <name>]\n";
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) {
         initial_agent = argv[++i];
       } else {
-        std::cerr << "Error: --agent requires an argument\n";
+        spdlog::error("--agent requires an argument");
         return 1;
       }
     } else {
-      std::cerr << "Error: unexpected argument '" << arg << "'\n";
+      spdlog::error("unexpected argument '{}'", arg);
       return 1;
     }
   }
@@ -157,13 +161,13 @@ int RunChat(int argc, char* argv[]) {
 
   auto session = runtime.GetDefaultSession();
   if (!session) {
-    std::cerr << "Error: could not create session\n";
+    spdlog::error("could not create session");
     return 1;
   }
   auto session_id = session->GetId();
 
-  std::cout << "[INFO] Connected to session: " << session_id << "\n";
-  std::cout << "[INFO] Connected to agent: " << current_name;
+  spdlog::info("Connected to session: {}", session_id);
+  std::string agent_info = "Connected to agent: " + current_name;
   const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
       if (e.name == current_name) return &e;
@@ -171,10 +175,10 @@ int RunChat(int argc, char* argv[]) {
     return nullptr;
   }();
   if (entry_ptr && !entry_ptr->description.empty()) {
-    std::cout << " (" << entry_ptr->description << ")";
+    agent_info += " (" + entry_ptr->description + ")";
   }
-  std::cout << "\nType /help for available commands.\n\n";
-
+  spdlog::info("{}", agent_info);
+  spdlog::info("Type /help for available commands.");
   std::string input;
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) continue;
@@ -190,7 +194,7 @@ int RunChat(int argc, char* argv[]) {
         std::cout << output << "\n";
       }
     } else {
-      std::cerr << "Error: " << output << "\n";
+      spdlog::error("{}", output);
     }
   }
 

@@ -6,7 +6,7 @@
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
-#include <fstream>
+#include <spdlog/spdlog.h>
 #include <chrono>
 #include <mutex>
 #include <sstream>
@@ -16,22 +16,6 @@ namespace pu {
 using json = nlohmann::json;
 
 namespace {
-
-static bool IsTraceEnabled() {
-  static const char* env = std::getenv("PU_TRACE");
-  return env && (std::string(env) == "1" || std::string(env) == "true");
-}
-
-static std::ofstream& GetTraceLog() {
-  static std::ofstream log;
-  static std::once_flag flag;
-  std::call_once(flag, []() {
-    const char* path = std::getenv("PU_TRACE_LOG");
-    if (!path) path = "/tmp/pu_trace.jsonl";
-    log.open(path, std::ios::app);
-  });
-  return log;
-}
 
 std::string SafeString(const json& j, const char* key) {
   return (j.contains(key) && j[key].is_string()) ? j[key].get<std::string>() : "";
@@ -168,16 +152,11 @@ void OpenAIProvider::HandleJsonToken(const json& j,
   }
 
   if (j.contains("usage") && j["usage"].is_object()) {
-    if (IsTraceEnabled()) {
-      auto usage = j["usage"];
-      nlohmann::json usage_log;
-      usage_log["trace_id"] = current_trace_id_;
-      usage_log["model"] = config_.model;
-      usage_log["input_tokens"] = usage.value("prompt_tokens", 0);
-      usage_log["output_tokens"] = usage.value("completion_tokens", 0);
-      usage_log["total_tokens"] = usage.value("total_tokens", 0);
-      GetTraceLog() << usage_log.dump() << std::endl;
-    }
+    auto usage = j["usage"];
+    spdlog::trace("OpenAI usage: prompt_tokens={}, completion_tokens={}, total_tokens={}",
+                  usage.value("prompt_tokens", 0),
+                  usage.value("completion_tokens", 0),
+                  usage.value("total_tokens", 0));
   }
 
   if (is_final) {
@@ -216,9 +195,6 @@ ChatResult OpenAIProvider::Chat(
   std::string url = host_ + "/chat/completions";
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
-
-  current_trace_id_ = std::to_string(
-      std::chrono::steady_clock::now().time_since_epoch().count());
 
   std::ostringstream content_stream;
   std::vector<ToolCall> collected_calls;

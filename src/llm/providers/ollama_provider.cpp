@@ -6,7 +6,7 @@
 #include "pu/error.hpp"
 
 #include <nlohmann/json.hpp>
-#include <iostream>
+#include <spdlog/spdlog.h>
 #include <sstream>
 
 namespace pu {
@@ -129,8 +129,7 @@ std::string OllamaProvider::BuildRequestWithTools(
     try {
       t["function"]["parameters"] = json::parse(tool.parameters_schema);
     } catch (const std::exception& e) {
-      std::cerr << "[OllamaProvider] Failed to parse schema for tool '" << tool.name
-                << "': " << e.what() << '\n';
+      spdlog::error("[OllamaProvider] Failed to parse schema for tool '{}': {}", tool.name, e.what());
       continue;
     }
     tools_json.push_back(t);

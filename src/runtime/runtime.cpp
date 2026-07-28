@@ -8,6 +8,8 @@
 #include "pu/tools/fork_tools.hpp"
 #include "infra/curl_http_client.hpp"
 #include <stdexcept>
+#include "pu/core/logging.hpp"
+#include <spdlog/spdlog.h>
 #include <iostream>
 
 namespace pu {
@@ -19,6 +21,11 @@ Runtime& Runtime::Instance() {
 
 void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
+
+  // Initialize logging (from environment variables)
+  std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
+  bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
+  pu::InitLogging(log_level, trace);
 
   auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
@@ -59,7 +66,7 @@ void Runtime::Initialize(const std::string& config_path) {
     fallback_policy.max_command_length = 0;
     fallback_policy.forbidden_patterns = {};
     executor_->SetSecurityPolicy(fallback_policy);
-    std::cerr << "[Warning] No default agent found for security policy. Using permissive fallback.\n";
+    spdlog::warn("No default agent found for security policy. Using permissive fallback.");
   }
 
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(

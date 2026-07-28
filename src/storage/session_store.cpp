@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/storage/session_store.hpp"
 #include "pu/error.hpp"
+#include <spdlog/spdlog.h>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 
 namespace pu {
@@ -102,7 +102,7 @@ std::string SessionStore::ExportMarkdown(const std::string& id) const {
     }
     return md.str();
   } catch (const std::exception& e) {
-    std::cerr << "Error: failed to export conversation: " << e.what() << '\n';
+    spdlog::error("Failed to export conversation: {}", e.what());
     return "";
   }
 }

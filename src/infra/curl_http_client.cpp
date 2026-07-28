@@ -5,6 +5,7 @@
 #include "pu/error.hpp"
 
 #include <curl/curl.h>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <fstream>
 #include <chrono>
@@ -12,22 +13,6 @@
 #include <nlohmann/json.hpp>
 
 namespace pu::http {
-
-static bool IsTraceEnabled() {
-  static const char* env = std::getenv("PU_TRACE");
-  return env && (std::string(env) == "1" || std::string(env) == "true");
-}
-
-static std::ofstream& GetTraceLog() {
-  static std::ofstream log;
-  static std::once_flag flag;
-  std::call_once(flag, []() {
-    const char* path = std::getenv("PU_TRACE_LOG");
-    if (!path) path = "/tmp/pu_trace.jsonl";
-    log.open(path, std::ios::app);
-  });
-  return log;
-}
 
 CurlSlist::~CurlSlist() { if (list) curl_slist_free_all(list); }
 void CurlSlist::append(const char* str) { list = curl_slist_append(list, str); }
@@ -73,15 +58,7 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   auto start = std::chrono::steady_clock::now();
   std::string trace_id = std::to_string(start.time_since_epoch().count());
 
-  if (IsTraceEnabled()) {
-    nlohmann::json req_log;
-    req_log["trace_id"] = trace_id;
-    req_log["timestamp"] = std::chrono::system_clock::now().time_since_epoch().count();
-    req_log["url"] = url;
-    req_log["body"] = body;
-    req_log["method"] = "POST";
-    GetTraceLog() << req_log.dump() << std::endl;
-  }
+  spdlog::trace("HTTP POST {} body_size={}", url, body.size());
 
   error_detail_.clear();
   response_body_.clear();
@@ -105,17 +82,9 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   long http_code = 0;
   curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
 
-  if (IsTraceEnabled()) {
-    auto end = std::chrono::steady_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-
-    nlohmann::json resp_log;
-    resp_log["trace_id"] = trace_id;
-    resp_log["duration_ms"] = duration_ms;
-    resp_log["http_code"] = http_code;
-
-    GetTraceLog() << resp_log.dump() << std::endl;
-  }
+  auto end = std::chrono::steady_clock::now();
+  auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  spdlog::trace("HTTP {} {} {}ms", url, http_code, duration_ms);
 
   if (res != CURLE_OK) {
     std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);

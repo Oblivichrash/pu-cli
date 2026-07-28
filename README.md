@@ -98,6 +98,12 @@ Create `agents.json` in current directory or `~/.pu/`:
 | `PU_AGENTS_CONFIG` | Path to agents.json |
 | `PU_HOME` | Data directory (default `~/.pu/`) |
 
+### Logging
+
+- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical`.
+- Set `PU_TRACE=1` to enable trace-level logging (equivalent to `PU_LOG_LEVEL=trace`).
+- Log files are stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+
 ---
 
 ## License

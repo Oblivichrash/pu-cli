@@ -9,6 +9,7 @@
 #include "pu/http/http_client.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -30,7 +31,7 @@ std::string ExpandEnvVars(const std::string& input) {
   while (std::regex_search(result, match, env_re)) {
     const char* env_val = std::getenv(match[1].str().c_str());
     std::string replacement = env_val ? env_val : "";
-    if (!env_val) std::cerr << "[WARN] Environment variable not set: " << match[1].str() << '\n';
+    if (!env_val) spdlog::warn("Environment variable not set: {}", match[1].str());
     result.replace(match.position(0), match.length(0), replacement);
   }
   return result;

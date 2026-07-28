@@ -6,6 +6,7 @@
 #include "tools/command_executor.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <iostream>
@@ -104,7 +105,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
     } catch (const std::exception& e) {
       auto err = "Request failed: " + std::string(e.what());
-      std::cerr << "\nError: " << err << '\n';
+      spdlog::error("{}", err);
       final_response = err;
       workspace.Append("assistant", final_response);
       break;
@@ -135,7 +136,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       } else {
         static config::SecurityPolicy empty_policy;
         tool_ctx.security = &empty_policy;
-        std::cerr << "[Warning] No security policy set for Executor. Using empty policy.\n";
+        spdlog::warn("No security policy set for Executor. Using empty policy.");
       }
 
       for (const auto& call : collected_calls) {

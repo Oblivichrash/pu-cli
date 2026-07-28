@@ -6,6 +6,7 @@
 #include "pu/tools/python_tool.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <chrono>
 #include <filesystem>
@@ -55,7 +56,7 @@ std::string Toolbox::ExecuteTool(const std::string& name,
                                  ToolContext& ctx) {
   // Final safety net: reject empty names even if they bypass earlier checks.
   if (name.empty()) {
-    std::cerr << "[ERROR] Attempted to execute tool with empty name\n";
+    spdlog::error("Attempted to execute tool with empty name");
     return "Error: tool name is empty";
   }
   Tool* tool = GetTool(name);
@@ -90,7 +91,7 @@ void Toolbox::ReloadExternalTools(const std::string& directory) {
         RegisterTool(std::move(tool));
         tool_file_mtimes_[name] = mtime;
       } catch (const std::exception& e) {
-        std::cerr << "[Toolbox] Failed to load tool " << name << ": " << e.what() << '\n';
+        spdlog::error("Failed to load tool {}: {}", name, e.what());
       }
     }
   }
