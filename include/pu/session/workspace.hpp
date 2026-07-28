@@ -26,6 +26,9 @@ public:
   size_t HistorySize() const;
   void Compact();
   bool HasPendingToolCalls() const;
+  
+  // New method for clearing history
+  void ClearHistory();
 
   // Delegate to Memory
   void SetVar(const std::string& key, const nlohmann::json& value);

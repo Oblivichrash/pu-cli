@@ -325,4 +325,12 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   return ws;
 }
 
+void Workspace::ClearHistory() {
+  if (!transcript_) {
+    transcript_ = std::make_unique<Transcript>();
+  } else {
+    transcript_ = std::make_unique<Transcript>(); // replace with empty
+  }
+}
+
 } // namespace pu

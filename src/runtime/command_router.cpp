@@ -47,7 +47,6 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   if (cmd == "/fork") return HandleFork(args, session, output);
   if (cmd == "/merge") return HandleMerge(args, session, output);
   if (cmd == "/backend") return HandleBackend(args, session, output);
-  if (cmd == "/agent") return HandleAgent(args, session, output);
   if (cmd == "/agents") return HandleAgents(args, session, output);
   if (cmd == "/save") return HandleSave(args, session, output);
   if (cmd == "/load") return HandleLoad(args, session, output);
@@ -76,7 +75,6 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& args, Session& se
       << "  /merge [--full]        Merge the current branch back\n"
       << "  /backend <agent_name>  Switch to a predefined agent\n"
       << "  /backend <type> <model> [host] [api_key]  Manually set backend\n"
-      << "  /agent <name>          Switch agent (same as /backend)\n"
       << "  /agents                List available agents\n"
       << "  /save [name]           Save conversation\n"
       << "  /load <id>             Load conversation\n"
@@ -312,17 +310,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   return true;
 }
 
-bool CommandRouter::HandleAgent(const std::vector<std::string>& args, Session& session, std::string& output) {
-  // Delegate to HandleBackend for consistency (agent name = backend preset)
-  if (args.empty()) {
-    output = "Current agent: " + session.GetRuntimeSpec().agent_name;
-    return true;
-  }
-  // Reuse the same logic: treat the first argument as agent name and switch backend
-  std::vector<std::string> backend_args = {args[0]};
-  return HandleBackend(backend_args, session, output);
-}
-
 bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output) {
   auto names = manager_.GetAgentNames();
   std::string current = session.GetRuntimeSpec().agent_name;
@@ -508,7 +495,8 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleClear(const std::vector<std::string>& args, Session& session, std::string& output) {
-  manager_.ClearSessions();
+  // Clear the session's workspace history instead of using agent sessions
+  session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
   return true;
 }

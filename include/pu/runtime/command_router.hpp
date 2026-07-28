@@ -19,7 +19,6 @@ private:
   bool HandleFork(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleMerge(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleAgent(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleSave(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output);

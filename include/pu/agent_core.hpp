@@ -87,71 +87,35 @@ struct ConfirmationRequest {
 
 using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
 
-class BaseAgent {
- public:
-  virtual ~BaseAgent() = default;
-
-  virtual std::string Name() const = 0;
-  virtual std::string Description() const = 0;
-
-  virtual std::string Handle(const std::string& input, class AgentContext& ctx) = 0;
-  virtual void ResetSession() = 0;
-
-  virtual std::vector<ChatMessage> SaveState() const { return {}; }
-  virtual void LoadState([[maybe_unused]] const std::vector<ChatMessage>& messages) {}
-
-  virtual ConfirmationCallback GetConfirmationCallback() const { return nullptr; }
-  virtual void SetConfirmationCallback(ConfirmationCallback cb) { (void)cb; }
-};
-
-struct PendingAction {
-  enum class Type { kNone, kPush, kPop };
-  Type type = Type::kNone;
-  std::string agent_name;
-  std::string input_path;
-};
-
-struct AgentContext {
-  std::shared_ptr<pu::Workspace> context;
-  PendingAction pending_action;
-  std::shared_ptr<pu::ForkMergeService> fork_service;
-};
-
 class AgentManager {
  public:
   AgentManager();
 
-  void RegisterAgent(std::unique_ptr<BaseAgent> agent);
-  BaseAgent* GetAgent(const std::string& name) const;
-  std::vector<std::string> GetAgentNames() const;
-
-  // New: Load agent config metadata (for backend switching, listing, etc.)
+  // Load agent config metadata (for backend switching, listing, etc.)
   void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs);
 
-  // New: Look up an agent config by name
+  // Look up an agent config by name
   const config::AgentEntry* GetAgentConfig(const std::string& name) const;
 
+  // List all agent names from config
+  std::vector<std::string> GetAgentNames() const;
+
+  // Active agent name
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
 
+  // Confirmation callback (forward to tools)
   ConfirmationCallback GetConfirmationCallback() const { return confirmation_callback_; }
+  void SetConfirmationCallback(ConfirmationCallback cb) { confirmation_callback_ = std::move(cb); }
+
+  // Show reasoning (for LLM)
   bool GetShowReasoning() const { return show_reasoning_; }
-  std::optional<std::string> GetSystemPrompt(const std::string& agent_name) const;
-
-  void SetConfirmationCallback(ConfirmationCallback cb);
-  void SetShowReasoning(bool enable);
-  void SetSystemPrompt(const std::string& agent_name, const std::string& prompt);
-
-  void ClearSessions();
-  std::unordered_map<std::string, std::vector<ChatMessage>> SnapshotAgents() const;
-  void RestoreAgents(const std::unordered_map<std::string, std::vector<ChatMessage>>& states);
+  void SetShowReasoning(bool enable) { show_reasoning_ = enable; }
 
  private:
-  std::unordered_map<std::string, std::unique_ptr<BaseAgent>> agents_;
   std::string active_agent_;
   bool show_reasoning_ = false;
   ConfirmationCallback confirmation_callback_;
-  std::unordered_map<std::string, std::string> system_prompts_;
 
   // Agent config metadata (from agents.json)
   std::vector<config::AgentEntry> agent_configs_;

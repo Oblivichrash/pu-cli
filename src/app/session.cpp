@@ -23,7 +23,7 @@ bool SessionManager::SaveConversation(const std::string& name, const std::vector
   conv.created_at = messages.empty() ? CurrentTimestamp() : messages.front().timestamp;
   conv.updated_at = CurrentTimestamp();
   conv.messages = messages;
-  conv.expert_histories = manager_.SnapshotAgents();
+  conv.expert_histories = {};
 
   try {
     store_.Save(conv);
@@ -46,8 +46,6 @@ bool SessionManager::LoadConversation(const std::string& id, std::vector<ChatMes
   try {
     auto conv = store_.Load(id);
     messages = conv.messages;
-    manager_.RestoreAgents(conv.expert_histories);
-    manager_.SetActiveAgent("");
     std::cout << "[INFO] Loaded conversation '" << id << "'\n";
     return true;
   } catch (const std::exception& e) {
