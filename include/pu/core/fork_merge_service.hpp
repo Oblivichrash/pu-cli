@@ -32,16 +32,17 @@ class ForkMergeService {
   };
 
   ForkMergeService(AgentManager& manager,
-                   std::shared_ptr<CallStack> delegation_stack,
                    std::shared_ptr<Workspace> root_context);
 
-  // Fork operations
-  ForkResult Fork(const std::string& agent_name,
+  // Fork operations — CallStack passed explicitly to avoid bidirectional coupling.
+  ForkResult Fork(CallStack& stack,
+                  const std::string& agent_name,
                   const std::string& goal,
                   const std::string& branch_name = "");
 
   // Merge operations
-  MergeResult Merge(const std::string& message,
+  MergeResult Merge(CallStack& stack,
+                    const std::string& message,
                     const std::string& strategy = "merge",
                     LLMProvider* provider = nullptr);
 
@@ -63,21 +64,21 @@ class ForkMergeService {
                                  const Assignment& delegation,
                                  LLMProvider* provider = nullptr);
 
-  // Summary injection
-  void InjectSummaryIntoParent(const HandoffReceipt& report);
+  // Summary injection — needs stack to locate parent context.
+  void InjectSummaryIntoParent(CallStack& stack,
+                               const HandoffReceipt& report);
 
   // Pop delegation
-  HandoffReceipt PopDelegation(LLMProvider* provider = nullptr);
+  HandoffReceipt PopDelegation(CallStack& stack,
+                               LLMProvider* provider = nullptr);
 
   // Accessors
   std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
-  std::shared_ptr<CallStack> GetDelegationStack() const { return delegation_stack_; }
 
  private:
   void PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const;
 
   AgentManager& manager_;
-  std::shared_ptr<CallStack> delegation_stack_;
   std::shared_ptr<Workspace> root_context_;
 };
 

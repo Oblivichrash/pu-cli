@@ -11,6 +11,7 @@
 
 namespace pu {
 class ForkMergeService;
+class CallStack;
 }
 
 namespace pu {
@@ -19,6 +20,7 @@ struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
   std::function<bool(const std::string& message)> request_confirmation;
   std::shared_ptr<ForkMergeService> fork_service;
+  std::shared_ptr<CallStack> call_stack;  // needed by fork tools to push/pop delegations
 };
 
 class Tool {

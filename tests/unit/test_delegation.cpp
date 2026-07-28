@@ -19,8 +19,7 @@ class MockAgentManager : public pu::AgentManager {
 
 TEST_CASE("CallStack push and pop", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   REQUIRE(stack->IsEmpty());
   REQUIRE(stack->Depth() == 0);
@@ -59,8 +58,7 @@ TEST_CASE("CallStack push and pop", "[delegation]") {
 
 TEST_CASE("CallStack push without explicit context creates one", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   Assignment d;
   d.goal = "goal";
@@ -76,8 +74,7 @@ TEST_CASE("CallStack push without explicit context creates one", "[delegation]")
 
 TEST_CASE("CallStack Current on empty throws", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   REQUIRE_THROWS_AS(stack->Current(), std::runtime_error);
   REQUIRE_THROWS_AS(stack->CurrentContext(), std::runtime_error);
@@ -85,8 +82,7 @@ TEST_CASE("CallStack Current on empty throws", "[delegation]") {
 
 TEST_CASE("CallStack Clear", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   Assignment d;
   d.goal = "goal";
@@ -102,8 +98,7 @@ TEST_CASE("CallStack Clear", "[delegation]") {
 
 TEST_CASE("CallStack GetFrames", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   Assignment d1;
   d1.goal = "goal1";
@@ -145,8 +140,7 @@ TEST_CASE("Assignment IsTimeout", "[delegation]") {
 
 TEST_CASE("CallStack pop with explicit result", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   Assignment d;
   d.goal = "goal";
@@ -168,8 +162,7 @@ TEST_CASE("CallStack pop with explicit result", "[delegation]") {
 
 TEST_CASE("CallStack pop without explicit result gets default", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   Assignment d;
   d.goal = "goal";
@@ -240,8 +233,7 @@ TEST_CASE("Context isolation between parent and child", "[delegation]") {
 
 TEST_CASE("CallStack depth tracking", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   for (int i = 0; i < 5; ++i) {
     Assignment d;
@@ -263,8 +255,7 @@ TEST_CASE("CallStack depth tracking", "[delegation]") {
 
 TEST_CASE("CallStack GetRootContext", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
   REQUIRE(stack->GetRootContext() == root);
 
@@ -276,13 +267,4 @@ TEST_CASE("CallStack GetRootContext", "[delegation]") {
 
   REQUIRE(stack->GetRootContext() == root);
   REQUIRE(stack->CurrentContext() != root);
-}
-
-TEST_CASE("CallStack GetForkMergeService", "[delegation]") {
-  auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
-
-  auto fms = stack->GetForkMergeService();
-  REQUIRE(fms != nullptr);
 }

@@ -21,11 +21,11 @@ class MockAgentManager : public pu::AgentManager {
 TEST_CASE("ForkMergeService::Fork creates a child workspace", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto result = service.Fork("test-agent", "Test exploration", "test-branch");
+  auto result = service.Fork(*stack, "test-agent", "Test exploration", "test-branch");
 
   REQUIRE(result.child_context != nullptr);
   REQUIRE(result.child_context->GetBranchName() == "test-branch");
@@ -35,11 +35,11 @@ TEST_CASE("ForkMergeService::Fork creates a child workspace", "[fork_merge_servi
 TEST_CASE("ForkMergeService::Fork creates a child with default branch name", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto result = service.Fork("test-agent", "Test exploration", "");
+  auto result = service.Fork(*stack, "test-agent", "Test exploration", "");
 
   REQUIRE(result.child_context != nullptr);
   REQUIRE_FALSE(result.child_context->GetBranchName().empty());
@@ -49,14 +49,14 @@ TEST_CASE("ForkMergeService::Fork creates a child with default branch name", "[f
 TEST_CASE("ForkMergeService Fork/Prune", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto fork1 = service.Fork("agent1", "Explore A", "branch-a");
+  auto fork1 = service.Fork(*stack, "agent1", "Explore A", "branch-a");
   REQUIRE(fork1.child_context != nullptr);
 
-  auto fork2 = service.Fork("agent2", "Explore B", "branch-b");
+  auto fork2 = service.Fork(*stack, "agent2", "Explore B", "branch-b");
   REQUIRE(fork2.child_context != nullptr);
 
   REQUIRE(root->GetChildren().size() == 2);
@@ -69,11 +69,11 @@ TEST_CASE("ForkMergeService Fork/Prune", "[fork_merge_service]") {
 TEST_CASE("ForkMergeService::Merge basic merge", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto fork = service.Fork("agent1", "Test merge", "merge-test");
+  auto fork = service.Fork(*stack, "agent1", "Test merge", "merge-test");
   REQUIRE(fork.child_context != nullptr);
 
   // Push the fork onto the call stack (required for Merge to work)
@@ -83,7 +83,7 @@ TEST_CASE("ForkMergeService::Merge basic merge", "[fork_merge_service]") {
   asgn.id = Assignment::GenerateId();
   stack->Push(asgn, fork.child_context);
 
-  auto merge = service.Merge("Merging test branch", "merge");
+  auto merge = service.Merge(*stack, "Merging test branch", "merge");
   REQUIRE(merge.merge_context != nullptr);
   REQUIRE(merge.report.summary.find("Merging") != std::string::npos);
 
@@ -95,11 +95,11 @@ TEST_CASE("ForkMergeService::Merge basic merge", "[fork_merge_service]") {
 TEST_CASE("ForkMergeService::PrintTree produces output", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto fork = service.Fork("agent1", "Print test", "print-branch");
+  auto fork = service.Fork(*stack, "agent1", "Print test", "print-branch");
   REQUIRE(fork.child_context != nullptr);
 
   std::ostringstream oss;
@@ -111,11 +111,11 @@ TEST_CASE("ForkMergeService::PrintTree produces output", "[fork_merge_service]")
 TEST_CASE("ForkMergeService::FindContext finds by id", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
-  auto fork = service.Fork("agent1", "Find test", "find-branch");
+  auto fork = service.Fork(*stack, "agent1", "Find test", "find-branch");
   REQUIRE(fork.child_context != nullptr);
 
   auto found = service.FindContext(fork.child_context->GetId());
@@ -126,9 +126,9 @@ TEST_CASE("ForkMergeService::FindContext finds by id", "[fork_merge_service]") {
 TEST_CASE("ForkMergeService::FindContext returns null for non-existent", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
   auto found = service.FindContext("nonexistent-id");
   REQUIRE(found == nullptr);
@@ -137,12 +137,12 @@ TEST_CASE("ForkMergeService::FindContext returns null for non-existent", "[fork_
 TEST_CASE("ForkMergeService multiple forks and merges (sequential)", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
   // Fork and merge branch A
-  auto fork1 = service.Fork("agent1", "Task A", "branch-a");
+  auto fork1 = service.Fork(*stack, "agent1", "Task A", "branch-a");
   REQUIRE(fork1.child_context != nullptr);
 
   Assignment asgn1;
@@ -151,11 +151,11 @@ TEST_CASE("ForkMergeService multiple forks and merges (sequential)", "[fork_merg
   asgn1.id = Assignment::GenerateId();
   stack->Push(asgn1, fork1.child_context);
 
-  auto merge1 = service.Merge("Completed A", "merge");
+  auto merge1 = service.Merge(*stack, "Completed A", "merge");
   REQUIRE(merge1.merge_context != nullptr);
 
   // Fork and merge branch B (from the merged root)
-  auto fork2 = service.Fork("agent2", "Task B", "branch-b");
+  auto fork2 = service.Fork(*stack, "agent2", "Task B", "branch-b");
   REQUIRE(fork2.child_context != nullptr);
 
   Assignment asgn2;
@@ -164,26 +164,16 @@ TEST_CASE("ForkMergeService multiple forks and merges (sequential)", "[fork_merg
   asgn2.id = Assignment::GenerateId();
   stack->Push(asgn2, fork2.child_context);
 
-  auto merge2 = service.Merge("Completed B", "merge");
+  auto merge2 = service.Merge(*stack, "Completed B", "merge");
   REQUIRE(merge2.merge_context != nullptr);
 }
 
 TEST_CASE("ForkMergeService GetRootContext", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
+  auto stack = CallStack::Create(root);
 
-  ForkMergeService service(manager, stack, root);
+  ForkMergeService service(manager, root);
 
   REQUIRE(service.GetRootContext() == root);
-}
-
-TEST_CASE("ForkMergeService GetDelegationStack", "[fork_merge_service]") {
-  auto root = std::make_shared<Workspace>("root");
-  MockAgentManager manager;
-  auto stack = CallStack::Create(root, manager);
-
-  ForkMergeService service(manager, stack, root);
-
-  REQUIRE(service.GetDelegationStack() == stack);
 }

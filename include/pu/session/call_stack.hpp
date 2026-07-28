@@ -9,9 +9,6 @@
 
 namespace pu {
 
-class ForkMergeService;
-class AgentManager;
-
 class CallStack {
 public:
   struct Frame {
@@ -29,17 +26,14 @@ public:
   bool IsEmpty() const;
   void Clear();
 
-  // Methods for integration with ForkMergeService
+  // Workspace accessors — kept for callers that need the root context.
   std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
   void SetRootContext(std::shared_ptr<Workspace> ctx) { root_context_ = ctx; }
-  std::shared_ptr<ForkMergeService> GetForkMergeService() const { return fork_service_; }
-  void SetForkMergeService(std::shared_ptr<ForkMergeService> svc) { fork_service_ = svc; }
   const std::vector<Frame>& GetFrames() const { return frames_; }
 
-  // Static factory to create a CallStack with ForkMergeService
+  // Simple factory — no longer creates a ForkMergeService internally.
   static std::shared_ptr<CallStack> Create(
-    std::shared_ptr<Workspace> root_context,
-    AgentManager& manager);
+    std::shared_ptr<Workspace> root_context);
 
   nlohmann::json Serialize() const;
   static CallStack Deserialize(const nlohmann::json& j);
@@ -47,7 +41,6 @@ public:
 private:
   std::shared_ptr<Workspace> root_context_;
   std::vector<Frame> frames_;
-  std::shared_ptr<ForkMergeService> fork_service_;
 };
 
 } // namespace pu

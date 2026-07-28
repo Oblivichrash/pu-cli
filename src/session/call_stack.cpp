@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/core/fork_merge_service.hpp"
-#include "pu/agent/agent_manager.hpp"
 #include <stdexcept>
 
 namespace pu {
 
 std::shared_ptr<CallStack> CallStack::Create(
-  std::shared_ptr<Workspace> root_context,
-  AgentManager& manager) {
+  std::shared_ptr<Workspace> root_context) {
   auto stack = std::make_shared<CallStack>();
   stack->root_context_ = std::move(root_context);
-  auto fork_service = std::make_shared<ForkMergeService>(
-      manager, stack, stack->root_context_);
-  stack->fork_service_ = fork_service;
   return stack;
 }
 

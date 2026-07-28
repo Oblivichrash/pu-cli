@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/fork_tools.hpp"
+#include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/core/fork_merge_service.hpp"
 
@@ -57,17 +58,19 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, pu::ToolContext
     return "Error: ForkMergeService not available in this context. "
            "Please use /fork command instead.";
   }
+  if (!ctx.call_stack) {
+    return "Error: CallStack not available in this context.";
+  }
 
-  auto result = ctx.fork_service->Fork(agent_name, goal, branch_name);
+  auto result = ctx.fork_service->Fork(*ctx.call_stack, agent_name, goal, branch_name);
   if (!result.child_context) {
     return "Error: " + result.message;
   }
 
-  // Push the fork onto the delegation stack
   Assignment asgn;
   asgn.goal = "exploration";
   asgn.agent_name = agent_name;
-  ctx.fork_service->GetDelegationStack()->Push(asgn, result.child_context);
+  ctx.call_stack->Push(asgn, result.child_context);
 
   return result.message;
 }
@@ -113,8 +116,10 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContex
     return "Error: ForkMergeService not available in this context. "
            "Please use /merge command instead.";
   }
+  if (!ctx.call_stack) {
+    return "Error: CallStack not available in this context.";
+  }
 
-  // Ask for confirmation first
   if (ctx.request_confirmation) {
     std::string confirm_msg = "Merge current branch with strategy '" + strategy + "'?";
     if (!ctx.request_confirmation(confirm_msg)) {
@@ -122,7 +127,7 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContex
     }
   }
 
-  auto result = ctx.fork_service->Merge(message, strategy);
+  auto result = ctx.fork_service->Merge(*ctx.call_stack, message, strategy);
   return result.message;
 }
 

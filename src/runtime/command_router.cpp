@@ -65,6 +65,19 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   return false;
 }
 
+ForkMergeService* CommandRouter::GetOrCreateForkService(Session& session) {
+  auto& call_stack = session.GetCallStack();
+  auto root_ctx = call_stack.GetRootContext();
+  if (!root_ctx) {
+    root_ctx = std::make_shared<Workspace>("root");
+    call_stack.SetRootContext(root_ctx);
+  }
+  if (!fork_service_) {
+    fork_service_ = std::make_unique<ForkMergeService>(manager_, root_ctx);
+  }
+  return fork_service_.get();
+}
+
 bool CommandRouter::HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output) {
   std::ostringstream oss;
   oss << "Available commands:\n"
@@ -92,22 +105,8 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& session, std::string& output) {
-  // Get or create ForkMergeService
   auto& call_stack = session.GetCallStack();
-  auto fork_service = call_stack.GetForkMergeService();
-  
-  if (!fork_service) {
-    // Create one if it doesn't exist
-    auto root_ctx = call_stack.GetRootContext();
-    if (!root_ctx) {
-      root_ctx = std::make_shared<Workspace>("root");
-      call_stack.SetRootContext(root_ctx);
-    }
-    fork_service = std::make_shared<ForkMergeService>(manager_, 
-        std::shared_ptr<CallStack>(&call_stack, [](void*){}), 
-        root_ctx);
-    call_stack.SetForkMergeService(fork_service);
-  }
+  auto* fork_service = GetOrCreateForkService(session);
 
   if (args.empty()) {
     // /fork - show tree
@@ -181,7 +180,7 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
 
   // /fork <agent_name> - fork with specific agent
   std::string agent_name = args[0];
-  auto result = fork_service->Fork(agent_name, "Exploration", "");
+  auto result = fork_service->Fork(call_stack, agent_name, "Exploration", "");
   if (result.child_context) {
     Assignment asgn;
     asgn.goal = "exploration";
@@ -200,12 +199,7 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
 
 bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& session, std::string& output) {
   auto& call_stack = session.GetCallStack();
-  auto fork_service = call_stack.GetForkMergeService();
-  
-  if (!fork_service) {
-    output = "Error: no fork service available.";
-    return true;
-  }
+  auto* fork_service = GetOrCreateForkService(session);
 
   if (call_stack.IsEmpty()) {
     output = "Error: no active branch to merge.";
@@ -215,14 +209,14 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
   bool full = (!args.empty() && args[0] == "--full");
   
   if (full) {
-    auto result = fork_service->Merge("Merged with full history", "merge");
+    auto result = fork_service->Merge(call_stack, "Merged with full history", "merge");
     std::ostringstream oss;
     oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
     output = oss.str();
   } else {
     // Squash merge - use LLM provider for summary
     auto provider = session.CreateProvider();
-    auto result = fork_service->Merge("Squash merged", "squash", provider.get());
+    auto result = fork_service->Merge(call_stack, "Squash merged", "squash", provider.get());
     std::ostringstream oss;
     oss << "\xf0\x9f\x91\x8d Merged (squash): " << result.report.summary;
     output = oss.str();
@@ -331,7 +325,6 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
   }
   
   if (save_name.empty()) {
-    // Generate a simple ID
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::ostringstream ss;
@@ -339,7 +332,6 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
     save_name = ss.str();
   }
 
-  // Save conversation using SessionStore directly
   auto pu_dir = pu::path::GetDataDir();
   auto store_dir = pu_dir / "sessions";
   SessionStore store(store_dir);
@@ -383,7 +375,6 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
       return true;
     }
     auto& ws = session.GetWorkspace();
-    // Clear existing and load
     auto history = loaded->GetWorkspace().GetHistory();
     for (const auto& msg : history) {
       ws.Append(msg);
@@ -475,7 +466,6 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
   }
 
   if (args[0] == "add" && args.size() > 1) {
-    // Reconstruct the text from remaining args
     std::string text;
     for (size_t i = 1; i < args.size(); ++i) {
       if (i > 1) text += " ";
@@ -498,7 +488,6 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleClear(const std::vector<std::string>& args, Session& session, std::string& output) {
-  // Clear the session's workspace history instead of using agent sessions
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
   return true;

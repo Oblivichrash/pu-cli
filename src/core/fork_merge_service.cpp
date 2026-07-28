@@ -13,19 +13,18 @@
 namespace pu {
 
 ForkMergeService::ForkMergeService(AgentManager& manager,
-                                    std::shared_ptr<CallStack> delegation_stack,
                                     std::shared_ptr<Workspace> root_context)
     : manager_(manager),
-      delegation_stack_(std::move(delegation_stack)),
       root_context_(std::move(root_context)) {}
 
-ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_name,
+ForkMergeService::ForkResult ForkMergeService::Fork(CallStack& stack,
+                                                     const std::string& agent_name,
                                                      const std::string& goal,
                                                      const std::string& branch_name) {
   ForkResult result;
   std::shared_ptr<Workspace> parent;
-  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
-    parent = delegation_stack_->CurrentContext();
+  if (!stack.IsEmpty()) {
+    parent = stack.CurrentContext();
   } else {
     parent = root_context_;
   }
@@ -42,21 +41,22 @@ ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_nam
   return result;
 }
 
-ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message,
+ForkMergeService::MergeResult ForkMergeService::Merge(CallStack& stack,
+                                                       const std::string& message,
                                                        const std::string& strategy,
                                                        LLMProvider* provider) {
   MergeResult result;
-  if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
+  if (stack.IsEmpty()) {
     result.report.status = HandoffReceipt::Status::kFailed;
     result.report.summary = "No active delegation to merge";
     result.message = "Error: No active delegation to merge";
     return result;
   }
-  auto& frame = delegation_stack_->Current();
+  auto& frame = stack.Current();
   auto child = frame.context;
   auto parent = child->GetParent();
   if (!parent) {
-    result.report = PopDelegation(provider);
+    result.report = PopDelegation(stack, provider);
     result.message = "Popped delegation: " + result.report.summary;
     return result;
   }
@@ -68,7 +68,6 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
     SummaryGenerator summary_gen(manager_);
     auto summary = summary_gen.Generate(child, frame.assignment, provider);
     merge_ctx = parent->Merge(child, message);
-    // For squash, we just add summary messages instead of full history
     merge_ctx->Append("system", "[Squash Merge] " + message);
     merge_ctx->Append("system", "Summary: " + summary.summary);
     auto child_artifacts = child->GetArtifacts();
@@ -83,12 +82,12 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
 
   result.report.key_discoveries = child->GetArtifacts();
   result.merge_context = merge_ctx;
-  delegation_stack_->Pop();
+  stack.Pop();
 
-  if (!delegation_stack_->IsEmpty()) {
-    delegation_stack_->Current().context = merge_ctx;
+  if (!stack.IsEmpty()) {
+    stack.Current().context = merge_ctx;
   }
-  if (delegation_stack_->IsEmpty()) {
+  if (stack.IsEmpty()) {
     root_context_ = merge_ctx;
   }
 
@@ -191,9 +190,10 @@ HandoffReceipt ForkMergeService::GenerateSummary(const std::shared_ptr<Workspace
   return summary_gen.Generate(child_ctx, delegation, provider);
 }
 
-void ForkMergeService::InjectSummaryIntoParent(const HandoffReceipt& report) {
-  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
-    auto parent_ctx = delegation_stack_->CurrentContext();
+void ForkMergeService::InjectSummaryIntoParent(CallStack& stack,
+                                                const HandoffReceipt& report) {
+  if (!stack.IsEmpty()) {
+    auto parent_ctx = stack.CurrentContext();
     if (parent_ctx) {
       parent_ctx->Append("system", "[Sub-task] " + report.summary);
       for (const auto& f : report.key_discoveries) {
@@ -205,17 +205,18 @@ void ForkMergeService::InjectSummaryIntoParent(const HandoffReceipt& report) {
   }
 }
 
-HandoffReceipt ForkMergeService::PopDelegation(LLMProvider* provider) {
-  if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
+HandoffReceipt ForkMergeService::PopDelegation(CallStack& stack,
+                                                LLMProvider* provider) {
+  if (stack.IsEmpty()) {
     HandoffReceipt report;
     report.status = HandoffReceipt::Status::kFailed;
     report.summary = "No active delegation to pop";
     return report;
   }
-  auto& frame = delegation_stack_->Current();
+  auto& frame = stack.Current();
   auto report = GenerateSummary(frame.context, frame.assignment, provider);
   frame.assignment.result = report;
-  delegation_stack_->Pop();
+  stack.Pop();
   return report;
 }
 
