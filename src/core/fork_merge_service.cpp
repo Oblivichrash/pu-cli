@@ -43,7 +43,8 @@ ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_nam
 }
 
 ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message,
-                                                       const std::string& strategy) {
+                                                       const std::string& strategy,
+                                                       LLMProvider* provider) {
   MergeResult result;
   if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
     result.report.status = HandoffReceipt::Status::kFailed;
@@ -55,7 +56,7 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
   auto child = frame.context;
   auto parent = child->GetParent();
   if (!parent) {
-    result.report = PopDelegation();
+    result.report = PopDelegation(provider);
     result.message = "Popped delegation: " + result.report.summary;
     return result;
   }
@@ -65,7 +66,7 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
 
   if (strategy == "squash") {
     SummaryGenerator summary_gen(manager_);
-    auto summary = summary_gen.Generate(child, frame.assignment);
+    auto summary = summary_gen.Generate(child, frame.assignment, provider);
     merge_ctx = parent->Merge(child, message);
     // For squash, we just add summary messages instead of full history
     merge_ctx->Append("system", "[Squash Merge] " + message);
@@ -184,9 +185,10 @@ std::vector<Artifact> ForkMergeService::ExtractFacts(const std::shared_ptr<Works
 }
 
 HandoffReceipt ForkMergeService::GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
-                                                  const Assignment& delegation) {
+                                                  const Assignment& delegation,
+                                                  LLMProvider* provider) {
   SummaryGenerator summary_gen(manager_);
-  return summary_gen.Generate(child_ctx, delegation);
+  return summary_gen.Generate(child_ctx, delegation, provider);
 }
 
 void ForkMergeService::InjectSummaryIntoParent(const HandoffReceipt& report) {
@@ -203,7 +205,7 @@ void ForkMergeService::InjectSummaryIntoParent(const HandoffReceipt& report) {
   }
 }
 
-HandoffReceipt ForkMergeService::PopDelegation() {
+HandoffReceipt ForkMergeService::PopDelegation(LLMProvider* provider) {
   if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
     HandoffReceipt report;
     report.status = HandoffReceipt::Status::kFailed;
@@ -211,7 +213,7 @@ HandoffReceipt ForkMergeService::PopDelegation() {
     return report;
   }
   auto& frame = delegation_stack_->Current();
-  auto report = GenerateSummary(frame.context, frame.assignment);
+  auto report = GenerateSummary(frame.context, frame.assignment, provider);
   frame.assignment.result = report;
   delegation_stack_->Pop();
   return report;

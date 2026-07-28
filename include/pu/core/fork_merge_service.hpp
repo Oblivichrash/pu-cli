@@ -4,6 +4,7 @@
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
 #include "pu/agent/agent_manager.hpp"
+#include "pu/llm/llm_provider.hpp"
 
 #include <memory>
 #include <ostream>
@@ -41,7 +42,8 @@ class ForkMergeService {
 
   // Merge operations
   MergeResult Merge(const std::string& message,
-                    const std::string& strategy = "merge");
+                    const std::string& strategy = "merge",
+                    LLMProvider* provider = nullptr);
 
   // Tree operations
   void PrintTree(std::ostream& os) const;
@@ -58,13 +60,14 @@ class ForkMergeService {
 
   // Summary generation
   HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
-                                 const Assignment& delegation);
+                                 const Assignment& delegation,
+                                 LLMProvider* provider = nullptr);
 
   // Summary injection
   void InjectSummaryIntoParent(const HandoffReceipt& report);
 
   // Pop delegation
-  HandoffReceipt PopDelegation();
+  HandoffReceipt PopDelegation(LLMProvider* provider = nullptr);
 
   // Accessors
   std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }

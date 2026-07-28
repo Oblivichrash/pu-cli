@@ -12,7 +12,8 @@ SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
 HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
-                                          const Assignment& delegation) {
+                                          const Assignment& delegation,
+                                          LLMProvider* provider) {
   HandoffReceipt report;
   report.status = HandoffReceipt::Status::kCompleted;
   if (!child_ctx) {
@@ -21,16 +22,52 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
     return report;
   }
 
+  // Build the summary prompt
   std::string prompt = "Summarize the following conversation in 3-5 sentences. "
-                       "Focus on key findings and decisions. End with 'DONE'.\n\n";
+                       "Focus on key findings, decisions, and unresolved issues.\n\n---\n";
   auto history = child_ctx->GetHistory();
   for (const auto& msg : history) {
     prompt += msg.role + ": " + msg.content + "\n";
   }
+  prompt += "\n---\nSummary:\n";
 
-  // TODO: Phase 2 - Use new Executor with proper provider and toolbox
-  // For now, return a basic summary
-  report.summary = "Summary generation requires Executor with LLMProvider (Phase 2).";
+  if (provider) {
+    // Use the LLM provider to generate a real summary
+    std::string summary_text;
+    auto content_callback = [&summary_text](const std::string& chunk) {
+      summary_text += chunk;
+    };
+
+    try {
+      std::vector<ChatMessage> msg_history;
+      ChatMessage system_msg;
+      system_msg.role = "system";
+      system_msg.content = "You are a helpful assistant that summarizes conversations.";
+      msg_history.push_back(system_msg);
+
+      ChatMessage user_msg;
+      user_msg.role = "user";
+      user_msg.content = prompt;
+      msg_history.push_back(user_msg);
+
+      auto result = provider->Chat(msg_history, {}, content_callback, nullptr);
+
+      if (!summary_text.empty()) {
+        report.summary = summary_text;
+      } else if (!result.content.empty()) {
+        report.summary = result.content;
+      } else {
+        report.summary = "[Summary generation returned empty result]";
+      }
+    } catch (const std::exception& e) {
+      report.summary = "[Summary generation failed: " + std::string(e.what()) + "]";
+    }
+  } else {
+    // Fallback: basic summary when no provider is available
+    report.summary = "Summary generation requires an LLM provider. "
+                     "The conversation had " + std::to_string(history.size()) + " messages.";
+  }
+
   report.key_discoveries = child_ctx->GetArtifacts();
   return report;
 }

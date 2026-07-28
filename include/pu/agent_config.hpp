@@ -41,9 +41,17 @@ struct AgentEntry {
   SecurityPolicy security;
 };
 
+// B.4: Runtime limits configuration
+struct RuntimeLimits {
+  size_t max_history_messages = 10000;
+  size_t max_branches = 20;
+  size_t max_sessions = 10;
+};
+
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
+  RuntimeLimits limits;  // B.4: optional runtime limits
 };
 
 std::string FindConfigPath();

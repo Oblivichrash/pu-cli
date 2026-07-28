@@ -42,6 +42,12 @@ public:
   void SetMaxSessions(int n);
   void SetMaxDepth(int depth);
 
+  // B.2: Reload external tools
+  void ReloadTools();
+
+  // B.3: Override default agent name for startup
+  void SetDefaultAgent(const std::string& agent_name);
+
 private:
   Runtime() = default;
   ~Runtime() = default;
@@ -61,6 +67,9 @@ private:
   BackendConfig default_backend_config_;
   int max_sessions_ = 10;
   int max_depth_ = 5;
+
+  // B.3: default agent override (set via --agent flag)
+  std::string default_agent_override_;
 };
 
 } // namespace pu

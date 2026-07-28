@@ -7,6 +7,7 @@
 #include "pu/agent/agent_manager.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/assignment.hpp"
+#include "pu/llm/llm_provider.hpp"
 
 namespace pu {
 
@@ -15,7 +16,8 @@ class SummaryGenerator {
   explicit SummaryGenerator(AgentManager& manager);
 
   HandoffReceipt Generate(const std::shared_ptr<Workspace>& child_ctx,
-                         const Assignment& delegation);
+                         const Assignment& delegation,
+                         LLMProvider* provider = nullptr);
 
  private:
   AgentManager& manager_;

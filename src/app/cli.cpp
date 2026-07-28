@@ -98,6 +98,12 @@ int RunAsk(int argc, char* argv[]) {
   auto ctx = SetupAppContext(requested_agent);
   try {
     auto& runtime = Runtime::Instance();
+    
+    // B.3: Pass requested agent to runtime before initialization
+    if (!requested_agent.empty()) {
+      runtime.SetDefaultAgent(requested_agent);
+    }
+    
     runtime.Initialize();
     
     // Create a session and process the prompt
@@ -147,6 +153,12 @@ int RunChat(int argc, char* argv[]) {
   std::string current_name = manager.GetActiveAgent();
 
   auto& runtime = Runtime::Instance();
+  
+  // B.3: Pass initial agent to runtime before initialization
+  if (!initial_agent.empty()) {
+    runtime.SetDefaultAgent(initial_agent);
+  }
+  
   runtime.Initialize();
 
   // Get default session

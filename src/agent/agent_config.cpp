@@ -106,6 +106,21 @@ AgentEntry ParseAgentEntry(const json& j) {
   return entry;
 }
 
+// B.4: Parse runtime limits from config
+RuntimeLimits ParseRuntimeLimits(const json& j) {
+  RuntimeLimits limits;
+  if (j.contains("max_history_messages") && j["max_history_messages"].is_number()) {
+    limits.max_history_messages = j["max_history_messages"];
+  }
+  if (j.contains("max_branches") && j["max_branches"].is_number()) {
+    limits.max_branches = j["max_branches"];
+  }
+  if (j.contains("max_sessions") && j["max_sessions"].is_number()) {
+    limits.max_sessions = j["max_sessions"];
+  }
+  return limits;
+}
+
 }  // namespace
 
 std::string FindConfigPath() {
@@ -128,6 +143,11 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   }
   result.default_agent = j["default_agent"];
 
+  // B.4: Parse optional limits
+  if (j.contains("limits") && j["limits"].is_object()) {
+    result.limits = ParseRuntimeLimits(j["limits"]);
+  }
+
   if (!j.contains("agents") || !j["agents"].is_array()) {
     throw pu::Error("Missing agents array in config");
   }
@@ -146,6 +166,13 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
+
+  // B.4: Save limits
+  json limits;
+  limits["max_history_messages"] = cfg.limits.max_history_messages;
+  limits["max_branches"] = cfg.limits.max_branches;
+  limits["max_sessions"] = cfg.limits.max_sessions;
+  j["limits"] = limits;
 
   json agents_array = json::array();
   for (const auto& entry : cfg.agents) {

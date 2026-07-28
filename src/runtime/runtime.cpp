@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime/runtime.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/path_utils.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
@@ -163,7 +164,11 @@ std::shared_ptr<Session> Runtime::GetDefaultSession() {
 
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   auto owner = getenv("USER") ? getenv("USER") : "default";
-  auto id = CreateSession(owner);
+  // Use the override agent name if set (from --agent flag), otherwise use the active agent
+  std::string agent = default_agent_override_.empty()
+      ? agent_manager_->GetActiveAgent()
+      : default_agent_override_;
+  auto id = CreateSession(owner, agent);
   default_session_id_ = id;
   return GetSession(id);
 }
@@ -173,9 +178,9 @@ void Runtime::SetDefaultSessionId(const std::string& id) {
 }
 
 bool Runtime::ProcessInput(const std::string& session_id,
-                           const std::string& input,
-                           std::string& output,
-                           bool& is_command) {
+                            const std::string& input,
+                            std::string& output,
+                            bool& is_command) {
   if (!is_running_) {
     output = "Runtime is not running.";
     return false;
@@ -201,5 +206,18 @@ bool Runtime::ProcessInput(const std::string& session_id,
 
 void Runtime::SetMaxSessions(int n) { max_sessions_ = n; }
 void Runtime::SetMaxDepth(int depth) { max_depth_ = depth; }
+
+// B.2: Reload external tools
+void Runtime::ReloadTools() {
+  auto tools_dir = pu::path::GetDataDir() / "tools";
+  if (toolbox_) {
+    toolbox_->ReloadExternalTools(tools_dir.string());
+  }
+}
+
+// B.3: Override default agent name
+void Runtime::SetDefaultAgent(const std::string& agent_name) {
+  default_agent_override_ = agent_name;
+}
 
 } // namespace pu

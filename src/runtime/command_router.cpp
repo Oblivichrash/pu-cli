@@ -5,6 +5,7 @@
 #include "pu/core/fork_merge_service.hpp"
 #include "pu/storage/session_store.hpp"
 #include "pu/path_utils.hpp"
+#include "pu/runtime/runtime.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -219,24 +220,12 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
     oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
     output = oss.str();
   } else {
-    auto current = call_stack.CurrentContext();
-    if (!current) {
-      output = "Error: no active context to merge.";
-      return true;
-    }
+    // Squash merge - use LLM provider for summary
+    auto provider = session.CreateProvider();
+    auto result = fork_service->Merge("Squash merged", "squash", provider.get());
     std::ostringstream oss;
-    oss << "\xf0\x9f\x93\x8b Merge Strategy\n"
-        << "   Branch: " << current->GetBranchName() << "\n"
-        << "   History: " << current->HistorySize() << " messages, ~"
-        << current->GetTokenCount() << " tokens\n";
-    auto parent = current->GetParent();
-    oss << "   Parent: " << (parent ? parent->GetBranchName() : "root") << "\n\n"
-        << "   [s] Squash: Only summary (~50 tokens)\n"
-        << "   [f] Full: Keep all history (~" << current->GetTokenCount() << " tokens)\n"
-        << "   [c] Cancel: Discard this branch\n\n"
-        << "   Choose strategy: ";
+    oss << "\xf0\x9f\x91\x8d Merged (squash): " << result.report.summary;
     output = oss.str();
-    // Note: interactive strategy selection should be handled in cli layer
   }
   return true;
 }
@@ -516,7 +505,9 @@ bool CommandRouter::HandleClear(const std::vector<std::string>& args, Session& s
 }
 
 bool CommandRouter::HandleReloadTools(const std::vector<std::string>& args, Session& session, std::string& output) {
-  output = "Tool reload not yet implemented.";
+  Runtime::Instance().ReloadTools();
+  auto tools_dir = pu::path::GetDataDir() / "tools";
+  output = "Tools reloaded from " + tools_dir.string();
   return true;
 }
 
