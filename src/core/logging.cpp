@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/logging.hpp"
 
 #include <spdlog/spdlog.h>
@@ -26,21 +27,31 @@ void InitLogging(const std::string& log_level, bool trace_enabled) {
     }
 
     // 2. Create sinks
-    auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
-    console_sink->set_level(level);
+    std::vector<spdlog::sink_ptr> sinks;
 
-    // 3. File sink (rotating log, max 5MB, keep 3 files)
+    // Console sink (stderr) — optionally disabled via PU_LOG_CONSOLE=0
+    const char* console_env = std::getenv("PU_LOG_CONSOLE");
+    bool enable_console = true;
+    if (console_env && std::string(console_env) == "0") {
+        enable_console = false;
+    }
+    if (enable_console) {
+        auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+        console_sink->set_level(level);
+        sinks.push_back(console_sink);
+    }
+
+    // File sink (rotating log, max 5MB, keep 3 files) — always enabled
     std::filesystem::path log_dir = std::getenv("HOME")
         ? std::filesystem::path(std::getenv("HOME")) / ".pu" / "logs"
         : "/tmp/pu_logs";
     std::filesystem::create_directories(log_dir);
     auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);
+    file_sink->set_level(level);
+    sinks.push_back(file_sink);
 
-    // 4. Combine sinks
-    std::vector<spdlog::sink_ptr> sinks = {console_sink, file_sink};
-
-    // 5. Create async logger
+    // 3. Create async logger
     spdlog::init_thread_pool(8192, 1);
     auto logger = std::make_shared<spdlog::async_logger>(
         "pu", sinks.begin(), sinks.end(),
