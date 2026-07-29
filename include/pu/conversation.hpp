@@ -13,8 +13,10 @@ struct ChatMessage {
   std::string timestamp;
   std::string role;
   std::string content;
-  std::string tool_name;
-  std::string tool_calls_json;  // Serialized tool_calls for assistant messages
+  std::string tool_name;         // for tool messages: name of the tool, or tool_call_id?
+  std::string tool_calls_json;   // Serialized tool_calls for assistant messages
+  std::string reasoning_content; // for DeepSeek thinking mode
+  std::string tool_call_id;      // for tool messages: ID of the tool call
 };
 
 struct Conversation {

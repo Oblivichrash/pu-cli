@@ -9,16 +9,16 @@
 
 namespace pu {
 
-// ToolDefinition used across provider interfaces
 struct ToolDefinition {
   std::string name;
   std::string description;
-  std::string parameters_schema;  // JSON schema as string
+  std::string parameters_schema;
 };
 
 struct ToolCall {
+  std::string id;  // unique identifier for the tool call
   std::string name;
-  nlohmann::json arguments;  // unified as object
+  nlohmann::json arguments;
 };
 
 struct ChatResult {
@@ -26,6 +26,7 @@ struct ChatResult {
   std::vector<ToolCall> tool_calls;
   int input_tokens = 0;
   int output_tokens = 0;
+  std::string reasoning_content;
 };
 
 class LLMProvider {

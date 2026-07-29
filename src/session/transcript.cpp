@@ -47,7 +47,6 @@ void Transcript::Compact() {
 bool Transcript::HasPendingToolCalls() const {
   if (messages_.empty()) return false;
   const auto& last = messages_.back();
-  // Check if the last message is from assistant with non-empty tool_calls_json
   if (last.role == "assistant" && !last.tool_calls_json.empty()) {
     try {
       auto j = nlohmann::json::parse(last.tool_calls_json);
@@ -68,7 +67,9 @@ nlohmann::json Transcript::Serialize() const {
       {"role", msg.role},
       {"content", msg.content},
       {"tool_name", msg.tool_name},
-      {"tool_calls_json", msg.tool_calls_json}
+      {"tool_calls_json", msg.tool_calls_json},
+      {"reasoning_content", msg.reasoning_content},
+      {"tool_call_id", msg.tool_call_id}
     });
   }
   return arr;
@@ -85,10 +86,12 @@ Transcript Transcript::Deserialize(const nlohmann::json& j) {
       msg.content = item.value("content", "");
       msg.tool_name = item.value("tool_name", "");
       msg.tool_calls_json = item.value("tool_calls_json", "");
+      msg.reasoning_content = item.value("reasoning_content", "");
+      msg.tool_call_id = item.value("tool_call_id", "");
       t.messages_.push_back(msg);
     }
   }
   return t;
 }
 
-} // namespace pu
+}  // namespace pu

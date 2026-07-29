@@ -27,14 +27,34 @@ json BuildMessagesJson(const std::vector<ChatMessage>& history) {
     std::string role = msg.role;
     if (role == "tool_result") role = "tool";
 
-    json j{{"role", role}, {"content", msg.content}};
-    if (role == "tool") {
-      j["tool_call_id"] = msg.tool_name;
+    json j = {
+      {"role", role},
+      {"content", msg.content.empty() ? "" : msg.content}
+    };
+
+    if (role == "assistant") {
+      j["reasoning_content"] = msg.reasoning_content.empty() ? "" : msg.reasoning_content;
     }
+
+    if (role == "tool") {
+      j["tool_call_id"] = msg.tool_call_id;
+    }
+
     if (!msg.tool_calls_json.empty()) {
       try {
-        j["tool_calls"] = json::parse(msg.tool_calls_json);
-      } catch (const std::exception&) {}
+        auto tool_calls = json::parse(msg.tool_calls_json);
+        for (auto& tc : tool_calls) {
+          if (tc.contains("function") && tc["function"].contains("arguments")) {
+            auto& args = tc["function"]["arguments"];
+            if (args.is_object() || args.is_array()) {
+              args = args.dump();
+            }
+          }
+        }
+        j["tool_calls"] = tool_calls;
+      } catch (const std::exception&) {
+        // ignore
+      }
     }
     messages.push_back(j);
   }
@@ -50,6 +70,7 @@ OpenAIProvider::OpenAIProvider(const Config& config,
 
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
+  current_reasoning_content_.clear();
 }
 
 std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
@@ -105,14 +126,9 @@ std::string OpenAIProvider::BuildRequestWithTools(
 
     json function_obj = {
       {"name", tool.name},
-      {"description", tool.description}
+      {"description", tool.description},
+      {"parameters", params_json}
     };
-
-    if (config_.parameters_as_string) {
-      function_obj["parameters"] = params_json.dump();
-    } else {
-      function_obj["parameters"] = params_json;
-    }
 
     tools_json.push_back({{"type", "function"}, {"function", function_obj}});
   }
@@ -131,7 +147,10 @@ void OpenAIProvider::HandleJsonToken(const json& j,
     if (delta.is_object()) {
       auto content = SafeString(delta, "content");
       if (!content.empty() && content_cb) content_cb(content);
-      // Ignore reasoning_content and reasoning fields - reasoning content is not forwarded
+
+      if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+        current_reasoning_content_ += delta["reasoning_content"].get<std::string>();
+      }
 
       if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
         for (const auto& tc : delta["tool_calls"]) {
@@ -162,6 +181,7 @@ void OpenAIProvider::HandleJsonToken(const json& j,
   if (is_final) {
     for (auto& [idx, acc] : pending_tools_) {
       ToolCall call;
+      call.id = acc.id;
       call.name = acc.name;
       if (!acc.arguments.empty()) {
         try {
@@ -192,6 +212,8 @@ ChatResult OpenAIProvider::Chat(
     body = BuildRequestWithTools(history, tools);
   }
 
+  spdlog::debug("OpenAI request body: {}", body);
+
   std::string url = host_ + "/chat/completions";
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
@@ -217,7 +239,6 @@ ChatResult OpenAIProvider::Chat(
         auto j = json::parse(data);
         HandleJsonToken(j, content_callback, tool_callback);
 
-        // Collect content for result
         if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
           const auto& delta = j["choices"][0].value("delta", json::object());
           if (delta.is_object()) {
@@ -240,6 +261,7 @@ ChatResult OpenAIProvider::Chat(
 
   result.content = content_stream.str();
   result.tool_calls = std::move(collected_calls);
+  result.reasoning_content = current_reasoning_content_;
   return result;
 }
 

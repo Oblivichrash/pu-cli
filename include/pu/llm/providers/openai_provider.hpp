@@ -56,6 +56,7 @@ class OpenAIProvider : public LLMProvider {
   std::map<int, ToolCallAccumulator> pending_tools_;
 
   std::string current_trace_id_;
+  std::string current_reasoning_content_;
 };
 
 }  // namespace pu
