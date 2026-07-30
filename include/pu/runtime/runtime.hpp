@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 #include "pu/session/session.hpp"
 #include "pu/storage/session_store.hpp"
 #include "pu/agent/agent_manager.hpp"
@@ -11,6 +12,7 @@
 #include "pu/executor/executor.hpp"
 #include "pu/tools/toolbox.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/mcp/mcp_client.hpp"
 
 namespace pu {
 
@@ -70,6 +72,9 @@ private:
 
   // B.3: default agent override (set via --agent flag)
   std::string default_agent_override_;
+
+  // MCP clients (owned by runtime for lifetime management)
+  std::vector<std::unique_ptr<mcp::McpClient>> mcp_clients_;
 };
 
 } // namespace pu

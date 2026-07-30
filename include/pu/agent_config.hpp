@@ -8,6 +8,7 @@
 
 #include "pu/llm/llm_provider.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/mcp/mcp_types.hpp"
 
 namespace pu::config {
 
@@ -39,6 +40,7 @@ struct AgentEntry {
   BackendConfig backend;
   std::vector<std::string> tools;
   SecurityPolicy security;
+  std::vector<pu::mcp::McpServerConfig> mcp_servers;
 };
 
 // B.4: Runtime limits configuration

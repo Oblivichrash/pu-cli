@@ -8,7 +8,7 @@ find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
 
-# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, and LLM providers
+# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, LLM providers, and MCP
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
@@ -30,12 +30,15 @@ add_library(pu_core STATIC
     src/llm/providers/ollama_provider.cpp
     src/llm/providers/openai_provider.cpp
     src/llm/common/streaming_json_parser.cpp
+    src/mcp/stdio_transport.cpp
+    src/mcp/json_rpc_client.cpp
+    src/mcp/mcp_client.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::core ALIAS pu_core)
 
-# Agent library: Agent manager, executor, tools, toolbox
+# Agent library: Agent manager, executor, tools, toolbox, MCP tool
 add_library(pu_agent STATIC
     src/agent/agent_config.cpp
     src/agent/agent_manager.cpp
@@ -45,6 +48,7 @@ add_library(pu_agent STATIC
     src/tools/builtin_tools.cpp
     src/tools/fork_tools.cpp
     src/tools/python_tool.cpp
+    src/tools/mcp_tool.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp
 )

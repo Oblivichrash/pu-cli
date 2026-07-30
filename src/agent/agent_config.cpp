@@ -7,6 +7,7 @@
 #include "pu/llm/providers/openai_provider.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/mcp/mcp_types.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -86,6 +87,27 @@ BackendConfig ParseBackendConfig(const json& j) {
   return cfg;
 }
 
+std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
+  std::vector<pu::mcp::McpServerConfig> servers;
+  if (!j.is_array()) return servers;
+  for (const auto& item : j) {
+    pu::mcp::McpServerConfig srv;
+    srv.name = item.value("name", "");
+    srv.command = item.value("command", "");
+    if (item.contains("args") && item["args"].is_array()) {
+      for (const auto& a : item["args"]) {
+        if (a.is_string()) srv.args.push_back(a.get<std::string>());
+      }
+    }
+    if (!srv.name.empty() && !srv.command.empty()) {
+      servers.push_back(std::move(srv));
+    } else {
+      spdlog::warn("Skipping MCP server entry with missing name or command");
+    }
+  }
+  return servers;
+}
+
 AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
@@ -102,6 +124,11 @@ AgentEntry ParseAgentEntry(const json& j) {
   }
   if (j.contains("security") && j["security"].is_object()) {
     entry.security = ParseSecurityPolicy(j["security"]);
+  }
+
+  // Parse MCP servers
+  if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+    entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
   }
 
   return entry;
@@ -202,6 +229,20 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
       default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
+
+    // Save MCP servers
+    if (!entry.mcp_servers.empty()) {
+      json mcp_array = json::array();
+      for (const auto& srv : entry.mcp_servers) {
+        json srv_json;
+        srv_json["name"] = srv.name;
+        srv_json["command"] = srv.command;
+        srv_json["args"] = srv.args;
+        mcp_array.push_back(srv_json);
+      }
+      item["mcp_servers"] = mcp_array;
+    }
+
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;

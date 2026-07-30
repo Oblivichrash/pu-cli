@@ -6,6 +6,7 @@
 #include "pu/tools/write_file_tool.hpp"
 #include "pu/tools/create_tool.hpp"
 #include "pu/tools/fork_tools.hpp"
+#include "pu/tools/mcp_tool.hpp"
 #include "infra/curl_http_client.hpp"
 #include <stdexcept>
 #include "pu/core/logging.hpp"
@@ -76,6 +77,24 @@ void Runtime::Initialize(const std::string& config_path) {
   toolbox_->RegisterTool(std::make_unique<tools::ForkContextTool>());
   toolbox_->RegisterTool(std::make_unique<tools::MergeContextTool>());
   toolbox_->RegisterTool(std::make_unique<tools::ListForksTool>());
+
+  // Initialize MCP clients and register MCP tools
+  for (const auto& entry : agents_cfg.agents) {
+    for (const auto& mcp_cfg : entry.mcp_servers) {
+      auto client = std::make_unique<mcp::McpClient>(mcp_cfg);
+      if (client->Connect()) {
+        auto tools = client->ListTools();
+        for (const auto& t : tools) {
+          auto mcp_tool = std::make_unique<tools::McpTool>(client.get(), t);
+          toolbox_->RegisterTool(std::move(mcp_tool));
+          spdlog::debug("Registered MCP tool: mcp.{} from server {}", t.name, mcp_cfg.name);
+        }
+        mcp_clients_.push_back(std::move(client));
+      } else {
+        spdlog::warn("MCP server '{}' connection failed, skipping", mcp_cfg.name);
+      }
+    }
+  }
 
   auto metadata = session_store_->ListAllMetadata();
   if (!metadata.empty()) {
