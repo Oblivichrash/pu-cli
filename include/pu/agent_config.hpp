@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "pu/llm/llm_provider.hpp"
+#include "pu/http/http_client.hpp"
+#include "pu/mcp/mcp_types.hpp"
 
 namespace pu::config {
 
@@ -25,6 +30,8 @@ struct BackendConfig {
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
+  bool parameters_as_string = false;
+  int max_tokens = 2048;
 };
 
 struct AgentEntry {
@@ -33,15 +40,26 @@ struct AgentEntry {
   BackendConfig backend;
   std::vector<std::string> tools;
   SecurityPolicy security;
+  std::vector<pu::mcp::McpServerConfig> mcp_servers;
+};
+
+// B.4: Runtime limits configuration
+struct RuntimeLimits {
+  size_t max_history_messages = 10000;
+  size_t max_branches = 20;
+  size_t max_sessions = 10;
 };
 
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
+  RuntimeLimits limits;  // B.4: optional runtime limits
 };
 
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
+std::unique_ptr<pu::LLMProvider> CreateBackend(
+    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config

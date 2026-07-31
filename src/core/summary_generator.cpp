@@ -1,43 +1,77 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/summary_generator.hpp"
-#include "pu/executor.hpp"
+#include "pu/executor/executor.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/tools/toolbox.hpp"
 
 #include <sstream>
 
-namespace pu::core {
+namespace pu {
 
-SummaryGenerator::SummaryGenerator(agent::AgentManager& manager)
+SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
-SummaryReport SummaryGenerator::Generate(const std::shared_ptr<Context>& child_ctx,
-                                          const Delegation& delegation) {
-  SummaryReport report;
-  report.status = SummaryReport::Status::kCompleted;
+HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
+                                          const Assignment& delegation,
+                                          LLMProvider* provider) {
+  (void)delegation;  // 未使用，保留参数以兼容接口
+
+  HandoffReceipt report;
+  report.status = HandoffReceipt::Status::kCompleted;
   if (!child_ctx) {
-    report.status = SummaryReport::Status::kFailed;
+    report.status = HandoffReceipt::Status::kFailed;
     report.summary = "Child context missing";
     return report;
   }
 
+  // Build the summary prompt
   std::string prompt = "Summarize the following conversation in 3-5 sentences. "
-                       "Focus on key findings and decisions. End with 'DONE'.\n\n";
+                       "Focus on key findings, decisions, and unresolved issues.\n\n---\n";
   auto history = child_ctx->GetHistory();
   for (const auto& msg : history) {
     prompt += msg.role + ": " + msg.content + "\n";
   }
+  prompt += "\n---\nSummary:\n";
 
-  agent::AgentExecutor executor(manager_);
-  auto ctx = executor.PrepareContext(delegation.agent_name, child_ctx);
-  std::string summary_text = executor.Execute(delegation.agent_name, prompt, ctx);
+  if (provider) {
+    // Use the LLM provider to generate a real summary
+    std::string summary_text;
+    auto content_callback = [&summary_text](const std::string& chunk) {
+      summary_text += chunk;
+    };
 
-  size_t done_pos = summary_text.find("DONE");
-  if (done_pos != std::string::npos) {
-    summary_text = summary_text.substr(0, done_pos);
+    try {
+      std::vector<ChatMessage> msg_history;
+      ChatMessage system_msg;
+      system_msg.role = "system";
+      system_msg.content = "You are a helpful assistant that summarizes conversations.";
+      msg_history.push_back(system_msg);
+
+      ChatMessage user_msg;
+      user_msg.role = "user";
+      user_msg.content = prompt;
+      msg_history.push_back(user_msg);
+
+      auto result = provider->Chat(msg_history, {}, content_callback, nullptr);
+
+      if (!summary_text.empty()) {
+        report.summary = summary_text;
+      } else if (!result.content.empty()) {
+        report.summary = result.content;
+      } else {
+        report.summary = "[Summary generation returned empty result]";
+      }
+    } catch (const std::exception& e) {
+      report.summary = "[Summary generation failed: " + std::string(e.what()) + "]";
+    }
+  } else {
+    // Fallback: basic summary when no provider is available
+    report.summary = "Summary generation requires an LLM provider. "
+                     "The conversation had " + std::to_string(history.size()) + " messages.";
   }
 
-  report.summary = summary_text;
-  report.key_discoveries = child_ctx->GetFacts();
+  report.key_discoveries = child_ctx->GetArtifacts();
   return report;
 }
 
-}  // namespace pu::core
+}  // namespace pu

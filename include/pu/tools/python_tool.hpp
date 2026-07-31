@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/agent_core.hpp"
+#include "pu/tools/tool.hpp"
 
 #include <string>
 
 namespace pu::tools {
 
-class PythonTool : public agent::Tool {
+class PythonTool : public pu::Tool {
  public:
   explicit PythonTool(const std::string& file_path);
   std::string Name() const override;
   std::string Description() const override;
   std::string ParametersSchema() const override;
-  std::string Execute(const nlohmann::json& args, agent::ToolContext& ctx) override;
+  std::string Execute(const nlohmann::json& args, pu::ToolContext& ctx) override;
 
  private:
   void Parse(const std::string& content);

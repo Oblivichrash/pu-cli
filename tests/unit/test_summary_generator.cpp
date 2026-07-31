@@ -1,60 +1,73 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/summary_generator.hpp"
-#include "pu/core/context.hpp"
-#include "pu/core/delegation.hpp"
-#include "pu/agent_core.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/assignment.hpp"
+#include "pu/agent/agent_manager.hpp"
 
-using namespace pu::core;
+using namespace pu;
 
 // Mock AgentManager - minimal implementation for testing
 namespace {
 
-class TestAgentManager : public pu::agent::AgentManager {
+class TestAgentManager : public pu::AgentManager {
  public:
-  TestAgentManager() : pu::agent::AgentManager() {}
+  TestAgentManager() : pu::AgentManager() {}
 };
 
 }  // namespace
 
-TEST_CASE("SummaryGenerator returns failed report for null context", "[summary_generator]") {
+TEST_CASE("SummaryGenerator returns failed report for null workspace", "[summary_generator]") {
   TestAgentManager manager;
   SummaryGenerator generator(manager);
 
-  Delegation delegation("test goal", "test-agent", {}, 0);
+  Assignment delegation;
+  delegation.goal = "test goal";
+  delegation.agent_name = "test-agent";
   auto report = generator.Generate(nullptr, delegation);
 
-  REQUIRE(report.status == SummaryReport::Status::kFailed);
+  REQUIRE(report.status == HandoffReceipt::kFailed);
   REQUIRE(report.summary == "Child context missing");
 }
 
-TEST_CASE("SummaryGenerator handles empty context", "[summary_generator]") {
-  auto ctx = std::make_shared<Context>("test");
+TEST_CASE("SummaryGenerator returns completed report for valid workspace", "[summary_generator]") {
   TestAgentManager manager;
   SummaryGenerator generator(manager);
 
-  Delegation delegation("test goal", "test-agent", {}, 0);
-  auto report = generator.Generate(ctx, delegation);
+  auto child_ctx = std::make_shared<Workspace>("test-ctx");
+  child_ctx->Append("user", "Hello");
+  child_ctx->Append("assistant", "Hi there!");
 
-  // With no LLM backend available, the summary generation will fail
-  // But the function should not crash and return a report
-  bool is_valid = (report.status == SummaryReport::Status::kCompleted) ||
-                  (report.status == SummaryReport::Status::kFailed);
-  REQUIRE(is_valid);
+  Assignment delegation;
+  delegation.goal = "test goal";
+  delegation.agent_name = "test-agent";
+  auto report = generator.Generate(child_ctx, delegation);
+
+  REQUIRE(report.status == HandoffReceipt::kCompleted);
+  REQUIRE_FALSE(report.summary.empty());
 }
 
-TEST_CASE("SummaryGenerator produces report with facts from context", "[summary_generator]") {
-  auto ctx = std::make_shared<Context>("test");
-  ctx->Append("user", "Initial question");
-  ctx->AddFact(Fact(Fact::Type::kFilePath, "/tmp/test.txt", "user"));
-
+TEST_CASE("SummaryGenerator extracts artifacts from workspace", "[summary_generator]") {
   TestAgentManager manager;
   SummaryGenerator generator(manager);
 
-  Delegation delegation("test goal", "test-agent", {}, 0);
-  auto report = generator.Generate(ctx, delegation);
+  auto child_ctx = std::make_shared<Workspace>("test-ctx");
+  child_ctx->Append("user", "Create a file");
+  child_ctx->Append("assistant", "Created file.txt");
+  
+  Artifact artifact;
+  artifact.type = Artifact::Type::kFilePath;
+  artifact.content = "/tmp/file.txt";
+  artifact.source = "assistant";
+  child_ctx->AddArtifact(artifact);
 
-  // Facts from context should be passed through
+  Assignment delegation;
+  delegation.goal = "create file";
+  delegation.agent_name = "test-agent";
+  auto report = generator.Generate(child_ctx, delegation);
+
+  REQUIRE(report.status == HandoffReceipt::kCompleted);
   REQUIRE(report.key_discoveries.size() == 1);
-  REQUIRE(report.key_discoveries[0].content == "/tmp/test.txt");
+  REQUIRE(report.key_discoveries[0].type == Artifact::Type::kFilePath);
+  REQUIRE(report.key_discoveries[0].content == "/tmp/file.txt");
 }

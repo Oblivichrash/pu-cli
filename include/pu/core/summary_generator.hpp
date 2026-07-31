@@ -4,21 +4,23 @@
 #include <memory>
 #include <string>
 
-#include "pu/agent_core.hpp"
-#include "pu/core/context.hpp"
-#include "pu/core/delegation.hpp"
+#include "pu/agent/agent_manager.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/assignment.hpp"
+#include "pu/llm/llm_provider.hpp"
 
-namespace pu::core {
+namespace pu {
 
 class SummaryGenerator {
  public:
-  explicit SummaryGenerator(agent::AgentManager& manager);
+  explicit SummaryGenerator(AgentManager& manager);
 
-  SummaryReport Generate(const std::shared_ptr<Context>& child_ctx,
-                         const Delegation& delegation);
+  HandoffReceipt Generate(const std::shared_ptr<Workspace>& child_ctx,
+                         const Assignment& delegation,
+                         LLMProvider* provider = nullptr);
 
  private:
-  agent::AgentManager& manager_;
+  AgentManager& manager_;
 };
 
-}  // namespace pu::core
+}  // namespace pu

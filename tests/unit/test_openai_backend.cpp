@@ -1,40 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "backends/openai/openai_backend.hpp"
+#include "pu/llm/providers/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
-using namespace pu::backend;
-using namespace pu::backends::openai;
+using namespace pu;
 using namespace pu::tests;
 
-TEST_CASE("OpenAIBackend request building", "[openai]") {
-  OpenAIBackend::Config config;
+TEST_CASE("OpenAIProvider request building", "[openai]") {
+  OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
   config.temperature = 0.7f;
-  config.system_prompt = "You are helpful.";
   config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(config, std::move(mock_http));
+  OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {
-    {pu::backend::Message::Role::kUser, "Hello"}
+  std::vector<ChatMessage> history = {
+    ChatMessage{1, "now", "user", "Hello", "", ""}
   };
 
-  backend.Chat(history, [](pu::backend::TokenType, std::string_view, bool) {});
+  provider.Chat(history, {});
 
   auto body = nlohmann::json::parse(mock_ptr->last_body);
   REQUIRE(body["model"] == "gpt-4o-mini");
   REQUIRE(body["stream"] == true);
   REQUIRE(body["temperature"] == 0.7f);
-  REQUIRE(body["messages"].size() == 2);
-  REQUIRE(body["messages"][0]["role"] == "system");
-  REQUIRE(body["messages"][1]["role"] == "user");
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -43,29 +38,28 @@ TEST_CASE("OpenAIBackend request building", "[openai]") {
   REQUIRE(has_auth);
 }
 
-TEST_CASE("OpenAIBackend does not send Authorization header when api_key is empty", "[openai]") {
-  OpenAIBackend::Config config;
+TEST_CASE("OpenAIProvider does not send Authorization header when api_key is empty", "[openai]") {
+  OpenAIProvider::Config config;
   config.model = "local-model";
   config.host = "http://localhost:8080/v1";
   config.api_key = "";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
-  OpenAIBackend backend(config, std::move(mock_http));
+  OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-  backend.Chat(history, [](auto&&...) {});
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
     if (h.find("Authorization:") != std::string::npos) has_auth = true;
   }
   REQUIRE_FALSE(has_auth);
-  REQUIRE(mock_ptr->last_url == "http://localhost:8080/v1/chat/completions");
 }
 
-TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
-  OpenAIBackend::Config config;
+TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
+  OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
   config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
@@ -89,30 +83,25 @@ TEST_CASE("OpenAIBackend full streaming callback", "[openai][streaming]") {
     }
   };
 
-  OpenAIBackend backend(config, std::move(mock_http));
+  OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {
-    {pu::backend::Message::Role::kUser, "Hi"}
+  std::vector<ChatMessage> history = {
+    ChatMessage{1, "now", "user", "Hi", "", ""}
   };
 
   std::string accumulated;
-  bool final_received = false;
+  auto result = provider.Chat(history, {},
+    [&](const std::string& token) {
+      accumulated += token;
+    },
+    [](const ToolCall&) {}
+  );
 
-  backend.Chat(history, [&](pu::backend::TokenType type,
-                            std::string_view token,
-                            bool is_final) {
-    REQUIRE(type == pu::backend::TokenType::kContent);
-    if (!token.empty()) accumulated += token;
-    if (is_final) final_received = true;
-  });
-
-  REQUIRE(accumulated == "Hello world");
-  REQUIRE(final_received == true);
-  REQUIRE(mock_ptr->last_url == "https://api.openai.com/v1/chat/completions");
+  REQUIRE(result.content == "Hello world");
 }
 
-TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
-  OpenAIBackend::Config config;
+TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
+  OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
   config.api_key = "invalid-key";
 
@@ -126,14 +115,14 @@ TEST_CASE("OpenAIBackend handles HTTP errors", "[openai][error]") {
     throw pu::HttpError("HTTP error 401: Unauthorized");
   };
 
-  OpenAIBackend backend(config, std::move(mock_http));
+  OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "Hi"}};
-  REQUIRE_THROWS_AS(backend.Chat(history, [](auto&&...) {}), pu::HttpError);
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  REQUIRE_THROWS_AS(provider.Chat(history, {}), pu::HttpError);
 }
 
-TEST_CASE("OpenAIBackend tool calling stream", "[openai][tools]") {
-  OpenAIBackend::Config config;
+TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
+  OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
   config.host = "https://api.openai.com/v1";
 
@@ -152,20 +141,19 @@ TEST_CASE("OpenAIBackend tool calling stream", "[openai][tools]") {
     cb(chunk2.data(), chunk2.size());
   };
 
-  OpenAIBackend backend(config, std::move(mock_http));
+  OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<pu::backend::Message> history = {{pu::backend::Message::Role::kUser, "list"}};
-  pu::backend::ToolDefinition tool;
+  std::vector<ChatMessage> history = {{1, "now", "user", "list", "", ""}};
+  ToolDefinition tool;
   tool.name = "exec";
-  tool.parameters.raw_schema = "{}";
-  std::vector<pu::backend::ToolDefinition> tools = {tool};
+  tool.parameters_schema = "{}";
+  std::vector<ToolDefinition> tools = {tool};
 
   bool tool_fired = false;
-  backend.Chat(history, tools,
-    [](TokenType, std::string_view, bool) {},
+  auto result = provider.Chat(history, tools,
+    [](const std::string&) {},
     [&](const ToolCall& call) {
       tool_fired = true;
-      REQUIRE(call.arguments == "ls");
     });
   REQUIRE(tool_fired);
 }

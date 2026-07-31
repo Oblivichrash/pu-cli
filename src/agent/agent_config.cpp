@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_core.hpp"
+#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_config.hpp"
 
 #include "pu/error.hpp"
-#include "backends/ollama/ollama_backend.hpp"
-#include "backends/openai/openai_backend.hpp"
-#include "pu/backend.hpp"
+#include "pu/llm/providers/ollama_provider.hpp"
+#include "pu/llm/providers/openai_provider.hpp"
+#include "pu/llm/llm_provider.hpp"
 #include "pu/http/http_client.hpp"
+#include "pu/mcp/mcp_types.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -16,7 +19,7 @@
 #include <regex>
 #include <stdexcept>
 
-namespace pu::agent::config {
+namespace pu::config {
 
 using json = nlohmann::json;
 
@@ -29,7 +32,7 @@ std::string ExpandEnvVars(const std::string& input) {
   while (std::regex_search(result, match, env_re)) {
     const char* env_val = std::getenv(match[1].str().c_str());
     std::string replacement = env_val ? env_val : "";
-    if (!env_val) std::cerr << "[WARN] Environment variable not set: " << match[1].str() << '\n';
+    if (!env_val) spdlog::warn("Environment variable not set: {}", match[1].str());
     result.replace(match.position(0), match.length(0), replacement);
   }
   return result;
@@ -84,6 +87,27 @@ BackendConfig ParseBackendConfig(const json& j) {
   return cfg;
 }
 
+std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
+  std::vector<pu::mcp::McpServerConfig> servers;
+  if (!j.is_array()) return servers;
+  for (const auto& item : j) {
+    pu::mcp::McpServerConfig srv;
+    srv.name = item.value("name", "");
+    srv.command = item.value("command", "");
+    if (item.contains("args") && item["args"].is_array()) {
+      for (const auto& a : item["args"]) {
+        if (a.is_string()) srv.args.push_back(a.get<std::string>());
+      }
+    }
+    if (!srv.name.empty() && !srv.command.empty()) {
+      servers.push_back(std::move(srv));
+    } else {
+      spdlog::warn("Skipping MCP server entry with missing name or command");
+    }
+  }
+  return servers;
+}
+
 AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
@@ -102,7 +126,27 @@ AgentEntry ParseAgentEntry(const json& j) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
 
+  // Parse MCP servers
+  if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+    entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
+  }
+
   return entry;
+}
+
+// B.4: Parse runtime limits from config
+RuntimeLimits ParseRuntimeLimits(const json& j) {
+  RuntimeLimits limits;
+  if (j.contains("max_history_messages") && j["max_history_messages"].is_number()) {
+    limits.max_history_messages = j["max_history_messages"];
+  }
+  if (j.contains("max_branches") && j["max_branches"].is_number()) {
+    limits.max_branches = j["max_branches"];
+  }
+  if (j.contains("max_sessions") && j["max_sessions"].is_number()) {
+    limits.max_sessions = j["max_sessions"];
+  }
+  return limits;
 }
 
 }  // namespace
@@ -127,6 +171,11 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   }
   result.default_agent = j["default_agent"];
 
+  // B.4: Parse optional limits
+  if (j.contains("limits") && j["limits"].is_object()) {
+    result.limits = ParseRuntimeLimits(j["limits"]);
+  }
+
   if (!j.contains("agents") || !j["agents"].is_array()) {
     throw pu::Error("Missing agents array in config");
   }
@@ -145,6 +194,13 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
+
+  // B.4: Save limits
+  json limits;
+  limits["max_history_messages"] = cfg.limits.max_history_messages;
+  limits["max_branches"] = cfg.limits.max_branches;
+  limits["max_sessions"] = cfg.limits.max_sessions;
+  j["limits"] = limits;
 
   json agents_array = json::array();
   for (const auto& entry : cfg.agents) {
@@ -173,6 +229,20 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
       default: backend["tool_call_style"] = "default";
     }
     item["backend"] = backend;
+
+    // Save MCP servers
+    if (!entry.mcp_servers.empty()) {
+      json mcp_array = json::array();
+      for (const auto& srv : entry.mcp_servers) {
+        json srv_json;
+        srv_json["name"] = srv.name;
+        srv_json["command"] = srv.command;
+        srv_json["args"] = srv.args;
+        mcp_array.push_back(srv_json);
+      }
+      item["mcp_servers"] = mcp_array;
+    }
+
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;
@@ -182,22 +252,22 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   file << j.dump(2);
 }
 
-std::unique_ptr<pu::backend::Backend> CreateBackend(
+std::unique_ptr<pu::LLMProvider> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
-      pu::backends::ollama::OllamaBackend::Config ollama_cfg;
+      OllamaProvider::Config ollama_cfg;
       ollama_cfg.model = cfg.model;
       ollama_cfg.temperature = cfg.temperature;
       ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       ollama_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<pu::backends::ollama::OllamaBackend>(
+      return std::make_unique<OllamaProvider>(
           std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
-      pu::backends::openai::OpenAIBackend::Config openai_cfg;
+      OpenAIProvider::Config openai_cfg;
       openai_cfg.model = cfg.model;
       openai_cfg.temperature = cfg.temperature;
       openai_cfg.system_prompt = cfg.system_prompt;
@@ -205,7 +275,7 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
       openai_cfg.api_key = cfg.api_key.value_or("");
       openai_cfg.parameters_as_string = cfg.parameters_as_string;
       openai_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<pu::backends::openai::OpenAIBackend>(
+      return std::make_unique<OpenAIProvider>(
           openai_cfg, std::move(http));
     }
     default:
@@ -213,4 +283,4 @@ std::unique_ptr<pu::backend::Backend> CreateBackend(
   }
 }
 
-}  // namespace pu::agent::config
+}  // namespace pu::config

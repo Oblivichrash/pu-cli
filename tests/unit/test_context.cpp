@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include "pu/core/context.hpp"
-#include "pu/core/fact.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/session/artifact.hpp"
 #include <nlohmann/json.hpp>
 
-using namespace pu::core;
+using namespace pu;
 
-TEST_CASE("Context basic operations", "[context]") {
-  Context ctx("test");
+TEST_CASE("Workspace basic operations", "[context]") {
+  Workspace ctx("test");
   ctx.Append("user", "Hello");
   ctx.Append("assistant", "Hi there!");
 
@@ -22,12 +22,12 @@ TEST_CASE("Context basic operations", "[context]") {
   REQUIRE(val->get<std::string>() == "bar");
 }
 
-TEST_CASE("Fact operations", "[context]") {
-  Context ctx;
-  Fact f(Fact::Type::kFilePath, "/tmp/data.csv", "user_input");
-  ctx.AddFact(f);
-  REQUIRE(ctx.GetFacts().size() == 1);
-
-  auto paths = ctx.GetFactsByType(Fact::Type::kFilePath);
-  REQUIRE(paths.size() == 1);
+TEST_CASE("Artifact operations", "[context]") {
+  Workspace ctx;
+  Artifact f;
+  f.type = Artifact::Type::kFilePath;
+  f.content = "/tmp/data.csv";
+  f.source = "user_input";
+  ctx.AddArtifact(f);
+  REQUIRE(ctx.GetArtifacts().size() == 1);
 }

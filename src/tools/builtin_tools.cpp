@@ -38,7 +38,7 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
   })##";
 }
 
-std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   (void)ctx;
   std::string command = args.value("command", "");
   if (command.empty()) {
@@ -92,7 +92,7 @@ std::string WriteFileTool::ParametersSchema() const {
   })##";
 }
 
-std::string WriteFileTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string path = args.value("path", "");
   std::string content = args.value("content", "");
   if (path.empty()) return "Error: 'path' is required";
@@ -162,7 +162,7 @@ std::string CreateTool::ParametersSchema() const {
   })JSON";
 }
 
-std::string CreateTool::Execute(const nlohmann::json& args, agent::ToolContext& ctx) {
+std::string CreateTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   (void)ctx;
   std::string name = args.value("name", "");
   std::string description = args.value("description", "");

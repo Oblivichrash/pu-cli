@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "backends/common/streaming_json_parser.hpp"
+#include "pu/llm/common/streaming_json_parser.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 #include <string>
 
-using namespace pu::backends;
+using namespace pu::llm;
 
 TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
   std::vector<std::string> lines;
@@ -15,7 +15,7 @@ TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
   );
 
   const char* input = "line1\nline2\nline3\n";
-  parser.Feed(input, 18);   // 18 bytes (was 17)
+  parser.Feed(input, 18);
   REQUIRE(lines.size() == 3);
   REQUIRE(lines[0] == "line1");
   REQUIRE(lines[1] == "line2");
@@ -42,11 +42,11 @@ TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") 
     [](const std::string&) {}
   );
 
-  const char* part1 = "{\"val\":\"\xE2\x82";   // 10 bytes (was called with 8)
-  const char* part2 = "\xAC\"}\n";              // 5 bytes
+  const char* part1 = "{\"val\":\"\xE2\x82";
+  const char* part2 = "\xAC\"}\n";
 
   parser.Feed(part1, 10);
-  REQUIRE(lines.empty());  // still incomplete
+  REQUIRE(lines.empty());
 
   parser.Feed(part2, 5);
   REQUIRE(lines.size() == 1);

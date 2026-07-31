@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/backend.hpp"
+#include <functional>
+#include <string_view>
 
 namespace pu {
 
@@ -11,11 +12,12 @@ void ClearInterruptFlag();
 
 class StreamingRenderer {
  public:
-  static backend::ChatCallback Create(bool show_reasoning = false);
+  using ContentCallback = std::function<void(std::string_view, bool)>;
+
+  static ContentCallback Create();
 
  private:
-  static void OnToken(backend::TokenType type, std::string_view token, bool is_final,
-                      bool show_reasoning, bool& first_reasoning);
+  static void OnToken(std::string_view token, bool is_final);
 };
 
 }  // namespace pu

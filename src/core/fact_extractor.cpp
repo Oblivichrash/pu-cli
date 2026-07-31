@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <regex>
 
-namespace pu::core {
+namespace pu {
 
-FactList FactExtractor::Extract(const std::shared_ptr<Context>& ctx,
+std::vector<Artifact> FactExtractor::Extract(const std::shared_ptr<Workspace>& ctx,
                                 const std::string& goal) {
-  FactList facts;
+  std::vector<Artifact> facts;
   if (!ctx) return facts;
   (void)goal;
 
@@ -18,21 +18,29 @@ FactList FactExtractor::Extract(const std::shared_ptr<Context>& ctx,
     static std::regex file_re(R"((/[^\s]+\.\w+)|([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+))");
     std::smatch match;
     if (std::regex_search(text, match, file_re)) {
-      facts.emplace_back(Fact::Type::kFilePath, match.str(), msg.role);
+      Artifact a;
+      a.type = Artifact::Type::kFilePath;
+      a.content = match.str();
+      a.source = msg.role;
+      facts.push_back(a);
     }
     if (text.find("error") != std::string::npos ||
         text.find("fail") != std::string::npos) {
-      facts.emplace_back(Fact::Type::kErrorMsg, text.substr(0, 200), msg.role);
+      Artifact a;
+      a.type = Artifact::Type::kErrorMsg;
+      a.content = text.substr(0, 200);
+      a.source = msg.role;
+      facts.push_back(a);
     }
   }
 
   std::sort(facts.begin(), facts.end(),
-            [](const Fact& a, const Fact& b) { return a.content < b.content; });
+            [](const Artifact& a, const Artifact& b) { return a.content < b.content; });
   facts.erase(std::unique(facts.begin(), facts.end(),
-                          [](const Fact& a, const Fact& b) {
+                          [](const Artifact& a, const Artifact& b) {
                             return a.content == b.content;
                           }), facts.end());
   return facts;
 }
 
-}  // namespace pu::core
+}  // namespace pu

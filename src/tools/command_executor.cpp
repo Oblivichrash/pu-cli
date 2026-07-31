@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "tools/command_executor.hpp"
 
-#include "infra/platform.hpp"
+#include "pu/infra/platform.hpp"
 
 #include <algorithm>
 #include <regex>
 
+#ifdef _WIN32
+#  include <direct.h>  // for _chdir
+#  define chdir _chdir
+#else
+#  include <unistd.h>  // for chdir
+#endif
+
 namespace pu::executor {
 
 const std::vector<std::string> CommandExecutor::dangerous_patterns_ = {
-    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)" };
+    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\()\{ :\|:&\};:)" };
 
 const std::vector<std::string> CommandExecutor::safe_commands_ = {
     "ls", "pwd", "cat", "head", "tail", "less", "more",
@@ -58,9 +65,18 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
     result.exit_code = -1;
     return result;
   }
-  std::string full_command = sandbox_path_.empty() ? command : "cd " + sandbox_path_ + " && " + command;
+
+  // Switch to sandbox directory if specified
+  if (!sandbox_path_.empty()) {
+    if (chdir(sandbox_path_.c_str()) != 0) {
+      result.exit_code = -1;
+      result.stderr_content = "Failed to chdir to sandbox: " + sandbox_path_;
+      return result;
+    }
+  }
+
   std::string output;
-  int exit_code = pu::platform::ExecuteCommand(full_command, output);
+  int exit_code = pu::platform::ExecuteCommandSafe(command, output);
   result.exit_code = exit_code;
   result.stdout_content = output;
   if (exit_code != 0) result.stderr_content = output;

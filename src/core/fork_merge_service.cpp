@@ -2,8 +2,7 @@
 #include "pu/core/fork_merge_service.hpp"
 #include "pu/core/fact_extractor.hpp"
 #include "pu/core/summary_generator.hpp"
-#include "pu/agent_core.hpp"
-#include "pu/executor.hpp"
+#include "pu/agent/agent_manager.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -11,22 +10,21 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace pu::core {
+namespace pu {
 
-ForkMergeService::ForkMergeService(agent::AgentManager& manager,
-                                    std::shared_ptr<DelegationStack> delegation_stack,
-                                    std::shared_ptr<Context> root_context)
+ForkMergeService::ForkMergeService(AgentManager& manager,
+                                    std::shared_ptr<Workspace> root_context)
     : manager_(manager),
-      delegation_stack_(std::move(delegation_stack)),
       root_context_(std::move(root_context)) {}
 
-ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_name,
+ForkMergeService::ForkResult ForkMergeService::Fork(CallStack& stack,
+                                                     const std::string& agent_name,
                                                      const std::string& goal,
                                                      const std::string& branch_name) {
   ForkResult result;
-  std::shared_ptr<Context> parent;
-  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
-    parent = delegation_stack_->CurrentContext();
+  std::shared_ptr<Workspace> parent;
+  if (!stack.IsEmpty()) {
+    parent = stack.CurrentContext();
   } else {
     parent = root_context_;
   }
@@ -43,37 +41,38 @@ ForkMergeService::ForkResult ForkMergeService::Fork(const std::string& agent_nam
   return result;
 }
 
-ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message,
-                                                       const std::string& strategy) {
+ForkMergeService::MergeResult ForkMergeService::Merge(CallStack& stack,
+                                                       const std::string& message,
+                                                       const std::string& strategy,
+                                                       LLMProvider* provider) {
   MergeResult result;
-  if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
-    result.report.status = SummaryReport::Status::kFailed;
+  if (stack.IsEmpty()) {
+    result.report.status = HandoffReceipt::Status::kFailed;
     result.report.summary = "No active delegation to merge";
     result.message = "Error: No active delegation to merge";
     return result;
   }
-  auto& frame = delegation_stack_->Current();
+  auto& frame = stack.Current();
   auto child = frame.context;
   auto parent = child->GetParent();
   if (!parent) {
-    result.report = PopDelegation();
+    result.report = PopDelegation(stack, provider);
     result.message = "Popped delegation: " + result.report.summary;
     return result;
   }
 
-  std::shared_ptr<Context> merge_ctx;
-  result.report.status = SummaryReport::Status::kCompleted;
+  std::shared_ptr<Workspace> merge_ctx;
+  result.report.status = HandoffReceipt::Status::kCompleted;
 
   if (strategy == "squash") {
     SummaryGenerator summary_gen(manager_);
-    auto summary = summary_gen.Generate(child, frame.delegation);
+    auto summary = summary_gen.Generate(child, frame.assignment, provider);
     merge_ctx = parent->Merge(child, message);
-    merge_ctx->ClearHistory();
     merge_ctx->Append("system", "[Squash Merge] " + message);
     merge_ctx->Append("system", "Summary: " + summary.summary);
-    merge_ctx->AddFacts(child->GetFacts());
-    for (const auto& [key, val] : child->GetAllVars()) {
-      merge_ctx->SetVar(key, val);
+    auto child_artifacts = child->GetArtifacts();
+    for (const auto& a : child_artifacts) {
+      merge_ctx->AddArtifact(a);
     }
     result.report.summary = "[Squash] " + summary.summary;
   } else {
@@ -81,14 +80,14 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::string& message
     result.report.summary = message;
   }
 
-  result.report.key_discoveries = child->GetFacts();
+  result.report.key_discoveries = child->GetArtifacts();
   result.merge_context = merge_ctx;
-  delegation_stack_->Pop();
+  stack.Pop();
 
-  if (!delegation_stack_->IsEmpty()) {
-    delegation_stack_->Current().context = merge_ctx;
+  if (!stack.IsEmpty()) {
+    stack.Current().context = merge_ctx;
   }
-  if (delegation_stack_->IsEmpty()) {
+  if (stack.IsEmpty()) {
     root_context_ = merge_ctx;
   }
 
@@ -100,21 +99,21 @@ void ForkMergeService::PrintTree(std::ostream& os) const {
   PrintTree(os, root_context_);
 }
 
-void ForkMergeService::PrintTree(std::ostream& os, const std::shared_ptr<Context>& root) const {
+void ForkMergeService::PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const {
   if (!root) {
     os << "No root context available.\n";
     return;
   }
 
   os << "=== Fork Tree ===\n";
-  std::function<void(const std::shared_ptr<Context>&, int, bool)> print_node;
-  print_node = [&](const std::shared_ptr<Context>& ctx, int depth, bool is_last) {
+  std::function<void(const std::shared_ptr<Workspace>&, int, bool)> print_node;
+  print_node = [&](const std::shared_ptr<Workspace>& ctx, int depth, bool is_last) {
     std::string icon;
     if (ctx == root) {
       icon = "\xf0\x9f\x8c\xbf";  // 🌿
-    } else if (ctx->GetState() == Context::State::kMerged) {
+    } else if (ctx->GetState() == Workspace::State::kMerged) {
       icon = "\xe2\x9c\x85";  // ✅
-    } else if (ctx->GetState() == Context::State::kActive) {
+    } else if (ctx->GetState() == Workspace::State::kActive) {
       icon = "\xf0\x9f\x8c\xb1";  // 🌱
     } else {
       icon = "\xf0\x9f\x9a\xab";  // 🚫
@@ -130,7 +129,7 @@ void ForkMergeService::PrintTree(std::ostream& os, const std::shared_ptr<Context
 
     os << indent << icon << " " << ctx->GetBranchName()
        << " (" << ctx->HistorySize() << " msgs, ~" << ctx->GetTokenCount() << " tokens";
-    if (ctx->GetState() == Context::State::kMerged) {
+    if (ctx->GetState() == Workspace::State::kMerged) {
       os << ", merged";
     }
     os << ")\n";
@@ -144,11 +143,11 @@ void ForkMergeService::PrintTree(std::ostream& os, const std::shared_ptr<Context
   print_node(root, 0, true);
 }
 
-std::shared_ptr<Context> ForkMergeService::FindContext(const std::string& id_or_branch) const {
+std::shared_ptr<Workspace> ForkMergeService::FindContext(const std::string& id_or_branch) const {
   auto ctx = root_context_;
   if (!ctx) return nullptr;
-  std::shared_ptr<Context> found = nullptr;
-  std::vector<std::shared_ptr<Context>> queue = {ctx};
+  std::shared_ptr<Workspace> found = nullptr;
+  std::vector<std::shared_ptr<Workspace>> queue = {ctx};
   while (!queue.empty()) {
     auto cur = queue.back(); queue.pop_back();
     if (cur->GetId() == id_or_branch || cur->GetBranchName() == id_or_branch) {
@@ -163,13 +162,13 @@ size_t ForkMergeService::PruneMerged() {
   if (!root_context_) return 0;
 
   size_t total_removed = 0;
-  std::function<void(std::shared_ptr<Context>&)> prune_recursive;
-  prune_recursive = [&](std::shared_ptr<Context>& ctx) {
+  std::function<void(std::shared_ptr<Workspace>&)> prune_recursive;
+  prune_recursive = [&](std::shared_ptr<Workspace>& ctx) {
     if (!ctx) return;
     total_removed += ctx->RemoveMergedChildren();
     auto children = ctx->GetChildren();
     for (auto& child : children) {
-      auto mutable_child = std::const_pointer_cast<Context>(child);
+      auto mutable_child = std::const_pointer_cast<Workspace>(child);
       prune_recursive(mutable_child);
     }
   };
@@ -178,25 +177,27 @@ size_t ForkMergeService::PruneMerged() {
   return total_removed;
 }
 
-core::FactList ForkMergeService::ExtractFacts(const std::shared_ptr<Context>& ctx,
-                                               const std::string& goal) {
+std::vector<Artifact> ForkMergeService::ExtractFacts(const std::shared_ptr<Workspace>& ctx,
+                                                      const std::string& goal) {
   FactExtractor extractor;
   return extractor.Extract(ctx, goal);
 }
 
-core::SummaryReport ForkMergeService::GenerateSummary(const std::shared_ptr<Context>& child_ctx,
-                                                       const core::Delegation& delegation) {
+HandoffReceipt ForkMergeService::GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
+                                                  const Assignment& delegation,
+                                                  LLMProvider* provider) {
   SummaryGenerator summary_gen(manager_);
-  return summary_gen.Generate(child_ctx, delegation);
+  return summary_gen.Generate(child_ctx, delegation, provider);
 }
 
-void ForkMergeService::InjectSummaryIntoParent(const core::SummaryReport& report) {
-  if (delegation_stack_ && !delegation_stack_->IsEmpty()) {
-    auto parent_ctx = delegation_stack_->CurrentContext();
+void ForkMergeService::InjectSummaryIntoParent(CallStack& stack,
+                                                const HandoffReceipt& report) {
+  if (!stack.IsEmpty()) {
+    auto parent_ctx = stack.CurrentContext();
     if (parent_ctx) {
       parent_ctx->Append("system", "[Sub-task] " + report.summary);
       for (const auto& f : report.key_discoveries) {
-        parent_ctx->AddFact(f);
+        parent_ctx->AddArtifact(f);
       }
     }
   } else if (root_context_) {
@@ -204,18 +205,19 @@ void ForkMergeService::InjectSummaryIntoParent(const core::SummaryReport& report
   }
 }
 
-core::SummaryReport ForkMergeService::PopDelegation() {
-  if (!delegation_stack_ || delegation_stack_->IsEmpty()) {
-    core::SummaryReport report;
-    report.status = core::SummaryReport::Status::kFailed;
+HandoffReceipt ForkMergeService::PopDelegation(CallStack& stack,
+                                                LLMProvider* provider) {
+  if (stack.IsEmpty()) {
+    HandoffReceipt report;
+    report.status = HandoffReceipt::Status::kFailed;
     report.summary = "No active delegation to pop";
     return report;
   }
-  auto& frame = delegation_stack_->Current();
-  auto report = GenerateSummary(frame.context, frame.delegation);
-  frame.delegation.result = report;
-  delegation_stack_->Pop();
+  auto& frame = stack.Current();
+  auto report = GenerateSummary(frame.context, frame.assignment, provider);
+  frame.assignment.result = report;
+  stack.Pop();
   return report;
 }
 
-}  // namespace pu::core
+}  // namespace pu
