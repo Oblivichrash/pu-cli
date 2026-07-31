@@ -35,10 +35,18 @@ std::string Executor::Execute(const std::string& input,
 
   auto result = RunToolLoop(workspace, provider);
 
-  // Only return error messages for CLI display.
   if (result.has_error) {
     return result.error_message;
   }
+
+  if (!result.final_response.empty() && result.tool_call_count > 0) {
+    workspace.Append("assistant", result.final_response);
+  }
+
+  if (result.tool_call_count > 0) {
+    return result.final_response;
+  }
+
   return "";
 }
 
@@ -121,6 +129,13 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     // Process tool calls.
     if (!collected_calls.empty()) {
+      // Ensure every tool call has a non‑empty ID (some providers may omit it).
+      for (auto& tc : collected_calls) {
+        if (tc.id.empty()) {
+          tc.id = "call_" + std::to_string(++next_tool_call_id_);
+        }
+      }
+
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
       assistant_msg.content = chat_result.content;
