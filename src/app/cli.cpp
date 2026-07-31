@@ -115,7 +115,11 @@ int RunAsk(int argc, char* argv[]) {
     std::string output;
     bool is_command = false;
     runtime.ProcessInput(session->GetId(), prompt, output, is_command);
-    std::cout << output << "\n";
+    if (!output.empty()) {
+      std::cout << output << "\n";
+    } else if (!is_command) {
+      std::cout << "\n";
+    }
 
     runtime.Shutdown();
   } catch (const std::exception& e) {
@@ -192,6 +196,8 @@ int RunChat(int argc, char* argv[]) {
     if (runtime.ProcessInput(session_id, input, output, is_command)) {
       if (!output.empty()) {
         std::cout << output << "\n";
+      } else if (!is_command) {
+        std::cout << "\n";
       }
     } else {
       spdlog::error("{}", output);

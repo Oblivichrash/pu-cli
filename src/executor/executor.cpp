@@ -35,11 +35,11 @@ std::string Executor::Execute(const std::string& input,
 
   auto result = RunToolLoop(workspace, provider);
 
-  if (!result.final_response.empty()) {
-    workspace.Append("assistant", result.final_response);
+  // Only return error messages for CLI display.
+  if (result.has_error) {
+    return result.error_message;
   }
-
-  return result.final_response;
+  return "";
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
@@ -54,16 +54,23 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   auto tools = toolbox_->GetToolDefinitions();
   bool tool_was_called = false;
   std::string final_response;
+  int max_iterations = 10;
+  int iteration = 0;
 
   do {
+    if (iteration++ > max_iterations) {
+      spdlog::warn("Tool loop exceeded max iterations, breaking");
+      break;
+    }
     tool_was_called = false;
 
-    auto history = workspace.GetHistory();
+    // Build chat history from workspace.
     std::vector<ChatMessage> chat_history;
-    for (const auto& msg : history) {
+    for (const auto& msg : workspace.GetHistory()) {
       chat_history.push_back(msg);
     }
 
+    // Inject system prompt if present and not already in history.
     auto system_prompt_var = workspace.GetVar("system_prompt");
     if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
       bool has_system = false;
@@ -83,8 +90,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;
-    auto renderer = pu::StreamingRenderer::Create();
-
     ChatResult chat_result;
 
     try {
@@ -108,29 +113,29 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     } catch (const std::exception& e) {
       auto err = "Request failed: " + std::string(e.what());
       spdlog::error("{}", err);
-      final_response = err;
-      workspace.Append("assistant", final_response);
+      result.has_error = true;
+      result.error_message = err;
+      workspace.Append("assistant", err);
       break;
     }
 
+    // Process tool calls.
     if (!collected_calls.empty()) {
-      // Build assistant message with tool_calls, using the ids from the provider.
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
       assistant_msg.content = chat_result.content;
+      assistant_msg.reasoning_content = chat_result.reasoning_content;
 
       json j_calls = json::array();
       for (const auto& tc : collected_calls) {
         json jc;
-        jc["id"] = tc.id;   // use the id from the provider (e.g., from DeepSeek)
+        jc["id"] = tc.id;
         jc["type"] = "function";
         jc["function"]["name"] = tc.name;
-        // arguments may already be a string or object; ensure we use the raw arguments as-is
         jc["function"]["arguments"] = tc.arguments;
         j_calls.push_back(jc);
       }
       assistant_msg.tool_calls_json = j_calls.dump();
-      assistant_msg.reasoning_content = chat_result.reasoning_content;
       workspace.Append(assistant_msg);
 
       ToolContext tool_ctx;
@@ -142,7 +147,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         spdlog::warn("No security policy set for Executor. Using empty policy.");
       }
 
-      // Execute each tool and append tool response messages with proper tool_call_id.
       for (const auto& call : collected_calls) {
         ++result.tool_call_count;
         std::string tool_result;
@@ -155,23 +159,21 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         ChatMessage tool_msg;
         tool_msg.role = "tool";
         tool_msg.content = tool_result;
-        tool_msg.tool_name = call.name;      // for informational purposes
-        tool_msg.tool_call_id = call.id;     // set the id to match assistant's tool_call
+        tool_msg.tool_name = call.name;
+        tool_msg.tool_call_id = call.id;
         workspace.Append(tool_msg);
       }
     }
   } while (tool_was_called);
 
-  if (result.tool_call_count > 0 && final_response.empty()) {
+  // After loop, if no final_response, use the last assistant message content.
+  if (final_response.empty()) {
     auto history = workspace.GetHistory();
     for (auto it = history.rbegin(); it != history.rend(); ++it) {
-      if (it->role == "tool") {
+      if (it->role == "assistant" && !it->content.empty()) {
         final_response = it->content;
         break;
       }
-    }
-    if (final_response.empty()) {
-      final_response = "Tool executed successfully.";
     }
   }
 
@@ -179,4 +181,4 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   return result;
 }
 
-} // namespace pu
+}  // namespace pu
