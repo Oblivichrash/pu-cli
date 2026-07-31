@@ -2,27 +2,21 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 namespace pu::platform {
 
+/**
+ * Execute a full shell command (unified command execution entry point).
+ *
+ * Internally uses popen (POSIX) / _popen (Windows) with `2>&1` appended so that
+ * stdout and stderr are merged into a single stream. All shell features are
+ * supported: pipes, redirections, logical operators, and command sequences.
+ *
+ * @param command The complete shell command string
+ * @param output  Merged stdout+stderr output of the command
+ * @return Exit code of the shell (0 on success, non-zero on failure, -1 on error)
+ */
 int ExecuteCommand(const std::string& command, std::string& output);
-
-/**
- * Execute a command safely without invoking a shell.
- * @param command The command string (will be parsed into argv array)
- * @param output  The stdout/stderr output of the command
- * @return Exit code of the child process, or -1 on error
- */
-int ExecuteCommandSafe(const std::string& command, std::string& output);
-
-/**
- * Execute a command with explicit arguments, bypassing shell entirely.
- * @param argv  Null-terminated array of arguments (argv[0] is the program)
- * @param output  The stdout/stderr output of the command
- * @return Exit code of the child process, or -1 on error
- */
-int ExecuteCommandArgv(const std::vector<std::string>& argv, std::string& output);
 
 void SetupSignalHandler();
 bool IsInterrupted();

@@ -76,7 +76,7 @@ ExecutionResult CommandExecutor::Execute(const std::string& command) {
   }
 
   std::string output;
-  int exit_code = pu::platform::ExecuteCommandSafe(command, output);
+  int exit_code = pu::platform::ExecuteCommand(command, output);
   result.exit_code = exit_code;
   result.stdout_content = output;
   if (exit_code != 0) result.stderr_content = output;

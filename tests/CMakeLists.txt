@@ -12,6 +12,7 @@ add_executable(pu_tests
     unit/test_fork_merge_service.cpp
     unit/test_summary_generator.cpp
     unit/test_fact_extractor.cpp
+    unit/test_command_execution.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
