@@ -5,7 +5,13 @@
 
 #include <algorithm>
 #include <regex>
-#include <unistd.h>
+
+#ifdef _WIN32
+#  include <direct.h>  // for _chdir
+#  define chdir _chdir
+#else
+#  include <unistd.h>  // for chdir
+#endif
 
 namespace pu::executor {
 
