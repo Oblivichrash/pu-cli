@@ -14,6 +14,8 @@ SummaryGenerator::SummaryGenerator(AgentManager& manager)
 HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
                                           const Assignment& delegation,
                                           LLMProvider* provider) {
+  (void)delegation;  // 未使用，保留参数以兼容接口
+
   HandoffReceipt report;
   report.status = HandoffReceipt::Status::kCompleted;
   if (!child_ctx) {

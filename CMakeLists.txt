@@ -68,9 +68,9 @@ target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
 
 # Compiler warnings
 if(MSVC)
-    target_compile_options(pu_core PRIVATE /W4)
-    target_compile_options(pu_agent PRIVATE /W4)
-    target_compile_options(pu PRIVATE /W4)
+    target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(pu PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(pu_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
