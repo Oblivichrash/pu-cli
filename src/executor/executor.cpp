@@ -117,7 +117,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       // Build assistant message with tool_calls, using the ids from the provider.
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
-      assistant_msg.content = "";
+      assistant_msg.content = chat_result.content;
 
       json j_calls = json::array();
       for (const auto& tc : collected_calls) {
