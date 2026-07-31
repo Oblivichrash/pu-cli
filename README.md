@@ -91,6 +91,36 @@ Create `agents.json` in current directory or `~/.pu/`:
 }
 ```
 
+### MCP Servers
+
+Add `mcp_servers` to any agent to connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Servers are started as child processes (stdio transport) and their tools are registered with a `mcp.` prefix.
+
+```json
+{
+  "default_agent": "chat",
+  "agents": [
+    {
+      "name": "chat",
+      "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:4b" },
+      "tools": ["execute_bash", "write_file"],
+      "mcp_servers": [
+        {
+          "name": "filesystem",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the MCP server |
+| `command` | Executable to launch |
+| `args` | Arguments passed to the command |
+
 ### Environment
 
 | Variable | Purpose |

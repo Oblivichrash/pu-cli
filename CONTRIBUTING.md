@@ -44,10 +44,11 @@ src/
   executor/      Executor (stateless)
   infra/         HTTP client, platform utils
   llm/           Providers
+  mcp/           MCP transport, JSON-RPC client, high-level client
   runtime/       Runtime, CommandRouter
   session/       Session, Workspace, Transcript, Memory, RevisionGraph, CallStack
   storage/       SessionStore
-  tools/         Toolbox, tools
+  tools/         Toolbox, tools (including McpTool adapter)
 include/pu/      Public headers
 tests/unit/      Unit tests
 ```
@@ -57,6 +58,7 @@ tests/unit/      Unit tests
 - **New backend**: Implement `pu::LLMProvider`, update `Session::CreateProvider()`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::Initialize()`.
 - **New command**: Add to `CommandRouter`, update help.
+- **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered and registered automatically via the MCP client.
 
 ## License
 
