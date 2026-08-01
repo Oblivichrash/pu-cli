@@ -190,7 +190,8 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
   }
 
   std::string agent_name = args[0];
-  auto result = fork_service->Fork(call_stack, agent_name, "Exploration", "");
+  auto parent = call_stack.IsEmpty() ? fork_service->GetRootContext() : call_stack.CurrentContext();
+  auto result = fork_service->Fork(parent, agent_name, "Exploration", "");
   if (result.child_context) {
     Assignment asgn;
     asgn.goal = "exploration";
@@ -218,17 +219,26 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
 
   bool full = (!args.empty() && args[0] == "--full");
 
+  auto child = call_stack.CurrentContext();
+  auto provider = session.CreateProvider();
+
+  ForkMergeService::MergeResult result;
   if (full) {
-    auto result = fork_service->Merge(call_stack, "Merged with full history", "merge");
-    std::ostringstream oss;
-    oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
-    output = oss.str();
+    result = fork_service->Merge(child, "Merged with full history", "merge");
   } else {
-    auto provider = session.CreateProvider();
-    auto result = fork_service->Merge(call_stack, "Squash merged", "squash", provider.get());
-    std::ostringstream oss;
+    result = fork_service->Merge(child, "Squash merged", "squash", provider.get());
+  }
+
+  std::ostringstream oss;
+  if (full) {
+    oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
+  } else {
     oss << "\xf0\x9f\x91\x8d Merged (squash): " << result.report.summary;
-    output = oss.str();
+  }
+  output = oss.str();
+
+  if (result.report.status != HandoffReceipt::Status::kFailed) {
+    call_stack.Pop();
   }
   return true;
 }

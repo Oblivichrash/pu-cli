@@ -2,7 +2,8 @@
 #pragma once
 
 #include "pu/session/workspace.hpp"
-#include "pu/session/call_stack.hpp"
+#include "pu/session/assignment.hpp"
+#include "pu/session/handoff_receipt.hpp"
 #include "pu/agent/agent_manager.hpp"
 #include "pu/llm/llm_provider.hpp"
 
@@ -34,14 +35,14 @@ class ForkMergeService {
   ForkMergeService(AgentManager& manager,
                    std::shared_ptr<Workspace> root_context);
 
-  // Fork operations — CallStack passed explicitly to avoid bidirectional coupling.
-  ForkResult Fork(CallStack& stack,
+  // Fork operations — caller provides the parent workspace directly.
+  ForkResult Fork(const std::shared_ptr<Workspace>& parent,
                   const std::string& agent_name,
                   const std::string& goal,
                   const std::string& branch_name = "");
 
-  // Merge operations
-  MergeResult Merge(CallStack& stack,
+  // Merge operations — caller provides the child workspace directly.
+  MergeResult Merge(const std::shared_ptr<Workspace>& child,
                     const std::string& message,
                     const std::string& strategy = "merge",
                     LLMProvider* provider = nullptr);
@@ -63,14 +64,6 @@ class ForkMergeService {
   HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
                                  const Assignment& delegation,
                                  LLMProvider* provider = nullptr);
-
-  // Summary injection — needs stack to locate parent context.
-  void InjectSummaryIntoParent(CallStack& stack,
-                               const HandoffReceipt& report);
-
-  // Pop delegation
-  HandoffReceipt PopDelegation(CallStack& stack,
-                               LLMProvider* provider = nullptr);
 
   // Accessors
   std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
