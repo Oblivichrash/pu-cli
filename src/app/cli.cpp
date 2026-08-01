@@ -68,7 +68,7 @@ AppContext SetupAppContext(const std::string& requested_agent) {
 
 }  // namespace
 
-int RunAsk(int argc, char* argv[]) {
+int RunAsk(int argc, char* argv[], Runtime& runtime) {
   std::string requested_agent;
   std::string prompt;
 
@@ -99,8 +99,6 @@ int RunAsk(int argc, char* argv[]) {
 
   auto ctx = SetupAppContext(requested_agent);
   try {
-    auto& runtime = Runtime::Instance();
-
     if (!requested_agent.empty()) {
       runtime.SetDefaultAgent(requested_agent);
     }
@@ -130,7 +128,7 @@ int RunAsk(int argc, char* argv[]) {
   return 0;
 }
 
-int RunChat(int argc, char* argv[]) {
+int RunChat(int argc, char* argv[], Runtime& runtime) {
   std::string initial_agent;
 
   for (int i = 1; i < argc; ++i) {
@@ -155,8 +153,6 @@ int RunChat(int argc, char* argv[]) {
   auto ctx = SetupAppContext(initial_agent);
   const auto& agents_config = ctx.agents_config;
   std::string current_name = ctx.active_agent;
-
-  auto& runtime = Runtime::Instance();
 
   if (!initial_agent.empty()) {
     runtime.SetDefaultAgent(initial_agent);

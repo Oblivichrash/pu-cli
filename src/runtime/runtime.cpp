@@ -17,11 +17,6 @@
 
 namespace pu {
 
-Runtime& Runtime::Instance() {
-  static Runtime instance;
-  return instance;
-}
-
 void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
 
@@ -55,7 +50,7 @@ void Runtime::Initialize(const std::string& config_path) {
   }
 
   session_store_ = std::make_unique<SessionStore>();
-  command_router_ = std::make_unique<CommandRouter>(*agent_manager_);
+  command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
 
   // Create the executor first; RebuildToolbox() (below) installs the new
   // Toolbox into it via SetToolbox().
@@ -176,8 +171,8 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   auto owner = getenv("USER") ? getenv("USER") : "default";
   // Use the override agent name if set (from --agent flag), otherwise use the active agent
   std::string agent = default_agent_override_.empty()
-      ? agent_manager_->GetActiveAgent()
-      : default_agent_override_;
+    ? agent_manager_->GetActiveAgent()
+    : default_agent_override_;
   auto id = CreateSession(owner, agent);
   default_session_id_ = id;
   return GetSession(id);

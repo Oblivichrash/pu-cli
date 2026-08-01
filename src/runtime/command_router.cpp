@@ -35,8 +35,8 @@ SessionStore CommandRouter::GetSessionStore() const {
   return SessionStore(pu::path::GetDataDir() / "sessions");
 }
 
-CommandRouter::CommandRouter(AgentManager& manager)
-    : manager_(manager) {}
+CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
+    : manager_(manager), runtime_(runtime) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   std::string trimmed = input;
@@ -264,7 +264,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     new_cfg.parameters_as_string = agent_config->backend.parameters_as_string;
     try {
       session.SwitchBackend(new_cfg);
-      Runtime::Instance().SwitchAgent(*agent_config);
+      runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" + new_cfg.type + "/" + new_cfg.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
@@ -493,7 +493,7 @@ bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Sessio
 }
 
 bool CommandRouter::HandleReloadTools(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
-  Runtime::Instance().ReloadTools();
+  runtime_.ReloadTools();
   auto tools_dir = pu::path::GetDataDir() / "tools";
   output = "Tools reloaded from " + tools_dir.string();
   return true;

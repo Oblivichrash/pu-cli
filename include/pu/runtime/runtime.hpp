@@ -18,7 +18,8 @@ namespace pu {
 
 class Runtime {
 public:
-  static Runtime& Instance();
+  Runtime() = default;
+  ~Runtime() = default;
 
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
@@ -54,9 +55,6 @@ public:
   void SwitchAgent(const config::AgentEntry& new_agent);
 
 private:
-  Runtime() = default;
-  ~Runtime() = default;
-
   std::shared_ptr<Session> GetOrCreateDefaultSession();
   void AutoSaveSession(const std::string& id);
 

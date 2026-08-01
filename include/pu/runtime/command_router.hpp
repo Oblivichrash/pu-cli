@@ -11,9 +11,11 @@
 
 namespace pu {
 
+class Runtime;
+
 class CommandRouter {
 public:
-  explicit CommandRouter(AgentManager& manager);
+  explicit CommandRouter(AgentManager& manager, Runtime& runtime);
 
   bool Route(const std::string& input, Session& session, std::string& output);
 
@@ -46,6 +48,7 @@ private:
   bool HandleStack(const std::vector<std::string>& args, Session& session, std::string& output);
 
   AgentManager& manager_;
+  Runtime& runtime_;
   std::unique_ptr<ForkMergeService> fork_service_;
   int max_depth_ = 5;
 };
