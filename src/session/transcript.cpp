@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/transcript.hpp"
 #include <algorithm>
+#include <nlohmann/json.hpp>
 
 namespace pu {
 
@@ -22,24 +23,72 @@ std::vector<ChatMessage> Transcript::Recent(int n) const {
 }
 
 void Transcript::Compact() {
-  if (messages_.size() <= COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) return;
   const size_t keep_first = COMPACT_KEEP_HEAD;
   const size_t keep_last = COMPACT_KEEP_TAIL;
+
   if (messages_.size() <= keep_first + keep_last) return;
 
+  // Determine tail start, then walk backward to ensure we don't truncate
+  // an assistant message with tool_calls before its matching tool responses.
+  size_t tail_start = messages_.size() - keep_last;
+
+  // Scan from tail_start backward up to keep_first to include any
+  // incomplete tool-call sequences.
+  for (size_t i = tail_start; i > keep_first; --i) {
+    const auto& msg = messages_[i];
+    if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {
+      // Collect all tool_call_id from this assistant's tool_calls.
+      std::vector<std::string> ids;
+      try {
+        auto j = nlohmann::json::parse(msg.tool_calls_json);
+        for (const auto& tc : j) {
+          if (tc.contains("id")) ids.push_back(tc["id"].get<std::string>());
+        }
+      } catch (...) {
+        continue; // If parsing fails, we cannot verify; skip.
+      }
+
+      // Check that every id has a corresponding tool message after i.
+      bool all_found = true;
+      for (const auto& id : ids) {
+        bool found = false;
+        for (size_t j = i + 1; j < messages_.size(); ++j) {
+          if (messages_[j].role == "tool" && messages_[j].tool_call_id == id) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          all_found = false;
+          break;
+        }
+      }
+
+      // If missing a tool response, extend tail_start to include this assistant.
+      if (!all_found) {
+        tail_start = i;
+        // Continue scanning backward because earlier messages may also be incomplete.
+      }
+    }
+  }
+
+  // Build compressed vector.
   std::vector<ChatMessage> compressed;
-  compressed.reserve(keep_first + 1 + keep_last);
+  compressed.reserve(keep_first + 1 + (messages_.size() - tail_start));
 
   compressed.insert(compressed.end(), messages_.begin(), messages_.begin() + keep_first);
 
-  ChatMessage summary;
-  summary.id = static_cast<int>(compressed.size()) + 1;
-  summary.timestamp = "";
-  summary.role = "system";
-  summary.content = "[Compressed: " + std::to_string(messages_.size() - keep_first - keep_last) + " messages omitted]";
-  compressed.push_back(summary);
+  // Only insert summary if we actually omitted something.
+  if (tail_start > keep_first) {
+    ChatMessage summary;
+    summary.id = static_cast<int>(compressed.size()) + 1;
+    summary.timestamp = "";
+    summary.role = "system";
+    summary.content = "[Compressed: " + std::to_string(tail_start - keep_first) + " messages omitted]";
+    compressed.push_back(summary);
+  }
 
-  compressed.insert(compressed.end(), messages_.end() - keep_last, messages_.end());
+  compressed.insert(compressed.end(), messages_.begin() + tail_start, messages_.end());
 
   messages_ = std::move(compressed);
 }
