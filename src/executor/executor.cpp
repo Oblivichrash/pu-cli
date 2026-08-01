@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor/executor.hpp"
 
-#include "pu/renderer.hpp"
 #include "pu/core/fork_merge_service.hpp"
 #include "tools/command_executor.hpp"
 
@@ -26,6 +25,10 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 std::string Executor::Execute(const std::string& input,
                               Workspace& workspace,
                               LLMProvider* provider) {
+  if (!toolbox_) {
+    return "Error: tool registry is not initialized.";
+  }
+
   workspace.Append("user", input);
 
   auto tools = toolbox_->GetToolDefinitions();
@@ -35,16 +38,30 @@ std::string Executor::Execute(const std::string& input,
 
   auto result = RunToolLoop(workspace, provider);
 
-  if (!result.final_response.empty()) {
+  if (result.has_error) {
+    return result.error_message;
+  }
+
+  if (!result.final_response.empty() && result.tool_call_count > 0) {
     workspace.Append("assistant", result.final_response);
   }
 
-  return result.final_response;
+  if (result.tool_call_count > 0) {
+    return result.final_response;
+  }
+
+  return "";
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
                                                LLMProvider* provider) {
   ToolLoopResult result;
+
+  if (!toolbox_) {
+    result.has_error = true;
+    result.error_message = "Tool registry is not initialized.";
+    return result;
+  }
 
   if (!provider->SupportsTools()) {
     result.final_response = "This provider does not support tool calling. Cannot execute tools.";
@@ -54,13 +71,18 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   auto tools = toolbox_->GetToolDefinitions();
   bool tool_was_called = false;
   std::string final_response;
+  int max_iterations = 10;
+  int iteration = 0;
 
   do {
+    if (iteration++ > max_iterations) {
+      spdlog::warn("Tool loop exceeded max iterations, breaking");
+      break;
+    }
     tool_was_called = false;
 
-    auto history = workspace.GetHistory();
     std::vector<ChatMessage> chat_history;
-    for (const auto& msg : history) {
+    for (const auto& msg : workspace.GetHistory()) {
       chat_history.push_back(msg);
     }
 
@@ -83,8 +105,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;
-    auto renderer = pu::StreamingRenderer::Create();
-
     ChatResult chat_result;
 
     try {
@@ -108,29 +128,35 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     } catch (const std::exception& e) {
       auto err = "Request failed: " + std::string(e.what());
       spdlog::error("{}", err);
-      final_response = err;
-      workspace.Append("assistant", final_response);
+      result.has_error = true;
+      result.error_message = err;
+      workspace.Append("assistant", err);
       break;
     }
 
     if (!collected_calls.empty()) {
-      // Build assistant message with tool_calls, using the ids from the provider.
+      // Ensure every tool call has a non‑empty ID (some providers may omit it).
+      for (auto& tc : collected_calls) {
+        if (tc.id.empty()) {
+          tc.id = "call_" + std::to_string(workspace.NextToolCallId());
+        }
+      }
+
       ChatMessage assistant_msg;
       assistant_msg.role = "assistant";
       assistant_msg.content = chat_result.content;
+      assistant_msg.reasoning_content = chat_result.reasoning_content;
 
       json j_calls = json::array();
       for (const auto& tc : collected_calls) {
         json jc;
-        jc["id"] = tc.id;   // use the id from the provider (e.g., from DeepSeek)
+        jc["id"] = tc.id;
         jc["type"] = "function";
         jc["function"]["name"] = tc.name;
-        // arguments may already be a string or object; ensure we use the raw arguments as-is
         jc["function"]["arguments"] = tc.arguments;
         j_calls.push_back(jc);
       }
       assistant_msg.tool_calls_json = j_calls.dump();
-      assistant_msg.reasoning_content = chat_result.reasoning_content;
       workspace.Append(assistant_msg);
 
       ToolContext tool_ctx;
@@ -142,7 +168,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         spdlog::warn("No security policy set for Executor. Using empty policy.");
       }
 
-      // Execute each tool and append tool response messages with proper tool_call_id.
       for (const auto& call : collected_calls) {
         ++result.tool_call_count;
         std::string tool_result;
@@ -155,23 +180,20 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         ChatMessage tool_msg;
         tool_msg.role = "tool";
         tool_msg.content = tool_result;
-        tool_msg.tool_name = call.name;      // for informational purposes
-        tool_msg.tool_call_id = call.id;     // set the id to match assistant's tool_call
+        tool_msg.tool_name = call.name;
+        tool_msg.tool_call_id = call.id;
         workspace.Append(tool_msg);
       }
     }
   } while (tool_was_called);
 
-  if (result.tool_call_count > 0 && final_response.empty()) {
+  if (final_response.empty()) {
     auto history = workspace.GetHistory();
     for (auto it = history.rbegin(); it != history.rend(); ++it) {
-      if (it->role == "tool") {
+      if (it->role == "assistant" && !it->content.empty()) {
         final_response = it->content;
         break;
       }
-    }
-    if (final_response.empty()) {
-      final_response = "Tool executed successfully.";
     }
   }
 

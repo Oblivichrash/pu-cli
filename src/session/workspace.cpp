@@ -34,8 +34,7 @@ std::string GenerateForkId() {
 Workspace::Workspace(const std::string& id)
   : id_(id),
       transcript_(std::make_unique<Transcript>()),
-      memory_(std::make_unique<Memory>()),
-      graph_(std::make_unique<RevisionGraph>()) {}
+      memory_(std::make_unique<Memory>()) {}
 
 // Transcript delegation
 void Workspace::Append(const ChatMessage& msg) {
@@ -93,10 +92,7 @@ bool Workspace::HasVar(const std::string& key) const {
 }
 
 void Workspace::RemoveVar(const std::string& key) {
-  if (memory_) {
-    // We don't have a RemoveVar on Memory directly, but we can set it to null
-    memory_->SetVar(key, nlohmann::json());
-  }
+  if (memory_) memory_->RemoveVar(key);
 }
 
 void Workspace::AddArtifact(const Artifact& artifact) {
@@ -129,10 +125,8 @@ std::shared_ptr<Workspace> Workspace::Fork(const std::string& branch_name) {
   child->branch_name_ = actual_branch;
   child->parent_ = shared_from_this();
 
-  // Copy memory
   if (memory_) {
     child->memory_ = std::make_unique<Memory>();
-    // Copy vars and artifacts
     auto vars_j = memory_->Serialize();
     *child->memory_ = Memory::Deserialize(vars_j);
   }
@@ -168,17 +162,14 @@ std::shared_ptr<Workspace> Workspace::Merge(const std::shared_ptr<Workspace>& ch
   merge_ws->transcript_ = std::make_unique<Transcript>();
   merge_ws->memory_ = std::make_unique<Memory>();
 
-  // Copy parent's memory
   if (memory_) {
     auto vars_j = memory_->Serialize();
     *merge_ws->memory_ = Memory::Deserialize(vars_j);
   }
 
-  // Record merge parents
   merge_ws->merge_parents_.push_back(shared_from_this());
   merge_ws->merge_parents_.push_back(child);
 
-  // Copy parent history
   if (transcript_) {
     for (const auto& msg : transcript_->GetHistory()) {
       merge_ws->Append(msg);
@@ -187,12 +178,10 @@ std::shared_ptr<Workspace> Workspace::Merge(const std::shared_ptr<Workspace>& ch
 
   merge_ws->Append("system", "[Merge] " + message);
 
-  // Copy child's artifacts
   if (child->memory_) {
     for (const auto& a : child->memory_->GetArtifacts()) {
       merge_ws->AddArtifact(a);
     }
-    // Copy child vars
     auto child_vars_j = child->memory_->Serialize();
     if (child_vars_j.contains("variables") && child_vars_j["variables"].is_object()) {
       for (auto& [key, val] : child_vars_j["variables"].items()) {
@@ -257,10 +246,10 @@ nlohmann::json Workspace::Serialize() const {
   if (memory_) {
     auto mem_j = memory_->Serialize();
     j["variables"] = mem_j["variables"];
-    j["facts"] = mem_j["facts"];
+    j["artifacts"] = mem_j["artifacts"];
   } else {
     j["variables"] = nlohmann::json::object();
-    j["facts"] = nlohmann::json::array();
+    j["artifacts"] = nlohmann::json::array();
   }
 
   j["branch_name"] = branch_name_;
@@ -295,13 +284,6 @@ std::shared_ptr<Workspace> Workspace::Load(const std::filesystem::path& path) {
   return Deserialize(j);
 }
 
-std::shared_ptr<Workspace> Workspace::LoadOrCreate(const std::filesystem::path& path) {
-  auto ws = Load(path);
-  if (!ws) {
-    ws = std::make_shared<Workspace>(path.stem().string());
-  }
-  return ws;
-}
 
 std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   auto ws = std::make_shared<Workspace>();
@@ -315,7 +297,9 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   ws->memory_ = std::make_unique<Memory>();
   nlohmann::json mem_j;
   mem_j["variables"] = j.value("variables", nlohmann::json::object());
-  mem_j["facts"] = j.value("facts", nlohmann::json::array());
+  // "artifacts" is the current key; "facts" remains as a legacy fallback.
+  mem_j["artifacts"] = j.contains("artifacts")
+      ? j["artifacts"] : j.value("facts", nlohmann::json::array());
   *ws->memory_ = Memory::Deserialize(mem_j);
 
   ws->branch_name_ = j.value("branch_name", "main");

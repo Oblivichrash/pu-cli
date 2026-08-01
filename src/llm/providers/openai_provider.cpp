@@ -28,19 +28,29 @@ json BuildMessagesJson(const std::vector<ChatMessage>& history) {
     if (role == "tool_result") role = "tool";
 
     json j = {
-      {"role", role},
-      {"content", msg.content.empty() ? "" : msg.content}
+      {"role", role}
     };
 
-    if (role == "assistant") {
-      j["reasoning_content"] = msg.reasoning_content.empty() ? "" : msg.reasoning_content;
+    bool has_tool_calls = !msg.tool_calls_json.empty();
+
+    if (has_tool_calls) {
+      // According to DeepSeek thinking mode spec, when tool_calls are present,
+      // content must be null (or omitted).
+      j["content"] = nullptr;
+    } else {
+      j["content"] = msg.content.empty() ? "" : msg.content;
+    }
+
+    // reasoning_content should be included only if non-empty and role is assistant
+    if (role == "assistant" && !msg.reasoning_content.empty()) {
+      j["reasoning_content"] = msg.reasoning_content;
     }
 
     if (role == "tool") {
       j["tool_call_id"] = msg.tool_call_id;
     }
 
-    if (!msg.tool_calls_json.empty()) {
+    if (has_tool_calls) {
       try {
         auto tool_calls = json::parse(msg.tool_calls_json);
         for (auto& tc : tool_calls) {
@@ -53,9 +63,10 @@ json BuildMessagesJson(const std::vector<ChatMessage>& history) {
         }
         j["tool_calls"] = tool_calls;
       } catch (const std::exception&) {
-        // ignore
+        // ignore malformed tool_calls_json
       }
     }
+
     messages.push_back(j);
   }
   return messages;

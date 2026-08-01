@@ -2,6 +2,7 @@
 #include "pu/cli.hpp"
 
 #include "pu/agent/agent_manager.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/renderer.hpp"
 
 #include <curl/curl.h>
@@ -23,8 +24,16 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   std::string cmd = argv[1];
-  if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1);
-  if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1);
-  std::cerr << "Unknown command: " << cmd << '\n';
-  return 1;
+
+  pu::Runtime runtime;
+
+  try {
+    if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1, runtime);
+    if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1, runtime);
+    std::cerr << "Unknown command: " << cmd << '\n';
+    return 1;
+  } catch (const std::exception& e) {
+    std::cerr << "Fatal error: " << e.what() << '\n';
+    return 1;
+  }
 }

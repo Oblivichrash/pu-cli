@@ -6,12 +6,13 @@ add_executable(pu_tests
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
     unit/test_streaming_json_parser.cpp
-    unit/test_context.cpp
+    unit/test_workspace.cpp
     unit/test_delegation.cpp
     unit/test_fork_merge.cpp
     unit/test_fork_merge_service.cpp
     unit/test_summary_generator.cpp
-    unit/test_fact_extractor.cpp
+    unit/test_artifact_extractor.cpp
+    unit/test_command_execution.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

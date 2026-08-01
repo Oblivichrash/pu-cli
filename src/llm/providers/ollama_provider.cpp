@@ -25,16 +25,6 @@ std::string OllamaProvider::RoleToString(const std::string& role) const {
   return "user";
 }
 
-ChatMessage OllamaProvider::ToChatMessage(const json& msg) const {
-  ChatMessage cm;
-  cm.role = msg.value("role", "user");
-  cm.content = msg.value("content", "");
-  cm.tool_name = msg.value("tool_name", "");
-  if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
-    cm.tool_calls_json = msg["tool_calls"].dump();
-  }
-  return cm;
-}
 
 std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
   json req;
@@ -146,7 +136,6 @@ void OllamaProvider::HandleJsonToken(const json& j,
     if (msg.contains("content") && msg["content"].is_string())
       if (content_cb) content_cb(msg["content"].get<std::string>());
 
-    // Parse tool calls, skipping any that lack a name.
     if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
       for (const auto& tc : msg["tool_calls"]) {
         if (!tc.contains("function")) continue;

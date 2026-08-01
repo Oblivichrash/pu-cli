@@ -114,7 +114,7 @@ std::string PythonTool::ExecutePython(const std::string& args_json) const {
 
   auto future = std::async(std::launch::async, [&]() -> std::string {
     std::string output;
-    int status = platform::ExecuteCommandSafe(cmd, output);
+    int status = platform::ExecuteCommand(cmd, output);
     if (status != 0 && output.empty()) {
       return "Python script failed (exit " + std::to_string(status) + ")";
     }

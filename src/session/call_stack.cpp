@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
-#include <stdexcept>
+#include "pu/error.hpp"
 
 namespace pu {
 
 std::shared_ptr<CallStack> CallStack::Create(
-  std::shared_ptr<Workspace> root_context) {
+  std::shared_ptr<Workspace> root_workspace) {
   auto stack = std::make_shared<CallStack>();
-  stack->root_context_ = std::move(root_context);
+  stack->root_workspace_ = std::move(root_workspace);
   return stack;
 }
 
-void CallStack::Push(const Assignment& assignment, std::shared_ptr<Workspace> context) {
+void CallStack::Push(const Assignment& assignment, std::shared_ptr<Workspace> workspace) {
   Frame frame;
   frame.assignment = assignment;
-  frame.context = context ? context : std::make_shared<Workspace>("ctx-" + assignment.id);
+  frame.workspace = workspace ? workspace : std::make_shared<Workspace>("ws-" + assignment.id);
   frames_.push_back(std::move(frame));
 }
 
@@ -43,23 +43,23 @@ std::optional<HandoffReceipt> CallStack::Pop() {
 
 CallStack::Frame& CallStack::Current() {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::Current() on empty stack");
+    throw RuntimeError("CallStack::Current() on empty stack");
   }
   return frames_.back();
 }
 
 const CallStack::Frame& CallStack::Current() const {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::Current() on empty stack");
+    throw RuntimeError("CallStack::Current() on empty stack");
   }
   return frames_.back();
 }
 
-std::shared_ptr<Workspace> CallStack::CurrentContext() const {
+std::shared_ptr<Workspace> CallStack::CurrentWorkspace() const {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::CurrentContext() on empty stack");
+    throw RuntimeError("CallStack::CurrentWorkspace() on empty stack");
   }
-  return frames_.back().context;
+  return frames_.back().workspace;
 }
 
 size_t CallStack::Depth() const {
@@ -79,8 +79,8 @@ nlohmann::json CallStack::Serialize() const {
   for (const auto& frame : frames_) {
     nlohmann::json f;
     f["assignment"] = frame.assignment.Serialize();
-    if (frame.context) {
-      f["context_id"] = frame.context->GetId();
+    if (frame.workspace) {
+      f["workspace_id"] = frame.workspace->GetId();
     }
     arr.push_back(f);
   }

@@ -10,7 +10,7 @@
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
 #include "pu/conversation.hpp"
-#include "pu/agent_config.hpp"   // 修正为正确路径
+#include "pu/agent_config.hpp"
 
 namespace pu {
 
@@ -20,6 +20,11 @@ public:
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
+  // The Runtime swaps the Toolbox when the active agent changes;
+  // the Toolbox is rebuilt per agent.
+  void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
+
+  // Returns error message if an error occurred, empty string otherwise.
   std::string Execute(const std::string& input,
                       Workspace& workspace,
                       LLMProvider* provider);
@@ -29,13 +34,14 @@ private:
     std::string final_response;
     bool completed = true;
     int tool_call_count = 0;
+    bool has_error = false;
+    std::string error_message;
   };
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
 
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
-  int next_tool_call_id_ = 0;
 };
 
 } // namespace pu

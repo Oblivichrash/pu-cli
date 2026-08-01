@@ -34,8 +34,5 @@ inline std::filesystem::path GetDataDir() {
 }
 
 // Helper: ensure data directory exists
-inline void EnsureDataDirExists() {
-  std::filesystem::create_directories(GetDataDir());
-}
 
 }  // namespace pu::path

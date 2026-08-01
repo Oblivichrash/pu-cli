@@ -14,8 +14,11 @@ struct Artifact {
   std::string source;
   double confidence = 1.0;
 
-  nlohmann::json Serialize() const;
-  static Artifact Deserialize(const nlohmann::json& j);
+  // Thin wrappers for backward compatibility with existing callers.
+  nlohmann::json Serialize() const { return nlohmann::json(*this); }
+  static Artifact Deserialize(const nlohmann::json& j) { return j.get<Artifact>(); }
+
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(Artifact, type, content, source, confidence)
 };
 
 } // namespace pu

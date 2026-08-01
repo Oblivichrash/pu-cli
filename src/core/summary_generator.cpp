@@ -11,30 +11,28 @@ namespace pu {
 SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
-HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
+HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_workspace,
                                           const Assignment& delegation,
                                           LLMProvider* provider) {
-  (void)delegation;  // 未使用，保留参数以兼容接口
+  (void)delegation;  // Unused; kept for interface compatibility
 
   HandoffReceipt report;
   report.status = HandoffReceipt::Status::kCompleted;
-  if (!child_ctx) {
+  if (!child_workspace) {
     report.status = HandoffReceipt::Status::kFailed;
-    report.summary = "Child context missing";
+    report.summary = "Child workspace missing";
     return report;
   }
 
-  // Build the summary prompt
   std::string prompt = "Summarize the following conversation in 3-5 sentences. "
                        "Focus on key findings, decisions, and unresolved issues.\n\n---\n";
-  auto history = child_ctx->GetHistory();
+  auto history = child_workspace->GetHistory();
   for (const auto& msg : history) {
     prompt += msg.role + ": " + msg.content + "\n";
   }
   prompt += "\n---\nSummary:\n";
 
   if (provider) {
-    // Use the LLM provider to generate a real summary
     std::string summary_text;
     auto content_callback = [&summary_text](const std::string& chunk) {
       summary_text += chunk;
@@ -65,12 +63,11 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
       report.summary = "[Summary generation failed: " + std::string(e.what()) + "]";
     }
   } else {
-    // Fallback: basic summary when no provider is available
     report.summary = "Summary generation requires an LLM provider. "
                      "The conversation had " + std::to_string(history.size()) + " messages.";
   }
 
-  report.key_discoveries = child_ctx->GetArtifacts();
+  report.key_discoveries = child_workspace->GetArtifacts();
   return report;
 }
 

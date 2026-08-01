@@ -41,7 +41,6 @@ public:
   ) = 0;
 
   virtual bool SupportsTools() const = 0;
-  virtual bool SupportsStrictMode() const = 0;
   virtual std::string GetModelName() const = 0;
 };
 

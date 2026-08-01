@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/core/fact_extractor.hpp"
+#include "pu/core/artifact_extractor.hpp"
 
 #include <algorithm>
 #include <regex>
 
 namespace pu {
 
-std::vector<Artifact> FactExtractor::Extract(const std::shared_ptr<Workspace>& ctx,
+std::vector<Artifact> ArtifactExtractor::Extract(const std::shared_ptr<Workspace>& ctx,
                                 const std::string& goal) {
-  std::vector<Artifact> facts;
-  if (!ctx) return facts;
+  std::vector<Artifact> artifacts;
+  if (!ctx) return artifacts;
   (void)goal;
 
   auto history = ctx->Recent(20);
@@ -22,7 +22,7 @@ std::vector<Artifact> FactExtractor::Extract(const std::shared_ptr<Workspace>& c
       a.type = Artifact::Type::kFilePath;
       a.content = match.str();
       a.source = msg.role;
-      facts.push_back(a);
+      artifacts.push_back(a);
     }
     if (text.find("error") != std::string::npos ||
         text.find("fail") != std::string::npos) {
@@ -30,17 +30,17 @@ std::vector<Artifact> FactExtractor::Extract(const std::shared_ptr<Workspace>& c
       a.type = Artifact::Type::kErrorMsg;
       a.content = text.substr(0, 200);
       a.source = msg.role;
-      facts.push_back(a);
+      artifacts.push_back(a);
     }
   }
 
-  std::sort(facts.begin(), facts.end(),
+  std::sort(artifacts.begin(), artifacts.end(),
             [](const Artifact& a, const Artifact& b) { return a.content < b.content; });
-  facts.erase(std::unique(facts.begin(), facts.end(),
+  artifacts.erase(std::unique(artifacts.begin(), artifacts.end(),
                           [](const Artifact& a, const Artifact& b) {
                             return a.content == b.content;
-                          }), facts.end());
-  return facts;
+                          }), artifacts.end());
+  return artifacts;
 }
 
 }  // namespace pu

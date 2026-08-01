@@ -126,7 +126,6 @@ AgentEntry ParseAgentEntry(const json& j) {
     entry.security = ParseSecurityPolicy(j["security"]);
   }
 
-  // Parse MCP servers
   if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
     entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
   }
@@ -134,7 +133,7 @@ AgentEntry ParseAgentEntry(const json& j) {
   return entry;
 }
 
-// B.4: Parse runtime limits from config
+// Parse runtime limits from config
 RuntimeLimits ParseRuntimeLimits(const json& j) {
   RuntimeLimits limits;
   if (j.contains("max_history_messages") && j["max_history_messages"].is_number()) {
@@ -171,7 +170,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   }
   result.default_agent = j["default_agent"];
 
-  // B.4: Parse optional limits
+  // Parse optional limits
   if (j.contains("limits") && j["limits"].is_object()) {
     result.limits = ParseRuntimeLimits(j["limits"]);
   }
@@ -195,7 +194,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
 
-  // B.4: Save limits
+  // Save limits
   json limits;
   limits["max_history_messages"] = cfg.limits.max_history_messages;
   limits["max_branches"] = cfg.limits.max_branches;
@@ -230,7 +229,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
     }
     item["backend"] = backend;
 
-    // Save MCP servers
     if (!entry.mcp_servers.empty()) {
       json mcp_array = json::array();
       for (const auto& srv : entry.mcp_servers) {

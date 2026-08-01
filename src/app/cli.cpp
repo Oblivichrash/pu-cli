@@ -10,7 +10,7 @@
 #include "pu/agent_config.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/conversation.hpp"
-#include "pu/renderer.hpp"
+#include "pu/error.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -67,7 +67,7 @@ AppContext SetupAppContext(const std::string& requested_agent) {
 
 }  // namespace
 
-int RunAsk(int argc, char* argv[]) {
+int RunAsk(int argc, char* argv[], Runtime& runtime) {
   std::string requested_agent;
   std::string prompt;
 
@@ -98,8 +98,6 @@ int RunAsk(int argc, char* argv[]) {
 
   auto ctx = SetupAppContext(requested_agent);
   try {
-    auto& runtime = Runtime::Instance();
-
     if (!requested_agent.empty()) {
       runtime.SetDefaultAgent(requested_agent);
     }
@@ -115,7 +113,11 @@ int RunAsk(int argc, char* argv[]) {
     std::string output;
     bool is_command = false;
     runtime.ProcessInput(session->GetId(), prompt, output, is_command);
-    std::cout << output << "\n";
+    if (!output.empty()) {
+      std::cout << output << "\n";
+    } else if (!is_command) {
+      std::cout << "\n";
+    }
 
     runtime.Shutdown();
   } catch (const std::exception& e) {
@@ -125,7 +127,7 @@ int RunAsk(int argc, char* argv[]) {
   return 0;
 }
 
-int RunChat(int argc, char* argv[]) {
+int RunChat(int argc, char* argv[], Runtime& runtime) {
   std::string initial_agent;
 
   for (int i = 1; i < argc; ++i) {
@@ -150,8 +152,6 @@ int RunChat(int argc, char* argv[]) {
   auto ctx = SetupAppContext(initial_agent);
   const auto& agents_config = ctx.agents_config;
   std::string current_name = ctx.active_agent;
-
-  auto& runtime = Runtime::Instance();
 
   if (!initial_agent.empty()) {
     runtime.SetDefaultAgent(initial_agent);
@@ -187,14 +187,20 @@ int RunChat(int argc, char* argv[]) {
       break;
     }
 
-    std::string output;
-    bool is_command = false;
-    if (runtime.ProcessInput(session_id, input, output, is_command)) {
-      if (!output.empty()) {
-        std::cout << output << "\n";
+    try {
+      std::string output;
+      bool is_command = false;
+      if (runtime.ProcessInput(session_id, input, output, is_command)) {
+        if (!output.empty()) {
+          std::cout << output << "\n";
+        } else if (!is_command) {
+          std::cout << "\n";
+        }
+      } else {
+        spdlog::error("{}", output);
       }
-    } else {
-      spdlog::error("{}", output);
+    } catch (const std::exception& e) {
+      spdlog::error("{}", e.what());
     }
   }
 

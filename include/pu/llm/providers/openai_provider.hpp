@@ -35,7 +35,6 @@ class OpenAIProvider : public LLMProvider {
   ) override;
 
   bool SupportsTools() const override { return true; }
-  bool SupportsStrictMode() const override { return true; }
   std::string GetModelName() const override { return config_.model; }
 
  private:
@@ -55,7 +54,6 @@ class OpenAIProvider : public LLMProvider {
   struct ToolCallAccumulator { std::string id, name, arguments; };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
-  std::string current_trace_id_;
   std::string current_reasoning_content_;
 };
 

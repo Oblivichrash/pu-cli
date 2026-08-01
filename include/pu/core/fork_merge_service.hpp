@@ -2,7 +2,8 @@
 #pragma once
 
 #include "pu/session/workspace.hpp"
-#include "pu/session/call_stack.hpp"
+#include "pu/session/assignment.hpp"
+#include "pu/session/handoff_receipt.hpp"
 #include "pu/agent/agent_manager.hpp"
 #include "pu/llm/llm_provider.hpp"
 
@@ -16,32 +17,27 @@ namespace pu {
 class ForkMergeService {
  public:
   struct ForkResult {
-    std::shared_ptr<Workspace> child_context;
+    std::shared_ptr<Workspace> child_workspace;
     std::string message;
   };
 
   struct MergeResult {
-    std::shared_ptr<Workspace> merge_context;
+    std::shared_ptr<Workspace> merge_workspace;
     HandoffReceipt report;
     std::string message;
   };
 
-  struct ForkContextResult {
-    std::shared_ptr<Workspace> child_context;
-    std::string message;
-  };
-
   ForkMergeService(AgentManager& manager,
-                   std::shared_ptr<Workspace> root_context);
+                   std::shared_ptr<Workspace> root_workspace);
 
-  // Fork operations — CallStack passed explicitly to avoid bidirectional coupling.
-  ForkResult Fork(CallStack& stack,
+  // Fork operations — caller provides the parent workspace directly.
+  ForkResult Fork(const std::shared_ptr<Workspace>& parent,
                   const std::string& agent_name,
                   const std::string& goal,
                   const std::string& branch_name = "");
 
-  // Merge operations
-  MergeResult Merge(CallStack& stack,
+  // Merge operations — caller provides the child workspace directly.
+  MergeResult Merge(const std::shared_ptr<Workspace>& child,
                     const std::string& message,
                     const std::string& strategy = "merge",
                     LLMProvider* provider = nullptr);
@@ -50,36 +46,28 @@ class ForkMergeService {
   void PrintTree(std::ostream& os) const;
 
   // Workspace lookup
-  std::shared_ptr<Workspace> FindContext(const std::string& id_or_branch) const;
+  std::shared_ptr<Workspace> FindWorkspace(const std::string& id_or_branch) const;
 
   // Pruning
   size_t PruneMerged();
 
   // Artifact extraction
-  std::vector<Artifact> ExtractFacts(const std::shared_ptr<Workspace>& ctx,
+  std::vector<Artifact> ExtractArtifacts(const std::shared_ptr<Workspace>& ws,
                          const std::string& goal);
 
   // Summary generation
-  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
+  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_workspace,
                                  const Assignment& delegation,
                                  LLMProvider* provider = nullptr);
 
-  // Summary injection — needs stack to locate parent context.
-  void InjectSummaryIntoParent(CallStack& stack,
-                               const HandoffReceipt& report);
-
-  // Pop delegation
-  HandoffReceipt PopDelegation(CallStack& stack,
-                               LLMProvider* provider = nullptr);
-
   // Accessors
-  std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
+  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_workspace_; }
 
  private:
   void PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const;
 
   AgentManager& manager_;
-  std::shared_ptr<Workspace> root_context_;
+  std::shared_ptr<Workspace> root_workspace_;
 };
 
 }  // namespace pu

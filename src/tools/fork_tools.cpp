@@ -10,18 +10,18 @@
 
 namespace pu::tools {
 
-std::string ForkContextTool::Name() const {
+std::string ForkWorkspaceTool::Name() const {
   return "fork_context";
 }
 
-std::string ForkContextTool::Description() const {
-  return "Fork a new isolated context for sub-task execution. "
-         "The child context inherits all data from the parent but "
+std::string ForkWorkspaceTool::Description() const {
+  return "Fork a new isolated workspace for sub-task execution. "
+         "The child workspace inherits all data from the parent but "
          "has independent history. Use for complex tasks that require "
          "multiple tool calls or deep exploration.";
 }
 
-std::string ForkContextTool::ParametersSchema() const {
+std::string ForkWorkspaceTool::ParametersSchema() const {
   return R"schema({
     "type": "object",
     "properties": {
@@ -42,7 +42,7 @@ std::string ForkContextTool::ParametersSchema() const {
   })schema";
 }
 
-std::string ForkContextTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string ForkWorkspaceTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string agent_name = args.value("agent_name", "");
   std::string goal = args.value("goal", "");
   std::string branch_name = args.value("branch_name", "");
@@ -62,30 +62,32 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, pu::ToolContext
     return "Error: CallStack not available in this context.";
   }
 
-  auto result = ctx.fork_service->Fork(*ctx.call_stack, agent_name, goal, branch_name);
-  if (!result.child_context) {
+  auto parent = ctx.call_stack->IsEmpty() ? ctx.fork_service->GetRootWorkspace()
+                                         : ctx.call_stack->CurrentWorkspace();
+  auto result = ctx.fork_service->Fork(parent, agent_name, goal, branch_name);
+  if (!result.child_workspace) {
     return "Error: " + result.message;
   }
 
   Assignment asgn;
   asgn.goal = "exploration";
   asgn.agent_name = agent_name;
-  ctx.call_stack->Push(asgn, result.child_context);
+  ctx.call_stack->Push(asgn, result.child_workspace);
 
   return result.message;
 }
 
-std::string MergeContextTool::Name() const {
+std::string MergeWorkspaceTool::Name() const {
   return "merge_context";
 }
 
-std::string MergeContextTool::Description() const {
-  return "Merge the current context back to its parent. "
-         "This creates a merge context that combines histories. "
+std::string MergeWorkspaceTool::Description() const {
+  return "Merge the current workspace back to its parent. "
+         "This creates a merged workspace that combines histories. "
          "Use when sub-task is complete and results should be integrated.";
 }
 
-std::string MergeContextTool::ParametersSchema() const {
+std::string MergeWorkspaceTool::ParametersSchema() const {
   return R"schema({
     "type": "object",
     "properties": {
@@ -104,7 +106,7 @@ std::string MergeContextTool::ParametersSchema() const {
   })schema";
 }
 
-std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string MergeWorkspaceTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string message = args.value("message", "");
   std::string strategy = args.value("strategy", "merge");
 
@@ -127,7 +129,15 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContex
     }
   }
 
-  auto result = ctx.fork_service->Merge(*ctx.call_stack, message, strategy);
+  if (ctx.call_stack->IsEmpty()) {
+    return "Error: no active workspace to merge.";
+  }
+
+  auto child = ctx.call_stack->CurrentWorkspace();
+  auto result = ctx.fork_service->Merge(child, message, strategy);
+  if (result.report.status != HandoffReceipt::Status::kFailed) {
+    ctx.call_stack->Pop();
+  }
   return result.message;
 }
 
@@ -136,7 +146,7 @@ std::string ListForksTool::Name() const {
 }
 
 std::string ListForksTool::Description() const {
-  return "List all active and merged child contexts of the current context.";
+  return "List all active and merged child workspaces of the current workspace.";
 }
 
 std::string ListForksTool::ParametersSchema() const {
@@ -148,7 +158,7 @@ std::string ListForksTool::Execute(const nlohmann::json& args, pu::ToolContext& 
 
   if (!ctx.fork_service) {
     return "Error: ForkMergeService not available in this context. "
-           "Please use '/fork list' command to see all contexts.";
+           "Please use '/fork list' command to see all workspaces.";
   }
 
   std::ostringstream oss;

@@ -3,9 +3,14 @@
 
 #include <string>
 
-namespace pu::cli {
+namespace pu {
 
-int RunAsk(int argc, char* argv[]);
-int RunChat(int argc, char* argv[]);
+class Runtime;
+
+namespace cli {
+
+int RunAsk(int argc, char* argv[], Runtime& runtime);
+int RunChat(int argc, char* argv[], Runtime& runtime);
 
 }  // namespace pu::cli
+}  // namespace pu

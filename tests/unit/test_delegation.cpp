@@ -35,7 +35,7 @@ TEST_CASE("CallStack push and pop", "[delegation]") {
   REQUIRE(!stack->IsEmpty());
   REQUIRE(stack->Depth() == 1);
   REQUIRE(stack->Current().assignment.goal == "goal1");
-  REQUIRE(stack->CurrentContext() == ctx1);
+  REQUIRE(stack->CurrentWorkspace() == ctx1);
 
   Assignment d2;
   d2.goal = "goal2";
@@ -56,7 +56,7 @@ TEST_CASE("CallStack push and pop", "[delegation]") {
   REQUIRE(stack->IsEmpty());
 }
 
-TEST_CASE("CallStack push without explicit context creates one", "[delegation]") {
+TEST_CASE("CallStack push without explicit workspace creates one", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
   auto stack = CallStack::Create(root);
 
@@ -68,8 +68,8 @@ TEST_CASE("CallStack push without explicit context creates one", "[delegation]")
   stack->Push(d);
 
   REQUIRE(stack->Depth() == 1);
-  REQUIRE(stack->CurrentContext() != nullptr);
-  REQUIRE(stack->CurrentContext() != root);
+  REQUIRE(stack->CurrentWorkspace() != nullptr);
+  REQUIRE(stack->CurrentWorkspace() != root);
 }
 
 TEST_CASE("CallStack Current on empty throws", "[delegation]") {
@@ -77,7 +77,7 @@ TEST_CASE("CallStack Current on empty throws", "[delegation]") {
   auto stack = CallStack::Create(root);
 
   REQUIRE_THROWS_AS(stack->Current(), std::runtime_error);
-  REQUIRE_THROWS_AS(stack->CurrentContext(), std::runtime_error);
+  REQUIRE_THROWS_AS(stack->CurrentWorkspace(), std::runtime_error);
 }
 
 TEST_CASE("CallStack Clear", "[delegation]") {
@@ -201,7 +201,7 @@ TEST_CASE("Assignment with seeded artifacts", "[delegation]") {
   REQUIRE(d.depth == 0);
 }
 
-TEST_CASE("Context isolation between parent and child", "[delegation]") {
+TEST_CASE("Workspace isolation between parent and child", "[delegation]") {
   auto parent = std::make_shared<Workspace>("parent");
   parent->Append("user", "Hello from parent");
   Artifact a;
@@ -253,11 +253,11 @@ TEST_CASE("CallStack depth tracking", "[delegation]") {
   REQUIRE(stack->IsEmpty());
 }
 
-TEST_CASE("CallStack GetRootContext", "[delegation]") {
+TEST_CASE("CallStack GetRootWorkspace", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
   auto stack = CallStack::Create(root);
 
-  REQUIRE(stack->GetRootContext() == root);
+  REQUIRE(stack->GetRootWorkspace() == root);
 
   Assignment d;
   d.goal = "goal";
@@ -265,6 +265,6 @@ TEST_CASE("CallStack GetRootContext", "[delegation]") {
   d.id = Assignment::GenerateId();
   stack->Push(d);
 
-  REQUIRE(stack->GetRootContext() == root);
-  REQUIRE(stack->CurrentContext() != root);
+  REQUIRE(stack->GetRootWorkspace() == root);
+  REQUIRE(stack->CurrentWorkspace() != root);
 }

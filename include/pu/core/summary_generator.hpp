@@ -15,7 +15,7 @@ class SummaryGenerator {
  public:
   explicit SummaryGenerator(AgentManager& manager);
 
-  HandoffReceipt Generate(const std::shared_ptr<Workspace>& child_ctx,
+  HandoffReceipt Generate(const std::shared_ptr<Workspace>& child_workspace,
                          const Assignment& delegation,
                          LLMProvider* provider = nullptr);
 

@@ -6,7 +6,7 @@
 
 using namespace pu;
 
-TEST_CASE("Workspace basic operations", "[context]") {
+TEST_CASE("Workspace basic operations", "[workspace]") {
   Workspace ctx("test");
   ctx.Append("user", "Hello");
   ctx.Append("assistant", "Hi there!");
@@ -22,7 +22,7 @@ TEST_CASE("Workspace basic operations", "[context]") {
   REQUIRE(val->get<std::string>() == "bar");
 }
 
-TEST_CASE("Artifact operations", "[context]") {
+TEST_CASE("Artifact operations", "[workspace]") {
   Workspace ctx;
   Artifact f;
   f.type = Artifact::Type::kFilePath;

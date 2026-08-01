@@ -43,7 +43,7 @@ struct AgentEntry {
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
 };
 
-// B.4: Runtime limits configuration
+// Runtime limits configuration (optional "limits" section in agents.json)
 struct RuntimeLimits {
   size_t max_history_messages = 10000;
   size_t max_branches = 20;
