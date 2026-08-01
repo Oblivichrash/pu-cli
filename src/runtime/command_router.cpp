@@ -35,8 +35,9 @@ SessionStore CommandRouter::GetSessionStore() const {
   return SessionStore(pu::path::GetDataDir() / "sessions");
 }
 
-CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
-    : manager_(manager), runtime_(runtime) {}
+CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime,
+                             std::shared_ptr<ForkMergeService> fork_service)
+    : manager_(manager), runtime_(runtime), fork_service_(std::move(fork_service)) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   std::string trimmed = input;
@@ -79,19 +80,6 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   return false;
 }
 
-ForkMergeService* CommandRouter::GetOrCreateForkService(Session& session) {
-  auto& call_stack = session.GetCallStack();
-  auto root_ctx = call_stack.GetRootWorkspace();
-  if (!root_ctx) {
-    root_ctx = std::make_shared<Workspace>("root");
-    call_stack.SetRootWorkspace(root_ctx);
-  }
-  if (!fork_service_) {
-    fork_service_ = std::make_unique<ForkMergeService>(manager_, root_ctx);
-  }
-  return fork_service_.get();
-}
-
 bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
   std::ostringstream oss;
   oss << "Available commands:\n"
@@ -120,7 +108,7 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
 
 bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& session, std::string& output) {
   auto& call_stack = session.GetCallStack();
-  auto* fork_service = GetOrCreateForkService(session);
+  auto* fork_service = fork_service_.get();
 
   if (args.empty()) {
     std::ostringstream oss;
@@ -210,7 +198,7 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
 
 bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& session, std::string& output) {
   auto& call_stack = session.GetCallStack();
-  auto* fork_service = GetOrCreateForkService(session);
+  auto* fork_service = fork_service_.get();
 
   if (call_stack.IsEmpty()) {
     output = "Error: no active branch to merge.";

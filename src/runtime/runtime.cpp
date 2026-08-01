@@ -8,9 +8,11 @@
 
 #include "infra/curl_http_client.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/core/fork_merge_service.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
+#include "pu/session/workspace.hpp"
 #include "pu/tools/create_tool.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/fork_tools.hpp"
@@ -34,6 +36,10 @@ void Runtime::Initialize(const std::string& config_path) {
   agent_manager_->SetActiveAgent(agents_cfg.default_agent);
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
+  // Create the shared root workspace and ForkMergeService once.
+  auto root_ws = std::make_shared<Workspace>("root");
+  fork_service_ = std::make_shared<ForkMergeService>(*agent_manager_, root_ws);
+
   const config::AgentEntry* default_entry = nullptr;
   for (const auto& entry : agents_cfg.agents) {
     if (entry.name == agents_cfg.default_agent) {
@@ -51,7 +57,7 @@ void Runtime::Initialize(const std::string& config_path) {
   }
 
   session_store_ = std::make_unique<SessionStore>();
-  command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
+  command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this, fork_service_);
 
   executor_ = std::make_unique<Executor>(nullptr);
 
@@ -200,6 +206,18 @@ bool Runtime::ProcessInput(const std::string& session_id,
   }
 
   is_command = false;
+
+  // Ensure the session's call stack has a root workspace that matches
+  // the shared ForkMergeService root.
+  auto call_stack_ptr = session->GetCallStackPtr();
+  if (!call_stack_ptr->GetRootWorkspace()) {
+    call_stack_ptr->SetRootWorkspace(fork_service_->GetRootWorkspace());
+  }
+
+  // Share the single ForkMergeService and the session's CallStack with the executor.
+  executor_->SetForkService(fork_service_);
+  executor_->SetCallStack(call_stack_ptr);
+
   auto provider = session->CreateProvider();
   auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get());
   result = std::move(exec_result);

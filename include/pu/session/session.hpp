@@ -30,8 +30,10 @@ public:
   const Workspace& GetWorkspace() const { return *workspace_; }
   RuntimeSpec& GetRuntimeSpec() { return runtime_spec_; }
   const RuntimeSpec& GetRuntimeSpec() const { return runtime_spec_; }
-  CallStack& GetCallStack() { return call_stack_; }
-  const CallStack& GetCallStack() const { return call_stack_; }
+
+  std::shared_ptr<CallStack> GetCallStackPtr() const { return call_stack_; }
+  CallStack& GetCallStack() { return *call_stack_; }
+  const CallStack& GetCallStack() const { return *call_stack_; }
 
   // Core operations
   void SwitchBackend(const SessionBackendConfig& new_config);
@@ -55,7 +57,7 @@ private:
   std::chrono::system_clock::time_point last_access_at_;
   std::shared_ptr<Workspace> workspace_;
   RuntimeSpec runtime_spec_;
-  CallStack call_stack_;
+  std::shared_ptr<CallStack> call_stack_;
 };
 
 } // namespace pu

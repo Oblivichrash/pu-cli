@@ -79,14 +79,17 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
   auto tools = toolbox_->GetToolDefinitions();
   bool tool_was_called = false;
-  int max_iterations = 10;
+  const int max_iterations = 20;
   int iteration = 0;
+  bool hit_max_iterations = false;
 
   do {
-    if (iteration++ > max_iterations) {
-      spdlog::warn("Tool loop exceeded max iterations, breaking");
+    if (iteration >= max_iterations) {
+      hit_max_iterations = true;
+      spdlog::warn("Tool loop reached max_iterations ({}), breaking", max_iterations);
       break;
     }
+    ++iteration;
     tool_was_called = false;
 
     std::vector<ChatMessage> chat_history;
@@ -175,6 +178,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         tool_ctx.security = &empty_policy;
         spdlog::warn("No security policy set for Executor. Using empty policy.");
       }
+      tool_ctx.fork_service = fork_service_;
+      tool_ctx.call_stack = call_stack_;
+      if (!tool_ctx.request_confirmation) {
+        tool_ctx.request_confirmation = [](const std::string&) { return true; };
+      }
 
       for (const auto& call : collected_calls) {
         ++result.tool_call_count;
@@ -202,6 +210,17 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         result.final_response = it->content;
         break;
       }
+    }
+  }
+
+  if (result.final_response.empty() && !result.has_error) {
+    if (hit_max_iterations) {
+      result.final_response =
+          "Tool execution reached the maximum number of iterations without generating a final answer. "
+          "Please rephrase your request or narrow the scope.";
+    } else {
+      result.final_response =
+          "Tool execution completed but no final answer was generated. Please rephrase your request.";
     }
   }
 
