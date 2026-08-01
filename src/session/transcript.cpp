@@ -25,12 +25,9 @@ void Transcript::Compact() {
 
   if (messages_.size() <= keep_first + keep_last) return;
 
-  // Determine tail start, then walk backward to ensure we don't truncate
-  // an assistant message with tool_calls before its matching tool responses.
+  // Tail-start walk-back keeps assistant tool_calls paired with their tool
+  // responses (detailed strategy: docs/ARCHITECTURE.md#transcript-compaction).
   size_t tail_start = messages_.size() - keep_last;
-
-  // Scan from tail_start backward up to keep_first to include any
-  // incomplete tool-call sequences.
   for (size_t i = tail_start; i > keep_first; --i) {
     const auto& msg = messages_[i];
     if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {

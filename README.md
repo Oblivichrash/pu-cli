@@ -40,7 +40,7 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 ```bash
 ./build/pu chat
-> /backend deepseek-pro    # switch to predefined agent
+> /backend deepseek-pro    # switch to predefined agent (rebuilds tools)
 > /fork experiment         # create branch
 > /merge                   # merge back
 ```
@@ -51,16 +51,28 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 | Command | Description |
 |---------|-------------|
-| `/backend <agent>` | Switch to predefined agent |
-| `/backend <type> <model>` | Manual backend switch |
+| `/backend <agent>` | Switch to predefined agent (rebuilds the active tool set) |
+| `/backend <type> <model>` | Manual backend switch (keeps current agent) |
 | `/fork [<agent>]` | Fork new branch |
 | `/fork list` | Show branch tree |
+| `/fork show <id>` | Show branch details |
+| `/fork prune [--yes]` | Prune merged branches |
 | `/merge` | Merge current branch |
 | `/save [name]` | Save session |
 | `/load <id>` | Load session |
 | `/list` | List saved sessions |
+| `/stack` | Show delegation stack |
 | `/clear` | Clear history |
 | `/exit` | Exit |
+
+---
+
+## Tools & Agent Binding
+
+The tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones). No manual reload needed.
+
+- `tools` in `agents.json` filters which built-in tools are advertised to the model.
+- MCP tools are always exposed with a `mcp.` prefix when a server is configured.
 
 ---
 
@@ -93,7 +105,7 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 ### MCP Servers
 
-Add `mcp_servers` to any agent to connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Servers are started as child processes (stdio transport) and their tools are registered with a `mcp.` prefix.
+Add `mcp_servers` to any agent to connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Servers are started as child processes (stdio transport) and their tools are registered with a `mcp.` prefix in the active agent's tool set. **Each agent can define its own servers**; switching to that agent starts them, switching away stops them.
 
 ```json
 {
@@ -120,6 +132,8 @@ Add `mcp_servers` to any agent to connect external tools via the [Model Context 
 | `name` | Display name for the MCP server |
 | `command` | Executable to launch |
 | `args` | Arguments passed to the command |
+
+> Note: only the first `mcp_servers` entry per agent is currently started.
 
 ### Environment
 

@@ -51,7 +51,7 @@ TEST_CASE("ArtifactExtractor extracts error messages", "[artifact_extractor]") {
   REQUIRE(found_error);
 }
 
-TEST_CASE("ArtifactExtractor deduplicates facts", "[artifact_extractor]") {
+TEST_CASE("ArtifactExtractor deduplicates artifacts", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Check /tmp/file.cpp");
@@ -69,7 +69,7 @@ TEST_CASE("ArtifactExtractor deduplicates facts", "[artifact_extractor]") {
   REQUIRE(count == 1);  // Should be deduplicated
 }
 
-TEST_CASE("ArtifactExtractor returns empty for empty context", "[artifact_extractor]") {
+TEST_CASE("ArtifactExtractor returns empty for empty workspace", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ArtifactExtractor extractor;
@@ -78,7 +78,7 @@ TEST_CASE("ArtifactExtractor returns empty for empty context", "[artifact_extrac
   REQUIRE(facts.empty());
 }
 
-TEST_CASE("ArtifactExtractor returns empty for null context", "[artifact_extractor]") {
+TEST_CASE("ArtifactExtractor returns empty for null workspace", "[artifact_extractor]") {
   ArtifactExtractor extractor;
   auto facts = extractor.Extract(nullptr, "testing");
 
