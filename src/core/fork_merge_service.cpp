@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/fork_merge_service.hpp"
-#include "pu/core/fact_extractor.hpp"
+#include "pu/core/artifact_extractor.hpp"
 #include "pu/core/summary_generator.hpp"
 #include "pu/agent/agent_manager.hpp"
 
@@ -48,7 +48,7 @@ ForkMergeService::MergeResult ForkMergeService::Merge(const std::shared_ptr<Work
   }
   auto parent = child->GetParent();
   if (!parent) {
-    // No parent — this is the root. Generate summary and report.
+    // Root workspace has no parent: generate a final summary.
     SummaryGenerator summary_gen(manager_);
     Assignment dummy;
     dummy.goal = "merge";
@@ -135,7 +135,7 @@ void ForkMergeService::PrintTree(std::ostream& os, const std::shared_ptr<Workspa
   print_node(root, 0, true);
 }
 
-std::shared_ptr<Workspace> ForkMergeService::FindContext(const std::string& id_or_branch) const {
+std::shared_ptr<Workspace> ForkMergeService::FindWorkspace(const std::string& id_or_branch) const {
   auto ctx = root_context_;
   if (!ctx) return nullptr;
   std::shared_ptr<Workspace> found = nullptr;
@@ -169,9 +169,9 @@ size_t ForkMergeService::PruneMerged() {
   return total_removed;
 }
 
-std::vector<Artifact> ForkMergeService::ExtractFacts(const std::shared_ptr<Workspace>& ctx,
+std::vector<Artifact> ForkMergeService::ExtractArtifacts(const std::shared_ptr<Workspace>& ctx,
                                                       const std::string& goal) {
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   return extractor.Extract(ctx, goal);
 }
 
