@@ -199,3 +199,82 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.system_prompt.has_value());
   REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }
+
+TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[agent_config]") {
+  TempConfigFile tmp;
+  std::string json = R"({
+    "default_agent": "deepseek",
+    "agents": [
+      {
+        "name": "deepseek",
+        "backend": {
+          "type": "openai",
+          "host": "https://api.deepseek.com/v1",
+          "model": "deepseek-reasoner",
+          "enable_thinking": true
+        },
+        "history_compaction": {
+          "enabled": false,
+          "keep_head": 15,
+          "keep_tail": 60,
+          "strategy": "truncate"
+        }
+      }
+    ]
+  })";
+  tmp.write(json);
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.agents.size() == 1);
+  REQUIRE(cfg.agents[0].backend.enable_thinking == true);
+  REQUIRE(cfg.agents[0].compaction.enabled == false);
+  REQUIRE(cfg.agents[0].compaction.keep_head == 15);
+  REQUIRE(cfg.agents[0].compaction.keep_tail == 60);
+  REQUIRE(cfg.agents[0].compaction.strategy == "truncate");
+}
+
+TEST_CASE("LoadAgentsConfig uses defaults when compaction fields absent", "[agent_config]") {
+  TempConfigFile tmp;
+  std::string json = R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen" }
+      }
+    ]
+  })";
+  tmp.write(json);
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.agents[0].backend.enable_thinking == true);
+  REQUIRE(cfg.agents[0].compaction.enabled == true);
+  REQUIRE(cfg.agents[0].compaction.keep_head == 10);
+  REQUIRE(cfg.agents[0].compaction.keep_tail == 50);
+  REQUIRE(cfg.agents[0].compaction.strategy == "truncate");
+}
+
+TEST_CASE("SaveAgentsConfig round-trips enable_thinking and compaction", "[agent_config]") {
+  TempConfigFile tmp;
+  config::AgentsConfig original;
+  original.default_agent = "deepseek";
+  config::AgentEntry entry;
+  entry.name = "deepseek";
+  entry.backend.type = config::BackendType::kOpenAI;
+  entry.backend.host = "https://api.deepseek.com/v1";
+  entry.backend.model = "deepseek-reasoner";
+  entry.backend.enable_thinking = true;
+  entry.compaction.enabled = false;
+  entry.compaction.keep_head = 15;
+  entry.compaction.keep_tail = 60;
+  entry.compaction.strategy = "truncate";
+  original.agents.push_back(entry);
+
+  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
+
+  config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(loaded.agents.size() == 1);
+  REQUIRE(loaded.agents[0].backend.enable_thinking == true);
+  REQUIRE(loaded.agents[0].compaction.enabled == false);
+  REQUIRE(loaded.agents[0].compaction.keep_head == 15);
+  REQUIRE(loaded.agents[0].compaction.keep_tail == 60);
+  REQUIRE(loaded.agents[0].compaction.strategy == "truncate");
+}
