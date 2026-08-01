@@ -58,6 +58,9 @@ public:
   size_t RemoveMergedChildren();
   size_t GetTokenCount() const;
 
+  // Generate a unique tool call ID for this workspace.
+  int NextToolCallId() { return ++next_tool_call_id_; }
+
   // Serialization (compatible with old Context JSON structure)
   nlohmann::json Serialize() const;
   void Save(const std::filesystem::path& path) const;
@@ -77,6 +80,8 @@ private:
   std::unique_ptr<Transcript> transcript_;
   std::unique_ptr<Memory> memory_;
   std::unique_ptr<RevisionGraph> graph_;
+
+  int next_tool_call_id_ = 0;
 };
 
 } // namespace pu

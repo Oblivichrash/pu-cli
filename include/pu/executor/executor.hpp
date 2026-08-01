@@ -38,7 +38,6 @@ private:
 
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
-  int next_tool_call_id_ = 0;
 };
 
 } // namespace pu

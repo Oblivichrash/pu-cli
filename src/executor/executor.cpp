@@ -132,7 +132,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       // Ensure every tool call has a non‑empty ID (some providers may omit it).
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
-          tc.id = "call_" + std::to_string(++next_tool_call_id_);
+          tc.id = "call_" + std::to_string(workspace.NextToolCallId());
         }
       }
 
