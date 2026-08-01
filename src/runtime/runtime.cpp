@@ -8,7 +8,7 @@
 #include "pu/tools/fork_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
 #include "infra/curl_http_client.hpp"
-#include <stdexcept>
+#include "pu/error.hpp"
 #include "pu/core/logging.hpp"
 #include <spdlog/spdlog.h>
 #include <iostream>
@@ -117,7 +117,7 @@ std::string Runtime::CreateSession(const std::string& owner_id,
                                    const std::string& agent_name,
                                    const BackendConfig* backend) {
   if (sessions_.size() >= static_cast<size_t>(max_sessions_)) {
-    throw std::runtime_error("Maximum sessions reached");
+    throw RuntimeError("Maximum sessions reached");
   }
 
   auto id = "session_" + std::to_string(

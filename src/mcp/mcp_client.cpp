@@ -2,6 +2,7 @@
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/mcp/stdio_transport.hpp"
 #include "pu/mcp/json_rpc_client.hpp"
+#include "pu/error.hpp"
 #include <spdlog/spdlog.h>
 #include <future>
 #include <chrono>
@@ -81,12 +82,12 @@ bool McpClient::Handshake() {
 
 nlohmann::json McpClient::SendRequest(const std::string& method, const nlohmann::json& params, int timeout_ms) {
     if (!pimpl_->connected || !pimpl_->rpc) {
-        throw std::runtime_error("MCP client not connected");
+        throw RuntimeError("MCP client not connected");
     }
     auto future = pimpl_->rpc->SendRequest(method, params);
     auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
     if (status == std::future_status::timeout) {
-        throw std::runtime_error("MCP request timeout");
+        throw RuntimeError("MCP request timeout");
     }
     return future.get();
 }

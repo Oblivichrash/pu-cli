@@ -4,7 +4,7 @@
 #include "pu/llm/providers/openai_provider.hpp"
 #include "pu/http/http_client.hpp"
 #include "infra/curl_http_client.hpp"
-#include <stdexcept>
+#include "pu/error.hpp"
 
 namespace pu {
 
@@ -26,7 +26,7 @@ Session::Session(const std::string& id, const std::string& owner_id,
 
 void Session::SwitchAgent(const std::string& agent_name) {
   if (HasPendingToolCalls()) {
-    throw std::runtime_error(
+    throw RuntimeError(
       "Cannot switch agent while tool calls are pending. "
       "Please let the current tool finish or /clear.");
   }
@@ -35,7 +35,7 @@ void Session::SwitchAgent(const std::string& agent_name) {
 
 void Session::SwitchBackend(const BackendConfig& new_config) {
   if (HasPendingToolCalls()) {
-    throw std::runtime_error(
+    throw RuntimeError(
       "Cannot switch backend while tool calls are pending. "
       "Please let the current tool finish or /clear.");
   }
@@ -63,7 +63,7 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
     openai_cfg.max_tokens = cfg.max_tokens;
     return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
   }
-  throw std::runtime_error("Unknown backend type: " + cfg.type);
+  throw RuntimeError("Unknown backend type: " + cfg.type);
 }
 
 nlohmann::json Session::Serialize() const {

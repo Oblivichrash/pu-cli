@@ -11,6 +11,7 @@
 #include "pu/path_utils.hpp"
 #include "pu/conversation.hpp"
 #include "pu/renderer.hpp"
+#include "pu/error.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -191,16 +192,20 @@ int RunChat(int argc, char* argv[]) {
       break;
     }
 
-    std::string output;
-    bool is_command = false;
-    if (runtime.ProcessInput(session_id, input, output, is_command)) {
-      if (!output.empty()) {
-        std::cout << output << "\n";
-      } else if (!is_command) {
-        std::cout << "\n";
+    try {
+      std::string output;
+      bool is_command = false;
+      if (runtime.ProcessInput(session_id, input, output, is_command)) {
+        if (!output.empty()) {
+          std::cout << output << "\n";
+        } else if (!is_command) {
+          std::cout << "\n";
+        }
+      } else {
+        spdlog::error("{}", output);
       }
-    } else {
-      spdlog::error("{}", output);
+    } catch (const std::exception& e) {
+      spdlog::error("{}", e.what());
     }
   }
 

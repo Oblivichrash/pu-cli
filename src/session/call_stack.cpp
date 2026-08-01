@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
-#include <stdexcept>
+#include "pu/error.hpp"
 
 namespace pu {
 
@@ -43,21 +43,21 @@ std::optional<HandoffReceipt> CallStack::Pop() {
 
 CallStack::Frame& CallStack::Current() {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::Current() on empty stack");
+    throw RuntimeError("CallStack::Current() on empty stack");
   }
   return frames_.back();
 }
 
 const CallStack::Frame& CallStack::Current() const {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::Current() on empty stack");
+    throw RuntimeError("CallStack::Current() on empty stack");
   }
   return frames_.back();
 }
 
 std::shared_ptr<Workspace> CallStack::CurrentContext() const {
   if (frames_.empty()) {
-    throw std::runtime_error("CallStack::CurrentContext() on empty stack");
+    throw RuntimeError("CallStack::CurrentContext() on empty stack");
   }
   return frames_.back().context;
 }
