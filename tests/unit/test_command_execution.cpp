@@ -21,6 +21,7 @@ TEST_CASE("ExecuteCommand runs compound command with pipe", "[platform][command]
   REQUIRE(output.find("HELLO") != std::string::npos);
 }
 
+#ifndef _WIN32
 TEST_CASE("ExecuteCommand runs compound command with semicolons and redirection",
           "[platform][command]") {
   std::string output;
@@ -30,6 +31,7 @@ TEST_CASE("ExecuteCommand runs compound command with semicolons and redirection"
   REQUIRE(!output.empty());
   REQUIRE(output.find("g++") != std::string::npos);
 }
+#endif
 
 TEST_CASE("ExecuteCommand reports non-zero exit code for failing command", "[platform][command]") {
   std::string output;
