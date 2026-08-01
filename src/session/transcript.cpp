@@ -19,16 +19,11 @@ std::vector<ChatMessage> Transcript::Recent(int n) const {
   return std::vector<ChatMessage>(messages_.end() - n, messages_.end());
 }
 
-void Transcript::Compact() {
-  const size_t keep_first = COMPACT_KEEP_HEAD;
-  const size_t keep_last = COMPACT_KEEP_TAIL;
+void Transcript::Compact(size_t keep_head, size_t keep_tail) {
+  if (messages_.size() <= keep_head + keep_tail) return;
 
-  if (messages_.size() <= keep_first + keep_last) return;
-
-  // Tail-start walk-back keeps assistant tool_calls paired with their tool
-  // responses (detailed strategy: docs/ARCHITECTURE.md#transcript-compaction).
-  size_t tail_start = messages_.size() - keep_last;
-  for (size_t i = tail_start; i > keep_first; --i) {
+  size_t tail_start = messages_.size() - keep_tail;
+  for (size_t i = tail_start; i > keep_head; --i) {
     const auto& msg = messages_[i];
     if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {
       std::vector<std::string> ids;
@@ -37,9 +32,7 @@ void Transcript::Compact() {
         for (const auto& tc : j) {
           if (tc.contains("id")) ids.push_back(tc["id"].get<std::string>());
         }
-      } catch (...) {
-        continue; // If parsing fails, we cannot verify; skip.
-      }
+      } catch (...) { continue; }
 
       bool all_found = true;
       for (const auto& id : ids) {
@@ -55,8 +48,6 @@ void Transcript::Compact() {
           break;
         }
       }
-
-      // If missing a tool response, extend tail_start to include this assistant.
       if (!all_found) {
         tail_start = i;
       }
@@ -64,21 +55,17 @@ void Transcript::Compact() {
   }
 
   std::vector<ChatMessage> compressed;
-  compressed.reserve(keep_first + 1 + (messages_.size() - tail_start));
-
-  compressed.insert(compressed.end(), messages_.begin(), messages_.begin() + keep_first);
-
-  if (tail_start > keep_first) {
+  compressed.reserve(keep_head + 1 + (messages_.size() - tail_start));
+  compressed.insert(compressed.end(), messages_.begin(), messages_.begin() + keep_head);
+  if (tail_start > keep_head) {
     ChatMessage summary;
     summary.id = static_cast<int>(compressed.size()) + 1;
     summary.timestamp = "";
     summary.role = "system";
-    summary.content = "[Compressed: " + std::to_string(tail_start - keep_first) + " messages omitted]";
+    summary.content = "[Compressed: " + std::to_string(tail_start - keep_head) + " messages omitted]";
     compressed.push_back(summary);
   }
-
   compressed.insert(compressed.end(), messages_.begin() + tail_start, messages_.end());
-
   messages_ = std::move(compressed);
 }
 
@@ -89,9 +76,7 @@ bool Transcript::HasPendingToolCalls() const {
     try {
       auto j = nlohmann::json::parse(last.tool_calls_json);
       return j.is_array() && !j.empty();
-    } catch (...) {
-      return false;
-    }
+    } catch (...) { return false; }
   }
   return false;
 }
@@ -132,4 +117,4 @@ Transcript Transcript::Deserialize(const nlohmann::json& j) {
   return t;
 }
 
-}  // namespace pu
+} // namespace pu

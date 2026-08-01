@@ -33,6 +33,7 @@ class OllamaProvider : public LLMProvider {
 
   bool SupportsTools() const override { return true; }
   std::string GetModelName() const override { return config_.model; }
+  bool IsThinkingMode() const override { return false; }
 
  private:
   std::string BuildRequest(const std::vector<ChatMessage>& history) const;

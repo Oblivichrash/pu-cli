@@ -34,8 +34,13 @@ ExecutionResult Executor::Execute(const std::string& input,
   workspace.Append("user", input);
 
   auto tools = toolbox_->GetToolDefinitions();
-  if (!provider->SupportsTools() && !tools.empty()) {
-    workspace.Compact();
+  if (!provider->SupportsTools() && !tools.empty() && compaction_config_.enabled) {
+    if (provider->IsThinkingMode()) {
+      spdlog::warn("Compaction is disabled because the provider is in thinking mode. "
+                   "Set compaction.enabled=false in agents.json to override.");
+    } else {
+      workspace.Compact(compaction_config_.keep_head, compaction_config_.keep_tail);
+    }
   }
 
   auto result = RunToolLoop(workspace, provider);

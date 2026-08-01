@@ -34,14 +34,11 @@ json BuildMessagesJson(const std::vector<ChatMessage>& history) {
     bool has_tool_calls = !msg.tool_calls_json.empty();
 
     if (has_tool_calls) {
-      // According to DeepSeek thinking mode spec, when tool_calls are present,
-      // content must be null (or omitted).
       j["content"] = nullptr;
     } else {
       j["content"] = msg.content.empty() ? "" : msg.content;
     }
 
-    // reasoning_content should be included only if non-empty and role is assistant
     if (role == "assistant" && !msg.reasoning_content.empty()) {
       j["reasoning_content"] = msg.reasoning_content;
     }
@@ -91,6 +88,12 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
   req["temperature"] = config_.temperature;
   req["max_tokens"] = config_.max_tokens;
 
+  if (!config_.enable_thinking) {
+    json extra_body;
+    extra_body["thinking"]["type"] = "disabled";
+    req["extra_body"] = extra_body;
+  }
+
   auto messages = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
         return m.role == "system";
@@ -113,6 +116,12 @@ std::string OpenAIProvider::BuildRequestWithTools(
   req["stream"] = true;
   req["temperature"] = config_.temperature;
   req["max_tokens"] = config_.max_tokens;
+
+  if (!config_.enable_thinking) {
+    json extra_body;
+    extra_body["thinking"]["type"] = "disabled";
+    req["extra_body"] = extra_body;
+  }
 
   auto messages = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {

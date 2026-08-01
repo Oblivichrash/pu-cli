@@ -32,6 +32,14 @@ struct BackendConfig {
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
   bool parameters_as_string = false;
   int max_tokens = 2048;
+  bool enable_thinking = true;  // for DeepSeek/vLLM only
+};
+
+struct HistoryCompactionConfig {
+  bool enabled = true;
+  size_t keep_head = 10;
+  size_t keep_tail = 50;
+  std::string strategy = "truncate";  // reserved for future
 };
 
 struct AgentEntry {
@@ -41,9 +49,9 @@ struct AgentEntry {
   std::vector<std::string> tools;
   SecurityPolicy security;
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
+  HistoryCompactionConfig compaction;
 };
 
-// Runtime limits configuration (optional "limits" section in agents.json)
 struct RuntimeLimits {
   size_t max_history_messages = 10000;
   size_t max_branches = 20;
@@ -53,7 +61,7 @@ struct RuntimeLimits {
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
-  RuntimeLimits limits;  // B.4: optional runtime limits
+  RuntimeLimits limits;
 };
 
 std::string FindConfigPath();

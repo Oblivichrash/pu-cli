@@ -21,6 +21,7 @@ class OpenAIProvider : public LLMProvider {
     std::string api_key;
     bool parameters_as_string = false;
     int max_tokens = 2048;
+    bool enable_thinking = true;   // for DeepSeek/vLLM
   };
 
   explicit OpenAIProvider(const Config& config,
@@ -36,6 +37,7 @@ class OpenAIProvider : public LLMProvider {
 
   bool SupportsTools() const override { return true; }
   std::string GetModelName() const override { return config_.model; }
+  bool IsThinkingMode() const override { return config_.enable_thinking; }
 
  private:
   std::string BuildRequest(const std::vector<ChatMessage>& history) const;

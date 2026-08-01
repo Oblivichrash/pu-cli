@@ -1,23 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent/agent_manager.hpp"
 #include "pu/agent_config.hpp"
-
 #include "pu/error.hpp"
 #include "pu/llm/providers/ollama_provider.hpp"
 #include "pu/llm/providers/openai_provider.hpp"
-#include "pu/llm/llm_provider.hpp"
-#include "pu/http/http_client.hpp"
-#include "pu/mcp/mcp_types.hpp"
-
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <regex>
-#include <stdexcept>
 
 namespace pu::config {
 
@@ -52,21 +43,17 @@ ToolCallStyle ParseToolCallStyle(const std::string& str) {
 
 SecurityPolicy ParseSecurityPolicy(const json& j) {
   SecurityPolicy policy;
-  if (j.contains("sandbox_root") && j["sandbox_root"].is_string()) {
+  if (j.contains("sandbox_root") && j["sandbox_root"].is_string())
     policy.sandbox_root = j["sandbox_root"];
-  }
   if (j.contains("allowed_paths") && j["allowed_paths"].is_array()) {
-    for (const auto& p : j["allowed_paths"]) {
+    for (const auto& p : j["allowed_paths"])
       if (p.is_string()) policy.allowed_paths.push_back(p.get<std::string>());
-    }
   }
-  if (j.contains("max_command_length") && j["max_command_length"].is_number()) {
+  if (j.contains("max_command_length") && j["max_command_length"].is_number())
     policy.max_command_length = j["max_command_length"];
-  }
   if (j.contains("forbidden_patterns") && j["forbidden_patterns"].is_array()) {
-    for (const auto& pat : j["forbidden_patterns"]) {
+    for (const auto& pat : j["forbidden_patterns"])
       if (pat.is_string()) policy.forbidden_patterns.push_back(pat.get<std::string>());
-    }
   }
   return policy;
 }
@@ -84,6 +71,7 @@ BackendConfig ParseBackendConfig(const json& j) {
   cfg.tool_call_style = ParseToolCallStyle(j.value("tool_call_style", "default"));
   cfg.parameters_as_string = j.value("parameters_as_string", false);
   cfg.max_tokens = j.value("max_tokens", 2048);
+  cfg.enable_thinking = j.value("enable_thinking", true);
   return cfg;
 }
 
@@ -95,106 +83,103 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
     srv.name = item.value("name", "");
     srv.command = item.value("command", "");
     if (item.contains("args") && item["args"].is_array()) {
-      for (const auto& a : item["args"]) {
+      for (const auto& a : item["args"])
         if (a.is_string()) srv.args.push_back(a.get<std::string>());
-      }
     }
-    if (!srv.name.empty() && !srv.command.empty()) {
+    if (!srv.name.empty() && !srv.command.empty())
       servers.push_back(std::move(srv));
-    } else {
+    else
       spdlog::warn("Skipping MCP server entry with missing name or command");
-    }
   }
   return servers;
+}
+
+HistoryCompactionConfig ParseCompactionConfig(const json& j) {
+  HistoryCompactionConfig cfg;
+  if (j.contains("history_compaction") && j["history_compaction"].is_object()) {
+    const auto& c = j["history_compaction"];
+    cfg.enabled = c.value("enabled", true);
+    cfg.keep_head = c.value("keep_head", 10);
+    cfg.keep_tail = c.value("keep_tail", 50);
+    cfg.strategy = c.value("strategy", "truncate");
+  }
+  return cfg;
 }
 
 AgentEntry ParseAgentEntry(const json& j) {
   AgentEntry entry;
   entry.name = j.value("name", "");
-  if (entry.name.empty()) throw pu::Error("Missing agent name field");
+  if (entry.name.empty()) throw pu::Error("Missing agent name");
   entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object()) { throw pu::Error("Missing backend field"); }
+  if (!j.contains("backend") || !j["backend"].is_object())
+    throw pu::Error("Missing backend field");
   entry.backend = ParseBackendConfig(j["backend"]);
-  if (entry.backend.host.empty() || entry.backend.model.empty()) { throw pu::Error("Missing host or model in backend config"); }
+  if (entry.backend.host.empty() || entry.backend.model.empty())
+    throw pu::Error("Missing host or model in backend");
 
   if (j.contains("tools") && j["tools"].is_array()) {
-    for (const auto& t : j["tools"]) {
+    for (const auto& t : j["tools"])
       if (t.is_string()) entry.tools.push_back(t.get<std::string>());
-    }
   }
-  if (j.contains("security") && j["security"].is_object()) {
+  if (j.contains("security") && j["security"].is_object())
     entry.security = ParseSecurityPolicy(j["security"]);
-  }
-
-  if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+  if (j.contains("mcp_servers") && j["mcp_servers"].is_array())
     entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
-  }
 
+  entry.compaction = ParseCompactionConfig(j);
   return entry;
 }
 
-// Parse runtime limits from config
 RuntimeLimits ParseRuntimeLimits(const json& j) {
   RuntimeLimits limits;
-  if (j.contains("max_history_messages") && j["max_history_messages"].is_number()) {
+  if (j.contains("max_history_messages") && j["max_history_messages"].is_number())
     limits.max_history_messages = j["max_history_messages"];
-  }
-  if (j.contains("max_branches") && j["max_branches"].is_number()) {
+  if (j.contains("max_branches") && j["max_branches"].is_number())
     limits.max_branches = j["max_branches"];
-  }
-  if (j.contains("max_sessions") && j["max_sessions"].is_number()) {
+  if (j.contains("max_sessions") && j["max_sessions"].is_number())
     limits.max_sessions = j["max_sessions"];
-  }
   return limits;
 }
 
-}  // namespace
+} // unnamed namespace
 
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
   if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  throw pu::Error("Configuration file not found. "
-                           "Set PU_AGENTS_CONFIG or place agents.json in current directory.");
+  throw pu::Error("Configuration file not found. Set PU_AGENTS_CONFIG or place agents.json in current directory.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) { throw pu::Error("Configuration file not found. " + config_path); }
+  if (!file.is_open())
+    throw pu::Error("Configuration file not found: " + config_path);
 
   json j;
-  try { file >> j; } catch (const json::parse_error&) { throw pu::Error("Failed to parse configuration JSON"); }
-
-  if (!j.contains("default_agent") || !j["default_agent"].is_string()) {
-    throw pu::Error("Missing default_agent field in config");
+  try { file >> j; } catch (const json::parse_error&) {
+    throw pu::Error("Failed to parse configuration JSON");
   }
+
+  if (!j.contains("default_agent") || !j["default_agent"].is_string())
+    throw pu::Error("Missing default_agent field");
   result.default_agent = j["default_agent"];
 
-  // Parse optional limits
-  if (j.contains("limits") && j["limits"].is_object()) {
+  if (j.contains("limits") && j["limits"].is_object())
     result.limits = ParseRuntimeLimits(j["limits"]);
-  }
 
-  if (!j.contains("agents") || !j["agents"].is_array()) {
-    throw pu::Error("Missing agents array in config");
-  }
+  if (!j.contains("agents") || !j["agents"].is_array())
+    throw pu::Error("Missing agents array");
+  for (const auto& item : j["agents"])
+    result.agents.push_back(ParseAgentEntry(item));
 
-  for (const auto& item : j["agents"]) {
-    auto entry = ParseAgentEntry(item);
-    result.agents.push_back(std::move(entry));
-  }
-
-  if (result.default_agent.empty() && !result.agents.empty()) {
+  if (result.default_agent.empty() && !result.agents.empty())
     result.default_agent = result.agents[0].name;
-  }
   return result;
 }
 
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
-
-  // Save limits
   json limits;
   limits["max_history_messages"] = cfg.limits.max_history_messages;
   limits["max_branches"] = cfg.limits.max_branches;
@@ -222,6 +207,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
     if (entry.backend.api_key) backend["api_key"] = *entry.backend.api_key;
     backend["temperature"] = entry.backend.temperature;
     if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
+    backend["enable_thinking"] = entry.backend.enable_thinking;
     switch (entry.backend.tool_call_style) {
       case ToolCallStyle::kOpenAI: backend["tool_call_style"] = "openai"; break;
       case ToolCallStyle::kPhi4:   backend["tool_call_style"] = "phi4"; break;
@@ -241,12 +227,19 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
       item["mcp_servers"] = mcp_array;
     }
 
+    json compaction;
+    compaction["enabled"] = entry.compaction.enabled;
+    compaction["keep_head"] = entry.compaction.keep_head;
+    compaction["keep_tail"] = entry.compaction.keep_tail;
+    compaction["strategy"] = entry.compaction.strategy;
+    item["history_compaction"] = compaction;
+
     agents_array.push_back(item);
   }
   j["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open()) { throw pu::Error("Failed to open config file for writing: " + config_path); }
+  if (!file.is_open()) throw pu::Error("Failed to open config file for writing: " + config_path);
   file << j.dump(2);
 }
 
@@ -261,8 +254,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       ollama_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<OllamaProvider>(
-          std::move(ollama_cfg), std::move(http));
+      return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
       OpenAIProvider::Config openai_cfg;
@@ -273,12 +265,12 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
       openai_cfg.api_key = cfg.api_key.value_or("");
       openai_cfg.parameters_as_string = cfg.parameters_as_string;
       openai_cfg.max_tokens = cfg.max_tokens;
-      return std::make_unique<OpenAIProvider>(
-          openai_cfg, std::move(http));
+      openai_cfg.enable_thinking = cfg.enable_thinking;
+      return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
     }
     default:
       throw pu::Error("Unknown backend type");
   }
 }
 
-}  // namespace pu::config
+} // namespace pu::config

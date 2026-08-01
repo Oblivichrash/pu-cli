@@ -278,6 +278,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 
   executor_->SetSecurityPolicy(agent.security);
   executor_->SetToolbox(toolbox_.get());
+  executor_->SetCompactionConfig(agent.compaction);
   agent_manager_->SetActiveAgent(agent.name);
 }
 

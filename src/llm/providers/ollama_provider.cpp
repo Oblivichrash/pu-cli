@@ -217,4 +217,8 @@ ChatResult OllamaProvider::Chat(
   return result;
 }
 
+bool OllamaProvider::IsThinkingMode() const {
+  return false;
+}
+
 }  // namespace pu

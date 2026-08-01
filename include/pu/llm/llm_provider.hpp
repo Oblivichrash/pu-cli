@@ -16,7 +16,7 @@ struct ToolDefinition {
 };
 
 struct ToolCall {
-  std::string id;  // unique identifier for the tool call
+  std::string id;
   std::string name;
   nlohmann::json arguments;
 };
@@ -42,6 +42,7 @@ public:
 
   virtual bool SupportsTools() const = 0;
   virtual std::string GetModelName() const = 0;
+  virtual bool IsThinkingMode() const { return false; }
 };
 
 } // namespace pu

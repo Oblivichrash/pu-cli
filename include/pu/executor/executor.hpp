@@ -28,6 +28,7 @@ class Executor {
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
+  void SetCompactionConfig(const config::HistoryCompactionConfig& cfg) { compaction_config_ = cfg; }
 
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
@@ -46,6 +47,7 @@ class Executor {
 
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
+  config::HistoryCompactionConfig compaction_config_;
 };
 
 }  // namespace pu
