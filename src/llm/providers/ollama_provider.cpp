@@ -25,7 +25,6 @@ std::string OllamaProvider::RoleToString(const std::string& role) const {
   return "user";
 }
 
-
 std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
   json req;
   req["model"] = config_.model;
@@ -47,6 +46,9 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
     json m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
     if (msg.role == "tool") {
       m["tool_name"] = msg.tool_name;
+      if (!msg.tool_call_id.empty()) {
+        m["tool_call_id"] = msg.tool_call_id;
+      }
     }
     if (!msg.tool_calls_json.empty()) {
       try {
@@ -82,6 +84,9 @@ std::string OllamaProvider::BuildRequestWithTools(
     json m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
     if (msg.role == "tool") {
       m["tool_name"] = msg.tool_name;
+      if (!msg.tool_call_id.empty()) {
+        m["tool_call_id"] = msg.tool_call_id;
+      }
     }
     if (!msg.tool_calls_json.empty()) {
       try {
@@ -140,9 +145,12 @@ void OllamaProvider::HandleJsonToken(const json& j,
       for (const auto& tc : msg["tool_calls"]) {
         if (!tc.contains("function")) continue;
         std::string tool_name = tc["function"].value("name", "");
-        if (tool_name.empty()) continue;   // malformed call
+        if (tool_name.empty()) continue;
 
         ToolCall call;
+        if (tc.contains("id") && tc["id"].is_string()) {
+          call.id = tc["id"].get<std::string>();
+        }
         call.name = tool_name;
         if (tc["function"].contains("arguments")) {
           const auto& args = tc["function"]["arguments"];

@@ -5,19 +5,20 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_config.hpp"
+#include "pu/executor/executor.hpp"
+#include "pu/mcp/mcp_client.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/storage/session_store.hpp"
-#include "pu/agent/agent_manager.hpp"
-#include "pu/runtime/command_router.hpp"
-#include "pu/executor/executor.hpp"
 #include "pu/tools/toolbox.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/mcp/mcp_client.hpp"
 
 namespace pu {
 
 class Runtime {
-public:
+ public:
   Runtime() = default;
   ~Runtime() = default;
 
@@ -36,25 +37,16 @@ public:
 
   std::shared_ptr<Session> GetDefaultSession();
 
-  bool ProcessInput(const std::string& session_id,
-                    const std::string& input,
-                    std::string& output,
-                    bool& is_command);
+  bool ProcessInput(const std::string& session_id, const std::string& input,
+                    ExecutionResult& result, bool& is_command);
 
-
-  // Reload external tools
   void ReloadTools();
-
-  // Override the default agent name for startup (--agent flag)
   void SetDefaultAgent(const std::string& agent_name);
-
-  // Switch the active agent and rebuild the tool registry.
   void SwitchAgent(const config::AgentEntry& new_agent);
 
-private:
+ private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
-  // Tool lifecycle helpers
   void RebuildToolbox(const config::AgentEntry& agent);
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
@@ -73,14 +65,11 @@ private:
   SessionBackendConfig default_backend_config_;
   int max_sessions_ = 10;
 
-  // Default agent override (set via --agent flag)
   std::string default_agent_override_;
 
-  // Per-agent tool registry state. The Runtime is the sole owner of the
-  // Toolbox; it is rebuilt whenever the active agent changes.
   std::unique_ptr<mcp::McpClient> current_mcp_client_;
   std::string current_agent_name_;
   config::AgentEntry current_agent_config_;
 };
 
-} // namespace pu
+}  // namespace pu

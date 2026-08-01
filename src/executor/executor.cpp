@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor/executor.hpp"
 
-#include "pu/core/fork_merge_service.hpp"
-#include "tools/command_executor.hpp"
-
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -11,22 +8,27 @@
 #include <iostream>
 #include <sstream>
 
+#include "pu/core/fork_merge_service.hpp"
+#include "tools/command_executor.hpp"
+
 namespace pu {
 
 using json = nlohmann::json;
 
-Executor::Executor(Toolbox* toolbox)
-    : toolbox_(toolbox) {}
+Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) {}
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
-std::string Executor::Execute(const std::string& input,
-                              Workspace& workspace,
-                              LLMProvider* provider) {
+ExecutionResult Executor::Execute(const std::string& input,
+                                  Workspace& workspace,
+                                  LLMProvider* provider) {
   if (!toolbox_) {
-    return "Error: tool registry is not initialized.";
+    ExecutionResult err;
+    err.has_error = true;
+    err.error_message = "Tool registry is not initialized.";
+    return err;
   }
 
   workspace.Append("user", input);
@@ -37,25 +39,27 @@ std::string Executor::Execute(const std::string& input,
   }
 
   auto result = RunToolLoop(workspace, provider);
-
+  ExecutionResult exec_result;
   if (result.has_error) {
-    return result.error_message;
+    exec_result.has_error = true;
+    exec_result.error_message = result.error_message;
+    return exec_result;
   }
 
   if (!result.final_response.empty() && result.tool_call_count > 0) {
     workspace.Append("assistant", result.final_response);
   }
 
-  if (result.tool_call_count > 0) {
-    return result.final_response;
-  }
-
-  return "";
+  exec_result.content = result.final_response;
+  exec_result.was_streamed = result.was_streamed;
+  exec_result.tool_call_count = result.tool_call_count;
+  return exec_result;
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
                                                LLMProvider* provider) {
   ToolLoopResult result;
+  result.was_streamed = false;
 
   if (!toolbox_) {
     result.has_error = true;
@@ -70,7 +74,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
   auto tools = toolbox_->GetToolDefinitions();
   bool tool_was_called = false;
-  std::string final_response;
   int max_iterations = 10;
   int iteration = 0;
 
@@ -87,7 +90,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     auto system_prompt_var = workspace.GetVar("system_prompt");
-    if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
+    if (system_prompt_var && system_prompt_var->is_string() &&
+        !system_prompt_var->get<std::string>().empty()) {
       bool has_system = false;
       for (const auto& cm : chat_history) {
         if (cm.role == "system") {
@@ -109,33 +113,32 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     try {
       chat_result = provider->Chat(
-        chat_history,
-        tools,
-        [&](const std::string& token) {
-          std::cout << token << std::flush;
-          content_stream << token;
-        },
-        [&](const ToolCall& call) {
-          tool_was_called = true;
-          collected_calls.push_back(call);
-        }
-      );
+          chat_history, tools,
+          [&](const std::string& token) {
+            if (!token.empty()) {
+              result.was_streamed = true;
+              std::cout << token << std::flush;
+              content_stream << token;
+            }
+          },
+          [&](const ToolCall& call) {
+            tool_was_called = true;
+            collected_calls.push_back(call);
+          });
 
       if (!tool_was_called) {
-        final_response = chat_result.content;
+        result.final_response = chat_result.content;
         break;
       }
     } catch (const std::exception& e) {
-      auto err = "Request failed: " + std::string(e.what());
-      spdlog::error("{}", err);
       result.has_error = true;
-      result.error_message = err;
-      workspace.Append("assistant", err);
+      result.error_message = "Request failed: " + std::string(e.what());
+      spdlog::error("{}", result.error_message);
+      workspace.Append("assistant", result.error_message);
       break;
     }
 
     if (!collected_calls.empty()) {
-      // Ensure every tool call has a non‑empty ID (some providers may omit it).
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
           tc.id = "call_" + std::to_string(workspace.NextToolCallId());
@@ -187,18 +190,17 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
   } while (tool_was_called);
 
-  if (final_response.empty()) {
+  if (result.final_response.empty()) {
     auto history = workspace.GetHistory();
     for (auto it = history.rbegin(); it != history.rend(); ++it) {
       if (it->role == "assistant" && !it->content.empty()) {
-        final_response = it->content;
+        result.final_response = it->content;
         break;
       }
     }
   }
 
-  result.final_response = final_response;
   return result;
 }
 
-} // namespace pu
+}  // namespace pu

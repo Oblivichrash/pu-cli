@@ -1,40 +1,44 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
 
-#include "pu/llm/llm_provider.hpp"
-#include "pu/tools/toolbox.hpp"
-#include "pu/session/workspace.hpp"
-#include "pu/session/call_stack.hpp"
-#include "pu/conversation.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/conversation.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/session/call_stack.hpp"
+#include "pu/session/workspace.hpp"
+#include "pu/tools/toolbox.hpp"
 
 namespace pu {
 
+struct ExecutionResult {
+  std::string content;
+  bool was_streamed = false;
+  bool has_error = false;
+  std::string error_message;
+  int tool_call_count = 0;
+};
+
 class Executor {
-public:
+ public:
   explicit Executor(Toolbox* toolbox);
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
-
-  // The Runtime swaps the Toolbox when the active agent changes;
-  // the Toolbox is rebuilt per agent.
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
 
-  // Returns error message if an error occurred, empty string otherwise.
-  std::string Execute(const std::string& input,
-                      Workspace& workspace,
-                      LLMProvider* provider);
+  ExecutionResult Execute(const std::string& input, Workspace& workspace,
+                          LLMProvider* provider);
 
-private:
+ private:
   struct ToolLoopResult {
     std::string final_response;
     bool completed = true;
     int tool_call_count = 0;
     bool has_error = false;
+    bool was_streamed = false;
     std::string error_message;
   };
 
@@ -44,4 +48,4 @@ private:
   std::optional<config::SecurityPolicy> security_policy_;
 };
 
-} // namespace pu
+}  // namespace pu
