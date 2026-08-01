@@ -243,8 +243,8 @@ void Runtime::RegisterBuiltinTools() {
                                                               : current_agent_config_.security.sandbox_root)));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
   toolbox_->RegisterTool(std::make_unique<tools::CreateTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::ForkContextTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::MergeContextTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::ForkWorkspaceTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::MergeWorkspaceTool>());
   toolbox_->RegisterTool(std::make_unique<tools::ListForksTool>());
 }
 

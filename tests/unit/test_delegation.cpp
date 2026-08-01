@@ -56,7 +56,7 @@ TEST_CASE("CallStack push and pop", "[delegation]") {
   REQUIRE(stack->IsEmpty());
 }
 
-TEST_CASE("CallStack push without explicit context creates one", "[delegation]") {
+TEST_CASE("CallStack push without explicit workspace creates one", "[delegation]") {
   auto root = std::make_shared<Workspace>("root");
   auto stack = CallStack::Create(root);
 
@@ -201,7 +201,7 @@ TEST_CASE("Assignment with seeded artifacts", "[delegation]") {
   REQUIRE(d.depth == 0);
 }
 
-TEST_CASE("Context isolation between parent and child", "[delegation]") {
+TEST_CASE("Workspace isolation between parent and child", "[delegation]") {
   auto parent = std::make_shared<Workspace>("parent");
   parent->Append("user", "Hello from parent");
   Artifact a;

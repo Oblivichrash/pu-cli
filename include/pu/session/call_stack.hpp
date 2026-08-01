@@ -13,10 +13,10 @@ class CallStack {
 public:
   struct Frame {
     Assignment assignment;
-    std::shared_ptr<Workspace> context;
+    std::shared_ptr<Workspace> workspace;
   };
 
-  void Push(const Assignment& assignment, std::shared_ptr<Workspace> context);
+  void Push(const Assignment& assignment, std::shared_ptr<Workspace> workspace);
   void Push(const Assignment& assignment);
   std::optional<HandoffReceipt> Pop();
   Frame& Current();
@@ -27,19 +27,19 @@ public:
   void Clear();
 
   // Workspace accessors — kept for callers that need the root workspace.
-  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_context_; }
-  void SetRootWorkspace(std::shared_ptr<Workspace> ctx) { root_context_ = ctx; }
+  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_workspace_; }
+  void SetRootWorkspace(std::shared_ptr<Workspace> workspace) { root_workspace_ = workspace; }
   const std::vector<Frame>& GetFrames() const { return frames_; }
 
   // Factory: creates an empty stack; callers install the root workspace.
   static std::shared_ptr<CallStack> Create(
-    std::shared_ptr<Workspace> root_context);
+    std::shared_ptr<Workspace> root_workspace);
 
   nlohmann::json Serialize() const;
   static CallStack Deserialize(const nlohmann::json& j);
 
 private:
-  std::shared_ptr<Workspace> root_context_;
+  std::shared_ptr<Workspace> root_workspace_;
   std::vector<Frame> frames_;
 };
 

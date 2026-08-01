@@ -11,22 +11,22 @@ namespace pu {
 SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
-HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
+HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_workspace,
                                           const Assignment& delegation,
                                           LLMProvider* provider) {
   (void)delegation;  // Unused; kept for interface compatibility
 
   HandoffReceipt report;
   report.status = HandoffReceipt::Status::kCompleted;
-  if (!child_ctx) {
+  if (!child_workspace) {
     report.status = HandoffReceipt::Status::kFailed;
-    report.summary = "Child context missing";
+    report.summary = "Child workspace missing";
     return report;
   }
 
   std::string prompt = "Summarize the following conversation in 3-5 sentences. "
                        "Focus on key findings, decisions, and unresolved issues.\n\n---\n";
-  auto history = child_ctx->GetHistory();
+  auto history = child_workspace->GetHistory();
   for (const auto& msg : history) {
     prompt += msg.role + ": " + msg.content + "\n";
   }
@@ -67,7 +67,7 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
                      "The conversation had " + std::to_string(history.size()) + " messages.";
   }
 
-  report.key_discoveries = child_ctx->GetArtifacts();
+  report.key_discoveries = child_workspace->GetArtifacts();
   return report;
 }
 

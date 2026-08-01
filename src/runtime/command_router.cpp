@@ -142,12 +142,12 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
     std::string fork_id = args[1];
     auto found = fork_service->FindWorkspace(fork_id);
     if (!found) {
-      output = "Context not found: " + fork_id;
+      output = "Workspace not found: " + fork_id;
       return true;
     }
     std::ostringstream oss;
     auto st = found->GetState();
-    oss << "=== Context: " << found->GetId() << " ===\n";
+    oss << "=== Workspace: " << found->GetId() << " ===\n";
     oss << "  Branch: " << found->GetBranchName() << "\n";
     oss << "  State: " << (st == Workspace::State::kActive ? "active" :
                            st == Workspace::State::kMerged ? "merged" : "abandoned") << "\n";
@@ -192,13 +192,13 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
   std::string agent_name = args[0];
   auto parent = call_stack.IsEmpty() ? fork_service->GetRootWorkspace() : call_stack.CurrentWorkspace();
   auto result = fork_service->Fork(parent, agent_name, "Exploration", "");
-  if (result.child_context) {
+  if (result.child_workspace) {
     Assignment asgn;
     asgn.goal = "exploration";
     asgn.agent_name = agent_name;
-    call_stack.Push(asgn, result.child_context);
+    call_stack.Push(asgn, result.child_workspace);
     std::ostringstream oss;
-    oss << "\xf0\x9f\x91\x8d Forked to branch: " << result.child_context->GetBranchName()
+    oss << "\xf0\x9f\x91\x8d Forked to branch: " << result.child_workspace->GetBranchName()
         << " (agent: " << agent_name << ")\n"
         << "   Type /merge to close.";
     output = oss.str();
@@ -503,9 +503,9 @@ bool CommandRouter::HandleStack(const std::vector<std::string>& /*args*/, Sessio
     for (const auto& frame : call_stack.GetFrames()) {
       oss << "  " << frame.assignment.agent_name
           << " [" << frame.assignment.id << "]\n";
-      if (frame.context) {
-        oss << "    Context: " << frame.context->GetId()
-            << " [branch: " << frame.context->GetBranchName() << "]\n";
+      if (frame.workspace) {
+        oss << "    Workspace: " << frame.workspace->GetId()
+            << " [branch: " << frame.workspace->GetBranchName() << "]\n";
       }
     }
     output = oss.str();

@@ -27,21 +27,21 @@ TEST_CASE("SummaryGenerator returns failed report for null workspace", "[summary
   auto report = generator.Generate(nullptr, delegation);
 
   REQUIRE(report.status == HandoffReceipt::kFailed);
-  REQUIRE(report.summary == "Child context missing");
+  REQUIRE(report.summary == "Child workspace missing");
 }
 
 TEST_CASE("SummaryGenerator returns completed report for valid workspace", "[summary_generator]") {
   TestAgentManager manager;
   SummaryGenerator generator(manager);
 
-  auto child_ctx = std::make_shared<Workspace>("test-ctx");
-  child_ctx->Append("user", "Hello");
-  child_ctx->Append("assistant", "Hi there!");
+  auto child_workspace = std::make_shared<Workspace>("test-ws");
+  child_workspace->Append("user", "Hello");
+  child_workspace->Append("assistant", "Hi there!");
 
   Assignment delegation;
   delegation.goal = "test goal";
   delegation.agent_name = "test-agent";
-  auto report = generator.Generate(child_ctx, delegation);
+  auto report = generator.Generate(child_workspace, delegation);
 
   REQUIRE(report.status == HandoffReceipt::kCompleted);
   REQUIRE_FALSE(report.summary.empty());
@@ -51,20 +51,20 @@ TEST_CASE("SummaryGenerator extracts artifacts from workspace", "[summary_genera
   TestAgentManager manager;
   SummaryGenerator generator(manager);
 
-  auto child_ctx = std::make_shared<Workspace>("test-ctx");
-  child_ctx->Append("user", "Create a file");
-  child_ctx->Append("assistant", "Created file.txt");
+  auto child_workspace = std::make_shared<Workspace>("test-ws");
+  child_workspace->Append("user", "Create a file");
+  child_workspace->Append("assistant", "Created file.txt");
   
   Artifact artifact;
   artifact.type = Artifact::Type::kFilePath;
   artifact.content = "/tmp/file.txt";
   artifact.source = "assistant";
-  child_ctx->AddArtifact(artifact);
+  child_workspace->AddArtifact(artifact);
 
   Assignment delegation;
   delegation.goal = "create file";
   delegation.agent_name = "test-agent";
-  auto report = generator.Generate(child_ctx, delegation);
+  auto report = generator.Generate(child_workspace, delegation);
 
   REQUIRE(report.status == HandoffReceipt::kCompleted);
   REQUIRE(report.key_discoveries.size() == 1);

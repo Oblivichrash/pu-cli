@@ -17,18 +17,18 @@ namespace pu {
 class ForkMergeService {
  public:
   struct ForkResult {
-    std::shared_ptr<Workspace> child_context;
+    std::shared_ptr<Workspace> child_workspace;
     std::string message;
   };
 
   struct MergeResult {
-    std::shared_ptr<Workspace> merge_context;
+    std::shared_ptr<Workspace> merge_workspace;
     HandoffReceipt report;
     std::string message;
   };
 
   ForkMergeService(AgentManager& manager,
-                   std::shared_ptr<Workspace> root_context);
+                   std::shared_ptr<Workspace> root_workspace);
 
   // Fork operations — caller provides the parent workspace directly.
   ForkResult Fork(const std::shared_ptr<Workspace>& parent,
@@ -52,22 +52,22 @@ class ForkMergeService {
   size_t PruneMerged();
 
   // Artifact extraction
-  std::vector<Artifact> ExtractArtifacts(const std::shared_ptr<Workspace>& ctx,
+  std::vector<Artifact> ExtractArtifacts(const std::shared_ptr<Workspace>& ws,
                          const std::string& goal);
 
   // Summary generation
-  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_ctx,
+  HandoffReceipt GenerateSummary(const std::shared_ptr<Workspace>& child_workspace,
                                  const Assignment& delegation,
                                  LLMProvider* provider = nullptr);
 
   // Accessors
-  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_context_; }
+  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_workspace_; }
 
  private:
   void PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const;
 
   AgentManager& manager_;
-  std::shared_ptr<Workspace> root_context_;
+  std::shared_ptr<Workspace> root_workspace_;
 };
 
 }  // namespace pu

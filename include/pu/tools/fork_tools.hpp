@@ -7,7 +7,11 @@
 
 namespace pu::tools {
 
-class ForkContextTool : public pu::Tool {
+// The tool Name() strings ("fork_context"/"merge_context") are the stable
+// model-facing identifiers (they appear in agent tool lists and saved
+// transcripts). They are intentionally NOT renamed to "workspace" to avoid
+// breaking the agent interface; only the C++ class names use Workspace.
+class ForkWorkspaceTool : public pu::Tool {
  public:
   std::string Name() const override;
   std::string Description() const override;
@@ -15,7 +19,7 @@ class ForkContextTool : public pu::Tool {
   std::string Execute(const nlohmann::json& args, pu::ToolContext& ctx) override;
 };
 
-class MergeContextTool : public pu::Tool {
+class MergeWorkspaceTool : public pu::Tool {
  public:
   std::string Name() const override;
   std::string Description() const override;
