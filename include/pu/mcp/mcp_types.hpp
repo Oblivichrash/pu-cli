@@ -13,11 +13,4 @@ struct McpServerConfig {
     std::vector<std::string> args;
 };
 
-// MCP tool definition (compatible with pu::ToolDefinition)
-struct McpToolDef {
-    std::string name;
-    std::string description;
-    nlohmann::json inputSchema;
-};
-
 } // namespace pu::mcp

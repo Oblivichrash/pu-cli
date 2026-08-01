@@ -18,23 +18,37 @@
 
 namespace pu {
 
+bool CommandRouter::RequireMinArgs(const std::vector<std::string>& args, size_t min,
+                                   const std::string& usage, std::string& output) const {
+  if (args.size() < min) {
+    output = usage;
+    return true;
+  }
+  return false;
+}
+
+std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string& usage) const {
+  return "Usage: " + cmd + " " + usage;
+}
+
+SessionStore CommandRouter::GetSessionStore() const {
+  return SessionStore(pu::path::GetDataDir() / "sessions");
+}
+
 CommandRouter::CommandRouter(AgentManager& manager)
     : manager_(manager) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
-  // Trim leading whitespace
   std::string trimmed = input;
   size_t start = trimmed.find_first_not_of(" \t");
   if (start != std::string::npos) trimmed = trimmed.substr(start);
-  
+
   if (trimmed.empty() || trimmed[0] != '/') return false;
 
-  // Split into command and args
   size_t space = trimmed.find(' ');
   std::string cmd = space == std::string::npos ? trimmed : trimmed.substr(0, space);
   std::string args_str = space == std::string::npos ? "" : trimmed.substr(space + 1);
-  
-  // Parse args
+
   std::vector<std::string> args;
   if (!args_str.empty()) {
     std::istringstream iss(args_str);
@@ -78,7 +92,7 @@ ForkMergeService* CommandRouter::GetOrCreateForkService(Session& session) {
   return fork_service_.get();
 }
 
-bool CommandRouter::HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
   std::ostringstream oss;
   oss << "Available commands:\n"
       << "  /help                  Show this help message\n"
@@ -109,7 +123,6 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
   auto* fork_service = GetOrCreateForkService(session);
 
   if (args.empty()) {
-    // /fork - show tree
     std::ostringstream oss;
     fork_service->PrintTree(oss);
     output = oss.str();
@@ -124,11 +137,9 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
   }
 
   if (args[0] == "show") {
-    std::string fork_id = args.size() > 1 ? args[1] : "";
-    if (fork_id.empty()) {
-      output = "Usage: /fork show <id>";
-      return true;
-    }
+    if (RequireMinArgs(args, 2, FormatUsage("/fork show", "<id>"), output)) return true;
+
+    std::string fork_id = args[1];
     auto found = fork_service->FindContext(fork_id);
     if (!found) {
       output = "Context not found: " + fork_id;
@@ -178,7 +189,6 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
     return true;
   }
 
-  // /fork <agent_name> - fork with specific agent
   std::string agent_name = args[0];
   auto result = fork_service->Fork(call_stack, agent_name, "Exploration", "");
   if (result.child_context) {
@@ -207,14 +217,13 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
   }
 
   bool full = (!args.empty() && args[0] == "--full");
-  
+
   if (full) {
     auto result = fork_service->Merge(call_stack, "Merged with full history", "merge");
     std::ostringstream oss;
     oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
     output = oss.str();
   } else {
-    // Squash merge - use LLM provider for summary
     auto provider = session.CreateProvider();
     auto result = fork_service->Merge(call_stack, "Squash merged", "squash", provider.get());
     std::ostringstream oss;
@@ -225,7 +234,6 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
 }
 
 bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
-  // No arguments: display current backend
   if (args.empty()) {
     const auto& cfg = session.GetRuntimeSpec().backend;
     output = "Current backend: " + cfg.type +
@@ -234,7 +242,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     return true;
   }
 
-  // 1. Try to interpret as agent name
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
     BackendConfig new_cfg;
@@ -254,11 +261,8 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     return true;
   }
 
-  // 2. Manual mode: /backend <type> <model> [host] [api_key]
-  if (args.size() < 2) {
-    output = "Usage: /backend <agent_name> | /backend <type> <model> [host] [api_key]";
+  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
-  }
 
   BackendConfig new_cfg;
   new_cfg.type = args[0];
@@ -266,7 +270,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   if (args.size() > 2) {
     new_cfg.host = args[2];
   } else {
-    // Provide default hosts
     if (new_cfg.type == "ollama") {
       new_cfg.host = "http://localhost:11434";
     } else if (new_cfg.type == "openai") {
@@ -276,7 +279,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
       return true;
     }
   }
-  // Optional api_key
   if (args.size() > 3) {
     new_cfg.api_key = args[3];
   }
@@ -293,7 +295,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   return true;
 }
 
-bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   auto names = manager_.GetAgentNames();
   std::string current = session.GetRuntimeSpec().agent_name;
   std::ostringstream oss;
@@ -301,7 +303,6 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& 
   for (const auto& name : names) {
     oss << "  " << name;
     if (name == current) oss << " (active)";
-    // Try to get description from config
     const auto* cfg = manager_.GetAgentConfig(name);
     if (cfg && !cfg->description.empty()) {
       oss << " - " << cfg->description;
@@ -315,7 +316,7 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& args, Session& 
 bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& session, std::string& output) {
   std::string save_name;
   bool no_summary = false;
-  
+
   for (const auto& arg : args) {
     if (arg == "--no-summary") {
       no_summary = true;
@@ -323,7 +324,7 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
       save_name = arg;
     }
   }
-  
+
   if (save_name.empty()) {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -332,10 +333,8 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
     save_name = ss.str();
   }
 
-  auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "sessions";
-  SessionStore store(store_dir);
-  
+  auto store = GetSessionStore();
+
   auto session_copy = Session(save_name, "cli");
   auto history = session.GetWorkspace().GetHistory();
   for (const auto& msg : history) {
@@ -348,7 +347,7 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
     session_msg.tool_calls_json = msg.tool_calls_json;
     session_copy.GetWorkspace().Append(session_msg);
   }
-  
+
   try {
     store.SaveSession(session_copy);
     output = "Conversation saved as '" + save_name + "'";
@@ -359,15 +358,11 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output) {
-  if (args.empty()) {
-    output = "Error: conversation id required.";
+  if (RequireMinArgs(args, 1, FormatUsage("/load", "<id>"), output))
     return true;
-  }
 
-  auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "sessions";
-  SessionStore store(store_dir);
-  
+  auto store = GetSessionStore();
+
   try {
     auto loaded = store.LoadSession(args[0]);
     if (!loaded) {
@@ -386,13 +381,10 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
   return true;
 }
 
-bool CommandRouter::HandleList(const std::vector<std::string>& args, Session& session, std::string& output) {
-  auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "sessions";
-  SessionStore store(store_dir);
-  
+bool CommandRouter::HandleList(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
+  auto store = GetSessionStore();
   auto metadata = store.ListAllMetadata();
-  
+
   std::ostringstream oss;
   if (metadata.empty()) {
     oss << "No saved conversations.";
@@ -406,23 +398,19 @@ bool CommandRouter::HandleList(const std::vector<std::string>& args, Session& se
   return true;
 }
 
-bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& session, std::string& output) {
-  if (args.empty()) {
-    output = "Error: conversation id required.";
+bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& /*session*/, std::string& output) {
+  if (RequireMinArgs(args, 1, FormatUsage("/export", "<id>"), output))
     return true;
-  }
 
-  auto pu_dir = pu::path::GetDataDir();
-  auto store_dir = pu_dir / "sessions";
-  SessionStore store(store_dir);
-  
+  auto store = GetSessionStore();
+
   try {
     auto loaded = store.LoadSession(args[0]);
     if (!loaded) {
       output = "Error: session not found: " + args[0];
       return true;
     }
-    
+
     std::string filename = "conversation_" + args[0] + ".md";
     std::ofstream out(filename);
     if (!out) {
@@ -443,12 +431,12 @@ bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& 
 
 bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& session, std::string& output) {
   if (args.empty()) {
-    output = "Usage: /note add <text> | /note show";
+    output = FormatUsage("/note", "add <text> | show");
     return true;
   }
 
   auto& ws = session.GetWorkspace();
-  
+
   if (args[0] == "show") {
     std::string var_key = "notes/" + session.GetRuntimeSpec().agent_name;
     auto val = ws.GetVar(var_key);
@@ -471,7 +459,7 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
       if (i > 1) text += " ";
       text += args[i];
     }
-    
+
     std::string var_key = "notes/" + session.GetRuntimeSpec().agent_name;
     auto existing = ws.GetVar(var_key);
     nlohmann::json new_notes = existing.has_value() ? *existing : nlohmann::json::array();
@@ -483,24 +471,24 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
     return true;
   }
 
-  output = "Usage: /note add <text> | /note show";
+  output = FormatUsage("note", "add <text> | show");
   return true;
 }
 
-bool CommandRouter::HandleClear(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
   return true;
 }
 
-bool CommandRouter::HandleReloadTools(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleReloadTools(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
   Runtime::Instance().ReloadTools();
   auto tools_dir = pu::path::GetDataDir() / "tools";
   output = "Tools reloaded from " + tools_dir.string();
   return true;
 }
 
-bool CommandRouter::HandleStack(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleStack(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   auto& call_stack = session.GetCallStack();
   if (!call_stack.IsEmpty()) {
     std::ostringstream oss;
