@@ -20,6 +20,10 @@ public:
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
+  // Stage 6+7: allow the Runtime to swap the Toolbox when the active agent
+  // changes (the Toolbox is rebuilt per agent).
+  void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
+
   // Returns error message if an error occurred, empty string otherwise.
   std::string Execute(const std::string& input,
                       Workspace& workspace,

@@ -7,10 +7,12 @@
 #include "pu/tools/create_tool.hpp"
 #include "pu/tools/fork_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
+#include "tools/command_executor.hpp"
 #include "infra/curl_http_client.hpp"
 #include "pu/error.hpp"
 #include "pu/core/logging.hpp"
 #include <spdlog/spdlog.h>
+#include <filesystem>
 #include <iostream>
 
 namespace pu {
@@ -54,12 +56,16 @@ void Runtime::Initialize(const std::string& config_path) {
 
   session_store_ = std::make_unique<SessionStore>();
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_);
-  toolbox_ = std::make_unique<Toolbox>();
-  executor_ = std::make_unique<Executor>(toolbox_.get());
 
-  // Inject security policy from the default agent (if found)
+  // Create the executor first; RebuildToolbox() (below) installs the new
+  // Toolbox into it via SetToolbox().
+  executor_ = std::make_unique<Executor>(nullptr);
+
   if (default_entry) {
-    executor_->SetSecurityPolicy(default_entry->security);
+    // Stage 6+7: build the tool registry for the default agent only.
+    current_agent_config_ = *default_entry;
+    current_agent_name_ = default_entry->name;
+    RebuildToolbox(*default_entry);
   } else {
     // Fallback: allow all (with warning)
     config::SecurityPolicy fallback_policy;
@@ -67,33 +73,11 @@ void Runtime::Initialize(const std::string& config_path) {
     fallback_policy.max_command_length = 0;
     fallback_policy.forbidden_patterns = {};
     executor_->SetSecurityPolicy(fallback_policy);
+    toolbox_ = std::make_unique<Toolbox>();
+    RegisterBuiltinTools();
+    RegisterPythonTools();
+    executor_->SetToolbox(toolbox_.get());
     spdlog::warn("No default agent found for security policy. Using permissive fallback.");
-  }
-
-  toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      std::make_unique<executor::CommandExecutor>(".")));
-  toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::CreateTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::ForkContextTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::MergeContextTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::ListForksTool>());
-
-  // Initialize MCP clients and register MCP tools
-  for (const auto& entry : agents_cfg.agents) {
-    for (const auto& mcp_cfg : entry.mcp_servers) {
-      auto client = std::make_unique<mcp::McpClient>(mcp_cfg);
-      if (client->Connect()) {
-        auto tools = client->ListTools();
-        for (const auto& t : tools) {
-          auto mcp_tool = std::make_unique<tools::McpTool>(client.get(), t);
-          toolbox_->RegisterTool(std::move(mcp_tool));
-          spdlog::debug("Registered MCP tool: mcp.{} from server {}", t.name, mcp_cfg.name);
-        }
-        mcp_clients_.push_back(std::move(client));
-      } else {
-        spdlog::warn("MCP server '{}' connection failed, skipping", mcp_cfg.name);
-      }
-    }
   }
 
   auto metadata = session_store_->ListAllMetadata();
@@ -244,6 +228,99 @@ void Runtime::ReloadTools() {
 // B.3: Override default agent name
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
+}
+
+// Stage 6+7: lifecycle management -------------------------------------------
+
+void Runtime::ShutdownMCP() {
+  if (current_mcp_client_) {
+    current_mcp_client_->Disconnect();
+    current_mcp_client_.reset();
+  }
+}
+
+bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
+  current_mcp_client_ = std::make_unique<mcp::McpClient>(config);
+  if (current_mcp_client_->Connect()) {
+    return true;
+  } else {
+    spdlog::warn("MCP server '{}' connection failed", config.name);
+    current_mcp_client_.reset();
+    return false;
+  }
+}
+
+void Runtime::RegisterBuiltinTools() {
+  toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
+      std::make_unique<executor::CommandExecutor>(
+          current_agent_config_.security.sandbox_root.empty() ? "."
+                                                              : current_agent_config_.security.sandbox_root)));
+  toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::CreateTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::ForkContextTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::MergeContextTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::ListForksTool>());
+}
+
+void Runtime::RegisterPythonTools() {
+  auto tools_dir = pu::path::GetDataDir() / "tools";
+  if (std::filesystem::exists(tools_dir)) {
+    toolbox_->ReloadExternalTools(tools_dir.string());
+  }
+}
+
+void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
+  // 1. Shutdown old MCP
+  ShutdownMCP();
+
+  // 2. Create new Toolbox
+  toolbox_ = std::make_unique<Toolbox>();
+
+  // 3. Register built-in tools (always available)
+  RegisterBuiltinTools();
+
+  // 4. Load Python tools from ~/.pu/tools/
+  RegisterPythonTools();
+
+  // 5. If agent has MCP servers, start first one and register tools
+  if (!agent.mcp_servers.empty()) {
+    const auto& mcp_cfg = agent.mcp_servers[0];  // currently only a single server per agent
+    if (StartMCP(mcp_cfg)) {
+      auto tools = current_mcp_client_->ListTools();
+      for (const auto& t : tools) {
+        auto mcp_tool = std::make_unique<tools::McpTool>(current_mcp_client_.get(), t);
+        toolbox_->RegisterTool(std::move(mcp_tool));
+        spdlog::debug("Registered MCP tool: mcp.{} from server {}", t.name, mcp_cfg.name);
+      }
+    }
+  }
+
+  // 6. Update Executor's security policy
+  executor_->SetSecurityPolicy(agent.security);
+  executor_->SetToolbox(toolbox_.get());
+
+  // 7. Update agent manager's active agent name
+  agent_manager_->SetActiveAgent(agent.name);
+}
+
+void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
+  if (current_agent_name_ == new_agent.name) return;
+  current_agent_config_ = new_agent;
+  current_agent_name_ = new_agent.name;
+  RebuildToolbox(new_agent);
+
+  // Optionally update default session's agent name (backend config is left
+  // untouched; /backend already handled that on the caller's session).
+  if (!default_session_id_.empty()) {
+    auto session = GetSession(default_session_id_);
+    if (session) {
+      try {
+        session->SwitchAgent(new_agent.name);
+      } catch (const std::exception& e) {
+        spdlog::warn("Failed to sync default session agent name: {}", e.what());
+      }
+    }
+  }
 }
 
 } // namespace pu

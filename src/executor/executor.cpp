@@ -26,6 +26,10 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 std::string Executor::Execute(const std::string& input,
                               Workspace& workspace,
                               LLMProvider* provider) {
+  if (!toolbox_) {
+    return "Error: tool registry is not initialized.";
+  }
+
   workspace.Append("user", input);
 
   auto tools = toolbox_->GetToolDefinitions();
@@ -53,6 +57,12 @@ std::string Executor::Execute(const std::string& input,
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
                                                LLMProvider* provider) {
   ToolLoopResult result;
+
+  if (!toolbox_) {
+    result.has_error = true;
+    result.error_message = "Tool registry is not initialized.";
+    return result;
+  }
 
   if (!provider->SupportsTools()) {
     result.final_response = "This provider does not support tool calling. Cannot execute tools.";
@@ -196,4 +206,4 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   return result;
 }
 
-}  // namespace pu
+} // namespace pu

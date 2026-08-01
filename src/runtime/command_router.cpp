@@ -264,6 +264,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     new_cfg.parameters_as_string = agent_config->backend.parameters_as_string;
     try {
       session.SwitchBackend(new_cfg);
+      Runtime::Instance().SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" + new_cfg.type + "/" + new_cfg.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());

@@ -50,12 +50,22 @@ public:
   // B.3: Override default agent name for startup
   void SetDefaultAgent(const std::string& agent_name);
 
+  // Stage 6+7: Switch the active agent and rebuild the tool registry.
+  void SwitchAgent(const config::AgentEntry& new_agent);
+
 private:
   Runtime() = default;
   ~Runtime() = default;
 
   std::shared_ptr<Session> GetOrCreateDefaultSession();
   void AutoSaveSession(const std::string& id);
+
+  // Stage 6+7: tool lifecycle helpers
+  void RebuildToolbox(const config::AgentEntry& agent);
+  void ShutdownMCP();
+  bool StartMCP(const pu::mcp::McpServerConfig& config);
+  void RegisterBuiltinTools();
+  void RegisterPythonTools();
 
   bool is_initialized_ = false;
   bool is_running_ = false;
@@ -73,8 +83,11 @@ private:
   // B.3: default agent override (set via --agent flag)
   std::string default_agent_override_;
 
-  // MCP clients (owned by runtime for lifetime management)
-  std::vector<std::unique_ptr<mcp::McpClient>> mcp_clients_;
+  // Stage 6+7: per-agent tool registry state. The Runtime is the sole owner of
+  // the Toolbox; it is rebuilt whenever the active agent changes.
+  std::unique_ptr<mcp::McpClient> current_mcp_client_;
+  std::string current_agent_name_;
+  config::AgentEntry current_agent_config_;
 };
 
 } // namespace pu

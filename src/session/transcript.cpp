@@ -7,9 +7,10 @@ namespace pu {
 
 void Transcript::Append(const ChatMessage& msg) {
   messages_.push_back(msg);
-  if (messages_.size() > COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) {
-    Compact();
-  }
+  // Temporarily disabled:
+  //if (messages_.size() > COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) {
+  //  Compact();
+  //}
 }
 
 std::vector<ChatMessage> Transcript::GetHistory() const {
