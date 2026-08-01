@@ -106,7 +106,9 @@ RebuildToolbox(agent)
  ├─ RegisterPythonTools()
  ├─ if agent.mcp_servers non-empty:
  │    StartMCP(cfg) → ListTools() → register mcp.<name> tools
- └─ executor_->SetToolbox(toolbox_); executor_->SetSecurityPolicy(agent.security)
+ └─ executor_->SetToolbox(toolbox_);
+     executor_->SetSecurityPolicy(agent.security)
+     executor_->SetCompactionConfig(agent.compaction)
 ```
 
 Consequences:
@@ -115,6 +117,9 @@ Consequences:
   starts the new agent's server on demand — MCP clients are **not** kept alive
   across agent switches.
 - Currently only the first `mcp_servers` entry per agent is started.
+- Compaction settings travel with the agent: `SetCompactionConfig` copies the
+  agent's `HistoryCompactionConfig` (`enabled`, `keep_head`, `keep_tail`) into
+  the executor before any message is processed.
 
 ---
 
@@ -191,12 +196,14 @@ MCP SDK is required — the client is fully self-contained.
 
 ## Transcript Compaction
 
-`Transcript::Compact()` keeps the head (`COMPACT_KEEP_HEAD = 10`) and tail
-(`COMPACT_KEEP_TAIL = 50`) messages and discards the middle. The non-obvious
-part is **tool-call pairing preservation**:
+`Transcript::Compact(keep_head, keep_tail)` keeps the head and tail messages and
+discards the middle. The counts come from the agent's `history_compaction`
+config (defaults `keep_head = 10`, `keep_tail = 50`); there are no hardcoded
+limits in the transcript. The non-obvious part is **tool-call pairing
+preservation**:
 
-1. Compute the tail start as `size - keep_last`.
-2. Scan **backward** from the tail start to `keep_first`.
+1. Compute the tail start as `size - keep_tail`.
+2. Scan **backward** from the tail start to `keep_head`.
 3. For every assistant message carrying `tool_calls_json`, collect the tool-call
    IDs and check that **all** of them have a matching `role == "tool"` response
    later in the transcript.
@@ -207,6 +214,26 @@ part is **tool-call pairing preservation**:
 If a tool-call JSON fails to parse, the message is skipped (the pair check
 cannot be verified), which is a conservative fallback that may keep slightly
 more history than strictly necessary.
+
+### When compaction runs
+
+`Executor::Execute()` decides, once per request, whether to compact:
+
+```
+if (!provider->SupportsTools() && !tools.empty() && compaction_config_.enabled)
+    if provider->IsThinkingMode() → log warning, skip compaction
+    else → workspace.Compact(keep_head, keep_tail)
+```
+
+`LLMProvider::IsThinkingMode()` is a virtual hook (default `false`). It is
+overridden by `OpenAIProvider` (returns `config_.enable_thinking`, used for
+DeepSeek/vLLM reasoning models) and `OllamaProvider` (returns `false`).
+
+Compaction is skipped for thinking-mode backends on purpose: dropping the
+intermediate `reasoning_content` messages would break the DeepSeek API contract
+(HTTP 400), so the full history is sent instead. `Workspace::Compact` simply
+forwards its arguments to `Transcript::Compact`, keeping the delegate interface
+thin.
 
 ---
 
@@ -267,6 +294,7 @@ src/
 - MCP transport is POSIX-only (`fork`/`execvp`); Windows support not yet implemented.
 - MCP request timeout is fixed at 5 seconds.
 - Only the first `mcp_servers` entry per agent is started.
+- Compaction is only truncation-based today; `"strategy": "summarize"` is reserved for future work and remains incompatible with thinking mode.
 
 ---
 

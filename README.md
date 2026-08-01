@@ -131,9 +131,52 @@ Add `mcp_servers` to any agent to connect external tools via the [Model Context 
 |-------|-------------|
 | `name` | Display name for the MCP server |
 | `command` | Executable to launch |
-| `args` | Arguments passed to the command |
+| `args` | Arguments passed to the executable |
 
 > Note: only the first `mcp_servers` entry per agent is currently started.
+
+### Thinking Mode & History Compaction
+
+Backends targeting DeepSeek/vLLM reasoning models can enable thinking mode via `enable_thinking`. When enabled, the provider streams `reasoning_content` alongside the answer.
+
+History compaction trims the middle of the conversation to save tokens, keeping `keep_head` leading and `keep_tail` trailing messages. **It is skipped automatically when the backend is in thinking mode** (compaction would drop the intermediate `reasoning_content` and cause API errors); a warning is logged and the model receives the full history instead.
+
+```json
+{
+  "default_agent": "deepseek",
+  "agents": [
+    {
+      "name": "deepseek",
+      "backend": {
+        "type": "openai",
+        "host": "https://api.deepseek.com/v1",
+        "model": "deepseek-reasoner",
+        "api_key": "${DEEPSEEK_API_KEY}",
+        "enable_thinking": true,
+        "temperature": 0.1
+      },
+      "tools": ["execute_bash", "write_file"],
+      "security": { "sandbox_root": "." },
+      "history_compaction": {
+        "enabled": false,
+        "keep_head": 15,
+        "keep_tail": 60,
+        "strategy": "truncate"
+      }
+    }
+  ]
+}
+```
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `enable_thinking` | Enable thinking mode (DeepSeek/vLLM only) | `true` |
+| `history_compaction.enabled` | Enable compaction when the provider is not in thinking mode | `true` |
+| `history_compaction.keep_head` | Number of leading messages to keep | `10` |
+| `history_compaction.keep_tail` | Number of trailing messages to keep | `50` |
+| `history_compaction.strategy` | Compaction strategy (reserved; only `truncate` today) | `"truncate"` |
+
+For thinking-mode backends set `enable_thinking: true` and `history_compaction.enabled: false` for clarity (the runtime skips compaction and warns anyway). For ordinary models (Ollama, non-thinking OpenAI) leave compaction enabled to save tokens.
 
 ### Environment
 
