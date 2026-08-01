@@ -14,7 +14,7 @@ struct Assignment {
   std::string id;
   std::string goal;
   std::string agent_name;
-  std::vector<Artifact> seeded_artifacts;  // was seeded_facts
+  std::vector<Artifact> seeded_artifacts;  
   std::vector<std::string> constraints;
   int depth = 0;
   std::chrono::steady_clock::time_point created_at;

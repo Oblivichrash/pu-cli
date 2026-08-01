@@ -21,17 +21,17 @@ public:
   std::optional<HandoffReceipt> Pop();
   Frame& Current();
   const Frame& Current() const;
-  std::shared_ptr<Workspace> CurrentContext() const;
+  std::shared_ptr<Workspace> CurrentWorkspace() const;
   size_t Depth() const;
   bool IsEmpty() const;
   void Clear();
 
-  // Workspace accessors — kept for callers that need the root context.
-  std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
-  void SetRootContext(std::shared_ptr<Workspace> ctx) { root_context_ = ctx; }
+  // Workspace accessors — kept for callers that need the root workspace.
+  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_context_; }
+  void SetRootWorkspace(std::shared_ptr<Workspace> ctx) { root_context_ = ctx; }
   const std::vector<Frame>& GetFrames() const { return frames_; }
 
-  // Simple factory — no longer creates a ForkMergeService internally.
+  // Factory: creates an empty stack; callers install the root workspace.
   static std::shared_ptr<CallStack> Create(
     std::shared_ptr<Workspace> root_context);
 
