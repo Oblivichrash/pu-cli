@@ -98,7 +98,7 @@ TEST_CASE("ForkMergeService::PrintTree produces output", "[fork_merge_service]")
   REQUIRE(oss.str().find("main") != std::string::npos);
 }
 
-TEST_CASE("ForkMergeService::FindContext finds by id", "[fork_merge_service]") {
+TEST_CASE("ForkMergeService::FindWorkspace finds by id", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
 
@@ -107,18 +107,18 @@ TEST_CASE("ForkMergeService::FindContext finds by id", "[fork_merge_service]") {
   auto fork = service.Fork(root, "agent1", "Find test", "find-branch");
   REQUIRE(fork.child_context != nullptr);
 
-  auto found = service.FindContext(fork.child_context->GetId());
+  auto found = service.FindWorkspace(fork.child_context->GetId());
   REQUIRE(found != nullptr);
   REQUIRE(found->GetBranchName() == "find-branch");
 }
 
-TEST_CASE("ForkMergeService::FindContext returns null for non-existent", "[fork_merge_service]") {
+TEST_CASE("ForkMergeService::FindWorkspace returns null for non-existent", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
 
   ForkMergeService service(manager, root);
 
-  auto found = service.FindContext("nonexistent-id");
+  auto found = service.FindWorkspace("nonexistent-id");
   REQUIRE(found == nullptr);
 }
 
@@ -143,11 +143,11 @@ TEST_CASE("ForkMergeService multiple forks and merges (sequential)", "[fork_merg
   REQUIRE(merge2.merge_context != nullptr);
 }
 
-TEST_CASE("ForkMergeService GetRootContext", "[fork_merge_service]") {
+TEST_CASE("ForkMergeService GetRootWorkspace", "[fork_merge_service]") {
   auto root = std::make_shared<Workspace>("root");
   MockAgentManager manager;
 
   ForkMergeService service(manager, root);
 
-  REQUIRE(service.GetRootContext() == root);
+  REQUIRE(service.GetRootWorkspace() == root);
 }

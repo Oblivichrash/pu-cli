@@ -14,7 +14,7 @@ SummaryGenerator::SummaryGenerator(AgentManager& manager)
 HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_ctx,
                                           const Assignment& delegation,
                                           LLMProvider* provider) {
-  (void)delegation;  // 未使用，保留参数以兼容接口
+  (void)delegation;  // Unused; kept for interface compatibility
 
   HandoffReceipt report;
   report.status = HandoffReceipt::Status::kCompleted;
@@ -24,7 +24,6 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
     return report;
   }
 
-  // Build the summary prompt
   std::string prompt = "Summarize the following conversation in 3-5 sentences. "
                        "Focus on key findings, decisions, and unresolved issues.\n\n---\n";
   auto history = child_ctx->GetHistory();
@@ -34,7 +33,6 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
   prompt += "\n---\nSummary:\n";
 
   if (provider) {
-    // Use the LLM provider to generate a real summary
     std::string summary_text;
     auto content_callback = [&summary_text](const std::string& chunk) {
       summary_text += chunk;
@@ -65,7 +63,6 @@ HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& chil
       report.summary = "[Summary generation failed: " + std::string(e.what()) + "]";
     }
   } else {
-    // Fallback: basic summary when no provider is available
     report.summary = "Summary generation requires an LLM provider. "
                      "The conversation had " + std::to_string(history.size()) + " messages.";
   }

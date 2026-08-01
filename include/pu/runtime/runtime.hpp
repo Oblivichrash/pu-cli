@@ -29,36 +29,32 @@ public:
 
   std::string CreateSession(const std::string& owner_id,
                             const std::string& agent_name = "",
-                            const BackendConfig* backend = nullptr);
+                            const SessionBackendConfig* backend = nullptr);
   std::shared_ptr<Session> GetSession(const std::string& id);
   std::vector<std::string> ListSessions() const;
   bool DestroySession(const std::string& id);
 
   std::shared_ptr<Session> GetDefaultSession();
-  void SetDefaultSessionId(const std::string& id);
 
   bool ProcessInput(const std::string& session_id,
                     const std::string& input,
                     std::string& output,
                     bool& is_command);
 
-  void SetMaxSessions(int n);
-  void SetMaxDepth(int depth);
 
-  // B.2: Reload external tools
+  // Reload external tools
   void ReloadTools();
 
-  // B.3: Override default agent name for startup
+  // Override the default agent name for startup (--agent flag)
   void SetDefaultAgent(const std::string& agent_name);
 
-  // Stage 6+7: Switch the active agent and rebuild the tool registry.
+  // Switch the active agent and rebuild the tool registry.
   void SwitchAgent(const config::AgentEntry& new_agent);
 
 private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
-  void AutoSaveSession(const std::string& id);
 
-  // Stage 6+7: tool lifecycle helpers
+  // Tool lifecycle helpers
   void RebuildToolbox(const config::AgentEntry& agent);
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
@@ -74,15 +70,14 @@ private:
   std::unique_ptr<Executor> executor_;
   std::map<std::string, std::shared_ptr<Session>> sessions_;
   std::string default_session_id_;
-  BackendConfig default_backend_config_;
+  SessionBackendConfig default_backend_config_;
   int max_sessions_ = 10;
-  int max_depth_ = 5;
 
-  // B.3: default agent override (set via --agent flag)
+  // Default agent override (set via --agent flag)
   std::string default_agent_override_;
 
-  // Stage 6+7: per-agent tool registry state. The Runtime is the sole owner of
-  // the Toolbox; it is rebuilt whenever the active agent changes.
+  // Per-agent tool registry state. The Runtime is the sole owner of the
+  // Toolbox; it is rebuilt whenever the active agent changes.
   std::unique_ptr<mcp::McpClient> current_mcp_client_;
   std::string current_agent_name_;
   config::AgentEntry current_agent_config_;

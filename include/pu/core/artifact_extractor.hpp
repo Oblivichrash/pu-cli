@@ -10,9 +10,9 @@
 
 namespace pu {
 
-class FactExtractor {
+class ArtifactExtractor {
  public:
-  FactExtractor() = default;
+  ArtifactExtractor() = default;
 
   std::vector<Artifact> Extract(const std::shared_ptr<Workspace>& ctx,
                    const std::string& goal);

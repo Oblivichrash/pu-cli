@@ -27,11 +27,6 @@ class ForkMergeService {
     std::string message;
   };
 
-  struct ForkContextResult {
-    std::shared_ptr<Workspace> child_context;
-    std::string message;
-  };
-
   ForkMergeService(AgentManager& manager,
                    std::shared_ptr<Workspace> root_context);
 
@@ -51,13 +46,13 @@ class ForkMergeService {
   void PrintTree(std::ostream& os) const;
 
   // Workspace lookup
-  std::shared_ptr<Workspace> FindContext(const std::string& id_or_branch) const;
+  std::shared_ptr<Workspace> FindWorkspace(const std::string& id_or_branch) const;
 
   // Pruning
   size_t PruneMerged();
 
   // Artifact extraction
-  std::vector<Artifact> ExtractFacts(const std::shared_ptr<Workspace>& ctx,
+  std::vector<Artifact> ExtractArtifacts(const std::shared_ptr<Workspace>& ctx,
                          const std::string& goal);
 
   // Summary generation
@@ -66,7 +61,7 @@ class ForkMergeService {
                                  LLMProvider* provider = nullptr);
 
   // Accessors
-  std::shared_ptr<Workspace> GetRootContext() const { return root_context_; }
+  std::shared_ptr<Workspace> GetRootWorkspace() const { return root_context_; }
 
  private:
   void PrintTree(std::ostream& os, const std::shared_ptr<Workspace>& root) const;

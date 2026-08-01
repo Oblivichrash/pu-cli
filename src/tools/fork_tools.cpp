@@ -62,8 +62,8 @@ std::string ForkContextTool::Execute(const nlohmann::json& args, pu::ToolContext
     return "Error: CallStack not available in this context.";
   }
 
-  auto parent = ctx.call_stack->IsEmpty() ? ctx.fork_service->GetRootContext()
-                                         : ctx.call_stack->CurrentContext();
+  auto parent = ctx.call_stack->IsEmpty() ? ctx.fork_service->GetRootWorkspace()
+                                         : ctx.call_stack->CurrentWorkspace();
   auto result = ctx.fork_service->Fork(parent, agent_name, goal, branch_name);
   if (!result.child_context) {
     return "Error: " + result.message;
@@ -133,7 +133,7 @@ std::string MergeContextTool::Execute(const nlohmann::json& args, pu::ToolContex
     return "Error: no active context to merge.";
   }
 
-  auto child = ctx.call_stack->CurrentContext();
+  auto child = ctx.call_stack->CurrentWorkspace();
   auto result = ctx.fork_service->Merge(child, message, strategy);
   if (result.report.status != HandoffReceipt::Status::kFailed) {
     ctx.call_stack->Pop();

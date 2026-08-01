@@ -13,6 +13,7 @@ public:
   void SetVar(const std::string& key, const nlohmann::json& value);
   std::optional<nlohmann::json> GetVar(const std::string& key) const;
   bool HasVar(const std::string& key) const;
+  void RemoveVar(const std::string& key);
 
   void AddArtifact(const Artifact& artifact);
   std::vector<Artifact> GetArtifacts() const;

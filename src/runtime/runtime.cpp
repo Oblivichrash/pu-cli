@@ -20,7 +20,6 @@ namespace pu {
 void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
 
-  // Initialize logging (from environment variables)
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
@@ -33,7 +32,6 @@ void Runtime::Initialize(const std::string& config_path) {
   // Load agent config metadata so that /backend and /agents work
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
-  // Extract default backend config and security policy
   const config::AgentEntry* default_entry = nullptr;
   for (const auto& entry : agents_cfg.agents) {
     if (entry.name == agents_cfg.default_agent) {
@@ -57,7 +55,7 @@ void Runtime::Initialize(const std::string& config_path) {
   executor_ = std::make_unique<Executor>(nullptr);
 
   if (default_entry) {
-    // Stage 6+7: build the tool registry for the default agent only.
+    // Build the tool registry for the default agent only.
     current_agent_config_ = *default_entry;
     current_agent_name_ = default_entry->name;
     RebuildToolbox(*default_entry);
@@ -94,7 +92,7 @@ void Runtime::Shutdown() {
 
 std::string Runtime::CreateSession(const std::string& owner_id,
                                    const std::string& agent_name,
-                                   const BackendConfig* backend) {
+                                   const SessionBackendConfig* backend) {
   if (sessions_.size() >= static_cast<size_t>(max_sessions_)) {
     throw RuntimeError("Maximum sessions reached");
   }
@@ -178,9 +176,6 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   return GetSession(id);
 }
 
-void Runtime::SetDefaultSessionId(const std::string& id) {
-  default_session_id_ = id;
-}
 
 bool Runtime::ProcessInput(const std::string& session_id,
                             const std::string& input,
@@ -209,10 +204,8 @@ bool Runtime::ProcessInput(const std::string& session_id,
   return true;
 }
 
-void Runtime::SetMaxSessions(int n) { max_sessions_ = n; }
-void Runtime::SetMaxDepth(int depth) { max_depth_ = depth; }
 
-// B.2: Reload external tools
+// Reload external tools
 void Runtime::ReloadTools() {
   auto tools_dir = pu::path::GetDataDir() / "tools";
   if (toolbox_) {
@@ -220,12 +213,10 @@ void Runtime::ReloadTools() {
   }
 }
 
-// B.3: Override default agent name
+// Override default agent name
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
-
-// Stage 6+7: lifecycle management -------------------------------------------
 
 void Runtime::ShutdownMCP() {
   if (current_mcp_client_) {
@@ -265,19 +256,15 @@ void Runtime::RegisterPythonTools() {
 }
 
 void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
-  // 1. Shutdown old MCP
   ShutdownMCP();
 
-  // 2. Create new Toolbox
   toolbox_ = std::make_unique<Toolbox>();
 
-  // 3. Register built-in tools (always available)
   RegisterBuiltinTools();
 
-  // 4. Load Python tools from ~/.pu/tools/
   RegisterPythonTools();
 
-  // 5. If agent has MCP servers, start first one and register tools
+  // If the agent has MCP servers, start the first one.
   if (!agent.mcp_servers.empty()) {
     const auto& mcp_cfg = agent.mcp_servers[0];  // currently only a single server per agent
     if (StartMCP(mcp_cfg)) {
@@ -290,11 +277,9 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
     }
   }
 
-  // 6. Update Executor's security policy
   executor_->SetSecurityPolicy(agent.security);
   executor_->SetToolbox(toolbox_.get());
 
-  // 7. Update agent manager's active agent name
   agent_manager_->SetActiveAgent(agent.name);
 }
 

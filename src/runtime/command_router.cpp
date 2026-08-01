@@ -81,10 +81,10 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
 
 ForkMergeService* CommandRouter::GetOrCreateForkService(Session& session) {
   auto& call_stack = session.GetCallStack();
-  auto root_ctx = call_stack.GetRootContext();
+  auto root_ctx = call_stack.GetRootWorkspace();
   if (!root_ctx) {
     root_ctx = std::make_shared<Workspace>("root");
-    call_stack.SetRootContext(root_ctx);
+    call_stack.SetRootWorkspace(root_ctx);
   }
   if (!fork_service_) {
     fork_service_ = std::make_unique<ForkMergeService>(manager_, root_ctx);
@@ -140,7 +140,7 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
     if (RequireMinArgs(args, 2, FormatUsage("/fork show", "<id>"), output)) return true;
 
     std::string fork_id = args[1];
-    auto found = fork_service->FindContext(fork_id);
+    auto found = fork_service->FindWorkspace(fork_id);
     if (!found) {
       output = "Context not found: " + fork_id;
       return true;
@@ -190,7 +190,7 @@ bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& se
   }
 
   std::string agent_name = args[0];
-  auto parent = call_stack.IsEmpty() ? fork_service->GetRootContext() : call_stack.CurrentContext();
+  auto parent = call_stack.IsEmpty() ? fork_service->GetRootWorkspace() : call_stack.CurrentWorkspace();
   auto result = fork_service->Fork(parent, agent_name, "Exploration", "");
   if (result.child_context) {
     Assignment asgn;
@@ -219,7 +219,7 @@ bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& s
 
   bool full = (!args.empty() && args[0] == "--full");
 
-  auto child = call_stack.CurrentContext();
+  auto child = call_stack.CurrentWorkspace();
   auto provider = session.CreateProvider();
 
   ForkMergeService::MergeResult result;
@@ -254,7 +254,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
-    BackendConfig new_cfg;
+    SessionBackendConfig new_cfg;
     new_cfg.type = (agent_config->backend.type == config::BackendType::kOllama) ? "ollama" : "openai";
     new_cfg.host = agent_config->backend.host;
     new_cfg.model = agent_config->backend.model;
@@ -275,7 +275,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
-  BackendConfig new_cfg;
+  SessionBackendConfig new_cfg;
   new_cfg.type = args[0];
   new_cfg.model = args[1];
   if (args.size() > 2) {
@@ -326,14 +326,10 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
 
 bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& session, std::string& output) {
   std::string save_name;
-  bool no_summary = false;
 
   for (const auto& arg : args) {
-    if (arg == "--no-summary") {
-      no_summary = true;
-    } else {
-      save_name = arg;
-    }
+    if (arg == "--no-summary") continue;  // Accepted for CLI compatibility; summary is not generated on save.
+    save_name = arg;
   }
 
   if (save_name.empty()) {

@@ -10,7 +10,6 @@
 #include "pu/agent_config.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/conversation.hpp"
-#include "pu/renderer.hpp"
 #include "pu/error.hpp"
 
 #include <spdlog/spdlog.h>

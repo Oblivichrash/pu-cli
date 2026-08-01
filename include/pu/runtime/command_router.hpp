@@ -50,7 +50,6 @@ private:
   AgentManager& manager_;
   Runtime& runtime_;
   std::unique_ptr<ForkMergeService> fork_service_;
-  int max_depth_ = 5;
 };
 
 } // namespace pu

@@ -7,10 +7,6 @@ namespace pu {
 
 void Transcript::Append(const ChatMessage& msg) {
   messages_.push_back(msg);
-  // Temporarily disabled:
-  //if (messages_.size() > COMPACT_KEEP_HEAD + COMPACT_KEEP_TAIL) {
-  //  Compact();
-  //}
 }
 
 std::vector<ChatMessage> Transcript::GetHistory() const {
@@ -38,7 +34,6 @@ void Transcript::Compact() {
   for (size_t i = tail_start; i > keep_first; --i) {
     const auto& msg = messages_[i];
     if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {
-      // Collect all tool_call_id from this assistant's tool_calls.
       std::vector<std::string> ids;
       try {
         auto j = nlohmann::json::parse(msg.tool_calls_json);
@@ -49,7 +44,6 @@ void Transcript::Compact() {
         continue; // If parsing fails, we cannot verify; skip.
       }
 
-      // Check that every id has a corresponding tool message after i.
       bool all_found = true;
       for (const auto& id : ids) {
         bool found = false;
@@ -68,18 +62,15 @@ void Transcript::Compact() {
       // If missing a tool response, extend tail_start to include this assistant.
       if (!all_found) {
         tail_start = i;
-        // Continue scanning backward because earlier messages may also be incomplete.
       }
     }
   }
 
-  // Build compressed vector.
   std::vector<ChatMessage> compressed;
   compressed.reserve(keep_first + 1 + (messages_.size() - tail_start));
 
   compressed.insert(compressed.end(), messages_.begin(), messages_.begin() + keep_first);
 
-  // Only insert summary if we actually omitted something.
   if (tail_start > keep_first) {
     ChatMessage summary;
     summary.id = static_cast<int>(compressed.size()) + 1;

@@ -7,7 +7,7 @@
 
 namespace pu {
 
-struct BackendConfig {
+struct SessionBackendConfig {
   std::string type;   // "ollama" | "openai"
   std::string host;
   std::string model;
@@ -18,14 +18,14 @@ struct BackendConfig {
 
   // Thin wrappers for backward compatibility with existing callers.
   nlohmann::json Serialize() const { return nlohmann::json(*this); }
-  static BackendConfig Deserialize(const nlohmann::json& j) { return j.get<BackendConfig>(); }
+  static SessionBackendConfig Deserialize(const nlohmann::json& j) { return j.get<SessionBackendConfig>(); }
 
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(BackendConfig, type, host, model, api_key,
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(SessionBackendConfig, type, host, model, api_key,
                                  temperature, max_tokens, parameters_as_string)
 };
 
 struct RuntimeSpec {
-  BackendConfig backend;
+  SessionBackendConfig backend;
   std::string agent_name;
   int max_delegation_depth = 5;
   std::map<std::string, nlohmann::json> overrides;

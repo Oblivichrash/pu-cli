@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor/executor.hpp"
 
-#include "pu/renderer.hpp"
 #include "pu/core/fork_merge_service.hpp"
 #include "tools/command_executor.hpp"
 
@@ -82,13 +81,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
     tool_was_called = false;
 
-    // Build chat history from workspace.
     std::vector<ChatMessage> chat_history;
     for (const auto& msg : workspace.GetHistory()) {
       chat_history.push_back(msg);
     }
 
-    // Inject system prompt if present and not already in history.
     auto system_prompt_var = workspace.GetVar("system_prompt");
     if (system_prompt_var && system_prompt_var->is_string() && !system_prompt_var->get<std::string>().empty()) {
       bool has_system = false;
@@ -137,7 +134,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       break;
     }
 
-    // Process tool calls.
     if (!collected_calls.empty()) {
       // Ensure every tool call has a non‑empty ID (some providers may omit it).
       for (auto& tc : collected_calls) {
@@ -191,7 +187,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
   } while (tool_was_called);
 
-  // After loop, if no final_response, use the last assistant message content.
   if (final_response.empty()) {
     auto history = workspace.GetHistory();
     for (auto it = history.rbegin(); it != history.rend(); ++it) {

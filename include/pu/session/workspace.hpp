@@ -6,7 +6,6 @@
 #include <filesystem>
 #include "pu/session/transcript.hpp"
 #include "pu/session/memory.hpp"
-#include "pu/session/revision_graph.hpp"
 
 namespace pu {
 
@@ -27,7 +26,6 @@ public:
   void Compact();
   bool HasPendingToolCalls() const;
   
-  // New method for clearing history
   void ClearHistory();
 
   // Delegate to Memory
@@ -51,21 +49,18 @@ public:
   // State
   enum class State { kActive, kMerged, kAbandoned };
   State GetState() const { return state_; }
-  void SetState(State s) { state_ = s; }
   std::string GetBranchName() const { return branch_name_; }
   bool IsMergeCommit() const { return is_merge_commit_; }
 
   size_t RemoveMergedChildren();
   size_t GetTokenCount() const;
 
-  // Generate a unique tool call ID for this workspace.
   int NextToolCallId() { return ++next_tool_call_id_; }
 
   // Serialization (compatible with old Context JSON structure)
   nlohmann::json Serialize() const;
   void Save(const std::filesystem::path& path) const;
   static std::shared_ptr<Workspace> Load(const std::filesystem::path& path);
-  static std::shared_ptr<Workspace> LoadOrCreate(const std::filesystem::path& path);
   static std::shared_ptr<Workspace> Deserialize(const nlohmann::json& j);
 
 private:
@@ -79,7 +74,6 @@ private:
 
   std::unique_ptr<Transcript> transcript_;
   std::unique_ptr<Memory> memory_;
-  std::unique_ptr<RevisionGraph> graph_;
 
   int next_tool_call_id_ = 0;
 };

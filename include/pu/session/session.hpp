@@ -25,9 +25,6 @@ public:
 
   // Accessors
   std::string GetId() const { return id_; }
-  std::string GetOwnerId() const { return owner_id_; }
-  std::chrono::system_clock::time_point GetCreatedAt() const { return created_at_; }
-  std::chrono::system_clock::time_point GetLastAccessAt() const { return last_access_at_; }
 
   Workspace& GetWorkspace() { return *workspace_; }
   const Workspace& GetWorkspace() const { return *workspace_; }
@@ -37,14 +34,12 @@ public:
   const CallStack& GetCallStack() const { return call_stack_; }
 
   // Core operations
-  void SwitchBackend(const BackendConfig& new_config);
+  void SwitchBackend(const SessionBackendConfig& new_config);
   void SwitchAgent(const std::string& agent_name);
   void Touch() { last_access_at_ = std::chrono::system_clock::now(); }
 
   // Safety checks
   bool HasPendingToolCalls() const { return workspace_->HasPendingToolCalls(); }
-  size_t GetBranchCount() const { return workspace_->GetChildren().size(); }
-  size_t GetHistorySize() const { return workspace_->HistorySize(); }
 
   // Provider factory
   std::unique_ptr<LLMProvider> CreateProvider() const;

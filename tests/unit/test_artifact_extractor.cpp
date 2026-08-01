@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include "pu/core/fact_extractor.hpp"
+#include "pu/core/artifact_extractor.hpp"
 #include "pu/session/workspace.hpp"
 
 using namespace pu;
 
-TEST_CASE("FactExtractor extracts file paths from messages", "[fact_extractor]") {
+TEST_CASE("ArtifactExtractor extracts file paths from messages", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Check /home/user/project/main.cpp for issues");
   ctx->Append("assistant", "Looking at src/utils/helper.h");
   ctx->Append("user", "Also check README.md");
 
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
 
   REQUIRE(facts.size() >= 2);  // At least main.cpp and helper.h
@@ -30,14 +30,14 @@ TEST_CASE("FactExtractor extracts file paths from messages", "[fact_extractor]")
   REQUIRE(found_helper);
 }
 
-TEST_CASE("FactExtractor extracts error messages", "[fact_extractor]") {
+TEST_CASE("ArtifactExtractor extracts error messages", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "The build failed with an error");
   ctx->Append("assistant", "I found a compile error in the code");
   ctx->Append("user", "No issues here");
 
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
 
   bool found_error = false;
@@ -51,13 +51,13 @@ TEST_CASE("FactExtractor extracts error messages", "[fact_extractor]") {
   REQUIRE(found_error);
 }
 
-TEST_CASE("FactExtractor deduplicates facts", "[fact_extractor]") {
+TEST_CASE("ArtifactExtractor deduplicates facts", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Check /tmp/file.cpp");
   ctx->Append("assistant", "Check /tmp/file.cpp again");
 
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
 
   // Count occurrences of /tmp/file.cpp
@@ -69,30 +69,30 @@ TEST_CASE("FactExtractor deduplicates facts", "[fact_extractor]") {
   REQUIRE(count == 1);  // Should be deduplicated
 }
 
-TEST_CASE("FactExtractor returns empty for empty context", "[fact_extractor]") {
+TEST_CASE("ArtifactExtractor returns empty for empty context", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
 
   REQUIRE(facts.empty());
 }
 
-TEST_CASE("FactExtractor returns empty for null context", "[fact_extractor]") {
-  FactExtractor extractor;
+TEST_CASE("ArtifactExtractor returns empty for null context", "[artifact_extractor]") {
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(nullptr, "testing");
 
   REQUIRE(facts.empty());
 }
 
-TEST_CASE("FactExtractor handles mixed content", "[fact_extractor]") {
+TEST_CASE("ArtifactExtractor handles mixed content", "[artifact_extractor]") {
   auto ctx = std::make_shared<Workspace>("test");
 
   ctx->Append("user", "Found error in /var/log/syslog");
   ctx->Append("assistant", "The application crashed with a segmentation fault");
   ctx->Append("user", "Fixed in /home/user/fix.patch");
 
-  FactExtractor extractor;
+  ArtifactExtractor extractor;
   auto facts = extractor.Extract(ctx, "testing");
 
   REQUIRE(facts.size() >= 2);

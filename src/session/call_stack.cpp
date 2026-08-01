@@ -55,9 +55,9 @@ const CallStack::Frame& CallStack::Current() const {
   return frames_.back();
 }
 
-std::shared_ptr<Workspace> CallStack::CurrentContext() const {
+std::shared_ptr<Workspace> CallStack::CurrentWorkspace() const {
   if (frames_.empty()) {
-    throw RuntimeError("CallStack::CurrentContext() on empty stack");
+    throw RuntimeError("CallStack::CurrentWorkspace() on empty stack");
   }
   return frames_.back().context;
 }

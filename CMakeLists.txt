@@ -15,14 +15,13 @@ add_library(pu_core STATIC
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/memory.cpp
-    src/session/revision_graph.cpp
     src/session/assignment.cpp
     src/session/handoff_receipt.cpp
     src/session/call_stack.cpp
     src/session/session.cpp
     src/storage/session_store.cpp
     src/core/logging.cpp
-    src/core/fact_extractor.cpp
+    src/core/artifact_extractor.cpp
     src/core/fork_merge_service.cpp
     src/core/summary_generator.cpp
     src/llm/providers/ollama_provider.cpp

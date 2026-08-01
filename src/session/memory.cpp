@@ -17,6 +17,10 @@ bool Memory::HasVar(const std::string& key) const {
   return variables_.find(key) != variables_.end();
 }
 
+void Memory::RemoveVar(const std::string& key) {
+  variables_.erase(key);
+}
+
 void Memory::AddArtifact(const Artifact& artifact) {
   artifacts_.push_back(artifact);
 }
@@ -38,12 +42,11 @@ nlohmann::json Memory::Serialize() const {
   }
   j["variables"] = vars_obj;
 
-  // Artifacts (stored as "facts" for backward compatibility)
   nlohmann::json arts_arr = nlohmann::json::array();
   for (const auto& a : artifacts_) {
     arts_arr.push_back(a.Serialize());
   }
-  j["facts"] = arts_arr;
+  j["artifacts"] = arts_arr;
 
   return j;
 }
@@ -55,7 +58,12 @@ Memory Memory::Deserialize(const nlohmann::json& j) {
       m.variables_[key] = val;
     }
   }
-  if (j.contains("facts") && j["facts"].is_array()) {
+  if (j.contains("artifacts") && j["artifacts"].is_array()) {
+    for (const auto& item : j["artifacts"]) {
+      m.artifacts_.push_back(Artifact::Deserialize(item));
+    }
+  } else if (j.contains("facts") && j["facts"].is_array()) {
+    // Legacy sessions (pre-v0.4) stored artifacts under the "facts" key.
     for (const auto& item : j["facts"]) {
       m.artifacts_.push_back(Artifact::Deserialize(item));
     }

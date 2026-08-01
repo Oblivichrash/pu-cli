@@ -34,8 +34,7 @@ std::string GenerateForkId() {
 Workspace::Workspace(const std::string& id)
   : id_(id),
       transcript_(std::make_unique<Transcript>()),
-      memory_(std::make_unique<Memory>()),
-      graph_(std::make_unique<RevisionGraph>()) {}
+      memory_(std::make_unique<Memory>()) {}
 
 // Transcript delegation
 void Workspace::Append(const ChatMessage& msg) {
@@ -93,10 +92,7 @@ bool Workspace::HasVar(const std::string& key) const {
 }
 
 void Workspace::RemoveVar(const std::string& key) {
-  if (memory_) {
-    // Memory has no RemoveVar, so encode removal as a null value.
-    memory_->SetVar(key, nlohmann::json());
-  }
+  if (memory_) memory_->RemoveVar(key);
 }
 
 void Workspace::AddArtifact(const Artifact& artifact) {
@@ -288,13 +284,6 @@ std::shared_ptr<Workspace> Workspace::Load(const std::filesystem::path& path) {
   return Deserialize(j);
 }
 
-std::shared_ptr<Workspace> Workspace::LoadOrCreate(const std::filesystem::path& path) {
-  auto ws = Load(path);
-  if (!ws) {
-    ws = std::make_shared<Workspace>(path.stem().string());
-  }
-  return ws;
-}
 
 std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   auto ws = std::make_shared<Workspace>();

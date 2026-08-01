@@ -46,16 +46,6 @@ void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
   }
 }
 
-void PrintConversationList(const std::vector<pu::Conversation>& convs) {
-  if (convs.empty()) {
-    std::cout << "No saved conversations.\n";
-    return;
-  }
-  for (const auto& c : convs) {
-    std::cout << "  " << c.id << " (" << c.messages.size() << " messages) created: " << c.created_at << '\n';
-  }
-}
-
 void PrintChatHelp() {
   std::cout << "Available commands:\n"
             << "  /help           Show this help\n"

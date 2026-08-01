@@ -33,7 +33,7 @@ void Session::SwitchAgent(const std::string& agent_name) {
   runtime_spec_.agent_name = agent_name;
 }
 
-void Session::SwitchBackend(const BackendConfig& new_config) {
+void Session::SwitchBackend(const SessionBackendConfig& new_config) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
       "Cannot switch backend while tool calls are pending. "

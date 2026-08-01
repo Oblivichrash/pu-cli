@@ -32,7 +32,6 @@ class OllamaProvider : public LLMProvider {
   ) override;
 
   bool SupportsTools() const override { return true; }
-  bool SupportsStrictMode() const override { return false; }
   std::string GetModelName() const override { return config_.model; }
 
  private:
@@ -43,7 +42,6 @@ class OllamaProvider : public LLMProvider {
                        std::function<void(const std::string&)>& content_cb,
                        std::function<void(const ToolCall&)>& tool_cb);
   std::string RoleToString(const std::string& role) const;
-  ChatMessage ToChatMessage(const nlohmann::json& msg) const;
 
   Config config_;
   std::string host_;

@@ -16,7 +16,7 @@
 namespace pu::executor {
 
 const std::vector<std::string> CommandExecutor::dangerous_patterns_ = {
-    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\()\{ :\|:&\};:)" };
+    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)" };
 
 const std::vector<std::string> CommandExecutor::safe_commands_ = {
     "ls", "pwd", "cat", "head", "tail", "less", "more",
