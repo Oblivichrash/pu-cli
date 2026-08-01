@@ -16,8 +16,12 @@ struct BackendConfig {
   int max_tokens = 2048;
   bool parameters_as_string = false;
 
-  nlohmann::json Serialize() const;
-  static BackendConfig Deserialize(const nlohmann::json& j);
+  // Thin wrappers for backward compatibility with existing callers.
+  nlohmann::json Serialize() const { return nlohmann::json(*this); }
+  static BackendConfig Deserialize(const nlohmann::json& j) { return j.get<BackendConfig>(); }
+
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(BackendConfig, type, host, model, api_key,
+                                 temperature, max_tokens, parameters_as_string)
 };
 
 struct RuntimeSpec {
@@ -26,8 +30,12 @@ struct RuntimeSpec {
   int max_delegation_depth = 5;
   std::map<std::string, nlohmann::json> overrides;
 
-  nlohmann::json Serialize() const;
-  static RuntimeSpec Deserialize(const nlohmann::json& j);
+  // Thin wrappers for backward compatibility with existing callers.
+  nlohmann::json Serialize() const { return nlohmann::json(*this); }
+  static RuntimeSpec Deserialize(const nlohmann::json& j) { return j.get<RuntimeSpec>(); }
+
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(RuntimeSpec, backend, agent_name,
+                                max_delegation_depth, overrides)
 };
 
 } // namespace pu

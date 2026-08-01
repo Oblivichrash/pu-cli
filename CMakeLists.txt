@@ -16,11 +16,9 @@ add_library(pu_core STATIC
     src/session/transcript.cpp
     src/session/memory.cpp
     src/session/revision_graph.cpp
-    src/session/artifact.cpp
     src/session/assignment.cpp
     src/session/handoff_receipt.cpp
     src/session/call_stack.cpp
-    src/session/runtime_spec.cpp
     src/session/session.cpp
     src/storage/session_store.cpp
     src/core/logging.cpp
