@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 
 namespace pu::tools {
 
@@ -67,7 +68,11 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::Too
 
   if (ctx.security) {
     for (const auto& pattern : ctx.security->forbidden_patterns) {
-      if (command.find(pattern) != std::string::npos) {
+      // Word-boundary matching prevents false positives where a short pattern
+      // such as "dd" or "rm" appears as a substring inside a Git commit hash
+      // or file path.
+      std::regex re("\\b" + pattern + "\\b");
+      if (std::regex_search(command, re)) {
         return MakeToolJson(false, "", "",
                             "command contains forbidden pattern '" + pattern + "'", -1);
       }
