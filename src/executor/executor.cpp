@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor/executor.hpp"
+#include "pu/infra/platform.hpp"
 
 #include "pu/core/logging.hpp"
 
@@ -16,7 +17,179 @@ namespace pu {
 
 using json = nlohmann::json;
 
-Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) {}
+namespace {
+
+std::string RunShellCapture(const std::string& cmd) {
+  std::string output;
+  pu::platform::ExecuteCommand(cmd, output);
+  while (!output.empty() &&
+         (output.back() == '\n' || output.back() == '\r' ||
+          output.back() == ' ' || output.back() == '\t')) {
+    output.pop_back();
+  }
+  return output;
+}
+
+std::string Truncate(const std::string& s, size_t max_len) {
+  if (s.size() <= max_len) return s;
+  if (max_len <= 3) return s.substr(0, max_len);
+  return s.substr(0, max_len - 3) + "...";
+}
+
+}  // namespace
+
+std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
+  try {
+    auto j = json::parse(tool_result);
+    if (j.is_object() && j.contains("success")) {
+      bool success = j["success"].get<bool>();
+      return success ? j.value("stdout", std::string{})
+                     : j.value("error", std::string{});
+    }
+  } catch (...) {
+  }
+  return tool_result;
+}
+
+void Executor::ProbeStaticEnvironment() {
+  if (static_env_info_.probed) return;
+
+  static_env_info_.os_name = RunShellCapture("uname -s");
+  static_env_info_.kernel_version = RunShellCapture("uname -r");
+
+  static const std::vector<std::string> kTools = {
+      "bash", "python3", "gcc", "git", "curl", "jq"};
+  for (const auto& tool : kTools) {
+    if (!RunShellCapture("which " + tool + " 2>/dev/null").empty()) {
+      static_env_info_.available_tools.push_back(tool);
+    }
+  }
+  static_env_info_.probed = true;
+
+  spdlog::info("Static environment probed: OS='{}' kernel='{}' tools=[{}]",
+               static_env_info_.os_name, static_env_info_.kernel_version,
+               [&] {
+                 std::string joined;
+                 for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
+                   if (i > 0) joined += ", ";
+                   joined += static_env_info_.available_tools[i];
+                 }
+                 return joined;
+               }());
+}
+
+std::string Executor::BuildSystemContextMessage(const Workspace& workspace) const {
+  std::ostringstream oss;
+
+  oss << "=== Environment ===\n";
+  if (static_env_info_.probed) {
+    oss << "OS: " << static_env_info_.os_name << "\n";
+    oss << "Kernel: " << static_env_info_.kernel_version << "\n";
+    oss << "Available tools: ";
+    if (static_env_info_.available_tools.empty()) {
+      oss << "(none detected)";
+    } else {
+      for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << static_env_info_.available_tools[i];
+      }
+    }
+    oss << "\n";
+  } else {
+    oss << "(environment not probed)\n";
+  }
+
+  oss << "=== Security Policy ===\n";
+  if (security_policy_) {
+    oss << "Sandbox root: " << security_policy_->sandbox_root << "\n";
+    oss << "Forbidden patterns: ";
+    if (security_policy_->forbidden_patterns.empty()) {
+      oss << "(none)";
+    } else {
+      for (size_t i = 0; i < security_policy_->forbidden_patterns.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << "'" << security_policy_->forbidden_patterns[i] << "'";
+      }
+    }
+    oss << "\n";
+  } else {
+    oss << "(no security policy set)\n";
+  }
+
+  oss << "=== Working Directory ===\n";
+  if (security_policy_ && !security_policy_->sandbox_root.empty()) {
+    oss << security_policy_->sandbox_root << "\n";
+  } else {
+    oss << ".\n";
+  }
+
+  auto artifacts = workspace.GetArtifacts();
+  std::vector<Artifact> file_artifacts;
+  for (const auto& a : artifacts) {
+    if (a.type == Artifact::kFilePath) {
+      file_artifacts.push_back(a);
+    }
+  }
+  if (file_artifacts.size() > 8) {
+    file_artifacts.assign(file_artifacts.end() - 8, file_artifacts.end());
+  }
+  oss << "=== Known File Paths ===\n";
+  if (file_artifacts.empty()) {
+    oss << "(none)\n";
+  } else {
+    for (const auto& fa : file_artifacts) {
+      oss << fa.content << "\n";
+    }
+  }
+
+  auto history = workspace.GetHistory();
+  std::vector<const ChatMessage*> tool_msgs;
+  for (auto it = history.rbegin(); it != history.rend() && tool_msgs.size() < 2; ++it) {
+    if (it->role == "tool") {
+      tool_msgs.push_back(&(*it));
+    }
+  }
+  std::reverse(tool_msgs.begin(), tool_msgs.end());
+
+  oss << "=== Recent Tool Executions ===\n";
+  if (tool_msgs.empty()) {
+    oss << "(none)\n";
+  } else {
+    for (const auto* tm : tool_msgs) {
+      bool parsed_success = false;
+      bool success_val = false;
+      std::string extracted;
+      try {
+        auto j = json::parse(tm->content);
+        if (j.is_object() && j.contains("success")) {
+          parsed_success = true;
+          success_val = j["success"].get<bool>();
+          extracted = success_val ? j.value("stdout", std::string{})
+                                  : j.value("error", std::string{});
+        }
+      } catch (...) {
+      }
+
+      oss << "- [" << tm->tool_name << "] ";
+      if (parsed_success) {
+        if (success_val) {
+          oss << "OK: " << Truncate(extracted, 80) << "\n";
+        } else {
+          oss << "FAILED: " << Truncate(extracted, 80)
+              << " (hint: check the error and retry with a corrected command)\n";
+        }
+      } else {
+        oss << Truncate(tm->content, 80) << "\n";
+      }
+    }
+  }
+
+  return oss.str();
+}
+
+Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) {
+  ProbeStaticEnvironment();
+}
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
@@ -98,22 +271,27 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       chat_history.push_back(msg);
     }
 
+    std::string system_context = BuildSystemContextMessage(workspace);
+    std::string merged_system = system_context;
     auto system_prompt_var = workspace.GetVar("system_prompt");
     if (system_prompt_var && system_prompt_var->is_string() &&
         !system_prompt_var->get<std::string>().empty()) {
-      bool has_system = false;
-      for (const auto& cm : chat_history) {
-        if (cm.role == "system") {
-          has_system = true;
-          break;
-        }
+      merged_system = system_prompt_var->get<std::string>() + "\n\n" + system_context;
+    }
+
+    bool has_system = false;
+    for (auto& cm : chat_history) {
+      if (cm.role == "system") {
+        cm.content = merged_system;
+        has_system = true;
+        break;
       }
-      if (!has_system) {
-        ChatMessage sys;
-        sys.role = "system";
-        sys.content = system_prompt_var->get<std::string>();
-        chat_history.insert(chat_history.begin(), std::move(sys));
-      }
+    }
+    if (!has_system) {
+      ChatMessage sys;
+      sys.role = "system";
+      sys.content = merged_system;
+      chat_history.insert(chat_history.begin(), std::move(sys));
     }
 
     std::vector<ToolCall> collected_calls;

@@ -10,6 +10,23 @@
 
 namespace pu::tools {
 
+namespace {
+
+std::string MakeToolJson(bool success,
+                         const std::string& stdout_str,
+                         const std::string& stderr_str,
+                         const std::string& error_str,
+                         int exit_code) {
+  nlohmann::json j;
+  j["success"] = success;
+  j["stdout"] = stdout_str;
+  j["stderr"] = stderr_str;
+  j["error"] = error_str;
+  j["exit_code"] = exit_code;
+  return j.dump();
+}
+
+}  // namespace
 
 ExecuteBashToolStandard::ExecuteBashToolStandard(std::unique_ptr<executor::CommandExecutor> executor)
     : executor_(std::move(executor)) {}
@@ -36,39 +53,45 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
 }
 
 std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  (void)ctx;
   std::string command = args.value("command", "");
   if (command.empty()) {
-    return "Error: 'command' parameter is required";
+    return MakeToolJson(false, "", "", "'command' parameter is required", -1);
   }
 
   if (ctx.security && ctx.security->max_command_length > 0 && command.size() > ctx.security->max_command_length) {
-    return "Error: command exceeds maximum allowed length (" + std::to_string(ctx.security->max_command_length) + ")";
+    return MakeToolJson(false, "", "",
+                        "command exceeds maximum allowed length (" +
+                            std::to_string(ctx.security->max_command_length) + ")",
+                        -1);
   }
 
-  for (const auto& pattern : ctx.security->forbidden_patterns) {
-    if (command.find(pattern) != std::string::npos) {
-      return "Blocked: command contains forbidden pattern '" + pattern + "'";
+  if (ctx.security) {
+    for (const auto& pattern : ctx.security->forbidden_patterns) {
+      if (command.find(pattern) != std::string::npos) {
+        return MakeToolJson(false, "", "",
+                            "command contains forbidden pattern '" + pattern + "'", -1);
+      }
     }
   }
 
   auto risk = executor_->AssessRisk(command);
   if (risk.level == executor::RiskLevel::kDangerous) {
-    return "Blocked: " + risk.reason;
+    return MakeToolJson(false, "", "", "Blocked: " + risk.reason, -1);
   }
 
   auto result = executor_->Execute(command);
   if (result.was_intercepted) {
-    return "Blocked: " + result.intercept_reason;
+    return MakeToolJson(false, "", "", "Blocked: " + result.intercept_reason, -1);
   }
+
   if (result.exit_code == 0) {
-    return result.stdout_content.empty() ? "Command executed successfully." : result.stdout_content;
+    return MakeToolJson(true, result.stdout_content, result.stderr_content, "", 0);
   } else {
-    return "Command failed (exit " + std::to_string(result.exit_code) + ").\n" +
-           result.stderr_content + result.stdout_content;
+    return MakeToolJson(false, result.stdout_content, result.stderr_content,
+                        "Command failed (exit " + std::to_string(result.exit_code) + ")",
+                        result.exit_code);
   }
 }
-
 
 std::string WriteFileTool::Name() const {
   return "write_file";
@@ -92,32 +115,47 @@ std::string WriteFileTool::ParametersSchema() const {
 std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string path = args.value("path", "");
   std::string content = args.value("content", "");
-  if (path.empty()) return "Error: 'path' is required";
+  if (path.empty()) {
+    return MakeToolJson(false, "", "", "'path' is required", -1);
+  }
 
-  if (!ctx.security) return "Error: security policy not set";
+  if (!ctx.security) {
+    return MakeToolJson(false, "", "", "security policy not set", -1);
+  }
 
   std::error_code ec;
   std::filesystem::path sandbox_root(ctx.security->sandbox_root);
   auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
-  if (ec) return "Error: cannot resolve sandbox root: " + ctx.security->sandbox_root;
+  if (ec) {
+    return MakeToolJson(false, "", "",
+                        "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
+  }
 
   std::filesystem::path full_path = sandbox_canonical / path;
   full_path = std::filesystem::weakly_canonical(full_path, ec);
-  if (ec) return "Error: invalid path";
+  if (ec) {
+    return MakeToolJson(false, "", "", "invalid path", -1);
+  }
 
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
-    return "Error: path outside sandbox root (traversal not allowed)";
+    return MakeToolJson(false, "", "", "path outside sandbox root (traversal not allowed)", -1);
   }
 
   std::filesystem::create_directories(full_path.parent_path(), ec);
-  if (ec) return "Error: cannot create parent directories";
+  if (ec) {
+    return MakeToolJson(false, "", "", "cannot create parent directories", -1);
+  }
 
   std::ofstream file(full_path);
-  if (!file.is_open()) return "Error: cannot write to " + path;
+  if (!file.is_open()) {
+    return MakeToolJson(false, "", "", "cannot write to " + path, -1);
+  }
   file << content;
-  return "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
+
+  std::string summary = "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
+  return MakeToolJson(true, summary, "", "", 0);
 }
 
 }  // namespace pu::tools

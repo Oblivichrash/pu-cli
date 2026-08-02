@@ -21,6 +21,13 @@ struct ExecutionResult {
   int tool_call_count = 0;
 };
 
+struct StaticEnvInfo {
+  std::string os_name;
+  std::string kernel_version;
+  std::vector<std::string> available_tools;
+  bool probed = false;
+};
+
 class Executor {
  public:
   explicit Executor(Toolbox* toolbox);
@@ -44,10 +51,16 @@ class Executor {
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
 
+  void ProbeStaticEnvironment();
+  std::string BuildSystemContextMessage(const Workspace& workspace) const;
+  static std::string ExtractToolResultContent(const std::string& tool_result);
+
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   config::HistoryCompactionConfig compaction_config_;
   int next_tool_call_id_ = 0;
+
+  StaticEnvInfo static_env_info_;
 };
 
 }  // namespace pu
