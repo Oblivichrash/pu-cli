@@ -35,12 +35,6 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   return std::nullopt;
 }
 
-ToolCallStyle ParseToolCallStyle(const std::string& str) {
-  if (str == "openai") return ToolCallStyle::kOpenAI;
-  if (str == "phi4") return ToolCallStyle::kPhi4;
-  return ToolCallStyle::kDefault;
-}
-
 SecurityPolicy ParseSecurityPolicy(const json& j) {
   SecurityPolicy policy;
   if (j.contains("sandbox_root") && j["sandbox_root"].is_string())
@@ -68,7 +62,6 @@ BackendConfig ParseBackendConfig(const json& j) {
   if (j.contains("api_key")) cfg.api_key = ExpandEnvVars(j["api_key"].get<std::string>());
   cfg.temperature = j.value("temperature", 0.7f);
   if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
-  cfg.tool_call_style = ParseToolCallStyle(j.value("tool_call_style", "default"));
   cfg.parameters_as_string = j.value("parameters_as_string", false);
   cfg.max_tokens = j.value("max_tokens", 2048);
   cfg.enable_thinking = j.value("enable_thinking", true);
@@ -208,11 +201,7 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
     backend["temperature"] = entry.backend.temperature;
     if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
     backend["enable_thinking"] = entry.backend.enable_thinking;
-    switch (entry.backend.tool_call_style) {
-      case ToolCallStyle::kOpenAI: backend["tool_call_style"] = "openai"; break;
-      case ToolCallStyle::kPhi4:   backend["tool_call_style"] = "phi4"; break;
-      default: backend["tool_call_style"] = "default";
-    }
+    backend["tool_call_style"] = "default";
     item["backend"] = backend;
 
     if (!entry.mcp_servers.empty()) {

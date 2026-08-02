@@ -49,13 +49,17 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 | Command | Description |
 |---------|-------------|
+| `/help` | Show available commands |
 | `/backend <agent>` | Switch to predefined agent (rebuilds the active tool set) |
 | `/backend <type> <model>` | Manual backend switch (keeps current agent) |
-| `/save [name]` | Save session |
-| `/load <id>` | Load session |
-| `/list` | List saved sessions |
-| `/clear` | Clear history |
-| `/exit` | Exit |
+| `/agents` | List available agents |
+| `/save [name]` | Save conversation |
+| `/load <id>` | Load conversation |
+| `/list` | List saved conversations |
+| `/export <id>` | Export conversation as Markdown |
+| `/note add <text> \| /note show` | Add or show notes |
+| `/clear` | Clear conversation history |
+| `/exit`, `/quit` | Exit |
 
 ---
 

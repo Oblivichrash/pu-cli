@@ -15,7 +15,7 @@
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
+enum class ToolCallStyle { kDefault };
 
 struct SecurityPolicy {
   std::string sandbox_root;
