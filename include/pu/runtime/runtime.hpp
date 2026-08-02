@@ -32,7 +32,7 @@ class Runtime {
 
   std::string CreateSession(const std::string& owner_id,
                             const std::string& agent_name = "",
-                            const SessionBackendConfig* backend = nullptr);
+                            const config::BackendConfig* backend = nullptr);
   std::shared_ptr<Session> GetSession(const std::string& id);
   std::vector<std::string> ListSessions() const;
   bool DestroySession(const std::string& id);
@@ -62,7 +62,7 @@ class Runtime {
   std::unique_ptr<Executor> executor_;
   std::map<std::string, std::shared_ptr<Session>> sessions_;
   std::string default_session_id_;
-  SessionBackendConfig default_backend_config_;
+  config::BackendConfig default_backend_config_;
   int max_sessions_ = 10;
 
   std::string default_agent_override_;

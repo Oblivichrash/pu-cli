@@ -9,6 +9,7 @@
 #include "pu/session/runtime_spec.hpp"
 #include "pu/session/call_stack.hpp"
 #include "pu/llm/llm_provider.hpp"
+#include "pu/agent_config.hpp"
 
 namespace pu {
 
@@ -36,7 +37,7 @@ public:
   const CallStack& GetCallStack() const { return *call_stack_; }
 
   // Core operations
-  void SwitchBackend(const SessionBackendConfig& new_config);
+  void SwitchBackend(const config::BackendConfig& new_config);
   void SwitchAgent(const std::string& agent_name);
   void Touch() { last_access_at_ = std::chrono::system_clock::now(); }
 

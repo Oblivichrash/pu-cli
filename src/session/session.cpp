@@ -35,7 +35,7 @@ void Session::SwitchAgent(const std::string& agent_name) {
   runtime_spec_.agent_name = agent_name;
 }
 
-void Session::SwitchBackend(const SessionBackendConfig& new_config) {
+void Session::SwitchBackend(const config::BackendConfig& new_config) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
       "Cannot switch backend while tool calls are pending. "
@@ -47,25 +47,26 @@ void Session::SwitchBackend(const SessionBackendConfig& new_config) {
 std::unique_ptr<LLMProvider> Session::CreateProvider() const {
   const auto& cfg = runtime_spec_.backend;
   auto http = std::make_unique<pu::http::CurlHttpClient>();
-  if (cfg.type == "ollama") {
+  if (cfg.type == config::BackendType::kOllama) {
     OllamaProvider::Config ollama_cfg;
     ollama_cfg.model = cfg.model;
     ollama_cfg.temperature = cfg.temperature;
     ollama_cfg.host = cfg.host;
-    ollama_cfg.api_key = cfg.api_key;
+    ollama_cfg.api_key = cfg.api_key.value_or("");
     ollama_cfg.max_tokens = cfg.max_tokens;
     return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
-  } else if (cfg.type == "openai") {
+  } else if (cfg.type == config::BackendType::kOpenAI) {
     OpenAIProvider::Config openai_cfg;
     openai_cfg.model = cfg.model;
     openai_cfg.temperature = cfg.temperature;
     openai_cfg.host = cfg.host;
-    openai_cfg.api_key = cfg.api_key;
+    openai_cfg.api_key = cfg.api_key.value_or("");
     openai_cfg.parameters_as_string = cfg.parameters_as_string;
     openai_cfg.max_tokens = cfg.max_tokens;
+    openai_cfg.enable_thinking = cfg.enable_thinking;
     return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
   }
-  throw RuntimeError("Unknown backend type: " + cfg.type);
+  throw RuntimeError("Unknown backend type");
 }
 
 nlohmann::json Session::Serialize() const {

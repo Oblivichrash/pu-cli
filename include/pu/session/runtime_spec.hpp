@@ -5,27 +5,15 @@
 #include <map>
 #include <nlohmann/json.hpp>
 
+#include "pu/agent_config.hpp"
+
 namespace pu {
 
-struct SessionBackendConfig {
-  std::string type;   // "ollama" | "openai"
-  std::string host;
-  std::string model;
-  std::string api_key;
-  float temperature = 0.7f;
-  int max_tokens = 2048;
-  bool parameters_as_string = false;
-
-  // Thin wrappers for backward compatibility with existing callers.
-  nlohmann::json Serialize() const { return nlohmann::json(*this); }
-  static SessionBackendConfig Deserialize(const nlohmann::json& j) { return j.get<SessionBackendConfig>(); }
-
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(SessionBackendConfig, type, host, model, api_key,
-                                 temperature, max_tokens, parameters_as_string)
-};
-
+// RuntimeSpec uses the unified config::BackendConfig for its backend field.
+// The JSON serialization is defined via NLOHMANN_DEFINE_TYPE_INTRUSIVE which
+// will invoke the custom to_json/from_json defined in agent_config.hpp.
 struct RuntimeSpec {
-  SessionBackendConfig backend;
+  config::BackendConfig backend;
   std::string agent_name;
   int max_delegation_depth = 5;
   std::map<std::string, nlohmann::json> overrides;

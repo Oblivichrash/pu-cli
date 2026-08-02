@@ -98,7 +98,8 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
 bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
   if (args.empty()) {
     const auto& cfg = session.GetRuntimeSpec().backend;
-    output = "Current backend: " + cfg.type +
+    output = "Current backend: " +
+             std::string(cfg.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
              " (model: " + cfg.model +
              ", host: " + cfg.host + ")";
     return true;
@@ -106,18 +107,13 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
-    SessionBackendConfig new_cfg;
-    new_cfg.type = (agent_config->backend.type == config::BackendType::kOllama) ? "ollama" : "openai";
-    new_cfg.host = agent_config->backend.host;
-    new_cfg.model = agent_config->backend.model;
-    new_cfg.api_key = agent_config->backend.api_key.value_or("");
-    new_cfg.temperature = agent_config->backend.temperature;
-    new_cfg.max_tokens = agent_config->backend.max_tokens;
-    new_cfg.parameters_as_string = agent_config->backend.parameters_as_string;
+    // Directly use the agent's BackendConfig
     try {
-      session.SwitchBackend(new_cfg);
+      session.SwitchBackend(agent_config->backend);
       runtime_.SwitchAgent(*agent_config);
-      output = "Switched to agent: " + args[0] + " (" + new_cfg.type + "/" + new_cfg.model + ")";
+      output = "Switched to agent: " + args[0] + " (" +
+        std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
+        "/" + agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
     }
@@ -127,19 +123,23 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
-  SessionBackendConfig new_cfg;
-  new_cfg.type = args[0];
+  config::BackendConfig new_cfg;
+  if (args[0] == "ollama") {
+    new_cfg.type = config::BackendType::kOllama;
+  } else if (args[0] == "openai") {
+    new_cfg.type = config::BackendType::kOpenAI;
+  } else {
+    output = "Unknown type: " + args[0] + ". Use 'ollama' or 'openai'.";
+    return true;
+  }
   new_cfg.model = args[1];
   if (args.size() > 2) {
     new_cfg.host = args[2];
   } else {
-    if (new_cfg.type == "ollama") {
+    if (new_cfg.type == config::BackendType::kOllama) {
       new_cfg.host = "http://localhost:11434";
-    } else if (new_cfg.type == "openai") {
-      new_cfg.host = "https://api.openai.com/v1";
     } else {
-      output = "Unknown type: " + new_cfg.type + ". Use 'ollama' or 'openai'.";
-      return true;
+      new_cfg.host = "https://api.openai.com/v1";
     }
   }
   if (args.size() > 3) {
@@ -148,8 +148,9 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 
   try {
     session.SwitchBackend(new_cfg);
-    output = "Switched backend to: " + new_cfg.type + " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
-    if (!new_cfg.api_key.empty()) {
+    output = "Switched backend to: " + args[0] +
+      " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
+    if (new_cfg.api_key && !new_cfg.api_key->empty()) {
       output += " (API key set)";
     }
   } catch (const std::exception& e) {

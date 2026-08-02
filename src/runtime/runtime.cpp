@@ -40,12 +40,7 @@ void Runtime::Initialize(const std::string& config_path) {
     }
   }
   if (default_entry) {
-    default_backend_config_.type =
-        (default_entry->backend.type == config::BackendType::kOllama) ? "ollama" : "openai";
-    default_backend_config_.host = default_entry->backend.host;
-    default_backend_config_.model = default_entry->backend.model;
-    default_backend_config_.api_key = default_entry->backend.api_key.value_or("");
-    default_backend_config_.temperature = default_entry->backend.temperature;
+    default_backend_config_ = default_entry->backend;
   }
 
   session_store_ = std::make_unique<SessionStore>();
@@ -88,7 +83,7 @@ void Runtime::Shutdown() {
 
 std::string Runtime::CreateSession(const std::string& owner_id,
                                    const std::string& agent_name,
-                                   const SessionBackendConfig* backend) {
+                                   const config::BackendConfig* backend) {
   if (sessions_.size() >= static_cast<size_t>(max_sessions_)) {
     throw RuntimeError("Maximum sessions reached");
   }
@@ -121,7 +116,8 @@ std::shared_ptr<Session> Runtime::GetSession(const std::string& id) {
 
   auto session = session_store_->LoadSession(id);
   if (session) {
-    if (session->GetRuntimeSpec().backend.type.empty()) {
+    if (session->GetRuntimeSpec().backend.host.empty() &&
+        session->GetRuntimeSpec().backend.model.empty()) {
       session->SwitchBackend(default_backend_config_);
       session_store_->SaveSession(*session);
     }
