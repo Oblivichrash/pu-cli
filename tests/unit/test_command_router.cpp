@@ -57,7 +57,6 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(output.find("/help") != std::string::npos);
   REQUIRE(output.find("/backend") != std::string::npos);
   REQUIRE(output.find("/save") != std::string::npos);
-  REQUIRE(output.find("/stack") != std::string::npos);
   REQUIRE(output.find("/exit, /quit") != std::string::npos);
 
   REQUIRE(f.Route("/clear", output));

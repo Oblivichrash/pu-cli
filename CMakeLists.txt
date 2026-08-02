@@ -8,16 +8,13 @@ find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
 
-# Core library: HTTP client, platform utilities, Workspace/Assignment/CallStack, LLM providers, and MCP
+# Core library: HTTP client, platform utilities, Workspace, LLM providers, and MCP
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/memory.cpp
-    src/session/assignment.cpp
-    src/session/handoff_receipt.cpp
-    src/session/call_stack.cpp
     src/session/session.cpp
     src/storage/session_store.cpp
     src/core/logging.cpp

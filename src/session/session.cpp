@@ -13,8 +13,7 @@ Session::Session(const std::string& id, const std::string& owner_id)
     created_at_(std::chrono::system_clock::now()),
     last_access_at_(created_at_),
     workspace_(std::make_shared<Workspace>()),
-    runtime_spec_(),
-    call_stack_(std::make_shared<CallStack>()) {}
+    runtime_spec_() {}
 
 Session::Session(const std::string& id, const std::string& owner_id,
                  std::shared_ptr<Workspace> workspace,
@@ -23,8 +22,7 @@ Session::Session(const std::string& id, const std::string& owner_id,
     created_at_(std::chrono::system_clock::now()),
     last_access_at_(created_at_),
     workspace_(std::move(workspace)),
-    runtime_spec_(spec),
-    call_stack_(std::make_shared<CallStack>()) {}
+    runtime_spec_(spec) {}
 
 void Session::SwitchAgent(const std::string& agent_name) {
   if (HasPendingToolCalls()) {
@@ -79,7 +77,6 @@ nlohmann::json Session::Serialize() const {
       last_access_at_.time_since_epoch()).count();
   j["workspace"] = workspace_->Serialize();
   j["runtime_spec"] = runtime_spec_.Serialize();
-  j["call_stack"] = call_stack_->Serialize();
   return j;
 }
 
@@ -89,10 +86,6 @@ std::unique_ptr<Session> Session::Deserialize(const nlohmann::json& j) {
   auto ws = Workspace::Deserialize(j["workspace"]);
   auto spec = RuntimeSpec::Deserialize(j["runtime_spec"]);
   auto session = std::make_unique<Session>(id, owner_id, ws, spec);
-  if (j.contains("call_stack")) {
-    auto cs = CallStack::Deserialize(j["call_stack"]);
-    session->call_stack_ = std::make_shared<CallStack>(std::move(cs));
-  }
   // Restore timestamps
   if (j.contains("created_at")) {
     auto secs = std::chrono::seconds(j["created_at"].get<int64_t>());

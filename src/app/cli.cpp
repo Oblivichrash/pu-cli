@@ -16,8 +16,6 @@
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/session/assignment.hpp"
-#include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
 #include "ui.hpp"
 

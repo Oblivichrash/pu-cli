@@ -11,15 +11,12 @@ namespace pu {
 SummaryGenerator::SummaryGenerator(AgentManager& manager)
     : manager_(manager) {}
 
-HandoffReceipt SummaryGenerator::Generate(const std::shared_ptr<Workspace>& child_workspace,
-                                          const Assignment& delegation,
-                                          LLMProvider* provider) {
-  (void)delegation;  // Unused; kept for interface compatibility
-
-  HandoffReceipt report;
-  report.status = HandoffReceipt::Status::kCompleted;
+SummaryGenerator::SummaryResult SummaryGenerator::Generate(
+    const std::shared_ptr<Workspace>& child_workspace, LLMProvider* provider) {
+  SummaryResult report;
+  report.status = SummaryResult::kCompleted;
   if (!child_workspace) {
-    report.status = HandoffReceipt::Status::kFailed;
+    report.status = SummaryResult::kFailed;
     report.summary = "Child workspace missing";
     return report;
   }

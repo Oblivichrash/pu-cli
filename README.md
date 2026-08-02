@@ -54,7 +54,6 @@ Create `agents.json` in current directory or `~/.pu/`:
 | `/save [name]` | Save session |
 | `/load <id>` | Load session |
 | `/list` | List saved sessions |
-| `/stack` | Show delegation stack |
 | `/clear` | Clear history |
 | `/exit` | Exit |
 

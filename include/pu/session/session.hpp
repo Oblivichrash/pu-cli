@@ -7,7 +7,6 @@
 #include <nlohmann/json.hpp>
 #include "pu/session/workspace.hpp"
 #include "pu/session/runtime_spec.hpp"
-#include "pu/session/call_stack.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/agent_config.hpp"
 
@@ -32,10 +31,6 @@ public:
   RuntimeSpec& GetRuntimeSpec() { return runtime_spec_; }
   const RuntimeSpec& GetRuntimeSpec() const { return runtime_spec_; }
 
-  std::shared_ptr<CallStack> GetCallStackPtr() const { return call_stack_; }
-  CallStack& GetCallStack() { return *call_stack_; }
-  const CallStack& GetCallStack() const { return *call_stack_; }
-
   // Core operations
   void SwitchBackend(const config::BackendConfig& new_config);
   void SwitchAgent(const std::string& agent_name);
@@ -58,7 +53,6 @@ private:
   std::chrono::system_clock::time_point last_access_at_;
   std::shared_ptr<Workspace> workspace_;
   RuntimeSpec runtime_spec_;
-  std::shared_ptr<CallStack> call_stack_;
 };
 
 } // namespace pu

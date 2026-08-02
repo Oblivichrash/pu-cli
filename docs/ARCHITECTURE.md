@@ -18,14 +18,13 @@ pu-cli is built around four principles:
 | Component | Responsibility |
 |-----------|----------------|
 | `Runtime` | Plain object (no singleton) created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds the tool registry on agent switch |
-| `Session` | Aggregate root: `Workspace` + `RuntimeSpec` + `CallStack` |
+| `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
 | `Executor` | Fully stateless tool loop; reads/writes `Workspace`, holds no counters or flags |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `SessionStore` | Persists sessions to `~/.pu/sessions/` |
-| `CallStack` | Delegation stack for nested tasks; surfaced via the `/stack` command |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer; request/response with promise mapping |
 | `StdioTransport` | stdio subprocess transport; fork+exec, pipe-based line I/O |
@@ -56,10 +55,7 @@ new error types should extend `RuntimeError`.
 | Old | New |
 |-----|-----|
 | `Context` | `Workspace` |
-| `Delegation` | `Assignment` |
 | `Fact` | `Artifact` |
-| `SummaryReport` | `HandoffReceipt` |
-| `DelegationStack` | `CallStack` |
 | `session::BackendConfig` | `SessionBackendConfig` |
 | `FactExtractor` | `ArtifactExtractor` |
 
@@ -222,7 +218,7 @@ thin.
 └── session_123457.json
 ```
 
-Each session file contains serialized `Workspace`, `RuntimeSpec`, and `CallStack`.
+Each session file contains serialized `Workspace` and `RuntimeSpec`.
 
 ---
 
@@ -232,7 +228,7 @@ Each session file contains serialized `Workspace`, `RuntimeSpec`, and `CallStack
 include/pu/
 ├── agent/          # AgentManager, config (config::BackendConfig, BackendType)
 ├── runtime/        # Runtime, CommandRouter
-├── session/        # Session, Workspace, Transcript, Memory, CallStack
+├── session/        # Session, Workspace, Transcript, Memory
 ├── executor/       # Executor (stateless)
 ├── llm/            # LLMProvider, providers (Ollama, OpenAI)
 ├── mcp/            # McpClient, JsonRpcClient, StdioTransport, types

@@ -11,7 +11,6 @@
 #include "pu/executor/executor.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/runtime/command_router.hpp"
-#include "pu/session/call_stack.hpp"
 #include "pu/session/session.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/storage/session_store.hpp"

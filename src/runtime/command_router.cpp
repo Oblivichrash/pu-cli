@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime/command_router.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/session/call_stack.hpp"
 #include "pu/storage/session_store.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/runtime/runtime.hpp"
@@ -53,7 +52,6 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /note add <text>       Add a note\n"
       "  /note show             Show notes\n");
   add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
-  add("/stack", &CommandRouter::HandleStack, "  /stack                 Show delegation stack\n");
   return reg;
 }
 
@@ -353,26 +351,6 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
 bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
-  return true;
-}
-
-bool CommandRouter::HandleStack(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
-  auto& call_stack = session.GetCallStack();
-  if (!call_stack.IsEmpty()) {
-    std::ostringstream oss;
-    oss << "Assignment stack (depth " << call_stack.Depth() << "):\n";
-    for (const auto& frame : call_stack.GetFrames()) {
-      oss << "  " << frame.assignment.agent_name
-          << " [" << frame.assignment.id << "]\n";
-      if (frame.workspace) {
-        oss << "    Workspace: " << frame.workspace->GetId()
-            << " [branch: " << frame.workspace->GetBranchName() << "]\n";
-      }
-    }
-    output = oss.str();
-  } else {
-    output = "Assignment stack is empty (depth 0)";
-  }
   return true;
 }
 
