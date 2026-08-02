@@ -209,19 +209,21 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
 }
 
 void Runtime::ShutdownMCP() {
-  if (current_mcp_client_) {
-    current_mcp_client_->Disconnect();
-    current_mcp_client_.reset();
+  for (auto& client : mcp_clients_) {
+    if (client) {
+      client->Disconnect();
+    }
   }
+  mcp_clients_.clear();
 }
 
 bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
-  current_mcp_client_ = std::make_unique<mcp::McpClient>(config);
-  if (current_mcp_client_->Connect()) {
+  auto client = std::make_unique<mcp::McpClient>(config);
+  if (client->Connect()) {
+    mcp_clients_.push_back(std::move(client));
     return true;
   } else {
     spdlog::warn("MCP server '{}' connection failed", config.name);
-    current_mcp_client_.reset();
     return false;
   }
 }
@@ -242,15 +244,20 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 
   RegisterBuiltinTools();
 
-  if (!agent.mcp_servers.empty()) {
-    const auto& mcp_cfg = agent.mcp_servers[0];
-    if (StartMCP(mcp_cfg)) {
-      auto tools = current_mcp_client_->ListTools();
-      for (const auto& t : tools) {
-        auto mcp_tool = std::make_unique<tools::McpTool>(current_mcp_client_.get(), t);
-        toolbox_->RegisterTool(std::move(mcp_tool));
-        spdlog::debug("Registered MCP tool: mcp.{} from server {}", t.name, mcp_cfg.name);
-      }
+  for (const auto& mcp_cfg : agent.mcp_servers) {
+    if (!StartMCP(mcp_cfg)) {
+      spdlog::warn("Skipping MCP server '{}' — connection failed", mcp_cfg.name);
+      continue;
+    }
+
+    // The last client pushed by StartMCP is the one we just connected.
+    auto* client = mcp_clients_.back().get();
+    auto tools = client->ListTools();
+    for (const auto& t : tools) {
+      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
+      toolbox_->RegisterTool(std::move(mcp_tool));
+      spdlog::debug("Registered MCP tool: mcp.{}.{} from server {}",
+                    mcp_cfg.name, t.name, mcp_cfg.name);
     }
   }
 

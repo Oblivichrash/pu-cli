@@ -66,7 +66,7 @@ class Runtime {
 
   std::string default_agent_override_;
 
-  std::unique_ptr<mcp::McpClient> current_mcp_client_;
+  std::vector<std::unique_ptr<mcp::McpClient>> mcp_clients_;
   std::string current_agent_name_;
   config::AgentEntry current_agent_config_;
 };
