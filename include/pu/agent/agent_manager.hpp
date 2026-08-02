@@ -17,7 +17,6 @@
 
 namespace pu {
 class Workspace;
-class ForkMergeService;
 namespace http {
 class HttpClient;
 }

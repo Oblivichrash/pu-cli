@@ -8,7 +8,6 @@
 
 #include "pu/agent/agent_manager.hpp"
 #include "pu/agent_config.hpp"
-#include "pu/core/fork_merge_service.hpp"
 #include "pu/executor/executor.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/runtime/command_router.hpp"
@@ -67,8 +66,6 @@ class Runtime {
   int max_sessions_ = 10;
 
   std::string default_agent_override_;
-
-  std::shared_ptr<ForkMergeService> fork_service_;
 
   std::unique_ptr<mcp::McpClient> current_mcp_client_;
   std::string current_agent_name_;

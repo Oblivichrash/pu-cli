@@ -2,7 +2,7 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist CLI orchestrator for LLMs with **multi-session isolation**, **Git-style fork-merge branching**, and **dynamic backend switching**.
+A minimalist CLI orchestrator for LLMs with **multi-session isolation** and **dynamic backend switching**.
 
 ---
 
@@ -41,8 +41,6 @@ Create `agents.json` in current directory or `~/.pu/`:
 ```bash
 ./build/pu chat
 > /backend deepseek-pro    # switch to predefined agent (rebuilds tools)
-> /fork experiment         # create branch
-> /merge                   # merge back
 ```
 
 ---
@@ -53,11 +51,6 @@ Create `agents.json` in current directory or `~/.pu/`:
 |---------|-------------|
 | `/backend <agent>` | Switch to predefined agent (rebuilds the active tool set) |
 | `/backend <type> <model>` | Manual backend switch (keeps current agent) |
-| `/fork [<agent>]` | Fork new branch |
-| `/fork list` | Show branch tree |
-| `/fork show <id>` | Show branch details |
-| `/fork prune [--yes]` | Prune merged branches |
-| `/merge` | Merge current branch |
 | `/save [name]` | Save session |
 | `/load <id>` | Load session |
 | `/list` | List saved sessions |

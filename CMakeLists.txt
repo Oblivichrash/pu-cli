@@ -22,7 +22,6 @@ add_library(pu_core STATIC
     src/storage/session_store.cpp
     src/core/logging.cpp
     src/core/artifact_extractor.cpp
-    src/core/fork_merge_service.cpp
     src/core/summary_generator.cpp
     src/llm/providers/ollama_provider.cpp
     src/llm/providers/openai_provider.cpp
@@ -43,7 +42,6 @@ add_library(pu_agent STATIC
     src/tools/toolbox.cpp
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
-    src/tools/fork_tools.cpp
     src/tools/mcp_tool.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp

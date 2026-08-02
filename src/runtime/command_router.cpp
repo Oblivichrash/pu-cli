@@ -2,7 +2,6 @@
 #include "pu/runtime/command_router.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/call_stack.hpp"
-#include "pu/core/fork_merge_service.hpp"
 #include "pu/storage/session_store.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/runtime/runtime.hpp"
@@ -35,9 +34,8 @@ SessionStore CommandRouter::GetSessionStore() const {
   return SessionStore(pu::path::GetDataDir() / "sessions");
 }
 
-CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime,
-                             std::shared_ptr<ForkMergeService> fork_service)
-    : manager_(manager), runtime_(runtime), fork_service_(std::move(fork_service)) {}
+CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
+    : manager_(manager), runtime_(runtime) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   std::string trimmed = input;
@@ -60,8 +58,6 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   }
 
   if (cmd == "/help") return HandleHelp(args, session, output);
-  if (cmd == "/fork") return HandleFork(args, session, output);
-  if (cmd == "/merge") return HandleMerge(args, session, output);
   if (cmd == "/backend") return HandleBackend(args, session, output);
   if (cmd == "/agents") return HandleAgents(args, session, output);
   if (cmd == "/save") return HandleSave(args, session, output);
@@ -83,11 +79,6 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
   std::ostringstream oss;
   oss << "Available commands:\n"
       << "  /help                  Show this help message\n"
-      << "  /fork [<agent>]        Fork a new branch with optional agent\n"
-      << "  /fork list             List all branches\n"
-      << "  /fork show <id>        Show details of a branch\n"
-      << "  /fork prune            Remove merged branches\n"
-      << "  /merge [--full]        Merge the current branch back\n"
       << "  /backend <agent_name>  Switch to a predefined agent\n"
       << "  /backend <type> <model> [host] [api_key]  Manually set backend\n"
       << "  /agents                List available agents\n"
@@ -101,131 +92,6 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
       << "  /stack                 Show delegation stack\n"
       << "  /exit, /quit           Exit the chat\n";
   output = oss.str();
-  return true;
-}
-
-bool CommandRouter::HandleFork(const std::vector<std::string>& args, Session& session, std::string& output) {
-  auto& call_stack = session.GetCallStack();
-  auto* fork_service = fork_service_.get();
-
-  if (args.empty()) {
-    std::ostringstream oss;
-    fork_service->PrintTree(oss);
-    output = oss.str();
-    return true;
-  }
-
-  if (args[0] == "list") {
-    std::ostringstream oss;
-    fork_service->PrintTree(oss);
-    output = oss.str();
-    return true;
-  }
-
-  if (args[0] == "show") {
-    if (RequireMinArgs(args, 2, FormatUsage("/fork show", "<id>"), output)) return true;
-
-    std::string fork_id = args[1];
-    auto found = fork_service->FindWorkspace(fork_id);
-    if (!found) {
-      output = "Workspace not found: " + fork_id;
-      return true;
-    }
-    std::ostringstream oss;
-    auto st = found->GetState();
-    oss << "=== Workspace: " << found->GetId() << " ===\n";
-    oss << "  Branch: " << found->GetBranchName() << "\n";
-    oss << "  State: " << (st == Workspace::State::kActive ? "active" :
-                           st == Workspace::State::kMerged ? "merged" : "abandoned") << "\n";
-    oss << "  History: " << found->HistorySize() << " messages\n";
-    oss << "  Tokens: ~" << found->GetTokenCount() << "\n";
-    oss << "  Artifacts: " << found->GetArtifacts().size() << "\n";
-    if (found->IsMergeCommit()) {
-      oss << "  Merge commit: yes\n";
-      oss << "  Parents: " << found->GetMergeParents().size() << "\n";
-    }
-    auto parent = found->GetParent();
-    if (parent) oss << "  Parent: " << parent->GetId() << "\n";
-    oss << "  Children: " << found->GetChildren().size() << "\n";
-    auto recent = found->Recent(10);
-    if (!recent.empty()) {
-      oss << "\n  Recent messages:\n";
-      for (const auto& msg : recent) {
-        std::string preview = msg.content.substr(0, 100);
-        oss << "    [" << msg.role << "] " << preview;
-        if (msg.content.size() > 100) oss << "...";
-        oss << "\n";
-      }
-    }
-    output = oss.str();
-    return true;
-  }
-
-  if (args[0] == "prune") {
-    bool confirmed = (args.size() > 1 && (args[1] == "--yes" || args[1] == "-y"));
-    size_t count = fork_service->PruneMerged();
-    std::ostringstream oss;
-    if (confirmed) {
-      oss << "Pruned " << count << " merged branch(es).\n";
-    } else {
-      oss << "Found " << count << " merged branch(es). "
-          << "Use /fork prune --yes to remove them.\n";
-    }
-    output = oss.str();
-    return true;
-  }
-
-  std::string agent_name = args[0];
-  auto parent = call_stack.IsEmpty() ? fork_service->GetRootWorkspace() : call_stack.CurrentWorkspace();
-  auto result = fork_service->Fork(parent, agent_name, "Exploration", "");
-  if (result.child_workspace) {
-    Assignment asgn;
-    asgn.goal = "exploration";
-    asgn.agent_name = agent_name;
-    call_stack.Push(asgn, result.child_workspace);
-    std::ostringstream oss;
-    oss << "\xf0\x9f\x91\x8d Forked to branch: " << result.child_workspace->GetBranchName()
-        << " (agent: " << agent_name << ")\n"
-        << "   Type /merge to close.";
-    output = oss.str();
-  } else {
-    output = "Error: failed to fork.";
-  }
-  return true;
-}
-
-bool CommandRouter::HandleMerge(const std::vector<std::string>& args, Session& session, std::string& output) {
-  auto& call_stack = session.GetCallStack();
-  auto* fork_service = fork_service_.get();
-
-  if (call_stack.IsEmpty()) {
-    output = "Error: no active branch to merge.";
-    return true;
-  }
-
-  bool full = (!args.empty() && args[0] == "--full");
-
-  auto child = call_stack.CurrentWorkspace();
-  auto provider = session.CreateProvider();
-
-  ForkMergeService::MergeResult result;
-  if (full) {
-    result = fork_service->Merge(child, "Merged with full history", "merge");
-  } else {
-    result = fork_service->Merge(child, "Squash merged", "squash", provider.get());
-  }
-
-  std::ostringstream oss;
-  if (full) {
-    oss << "\xf0\x9f\x91\x8d Merged: " << result.report.summary;
-  } else {
-    oss << "\xf0\x9f\x91\x8d Merged (squash): " << result.report.summary;
-  }
-  output = oss.str();
-
-  if (result.report.status != HandoffReceipt::Status::kFailed) {
-    call_stack.Pop();
-  }
   return true;
 }
 

@@ -8,7 +8,6 @@
 #include <iostream>
 #include <sstream>
 
-#include "pu/core/fork_merge_service.hpp"
 #include "tools/command_executor.hpp"
 
 namespace pu {
@@ -178,8 +177,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         tool_ctx.security = &empty_policy;
         spdlog::warn("No security policy set for Executor. Using empty policy.");
       }
-      tool_ctx.fork_service = fork_service_;
-      tool_ctx.call_stack = call_stack_;
       if (!tool_ctx.request_confirmation) {
         tool_ctx.request_confirmation = [](const std::string&) { return true; };
       }

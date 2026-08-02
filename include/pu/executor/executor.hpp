@@ -7,9 +7,7 @@
 
 #include "pu/agent_config.hpp"
 #include "pu/conversation.hpp"
-#include "pu/core/fork_merge_service.hpp"
 #include "pu/llm/llm_provider.hpp"
-#include "pu/session/call_stack.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"
 
@@ -30,8 +28,6 @@ class Executor {
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
   void SetCompactionConfig(const config::HistoryCompactionConfig& cfg) { compaction_config_ = cfg; }
-  void SetForkService(std::shared_ptr<ForkMergeService> fs) { fork_service_ = std::move(fs); }
-  void SetCallStack(std::shared_ptr<CallStack> cs) { call_stack_ = std::move(cs); }
 
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
@@ -51,8 +47,6 @@ class Executor {
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   config::HistoryCompactionConfig compaction_config_;
-  std::shared_ptr<ForkMergeService> fork_service_;
-  std::shared_ptr<CallStack> call_stack_;
 };
 
 }  // namespace pu

@@ -6,7 +6,6 @@
 #include <memory>
 
 #include "pu/agent/agent_manager.hpp"
-#include "pu/core/fork_merge_service.hpp"
 #include "pu/session/session.hpp"
 #include "pu/storage/session_store.hpp"
 
@@ -16,12 +15,9 @@ class Runtime;
 
 class CommandRouter {
 public:
-  CommandRouter(AgentManager& manager, Runtime& runtime,
-                std::shared_ptr<ForkMergeService> fork_service);
+  CommandRouter(AgentManager& manager, Runtime& runtime);
 
   bool Route(const std::string& input, Session& session, std::string& output);
-
-  ForkMergeService* GetForkService() const { return fork_service_.get(); }
 
 private:
   bool RequireMinArgs(const std::vector<std::string>& args, size_t min,
@@ -32,8 +28,6 @@ private:
   SessionStore GetSessionStore() const;
 
   bool HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleFork(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleMerge(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleSave(const std::vector<std::string>& args, Session& session, std::string& output);
@@ -46,7 +40,6 @@ private:
 
   AgentManager& manager_;
   Runtime& runtime_;
-  std::shared_ptr<ForkMergeService> fork_service_;
 };
 
 } // namespace pu

@@ -4,13 +4,12 @@
 
 ## Overview
 
-pu-cli is built around five principles:
+pu-cli is built around four principles:
 
-1. **Session isolation** — Each session owns its workspace, history, and branch tree.
-2. **Git-style branching** — Fork/merge isolated workspaces with squash or full history.
-3. **Dynamic backend switching** — Switch LLM providers without losing state.
-4. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
-5. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
+1. **Session isolation** — Each session owns its workspace and history.
+2. **Dynamic backend switching** — Switch LLM providers without losing state.
+3. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
+4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
 
 ---
 
@@ -20,14 +19,13 @@ pu-cli is built around five principles:
 |-----------|----------------|
 | `Runtime` | Plain object (no singleton) created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds the tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` + `CallStack` |
-| `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) + branch tree (via parent/children links) |
+| `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
 | `Executor` | Fully stateless tool loop; reads/writes `Workspace`, holds no counters or flags |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `SessionStore` | Persists sessions to `~/.pu/sessions/` |
-| `ForkMergeService` | Branch operations: fork, merge, prune; **does not depend on `CallStack`** |
-| `CallStack` | Delegation stack for nested tasks; maintained by the upper layer (router/tools) |
+| `CallStack` | Delegation stack for nested tasks; surfaced via the `/stack` command |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer; request/response with promise mapping |
 | `StdioTransport` | stdio subprocess transport; fork+exec, pipe-based line I/O |
@@ -147,26 +145,6 @@ Runtime.ProcessInput(session_id, input, ...)
                        SessionStore.SaveSession()
 ```
 
-### Fork/Merge flow (decoupled coordination)
-
-`ForkMergeService` operates purely on `Workspace` nodes. It never touches
-`CallStack`; the **upper layer** (either `CommandRouter` for `/fork`/`/merge`
-or the fork/merge tools) is responsible for pushing/popping the corresponding
-`Assignment`:
-
-```
-Fork:  parent = CallStack.CurrentWorkspace() or GetRootWorkspace()
-       result = ForkMergeService.Fork(parent, agent, goal)
-       CallStack.Push(assignment, result.child_workspace)
-
-Merge: child  = CallStack.CurrentWorkspace()
-       result = ForkMergeService.Merge(child, message, strategy)
-       if succeeded → CallStack.Pop()
-```
-
-This keeps the branch service independent from the delegation stack and lets
-both the CLI commands and the tool interface share the same coordination rules.
-
 ---
 
 ## MCP Integration
@@ -260,7 +238,7 @@ include/pu/
 ├── mcp/            # McpClient, JsonRpcClient, StdioTransport, types
 ├── tools/          # Toolbox, tools (including McpTool adapter)
 ├── storage/        # SessionStore
-└── core/           # ForkMergeService, SummaryGenerator, ArtifactExtractor
+└── core/           # SummaryGenerator, ArtifactExtractor
 
 src/
 ├── app/            # CLI entry (main constructs Runtime), UI helpers
@@ -271,7 +249,7 @@ src/
 ├── mcp/            # MCP transport, JSON-RPC, client implementations
 ├── tools/          # Toolbox, tools
 ├── storage/        # SessionStore
-└── core/           # ForkMergeService, SummaryGenerator, ArtifactExtractor
+└── core/           # SummaryGenerator, ArtifactExtractor
 ```
 
 ---
