@@ -235,9 +235,9 @@ src/
 
 ## Known Limitations
 
-- MCP transport is POSIX-only (`fork`/`execvp`); Windows not yet implemented.
+- MCP transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes).
 - MCP request timeout fixed at 5 seconds.
-- Only the first `mcp_servers` entry per agent is started (multiple servers supported as separate clients, but the toolbox only registers the first).
+- Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.
 - Environment probing uses `uname` and `which`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
 
