@@ -44,7 +44,6 @@ add_library(pu_agent STATIC
     src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
     src/tools/fork_tools.cpp
-    src/tools/python_tool.cpp
     src/tools/mcp_tool.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp

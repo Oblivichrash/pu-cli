@@ -70,7 +70,6 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   if (cmd == "/export") return HandleExport(args, session, output);
   if (cmd == "/note") return HandleNote(args, session, output);
   if (cmd == "/clear") return HandleClear(args, session, output);
-  if (cmd == "/reload-tools") return HandleReloadTools(args, session, output);
   if (cmd == "/stack") return HandleStack(args, session, output);
   if (cmd == "/exit" || cmd == "/quit") {
     output = "";
@@ -99,7 +98,6 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
       << "  /note add <text>       Add a note\n"
       << "  /note show             Show notes\n"
       << "  /clear                 Clear conversation history\n"
-      << "  /reload-tools          Reload external tools\n"
       << "  /stack                 Show delegation stack\n"
       << "  /exit, /quit           Exit the chat\n";
   output = oss.str();
@@ -473,13 +471,6 @@ bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& se
 bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
-  return true;
-}
-
-bool CommandRouter::HandleReloadTools(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
-  runtime_.ReloadTools();
-  auto tools_dir = pu::path::GetDataDir() / "tools";
-  output = "Tools reloaded from " + tools_dir.string();
   return true;
 }
 

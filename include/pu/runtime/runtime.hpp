@@ -43,7 +43,6 @@ class Runtime {
   bool ProcessInput(const std::string& session_id, const std::string& input,
                     ExecutionResult& result, bool& is_command);
 
-  void ReloadTools();
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
 
@@ -54,7 +53,6 @@ class Runtime {
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
   void RegisterBuiltinTools();
-  void RegisterPythonTools();
 
   bool is_initialized_ = false;
   bool is_running_ = false;

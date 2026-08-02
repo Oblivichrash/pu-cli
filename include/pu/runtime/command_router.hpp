@@ -42,7 +42,6 @@ private:
   bool HandleExport(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleNote(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleReloadTools(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleStack(const std::vector<std::string>& args, Session& session, std::string& output);
 
   AgentManager& manager_;

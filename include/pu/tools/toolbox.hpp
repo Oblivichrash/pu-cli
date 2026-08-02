@@ -23,11 +23,9 @@ class Toolbox {
   std::string ExecuteTool(const std::string& name,
                           const nlohmann::json& args,
                           ToolContext& ctx);
-  void ReloadExternalTools(const std::string& directory);
 
  private:
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  std::unordered_map<std::string, std::string> tool_file_mtimes_;
 };
 
 }  // namespace pu

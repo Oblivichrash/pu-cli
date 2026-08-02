@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/write_file_tool.hpp"
-#include "pu/tools/create_tool.hpp"
-#include "pu/path_utils.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <regex>
 
 namespace pu::tools {
 
@@ -121,92 +118,6 @@ std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& 
   if (!file.is_open()) return "Error: cannot write to " + path;
   file << content;
   return "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
-}
-
-
-namespace {
-
-bool IsSafePythonCode(const std::string& code) {
-  std::vector<std::string> dangerous_patterns = {
-    "os.system", "subprocess", "eval(", "exec(", "__import__", "open(", "file(",
-    "execfile", "compile(", "globals()", "locals()", "__builtins__"
-  };
-  for (const auto& pat : dangerous_patterns) {
-    if (code.find(pat) != std::string::npos) {
-      return false;
-    }
-  }
-  return true;
-}
-
-}  // namespace
-
-std::string CreateTool::Name() const {
-  return "create_tool";
-}
-
-std::string CreateTool::Description() const {
-  return "Create a new Python tool with name, schema, and code.";
-}
-
-std::string CreateTool::ParametersSchema() const {
-  return R"JSON({
-    "type": "object",
-    "properties": {
-      "name": {"type": "string", "description": "Unique tool name (alphanumeric, underscore)"},
-      "description": {"type": "string", "description": "Brief description of the tool"},
-      "parameters_schema": {"type": "string", "description": "JSON Schema for tool parameters"},
-      "python_code": {"type": "string", "description": "Python code with a 'run' function"}
-    },
-    "required": ["name", "description", "parameters_schema", "python_code"]
-  })JSON";
-}
-
-std::string CreateTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  (void)ctx;
-  std::string name = args.value("name", "");
-  std::string description = args.value("description", "");
-  std::string parameters_schema = args.value("parameters_schema", "");
-  std::string python_code = args.value("python_code", "");
-
-  if (name.empty() || description.empty() || parameters_schema.empty() || python_code.empty()) {
-    return "Error: missing required fields";
-  }
-
-  if (!std::regex_match(name, std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
-    return "Error: invalid tool name (must be alphanumeric and start with letter or underscore)";
-  }
-
-  if (!IsSafePythonCode(python_code)) {
-    return "Error: Python code contains unsafe operations (os.system, subprocess, eval, etc.)";
-  }
-
-  auto tools_dir = pu::path::GetDataDir() / "tools";
-  if (!std::filesystem::exists(tools_dir)) {
-    std::filesystem::create_directories(tools_dir);
-  }
-
-  std::filesystem::path file_path = tools_dir / (name + ".py");
-
-  std::ofstream file(file_path);
-  if (!file.is_open()) {
-    return "Error: cannot write to " + file_path.string();
-  }
-
-  file << "# tool: " << name << "\n";
-  file << "# description: " << description << "\n";
-  file << "# parameters: " << parameters_schema << "\n\n";
-  file << python_code << "\n";
-  file.close();
-
-  if (ctx.request_confirmation) {
-    std::string confirm_msg = "Created new tool '" + name + "'. Do you want to reload tools now? (y/n)";
-    if (!ctx.request_confirmation(confirm_msg)) {
-      return "Tool saved but not reloaded. Use /reload-tools to activate.";
-    }
-  }
-
-  return "Tool '" + name + "' created successfully. Use /reload-tools to activate, or restart the agent.";
 }
 
 }  // namespace pu::tools

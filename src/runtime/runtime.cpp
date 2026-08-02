@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime/runtime.hpp"
 
-#include <filesystem>
 #include <iostream>
 
 #include <spdlog/spdlog.h>
@@ -13,7 +12,6 @@
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/tools/create_tool.hpp"
 #include "pu/tools/execute_bash_tool.hpp"
 #include "pu/tools/fork_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
@@ -73,7 +71,6 @@ void Runtime::Initialize(const std::string& config_path) {
     executor_->SetSecurityPolicy(fallback_policy);
     toolbox_ = std::make_unique<Toolbox>();
     RegisterBuiltinTools();
-    RegisterPythonTools();
     executor_->SetToolbox(toolbox_.get());
     spdlog::warn("No default agent found for security policy. Using permissive fallback.");
   }
@@ -225,13 +222,6 @@ bool Runtime::ProcessInput(const std::string& session_id,
   return true;
 }
 
-void Runtime::ReloadTools() {
-  auto tools_dir = pu::path::GetDataDir() / "tools";
-  if (toolbox_) {
-    toolbox_->ReloadExternalTools(tools_dir.string());
-  }
-}
-
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
@@ -261,17 +251,9 @@ void Runtime::RegisterBuiltinTools() {
                                                               : current_agent_config_.security
                                                                     .sandbox_root)));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::CreateTool>());
   toolbox_->RegisterTool(std::make_unique<tools::ForkWorkspaceTool>());
   toolbox_->RegisterTool(std::make_unique<tools::MergeWorkspaceTool>());
   toolbox_->RegisterTool(std::make_unique<tools::ListForksTool>());
-}
-
-void Runtime::RegisterPythonTools() {
-  auto tools_dir = pu::path::GetDataDir() / "tools";
-  if (std::filesystem::exists(tools_dir)) {
-    toolbox_->ReloadExternalTools(tools_dir.string());
-  }
 }
 
 void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
@@ -280,7 +262,6 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   toolbox_ = std::make_unique<Toolbox>();
 
   RegisterBuiltinTools();
-  RegisterPythonTools();
 
   if (!agent.mcp_servers.empty()) {
     const auto& mcp_cfg = agent.mcp_servers[0];

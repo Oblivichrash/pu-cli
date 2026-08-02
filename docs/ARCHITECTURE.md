@@ -23,7 +23,7 @@ pu-cli is built around five principles:
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) + branch tree (via parent/children links) |
 | `Executor` | Fully stateless tool loop; reads/writes `Workspace`, holds no counters or flags |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
-| `Toolbox` | Tool registry; rebuilt per active agent, executes built-in, Python, and MCP tools |
+| `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `SessionStore` | Persists sessions to `~/.pu/sessions/` |
 | `ForkMergeService` | Branch operations: fork, merge, prune; **does not depend on `CallStack`** |
@@ -103,7 +103,6 @@ RebuildToolbox(agent)
  ├─ ShutdownMCP()                      // stop previous MCP child process
  ├─ toolbox_ = new Toolbox()
  ├─ RegisterBuiltinTools()
- ├─ RegisterPythonTools()
  ├─ if agent.mcp_servers non-empty:
  │    StartMCP(cfg) → ListTools() → register mcp.<name> tools
  └─ executor_->SetToolbox(toolbox_);
@@ -290,7 +289,6 @@ src/
 
 - `--agent` startup parameter does not auto-switch backend (use `/backend` after start).
 - `[INFO] Connected to agent:` display is currently empty.
-- `/reload-tools` is a placeholder.
 - MCP transport is POSIX-only (`fork`/`execvp`); Windows support not yet implemented.
 - MCP request timeout is fixed at 5 seconds.
 - Only the first `mcp_servers` entry per agent is started.

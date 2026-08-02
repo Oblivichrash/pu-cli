@@ -59,7 +59,7 @@ void PrintChatHelp() {
             << "  /export <id>    Export conversation to Markdown\n"
             << "  /note add <text>  Add a note for current agent\n"
             << "  /note show      Show notes for current agent\n"
-            << "  /reload-tools   Reload external Python tools\n";
+            << "\n";
 }
 
 }  // namespace pu::cli
