@@ -18,8 +18,6 @@ add_library(pu_core STATIC
     src/session/session.cpp
     src/storage/session_store.cpp
     src/core/logging.cpp
-    src/core/artifact_extractor.cpp
-    src/core/summary_generator.cpp
     src/llm/providers/ollama_provider.cpp
     src/llm/providers/openai_provider.cpp
     src/llm/common/streaming_json_parser.cpp
