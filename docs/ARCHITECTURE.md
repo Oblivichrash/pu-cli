@@ -17,18 +17,18 @@ pu-cli is built around four principles:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `Runtime` | Plain object (no singleton) created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds the tool registry on agent switch |
+| `Runtime` | Plain object created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
-| `Executor` | Fully stateless tool loop; reads/writes `Workspace`, holds no counters or flags |
+| `Executor` | Stateless tool loop; reads/writes `Workspace`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `SessionStore` | Persists sessions to `~/.pu/sessions/` |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
-| `JsonRpcClient` | JSON-RPC 2.0 protocol layer; request/response with promise mapping |
-| `StdioTransport` | stdio subprocess transport; fork+exec, pipe-based line I/O |
-| `ArtifactExtractor` | Extracts `Artifact`s (file paths, error messages) from workspace history |
+| `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
+| `StdioTransport` | stdio subprocess transport |
+| `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
 
 ---
 
@@ -44,75 +44,83 @@ pu::RuntimeError : std::runtime_error
 ```
 
 `main()` wraps top-level dispatch in a `try/catch (const std::exception&)` so any
-`RuntimeError` (or plain `std::exception`) is converted to a friendly fatal-error
-message instead of crashing. Components throw the most specific subclass available;
-new error types should extend `RuntimeError`.
+`RuntimeError` is converted to a friendly fatal-error message.
 
 ---
 
-## Key Data Types
+## Executor Enhancements (since v0.4)
 
-| Old | New |
-|-----|-----|
-| `Context` | `Workspace` |
-| `Fact` | `Artifact` |
-| `session::BackendConfig` | `SessionBackendConfig` |
-| `FactExtractor` | `ArtifactExtractor` |
+### Structured Tool Output
 
-Serialization follows the *new* names (`artifacts`, `workspace_id`, …). The
-deserializer keeps a legacy fallback (`facts`) so pre-rename session files still load.
+Every tool (`execute_bash`, `write_file`, MCP tools) returns a JSON object with the following schema:
+
+```json
+{
+  "success": bool,
+  "stdout": string,
+  "stderr": string,
+  "error": string,
+  "exit_code": int
+}
+```
+
+The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==false`) and stores only that content in the transcript. The full JSON is not persisted, keeping history clean and human‑readable.
+
+### System Context Injection
+
+`Executor` automatically builds a system message containing:
+
+- OS name and kernel version (probed once at startup)
+- Available system tools (detected via `which`)
+- Security policy (sandbox root, forbidden patterns)
+- Current working directory (the sandbox root)
+- Last known file paths (extracted from artifacts)
+- Recent tool executions (up to 2) with success/failure status and truncated output
+
+This context is merged with the user‑defined `system_prompt` (if any) and prepended to the chat history on every request. This gives the model full awareness of its environment, dramatically reducing blind attempts.
+
+### Environment Probing
+
+`Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`, `uname -r`, and `which` to detect the OS and common tools (`bash`, `python3`, `gcc`, `git`, `curl`, `jq`). The result is cached and included in the system context.
+
+### Forbidden Patterns
+
+The security policy’s `forbidden_patterns` is enforced at the tool execution layer. Commands matching any pattern are rejected with a JSON error response. It is strongly recommended to include `"cd"` to prevent the model from changing the working directory.
 
 ---
 
 ## Runtime Lifecycle & Dependency Injection
 
 `Runtime` is not a singleton. `main()` constructs a single instance and owns every
-major collaborator as a `unique_ptr` member; nothing is reached through a global:
+major collaborator as a `unique_ptr` member:
 
 ```
 main()
- ├─ pu::Runtime runtime;            // constructed on the stack
+ ├─ pu::Runtime runtime;
  ├─ RunAsk / RunChat(runtime)
  └─ catch (std::exception&) → friendly message
 ```
 
 Key responsibilities:
 
-- `Initialize(config_path)` — loads `agents.json`, creates `AgentManager`,
-  `SessionStore`, `Executor`, `CommandRouter`, then builds the default toolbox.
-- `CreateSession(owner, agent, backend)` — creates a session; `backend` is
-  optional and overrides the agent's default backend for that session only.
-- `SwitchAgent(agent)` — updates the active agent **and rebuilds the toolbox**
-  (see below).
-- `ProcessInput(...)` — routes either to `CommandRouter` (commands) or to
-  `Executor` (messages).
+- `Initialize(config_path)` — loads `agents.json`, creates `AgentManager`, `SessionStore`, `Executor`, `CommandRouter`, then builds the default toolbox.
+- `CreateSession(owner, agent, backend)` — creates a session; `backend` is optional.
+- `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
+- `ProcessInput(...)` — routes either to `CommandRouter` (commands) or to `Executor` (messages).
 
 ### Toolbox & MCP lifecycle
 
-The `Toolbox` is **not** a global singleton either. It is rebuilt whenever the
-active agent changes:
-
 ```
 RebuildToolbox(agent)
- ├─ ShutdownMCP()                      // stop previous MCP child process
+ ├─ ShutdownMCP()                      // stop all MCP child processes
  ├─ toolbox_ = new Toolbox()
  ├─ RegisterBuiltinTools()
- ├─ if agent.mcp_servers non-empty:
- │    StartMCP(cfg) → ListTools() → register mcp.<name> tools
+ ├─ for each mcp_servers:
+ │    StartMCP(cfg) → ListTools() → register mcp.<server>.<tool>
  └─ executor_->SetToolbox(toolbox_);
      executor_->SetSecurityPolicy(agent.security)
      executor_->SetCompactionConfig(agent.compaction)
 ```
-
-Consequences:
-
-- Switching agents via `/backend <agent>` tears down the old MCP server and
-  starts the new agent's server on demand — MCP clients are **not** kept alive
-  across agent switches.
-- Currently only the first `mcp_servers` entry per agent is started.
-- Compaction settings travel with the agent: `SetCompactionConfig` copies the
-  agent's `HistoryCompactionConfig` (`enabled`, `keep_head`, `keep_tail`) into
-  the executor before any message is processed.
 
 ---
 
@@ -131,11 +139,13 @@ Runtime.ProcessInput(session_id, input, ...)
                          ▼
                        Executor.Execute()          (stateless)
                          │
+                         ├── Inject system context into chat history
                          ├── Read Workspace.Transcript
                          ├── LLMProvider.Chat()
-                         ├── Toolbox.ExecuteTool() (per active agent)
-                         ├── Write to Workspace.Transcript
-                         └── Return response
+                         ├── Toolbox.ExecuteTool() → JSON response
+                         ├── Extract std/error → store in Transcript
+                         ├── Repeat tool loop if tool calls present
+                         └── Return final response
                          │
                          ▼
                        SessionStore.SaveSession()
@@ -159,54 +169,18 @@ Runtime.ProcessInput(session_id, input, ...)
 └──────────────────────────────────────────────┘
 ```
 
-MCP servers are configured per-agent in `agents.json` via `mcp_servers`. When an
-agent becomes active, `Runtime::RebuildToolbox` spawns its server, performs the
-MCP handshake, lists tools, and registers them with a `mcp.` prefix in the
-current `Toolbox`. Switching agents shuts the previous server down. No external
-MCP SDK is required — the client is fully self-contained.
+MCP servers are configured per-agent via `mcp_servers`. When an agent becomes active, `Runtime::RebuildToolbox` spawns its servers, performs the handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 
 ---
 
 ## Transcript Compaction
 
-`Transcript::Compact(keep_head, keep_tail)` keeps the head and tail messages and
-discards the middle. The counts come from the agent's `history_compaction`
-config (defaults `keep_head = 10`, `keep_tail = 50`); there are no hardcoded
-limits in the transcript. The non-obvious part is **tool-call pairing
-preservation**:
+`Transcript::Compact(keep_head, keep_tail)` keeps the head and tail messages and discards the middle. It preserves tool‑call pairing by scanning backward and ensuring all tool‑call IDs have matching responses.
 
-1. Compute the tail start as `size - keep_tail`.
-2. Scan **backward** from the tail start to `keep_head`.
-3. For every assistant message carrying `tool_calls_json`, collect the tool-call
-   IDs and check that **all** of them have a matching `role == "tool"` response
-   later in the transcript.
-4. If any ID is missing its response, extend `tail_start` leftward to include
-   that assistant message, so a truncated assistant message is never separated
-   from the tool responses it needs.
-
-If a tool-call JSON fails to parse, the message is skipped (the pair check
-cannot be verified), which is a conservative fallback that may keep slightly
-more history than strictly necessary.
-
-### When compaction runs
-
-`Executor::Execute()` decides, once per request, whether to compact:
-
-```
-if (!provider->SupportsTools() && !tools.empty() && compaction_config_.enabled)
-    if provider->IsThinkingMode() → log warning, skip compaction
-    else → workspace.Compact(keep_head, keep_tail)
-```
-
-`LLMProvider::IsThinkingMode()` is a virtual hook (default `false`). It is
-overridden by `OpenAIProvider` (returns `config_.enable_thinking`, used for
-DeepSeek/vLLM reasoning models) and `OllamaProvider` (returns `false`).
-
-Compaction is skipped for thinking-mode backends on purpose: dropping the
-intermediate `reasoning_content` messages would break the DeepSeek API contract
-(HTTP 400), so the full history is sent instead. `Workspace::Compact` simply
-forwards its arguments to `Transcript::Compact`, keeping the delegate interface
-thin.
+Compaction runs automatically in `Executor::Execute()` if:
+- The provider does not support tools (or `tools` list is empty)
+- Compaction is enabled in the agent config
+- The provider is **not** in thinking mode (otherwise compaction is skipped and a warning is logged)
 
 ---
 
@@ -226,23 +200,23 @@ Each session file contains serialized `Workspace` and `RuntimeSpec`.
 
 ```
 include/pu/
-├── agent/          # AgentManager, config (config::BackendConfig, BackendType)
+├── agent/          # AgentManager, config
 ├── runtime/        # Runtime, CommandRouter
 ├── session/        # Session, Workspace, Transcript, Memory
-├── executor/       # Executor (stateless)
+├── executor/       # Executor (stateless, with system context injection)
 ├── llm/            # LLMProvider, providers (Ollama, OpenAI)
-├── mcp/            # McpClient, JsonRpcClient, StdioTransport, types
-├── tools/          # Toolbox, tools (including McpTool adapter)
+├── mcp/            # McpClient, JsonRpcClient, StdioTransport
+├── tools/          # Toolbox, tools (built-in, MCP adapter)
 ├── storage/        # SessionStore
 └── core/           # SummaryGenerator, ArtifactExtractor
 
 src/
-├── app/            # CLI entry (main constructs Runtime), UI helpers
+├── app/            # CLI entry (main), UI helpers
 ├── runtime/        # Runtime, CommandRouter implementations
-├── session/        # Session, Workspace, etc. implementations
+├── session/        # Session, Workspace, etc.
 ├── executor/       # Executor implementation
 ├── llm/            # Providers
-├── mcp/            # MCP transport, JSON-RPC, client implementations
+├── mcp/            # MCP transport, JSON-RPC, client
 ├── tools/          # Toolbox, tools
 ├── storage/        # SessionStore
 └── core/           # SummaryGenerator, ArtifactExtractor
@@ -261,12 +235,11 @@ src/
 
 ## Known Limitations
 
-- `--agent` startup parameter does not auto-switch backend (use `/backend` after start).
-- `[INFO] Connected to agent:` display is currently empty.
-- MCP transport is POSIX-only (`fork`/`execvp`); Windows support not yet implemented.
-- MCP request timeout is fixed at 5 seconds.
-- Only the first `mcp_servers` entry per agent is started.
-- Compaction is only truncation-based today; `"strategy": "summarize"` is reserved for future work and remains incompatible with thinking mode.
+- MCP transport is POSIX-only (`fork`/`execvp`); Windows not yet implemented.
+- MCP request timeout fixed at 5 seconds.
+- Only the first `mcp_servers` entry per agent is started (multiple servers supported as separate clients, but the toolbox only registers the first).
+- Compaction only supports truncation; `"summarize"` strategy is reserved.
+- Environment probing uses `uname` and `which`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
 
 ---
 

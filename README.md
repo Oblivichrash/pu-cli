@@ -30,7 +30,11 @@ Create `agents.json` in current directory or `~/.pu/`:
         "host": "http://localhost:11434",
         "model": "qwen3.5:2b"
       },
-      "tools": ["execute_bash", "write_file"]
+      "tools": ["execute_bash", "write_file"],
+      "security": {
+        "sandbox_root": ".",
+        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
+      }
     }
   ]
 }
@@ -40,7 +44,7 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 ```bash
 ./build/pu chat
-> /backend deepseek-pro    # switch to predefined agent (rebuilds tools)
+> /backend deepseek-pro    # switch to predefined agent
 ```
 
 ---
@@ -50,8 +54,8 @@ Create `agents.json` in current directory or `~/.pu/`:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/backend <agent>` | Switch to predefined agent (rebuilds the active tool set) |
-| `/backend <type> <model>` | Manual backend switch (keeps current agent) |
+| `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
+| `/backend <type> <model>` | Manual backend switch |
 | `/agents` | List available agents |
 | `/save [name]` | Save conversation |
 | `/load <id>` | Load conversation |
@@ -65,10 +69,26 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 ## Tools & Agent Binding
 
-The tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones). No manual reload needed.
+Tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones).
 
-- `tools` in `agents.json` filters which built-in tools are advertised to the model.
-- MCP tools are always exposed with a `mcp.` prefix when a server is configured.
+- `tools` in `agents.json` filters built‑in tools.
+- MCP tools are exposed with a `mcp.<server>.<tool>` prefix.
+
+### Tool Output Format
+
+All tools now return structured JSON with the following fields:
+
+```json
+{
+  "success": true/false,
+  "stdout": "...",
+  "stderr": "...",
+  "error": "...",
+  "exit_code": 0
+}
+```
+
+This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript stores the extracted `stdout` or `error` content; the full JSON is not persisted.
 
 ---
 
@@ -92,16 +112,20 @@ The tool set is bound to the active agent – switching agents with `/backend <a
       "tools": ["execute_bash", "write_file"],
       "security": {
         "sandbox_root": ".",
-        "forbidden_patterns": ["rm -rf", "sudo"]
+        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
       }
     }
   ]
 }
 ```
 
-### MCP Servers
+### Security
 
-Add `mcp_servers` to any agent to connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Servers are started as child processes (stdio transport) and their tools are registered with a `mcp.` prefix in the active agent's tool set. **Each agent can define its own servers**; switching to that agent starts them, switching away stops them.
+- `forbidden_patterns` – commands containing these substrings are blocked.
+- `sandbox_root` – all file operations are relative to this directory.
+- It is strongly recommended to include `"cd"` in `forbidden_patterns` to prevent the model from changing the working directory, which can cause confusion.
+
+### MCP Servers
 
 ```json
 {
@@ -129,13 +153,7 @@ Add `mcp_servers` to any agent to connect external tools via the [Model Context 
 | `command` | Executable to launch |
 | `args` | Arguments passed to the executable |
 
-> Note: only the first `mcp_servers` entry per agent is currently started.
-
 ### Thinking Mode & History Compaction
-
-Backends targeting DeepSeek/vLLM reasoning models can enable thinking mode via `enable_thinking`. When enabled, the provider streams `reasoning_content` alongside the answer.
-
-History compaction trims the middle of the conversation to save tokens, keeping `keep_head` leading and `keep_tail` trailing messages. **It is skipped automatically when the backend is in thinking mode** (compaction would drop the intermediate `reasoning_content` and cause API errors); a warning is logged and the model receives the full history instead.
 
 ```json
 {
@@ -151,41 +169,30 @@ History compaction trims the middle of the conversation to save tokens, keeping 
         "enable_thinking": true,
         "temperature": 0.1
       },
-      "tools": ["execute_bash", "write_file"],
-      "security": { "sandbox_root": "." },
       "history_compaction": {
         "enabled": false,
         "keep_head": 15,
-        "keep_tail": 60,
-        "strategy": "truncate"
+        "keep_tail": 60
       }
     }
   ]
 }
 ```
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `enable_thinking` | Enable thinking mode (DeepSeek/vLLM only) | `true` |
-| `history_compaction.enabled` | Enable compaction when the provider is not in thinking mode | `true` |
-| `history_compaction.keep_head` | Number of leading messages to keep | `10` |
-| `history_compaction.keep_tail` | Number of trailing messages to keep | `50` |
-| `history_compaction.strategy` | Compaction strategy (reserved; only `truncate` today) | `"truncate"` |
-
-For thinking-mode backends set `enable_thinking: true` and `history_compaction.enabled: false` for clarity (the runtime skips compaction and warns anyway). For ordinary models (Ollama, non-thinking OpenAI) leave compaction enabled to save tokens.
-
-### Environment
+### Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Path to agents.json |
 | `PU_HOME` | Data directory (default `~/.pu/`) |
+| `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `PU_TRACE=1` | Enable trace logging |
+| `PU_LOG_JSON=1` | Enable structured JSON logging |
+| `PU_LOG_CONSOLE=0` | Disable console logging |
 
 ### Logging
 
-- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical`.
-- Set `PU_TRACE=1` to enable trace-level logging (equivalent to `PU_LOG_LEVEL=trace`).
-- Log files are stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+Log files stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
 
 ---
 
