@@ -10,6 +10,7 @@ add_executable(pu_tests
     unit/test_summary_generator.cpp
     unit/test_artifact_extractor.cpp
     unit/test_command_execution.cpp
+    unit/test_logging.cpp
     unit/test_command_router.cpp
 )
 

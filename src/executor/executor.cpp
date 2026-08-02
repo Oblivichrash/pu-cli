@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor/executor.hpp"
 
+#include "pu/core/logging.hpp"
+
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -184,11 +186,19 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       for (const auto& call : collected_calls) {
         ++result.tool_call_count;
         std::string tool_result;
+        SetLogToolName(call.name);
+        auto tool_start = std::chrono::steady_clock::now();
         try {
           tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
         } catch (const std::exception& e) {
           tool_result = std::string("Tool execution error: ") + e.what();
         }
+        auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - tool_start).count();
+        SetLogDurationMs(tool_ms);
+        spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
+        ClearLogToolName();
+        ClearLogDurationMs();
 
         ChatMessage tool_msg;
         tool_msg.role = "tool";

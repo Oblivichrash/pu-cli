@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "infra/curl_http_client.hpp"
 
+#include "pu/core/logging.hpp"
+
 #include "infra/platform.hpp"
 #include "pu/error.hpp"
 
@@ -80,7 +82,9 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
 
   auto end = std::chrono::steady_clock::now();
   auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  SetLogDurationMs(duration_ms);
   spdlog::trace("HTTP {} {} {}ms", url, http_code, duration_ms);
+  ClearLogDurationMs();
 
   if (res != CURLE_OK) {
     std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);

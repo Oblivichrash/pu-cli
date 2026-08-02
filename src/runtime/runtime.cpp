@@ -168,6 +168,9 @@ bool Runtime::ProcessInput(const std::string& session_id,
                            const std::string& input,
                            ExecutionResult& result,
                            bool& is_command) {
+  SetLogSessionId(session_id);
+  BeginRequest();
+
   if (!is_running_) {
     result.has_error = true;
     result.error_message = "Runtime is not running.";
