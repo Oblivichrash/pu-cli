@@ -148,7 +148,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     if (!collected_calls.empty()) {
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
-          tc.id = "call_" + std::to_string(workspace.NextToolCallId());
+          tc.id = "call_" + std::to_string(++next_tool_call_id_);
         }
       }
 

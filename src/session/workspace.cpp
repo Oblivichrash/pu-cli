@@ -21,14 +21,6 @@ std::string CurrentTimestamp() {
   return ss.str();
 }
 
-std::string GenerateForkId() {
-  auto now = std::chrono::system_clock::now();
-  auto in_time_t = std::chrono::system_clock::to_time_t(now);
-  std::ostringstream ss;
-  ss << std::put_time(std::gmtime(&in_time_t), "%Y%m%d_%H%M%S");
-  return ss.str();
-}
-
 } // namespace
 
 Workspace::Workspace(const std::string& id)
@@ -109,129 +101,6 @@ void Workspace::ClearArtifacts() {
   if (memory_) memory_->ClearArtifacts();
 }
 
-// Branch operations
-std::shared_ptr<Workspace> Workspace::Fork(const std::string& branch_name) {
-  if (state_ != State::kActive) {
-    throw pu::Error("Cannot fork: workspace '" + id_ + "' is not active (state=" +
-            std::to_string(static_cast<int>(state_)) + ")");
-  }
-
-  std::string actual_branch = branch_name;
-  if (actual_branch.empty()) {
-    actual_branch = "fork_" + GenerateForkId();
-  }
-
-  auto child = std::make_shared<Workspace>("ctx-" + actual_branch);
-  child->branch_name_ = actual_branch;
-  child->parent_ = shared_from_this();
-
-  if (memory_) {
-    child->memory_ = std::make_unique<Memory>();
-    auto vars_j = memory_->Serialize();
-    *child->memory_ = Memory::Deserialize(vars_j);
-  }
-
-  children_.push_back(child);
-
-  child->Append("system", "Forked from '" + id_ + "' (branch: " + actual_branch + ")");
-
-  return child;
-}
-
-std::shared_ptr<Workspace> Workspace::Merge(const std::shared_ptr<Workspace>& child,
-                      const std::string& message) {
-  if (!child) {
-    throw pu::Error("Merge: child workspace is null");
-  }
-
-  if (child->state_ != State::kActive) {
-    throw pu::Error("Cannot merge: child workspace '" + child->id_ +
-            "' is not active (state=" + std::to_string(static_cast<int>(child->state_)) + ")");
-  }
-
-  auto child_parent = child->parent_.lock();
-  if (child_parent.get() != this) {
-    throw pu::Error("Cannot merge: workspace '" + child->id_ +
-            "' is not a child of '" + id_ + "'");
-  }
-
-  auto merge_ws = std::make_shared<Workspace>("merge-" + child->id_);
-  merge_ws->is_merge_commit_ = true;
-  merge_ws->branch_name_ = branch_name_;
-  merge_ws->parent_ = parent_;
-  merge_ws->transcript_ = std::make_unique<Transcript>();
-  merge_ws->memory_ = std::make_unique<Memory>();
-
-  if (memory_) {
-    auto vars_j = memory_->Serialize();
-    *merge_ws->memory_ = Memory::Deserialize(vars_j);
-  }
-
-  merge_ws->merge_parents_.push_back(shared_from_this());
-  merge_ws->merge_parents_.push_back(child);
-
-  if (transcript_) {
-    for (const auto& msg : transcript_->GetHistory()) {
-      merge_ws->Append(msg);
-    }
-  }
-
-  merge_ws->Append("system", "[Merge] " + message);
-
-  if (child->memory_) {
-    for (const auto& a : child->memory_->GetArtifacts()) {
-      merge_ws->AddArtifact(a);
-    }
-    auto child_vars_j = child->memory_->Serialize();
-    if (child_vars_j.contains("variables") && child_vars_j["variables"].is_object()) {
-      for (auto& [key, val] : child_vars_j["variables"].items()) {
-        merge_ws->memory_->SetVar(key, val);
-      }
-    }
-  }
-
-  child->state_ = State::kMerged;
-
-  Append("system", "[Child '" + child->id_ + "' merged] " + message);
-
-  return merge_ws;
-}
-
-std::vector<std::shared_ptr<Workspace>> Workspace::GetMergeParents() const {
-  std::vector<std::shared_ptr<Workspace>> result;
-  for (const auto& wp : merge_parents_) {
-    auto sp = wp.lock();
-    if (sp) {
-      result.push_back(sp);
-    }
-  }
-  return result;
-}
-
-size_t Workspace::RemoveMergedChildren() {
-  size_t removed = 0;
-  auto it = children_.begin();
-  while (it != children_.end()) {
-    if ((*it)->state_ == State::kMerged) {
-      it = children_.erase(it);
-      ++removed;
-    } else {
-      ++it;
-    }
-  }
-  return removed;
-}
-
-size_t Workspace::GetTokenCount() const {
-  size_t total_chars = 0;
-  if (transcript_) {
-    for (const auto& msg : transcript_->GetHistory()) {
-      total_chars += msg.content.size();
-    }
-  }
-  return total_chars / 4;
-}
-
 // Serialization - compatible with old Context JSON structure
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
@@ -251,10 +120,6 @@ nlohmann::json Workspace::Serialize() const {
     j["variables"] = nlohmann::json::object();
     j["artifacts"] = nlohmann::json::array();
   }
-
-  j["branch_name"] = branch_name_;
-  j["state"] = static_cast<int>(state_);
-  j["is_merge_commit"] = is_merge_commit_;
 
   return j;
 }
@@ -301,10 +166,6 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   mem_j["artifacts"] = j.contains("artifacts")
       ? j["artifacts"] : j.value("facts", nlohmann::json::array());
   *ws->memory_ = Memory::Deserialize(mem_j);
-
-  ws->branch_name_ = j.value("branch_name", "main");
-  ws->state_ = static_cast<State>(j.value("state", 0));
-  ws->is_merge_commit_ = j.value("is_merge_commit", false);
 
   return ws;
 }

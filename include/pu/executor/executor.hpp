@@ -47,6 +47,7 @@ class Executor {
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   config::HistoryCompactionConfig compaction_config_;
+  int next_tool_call_id_ = 0;
 };
 
 }  // namespace pu
