@@ -2,8 +2,8 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
-#include <memory>
 
 #include "pu/agent/agent_manager.hpp"
 #include "pu/session/session.hpp"
@@ -15,11 +15,29 @@ class Runtime;
 
 class CommandRouter {
 public:
+  using CommandHandler =
+      bool (CommandRouter::*)(const std::vector<std::string>&, Session&, std::string&);
+
   CommandRouter(AgentManager& manager, Runtime& runtime);
 
   bool Route(const std::string& input, Session& session, std::string& output);
 
+  static std::string GetHelpText();
+
 private:
+  struct CommandEntry {
+    CommandHandler handler;
+    std::string help;
+  };
+
+  struct Registry {
+    std::unordered_map<std::string, CommandEntry> commands;
+    std::vector<std::string> order;
+  };
+
+  static Registry BuildRegistry();
+  static const Registry kRegistry;
+
   bool RequireMinArgs(const std::vector<std::string>& args, size_t min,
                       const std::string& usage, std::string& output) const;
 

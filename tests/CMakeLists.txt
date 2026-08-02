@@ -11,6 +11,7 @@ add_executable(pu_tests
     unit/test_summary_generator.cpp
     unit/test_artifact_extractor.cpp
     unit/test_command_execution.cpp
+    unit/test_command_router.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

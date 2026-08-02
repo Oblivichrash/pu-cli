@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <functional>
 #include <sstream>
 #include <filesystem>
 #include <fstream>
@@ -34,6 +33,32 @@ SessionStore CommandRouter::GetSessionStore() const {
   return SessionStore(pu::path::GetDataDir() / "sessions");
 }
 
+CommandRouter::Registry CommandRouter::BuildRegistry() {
+  Registry reg;
+  auto add = [&reg](const std::string& cmd, CommandHandler handler, const std::string& help) {
+    reg.commands[cmd] = CommandEntry{handler, help};
+    reg.order.push_back(cmd);
+  };
+  add("/help", &CommandRouter::HandleHelp, "  /help                  Show this help message\n");
+  add("/backend", &CommandRouter::HandleBackend,
+      "  /backend <agent_name>  Switch to a predefined agent\n"
+      "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
+  add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
+  add("/save", &CommandRouter::HandleSave, "  /save [name]           Save conversation\n");
+  add("/load", &CommandRouter::HandleLoad, "  /load <id>             Load conversation\n");
+  add("/list", &CommandRouter::HandleList, "  /list                  List saved conversations\n");
+  add("/export", &CommandRouter::HandleExport,
+      "  /export <id>           Export conversation as Markdown\n");
+  add("/note", &CommandRouter::HandleNote,
+      "  /note add <text>       Add a note\n"
+      "  /note show             Show notes\n");
+  add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
+  add("/stack", &CommandRouter::HandleStack, "  /stack                 Show delegation stack\n");
+  return reg;
+}
+
+const CommandRouter::Registry CommandRouter::kRegistry = CommandRouter::BuildRegistry();
+
 CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
     : manager_(manager), runtime_(runtime) {}
 
@@ -57,16 +82,11 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
     }
   }
 
-  if (cmd == "/help") return HandleHelp(args, session, output);
-  if (cmd == "/backend") return HandleBackend(args, session, output);
-  if (cmd == "/agents") return HandleAgents(args, session, output);
-  if (cmd == "/save") return HandleSave(args, session, output);
-  if (cmd == "/load") return HandleLoad(args, session, output);
-  if (cmd == "/list") return HandleList(args, session, output);
-  if (cmd == "/export") return HandleExport(args, session, output);
-  if (cmd == "/note") return HandleNote(args, session, output);
-  if (cmd == "/clear") return HandleClear(args, session, output);
-  if (cmd == "/stack") return HandleStack(args, session, output);
+  auto it = kRegistry.commands.find(cmd);
+  if (it != kRegistry.commands.end()) {
+    return (this->*(it->second.handler))(args, session, output);
+  }
+
   if (cmd == "/exit" || cmd == "/quit") {
     output = "";
     return true;
@@ -75,23 +95,18 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   return false;
 }
 
-bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
+std::string CommandRouter::GetHelpText() {
   std::ostringstream oss;
-  oss << "Available commands:\n"
-      << "  /help                  Show this help message\n"
-      << "  /backend <agent_name>  Switch to a predefined agent\n"
-      << "  /backend <type> <model> [host] [api_key]  Manually set backend\n"
-      << "  /agents                List available agents\n"
-      << "  /save [name]           Save conversation\n"
-      << "  /load <id>             Load conversation\n"
-      << "  /list                  List saved conversations\n"
-      << "  /export <id>           Export conversation as Markdown\n"
-      << "  /note add <text>       Add a note\n"
-      << "  /note show             Show notes\n"
-      << "  /clear                 Clear conversation history\n"
-      << "  /stack                 Show delegation stack\n"
-      << "  /exit, /quit           Exit the chat\n";
-  output = oss.str();
+  oss << "Available commands:\n";
+  for (const auto& cmd : kRegistry.order) {
+    oss << kRegistry.commands.at(cmd).help;
+  }
+  oss << "  /exit, /quit           Exit the chat\n";
+  return oss.str();
+}
+
+bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
+  output = GetHelpText();
   return true;
 }
 

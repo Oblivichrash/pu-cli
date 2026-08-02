@@ -7,6 +7,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "pu/runtime/command_router.hpp"
+
 namespace pu::cli {
 
 std::string Trim(const std::string& s) {
@@ -47,19 +49,7 @@ void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
 }
 
 void PrintChatHelp() {
-  std::cout << "Available commands:\n"
-            << "  /help           Show this help\n"
-            << "  /exit, /quit    Exit interactive mode\n"
-            << "  /clear          Clear conversation history and agent lock\n"
-            << "  /agent <name>   Switch to different agent\n"
-            << "  /agents         List available agents\n"
-            << "  /save [name] [--no-summary]  Save conversation and optionally generate summary\n"
-            << "  /load <id>      Load a saved conversation\n"
-            << "  /list           List saved conversations\n"
-            << "  /export <id>    Export conversation to Markdown\n"
-            << "  /note add <text>  Add a note for current agent\n"
-            << "  /note show      Show notes for current agent\n"
-            << "\n";
+  std::cout << CommandRouter::GetHelpText() << "\n";
 }
 
 }  // namespace pu::cli

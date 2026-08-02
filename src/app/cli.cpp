@@ -210,6 +210,9 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
             std::cout << "\n";
           }
         }
+      } else if (is_command && result.error_message.empty()) {
+        std::cout << "Unknown command. ";
+        PrintChatHelp();
       } else {
         spdlog::error("{}", result.error_message.empty() ? "Processing failed" : result.error_message);
       }
