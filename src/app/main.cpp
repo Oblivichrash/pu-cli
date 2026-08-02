@@ -2,8 +2,8 @@
 #include "pu/cli.hpp"
 
 #include "pu/agent/agent_manager.hpp"
+#include "pu/infra/platform.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/renderer.hpp"
 
 #include <curl/curl.h>
 
@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
   curl_global_init(CURL_GLOBAL_DEFAULT);
   std::atexit(curl_global_cleanup);
 
-  pu::SetupSignalHandler();
+  pu::platform::SetupSignalHandler();
 
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
