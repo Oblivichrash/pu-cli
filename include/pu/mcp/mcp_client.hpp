@@ -13,7 +13,7 @@ namespace pu::mcp {
 class McpClient {
 public:
     explicit McpClient(const McpServerConfig& config);
-    ~McpClient();
+    virtual ~McpClient();
 
     McpClient(const McpClient&) = delete;
     McpClient& operator=(const McpClient&) = delete;
@@ -21,10 +21,9 @@ public:
     bool Connect();
     void Disconnect();
 
-    std::vector<ToolDefinition> ListTools();
-    std::string CallTool(const std::string& name, const nlohmann::json& arguments);
-
-    bool IsConnected() const;
+    virtual std::vector<ToolDefinition> ListTools();
+    virtual std::string CallTool(const std::string& name, const nlohmann::json& arguments);
+    virtual bool IsConnected() const;
 
 private:
     bool Handshake();
