@@ -6,9 +6,14 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "pu/llm/llm_provider.hpp"
-#include "pu/mcp/mcp_types.hpp"
 
 namespace pu::mcp {
+
+struct McpServerConfig {
+    std::string name;
+    std::string command;
+    std::vector<std::string> args;
+};
 
 class McpClient {
 public:

@@ -2,7 +2,7 @@
 #pragma once
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "pu/conversation.hpp"
+#include "pu/llm/llm_provider.hpp"
 
 namespace pu {
 

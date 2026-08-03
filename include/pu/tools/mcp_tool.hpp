@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/tools/tool.hpp"
+#include "pu/tools/toolbox.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include <memory>
 #include <string>

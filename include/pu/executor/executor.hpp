@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "pu/agent_config.hpp"
-#include "pu/conversation.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"

@@ -12,7 +12,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include "pu/conversation.hpp"
 #include "pu/agent_config.hpp"
 
 namespace pu {

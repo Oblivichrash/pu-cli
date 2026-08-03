@@ -2,11 +2,27 @@
 #pragma once
 #include <map>
 #include <optional>
+#include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "pu/session/artifact.hpp"
 
 namespace pu {
+
+struct Artifact {
+  enum Type { kFilePath, kErrorMsg, kFunctionName, kUserPreference,
+        kCodeSnippet, kUrl, kCommand, kOther };
+
+  Type type = kOther;
+  std::string content;
+  std::string source;
+  double confidence = 1.0;
+
+  // Thin wrappers for backward compatibility with existing callers.
+  nlohmann::json Serialize() const { return nlohmann::json(*this); }
+  static Artifact Deserialize(const nlohmann::json& j) { return j.get<Artifact>(); }
+
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(Artifact, type, content, source, confidence)
+};
 
 class Memory {
 public:

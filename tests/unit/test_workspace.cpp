@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/session/workspace.hpp"
-#include "pu/session/artifact.hpp"
+#include "pu/session/memory.hpp"
 #include <nlohmann/json.hpp>
 
 using namespace pu;

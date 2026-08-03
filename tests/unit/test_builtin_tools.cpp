@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/execute_bash_tool.hpp"
-#include "pu/tools/write_file_tool.hpp"
+#include "pu/tools/builtin_tools.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>

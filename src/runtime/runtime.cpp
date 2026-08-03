@@ -11,9 +11,8 @@
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/tools/execute_bash_tool.hpp"
+#include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
-#include "pu/tools/write_file_tool.hpp"
 #include "tools/command_executor.hpp"
 
 namespace pu {
