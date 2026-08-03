@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent/agent_manager.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include "tools/command_executor.hpp"
 #include <memory>
 #include <vector>
 #include <string>

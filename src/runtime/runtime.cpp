@@ -13,7 +13,6 @@
 #include "pu/session/workspace.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
-#include "tools/command_executor.hpp"
 
 namespace pu {
 
@@ -229,10 +228,9 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
 
 void Runtime::RegisterBuiltinTools() {
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      std::make_unique<executor::CommandExecutor>(
-          current_agent_config_.security.sandbox_root.empty() ? "."
-                                                              : current_agent_config_.security
-                                                                    .sandbox_root)));
+      current_agent_config_.security.sandbox_root.empty() ? "."
+                                                          : current_agent_config_.security
+                                                                .sandbox_root));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
 }
 

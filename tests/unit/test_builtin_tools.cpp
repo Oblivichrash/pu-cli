@@ -4,16 +4,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
-#include "tests/mocks/mock_command_executor.hpp"
-
 using namespace pu;
 using namespace pu::tools;
-using namespace pu::tests;
 
 namespace {
 
@@ -28,21 +24,16 @@ std::string ReadFile(const std::string& path) {
 
 TEST_CASE("execute_bash returns success JSON on successful command",
           "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  mock->custom_result = pu::executor::ExecutionResult{};
-  mock->custom_result->exit_code = 0;
-  mock->custom_result->stdout_content = "hello from mock";
-
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
+  pu::ToolContext ctx;
 
   nlohmann::json args;
   args["command"] = "echo hello";
-  pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
   REQUIRE(j["success"] == true);
-  REQUIRE(j["stdout"] == "hello from mock");
+  REQUIRE(j["stdout"].get<std::string>().find("hello") != std::string::npos);
   REQUIRE(j["stderr"] == "");
   REQUIRE(j["error"] == "");
   REQUIRE(j["exit_code"] == 0);
@@ -50,31 +41,22 @@ TEST_CASE("execute_bash returns success JSON on successful command",
 
 TEST_CASE("execute_bash returns failure JSON on non-zero exit code",
           "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  mock->custom_result = pu::executor::ExecutionResult{};
-  mock->custom_result->exit_code = 1;
-  mock->custom_result->stdout_content = "some output";
-  mock->custom_result->stderr_content = "some error";
-
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
+  pu::ToolContext ctx;
 
   nlohmann::json args;
-  args["command"] = "false";
-  pu::ToolContext ctx;
+  args["command"] = "nonexistent_command_pu_test";
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
   REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("stdout") == "some output");
-  REQUIRE(j.value("stderr") == "some error");
-  REQUIRE(j.value("error") == "Command failed (exit 1)");
-  REQUIRE(j.value("exit_code") == 1);
+  REQUIRE(j.value("error").get<std::string>().find("Command failed") != std::string::npos);
+  REQUIRE(j.value("exit_code") != 0);
 }
 
 TEST_CASE("Execute_bash returns error JSON for missing command parameter",
           "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
 
   nlohmann::json args;
   pu::ToolContext ctx;
@@ -88,8 +70,7 @@ TEST_CASE("Execute_bash returns error JSON for missing command parameter",
 }
 
 TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
 
   pu::ToolContext ctx;
   config::SecurityPolicy policy;
@@ -108,8 +89,7 @@ TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
 
 TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment",
           "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
 
   pu::ToolContext ctx;
   nlohmann::json args;
@@ -122,8 +102,7 @@ TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment",
 }
 
 TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
-  auto mock = std::make_unique<MockCommandExecutor>();
-  ExecuteBashToolStandard tool(std::move(mock));
+  ExecuteBashToolStandard tool(".");
 
   pu::ToolContext ctx;
   config::SecurityPolicy policy;

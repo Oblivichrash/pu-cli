@@ -3,6 +3,7 @@
 #include "pu/infra/platform.hpp"
 
 #include "pu/core/logging.hpp"
+#include "pu/tools/tool_result.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -10,8 +11,6 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
-
-#include "tools/command_executor.hpp"
 
 namespace pu {
 
@@ -39,16 +38,7 @@ std::string Truncate(const std::string& s, size_t max_len) {
 }  // namespace
 
 std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
-  try {
-    auto j = json::parse(tool_result);
-    if (j.is_object() && j.contains("success")) {
-      bool success = j["success"].get<bool>();
-      return success ? j.value("stdout", std::string{})
-                     : j.value("error", std::string{});
-    }
-  } catch (...) {
-  }
-  return tool_result;
+  return tools::ExtractToolResultContent(tool_result);
 }
 
 void Executor::ProbeStaticEnvironment() {
@@ -156,26 +146,14 @@ std::string Executor::BuildSystemContextMessage(const Workspace& workspace) cons
     oss << "(none)\n";
   } else {
     for (const auto* tm : tool_msgs) {
-      bool parsed_success = false;
-      bool success_val = false;
-      std::string extracted;
-      try {
-        auto j = json::parse(tm->content);
-        if (j.is_object() && j.contains("success")) {
-          parsed_success = true;
-          success_val = j["success"].get<bool>();
-          extracted = success_val ? j.value("stdout", std::string{})
-                                  : j.value("error", std::string{});
-        }
-      } catch (...) {
-      }
+      auto tr = tools::ParseToolResult(tm->content);
 
       oss << "- [" << tm->tool_name << "] ";
-      if (parsed_success) {
-        if (success_val) {
-          oss << "OK: " << Truncate(extracted, 80) << "\n";
+      if (tr.valid) {
+        if (tr.success) {
+          oss << "OK: " << Truncate(tr.stdout_content, 80) << "\n";
         } else {
-          oss << "FAILED: " << Truncate(extracted, 80)
+          oss << "FAILED: " << Truncate(tr.error, 80)
               << " (hint: check the error and retry with a corrected command)\n";
         }
       } else {

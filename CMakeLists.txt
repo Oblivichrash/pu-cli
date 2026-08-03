@@ -35,7 +35,6 @@ add_library(pu_agent STATIC
     src/agent/agent_manager.cpp
     src/executor/executor.cpp
     src/tools/toolbox.cpp
-    src/tools/command_executor.cpp
     src/tools/builtin_tools.cpp
     src/tools/mcp_tool.cpp
     src/runtime/runtime.cpp

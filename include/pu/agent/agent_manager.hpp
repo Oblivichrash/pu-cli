@@ -20,7 +20,7 @@ namespace http {
 class HttpClient;
 }
 namespace executor {
-enum class RiskLevel : int;
+enum class RiskLevel { kSafe, kNeutral, kDangerous };
 }
 }  // namespace pu
 
