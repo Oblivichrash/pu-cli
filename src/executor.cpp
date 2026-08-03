@@ -12,12 +12,40 @@
 #include <iostream>
 #include <sstream>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <winternl.h>
+#endif
+
 namespace pu {
 
 using json = nlohmann::json;
 
 namespace {
 
+#ifdef _WIN32
+// Report the Windows kernel/OS version using RtlGetVersion, which returns the
+// real version regardless of the application compatibility manifest (unlike
+// GetVersionEx, which can be capped). RtlGetVersion is available on every
+// supported Windows version, so no deprecated fallback is needed.
+std::string WindowsKernelVersion() {
+  using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+  auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
+      ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
+  if (rtl_get_version) {
+    RTL_OSVERSIONINFOW info{};
+    info.dwOSVersionInfoSize = sizeof(info);
+    if (rtl_get_version(&info) == 0) {
+      return std::to_string(info.dwMajorVersion) + "." +
+             std::to_string(info.dwMinorVersion) + "." +
+             std::to_string(info.dwBuildNumber);
+    }
+  }
+  return "unknown";
+}
+#endif  // _WIN32
+
+#ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
   std::string output;
   pu::platform::ExecuteCommand(cmd, output);
@@ -27,6 +55,38 @@ std::string RunShellCapture(const std::string& cmd) {
     output.pop_back();
   }
   return output;
+}
+#endif  // !_WIN32
+
+std::string OsName() {
+#ifdef _WIN32
+  return "Windows";
+#else
+  return RunShellCapture("uname -s");
+#endif
+}
+
+std::string OsKernelVersion() {
+#ifdef _WIN32
+  return WindowsKernelVersion();
+#else
+  return RunShellCapture("uname -r");
+#endif
+}
+
+// Quietly check whether an executable is on PATH. Probing never surfaces
+// "command not found" output: on Windows `where /Q` is silent, and on POSIX
+// stdout/stderr are redirected to /dev/null, so detection relies on the exit
+// code rather than captured text.
+bool CommandExists(const std::string& tool) {
+  std::string output;
+#ifdef _WIN32
+  int rc = pu::platform::ExecuteCommand("where /Q \"" + tool + "\"", output);
+#else
+  int rc = pu::platform::ExecuteCommand(
+      "command -v " + tool + " >/dev/null 2>&1", output);
+#endif
+  return rc == 0;
 }
 
 std::string Truncate(const std::string& s, size_t max_len) {
@@ -44,13 +104,13 @@ std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
 void Executor::ProbeStaticEnvironment() {
   if (static_env_info_.probed) return;
 
-  static_env_info_.os_name = RunShellCapture("uname -s");
-  static_env_info_.kernel_version = RunShellCapture("uname -r");
+  static_env_info_.os_name = OsName();
+  static_env_info_.kernel_version = OsKernelVersion();
 
   static const std::vector<std::string> kTools = {
       "bash", "python3", "gcc", "git", "curl", "jq"};
   for (const auto& tool : kTools) {
-    if (!RunShellCapture("which " + tool + " 2>/dev/null").empty()) {
+    if (CommandExists(tool)) {
       static_env_info_.available_tools.push_back(tool);
     }
   }
