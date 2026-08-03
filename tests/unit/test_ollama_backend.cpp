@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/llm/providers/ollama_provider.hpp"
+#include "pu/llm/ollama_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -109,4 +109,39 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
       REQUIRE(call.name == "execute_bash");
     });
   REQUIRE(tool_fired);
+}
+
+TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tools]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  ChatMessage tool_msg;
+  tool_msg.id = 1;
+  tool_msg.role = "tool";
+  tool_msg.content = "result";
+  tool_msg.tool_name = "execute_bash";
+  tool_msg.tool_call_id = "call_42";
+  std::vector<ChatMessage> history = {tool_msg};
+
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE(body["messages"][0]["role"] == "tool");
+  REQUIRE(body["messages"][0]["tool_name"] == "execute_bash");
+  REQUIRE(body["messages"][0]["tool_call_id"] == "call_42");
+}
+
+TEST_CASE("OllamaProvider IsThinkingMode returns false", "[ollama]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+  REQUIRE(provider.IsThinkingMode() == false);
 }

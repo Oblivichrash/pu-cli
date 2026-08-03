@@ -6,14 +6,16 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "pu/llm/llm_provider.hpp"
-#include "pu/http/http_client.hpp"
-#include "pu/mcp/mcp_types.hpp"
+#include "pu/http_client.hpp"
+#include "pu/mcp/mcp_client.hpp"
 
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ToolCallStyle { kDefault, kOpenAI, kPhi4 };
+enum class ToolCallStyle { kDefault };
 
 struct SecurityPolicy {
   std::string sandbox_root;
@@ -32,6 +34,45 @@ struct BackendConfig {
   ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
   bool parameters_as_string = false;
   int max_tokens = 2048;
+  bool enable_thinking = true;  // for DeepSeek/vLLM only
+};
+
+// Keeps the old SessionBackendConfig JSON format (type as string, api_key as string).
+inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
+  j = nlohmann::json{
+    {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
+    {"host", cfg.host},
+    {"model", cfg.model},
+    {"api_key", cfg.api_key.value_or("")},
+    {"temperature", cfg.temperature},
+    {"max_tokens", cfg.max_tokens},
+    {"parameters_as_string", cfg.parameters_as_string},
+  };
+}
+
+inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
+  auto type_str = j.value("type", "ollama");
+  cfg.type = (type_str == "openai") ? BackendType::kOpenAI : BackendType::kOllama;
+  cfg.host = j.value("host", "");
+  cfg.model = j.value("model", "");
+  if (j.contains("api_key") && j["api_key"].is_string()) {
+    auto key = j["api_key"].get<std::string>();
+    cfg.api_key = key.empty() ? std::optional<std::string>{} : key;
+  }
+  cfg.temperature = j.value("temperature", 0.7f);
+  cfg.max_tokens = j.value("max_tokens", 2048);
+  cfg.parameters_as_string = j.value("parameters_as_string", false);
+  // The following fields may not be present in old session files; defaults are fine.
+  cfg.system_prompt = std::nullopt;
+  cfg.tool_call_style = ToolCallStyle::kDefault;
+  cfg.enable_thinking = true;
+}
+
+struct HistoryCompactionConfig {
+  bool enabled = true;
+  size_t keep_head = 10;
+  size_t keep_tail = 50;
+  std::string strategy = "truncate";  // reserved for future
 };
 
 struct AgentEntry {
@@ -41,9 +82,9 @@ struct AgentEntry {
   std::vector<std::string> tools;
   SecurityPolicy security;
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
+  HistoryCompactionConfig compaction;
 };
 
-// Runtime limits configuration (optional "limits" section in agents.json)
 struct RuntimeLimits {
   size_t max_history_messages = 10000;
   size_t max_branches = 20;
@@ -53,7 +94,7 @@ struct RuntimeLimits {
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
-  RuntimeLimits limits;  // B.4: optional runtime limits
+  RuntimeLimits limits;
 };
 
 std::string FindConfigPath();

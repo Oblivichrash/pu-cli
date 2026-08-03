@@ -6,14 +6,19 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "pu/llm/llm_provider.hpp"
-#include "pu/mcp/mcp_types.hpp"
 
 namespace pu::mcp {
+
+struct McpServerConfig {
+    std::string name;
+    std::string command;
+    std::vector<std::string> args;
+};
 
 class McpClient {
 public:
     explicit McpClient(const McpServerConfig& config);
-    ~McpClient();
+    virtual ~McpClient();
 
     McpClient(const McpClient&) = delete;
     McpClient& operator=(const McpClient&) = delete;
@@ -21,10 +26,9 @@ public:
     bool Connect();
     void Disconnect();
 
-    std::vector<ToolDefinition> ListTools();
-    std::string CallTool(const std::string& name, const nlohmann::json& arguments);
-
-    bool IsConnected() const;
+    virtual std::vector<ToolDefinition> ListTools();
+    virtual std::string CallTool(const std::string& name, const nlohmann::json& arguments);
+    virtual bool IsConnected() const;
 
 private:
     bool Handshake();

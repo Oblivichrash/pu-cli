@@ -2,7 +2,7 @@
 #pragma once
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "pu/conversation.hpp"  // ChatMessage
+#include "pu/llm/llm_provider.hpp"
 
 namespace pu {
 
@@ -11,8 +11,8 @@ public:
   void Append(const ChatMessage& msg);
   std::vector<ChatMessage> GetHistory() const;
   std::vector<ChatMessage> Recent(int n) const;
-  void Compact();
-  bool HasPendingToolCalls() const;  // check last assistant msg for unfinished tool_calls
+  void Compact(size_t keep_head = 10, size_t keep_tail = 50);
+  bool HasPendingToolCalls() const;
   size_t Size() const { return messages_.size(); }
 
   nlohmann::json Serialize() const;
@@ -20,8 +20,6 @@ public:
 
 private:
   std::vector<ChatMessage> messages_;
-  static constexpr size_t COMPACT_KEEP_HEAD = 10;
-  static constexpr size_t COMPACT_KEEP_TAIL = 50;
 };
 
 } // namespace pu

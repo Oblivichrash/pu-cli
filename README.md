@@ -2,7 +2,7 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist CLI orchestrator for LLMs with **multi-session isolation**, **Git-style fork-merge branching**, and **dynamic backend switching**.
+A minimalist CLI orchestrator for LLMs with **multi-session isolation** and **dynamic backend switching**.
 
 ---
 
@@ -30,7 +30,11 @@ Create `agents.json` in current directory or `~/.pu/`:
         "host": "http://localhost:11434",
         "model": "qwen3.5:2b"
       },
-      "tools": ["execute_bash", "write_file"]
+      "tools": ["execute_bash", "write_file"],
+      "security": {
+        "sandbox_root": ".",
+        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
+      }
     }
   ]
 }
@@ -40,9 +44,7 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 ```bash
 ./build/pu chat
-> /backend deepseek-pro    # switch to predefined agent (rebuilds tools)
-> /fork experiment         # create branch
-> /merge                   # merge back
+> /backend deepseek-pro    # switch to predefined agent
 ```
 
 ---
@@ -51,28 +53,42 @@ Create `agents.json` in current directory or `~/.pu/`:
 
 | Command | Description |
 |---------|-------------|
-| `/backend <agent>` | Switch to predefined agent (rebuilds the active tool set) |
-| `/backend <type> <model>` | Manual backend switch (keeps current agent) |
-| `/fork [<agent>]` | Fork new branch |
-| `/fork list` | Show branch tree |
-| `/fork show <id>` | Show branch details |
-| `/fork prune [--yes]` | Prune merged branches |
-| `/merge` | Merge current branch |
-| `/save [name]` | Save session |
-| `/load <id>` | Load session |
-| `/list` | List saved sessions |
-| `/stack` | Show delegation stack |
-| `/clear` | Clear history |
-| `/exit` | Exit |
+| `/help` | Show available commands |
+| `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
+| `/backend <type> <model>` | Manual backend switch |
+| `/agents` | List available agents |
+| `/save [name]` | Save conversation |
+| `/load <id>` | Load conversation |
+| `/list` | List saved conversations |
+| `/export <id>` | Export conversation as Markdown |
+| `/note add <text> \| /note show` | Add or show notes |
+| `/clear` | Clear conversation history |
+| `/exit`, `/quit` | Exit |
 
 ---
 
 ## Tools & Agent Binding
 
-The tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones). No manual reload needed.
+Tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones).
 
-- `tools` in `agents.json` filters which built-in tools are advertised to the model.
-- MCP tools are always exposed with a `mcp.` prefix when a server is configured.
+- `tools` in `agents.json` filters built‑in tools.
+- MCP tools are exposed with a `mcp.<server>.<tool>` prefix.
+
+### Tool Output Format
+
+All tools now return structured JSON with the following fields:
+
+```json
+{
+  "success": true/false,
+  "stdout": "...",
+  "stderr": "...",
+  "error": "...",
+  "exit_code": 0
+}
+```
+
+This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript stores the extracted `stdout` or `error` content; the full JSON is not persisted.
 
 ---
 
@@ -96,16 +112,20 @@ The tool set is bound to the active agent – switching agents with `/backend <a
       "tools": ["execute_bash", "write_file"],
       "security": {
         "sandbox_root": ".",
-        "forbidden_patterns": ["rm -rf", "sudo"]
+        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
       }
     }
   ]
 }
 ```
 
-### MCP Servers
+### Security
 
-Add `mcp_servers` to any agent to connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Servers are started as child processes (stdio transport) and their tools are registered with a `mcp.` prefix in the active agent's tool set. **Each agent can define its own servers**; switching to that agent starts them, switching away stops them.
+- `forbidden_patterns` – commands containing these substrings are blocked.
+- `sandbox_root` – all file operations are relative to this directory.
+- It is strongly recommended to include `"cd"` in `forbidden_patterns` to prevent the model from changing the working directory, which can cause confusion.
+
+### MCP Servers
 
 ```json
 {
@@ -131,22 +151,48 @@ Add `mcp_servers` to any agent to connect external tools via the [Model Context 
 |-------|-------------|
 | `name` | Display name for the MCP server |
 | `command` | Executable to launch |
-| `args` | Arguments passed to the command |
+| `args` | Arguments passed to the executable |
 
-> Note: only the first `mcp_servers` entry per agent is currently started.
+### Thinking Mode & History Compaction
 
-### Environment
+```json
+{
+  "default_agent": "deepseek",
+  "agents": [
+    {
+      "name": "deepseek",
+      "backend": {
+        "type": "openai",
+        "host": "https://api.deepseek.com/v1",
+        "model": "deepseek-reasoner",
+        "api_key": "${DEEPSEEK_API_KEY}",
+        "enable_thinking": true,
+        "temperature": 0.1
+      },
+      "history_compaction": {
+        "enabled": false,
+        "keep_head": 15,
+        "keep_tail": 60
+      }
+    }
+  ]
+}
+```
+
+### Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Path to agents.json |
 | `PU_HOME` | Data directory (default `~/.pu/`) |
+| `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `PU_TRACE=1` | Enable trace logging |
+| `PU_LOG_JSON=1` | Enable structured JSON logging |
+| `PU_LOG_CONSOLE=0` | Disable console logging |
 
 ### Logging
 
-- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical`.
-- Set `PU_TRACE=1` to enable trace-level logging (equivalent to `PU_LOG_LEVEL=trace`).
-- Log files are stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+Log files stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
 
 ---
 

@@ -23,9 +23,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 ### Key Test Areas
-- Workspace: Fork/Merge, Transcript, Memory.
-- CallStack: Push/Pop, depth tracking.
-- ForkMergeService: Fork, Merge, PrintTree, Prune.
+- Workspace: Transcript, Memory.
 - LLMProvider: Ollama/OpenAI request building, streaming, tool calling.
 
 ## Logging
@@ -40,13 +38,13 @@ ctest --test-dir build --output-on-failure
 src/
   agent/         AgentManager (config metadata only)
   app/           CLI, UI, session manager
-  core/          ForkMergeService, SummaryGenerator, ArtifactExtractor
+  core/          SummaryGenerator, ArtifactExtractor
   executor/      Executor (stateless)
   infra/         HTTP client, platform utils
   llm/           Providers
   mcp/           MCP transport, JSON-RPC client, high-level client
   runtime/       Runtime, CommandRouter
-  session/       Session, Workspace, Transcript, Memory, CallStack
+  session/       Session, Workspace, Transcript, Memory
   storage/       SessionStore
   tools/         Toolbox, tools (including McpTool adapter)
 include/pu/      Public headers

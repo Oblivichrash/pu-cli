@@ -1,28 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "ui.hpp"
-
-#include "pu/runtime/runtime.hpp"
-#include "pu/session/workspace.hpp"
-#include "pu/session/assignment.hpp"
-#include "pu/session/call_stack.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/path_utils.hpp"
-#include "pu/conversation.hpp"
-#include "pu/error.hpp"
-
-#include <spdlog/spdlog.h>
-
+#include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+
+#include "pu/agent_config.hpp"
+#include "pu/error.hpp"
+#include "pu/path_utils.hpp"
+#include "pu/command_router.hpp"
+#include "pu/runtime.hpp"
+#include "pu/session/workspace.hpp"
+
 namespace pu::cli {
+
+std::string Trim(const std::string& s);
+std::string CurrentTimestamp();
+std::string GenerateId();
+void PrintAgents(const pu::config::AgentsConfig& cfg, const std::string& current);
+void PrintChatHelp();
 
 namespace {
 
@@ -67,6 +72,47 @@ AppContext SetupAppContext(const std::string& requested_agent) {
 
 }  // namespace
 
+std::string Trim(const std::string& s) {
+  auto start = s.find_first_not_of(" \t");
+  if (start == std::string::npos) return {};
+  auto end = s.find_last_not_of(" \t");
+  return s.substr(start, end - start + 1);
+}
+
+std::string CurrentTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  auto in_time_t = std::chrono::system_clock::to_time_t(now);
+  std::ostringstream ss;
+  ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
+  return ss.str();
+}
+
+std::string GenerateId() {
+  auto now = std::chrono::high_resolution_clock::now();
+  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+  std::ostringstream ss;
+  ss << std::hex << nanos;
+  return "conv-" + ss.str();
+}
+
+void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
+  std::cout << "Available agents:\n";
+  for (const auto& entry : cfg.agents) {
+    std::cout << "  " << entry.name;
+    if (!entry.description.empty()) {
+      std::cout << " - " << entry.description;
+    }
+    if (entry.name == current) {
+      std::cout << " [current]";
+    }
+    std::cout << '\n';
+  }
+}
+
+void PrintChatHelp() {
+  std::cout << CommandRouter::GetHelpText() << "\n";
+}
+
 int RunAsk(int argc, char* argv[], Runtime& runtime) {
   std::string requested_agent;
   std::string prompt;
@@ -74,7 +120,6 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      // Help output goes to stdout (std::cout), not stderr (spdlog).
       std::cout << "Usage: pu ask [--agent <name>] <prompt>\n"
                 << "Options:\n"
                 << "  --agent <name>          Specify the agent to use\n"
@@ -82,7 +127,10 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
       return 0;
     } else if (arg == "--agent") {
       if (i + 1 < argc) requested_agent = argv[++i];
-      else { spdlog::error("--agent requires an argument"); return 1; }
+      else {
+        spdlog::error("--agent requires an argument");
+        return 1;
+      }
     } else if (prompt.empty()) {
       prompt = arg;
     } else {
@@ -110,13 +158,18 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
       return 1;
     }
 
-    std::string output;
+    ExecutionResult result;
     bool is_command = false;
-    runtime.ProcessInput(session->GetId(), prompt, output, is_command);
-    if (!output.empty()) {
-      std::cout << output << "\n";
-    } else if (!is_command) {
-      std::cout << "\n";
+    if (runtime.ProcessInput(session->GetId(), prompt, result, is_command)) {
+      if (result.has_error) {
+        spdlog::error("{}", result.error_message);
+      } else if (!result.content.empty()) {
+        std::cout << result.content << "\n";
+      } else if (!is_command) {
+        std::cout << "\n";
+      }
+    } else {
+      spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     }
 
     runtime.Shutdown();
@@ -133,7 +186,6 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
-      // Help output goes to stdout.
       std::cout << "Usage: pu chat [--agent <name>]\n";
       return 0;
     } else if (arg == "--agent") {
@@ -179,6 +231,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   }
   spdlog::info("{}", agent_info);
   spdlog::info("Type /help for available commands.");
+
   std::string input;
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) continue;
@@ -188,16 +241,27 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
     }
 
     try {
-      std::string output;
+      ExecutionResult result;
       bool is_command = false;
-      if (runtime.ProcessInput(session_id, input, output, is_command)) {
-        if (!output.empty()) {
-          std::cout << output << "\n";
-        } else if (!is_command) {
-          std::cout << "\n";
+      if (runtime.ProcessInput(session_id, input, result, is_command)) {
+        if (result.has_error) {
+          spdlog::error("{}", result.error_message);
+        } else if (!result.was_streamed) {
+          if (!result.content.empty()) {
+            std::cout << result.content << "\n";
+          } else if (!is_command) {
+            std::cout << "\n";
+          }
+        } else {
+          if (!is_command) {
+            std::cout << "\n";
+          }
         }
+      } else if (is_command && result.error_message.empty()) {
+        std::cout << "Unknown command. ";
+        PrintChatHelp();
       } else {
-        spdlog::error("{}", output);
+        spdlog::error("{}", result.error_message.empty() ? "Processing failed" : result.error_message);
       }
     } catch (const std::exception& e) {
       spdlog::error("{}", e.what());

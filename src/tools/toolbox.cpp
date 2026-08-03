@@ -2,17 +2,12 @@
 #include "pu/tools/toolbox.hpp"
 
 #include "pu/error.hpp"
-#include "pu/path_utils.hpp"
-#include "pu/tools/python_tool.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <stdexcept>
 
 namespace pu {
 
@@ -64,46 +59,6 @@ std::string Toolbox::ExecuteTool(const std::string& name,
     return "Tool not found: " + name;
   }
   return tool->Execute(args, ctx);
-}
-
-void Toolbox::ReloadExternalTools(const std::string& directory) {
-  namespace fs = std::filesystem;
-  if (!fs::exists(directory) || !fs::is_directory(directory)) {
-    return;
-  }
-
-  std::unordered_map<std::string, std::string> current_files;
-  for (const auto& entry : fs::directory_iterator(directory)) {
-    if (entry.path().extension() == ".py") {
-      std::string tool_name = entry.path().stem().string();
-      auto mod_time = fs::last_write_time(entry);
-      std::string time_str = std::to_string(static_cast<unsigned long long>(mod_time.time_since_epoch().count()));
-      current_files[tool_name] = time_str;
-    }
-  }
-
-  for (auto& [name, mtime] : current_files) {
-    auto it = tool_file_mtimes_.find(name);
-    if (it == tool_file_mtimes_.end() || it->second != mtime) {
-      try {
-        auto tool = std::make_unique<tools::PythonTool>((fs::path(directory) / (name + ".py")).string());
-        RemoveTool(name);
-        RegisterTool(std::move(tool));
-        tool_file_mtimes_[name] = mtime;
-      } catch (const std::exception& e) {
-        spdlog::error("Failed to load tool {}: {}", name, e.what());
-      }
-    }
-  }
-
-  for (auto it = tool_file_mtimes_.begin(); it != tool_file_mtimes_.end(); ) {
-    if (current_files.find(it->first) == current_files.end()) {
-      RemoveTool(it->first);
-      it = tool_file_mtimes_.erase(it);
-    } else {
-      ++it;
-    }
-  }
 }
 
 }  // namespace pu

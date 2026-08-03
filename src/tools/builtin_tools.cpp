@@ -1,21 +1,124 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/execute_bash_tool.hpp"
-#include "pu/tools/write_file_tool.hpp"
-#include "pu/tools/create_tool.hpp"
-#include "pu/path_utils.hpp"
+#include "pu/tools/builtin_tools.hpp"
+
+#include "pu/agent_manager.hpp"
+#include "pu/infra/platform.hpp"
+#include "pu/tools/tool_result.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <regex>
+#include <string>
+
+#ifdef _WIN32
+#  include <direct.h>  // for _chdir
+#  define chdir _chdir
+#else
+#  include <unistd.h>  // for chdir
+#endif
 
 namespace pu::tools {
 
+namespace {
 
-ExecuteBashToolStandard::ExecuteBashToolStandard(std::unique_ptr<executor::CommandExecutor> executor)
-    : executor_(std::move(executor)) {}
+bool MatchAnyPattern(const std::string& command, const std::vector<std::string>& patterns,
+                     std::string* matched = nullptr) {
+  for (const auto& pattern : patterns) {
+    try {
+      if (std::regex_search(command, std::regex(pattern, std::regex::icase))) {
+        if (matched) *matched = pattern;
+        return true;
+      }
+    } catch (const std::regex_error&) {}
+  }
+  return false;
+}
+
+struct RiskAssessment {
+  pu::executor::RiskLevel level = pu::executor::RiskLevel::kSafe;
+  std::string reason;
+};
+
+struct CommandResult {
+  int exit_code = 0;
+  std::string stdout_content;
+  std::string stderr_content;
+  bool was_intercepted = false;
+  std::string intercept_reason;
+};
+
+// Sandboxed command executor used by ExecuteBashToolStandard.
+class CommandExecutor {
+ public:
+  explicit CommandExecutor(std::string sandbox_path)
+      : sandbox_path_(std::move(sandbox_path)) {}
+
+  RiskAssessment AssessRisk(const std::string& command) const {
+    RiskAssessment result;
+    std::string pattern;
+    if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
+      result.level = pu::executor::RiskLevel::kDangerous;
+      result.reason = "Matches dangerous pattern: " + pattern;
+      return result;
+    }
+    result.level = MatchAnyPattern(command, safe_commands_)
+                       ? pu::executor::RiskLevel::kSafe
+                       : pu::executor::RiskLevel::kNeutral;
+    return result;
+  }
+
+  CommandResult Execute(const std::string& command) {
+    CommandResult result;
+    auto risk = AssessRisk(command);
+    if (risk.level == pu::executor::RiskLevel::kDangerous) {
+      result.was_intercepted = true;
+      result.intercept_reason = risk.reason;
+      result.exit_code = -1;
+      return result;
+    }
+
+    if (!sandbox_path_.empty()) {
+      if (chdir(sandbox_path_.c_str()) != 0) {
+        result.exit_code = -1;
+        result.stderr_content = "Failed to chdir to sandbox: " + sandbox_path_;
+        return result;
+      }
+    }
+
+    std::string output;
+    int exit_code = pu::platform::ExecuteCommand(command, output);
+    result.exit_code = exit_code;
+    result.stdout_content = output;
+    if (exit_code != 0) result.stderr_content = output;
+    return result;
+  }
+
+ private:
+  std::string sandbox_path_;
+
+  static const std::vector<std::string> dangerous_patterns_;
+  static const std::vector<std::string> safe_commands_;
+};
+
+const std::vector<std::string> CommandExecutor::dangerous_patterns_ = {
+    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)",
+    R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)" };
+
+const std::vector<std::string> CommandExecutor::safe_commands_ = {
+    "ls", "pwd", "cat", "head", "tail", "less", "more",
+    "echo", "date", "whoami", "hostname", "uptime",
+    "which", "type", "wc", "sort", "uniq", "cut", "tr",
+    "find .", "grep", "awk", "sed", "diff", "file",
+    "stat", "du", "df", "free", "ps", "top -n", "pgrep" };
+
+}  // namespace
+
+ExecuteBashToolStandard::ExecuteBashToolStandard(std::string sandbox_root)
+    : sandbox_root_(std::move(sandbox_root)) {}
 
 std::string ExecuteBashToolStandard::Name() const {
   return "execute_bash";
@@ -39,39 +142,50 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
 }
 
 std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  (void)ctx;
   std::string command = args.value("command", "");
   if (command.empty()) {
-    return "Error: 'command' parameter is required";
+    return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
   }
 
   if (ctx.security && ctx.security->max_command_length > 0 && command.size() > ctx.security->max_command_length) {
-    return "Error: command exceeds maximum allowed length (" + std::to_string(ctx.security->max_command_length) + ")";
+    return tools::MakeToolResultJson(false, "", "",
+                        "command exceeds maximum allowed length (" +
+                            std::to_string(ctx.security->max_command_length) + ")",
+                        -1);
   }
 
-  for (const auto& pattern : ctx.security->forbidden_patterns) {
-    if (command.find(pattern) != std::string::npos) {
-      return "Blocked: command contains forbidden pattern '" + pattern + "'";
+  if (ctx.security) {
+    for (const auto& pattern : ctx.security->forbidden_patterns) {
+      // Word-boundary matching prevents false positives where a short pattern
+      // such as "dd" or "rm" appears as a substring inside a Git commit hash
+      // or file path.
+      std::regex re("\\b" + pattern + "\\b");
+      if (std::regex_search(command, re)) {
+        return tools::MakeToolResultJson(false, "", "",
+                            "command contains forbidden pattern '" + pattern + "'", -1);
+      }
     }
   }
 
-  auto risk = executor_->AssessRisk(command);
-  if (risk.level == executor::RiskLevel::kDangerous) {
-    return "Blocked: " + risk.reason;
+  CommandExecutor executor(sandbox_root_);
+  auto risk = executor.AssessRisk(command);
+  if (risk.level == pu::executor::RiskLevel::kDangerous) {
+    return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
   }
 
-  auto result = executor_->Execute(command);
+  auto result = executor.Execute(command);
   if (result.was_intercepted) {
-    return "Blocked: " + result.intercept_reason;
+    return tools::MakeToolResultJson(false, "", "", "Blocked: " + result.intercept_reason, -1);
   }
+
   if (result.exit_code == 0) {
-    return result.stdout_content.empty() ? "Command executed successfully." : result.stdout_content;
+    return tools::MakeToolResultJson(true, result.stdout_content, result.stderr_content, "", 0);
   } else {
-    return "Command failed (exit " + std::to_string(result.exit_code) + ").\n" +
-           result.stderr_content + result.stdout_content;
+    return tools::MakeToolResultJson(false, result.stdout_content, result.stderr_content,
+                        "Command failed (exit " + std::to_string(result.exit_code) + ")",
+                        result.exit_code);
   }
 }
-
 
 std::string WriteFileTool::Name() const {
   return "write_file";
@@ -95,118 +209,47 @@ std::string WriteFileTool::ParametersSchema() const {
 std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
   std::string path = args.value("path", "");
   std::string content = args.value("content", "");
-  if (path.empty()) return "Error: 'path' is required";
+  if (path.empty()) {
+    return tools::MakeToolResultJson(false, "", "", "'path' is required", -1);
+  }
 
-  if (!ctx.security) return "Error: security policy not set";
+  if (!ctx.security) {
+    return tools::MakeToolResultJson(false, "", "", "security policy not set", -1);
+  }
 
   std::error_code ec;
   std::filesystem::path sandbox_root(ctx.security->sandbox_root);
   auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
-  if (ec) return "Error: cannot resolve sandbox root: " + ctx.security->sandbox_root;
+  if (ec) {
+    return tools::MakeToolResultJson(false, "", "",
+                        "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
+  }
 
   std::filesystem::path full_path = sandbox_canonical / path;
   full_path = std::filesystem::weakly_canonical(full_path, ec);
-  if (ec) return "Error: invalid path";
+  if (ec) {
+    return tools::MakeToolResultJson(false, "", "", "invalid path", -1);
+  }
 
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
-    return "Error: path outside sandbox root (traversal not allowed)";
+    return tools::MakeToolResultJson(false, "", "", "path outside sandbox root (traversal not allowed)", -1);
   }
 
   std::filesystem::create_directories(full_path.parent_path(), ec);
-  if (ec) return "Error: cannot create parent directories";
+  if (ec) {
+    return tools::MakeToolResultJson(false, "", "", "cannot create parent directories", -1);
+  }
 
   std::ofstream file(full_path);
-  if (!file.is_open()) return "Error: cannot write to " + path;
-  file << content;
-  return "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
-}
-
-
-namespace {
-
-bool IsSafePythonCode(const std::string& code) {
-  std::vector<std::string> dangerous_patterns = {
-    "os.system", "subprocess", "eval(", "exec(", "__import__", "open(", "file(",
-    "execfile", "compile(", "globals()", "locals()", "__builtins__"
-  };
-  for (const auto& pat : dangerous_patterns) {
-    if (code.find(pat) != std::string::npos) {
-      return false;
-    }
-  }
-  return true;
-}
-
-}  // namespace
-
-std::string CreateTool::Name() const {
-  return "create_tool";
-}
-
-std::string CreateTool::Description() const {
-  return "Create a new Python tool with name, schema, and code.";
-}
-
-std::string CreateTool::ParametersSchema() const {
-  return R"JSON({
-    "type": "object",
-    "properties": {
-      "name": {"type": "string", "description": "Unique tool name (alphanumeric, underscore)"},
-      "description": {"type": "string", "description": "Brief description of the tool"},
-      "parameters_schema": {"type": "string", "description": "JSON Schema for tool parameters"},
-      "python_code": {"type": "string", "description": "Python code with a 'run' function"}
-    },
-    "required": ["name", "description", "parameters_schema", "python_code"]
-  })JSON";
-}
-
-std::string CreateTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  (void)ctx;
-  std::string name = args.value("name", "");
-  std::string description = args.value("description", "");
-  std::string parameters_schema = args.value("parameters_schema", "");
-  std::string python_code = args.value("python_code", "");
-
-  if (name.empty() || description.empty() || parameters_schema.empty() || python_code.empty()) {
-    return "Error: missing required fields";
-  }
-
-  if (!std::regex_match(name, std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
-    return "Error: invalid tool name (must be alphanumeric and start with letter or underscore)";
-  }
-
-  if (!IsSafePythonCode(python_code)) {
-    return "Error: Python code contains unsafe operations (os.system, subprocess, eval, etc.)";
-  }
-
-  auto tools_dir = pu::path::GetDataDir() / "tools";
-  if (!std::filesystem::exists(tools_dir)) {
-    std::filesystem::create_directories(tools_dir);
-  }
-
-  std::filesystem::path file_path = tools_dir / (name + ".py");
-
-  std::ofstream file(file_path);
   if (!file.is_open()) {
-    return "Error: cannot write to " + file_path.string();
+    return tools::MakeToolResultJson(false, "", "", "cannot write to " + path, -1);
   }
+  file << content;
 
-  file << "# tool: " << name << "\n";
-  file << "# description: " << description << "\n";
-  file << "# parameters: " << parameters_schema << "\n\n";
-  file << python_code << "\n";
-  file.close();
-
-  if (ctx.request_confirmation) {
-    std::string confirm_msg = "Created new tool '" + name + "'. Do you want to reload tools now? (y/n)";
-    if (!ctx.request_confirmation(confirm_msg)) {
-      return "Tool saved but not reloaded. Use /reload-tools to activate.";
-    }
-  }
-
-  return "Tool '" + name + "' created successfully. Use /reload-tools to activate, or restart the agent.";
+  std::string summary = "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
+  return tools::MakeToolResultJson(true, summary, "", "", 0);
 }
 
 }  // namespace pu::tools

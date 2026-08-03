@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/llm/providers/openai_provider.hpp"
+#include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -156,4 +156,54 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
       tool_fired = true;
     });
   REQUIRE(tool_fired);
+}
+
+TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinking=false", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = false;
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE(body.contains("extra_body"));
+  REQUIRE(body["extra_body"]["thinking"]["type"] == "disabled");
+}
+
+TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = true;
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE_FALSE(body.contains("extra_body"));
+}
+
+TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") {
+  OpenAIProvider::Config config;
+  config.enable_thinking = true;
+  auto mock_http = std::make_unique<MockHttpClient>();
+  OpenAIProvider thinking(config, std::move(mock_http));
+  REQUIRE(thinking.IsThinkingMode() == true);
+
+  config.enable_thinking = false;
+  mock_http = std::make_unique<MockHttpClient>();
+  OpenAIProvider nothinking(config, std::move(mock_http));
+  REQUIRE(nothinking.IsThinkingMode() == false);
 }
