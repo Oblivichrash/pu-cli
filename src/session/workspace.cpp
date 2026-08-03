@@ -28,7 +28,6 @@ Workspace::Workspace(const std::string& id)
       transcript_(std::make_unique<Transcript>()),
       memory_(std::make_unique<Memory>()) {}
 
-// Transcript delegation
 void Workspace::Append(const ChatMessage& msg) {
   if (!transcript_) transcript_ = std::make_unique<Transcript>();
   transcript_->Append(msg);
@@ -67,7 +66,6 @@ bool Workspace::HasPendingToolCalls() const {
   return transcript_->HasPendingToolCalls();
 }
 
-// Memory delegation
 void Workspace::SetVar(const std::string& key, const nlohmann::json& value) {
   if (!memory_) memory_ = std::make_unique<Memory>();
   memory_->SetVar(key, value);
@@ -101,7 +99,6 @@ void Workspace::ClearArtifacts() {
   if (memory_) memory_->ClearArtifacts();
 }
 
-// Serialization - compatible with old Context JSON structure
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
   j["id"] = id_;

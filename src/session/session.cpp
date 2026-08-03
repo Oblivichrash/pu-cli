@@ -86,7 +86,6 @@ std::unique_ptr<Session> Session::Deserialize(const nlohmann::json& j) {
   auto ws = Workspace::Deserialize(j["workspace"]);
   auto spec = RuntimeSpec::Deserialize(j["runtime_spec"]);
   auto session = std::make_unique<Session>(id, owner_id, ws, spec);
-  // Restore timestamps
   if (j.contains("created_at")) {
     auto secs = std::chrono::seconds(j["created_at"].get<int64_t>());
     session->created_at_ = std::chrono::system_clock::time_point(secs);

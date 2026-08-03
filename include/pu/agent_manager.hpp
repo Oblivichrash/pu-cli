@@ -44,20 +44,15 @@ class AgentManager {
  public:
   AgentManager();
 
-  // Load agent config metadata (for backend switching, listing, etc.)
   void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs);
 
-  // Look up an agent config by name
   const config::AgentEntry* GetAgentConfig(const std::string& name) const;
 
-  // List all agent names from config
   std::vector<std::string> GetAgentNames() const;
 
-  // Active agent name
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
 
-  // Confirmation callback (forward to tools)
   ConfirmationCallback GetConfirmationCallback() const { return confirmation_callback_; }
   void SetConfirmationCallback(ConfirmationCallback cb) { confirmation_callback_ = std::move(cb); }
 
@@ -65,7 +60,6 @@ class AgentManager {
   std::string active_agent_;
   ConfirmationCallback confirmation_callback_;
 
-  // Agent config metadata (from agents.json)
   std::vector<config::AgentEntry> agent_configs_;
 };
 

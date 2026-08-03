@@ -7,9 +7,6 @@
 
 namespace pu::tools {
 
-// Parsed view of the canonical tool-result JSON payload produced by
-// MakeToolResultJson. `valid` is false when the payload is not a JSON object
-// containing a "success" key.
 struct ToolResult {
   bool valid = false;
   bool success = false;
@@ -19,8 +16,6 @@ struct ToolResult {
   int exit_code = 0;
 };
 
-// Build the canonical tool-result JSON payload as a string:
-// {"success", "stdout", "stderr", "error", "exit_code"}
 inline std::string MakeToolResultJson(bool success,
                                       const std::string& stdout_content,
                                       const std::string& stderr_content,
@@ -35,8 +30,6 @@ inline std::string MakeToolResultJson(bool success,
   return j.dump();
 }
 
-// Parse a tool-result JSON payload. If it is not a JSON object containing a
-// "success" key, `valid` is left false.
 inline ToolResult ParseToolResult(const std::string& raw) {
   ToolResult r;
   try {
@@ -54,8 +47,6 @@ inline ToolResult ParseToolResult(const std::string& raw) {
   return r;
 }
 
-// Return the content of a tool result: stdout on success, error on failure, or
-// the raw string when the payload is not a valid tool-result object.
 inline std::string ExtractToolResultContent(const std::string& tool_result) {
   auto r = ParseToolResult(tool_result);
   if (!r.valid) return tool_result;

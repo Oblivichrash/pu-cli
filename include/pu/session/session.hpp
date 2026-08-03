@@ -12,16 +12,13 @@
 
 namespace pu {
 
-// RuntimeSpec uses the unified config::BackendConfig for its backend field.
-// The JSON serialization is defined via NLOHMANN_DEFINE_TYPE_INTRUSIVE which
-// will invoke the custom to_json/from_json defined in agent_config.hpp.
+// Serialized via NLOHMANN_DEFINE_TYPE_INTRUSIVE using the custom to_json/from_json in agent_config.hpp.
 struct RuntimeSpec {
   config::BackendConfig backend;
   std::string agent_name;
   int max_delegation_depth = 5;
   std::map<std::string, nlohmann::json> overrides;
 
-  // Thin wrappers for backward compatibility with existing callers.
   nlohmann::json Serialize() const { return nlohmann::json(*this); }
   static RuntimeSpec Deserialize(const nlohmann::json& j) { return j.get<RuntimeSpec>(); }
 
@@ -40,7 +37,6 @@ public:
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
 
-  // Accessors
   std::string GetId() const { return id_; }
 
   Workspace& GetWorkspace() { return *workspace_; }
@@ -48,18 +44,14 @@ public:
   RuntimeSpec& GetRuntimeSpec() { return runtime_spec_; }
   const RuntimeSpec& GetRuntimeSpec() const { return runtime_spec_; }
 
-  // Core operations
   void SwitchBackend(const config::BackendConfig& new_config);
   void SwitchAgent(const std::string& agent_name);
   void Touch() { last_access_at_ = std::chrono::system_clock::now(); }
 
-  // Safety checks
   bool HasPendingToolCalls() const { return workspace_->HasPendingToolCalls(); }
 
-  // Provider factory
   std::unique_ptr<LLMProvider> CreateProvider() const;
 
-  // Serialization
   nlohmann::json Serialize() const;
   static std::unique_ptr<Session> Deserialize(const nlohmann::json& j);
 

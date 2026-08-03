@@ -17,7 +17,6 @@ struct Artifact {
   std::string source;
   double confidence = 1.0;
 
-  // Thin wrappers for backward compatibility with existing callers.
   nlohmann::json Serialize() const { return nlohmann::json(*this); }
   static Artifact Deserialize(const nlohmann::json& j) { return j.get<Artifact>(); }
 

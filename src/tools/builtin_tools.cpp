@@ -51,9 +51,7 @@ struct CommandResult {
   std::string intercept_reason;
 };
 
-// Sandboxed command executor, previously src/tools/command_executor.*. It is
-// kept as an internal detail of builtin_tools.cpp since ExecuteBashToolStandard
-// is its only consumer.
+// Sandboxed command executor used by ExecuteBashToolStandard.
 class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path)
@@ -83,7 +81,6 @@ class CommandExecutor {
       return result;
     }
 
-    // Switch to the sandbox directory if specified.
     if (!sandbox_path_.empty()) {
       if (chdir(sandbox_path_.c_str()) != 0) {
         result.exit_code = -1;

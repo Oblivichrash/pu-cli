@@ -24,10 +24,7 @@ using json = nlohmann::json;
 namespace {
 
 #ifdef _WIN32
-// Report the Windows kernel/OS version using RtlGetVersion, which returns the
-// real version regardless of the application compatibility manifest (unlike
-// GetVersionEx, which can be capped). RtlGetVersion is available on every
-// supported Windows version, so no deprecated fallback is needed.
+// RtlGetVersion reports the real OS version regardless of the manifest.
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
   auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
@@ -74,10 +71,7 @@ std::string OsKernelVersion() {
 #endif
 }
 
-// Quietly check whether an executable is on PATH. Probing never surfaces
-// "command not found" output: on Windows `where /Q` is silent, and on POSIX
-// stdout/stderr are redirected to /dev/null, so detection relies on the exit
-// code rather than captured text.
+// Silent PATH check that relies on the exit code, so missing tools emit no output.
 bool CommandExists(const std::string& tool) {
   std::string output;
 #ifdef _WIN32

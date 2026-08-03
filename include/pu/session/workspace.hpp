@@ -17,7 +17,6 @@ public:
   const std::string& GetId() const { return id_; }
   void SetId(const std::string& id) { id_ = id; }
 
-  // Delegate to Transcript
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
   std::vector<ChatMessage> GetHistory() const;
@@ -28,7 +27,6 @@ public:
 
   void ClearHistory();
 
-  // Delegate to Memory
   void SetVar(const std::string& key, const nlohmann::json& value);
   std::optional<nlohmann::json> GetVar(const std::string& key) const;
   bool HasVar(const std::string& key) const;
@@ -38,7 +36,6 @@ public:
   std::vector<Artifact> GetArtifacts() const;
   void ClearArtifacts();
 
-  // Serialization (compatible with old Context JSON structure)
   nlohmann::json Serialize() const;
   void Save(const std::filesystem::path& path) const;
   static std::shared_ptr<Workspace> Load(const std::filesystem::path& path);

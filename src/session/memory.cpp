@@ -35,7 +35,6 @@ void Memory::ClearArtifacts() {
 
 nlohmann::json Memory::Serialize() const {
   nlohmann::json j;
-  // Variables
   nlohmann::json vars_obj = nlohmann::json::object();
   for (const auto& [key, val] : variables_) {
     vars_obj[key] = val;

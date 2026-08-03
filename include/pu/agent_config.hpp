@@ -37,8 +37,7 @@ struct BackendConfig {
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
 
-// Custom JSON serialization for BackendConfig so that it is compatible with
-// the old SessionBackendConfig JSON format (type as string, api_key as string).
+// Keeps the old SessionBackendConfig JSON format (type as string, api_key as string).
 inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
   j = nlohmann::json{
     {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},

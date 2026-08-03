@@ -120,7 +120,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
-    // Directly use the agent's BackendConfig
     try {
       session.SwitchBackend(agent_config->backend);
       runtime_.SwitchAgent(*agent_config);

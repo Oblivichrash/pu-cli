@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include <catch2/catch_test_macros.hpp>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+
 #include "pu/agent_manager.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 
-#include <catch2/catch_test_macros.hpp>
-
-#include <cstdlib>
-#include <filesystem>
-#include <string>
+#ifdef _WIN32
+// Windows does not have setenv; use _putenv_s instead.
+static inline void setenv(const char* name, const char* value, int /*overwrite*/) {
+  _putenv_s(name, value);
+}
+#endif
 
 using namespace pu;
 
@@ -70,7 +76,8 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(output == "No saved conversations.");
 }
 
-TEST_CASE("CommandRouter handles /exit and /quit outside the registry", "[router]") {
+TEST_CASE("CommandRouter handles /exit and /quit outside the registry",
+          "[router]") {
   RouterFixture f;
   std::string output;
 
