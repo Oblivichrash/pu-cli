@@ -9,7 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/http/http_client.hpp"
+#include "pu/http_client.hpp"
 #include "pu/mcp/mcp_client.hpp"
 
 namespace pu::config {

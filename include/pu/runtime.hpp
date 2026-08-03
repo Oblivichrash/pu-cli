@@ -6,14 +6,14 @@
 #include <string>
 #include <vector>
 
-#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_manager.hpp"
 #include "pu/agent_config.hpp"
-#include "pu/executor/executor.hpp"
+#include "pu/executor.hpp"
 #include "pu/mcp/mcp_client.hpp"
-#include "pu/runtime/command_router.hpp"
+#include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/storage/session_store.hpp"
+#include "pu/session_store.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {

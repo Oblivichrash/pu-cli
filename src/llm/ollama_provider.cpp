@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/llm/providers/ollama_provider.hpp"
+#include "pu/llm/ollama_provider.hpp"
 
-#include "pu/llm/common/streaming_json_parser.hpp"
+#include "pu/llm/streaming_json_parser.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/error.hpp"
 

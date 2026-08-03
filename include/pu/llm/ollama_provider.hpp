@@ -2,31 +2,27 @@
 #pragma once
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/http/http_client.hpp"
+#include "pu/http_client.hpp"
 
-#include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 
 namespace pu {
 
-class OpenAIProvider : public LLMProvider {
+class OllamaProvider : public LLMProvider {
  public:
   struct Config {
-    std::string host = "https://api.openai.com/v1";
+    std::string host = "http://localhost:11434";
     std::string model;
     float temperature = 0.7f;
     std::optional<std::string> system_prompt;
     std::string api_key;
-    bool parameters_as_string = false;
     int max_tokens = 2048;
-    bool enable_thinking = true;   // for DeepSeek/vLLM
   };
 
-  explicit OpenAIProvider(const Config& config,
-                          std::unique_ptr<pu::http::HttpClient> http);
-  ~OpenAIProvider() override = default;
+  explicit OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http);
+  ~OllamaProvider() override = default;
 
   ChatResult Chat(
     const std::vector<ChatMessage>& history,
@@ -37,7 +33,7 @@ class OpenAIProvider : public LLMProvider {
 
   bool SupportsTools() const override { return true; }
   std::string GetModelName() const override { return config_.model; }
-  bool IsThinkingMode() const override { return config_.enable_thinking; }
+  bool IsThinkingMode() const override { return false; }
 
  private:
   std::string BuildRequest(const std::vector<ChatMessage>& history) const;
@@ -46,17 +42,12 @@ class OpenAIProvider : public LLMProvider {
   void HandleJsonToken(const nlohmann::json& j,
                        std::function<void(const std::string&)>& content_cb,
                        std::function<void(const ToolCall&)>& tool_cb);
-  void ResetAccumulators();
+  std::string RoleToString(const std::string& role) const;
 
   Config config_;
-  std::unique_ptr<pu::http::HttpClient> http_;
   std::string host_;
   std::string api_key_;
-
-  struct ToolCallAccumulator { std::string id, name, arguments; };
-  std::map<int, ToolCallAccumulator> pending_tools_;
-
-  std::string current_reasoning_content_;
+  std::unique_ptr<pu::http::HttpClient> http_;
 };
 
 }  // namespace pu

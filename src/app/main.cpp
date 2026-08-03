@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_manager.hpp"
 #include "pu/infra/platform.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/runtime.hpp"
 
 #include <curl/curl.h>
 

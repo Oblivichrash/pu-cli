@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/storage/session_store.hpp"
+#include "pu/session_store.hpp"
 #include "pu/error.hpp"
 #include <spdlog/spdlog.h>
 #include <fstream>

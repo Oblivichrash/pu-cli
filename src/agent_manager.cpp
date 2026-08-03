@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_manager.hpp"
 
 #include <iostream>
 

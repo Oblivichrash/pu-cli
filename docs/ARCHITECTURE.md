@@ -198,28 +198,38 @@ Each session file contains serialized `Workspace` and `RuntimeSpec`.
 
 ## Directory Structure
 
+Single-file modules live directly under `include/pu/` and `src/`; directories are kept
+only where a module has multiple files.
+
 ```
 include/pu/
-├── agent/          # AgentManager, config
-├── runtime/        # Runtime, CommandRouter
-├── session/        # Session, Workspace, Transcript, Memory
-├── executor/       # Executor (stateless, with system context injection)
-├── llm/            # LLMProvider, providers (Ollama, OpenAI)
-├── mcp/            # McpClient, JsonRpcClient, StdioTransport
-├── tools/          # Toolbox, tools (built-in, MCP adapter)
-├── storage/        # SessionStore
-└── core/           # SummaryGenerator, ArtifactExtractor
+├── agent_config.hpp      # AgentConfig types + helpers
+├── agent_manager.hpp     # AgentManager
+├── command_router.hpp    # CommandRouter
+├── runtime.hpp           # Runtime
+├── executor.hpp          # Executor (stateless, with system context injection)
+├── http_client.hpp       # HttpClient interface
+├── session_store.hpp     # SessionStore
+├── cli.hpp, error.hpp, path_utils.hpp
+├── core/                 # Logging
+├── infra/                # Platform utilities
+├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
+├── mcp/                  # McpClient, JsonRpcClient, StdioTransport
+├── session/              # Session, Workspace, Transcript, Memory
+└── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
-├── app/            # CLI entry (main), UI helpers
-├── runtime/        # Runtime, CommandRouter implementations
-├── session/        # Session, Workspace, etc.
-├── executor/       # Executor implementation
-├── llm/            # Providers
-├── mcp/            # MCP transport, JSON-RPC, client
-├── tools/          # Toolbox, tools
-├── storage/        # SessionStore
-└── core/           # SummaryGenerator, ArtifactExtractor
+├── app/                  # CLI entry (main), UI helpers
+├── agent_config.cpp, agent_manager.cpp
+├── runtime.cpp, command_router.cpp
+├── executor.cpp
+├── session_store.cpp
+├── core/                 # Logging
+├── infra/                # CurlHttpClient, platform
+├── llm/                  # Providers, streaming parser
+├── mcp/                  # MCP transport, JSON-RPC, client
+├── session/              # Session, Workspace, etc.
+└── tools/                # Toolbox, tools
 ```
 
 ---

@@ -5,9 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "pu/agent/agent_manager.hpp"
+#include "pu/agent_manager.hpp"
 #include "pu/session/session.hpp"
-#include "pu/storage/session_store.hpp"
+#include "pu/session_store.hpp"
 
 namespace pu {
 

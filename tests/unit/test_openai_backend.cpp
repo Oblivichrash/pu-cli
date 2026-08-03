@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/llm/providers/openai_provider.hpp"
+#include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>

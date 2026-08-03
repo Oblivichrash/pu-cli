@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent/agent_manager.hpp"
-#include "pu/runtime/command_router.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/agent_manager.hpp"
+#include "pu/command_router.hpp"
+#include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 
 #include <catch2/catch_test_macros.hpp>

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/session.hpp"
-#include "pu/llm/providers/ollama_provider.hpp"
-#include "pu/llm/providers/openai_provider.hpp"
-#include "pu/http/http_client.hpp"
+#include "pu/llm/ollama_provider.hpp"
+#include "pu/llm/openai_provider.hpp"
+#include "pu/http_client.hpp"
 #include "infra/curl_http_client.hpp"
 #include "pu/error.hpp"
 

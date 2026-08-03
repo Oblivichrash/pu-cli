@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/runtime/runtime.hpp"
+#include "pu/runtime.hpp"
 
 #include <iostream>
 

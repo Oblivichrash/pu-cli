@@ -16,11 +16,11 @@ add_library(pu_core STATIC
     src/session/transcript.cpp
     src/session/memory.cpp
     src/session/session.cpp
-    src/storage/session_store.cpp
+    src/session_store.cpp
     src/core/logging.cpp
-    src/llm/providers/ollama_provider.cpp
-    src/llm/providers/openai_provider.cpp
-    src/llm/common/streaming_json_parser.cpp
+    src/llm/ollama_provider.cpp
+    src/llm/openai_provider.cpp
+    src/llm/streaming_json_parser.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/json_rpc_client.cpp
     src/mcp/mcp_client.cpp
@@ -31,14 +31,14 @@ add_library(pu::core ALIAS pu_core)
 
 # Agent library: Agent manager, executor, tools, toolbox, MCP tool
 add_library(pu_agent STATIC
-    src/agent/agent_config.cpp
-    src/agent/agent_manager.cpp
-    src/executor/executor.cpp
+    src/agent_config.cpp
+    src/agent_manager.cpp
+    src/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp
     src/tools/mcp_tool.cpp
-    src/runtime/runtime.cpp
-    src/runtime/command_router.cpp
+    src/runtime.cpp
+    src/command_router.cpp
 )
 target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)

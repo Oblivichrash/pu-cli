@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/runtime/command_router.hpp"
+#include "pu/command_router.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/storage/session_store.hpp"
+#include "pu/session_store.hpp"
 #include "pu/path_utils.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/runtime.hpp"
 
 #include <algorithm>
 #include <chrono>

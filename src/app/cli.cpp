@@ -17,8 +17,8 @@
 #include "pu/agent_config.hpp"
 #include "pu/error.hpp"
 #include "pu/path_utils.hpp"
-#include "pu/runtime/command_router.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/command_router.hpp"
+#include "pu/runtime.hpp"
 #include "pu/session/workspace.hpp"
 
 namespace pu::cli {
