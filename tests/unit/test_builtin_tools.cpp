@@ -231,7 +231,7 @@ TEST_CASE("Ask_user metadata exposes name, description, and schema",
   AskUserTool tool;
 
   REQUIRE(tool.Name() == "ask_user");
-  REQUIRE(tool.Description() == "Ask the user a question and wait for a reply.");
+  REQUIRE(tool.Description() == "Ask user for clarification.");
 
   auto schema = nlohmann::json::parse(tool.ParametersSchema());
   REQUIRE(schema["type"] == "object");

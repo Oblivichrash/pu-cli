@@ -15,10 +15,10 @@
 #include <string>
 
 #ifdef _WIN32
-#  include <direct.h>  // for _chdir
+#  include <direct.h>
 #  define chdir _chdir
 #else
-#  include <unistd.h>  // for chdir
+#  include <unistd.h>
 #endif
 
 namespace pu::tools {
@@ -51,7 +51,6 @@ struct CommandResult {
   std::string intercept_reason;
 };
 
-// Sandboxed command executor used by ExecuteBashToolStandard.
 class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path)
@@ -125,20 +124,11 @@ std::string ExecuteBashToolStandard::Name() const {
 }
 
 std::string ExecuteBashToolStandard::Description() const {
-  return "Execute a bash command and return output.";
+  return "Execute a shell command.";
 }
 
 std::string ExecuteBashToolStandard::ParametersSchema() const {
-  return R"##({
-    "type": "object",
-    "properties": {
-      "command": {
-        "type": "string",
-        "description": "The bash command to execute"
-      }
-    },
-    "required": ["command"]
-  })##";
+  return R"##({"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"}},"required":["command"]})##";
 }
 
 std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
@@ -159,9 +149,6 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::Too
 
   if (ctx.security) {
     for (const auto& pattern : ctx.security->forbidden_patterns) {
-      // Word-boundary matching prevents false positives where a short pattern
-      // such as "dd" or "rm" appears as a substring inside a Git commit hash
-      // or file path.
       std::regex re("\\b" + pattern + "\\b");
       if (std::regex_search(command, re)) {
         return tools::MakeToolResultJson(false, "", "",
@@ -195,18 +182,11 @@ std::string WriteFileTool::Name() const {
 }
 
 std::string WriteFileTool::Description() const {
-  return "Write text content to a file (overwrites if exists).";
+  return "Write text to a file.";
 }
 
 std::string WriteFileTool::ParametersSchema() const {
-  return R"##({
-    "type": "object",
-    "properties": {
-      "path": {"type": "string", "description": "File path (relative to current dir)"},
-      "content": {"type": "string", "description": "Text content to write"}
-    },
-    "required": ["path", "content"]
-  })##";
+  return R"##({"type":"object","properties":{"path":{"type":"string","description":"File path (relative to sandbox)"},"content":{"type":"string","description":"Text to write"}},"required":["path","content"]})##";
 }
 
 std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
@@ -260,20 +240,11 @@ std::string AskUserTool::Name() const {
 }
 
 std::string AskUserTool::Description() const {
-  return "Ask the user a question and wait for a reply.";
+  return "Ask user for clarification.";
 }
 
 std::string AskUserTool::ParametersSchema() const {
-  return R"##({
-    "type": "object",
-    "properties": {
-      "question": {
-        "type": "string",
-        "description": "The question to ask the user"
-      }
-    },
-    "required": ["question"]
-  })##";
+  return R"##({"type":"object","properties":{"question":{"type":"string","description":"The question to ask"}},"required":["question"]})##";
 }
 
 std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
