@@ -83,12 +83,6 @@ bool CommandExists(const std::string& tool) {
   return rc == 0;
 }
 
-std::string Truncate(const std::string& s, size_t max_len) {
-  if (s.size() <= max_len) return s;
-  if (max_len <= 3) return s.substr(0, max_len);
-  return s.substr(0, max_len - 3) + "...";
-}
-
 }  // namespace
 
 std::string Executor::ExtractToolResultContent(const std::string& tool_result) {

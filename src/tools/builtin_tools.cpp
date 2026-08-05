@@ -142,7 +142,10 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
 }
 
 std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  std::string command = args.value("command", "");
+  std::string command;
+  if (args.is_object() && args.contains("command")) {
+    command = args["command"].get<std::string>();
+  }
   if (command.empty()) {
     return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
   }
@@ -274,10 +277,17 @@ std::string AskUserTool::ParametersSchema() const {
 }
 
 std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+  (void)ctx;
   nlohmann::json result;
   result["success"] = false;
   result["error"] = "clarification_needed";
-  result["question"] = args.value("question", "");
+
+  std::string question;
+  if (args.is_object() && args.contains("question")) {
+    question = args["question"].get<std::string>();
+  }
+  result["question"] = question;
+
   return result.dump();
 }
 
