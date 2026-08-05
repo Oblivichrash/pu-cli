@@ -40,6 +40,8 @@ void Session::SwitchBackend(const config::BackendConfig& new_config) {
       "Please let the current tool finish or /clear.");
   }
   runtime_spec_.backend = new_config;
+  // Include the configured system prompt in the static system message.
+  workspace_->SetVar("system_prompt", new_config.system_prompt.value_or(""));
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider() const {
