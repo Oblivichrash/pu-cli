@@ -184,6 +184,8 @@ ChatResult OllamaProvider::Chat(
     body = BuildRequestWithTools(history, tools);
   }
 
+  spdlog::debug("Ollama request body: {}", body);
+
   std::string url = host_ + "/api/chat";
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);

@@ -21,7 +21,6 @@ namespace pu {
 
 namespace {
 
-// Thread-local context captured into JSON log records.
 thread_local std::string g_session_id;
 thread_local std::string g_request_id;
 thread_local std::string g_tool_name;
@@ -36,8 +35,8 @@ std::string GenerateUuid() {
     if (i == 8 || i == 13 || i == 18 || i == 23) continue;
     uuid[i] = hex[dist(gen)];
   }
-  uuid[14] = '4';                              // UUID v4
-  uuid[19] = hex[(dist(gen) & 0x3) | 0x8];     // RFC 4122 variant
+  uuid[14] = '4';
+  uuid[19] = hex[(dist(gen) & 0x3) | 0x8];
   return uuid;
 }
 
@@ -116,12 +115,9 @@ std::unique_ptr<spdlog::formatter> JsonLogFormatter::clone() const {
   return std::make_unique<JsonLogFormatter>();
 }
 
-void InitLogging(const std::string& log_level, bool trace_enabled) {
-    // 1. Determine log level
+void InitLogging(const std::string& log_level, bool /*trace_enabled*/) {
     spdlog::level::level_enum level = spdlog::level::info;
-    if (trace_enabled || std::getenv("PU_TRACE")) {
-        level = spdlog::level::trace;
-    } else if (!log_level.empty()) {
+    if (!log_level.empty()) {
         if (log_level == "trace") level = spdlog::level::trace;
         else if (log_level == "debug") level = spdlog::level::debug;
         else if (log_level == "info") level = spdlog::level::info;
@@ -130,10 +126,8 @@ void InitLogging(const std::string& log_level, bool trace_enabled) {
         else if (log_level == "critical") level = spdlog::level::critical;
     }
 
-    // 2. Create sinks
     std::vector<spdlog::sink_ptr> sinks;
 
-    // Console sink (stderr) — optionally disabled via PU_LOG_CONSOLE=0
     const char* console_env = std::getenv("PU_LOG_CONSOLE");
     bool enable_console = true;
     if (console_env && std::string(console_env) == "0") {
@@ -145,7 +139,6 @@ void InitLogging(const std::string& log_level, bool trace_enabled) {
         sinks.push_back(console_sink);
     }
 
-    // File sink (rotating log, max 5MB, keep 3 files) — always enabled
     std::filesystem::path log_dir = std::getenv("HOME")
         ? std::filesystem::path(std::getenv("HOME")) / ".pu" / "logs"
         : "/tmp/pu_logs";
@@ -155,13 +148,9 @@ void InitLogging(const std::string& log_level, bool trace_enabled) {
     file_sink->set_level(level);
     sinks.push_back(file_sink);
 
-    // 3. Optional structured JSON logging (PU_LOG_JSON=1)
     const char* json_env = std::getenv("PU_LOG_JSON");
     bool use_json = json_env && std::string(json_env) == "1";
 
-    // JSON mode uses a synchronous logger so the JSON formatter runs on the
-    // calling thread and can read the thread-local context (session_id,
-    // request_id, tool_name, duration_ms). Plain-text mode stays async.
     std::shared_ptr<spdlog::logger> logger;
     if (use_json) {
         logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
