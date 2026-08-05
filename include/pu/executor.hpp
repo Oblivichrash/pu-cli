@@ -23,7 +23,6 @@ struct ExecutionResult {
 struct StaticEnvInfo {
   std::string os_name;
   std::string kernel_version;
-  std::vector<std::string> available_tools;
   bool probed = false;
 };
 

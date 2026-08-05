@@ -67,7 +67,7 @@ TEST_CASE(
   REQUIRE(result == j.dump());
 }
 
-TEST_CASE("BuildStaticSystemContext includes environment info when probed",
+TEST_CASE("BuildStaticSystemContext includes environment info",
           "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
@@ -75,7 +75,6 @@ TEST_CASE("BuildStaticSystemContext includes environment info when probed",
   REQUIRE(msg.find("=== Environment ===") != std::string::npos);
   REQUIRE(msg.find("OS: ") != std::string::npos);
   REQUIRE(msg.find("Kernel: ") != std::string::npos);
-  REQUIRE(msg.find("Available tools: ") != std::string::npos);
 }
 
 TEST_CASE("BuildStaticSystemContext includes security policy when set",
@@ -138,46 +137,29 @@ TEST_CASE("BuildStaticSystemContext working directory defaults to dot",
   REQUIRE(msg.find(".\n") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes ask_user clarification guidance",
+TEST_CASE("BuildStaticSystemContext includes tool use guidelines",
           "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
 
-  REQUIRE(msg.find("If you need more information from the user before "
-                   "completing a task, call the ask_user tool with a question. "
-                   "Then stop and wait for the user's reply before continuing. "
-                   "Do not guess or assume.") != std::string::npos);
+  REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
+  REQUIRE(msg.find("step-by-step plan") != std::string::npos);
+  REQUIRE(msg.find("head -n 50") != std::string::npos);
+  REQUIRE(msg.find("ask_user") != std::string::npos);
+  REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
-TEST_CASE("ProbeStaticEnvironment runs once and caches", "[executor]") {
+TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info",
+          "[executor]") {
   Executor executor(nullptr);
   const auto& info = executor.GetStaticEnvInfo();
   REQUIRE(info.probed);
   REQUIRE(!info.os_name.empty());
   REQUIRE(!info.kernel_version.empty());
-
-  bool has_bash = false;
-  bool has_python3 = false;
-  for (const auto& t : info.available_tools) {
-    if (t == "bash") has_bash = true;
-    if (t == "python3") has_python3 = true;
-  }
-  REQUIRE((has_bash || has_python3));
-}
-
-TEST_CASE("ProbeStaticEnvironment available_tools excludes missing tools",
-          "[executor]") {
-  Executor executor(nullptr);
-  const auto& info = executor.GetStaticEnvInfo();
-
-  for (const auto& t : info.available_tools) {
-    REQUIRE(t != "nonexistent_tool_xyz");
-  }
 }
 
 namespace {
 
-// A minimal LLM provider that emits a canned set of tool calls.
 class MockLLM : public LLMProvider {
  public:
   explicit MockLLM(std::vector<ToolCall> calls, std::string content = "")
@@ -203,8 +185,6 @@ class MockLLM : public LLMProvider {
   std::string content_;
 };
 
-// A tool that records when it executes. It must never run in the ask_user
-// scenario because the executor returns before processing other tools.
 class TrackingTool : public Tool {
  public:
   std::string Name() const override { return "tracking_tool"; }

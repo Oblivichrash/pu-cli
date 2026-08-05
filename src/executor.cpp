@@ -24,7 +24,7 @@ using json = nlohmann::json;
 namespace {
 
 #ifdef _WIN32
-// RtlGetVersion reports the real OS version regardless of the manifest.
+// RtlGetVersion bypasses the manifest compatibility layer and reports the true OS version.
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
   auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
@@ -40,7 +40,7 @@ std::string WindowsKernelVersion() {
   }
   return "unknown";
 }
-#endif  // _WIN32
+#endif
 
 #ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
@@ -53,7 +53,7 @@ std::string RunShellCapture(const std::string& cmd) {
   }
   return output;
 }
-#endif  // !_WIN32
+#endif
 
 std::string OsName() {
 #ifdef _WIN32
@@ -71,18 +71,6 @@ std::string OsKernelVersion() {
 #endif
 }
 
-// Silent PATH check that relies on the exit code, so missing tools emit no output.
-bool CommandExists(const std::string& tool) {
-  std::string output;
-#ifdef _WIN32
-  int rc = pu::platform::ExecuteCommand("where /Q \"" + tool + "\"", output);
-#else
-  int rc = pu::platform::ExecuteCommand(
-      "command -v " + tool + " >/dev/null 2>&1", output);
-#endif
-  return rc == 0;
-}
-
 }  // namespace
 
 std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
@@ -94,48 +82,18 @@ void Executor::ProbeStaticEnvironment() {
 
   static_env_info_.os_name = OsName();
   static_env_info_.kernel_version = OsKernelVersion();
-
-  static const std::vector<std::string> kTools = {
-      "bash", "python3", "gcc", "git", "curl", "jq"};
-  for (const auto& tool : kTools) {
-    if (CommandExists(tool)) {
-      static_env_info_.available_tools.push_back(tool);
-    }
-  }
   static_env_info_.probed = true;
 
-  spdlog::info("Static environment probed: OS='{}' kernel='{}' tools=[{}]",
-               static_env_info_.os_name, static_env_info_.kernel_version,
-               [&] {
-                 std::string joined;
-                 for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
-                   if (i > 0) joined += ", ";
-                   joined += static_env_info_.available_tools[i];
-                 }
-                 return joined;
-               }());
+  spdlog::debug("Probed environment: OS='{}' kernel='{}'",
+                static_env_info_.os_name, static_env_info_.kernel_version);
 }
 
 std::string Executor::BuildStaticSystemContext() const {
   std::ostringstream oss;
 
   oss << "=== Environment ===\n";
-  if (static_env_info_.probed) {
-    oss << "OS: " << static_env_info_.os_name << "\n";
-    oss << "Kernel: " << static_env_info_.kernel_version << "\n";
-    oss << "Available tools: ";
-    if (static_env_info_.available_tools.empty()) {
-      oss << "(none detected)";
-    } else {
-      for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << static_env_info_.available_tools[i];
-      }
-    }
-    oss << "\n";
-  } else {
-    oss << "(environment not probed)\n";
-  }
+  oss << "OS: " << static_env_info_.os_name << "\n";
+  oss << "Kernel: " << static_env_info_.kernel_version << "\n";
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -161,9 +119,11 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << ".\n";
   }
 
-  oss << "If you need more information from the user before completing a task, call "
-         "the ask_user tool with a question. Then stop and wait for the user's reply "
-         "before continuing. Do not guess or assume.\n";
+  oss << "=== Tool Use Guidelines ===\n";
+  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after stating the plan.\n";
+  oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n '10,30p') instead of full cat dumps.\n";
+  oss << "3. If you need more information from the user, call ask_user and stop. Do not guess.\n";
+  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
 
   return oss.str();
 }
@@ -247,13 +207,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     ++iteration;
     tool_was_called = false;
 
-    // Build chat history from workspace
     std::vector<ChatMessage> chat_history;
     for (const auto& msg : workspace.GetHistory()) {
       chat_history.push_back(msg);
     }
 
-    // Insert static system context if not already present in the history
     bool has_system = false;
     for (const auto& msg : chat_history) {
       if (msg.role == "system") {
@@ -264,7 +222,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     if (!has_system) {
       std::string static_context = BuildStaticSystemContext();
-      // Merge with custom system_prompt stored in workspace variables
       auto system_prompt_var = workspace.GetVar("system_prompt");
       if (system_prompt_var && system_prompt_var->is_string() &&
           !system_prompt_var->get<std::string>().empty()) {
@@ -308,7 +265,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     if (!collected_calls.empty()) {
-      // Check for ask_user tool call
       for (const auto& call : collected_calls) {
         if (call.name == "ask_user") {
           result.final_response = call.arguments.value("question", "");
