@@ -122,7 +122,7 @@ void Executor::ProbeStaticEnvironment() {
                }());
 }
 
-std::string Executor::BuildSystemContextMessage(const Workspace& workspace) const {
+std::string Executor::BuildStaticSystemContext() const {
   std::ostringstream oss;
 
   oss << "=== Environment ===\n";
@@ -165,55 +165,6 @@ std::string Executor::BuildSystemContextMessage(const Workspace& workspace) cons
     oss << security_policy_->sandbox_root << "\n";
   } else {
     oss << ".\n";
-  }
-
-  auto artifacts = workspace.GetArtifacts();
-  std::vector<Artifact> file_artifacts;
-  for (const auto& a : artifacts) {
-    if (a.type == Artifact::kFilePath) {
-      file_artifacts.push_back(a);
-    }
-  }
-  if (file_artifacts.size() > 8) {
-    file_artifacts.assign(file_artifacts.end() - 8, file_artifacts.end());
-  }
-  oss << "=== Known File Paths ===\n";
-  if (file_artifacts.empty()) {
-    oss << "(none)\n";
-  } else {
-    for (const auto& fa : file_artifacts) {
-      oss << fa.content << "\n";
-    }
-  }
-
-  auto history = workspace.GetHistory();
-  std::vector<const ChatMessage*> tool_msgs;
-  for (auto it = history.rbegin(); it != history.rend() && tool_msgs.size() < 2; ++it) {
-    if (it->role == "tool") {
-      tool_msgs.push_back(&(*it));
-    }
-  }
-  std::reverse(tool_msgs.begin(), tool_msgs.end());
-
-  oss << "=== Recent Tool Executions ===\n";
-  if (tool_msgs.empty()) {
-    oss << "(none)\n";
-  } else {
-    for (const auto* tm : tool_msgs) {
-      auto tr = tools::ParseToolResult(tm->content);
-
-      oss << "- [" << tm->tool_name << "] ";
-      if (tr.valid) {
-        if (tr.success) {
-          oss << "OK: " << Truncate(tr.stdout_content, 80) << "\n";
-        } else {
-          oss << "FAILED: " << Truncate(tr.error, 80)
-              << " (hint: check the error and retry with a corrected command)\n";
-        }
-      } else {
-        oss << Truncate(tm->content, 80) << "\n";
-      }
-    }
   }
 
   return oss.str();
@@ -298,31 +249,32 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     ++iteration;
     tool_was_called = false;
 
+    // Build chat history from workspace
     std::vector<ChatMessage> chat_history;
     for (const auto& msg : workspace.GetHistory()) {
       chat_history.push_back(msg);
     }
 
-    std::string system_context = BuildSystemContextMessage(workspace);
-    std::string merged_system = system_context;
-    auto system_prompt_var = workspace.GetVar("system_prompt");
-    if (system_prompt_var && system_prompt_var->is_string() &&
-        !system_prompt_var->get<std::string>().empty()) {
-      merged_system = system_prompt_var->get<std::string>() + "\n\n" + system_context;
-    }
-
+    // Insert static system context if not already present in the history
     bool has_system = false;
-    for (auto& cm : chat_history) {
-      if (cm.role == "system") {
-        cm.content = merged_system;
+    for (const auto& msg : chat_history) {
+      if (msg.role == "system") {
         has_system = true;
         break;
       }
     }
+
     if (!has_system) {
+      std::string static_context = BuildStaticSystemContext();
+      // Merge with custom system_prompt stored in workspace variables
+      auto system_prompt_var = workspace.GetVar("system_prompt");
+      if (system_prompt_var && system_prompt_var->is_string() &&
+          !system_prompt_var->get<std::string>().empty()) {
+        static_context = system_prompt_var->get<std::string>() + "\n\n" + static_context;
+      }
       ChatMessage sys;
       sys.role = "system";
-      sys.content = merged_system;
+      sys.content = static_context;
       chat_history.insert(chat_history.begin(), std::move(sys));
     }
 

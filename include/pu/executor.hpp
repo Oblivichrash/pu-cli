@@ -38,7 +38,6 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
 
-  std::string BuildSystemContextMessage(const Workspace& workspace) const;
   static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
 
@@ -55,6 +54,7 @@ class Executor {
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
 
   void ProbeStaticEnvironment();
+  std::string BuildStaticSystemContext() const;
 
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
