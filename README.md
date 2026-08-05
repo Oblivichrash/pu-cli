@@ -186,7 +186,6 @@ This allows the executor to distinguish success from failure and provide clear f
 | `PU_AGENTS_CONFIG` | Path to agents.json |
 | `PU_HOME` | Data directory (default `~/.pu/`) |
 | `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
-| `PU_TRACE=1` | Enable trace logging |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_LOG_CONSOLE=0` | Disable console logging |
 

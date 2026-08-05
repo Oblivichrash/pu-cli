@@ -49,9 +49,9 @@ TEST_CASE("execute_bash returns failure JSON on non-zero exit code",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error").get<std::string>().find("Command failed") != std::string::npos);
-  REQUIRE(j.value("exit_code") != 0);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"].get<std::string>().find("Command failed") != std::string::npos);
+  REQUIRE(j["exit_code"] != 0);
 }
 
 TEST_CASE("Execute_bash returns error JSON for missing command parameter",
@@ -63,10 +63,10 @@ TEST_CASE("Execute_bash returns error JSON for missing command parameter",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("stdout") == "");
-  REQUIRE(j.value("error") == "'command' parameter is required");
-  REQUIRE(j.value("exit_code") == -1);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["stdout"] == "");
+  REQUIRE(j["error"] == "'command' parameter is required");
+  REQUIRE(j["exit_code"] == -1);
 }
 
 TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
@@ -82,8 +82,8 @@ TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error").get<std::string>().find(
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"].get<std::string>().find(
               "command contains forbidden pattern") != std::string::npos);
 }
 
@@ -97,8 +97,8 @@ TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error").find("Blocked:") != std::string::npos);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"].get<std::string>().find("Blocked:") != std::string::npos);
 }
 
 TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
@@ -114,8 +114,8 @@ TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error").find("exceeds maximum allowed length") !=
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"].get<std::string>().find("exceeds maximum allowed length") !=
           std::string::npos);
 }
 
@@ -137,13 +137,12 @@ TEST_CASE("Write_file returns success JSON on successful write",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == true);
-  REQUIRE(j.value("stdout").find("Successfully wrote") != std::string::npos);
-  REQUIRE(j.value("error") == "");
-  REQUIRE(j.value("exit_code") == 0);
+  REQUIRE(j["success"] == true);
+  REQUIRE(j["stdout"].get<std::string>().find("Successfully wrote") != std::string::npos);
+  REQUIRE(j["error"] == "");
+  REQUIRE(j["exit_code"] == 0);
 
-  // Verify file was actually written.
-  std::string written = ReadFile(tmpdir / "hello.txt");
+  std::string written = ReadFile((tmpdir / "hello.txt").string());
   REQUIRE(written == "Hello, world!");
 
   std::filesystem::remove_all(tmpdir);
@@ -161,9 +160,9 @@ TEST_CASE("Write_file returns error JSON for missing path", "[builtin_tools]") {
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "'path' is required");
-  REQUIRE(j.value("exit_code") == -1);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"] == "'path' is required");
+  REQUIRE(j["exit_code"] == -1);
 }
 
 TEST_CASE("Write_file returns error JSON for path traversal attempt",
@@ -180,8 +179,8 @@ TEST_CASE("Write_file returns error JSON for path traversal attempt",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error").find("traversal") != std::string::npos);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"].get<std::string>().find("traversal") != std::string::npos);
 }
 
 TEST_CASE("Write_file returns error JSON when no security policy set",
@@ -195,6 +194,47 @@ TEST_CASE("Write_file returns error JSON when no security policy set",
   std::string result = tool.Execute(args, ctx);
 
   auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "security policy not set");
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"] == "security policy not set");
+}
+
+TEST_CASE("Ask_user returns clarification JSON with question", "[builtin_tools]") {
+  AskUserTool tool;
+  pu::ToolContext ctx;
+
+  nlohmann::json args;
+  args["question"] = "Which directory should I target?";
+  std::string result = tool.Execute(args, ctx);
+
+  auto j = nlohmann::json::parse(result);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"] == "clarification_needed");
+  REQUIRE(j["question"] == "Which directory should I target?");
+}
+
+TEST_CASE("Ask_user returns empty question when argument missing",
+          "[builtin_tools]") {
+  AskUserTool tool;
+  pu::ToolContext ctx;
+
+  nlohmann::json args;
+  std::string result = tool.Execute(args, ctx);
+
+  auto j = nlohmann::json::parse(result);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"] == "clarification_needed");
+  REQUIRE(j["question"] == "");
+}
+
+TEST_CASE("Ask_user metadata exposes name, description, and schema",
+          "[builtin_tools]") {
+  AskUserTool tool;
+
+  REQUIRE(tool.Name() == "ask_user");
+  REQUIRE(tool.Description() == "Ask user for clarification.");
+
+  auto schema = nlohmann::json::parse(tool.ParametersSchema());
+  REQUIRE(schema["type"] == "object");
+  REQUIRE(schema["required"] == nlohmann::json::array({"question"}));
+  REQUIRE(schema["properties"]["question"]["type"] == "string");
 }

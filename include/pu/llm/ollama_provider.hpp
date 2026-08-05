@@ -19,6 +19,7 @@ class OllamaProvider : public LLMProvider {
     std::optional<std::string> system_prompt;
     std::string api_key;
     int max_tokens = 2048;
+    std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
   };
 
   explicit OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http);

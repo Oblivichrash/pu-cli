@@ -232,6 +232,7 @@ void Runtime::RegisterBuiltinTools() {
                                                           : current_agent_config_.security
                                                                 .sandbox_root));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+  toolbox_->RegisterTool(std::make_unique<tools::AskUserTool>());
 }
 
 void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
