@@ -23,7 +23,6 @@ struct ExecutionResult {
 struct StaticEnvInfo {
   std::string os_name;
   std::string kernel_version;
-  std::vector<std::string> available_tools;
   bool probed = false;
 };
 
@@ -38,9 +37,9 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
 
-  std::string BuildSystemContextMessage(const Workspace& workspace) const;
   static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
+  std::string BuildStaticSystemContext() const;
 
  private:
   struct ToolLoopResult {

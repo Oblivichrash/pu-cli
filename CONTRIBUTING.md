@@ -29,7 +29,6 @@ ctest --test-dir build --output-on-failure
 ## Logging
 
 - Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical`.
-- Set `PU_TRACE=1` to enable trace-level logging (equivalent to `PU_LOG_LEVEL=trace`).
 - Log files are stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
 
 ## Directory Structure

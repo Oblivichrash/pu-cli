@@ -30,6 +30,7 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
   req["model"] = config_.model;
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
+  req["keep_alive"] = config_.keep_alive;
 
   auto messages = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
@@ -68,6 +69,7 @@ std::string OllamaProvider::BuildRequestWithTools(
   req["model"] = config_.model;
   req["stream"] = true;
   req["options"]["temperature"] = config_.temperature;
+  req["keep_alive"] = config_.keep_alive;
 
   auto messages = history;
   if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
@@ -181,6 +183,8 @@ ChatResult OllamaProvider::Chat(
   } else {
     body = BuildRequestWithTools(history, tools);
   }
+
+  spdlog::debug("Ollama request body: {}", body);
 
   std::string url = host_ + "/api/chat";
   std::vector<std::string> headers = {"Content-Type: application/json"};

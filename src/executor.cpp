@@ -24,7 +24,7 @@ using json = nlohmann::json;
 namespace {
 
 #ifdef _WIN32
-// RtlGetVersion reports the real OS version regardless of the manifest.
+// RtlGetVersion bypasses the manifest compatibility layer and reports the true OS version.
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
   auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
@@ -40,7 +40,7 @@ std::string WindowsKernelVersion() {
   }
   return "unknown";
 }
-#endif  // _WIN32
+#endif
 
 #ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
@@ -53,7 +53,7 @@ std::string RunShellCapture(const std::string& cmd) {
   }
   return output;
 }
-#endif  // !_WIN32
+#endif
 
 std::string OsName() {
 #ifdef _WIN32
@@ -71,24 +71,6 @@ std::string OsKernelVersion() {
 #endif
 }
 
-// Silent PATH check that relies on the exit code, so missing tools emit no output.
-bool CommandExists(const std::string& tool) {
-  std::string output;
-#ifdef _WIN32
-  int rc = pu::platform::ExecuteCommand("where /Q \"" + tool + "\"", output);
-#else
-  int rc = pu::platform::ExecuteCommand(
-      "command -v " + tool + " >/dev/null 2>&1", output);
-#endif
-  return rc == 0;
-}
-
-std::string Truncate(const std::string& s, size_t max_len) {
-  if (s.size() <= max_len) return s;
-  if (max_len <= 3) return s.substr(0, max_len);
-  return s.substr(0, max_len - 3) + "...";
-}
-
 }  // namespace
 
 std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
@@ -100,48 +82,18 @@ void Executor::ProbeStaticEnvironment() {
 
   static_env_info_.os_name = OsName();
   static_env_info_.kernel_version = OsKernelVersion();
-
-  static const std::vector<std::string> kTools = {
-      "bash", "python3", "gcc", "git", "curl", "jq"};
-  for (const auto& tool : kTools) {
-    if (CommandExists(tool)) {
-      static_env_info_.available_tools.push_back(tool);
-    }
-  }
   static_env_info_.probed = true;
 
-  spdlog::info("Static environment probed: OS='{}' kernel='{}' tools=[{}]",
-               static_env_info_.os_name, static_env_info_.kernel_version,
-               [&] {
-                 std::string joined;
-                 for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
-                   if (i > 0) joined += ", ";
-                   joined += static_env_info_.available_tools[i];
-                 }
-                 return joined;
-               }());
+  spdlog::debug("Probed environment: OS='{}' kernel='{}'",
+                static_env_info_.os_name, static_env_info_.kernel_version);
 }
 
-std::string Executor::BuildSystemContextMessage(const Workspace& workspace) const {
+std::string Executor::BuildStaticSystemContext() const {
   std::ostringstream oss;
 
   oss << "=== Environment ===\n";
-  if (static_env_info_.probed) {
-    oss << "OS: " << static_env_info_.os_name << "\n";
-    oss << "Kernel: " << static_env_info_.kernel_version << "\n";
-    oss << "Available tools: ";
-    if (static_env_info_.available_tools.empty()) {
-      oss << "(none detected)";
-    } else {
-      for (size_t i = 0; i < static_env_info_.available_tools.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << static_env_info_.available_tools[i];
-      }
-    }
-    oss << "\n";
-  } else {
-    oss << "(environment not probed)\n";
-  }
+  oss << "OS: " << static_env_info_.os_name << "\n";
+  oss << "Kernel: " << static_env_info_.kernel_version << "\n";
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -167,54 +119,11 @@ std::string Executor::BuildSystemContextMessage(const Workspace& workspace) cons
     oss << ".\n";
   }
 
-  auto artifacts = workspace.GetArtifacts();
-  std::vector<Artifact> file_artifacts;
-  for (const auto& a : artifacts) {
-    if (a.type == Artifact::kFilePath) {
-      file_artifacts.push_back(a);
-    }
-  }
-  if (file_artifacts.size() > 8) {
-    file_artifacts.assign(file_artifacts.end() - 8, file_artifacts.end());
-  }
-  oss << "=== Known File Paths ===\n";
-  if (file_artifacts.empty()) {
-    oss << "(none)\n";
-  } else {
-    for (const auto& fa : file_artifacts) {
-      oss << fa.content << "\n";
-    }
-  }
-
-  auto history = workspace.GetHistory();
-  std::vector<const ChatMessage*> tool_msgs;
-  for (auto it = history.rbegin(); it != history.rend() && tool_msgs.size() < 2; ++it) {
-    if (it->role == "tool") {
-      tool_msgs.push_back(&(*it));
-    }
-  }
-  std::reverse(tool_msgs.begin(), tool_msgs.end());
-
-  oss << "=== Recent Tool Executions ===\n";
-  if (tool_msgs.empty()) {
-    oss << "(none)\n";
-  } else {
-    for (const auto* tm : tool_msgs) {
-      auto tr = tools::ParseToolResult(tm->content);
-
-      oss << "- [" << tm->tool_name << "] ";
-      if (tr.valid) {
-        if (tr.success) {
-          oss << "OK: " << Truncate(tr.stdout_content, 80) << "\n";
-        } else {
-          oss << "FAILED: " << Truncate(tr.error, 80)
-              << " (hint: check the error and retry with a corrected command)\n";
-        }
-      } else {
-        oss << Truncate(tm->content, 80) << "\n";
-      }
-    }
-  }
+  oss << "=== Tool Use Guidelines ===\n";
+  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after stating the plan.\n";
+  oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n '10,30p') instead of full cat dumps.\n";
+  oss << "3. If you need more information from the user, call ask_user and stop. Do not guess.\n";
+  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
 
   return oss.str();
 }
@@ -303,26 +212,24 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       chat_history.push_back(msg);
     }
 
-    std::string system_context = BuildSystemContextMessage(workspace);
-    std::string merged_system = system_context;
-    auto system_prompt_var = workspace.GetVar("system_prompt");
-    if (system_prompt_var && system_prompt_var->is_string() &&
-        !system_prompt_var->get<std::string>().empty()) {
-      merged_system = system_prompt_var->get<std::string>() + "\n\n" + system_context;
-    }
-
     bool has_system = false;
-    for (auto& cm : chat_history) {
-      if (cm.role == "system") {
-        cm.content = merged_system;
+    for (const auto& msg : chat_history) {
+      if (msg.role == "system") {
         has_system = true;
         break;
       }
     }
+
     if (!has_system) {
+      std::string static_context = BuildStaticSystemContext();
+      auto system_prompt_var = workspace.GetVar("system_prompt");
+      if (system_prompt_var && system_prompt_var->is_string() &&
+          !system_prompt_var->get<std::string>().empty()) {
+        static_context = system_prompt_var->get<std::string>() + "\n\n" + static_context;
+      }
       ChatMessage sys;
       sys.role = "system";
-      sys.content = merged_system;
+      sys.content = static_context;
       chat_history.insert(chat_history.begin(), std::move(sys));
     }
 
@@ -358,6 +265,15 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     if (!collected_calls.empty()) {
+      for (const auto& call : collected_calls) {
+        if (call.name == "ask_user") {
+          result.final_response = call.arguments.value("question", "");
+          result.completed = true;
+          result.was_streamed = false;
+          return result;
+        }
+      }
+
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
           tc.id = "call_" + std::to_string(++next_tool_call_id_);
