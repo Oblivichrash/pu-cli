@@ -142,7 +142,7 @@ TEST_CASE("Write_file returns success JSON on successful write",
   REQUIRE(j["error"] == "");
   REQUIRE(j["exit_code"] == 0);
 
-  std::string written = ReadFile(tmpdir / "hello.txt");
+  std::string written = ReadFile((tmpdir / "hello.txt").string());
   REQUIRE(written == "Hello, world!");
 
   std::filesystem::remove_all(tmpdir);
