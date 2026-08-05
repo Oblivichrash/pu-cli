@@ -167,6 +167,10 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << ".\n";
   }
 
+  oss << "If you need more information from the user before completing a task, call "
+         "the ask_user tool with a question. Then stop and wait for the user's reply "
+         "before continuing. Do not guess or assume.\n";
+
   return oss.str();
 }
 
@@ -310,6 +314,16 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     if (!collected_calls.empty()) {
+      // Check for ask_user tool call
+      for (const auto& call : collected_calls) {
+        if (call.name == "ask_user") {
+          result.final_response = call.arguments.value("question", "");
+          result.completed = true;
+          result.was_streamed = false;
+          return result;
+        }
+      }
+
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
           tc.id = "call_" + std::to_string(++next_tool_call_id_);

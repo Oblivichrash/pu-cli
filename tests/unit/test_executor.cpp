@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
+#include "pu/tools/builtin_tools.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
+#include <functional>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace pu;
 
@@ -62,13 +67,10 @@ TEST_CASE(
   REQUIRE(result == j.dump());
 }
 
-TEST_CASE("BuildSystemContextMessage includes environment info when probed",
+TEST_CASE("BuildStaticSystemContext includes environment info when probed",
           "[executor]") {
   Executor executor(nullptr);
-  // ProbeStaticEnvironment is called in constructor; OS/kernel/tools are
-  // populated from the live system, so we only verify structural presence.
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Environment ===") != std::string::npos);
   REQUIRE(msg.find("OS: ") != std::string::npos);
@@ -76,7 +78,7 @@ TEST_CASE("BuildSystemContextMessage includes environment info when probed",
   REQUIRE(msg.find("Available tools: ") != std::string::npos);
 }
 
-TEST_CASE("BuildSystemContextMessage includes security policy when set",
+TEST_CASE("BuildStaticSystemContext includes security policy when set",
           "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
@@ -84,8 +86,7 @@ TEST_CASE("BuildSystemContextMessage includes security policy when set",
   policy.forbidden_patterns = {"rm -rf", "sudo"};
   executor.SetSecurityPolicy(policy);
 
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Security Policy ===") != std::string::npos);
   REQUIRE(msg.find("Sandbox root: /tmp/sandbox") != std::string::npos);
@@ -94,200 +95,73 @@ TEST_CASE("BuildSystemContextMessage includes security policy when set",
   REQUIRE(msg.find("'sudo'") != std::string::npos);
 }
 
-TEST_CASE("BuildSystemContextMessage shows empty forbidden patterns correctly",
+TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly",
           "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("Forbidden patterns: (none)") != std::string::npos);
 }
 
 TEST_CASE(
-    "BuildSystemContextMessage shows no-security-policy message when unset",
+    "BuildStaticSystemContext shows no-security-policy message when unset",
     "[executor]") {
   Executor executor(nullptr);
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("(no security policy set)") != std::string::npos);
 }
 
-TEST_CASE("BuildSystemContextMessage includes working directory section",
+TEST_CASE("BuildStaticSystemContext includes working directory section",
           "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
   policy.sandbox_root = "/home/user/project";
   executor.SetSecurityPolicy(policy);
 
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Working Directory ===") != std::string::npos);
   REQUIRE(msg.find("/home/user/project") != std::string::npos);
 }
 
-TEST_CASE("BuildSystemContextMessage working directory defaults to dot",
+TEST_CASE("BuildStaticSystemContext working directory defaults to dot",
           "[executor]") {
   Executor executor(nullptr);
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
+  std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Working Directory ===") != std::string::npos);
-  // Without a security policy, the working directory section shows ".".
   REQUIRE(msg.find(".\n") != std::string::npos);
 }
 
-TEST_CASE("BuildSystemContextMessage includes file artifacts section",
+TEST_CASE("BuildStaticSystemContext includes ask_user clarification guidance",
           "[executor]") {
   Executor executor(nullptr);
-  pu::Workspace ws;
-  pu::Artifact a;
-  a.type = pu::Artifact::kFilePath;
-  a.content = "/tmp/test.txt";
-  ws.AddArtifact(a);
+  std::string msg = executor.BuildStaticSystemContext();
 
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("=== Known File Paths ===") != std::string::npos);
-  REQUIRE(msg.find("/tmp/test.txt") != std::string::npos);
-}
-
-TEST_CASE("BuildSystemContextMessage shows none for empty file artifacts",
-          "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("=== Known File Paths ===") != std::string::npos);
-  REQUIRE(msg.find("(none)") != std::string::npos);
-}
-
-TEST_CASE(
-    "BuildSystemContextMessage truncates file artifacts beyond 8 entries",
-    "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-  // Add 12 file artifacts; only the last 8 should appear.
-  for (int i = 0; i < 12; ++i) {
-    pu::Artifact fp;
-    fp.type = pu::Artifact::kFilePath;
-    fp.content = "/tmp/file_" + std::to_string(i);
-    ws.AddArtifact(fp);
-  }
-
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  // First 4 (indices 0-3) should be missing.
-  REQUIRE(msg.find("/tmp/file_0") == std::string::npos);
-  REQUIRE(msg.find("/tmp/file_1") == std::string::npos);
-  REQUIRE(msg.find("/tmp/file_2") == std::string::npos);
-  REQUIRE(msg.find("/tmp/file_3") == std::string::npos);
-  // Last 8 (indices 4-11) should be present.
-  REQUIRE(msg.find("/tmp/file_4") != std::string::npos);
-  REQUIRE(msg.find("/tmp/file_11") != std::string::npos);
-}
-
-TEST_CASE(
-    "BuildSystemContextMessage includes recent tool executions section",
-    "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-
-  // Simulate a successful tool execution in history.
-  ChatMessage tool_msg;
-  tool_msg.role = "tool";
-  tool_msg.tool_name = "execute_bash";
-  nlohmann::json success_j;
-  success_j["success"] = true;
-  success_j["stdout"] = "hello";
-  success_j["error"] = "";
-  tool_msg.content = success_j.dump();
-  ws.Append(tool_msg);
-
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("=== Recent Tool Executions ===") != std::string::npos);
-  REQUIRE(msg.find("[execute_bash] OK:") != std::string::npos);
-  REQUIRE(msg.find("hello") != std::string::npos);
-}
-
-TEST_CASE(
-    "BuildSystemContextMessage shows FAILED status for failed tool executions",
-    "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-
-  ChatMessage tool_msg;
-  tool_msg.role = "tool";
-  tool_msg.tool_name = "execute_bash";
-  nlohmann::json fail;
-  fail["success"] = false;
-  fail["stdout"] = "";
-  fail["error"] = "command not found";
-  tool_msg.content = fail.dump();
-  ws.Append(tool_msg);
-
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("- [execute_bash] FAILED:") != std::string::npos);
-  REQUIRE(msg.find("command not found") != std::string::npos);
-  REQUIRE(msg.find(
-      "hint: check the error and retry with a corrected command") !=
-          std::string::npos);
-}
-
-TEST_CASE(
-    "BuildSystemContextMessage handles non-JSON tool results gracefully",
-    "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-
-  ChatMessage tool_msg;
-  tool_msg.role = "tool";
-  tool_msg.tool_name = "mcp.files.read";
-  tool_msg.content = "raw text result";
-  ws.Append(tool_msg);
-
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("- [mcp.files.read] ") != std::string::npos);
-  REQUIRE(msg.find("raw text result") != std::string::npos);
-}
-
-TEST_CASE("BuildSystemContextMessage shows none when no tool executions exist",
-          "[executor]") {
-  Executor executor(nullptr);
-  pu::Workspace ws;
-  std::string msg = executor.BuildSystemContextMessage(ws);
-
-  REQUIRE(msg.find("=== Recent Tool Executions ===") != std::string::npos);
-  REQUIRE(msg.find("(none)") != std::string::npos);
+  REQUIRE(msg.find("If you need more information from the user before "
+                   "completing a task, call the ask_user tool with a question. "
+                   "Then stop and wait for the user's reply before continuing. "
+                   "Do not guess or assume.") != std::string::npos);
 }
 
 TEST_CASE("ProbeStaticEnvironment runs once and caches", "[executor]") {
-  // The constructor calls ProbeStaticEnvironment.
   Executor executor(nullptr);
-
-  // The second call is a no-op because probed is already true.
-  // We confirm available_tools contains expected entries.
   const auto& info = executor.GetStaticEnvInfo();
   REQUIRE(info.probed);
   REQUIRE(!info.os_name.empty());
   REQUIRE(!info.kernel_version.empty());
 
-  // At least some tools should be detected on a developer machine.
   bool has_bash = false;
   bool has_python3 = false;
   for (const auto& t : info.available_tools) {
     if (t == "bash") has_bash = true;
     if (t == "python3") has_python3 = true;
   }
-  // On a typical Linux system, at least one of bash/python3 is available.
   REQUIRE((has_bash || has_python3));
 }
 
@@ -296,8 +170,83 @@ TEST_CASE("ProbeStaticEnvironment available_tools excludes missing tools",
   Executor executor(nullptr);
   const auto& info = executor.GetStaticEnvInfo();
 
-  // Tools like "nonexistent_tool_xyz" should never appear.
   for (const auto& t : info.available_tools) {
     REQUIRE(t != "nonexistent_tool_xyz");
   }
+}
+
+namespace {
+
+// A minimal LLM provider that emits a canned set of tool calls.
+class MockLLM : public LLMProvider {
+ public:
+  explicit MockLLM(std::vector<ToolCall> calls, std::string content = "")
+      : calls_(std::move(calls)), content_(std::move(content)) {}
+
+  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
+                  const std::vector<ToolDefinition>& /*tools*/,
+                  std::function<void(const std::string&)> /*content_callback*/,
+                  std::function<void(const ToolCall&)> tool_callback) override {
+    ChatResult r;
+    r.content = content_;
+    for (const auto& c : calls_) {
+      if (tool_callback) tool_callback(c);
+    }
+    return r;
+  }
+
+  bool SupportsTools() const override { return true; }
+  std::string GetModelName() const override { return "mock"; }
+
+ private:
+  std::vector<ToolCall> calls_;
+  std::string content_;
+};
+
+// A tool that records when it executes. It must never run in the ask_user
+// scenario because the executor returns before processing other tools.
+class TrackingTool : public Tool {
+ public:
+  std::string Name() const override { return "tracking_tool"; }
+  std::string Description() const override { return "records execution"; }
+  std::string ParametersSchema() const override {
+    return R"({"type":"object"})";
+  }
+  std::string Execute(const nlohmann::json& /*args*/,
+                      ToolContext& /*ctx*/) override {
+    ++executions;
+    return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
+  }
+
+  int executions = 0;
+};
+
+}  // namespace
+
+TEST_CASE("Executor returns ask_user question without running other tools",
+          "[executor][tool_loop]") {
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<tools::AskUserTool>());
+  auto tracking = std::make_unique<TrackingTool>();
+  auto* tracking_ptr = tracking.get();
+  toolbox.RegisterTool(std::move(tracking));
+
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.id = "call_ask_1";
+  call.name = "ask_user";
+  call.arguments["question"] = "Should I overwrite the existing file?";
+
+  MockLLM mock({call}, "thinking out loud");
+  Workspace ws;
+  ExecutionResult result = executor.Execute("help me", ws, &mock);
+
+  REQUIRE(result.content == "Should I overwrite the existing file?");
+  REQUIRE(result.was_streamed == false);
+  REQUIRE(result.has_error == false);
+  REQUIRE(tracking_ptr->executions == 0);
 }

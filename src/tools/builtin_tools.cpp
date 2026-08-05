@@ -252,4 +252,33 @@ std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& 
   return tools::MakeToolResultJson(true, summary, "", "", 0);
 }
 
+std::string AskUserTool::Name() const {
+  return "ask_user";
+}
+
+std::string AskUserTool::Description() const {
+  return "Ask the user a question and wait for a reply.";
+}
+
+std::string AskUserTool::ParametersSchema() const {
+  return R"##({
+    "type": "object",
+    "properties": {
+      "question": {
+        "type": "string",
+        "description": "The question to ask the user"
+      }
+    },
+    "required": ["question"]
+  })##";
+}
+
+std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+  nlohmann::json result;
+  result["success"] = false;
+  result["error"] = "clarification_needed";
+  result["question"] = args.value("question", "");
+  return result.dump();
+}
+
 }  // namespace pu::tools
