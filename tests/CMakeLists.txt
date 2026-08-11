@@ -14,6 +14,7 @@ add_executable(pu_tests
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
     unit/test_model_scanner.cpp
+    unit/test_provider_registry.cpp
     unit/test_system_probe.cpp
 )
 

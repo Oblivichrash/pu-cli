@@ -7,6 +7,7 @@
 
 #include "pu/infra/platform.hpp"
 #include "infra/curl_http_client.hpp"
+#include "config_tools/provider_registry.hpp"
 
 namespace pu::config_tools {
 
@@ -29,14 +30,14 @@ std::string UnameOutput(const char* flag) {
 #endif
 }
 
-bool HasEnv(const char* name) {
-  const char* val = std::getenv(name);
+bool HasEnv(const std::string& name) {
+  const char* val = std::getenv(name.c_str());
   return val && *val;
 }
 
-bool OllamaRunning(pu::http::HttpClient& http) {
+bool Reachable(pu::http::HttpClient& http, const std::string& url) {
   try {
-    http.Get("http://localhost:11434/api/tags");
+    http.Get(url);
     return true;
   } catch (const std::exception&) {
     return false;
@@ -63,10 +64,17 @@ nlohmann::json ProbeSystem(pu::http::HttpClient& http) {
 #endif
   j["working_dir"] = std::filesystem::current_path().string();
 
+  // Status is derived from the registry so custom providers are probed too.
   nlohmann::json status;
-  status["nim"]["has_api_key"] = HasEnv("NVIDIA_API_KEY");
-  status["ollama"]["is_running"] = OllamaRunning(http);
-  status["openai"]["has_api_key"] = HasEnv("OPENAI_API_KEY");
+  for (const auto& p : LoadProviders()) {
+    if (p.type == "ollama") {
+      // Ping the base URL: a running Ollama answers on it, unlike a check
+      // that depends on an endpoint path that custom providers may not use.
+      status[p.name]["is_running"] = Reachable(http, p.base_url);
+    } else {
+      status[p.name]["has_api_key"] = HasEnv(p.auth.env_var);
+    }
+  }
   j["provider_status"] = status;
 
   return j;

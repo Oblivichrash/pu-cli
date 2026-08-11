@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "interactive_wizard.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -9,6 +10,7 @@
 
 #include "model_scanner.hpp"
 #include "prompt_templates.hpp"
+#include "provider_registry.hpp"
 
 namespace pu::config_tools {
 
@@ -70,21 +72,17 @@ std::vector<std::string> MultiSelect(const std::string& prompt,
 }
 
 // Live scans can fail (service down, missing key); fall back to manual entry.
-std::vector<std::string> FetchModels(const std::string& provider, const std::string& host,
-                                     const std::string& api_key) {
+std::vector<std::string> FetchModels(const ProviderConfig& config) {
   try {
-    if (provider == "nim") return scanNvidiaNIM();
-    if (provider == "ollama") return scanOllama();
-    return scanOpenAICompatible(host, api_key);
+    return scanProvider(config);
   } catch (const std::exception& e) {
     std::cerr << "Model scan failed: " << e.what() << "\n";
     return {};
   }
 }
 
-std::string PickModel(const std::string& provider, const std::string& host,
-                      const std::string& api_key) {
-  auto models = FetchModels(provider, host, api_key);
+std::string PickModel(const ProviderConfig& config) {
+  auto models = FetchModels(config);
   if (models.empty()) {
     return ReadLine("Model name (no models discovered)");
   }
@@ -104,28 +102,44 @@ config::AgentEntry RunInteractiveWizard() {
 
   entry.description = ReadLine("Description");
 
-  // Provider selection
-  std::vector<std::string> providers = {"nim", "ollama", "openai"};
-  std::string provider = SelectFromList("Provider", providers, "ollama");
+  // Provider list comes from the registry so custom providers defined in
+  // providers.json show up without code changes.
+  const auto providers = LoadProviders();
+  std::vector<std::string> provider_names;
+  for (const auto& p : providers) provider_names.push_back(p.name);
+  std::string default_provider =
+      std::find(provider_names.begin(), provider_names.end(), "ollama") !=
+              provider_names.end()
+          ? "ollama"
+          : provider_names.front();
+  std::string provider_name =
+      SelectFromList("Provider", provider_names, default_provider);
+  const ProviderConfig* chosen = nullptr;
+  for (const auto& p : providers) {
+    if (p.name == provider_name) {
+      chosen = &p;
+      break;
+    }
+  }
+  if (!chosen) {
+    throw std::runtime_error("Unknown provider: " + provider_name);
+  }
 
-  // Backend config and live model scan
+  // Backend config and live model scan, both driven by the chosen provider.
   std::string api_key;
-  if (provider == "nim") {
-    entry.backend.type = config::BackendType::kOpenAI;
-    entry.backend.host = "https://integrate.api.nvidia.com/v1";
-    if (const char* key = std::getenv("NVIDIA_API_KEY")) api_key = key;
-    if (api_key.empty()) std::cerr << "NVIDIA_API_KEY is not set; NIM scan may fail.\n";
-  } else if (provider == "ollama") {
-    entry.backend.type = config::BackendType::kOllama;
-    entry.backend.host = "http://localhost:11434";
-  } else {
-    entry.backend.type = config::BackendType::kOpenAI;
-    entry.backend.host = ReadLine("Host", "https://api.openai.com/v1");
-    api_key = ReadLine("API key");
+  entry.backend.type = chosen->type == "ollama" ? config::BackendType::kOllama
+                                                : config::BackendType::kOpenAI;
+  entry.backend.host = chosen->base_url;
+  if (!chosen->auth.env_var.empty()) {
+    if (const char* key = std::getenv(chosen->auth.env_var.c_str())) api_key = key;
+    if (api_key.empty()) {
+      std::cerr << chosen->auth.env_var
+                << " is not set; model scan may fail.\n";
+    }
   }
   if (!api_key.empty()) entry.backend.api_key = api_key;
 
-  entry.backend.model = PickModel(provider, entry.backend.host, api_key);
+  entry.backend.model = PickModel(*chosen);
 
   // Tools multi-select
   std::vector<std::string> tool_options = {"execute_bash", "write_file", "ask_user"};

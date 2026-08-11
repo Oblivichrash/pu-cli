@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -37,9 +38,40 @@ class ScopedEnv {
   bool had_old_ = false;
 };
 
+// Redirects HOME to an empty temp dir so provider_status reflects the built-in
+// provider registry no matter what exists on the developer machine.
+class ScopedHome {
+ public:
+  ScopedHome() : dir_(std::filesystem::temp_directory_path() /
+                      ("pu_probe_" + std::to_string(counter_++))) {
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    old_ = std::getenv("HOME") ? std::getenv("HOME") : "";
+    had_old_ = std::getenv("HOME") != nullptr;
+    setenv("HOME", dir_.c_str(), 1);
+  }
+  ~ScopedHome() {
+    std::filesystem::remove_all(dir_);
+    if (had_old_) {
+      setenv("HOME", old_.c_str(), 1);
+    } else {
+      unsetenv("HOME");
+    }
+  }
+
+ private:
+  static int counter_;
+  std::filesystem::path dir_;
+  std::string old_;
+  bool had_old_ = false;
+};
+
+int ScopedHome::counter_ = 0;
+
 }  // unnamed namespace
 
 TEST_CASE("ProbeSystem reports API key env vars", "[system_probe]") {
+  ScopedHome home;
   ScopedEnv nim("NVIDIA_API_KEY", "nim-key");
   ScopedEnv openai("OPENAI_API_KEY", "oa-key");
   pu::tests::MockHttpClient mock;
@@ -56,6 +88,7 @@ TEST_CASE("ProbeSystem reports API key env vars", "[system_probe]") {
 }
 
 TEST_CASE("ProbeSystem reports missing API keys", "[system_probe]") {
+  ScopedHome home;
   ScopedEnv nim("NVIDIA_API_KEY", nullptr);
   ScopedEnv openai("OPENAI_API_KEY", nullptr);
   pu::tests::MockHttpClient mock;
@@ -67,17 +100,20 @@ TEST_CASE("ProbeSystem reports missing API keys", "[system_probe]") {
   REQUIRE(j["provider_status"]["openai"]["has_api_key"] == false);
 }
 
-TEST_CASE("ProbeSystem detects Ollama running", "[system_probe]") {
+TEST_CASE("ProbeSystem detects Ollama running by pinging base_url",
+          "[system_probe]") {
+  ScopedHome home;
   pu::tests::MockHttpClient mock;
-  mock.get_response = R"({"models":[]})";
+  mock.get_response = "Ollama is running";
 
   auto j = pu::config_tools::ProbeSystem(mock);
 
   REQUIRE(j["provider_status"]["ollama"]["is_running"] == true);
-  REQUIRE(mock.last_get_url == "http://localhost:11434/api/tags");
+  REQUIRE(mock.last_get_url == "http://localhost:11434");
 }
 
 TEST_CASE("ProbeSystem detects Ollama down", "[system_probe]") {
+  ScopedHome home;
   pu::tests::MockHttpClient mock;
   mock.simulate_get_response = [](const std::string&, const std::vector<std::string>&) -> std::string {
     throw pu::HttpError("connection refused");
@@ -89,6 +125,7 @@ TEST_CASE("ProbeSystem detects Ollama down", "[system_probe]") {
 }
 
 TEST_CASE("ProbeSystem returns valid JSON structure", "[system_probe]") {
+  ScopedHome home;
   pu::tests::MockHttpClient mock;
   mock.get_response = "{}";
 

@@ -89,7 +89,7 @@ Manage `agents.json` without editing it by hand:
 | `remove <name>` | Remove an agent |
 | `rename <old> <new>` | Rename an agent |
 | `set-default <name>` | Set the default agent |
-| `refresh-models` | Scan providers (`nim`, `ollama`, `openai`) for available models |
+| `refresh-models` | Scan providers (from `providers.json` or built-in defaults) for available models |
 | `probe` | Show system and provider status |
 
 Options:
@@ -98,9 +98,10 @@ Options:
 - `--provider=<name>` — restrict `refresh-models` to a single provider.
 - `-h`, `--help` — show usage.
 
-`refresh-models` uses `NVIDIA_API_KEY` and `OPENAI_API_KEY` when present, and
-reaches Ollama at `http://localhost:11434`. The scanned model list is also used
-by the `add` wizard to suggest available models.
+Providers come from `~/.pu/providers.json` (or `./providers.json` if
+present), falling back to built-in defaults for nim/ollama/openai. Each entry
+names an env var for auth; Ollama is pinged at its base URL. The scanned model
+list is also used by the `add` wizard to suggest available models.
 
 ---
 

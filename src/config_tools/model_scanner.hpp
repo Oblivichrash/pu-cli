@@ -5,21 +5,14 @@
 #include <vector>
 
 #include "pu/http_client.hpp"
+#include "config_tools/provider_registry.hpp"
 
 namespace pu::config_tools {
 
-// No-arg overloads use a real CurlHttpClient; the overloads taking
-// pu::http::HttpClient& exist so tests can inject mocks.
-std::vector<std::string> scanNvidiaNIM();
-std::vector<std::string> scanNvidiaNIM(pu::http::HttpClient& http);
-
-std::vector<std::string> scanOllama();
-std::vector<std::string> scanOllama(pu::http::HttpClient& http);
-
-std::vector<std::string> scanOpenAICompatible(const std::string& host,
-                                              const std::string& api_key);
-std::vector<std::string> scanOpenAICompatible(const std::string& host,
-                                              const std::string& api_key,
-                                              pu::http::HttpClient& http);
+// No-arg overload uses a real CurlHttpClient; the overload taking
+// pu::http::HttpClient& exists so tests can inject mocks.
+std::vector<std::string> scanProvider(const ProviderConfig& config);
+std::vector<std::string> scanProvider(const ProviderConfig& config,
+                                      pu::http::HttpClient& http);
 
 }  // namespace pu::config_tools

@@ -50,6 +50,7 @@ add_library(pu_config_tools STATIC
     src/config_tools/interactive_wizard.cpp
     src/config_tools/prompt_templates.cpp
     src/config_tools/model_scanner.cpp
+    src/config_tools/provider_registry.cpp
     src/config_tools/system_probe.cpp
 )
 target_include_directories(pu_config_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -12,6 +12,7 @@
 #include "pu/agent_config.hpp"
 #include "config_tools/agent_crud.hpp"
 #include "config_tools/model_scanner.hpp"
+#include "config_tools/provider_registry.hpp"
 #include "config_tools/system_probe.hpp"
 
 namespace {
@@ -29,7 +30,7 @@ void PrintUsage() {
             << "  probe                Show system and provider status\n"
             << "Options:\n"
             << "  --json               Output in JSON format (list, show, refresh-models, probe)\n"
-            << "  --provider=<name>    Only scan one provider: nim, ollama, or openai\n"
+            << "  --provider=<name>    Only scan one provider (see providers.json)\n"
             << "  -h, --help           Show this help message\n";
 }
 
@@ -38,20 +39,10 @@ struct ScanResult {
   std::string error;
 };
 
-ScanResult ScanOne(const std::string& provider) {
+ScanResult ScanOne(const pu::config_tools::ProviderConfig& config) {
   ScanResult result;
   try {
-    if (provider == "nim") {
-      result.models = pu::config_tools::scanNvidiaNIM();
-    } else if (provider == "ollama") {
-      result.models = pu::config_tools::scanOllama();
-    } else if (provider == "openai") {
-      const char* key = std::getenv("OPENAI_API_KEY");
-      result.models = pu::config_tools::scanOpenAICompatible(
-          "https://api.openai.com/v1", key ? key : "");
-    } else {
-      result.error = "unknown provider: " + provider;
-    }
+    result.models = pu::config_tools::scanProvider(config);
   } catch (const std::exception& e) {
     result.error = e.what();
   }
@@ -59,12 +50,22 @@ ScanResult ScanOne(const std::string& provider) {
 }
 
 int RefreshModels(const std::optional<std::string>& provider_opt, bool json_output) {
-  std::vector<std::string> providers = {"nim", "ollama", "openai"};
-  if (provider_opt) providers = {*provider_opt};
+  auto providers = pu::config_tools::LoadProviders();
+  if (provider_opt) {
+    std::vector<pu::config_tools::ProviderConfig> filtered;
+    for (const auto& p : providers) {
+      if (p.name == *provider_opt) filtered.push_back(p);
+    }
+    if (filtered.empty()) {
+      std::cerr << "unknown provider: " << *provider_opt << "\n";
+      return 1;
+    }
+    providers = std::move(filtered);
+  }
 
   std::vector<std::pair<std::string, ScanResult>> results;
   for (const auto& provider : providers) {
-    results.emplace_back(provider, ScanOne(provider));
+    results.emplace_back(provider.name, ScanOne(provider));
   }
 
   if (json_output) {
@@ -113,12 +114,17 @@ int Probe(bool json_output) {
   std::cout << "working_dir:     " << j["working_dir"].get<std::string>() << "\n";
   std::cout << "provider_status:\n";
   const auto& status = j["provider_status"];
-  std::cout << "  nim:    has_api_key="
-            << (status["nim"]["has_api_key"].get<bool>() ? "true" : "false") << "\n";
-  std::cout << "  ollama: is_running="
-            << (status["ollama"]["is_running"].get<bool>() ? "true" : "false") << "\n";
-  std::cout << "  openai: has_api_key="
-            << (status["openai"]["has_api_key"].get<bool>() ? "true" : "false") << "\n";
+  for (const auto& p : pu::config_tools::LoadProviders()) {
+    if (p.type == "ollama") {
+      std::cout << "  " << p.name << ": is_running="
+                << (status[p.name]["is_running"].get<bool>() ? "true" : "false")
+                << "\n";
+    } else {
+      std::cout << "  " << p.name << ": has_api_key="
+                << (status[p.name]["has_api_key"].get<bool>() ? "true" : "false")
+                << "\n";
+    }
+  }
   return 0;
 }
 
