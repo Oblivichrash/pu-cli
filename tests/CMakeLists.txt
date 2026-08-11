@@ -13,6 +13,8 @@ add_executable(pu_tests
     unit/test_command_router.cpp
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
+    unit/test_model_scanner.cpp
+    unit/test_system_probe.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

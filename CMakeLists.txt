@@ -44,11 +44,13 @@ target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include 
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
-# Config-tools library: agent CRUD, interactive wizard, prompt templates
+# Config-tools library: agent CRUD, interactive wizard, prompt templates, model scanning, system probe
 add_library(pu_config_tools STATIC
     src/config_tools/agent_crud.cpp
     src/config_tools/interactive_wizard.cpp
     src/config_tools/prompt_templates.cpp
+    src/config_tools/model_scanner.cpp
+    src/config_tools/system_probe.cpp
 )
 target_include_directories(pu_config_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_config_tools PUBLIC pu_agent nlohmann_json::nlohmann_json)

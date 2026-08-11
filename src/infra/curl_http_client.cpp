@@ -2,7 +2,6 @@
 #include "infra/curl_http_client.hpp"
 
 #include "pu/core/logging.hpp"
-
 #include "pu/infra/platform.hpp"
 #include "pu/error.hpp"
 
@@ -48,6 +47,36 @@ size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userd
   return ctx->cb(ptr, bytes);
 }
 
+void ThrowOnFailure(CURLcode res, long http_code, const std::string& response_body,
+                    std::string& error_detail) {
+  if (res != CURLE_OK) {
+    std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);
+    if (!response_body.empty()) {
+      detail += "\nResponse: " + response_body.substr(0, 1024);
+    }
+    error_detail = detail;
+    throw HttpError(detail);
+  }
+  if (http_code >= 400) {
+    std::string detail = "HTTP error " + std::to_string(http_code);
+    if (!response_body.empty()) {
+      detail += "\nResponse: " + response_body.substr(0, 1024);
+    }
+    error_detail = detail;
+    throw HttpError(detail);
+  }
+}
+
+void ApplyCommonOptions(CURL* handle) {
+  curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
+  curl_easy_setopt(handle, CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 1L);
+  curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 10L);
+  curl_easy_setopt(handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+  curl_easy_setopt(handle, CURLOPT_USERAGENT, "pu-cli/1.0");
+  curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
+}
+
 }  // namespace
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
@@ -61,9 +90,14 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   error_detail_.clear();
   response_body_.clear();
 
+  curl_easy_reset(handle_);
+
   curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(handle_, CURLOPT_POST, 1L);
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, body.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
+
+  ApplyCommonOptions(handle_);
 
   CurlSlist slist;
   for (const auto& h : headers) slist.append(h.c_str());
@@ -86,23 +120,44 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   spdlog::trace("HTTP {} {} {}ms", url, http_code, duration_ms);
   ClearLogDurationMs();
 
-  if (res != CURLE_OK) {
-    std::string detail = "CURL error " + std::to_string(res) + ": " + curl_easy_strerror(res);
-    if (!response_body_.empty()) {
-      detail += "\nResponse: " + response_body_.substr(0, 1024);
-    }
-    error_detail_ = detail;
-    throw HttpError(detail);
-  }
-  if (http_code >= 400) {
-    std::string detail = "HTTP error " + std::to_string(http_code);
-    if (!response_body_.empty()) {
-      detail += "\nResponse: " + response_body_.substr(0, 1024);
-    }
-    error_detail_ = detail;
-    throw HttpError(detail);
-  }
+  ThrowOnFailure(res, http_code, response_body_, error_detail_);
+}
+
+std::string CurlHttpClient::Get(const std::string& url,
+                                const std::vector<std::string>& headers) {
+  spdlog::trace("HTTP GET {}", url);
+
+  error_detail_.clear();
+  response_body_.clear();
+
   curl_easy_reset(handle_);
+
+  curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(handle_, CURLOPT_HTTPGET, 1L);
+  curl_easy_setopt(handle_, CURLOPT_POST, 0L);
+  curl_easy_setopt(handle_, CURLOPT_NOBODY, 0L);
+
+  ApplyCommonOptions(handle_);
+
+  CurlSlist slist;
+  for (const auto& h : headers) slist.append(h.c_str());
+  curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, slist.list);
+
+  WriteContext ctx{[](char*, size_t n) { return n; }, &response_body_};
+  curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION, WriteCallbackTrampoline);
+  curl_easy_setopt(handle_, CURLOPT_WRITEDATA, &ctx);
+  curl_easy_setopt(handle_, CURLOPT_NOPROGRESS, 0L);
+  curl_easy_setopt(handle_, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
+  curl_easy_setopt(handle_, CURLOPT_XFERINFODATA, this);
+
+  CURLcode res = curl_easy_perform(handle_);
+  long http_code = 0;
+  curl_easy_getinfo(handle_, CURLINFO_RESPONSE_CODE, &http_code);
+
+  spdlog::trace("HTTP {} {} bytes={}", url, http_code, response_body_.size());
+
+  ThrowOnFailure(res, http_code, response_body_, error_detail_);
+  return response_body_;
 }
 
 std::string CurlHttpClient::GetErrorDetail() const { return error_detail_; }

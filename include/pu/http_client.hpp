@@ -15,6 +15,8 @@ class HttpClient {
   virtual void PostStream(const std::string& url, const std::string& body,
                           const std::vector<std::string>& headers,
                           WriteCallback write_cb) = 0;
+  virtual std::string Get(const std::string& url,
+                          const std::vector<std::string>& headers = {}) = 0;
 };
 
 }  // namespace pu::http

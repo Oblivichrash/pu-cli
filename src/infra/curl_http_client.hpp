@@ -19,6 +19,9 @@ class CurlHttpClient : public HttpClient {
   void PostStream(const std::string& url, const std::string& body,
                   const std::vector<std::string>& headers, WriteCallback write_cb) override;
 
+  std::string Get(const std::string& url,
+                  const std::vector<std::string>& headers = {}) override;
+
   std::string GetErrorDetail() const;
 
  private:

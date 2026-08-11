@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "interactive_wizard.hpp"
 
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
 
+#include "model_scanner.hpp"
 #include "prompt_templates.hpp"
 
 namespace pu::config_tools {
@@ -67,6 +69,28 @@ std::vector<std::string> MultiSelect(const std::string& prompt,
   return selected;
 }
 
+// Live scans can fail (service down, missing key); fall back to manual entry.
+std::vector<std::string> FetchModels(const std::string& provider, const std::string& host,
+                                     const std::string& api_key) {
+  try {
+    if (provider == "nim") return scanNvidiaNIM();
+    if (provider == "ollama") return scanOllama();
+    return scanOpenAICompatible(host, api_key);
+  } catch (const std::exception& e) {
+    std::cerr << "Model scan failed: " << e.what() << "\n";
+    return {};
+  }
+}
+
+std::string PickModel(const std::string& provider, const std::string& host,
+                      const std::string& api_key) {
+  auto models = FetchModels(provider, host, api_key);
+  if (models.empty()) {
+    return ReadLine("Model name (no models discovered)");
+  }
+  return SelectFromList("Model", models, models[0]);
+}
+
 }  // unnamed namespace
 
 config::AgentEntry RunInteractiveWizard() {
@@ -84,28 +108,24 @@ config::AgentEntry RunInteractiveWizard() {
   std::vector<std::string> providers = {"nim", "ollama", "openai"};
   std::string provider = SelectFromList("Provider", providers, "ollama");
 
-  // Model selection (placeholder list)
-  std::vector<std::string> models;
+  // Backend config and live model scan
+  std::string api_key;
   if (provider == "nim") {
-    models = {"meta-llama-3.3-70b-instruct", "deepseek-r1", "qwen2.5-72b-instruct"};
-  } else if (provider == "ollama") {
-    models = {"qwen3.5:2b", "qwen3.5:4b", "llama3.2", "deepseek-r1:8b"};
-  } else {
-    models = {"gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"};
-  }
-  std::string model = SelectFromList("Model", models, models[0]);
-
-  // Backend config
-  if (provider == "openai") {
     entry.backend.type = config::BackendType::kOpenAI;
-    entry.backend.host = "https://api.openai.com/v1";
-    std::string api_key = ReadLine("API key");
-    if (!api_key.empty()) entry.backend.api_key = api_key;
-  } else {
+    entry.backend.host = "https://integrate.api.nvidia.com/v1";
+    if (const char* key = std::getenv("NVIDIA_API_KEY")) api_key = key;
+    if (api_key.empty()) std::cerr << "NVIDIA_API_KEY is not set; NIM scan may fail.\n";
+  } else if (provider == "ollama") {
     entry.backend.type = config::BackendType::kOllama;
     entry.backend.host = "http://localhost:11434";
+  } else {
+    entry.backend.type = config::BackendType::kOpenAI;
+    entry.backend.host = ReadLine("Host", "https://api.openai.com/v1");
+    api_key = ReadLine("API key");
   }
-  entry.backend.model = model;
+  if (!api_key.empty()) entry.backend.api_key = api_key;
+
+  entry.backend.model = PickModel(provider, entry.backend.host, api_key);
 
   // Tools multi-select
   std::vector<std::string> tool_options = {"execute_bash", "write_file", "ask_user"};
