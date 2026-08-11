@@ -212,7 +212,7 @@ TEST_CASE("Ask_user returns clarification JSON with question", "[builtin_tools]"
   REQUIRE(j["question"] == "Which directory should I target?");
 }
 
-TEST_CASE("Ask_user returns empty question when argument missing",
+TEST_CASE("Ask_user rejects missing or empty question",
           "[builtin_tools]") {
   AskUserTool tool;
   pu::ToolContext ctx;
@@ -222,8 +222,20 @@ TEST_CASE("Ask_user returns empty question when argument missing",
 
   auto j = nlohmann::json::parse(result);
   REQUIRE(j["success"] == false);
-  REQUIRE(j["error"] == "clarification_needed");
-  REQUIRE(j["question"] == "");
+  REQUIRE(j["error"] == "ask_user requires a non-empty 'question' string");
+}
+
+TEST_CASE("Ask_user rejects non-string question", "[builtin_tools]") {
+  AskUserTool tool;
+  pu::ToolContext ctx;
+
+  nlohmann::json args;
+  args["question"] = 123;
+  std::string result = tool.Execute(args, ctx);
+
+  auto j = nlohmann::json::parse(result);
+  REQUIRE(j["success"] == false);
+  REQUIRE(j["error"] == "ask_user requires a non-empty 'question' string");
 }
 
 TEST_CASE("Ask_user metadata exposes name, description, and schema",

@@ -110,6 +110,18 @@ The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==f
 
 This context is merged with the user‑defined `system_prompt` (if any) and prepended to the chat history on every request. This gives the model full awareness of its environment, dramatically reducing blind attempts.
 
+### ask_user Clarification
+
+`ask_user` is a built-in tool the model uses when it needs information from the
+user before continuing (see the Tool Use Guidelines in the static system
+context). It executes through the normal tool path: `AskUserTool` validates the
+`question` argument and returns a `clarification_needed` marker carrying the
+question. The executor recognizes the marker in the tool result, stops the
+loop, and returns the `question` as the final response without feeding the
+result back to the model. The assistant's tool call, the tool result, and the
+question are all recorded in the transcript, so the exchange survives session
+persistence and multi-turn context.
+
 ### Environment Probing
 
 `Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`, `uname -r`, and `which` to detect the OS and common tools (`bash`, `python3`, `gcc`, `git`, `curl`, `jq`). The result is cached and included in the system context.
@@ -128,7 +140,7 @@ major collaborator as a `unique_ptr` member:
 ```
 main()
  ├─ pu::Runtime runtime;
- ├─ RunAsk / RunChat(runtime)
+ ├─ RunChat(runtime)
  ├─ RunConfig(argc, argv)   // `pu config` — standalone, no Runtime
  └─ catch (std::exception&) → friendly message
 ```

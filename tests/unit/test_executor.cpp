@@ -229,4 +229,13 @@ TEST_CASE("Executor returns ask_user question without running other tools",
   REQUIRE(result.was_streamed == false);
   REQUIRE(result.has_error == false);
   REQUIRE(tracking_ptr->executions == 0);
+
+  // The exchange must be recorded so the next turn has context.
+  auto history = ws.GetHistory();
+  REQUIRE(history.size() == 4);  // user, assistant(tool call), tool, assistant(question)
+  REQUIRE(history[1].role == "assistant");
+  REQUIRE(history[2].role == "tool");
+  REQUIRE(history[2].tool_name == "ask_user");
+  REQUIRE(history[3].role == "assistant");
+  REQUIRE(history[3].content == "Should I overwrite the existing file?");
 }

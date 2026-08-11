@@ -251,14 +251,22 @@ std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ct
   (void)ctx;
   nlohmann::json result;
   result["success"] = false;
-  result["error"] = "clarification_needed";
 
   std::string question;
-  if (args.is_object() && args.contains("question")) {
+  if (args.is_object() && args.contains("question") && args["question"].is_string()) {
     question = args["question"].get<std::string>();
   }
-  result["question"] = question;
+  if (question.empty()) {
+    // An empty question would surface a blank prompt to the user. Return an
+    // error so the model can retry with a proper question.
+    result["error"] = "ask_user requires a non-empty 'question' string";
+    return result.dump();
+  }
 
+  // The executor recognizes this marker, surfaces `question` to the user, and
+  // stops the loop instead of feeding the result back to the model.
+  result["error"] = "clarification_needed";
+  result["question"] = question;
   return result.dump();
 }
 

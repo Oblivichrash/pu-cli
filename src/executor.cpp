@@ -197,6 +197,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   const int max_iterations = 20;
   int iteration = 0;
   bool hit_max_iterations = false;
+  bool stop_after_clarification = false;
 
   do {
     if (iteration >= max_iterations) {
@@ -265,15 +266,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     if (!collected_calls.empty()) {
-      for (const auto& call : collected_calls) {
-        if (call.name == "ask_user") {
-          result.final_response = call.arguments.value("question", "");
-          result.completed = true;
-          result.was_streamed = false;
-          return result;
-        }
-      }
-
       for (auto& tc : collected_calls) {
         if (tc.id.empty()) {
           tc.id = "call_" + std::to_string(++next_tool_call_id_);
@@ -332,9 +324,27 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         tool_msg.tool_name = call.name;
         tool_msg.tool_call_id = call.id;
         workspace.Append(tool_msg);
+
+        // ask_user is a clarification request, not a tool outcome: surface the
+        // question as the final response and stop the loop. The exchange is
+        // already in the transcript (assistant tool call + tool result), and
+        // the question is appended as the assistant turn by the caller.
+        if (call.name == "ask_user") {
+          try {
+            auto j = json::parse(tool_result);
+            if (j.value("error", "") == "clarification_needed") {
+              result.final_response = j.value("question", "");
+              result.was_streamed = false;
+              stop_after_clarification = true;
+              break;
+            }
+          } catch (const std::exception&) {
+            // Malformed result: let the model see the tool error and retry.
+          }
+        }
       }
     }
-  } while (tool_was_called);
+  } while (tool_was_called && !stop_after_clarification);
 
   if (result.final_response.empty()) {
     auto history = workspace.GetHistory();
