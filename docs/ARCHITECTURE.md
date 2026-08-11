@@ -28,7 +28,6 @@ pu-cli is built around four principles:
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
-| `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
 | `ConfigCli` | `pu config` CLI: agent CRUD (`list`/`show`/`add`/`remove`/`rename`/`set-default`), interactive wizard, `refresh-models`, `probe`; stateless free functions, no `Runtime` dependency |
 | `config_tools` | Implementation modules behind `pu config`: `AgentCrud` (config file mutation), `InteractiveWizard`, `PromptTemplates`, `ModelScanner` (NIM/Ollama/OpenAI-compatible), `SystemProbe` |
 
@@ -95,18 +94,16 @@ Every tool (`execute_bash`, `write_file`, MCP tools) returns a JSON object with 
 }
 ```
 
-The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==false`) and stores only that content in the transcript. The full JSON is not persisted, keeping history clean and human‑readable.
+The full JSON result is stored as the tool message in the transcript, giving the model the exact tool outcome on subsequent turns.
 
 ### System Context Injection
 
 `Executor` automatically builds a system message containing:
 
 - OS name and kernel version (probed once at startup)
-- Available system tools (detected via `which`)
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
-- Last known file paths (extracted from artifacts)
-- Recent tool executions (up to 2) with success/failure status and truncated output
+- Tool use guidelines (plan-first, targeted file reads, `ask_user` for clarification)
 
 This context is merged with the user‑defined `system_prompt` (if any) and prepended to the chat history on every request. This gives the model full awareness of its environment, dramatically reducing blind attempts.
 
@@ -124,7 +121,7 @@ persistence and multi-turn context.
 
 ### Environment Probing
 
-`Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`, `uname -r`, and `which` to detect the OS and common tools (`bash`, `python3`, `gcc`, `git`, `curl`, `jq`). The result is cached and included in the system context.
+`Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`/`uname -r` to detect the OS name and kernel version. The result is cached and included in the system context.
 
 ### Forbidden Patterns
 
@@ -297,7 +294,7 @@ src/
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.
-- Environment probing uses `uname` and `which`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
+- Environment probing uses `uname`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
 
 ---
 

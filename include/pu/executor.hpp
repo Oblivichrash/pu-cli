@@ -37,14 +37,12 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
 
-  static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
 
  private:
   struct ToolLoopResult {
     std::string final_response;
-    bool completed = true;
     int tool_call_count = 0;
     bool has_error = false;
     bool was_streamed = false;

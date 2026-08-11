@@ -21,18 +21,6 @@ void Memory::RemoveVar(const std::string& key) {
   variables_.erase(key);
 }
 
-void Memory::AddArtifact(const Artifact& artifact) {
-  artifacts_.push_back(artifact);
-}
-
-std::vector<Artifact> Memory::GetArtifacts() const {
-  return artifacts_;
-}
-
-void Memory::ClearArtifacts() {
-  artifacts_.clear();
-}
-
 nlohmann::json Memory::Serialize() const {
   nlohmann::json j;
   nlohmann::json vars_obj = nlohmann::json::object();

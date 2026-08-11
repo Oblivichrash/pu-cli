@@ -50,7 +50,7 @@ class Runtime {
   void RebuildToolbox(const config::AgentEntry& agent);
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
-  void RegisterBuiltinTools();
+  void RegisterBuiltinTools(const std::vector<std::string>& allowed_tools);
 
   bool is_initialized_ = false;
   bool is_running_ = false;

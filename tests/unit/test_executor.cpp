@@ -13,60 +13,6 @@
 
 using namespace pu;
 
-TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
-          "[executor]") {
-  nlohmann::json j;
-  j["success"] = true;
-  j["stdout"] = "hello world";
-  j["stderr"] = "";
-  j["error"] = "";
-  j["exit_code"] = 0;
-
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == "hello world");
-}
-
-TEST_CASE(
-    "ExtractToolResultContent parses failure JSON and returns error field",
-    "[executor]") {
-  nlohmann::json j;
-  j["success"] = false;
-  j["stdout"] = "";
-  j["stderr"] = "some stderr";
-  j["error"] = "Command failed (exit 1)";
-  j["exit_code"] = 1;
-
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == "Command failed (exit 1)");
-}
-
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for non-JSON input",
-    "[executor]") {
-  std::string raw = "plain text output";
-  std::string result = Executor::ExtractToolResultContent(raw);
-  REQUIRE(result == raw);
-}
-
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for JSON without success key",
-    "[executor]") {
-  nlohmann::json j;
-  j["other"] = "data";
-
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
-}
-
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for JSON array",
-    "[executor]") {
-  nlohmann::json j = nlohmann::json::array({"a", "b"});
-
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
-}
-
 TEST_CASE("BuildStaticSystemContext includes environment info",
           "[executor]") {
   Executor executor(nullptr);

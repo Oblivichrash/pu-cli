@@ -32,10 +32,6 @@ public:
   bool HasVar(const std::string& key) const;
   void RemoveVar(const std::string& key);
 
-  void AddArtifact(const Artifact& artifact);
-  std::vector<Artifact> GetArtifacts() const;
-  void ClearArtifacts();
-
   nlohmann::json Serialize() const;
   void Save(const std::filesystem::path& path) const;
   static std::shared_ptr<Workspace> Load(const std::filesystem::path& path);

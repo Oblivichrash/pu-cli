@@ -22,16 +22,6 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   REQUIRE(val->get<std::string>() == "bar");
 }
 
-TEST_CASE("Artifact operations", "[workspace]") {
-  Workspace ctx;
-  Artifact f;
-  f.type = Artifact::Type::kFilePath;
-  f.content = "/tmp/data.csv";
-  f.source = "user_input";
-  ctx.AddArtifact(f);
-  REQUIRE(ctx.GetArtifacts().size() == 1);
-}
-
 TEST_CASE("Transcript::Compact with defaults trims nothing under threshold", "[workspace]") {
   Transcript t;
   for (int i = 1; i <= 20; ++i) {

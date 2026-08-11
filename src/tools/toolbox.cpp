@@ -24,10 +24,6 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   tools_[name] = std::move(tool);
 }
 
-void Toolbox::RemoveTool(const std::string& name) {
-  tools_.erase(name);
-}
-
 Tool* Toolbox::GetTool(const std::string& name) const {
   auto it = tools_.find(name);
   if (it == tools_.end()) return nullptr;

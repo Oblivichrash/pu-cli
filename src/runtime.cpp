@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime.hpp"
 
+#include <algorithm>
 #include <iostream>
 
 #include <spdlog/spdlog.h>
@@ -57,7 +58,7 @@ void Runtime::Initialize(const std::string& config_path) {
     fallback_policy.forbidden_patterns = {};
     executor_->SetSecurityPolicy(fallback_policy);
     toolbox_ = std::make_unique<Toolbox>();
-    RegisterBuiltinTools();
+    RegisterBuiltinTools({});
     executor_->SetToolbox(toolbox_.get());
     spdlog::warn("No default agent found for security policy. Using permissive fallback.");
   }
@@ -226,12 +227,24 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
   }
 }
 
-void Runtime::RegisterBuiltinTools() {
-  toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      current_agent_config_.security.sandbox_root.empty() ? "."
-                                                          : current_agent_config_.security
-                                                                .sandbox_root));
-  toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+void Runtime::RegisterBuiltinTools(const std::vector<std::string>& allowed_tools) {
+  auto allowed = [&](const std::string& name) {
+    return allowed_tools.empty() ||
+           std::find(allowed_tools.begin(), allowed_tools.end(), name) !=
+               allowed_tools.end();
+  };
+
+  if (allowed("execute_bash")) {
+    toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
+        current_agent_config_.security.sandbox_root.empty() ? "."
+                                                            : current_agent_config_.security
+                                                                  .sandbox_root));
+  }
+  if (allowed("write_file")) {
+    toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+  }
+  // ask_user is a communication channel, not a sandbox capability, so it is
+  // always available regardless of the agent's tool whitelist.
   toolbox_->RegisterTool(std::make_unique<tools::AskUserTool>());
 }
 
@@ -240,7 +253,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 
   toolbox_ = std::make_unique<Toolbox>();
 
-  RegisterBuiltinTools();
+  RegisterBuiltinTools(agent.tools);
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
     if (!StartMCP(mcp_cfg)) {

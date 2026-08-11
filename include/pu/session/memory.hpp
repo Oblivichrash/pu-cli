@@ -30,10 +30,6 @@ public:
   bool HasVar(const std::string& key) const;
   void RemoveVar(const std::string& key);
 
-  void AddArtifact(const Artifact& artifact);
-  std::vector<Artifact> GetArtifacts() const;
-  void ClearArtifacts();
-
   nlohmann::json Serialize() const;
   static Memory Deserialize(const nlohmann::json& j);
 

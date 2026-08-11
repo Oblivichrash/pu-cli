@@ -85,20 +85,6 @@ void Workspace::RemoveVar(const std::string& key) {
   if (memory_) memory_->RemoveVar(key);
 }
 
-void Workspace::AddArtifact(const Artifact& artifact) {
-  if (!memory_) memory_ = std::make_unique<Memory>();
-  memory_->AddArtifact(artifact);
-}
-
-std::vector<Artifact> Workspace::GetArtifacts() const {
-  if (!memory_) return {};
-  return memory_->GetArtifacts();
-}
-
-void Workspace::ClearArtifacts() {
-  if (memory_) memory_->ClearArtifacts();
-}
-
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
   j["id"] = id_;

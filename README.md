@@ -108,7 +108,8 @@ by the `add` wizard to suggest available models.
 
 Tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones).
 
-- `tools` in `agents.json` filters built‑in tools.
+- `tools` in `agents.json` is a whitelist for built-in tools (`execute_bash`,
+  `write_file`); an empty list enables all. `ask_user` is always available.
 - MCP tools are exposed with a `mcp.<server>.<tool>` prefix.
 
 ### Tool Output Format
@@ -125,7 +126,7 @@ All tools now return structured JSON with the following fields:
 }
 ```
 
-This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript stores the extracted `stdout` or `error` content; the full JSON is not persisted.
+This allows the executor to distinguish success from failure and provide clear feedback to the model. The full JSON result is stored as the tool message in the transcript, so the model sees the exact outcome on later turns.
 
 ---
 

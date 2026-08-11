@@ -3,7 +3,6 @@
 #include "pu/infra/platform.hpp"
 
 #include "pu/core/logging.hpp"
-#include "pu/tools/tool_result.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -72,10 +71,6 @@ std::string OsKernelVersion() {
 }
 
 }  // namespace
-
-std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
-  return tools::ExtractToolResultContent(tool_result);
-}
 
 void Executor::ProbeStaticEnvironment() {
   if (static_env_info_.probed) return;

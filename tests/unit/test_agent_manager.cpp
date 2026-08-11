@@ -50,23 +50,3 @@ TEST_CASE("AgentManager GetAgentConfig finds entry by name", "[agent]") {
   const auto* not_found = manager.GetAgentConfig("nonexistent");
   REQUIRE(not_found == nullptr);
 }
-
-TEST_CASE("AgentManager confirmation callback works", "[agent]") {
-  AgentManager manager;
-
-  bool called = false;
-  manager.SetConfirmationCallback([&called](const ConfirmationRequest&) {
-    called = true;
-    return ConfirmationChoice::kApproveOnce;
-  });
-
-  auto cb = manager.GetConfirmationCallback();
-  REQUIRE(cb != nullptr);
-
-  ConfirmationRequest req;
-  req.description = "test";
-  req.highest_risk = pu::executor::RiskLevel::kSafe;
-  auto result = cb(req);
-  REQUIRE(called);
-  REQUIRE(result == ConfirmationChoice::kApproveOnce);
-}

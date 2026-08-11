@@ -36,17 +36,16 @@ ctest --test-dir build --output-on-failure
 
 ```
 src/
-  agent/         AgentManager (config metadata only)
-  app/           CLI, UI, session manager
-  core/          SummaryGenerator, ArtifactExtractor
-  executor/      Executor (stateless)
-  infra/         HTTP client, platform utils
-  llm/           Providers
+  app/           CLI entry (main), chat UI
+  config_tools/  `pu config`: agent CRUD, wizard, model scanner, system probe
+  core/          Logging
+  infra/         CurlHttpClient, platform utils
+  llm/           Providers, streaming parser
   mcp/           MCP transport, JSON-RPC client, high-level client
-  runtime/       Runtime, CommandRouter
   session/       Session, Workspace, Transcript, Memory
-  storage/       SessionStore
-  tools/         Toolbox, tools (including McpTool adapter)
+  tools/         Toolbox, built-in tools, MCP tool adapter
+  agent_config.cpp, agent_manager.cpp, command_router.cpp, config_cli.cpp,
+  executor.cpp, runtime.cpp, session_store.cpp
 include/pu/      Public headers
 tests/unit/      Unit tests
 ```
