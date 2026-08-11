@@ -6,6 +6,7 @@
 
 ## Commit Messages
 - Follow `type: description` (imperative mood, <72 chars).
+- Use a bullet list in the body to summarize key changes (`- Add ...`), matching existing history.
 
 ## Code Style
 - C++23 with Google C++ Style.

@@ -131,6 +131,13 @@ int RunConfig(int argc, char* argv[]) {
   }
 
   std::string subcmd = argv[1];
+
+  // `pu config --help` / `pu config -h` — help as first argument
+  if (subcmd == "-h" || subcmd == "--help") {
+    PrintUsage();
+    return 0;
+  }
+
   bool json_output = false;
   std::optional<std::string> provider_opt;
   std::vector<std::string> args;

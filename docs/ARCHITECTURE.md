@@ -29,6 +29,8 @@ pu-cli is built around four principles:
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
 | `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
+| `ConfigCli` | `pu config` CLI: agent CRUD (`list`/`show`/`add`/`remove`/`rename`/`set-default`), interactive wizard, `refresh-models`, `probe`; stateless free functions, no `Runtime` dependency |
+| `config_tools` | Implementation modules behind `pu config`: `AgentCrud` (config file mutation), `InteractiveWizard`, `PromptTemplates`, `ModelScanner` (NIM/Ollama/OpenAI-compatible), `SystemProbe` |
 
 ---
 
@@ -45,6 +47,35 @@ pu::RuntimeError : std::runtime_error
 
 `main()` wraps top-level dispatch in a `try/catch (const std::exception&)` so any
 `RuntimeError` is converted to a friendly fatal-error message.
+
+---
+
+## Configuration CLI (`pu config`)
+
+`pu config` manages `agents.json` without manual editing. It is deliberately
+kept independent of `Runtime`/`Executor`: `main()` dispatches `config` directly
+to `RunConfig()` (see [Runtime Lifecycle](#runtime-lifecycle--dependency-injection)),
+and every operation is a free function taking the resolved config path plus
+explicit collaborators — no global state.
+
+```
+main()
+ └─ config ──► RunConfig(argc, argv)
+                  ├─ list/show/add/remove/rename/set-default ──► AgentCrud + InteractiveWizard
+                  ├─ refresh-models ──► ModelScanner (HttpClient::Get)
+                  └─ probe ──► SystemProbe (HttpClient::Get)
+```
+
+- `AgentCrud` reads/writes `agents.json` (located via `FindConfigPath()`,
+  honoring `PU_AGENTS_CONFIG`/`PU_HOME`) and preserves unknown fields.
+- `ModelScanner` probes NVIDIA NIM (`NVIDIA_API_KEY`), Ollama
+  (`GET /api/tags`), and OpenAI-compatible endpoints (`OPENAI_API_KEY`).
+- `SystemProbe` reports OS, kernel, arch, working dir, and provider status.
+- Testability: scanning/probing functions have `HttpClient&` overloads so unit
+  tests inject `MockHttpClient`; the no-arg overloads construct
+  `CurlHttpClient` internally.
+- `HttpClient` gained a `Get()` method (blocking, returns body) in addition to
+  the existing `PostStream()`.
 
 ---
 
@@ -98,6 +129,7 @@ major collaborator as a `unique_ptr` member:
 main()
  ├─ pu::Runtime runtime;
  ├─ RunAsk / RunChat(runtime)
+ ├─ RunConfig(argc, argv)   // `pu config` — standalone, no Runtime
  └─ catch (std::exception&) → friendly message
 ```
 
@@ -209,6 +241,7 @@ include/pu/
 ├── runtime.hpp           # Runtime
 ├── executor.hpp          # Executor (stateless, with system context injection)
 ├── http_client.hpp       # HttpClient interface
+├── config_cli.hpp        # `pu config` CLI entry (RunConfig)
 ├── session_store.hpp     # SessionStore
 ├── cli.hpp, error.hpp, path_utils.hpp
 ├── core/                 # Logging
@@ -220,6 +253,8 @@ include/pu/
 
 src/
 ├── app/                  # CLI entry (main), UI helpers
+├── config_cli.cpp        # `pu config` subcommand dispatch
+├── config_tools/         # Agent CRUD, wizard, model scanner, system probe
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
@@ -239,6 +274,7 @@ src/
 - **New backend**: Implement `LLMProvider` and register in `Session::CreateProvider()`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
+- **New `pu config` subcommand**: Add handler in `src/config_cli.cpp`, implement the logic in `src/config_tools/`, update `PrintUsage()` and the README command table.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
 
 ---

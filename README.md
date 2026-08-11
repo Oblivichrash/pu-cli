@@ -17,7 +17,11 @@ cmake --build build -j$(nproc)
 
 ### Configure
 
-Create `agents.json` in current directory or `~/.pu/`:
+Create `agents.json` in current directory or `~/.pu/`, or let the interactive wizard scaffold it for you:
+
+```bash
+pu config add
+```
 
 ```json
 {
@@ -43,8 +47,15 @@ Create `agents.json` in current directory or `~/.pu/`:
 ### Usage
 
 ```bash
-./build/pu chat
+pu chat
 > /backend deepseek-pro    # switch to predefined agent
+```
+
+```bash
+pu config list           # list agents
+pu config add            # add an agent (interactive wizard)
+pu config refresh-models # scan providers for available models
+pu config probe          # system and provider status
 ```
 
 ---
@@ -63,6 +74,33 @@ Create `agents.json` in current directory or `~/.pu/`:
 | `/note add <text> \| /note show` | Add or show notes |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |
+
+---
+
+## Agent Configuration CLI (`pu config`)
+
+Manage `agents.json` without editing it by hand:
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all agents |
+| `show <name>` | Show agent details |
+| `add [name]` | Add a new agent (interactive wizard) |
+| `remove <name>` | Remove an agent |
+| `rename <old> <new>` | Rename an agent |
+| `set-default <name>` | Set the default agent |
+| `refresh-models` | Scan providers (`nim`, `ollama`, `openai`) for available models |
+| `probe` | Show system and provider status |
+
+Options:
+
+- `--json` — machine-readable output for `list`, `show`, `refresh-models`, `probe`.
+- `--provider=<name>` — restrict `refresh-models` to a single provider.
+- `-h`, `--help` — show usage.
+
+`refresh-models` uses `NVIDIA_API_KEY` and `OPENAI_API_KEY` when present, and
+reaches Ollama at `http://localhost:11434`. The scanned model list is also used
+by the `add` wizard to suggest available models.
 
 ---
 
@@ -187,6 +225,8 @@ This allows the executor to distinguish success from failure and provide clear f
 | `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_LOG_CONSOLE=0` | Disable console logging |
+| `NVIDIA_API_KEY` | API key for NVIDIA NIM (`pu config refresh-models`) |
+| `OPENAI_API_KEY` | API key for OpenAI-compatible endpoints (`pu config refresh-models`) |
 
 ### Logging
 
