@@ -60,7 +60,6 @@ Create `agents.json` in current directory or `~/.pu/`:
 | `/save [name]` | Save conversation |
 | `/load <id>` | Load conversation |
 | `/list` | List saved conversations |
-| `/export <id>` | Export conversation as Markdown |
 | `/note add <text> \| /note show` | Add or show notes |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |

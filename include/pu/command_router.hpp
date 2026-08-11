@@ -51,7 +51,6 @@ private:
   bool HandleSave(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleList(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleExport(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleNote(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
 

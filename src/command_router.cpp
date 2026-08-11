@@ -46,8 +46,6 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
   add("/save", &CommandRouter::HandleSave, "  /save [name]           Save conversation\n");
   add("/load", &CommandRouter::HandleLoad, "  /load <id>             Load conversation\n");
   add("/list", &CommandRouter::HandleList, "  /list                  List saved conversations\n");
-  add("/export", &CommandRouter::HandleExport,
-      "  /export <id>           Export conversation as Markdown\n");
   add("/note", &CommandRouter::HandleNote,
       "  /note add <text>       Add a note\n"
       "  /note show             Show notes\n");
@@ -267,37 +265,6 @@ bool CommandRouter::HandleList(const std::vector<std::string>& /*args*/, Session
     }
   }
   output = oss.str();
-  return true;
-}
-
-bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& /*session*/, std::string& output) {
-  if (RequireMinArgs(args, 1, FormatUsage("/export", "<id>"), output))
-    return true;
-
-  auto store = GetSessionStore();
-
-  try {
-    auto loaded = store.LoadSession(args[0]);
-    if (!loaded) {
-      output = "Error: session not found: " + args[0];
-      return true;
-    }
-
-    std::string filename = "conversation_" + args[0] + ".md";
-    std::ofstream out(filename);
-    if (!out) {
-      output = "Error: cannot write to " + filename;
-    } else {
-      out << "# Conversation: " << loaded->GetId() << "\n\n";
-      auto history = loaded->GetWorkspace().GetHistory();
-      for (const auto& msg : history) {
-        out << "**" << msg.role << "** (" << msg.timestamp << "):\n\n" << msg.content << "\n\n---\n\n";
-      }
-      output = "Exported to " + filename;
-    }
-  } catch (const std::exception& e) {
-    output = std::string("Error exporting conversation: ") + e.what();
-  }
   return true;
 }
 

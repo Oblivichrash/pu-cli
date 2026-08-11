@@ -104,9 +104,6 @@ TEST_CASE("CommandRouter validates arguments with RequireMinArgs", "[router]") {
   REQUIRE(f.Route("/load", output));
   REQUIRE(output == "Usage: /load <id>");
 
-  REQUIRE(f.Route("/export", output));
-  REQUIRE(output == "Usage: /export <id>");
-
   REQUIRE(f.Route("/note", output));
   REQUIRE(output == "Usage: /note add <text> | show");
 }

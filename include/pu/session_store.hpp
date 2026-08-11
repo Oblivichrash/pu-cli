@@ -26,8 +26,6 @@ public:
   void DeleteSession(const std::string& id);
   std::vector<SessionMetadata> ListAllMetadata() const;
 
-  // Export a session's conversation history as Markdown
-
 private:
   std::filesystem::path dir_;
   std::filesystem::path PathFor(const std::string& id) const;
