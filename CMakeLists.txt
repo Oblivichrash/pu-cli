@@ -44,22 +44,35 @@ target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include 
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
+# Config-tools library: agent CRUD, interactive wizard, prompt templates
+add_library(pu_config_tools STATIC
+    src/config_tools/agent_crud.cpp
+    src/config_tools/interactive_wizard.cpp
+    src/config_tools/prompt_templates.cpp
+)
+target_include_directories(pu_config_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(pu_config_tools PUBLIC pu_agent nlohmann_json::nlohmann_json)
+add_library(pu::config_tools ALIAS pu_config_tools)
+
 # CLI application: entry point, chat/ask/learn commands, UI helpers, session management
 add_executable(pu
     src/app/main.cpp
     src/app/cli.cpp
+    src/config_cli.cpp
 )
 target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
+target_link_libraries(pu PRIVATE pu_agent pu_config_tools pu_core spdlog::spdlog)
 
 # Compiler warnings
 if(MSVC)
     target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(pu_config_tools PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(pu_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_config_tools PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 

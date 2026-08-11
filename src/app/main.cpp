@@ -2,6 +2,7 @@
 #include "pu/cli.hpp"
 
 #include "pu/agent_manager.hpp"
+#include "pu/config_cli.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/runtime.hpp"
 
@@ -20,7 +21,8 @@ int main(int argc, char* argv[]) {
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
               << "Commands:\n  ask    Send a single prompt to a model\n"
-              << "  chat   Start interactive conversation\n";
+              << "  chat   Start interactive conversation\n"
+              << "  config Manage agent configuration\n";
     return 1;
   }
   std::string cmd = argv[1];
@@ -30,6 +32,7 @@ int main(int argc, char* argv[]) {
   try {
     if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1, runtime);
     if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1, runtime);
+    if (cmd == "config") return RunConfig(argc - 1, argv + 1);
     std::cerr << "Unknown command: " << cmd << '\n';
     return 1;
   } catch (const std::exception& e) {

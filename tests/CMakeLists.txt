@@ -5,6 +5,7 @@ add_executable(pu_tests
     unit/test_openai_backend.cpp
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
+    unit/test_config_crud.cpp
     unit/test_streaming_json_parser.cpp
     unit/test_workspace.cpp
     unit/test_command_execution.cpp
@@ -22,7 +23,7 @@ target_include_directories(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_agent pu_core
+    pu_agent pu_config_tools pu_core
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json
 )
