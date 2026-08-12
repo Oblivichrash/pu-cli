@@ -239,7 +239,6 @@ ChatResult OpenAIProvider::Chat(
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   std::ostringstream content_stream;
-  std::vector<ToolCall> collected_calls;
 
   llm::StreamingJsonParser parser(
     [&](std::string_view line) {
@@ -280,7 +279,6 @@ ChatResult OpenAIProvider::Chat(
   http_->PostStream(url, body, headers, write_cb);
 
   result.content = content_stream.str();
-  result.tool_calls = std::move(collected_calls);
   result.reasoning_content = current_reasoning_content_;
   return result;
 }

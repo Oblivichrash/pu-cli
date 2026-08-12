@@ -3,8 +3,6 @@
 #include "pu/error.hpp"
 #include <chrono>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -76,15 +74,6 @@ std::optional<nlohmann::json> Workspace::GetVar(const std::string& key) const {
   return memory_->GetVar(key);
 }
 
-bool Workspace::HasVar(const std::string& key) const {
-  if (!memory_) return false;
-  return memory_->HasVar(key);
-}
-
-void Workspace::RemoveVar(const std::string& key) {
-  if (memory_) memory_->RemoveVar(key);
-}
-
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
   j["id"] = id_;
@@ -107,32 +96,6 @@ nlohmann::json Workspace::Serialize() const {
   return j;
 }
 
-void Workspace::Save(const std::filesystem::path& path) const {
-  auto j = Serialize();
-  std::filesystem::create_directories(path.parent_path());
-  std::ofstream file(path);
-  if (file.is_open()) {
-    file << j.dump(2);
-  }
-}
-
-std::shared_ptr<Workspace> Workspace::Load(const std::filesystem::path& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    return nullptr;
-  }
-
-  nlohmann::json j;
-  try {
-    file >> j;
-  } catch (const std::exception&) {
-    return nullptr;
-  }
-
-  return Deserialize(j);
-}
-
-
 std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   auto ws = std::make_shared<Workspace>();
   ws->id_ = j.value("id", "");
@@ -154,11 +117,7 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
 }
 
 void Workspace::ClearHistory() {
-  if (!transcript_) {
-    transcript_ = std::make_unique<Transcript>();
-  } else {
-    transcript_ = std::make_unique<Transcript>(); // replace with empty
-  }
+  transcript_ = std::make_unique<Transcript>();
 }
 
 } // namespace pu

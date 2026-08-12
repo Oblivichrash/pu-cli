@@ -22,13 +22,10 @@ class CurlHttpClient : public HttpClient {
   std::string Get(const std::string& url,
                   const std::vector<std::string>& headers = {}) override;
 
-  std::string GetErrorDetail() const;
-
  private:
   CURL* handle_;
   std::function<bool()> interrupt_checker_;
   std::string response_body_;
-  std::string error_detail_;
   static int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                               curl_off_t ultotal, curl_off_t ulnow);
 };
@@ -37,7 +34,6 @@ struct CurlSlist {
   struct curl_slist* list = nullptr;
   ~CurlSlist();
   void append(const char* str);
-  operator struct curl_slist*() const { return list; }
 };
 
 }  // namespace pu::http

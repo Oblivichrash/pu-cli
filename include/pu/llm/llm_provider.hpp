@@ -37,9 +37,6 @@ struct ToolCall {
 
 struct ChatResult {
   std::string content;
-  std::vector<ToolCall> tool_calls;
-  int input_tokens = 0;
-  int output_tokens = 0;
   std::string reasoning_content;
 };
 

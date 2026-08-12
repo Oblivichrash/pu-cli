@@ -158,11 +158,9 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::Too
   }
 
   CommandExecutor executor(sandbox_root_);
-  auto risk = executor.AssessRisk(command);
-  if (risk.level == pu::executor::RiskLevel::kDangerous) {
-    return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
-  }
-
+  // Execute() assesses risk internally; the pre-check above duplicated the
+  // same pattern scan. The was_intercepted branch below stays as the single
+  // guard that reports hardcoded dangerous patterns as blocked.
   auto result = executor.Execute(command);
   if (result.was_intercepted) {
     return tools::MakeToolResultJson(false, "", "", "Blocked: " + result.intercept_reason, -1);

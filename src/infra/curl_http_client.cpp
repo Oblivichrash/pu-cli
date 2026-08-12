@@ -87,7 +87,7 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
 
   spdlog::trace("HTTP POST {} body_size={}", url, body.size());
 
-  error_detail_.clear();
+  std::string error_detail;
   response_body_.clear();
 
   curl_easy_reset(handle_);
@@ -120,14 +120,14 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
   spdlog::trace("HTTP {} {} {}ms", url, http_code, duration_ms);
   ClearLogDurationMs();
 
-  ThrowOnFailure(res, http_code, response_body_, error_detail_);
+  ThrowOnFailure(res, http_code, response_body_, error_detail);
 }
 
 std::string CurlHttpClient::Get(const std::string& url,
                                 const std::vector<std::string>& headers) {
   spdlog::trace("HTTP GET {}", url);
 
-  error_detail_.clear();
+  std::string error_detail;
   response_body_.clear();
 
   curl_easy_reset(handle_);
@@ -156,10 +156,8 @@ std::string CurlHttpClient::Get(const std::string& url,
 
   spdlog::trace("HTTP {} {} bytes={}", url, http_code, response_body_.size());
 
-  ThrowOnFailure(res, http_code, response_body_, error_detail_);
+  ThrowOnFailure(res, http_code, response_body_, error_detail);
   return response_body_;
 }
-
-std::string CurlHttpClient::GetErrorDetail() const { return error_detail_; }
 
 }  // namespace pu::http

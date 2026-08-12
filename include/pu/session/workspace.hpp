@@ -3,7 +3,6 @@
 #include <memory>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include <filesystem>
 #include "pu/session/transcript.hpp"
 #include "pu/session/memory.hpp"
 
@@ -15,7 +14,6 @@ public:
   explicit Workspace(const std::string& id);
 
   const std::string& GetId() const { return id_; }
-  void SetId(const std::string& id) { id_ = id; }
 
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
@@ -29,12 +27,7 @@ public:
 
   void SetVar(const std::string& key, const nlohmann::json& value);
   std::optional<nlohmann::json> GetVar(const std::string& key) const;
-  bool HasVar(const std::string& key) const;
-  void RemoveVar(const std::string& key);
-
   nlohmann::json Serialize() const;
-  void Save(const std::filesystem::path& path) const;
-  static std::shared_ptr<Workspace> Load(const std::filesystem::path& path);
   static std::shared_ptr<Workspace> Deserialize(const nlohmann::json& j);
 
 private:
