@@ -69,9 +69,6 @@ void ThrowOnFailure(CURLcode res, long http_code, const std::string& response_bo
 
 void ApplyCommonOptions(CURL* handle) {
   curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
-  curl_easy_setopt(handle, CURLOPT_TIMEOUT, 30L);
-  curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 1L);
-  curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 10L);
   curl_easy_setopt(handle, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
   curl_easy_setopt(handle, CURLOPT_USERAGENT, "pu-cli/1.0");
   curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
