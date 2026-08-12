@@ -85,12 +85,9 @@ nlohmann::json Workspace::Serialize() const {
   }
 
   if (memory_) {
-    auto mem_j = memory_->Serialize();
-    j["variables"] = mem_j["variables"];
-    j["artifacts"] = mem_j["artifacts"];
+    j["variables"] = memory_->Serialize()["variables"];
   } else {
     j["variables"] = nlohmann::json::object();
-    j["artifacts"] = nlohmann::json::array();
   }
 
   return j;
@@ -107,10 +104,8 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
 
   ws->memory_ = std::make_unique<Memory>();
   nlohmann::json mem_j;
+  // Legacy "artifacts"/"facts" keys from pre-v0.4 sessions are ignored.
   mem_j["variables"] = j.value("variables", nlohmann::json::object());
-  // "artifacts" is the current key; "facts" remains as a legacy fallback.
-  mem_j["artifacts"] = j.contains("artifacts")
-      ? j["artifacts"] : j.value("facts", nlohmann::json::array());
   *ws->memory_ = Memory::Deserialize(mem_j);
 
   return ws;

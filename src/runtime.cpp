@@ -9,7 +9,6 @@
 #include "infra/curl_http_client.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/error.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/builtin_tools.hpp"
@@ -82,10 +81,6 @@ void Runtime::Shutdown() {
 std::string Runtime::CreateSession(const std::string& owner_id,
                                    const std::string& agent_name,
                                    const config::BackendConfig* backend) {
-  if (sessions_.size() >= static_cast<size_t>(max_sessions_)) {
-    throw RuntimeError("Maximum sessions reached");
-  }
-
   auto id = "session_" +
             std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
   auto session = std::make_shared<Session>(id, owner_id);

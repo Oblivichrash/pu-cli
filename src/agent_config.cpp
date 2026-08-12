@@ -62,7 +62,6 @@ BackendConfig ParseBackendConfig(const json& j) {
   if (j.contains("api_key")) cfg.api_key = ExpandEnvVars(j["api_key"].get<std::string>());
   cfg.temperature = j.value("temperature", 0.7f);
   if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
-  cfg.parameters_as_string = j.value("parameters_as_string", false);
   cfg.max_tokens = j.value("max_tokens", 2048);
   cfg.enable_thinking = j.value("enable_thinking", true);
   return cfg;
@@ -123,17 +122,6 @@ AgentEntry ParseAgentEntry(const json& j) {
   return entry;
 }
 
-RuntimeLimits ParseRuntimeLimits(const json& j) {
-  RuntimeLimits limits;
-  if (j.contains("max_history_messages") && j["max_history_messages"].is_number())
-    limits.max_history_messages = j["max_history_messages"];
-  if (j.contains("max_branches") && j["max_branches"].is_number())
-    limits.max_branches = j["max_branches"];
-  if (j.contains("max_sessions") && j["max_sessions"].is_number())
-    limits.max_sessions = j["max_sessions"];
-  return limits;
-}
-
 } // unnamed namespace
 
 std::string FindConfigPath() {
@@ -157,9 +145,6 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
     throw pu::Error("Missing default_agent field");
   result.default_agent = j["default_agent"];
 
-  if (j.contains("limits") && j["limits"].is_object())
-    result.limits = ParseRuntimeLimits(j["limits"]);
-
   if (!j.contains("agents") || !j["agents"].is_array())
     throw pu::Error("Missing agents array");
   for (const auto& item : j["agents"])
@@ -173,12 +158,6 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
-  json limits;
-  limits["max_history_messages"] = cfg.limits.max_history_messages;
-  limits["max_branches"] = cfg.limits.max_branches;
-  limits["max_sessions"] = cfg.limits.max_sessions;
-  j["limits"] = limits;
-
   json agents_array = json::array();
   for (const auto& entry : cfg.agents) {
     json item;
@@ -244,8 +223,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
       openai_cfg.system_prompt = cfg.system_prompt;
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
-      openai_cfg.parameters_as_string = cfg.parameters_as_string;
-      openai_cfg.max_tokens = cfg.max_tokens;
+        openai_cfg.max_tokens = cfg.max_tokens;
       openai_cfg.enable_thinking = cfg.enable_thinking;
       return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
     }

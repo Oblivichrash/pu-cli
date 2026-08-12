@@ -29,7 +29,7 @@ json AgentToJson(const config::AgentEntry& entry) {
   security["forbidden_patterns"] = entry.security.forbidden_patterns;
   j["security"] = security;
 
-  // Reuses config::to_json so max_tokens/parameters_as_string/system_prompt are
+  // Reuses config::to_json so max_tokens/system_prompt/enable_thinking are
   // never dropped when listing or showing agents.
   j["backend"] = entry.backend;
 

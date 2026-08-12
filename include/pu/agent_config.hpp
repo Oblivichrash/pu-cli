@@ -24,7 +24,6 @@ struct McpServerConfig {
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ToolCallStyle { kDefault };
 
 struct SecurityPolicy {
   std::string sandbox_root;
@@ -40,8 +39,6 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-  ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
-  bool parameters_as_string = false;
   int max_tokens = 2048;
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
@@ -57,10 +54,8 @@ inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
     {"api_key", cfg.api_key.value_or("")},
     {"temperature", cfg.temperature},
     {"max_tokens", cfg.max_tokens},
-    {"parameters_as_string", cfg.parameters_as_string},
     {"system_prompt", cfg.system_prompt.value_or("")},
     {"enable_thinking", cfg.enable_thinking},
-    {"tool_call_style", "default"},
   };
 }
 
@@ -75,7 +70,6 @@ inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
   }
   cfg.temperature = j.value("temperature", 0.7f);
   cfg.max_tokens = j.value("max_tokens", 2048);
-  cfg.parameters_as_string = j.value("parameters_as_string", false);
   // Old session files may lack these fields; defaults keep them loadable.
   if (j.contains("system_prompt") && j["system_prompt"].is_string()) {
     auto sp = j["system_prompt"].get<std::string>();
@@ -84,7 +78,6 @@ inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
     cfg.system_prompt = std::nullopt;
   }
   cfg.enable_thinking = j.value("enable_thinking", true);
-  cfg.tool_call_style = ToolCallStyle::kDefault;
 }
 
 struct HistoryCompactionConfig {
@@ -104,16 +97,9 @@ struct AgentEntry {
   HistoryCompactionConfig compaction;
 };
 
-struct RuntimeLimits {
-  size_t max_history_messages = 10000;
-  size_t max_branches = 20;
-  size_t max_sessions = 10;
-};
-
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
-  RuntimeLimits limits;
 };
 
 std::string FindConfigPath();

@@ -66,7 +66,6 @@ class Runtime {
   std::map<std::string, std::shared_ptr<Session>> sessions_;
   std::string default_session_id_;
   config::BackendConfig default_backend_config_;
-  int max_sessions_ = 10;
 
   std::string default_agent_override_;
 

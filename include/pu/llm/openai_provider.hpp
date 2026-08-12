@@ -19,7 +19,6 @@ class OpenAIProvider : public LLMProvider {
     float temperature = 0.7f;
     std::optional<std::string> system_prompt;
     std::string api_key;
-    bool parameters_as_string = false;
     int max_tokens = 2048;
     bool enable_thinking = true;   // for DeepSeek/vLLM
   };
