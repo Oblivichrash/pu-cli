@@ -58,11 +58,11 @@ add_library(pu::config_tools ALIAS pu_config_tools)
 
 # CLI application: entry point, chat/ask/learn commands, UI helpers, session management
 add_executable(pu
-    src/app/main.cpp
-    src/app/cli.cpp
+    src/main.cpp
+    src/cli.cpp
     src/config_cli.cpp
 )
-target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu PRIVATE pu_agent pu_config_tools pu_core spdlog::spdlog)
 
 # Compiler warnings

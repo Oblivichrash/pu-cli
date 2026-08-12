@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/mcp_tool.hpp"
 
-#include "pu/tools/tool_result.hpp"
 #include <spdlog/spdlog.h>
 
 namespace pu::tools {

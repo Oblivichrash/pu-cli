@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/logging.hpp"
+#include "pu/path_utils.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
@@ -137,9 +138,8 @@ void InitLogging(const std::string& log_level) {
     sinks.push_back(console_sink);
   }
 
-  std::filesystem::path log_dir = std::getenv("HOME")
-      ? std::filesystem::path(std::getenv("HOME")) / ".pu" / "logs"
-      : "/tmp/pu_logs";
+  // Honor PU_HOME and project .pu/ like every other data directory.
+  std::filesystem::path log_dir = pu::path::GetDataDir() / "logs";
   std::filesystem::create_directories(log_dir);
   auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
       (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);

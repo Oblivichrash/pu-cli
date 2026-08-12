@@ -30,14 +30,35 @@ class Tool {
 class Toolbox {
  public:
   void RegisterTool(std::unique_ptr<Tool> tool);
-  Tool* GetTool(const std::string& name) const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
   std::string ExecuteTool(const std::string& name,
                           const nlohmann::json& args,
                           ToolContext& ctx);
 
  private:
+  // Lookup helper used only by ExecuteTool.
+  Tool* GetTool(const std::string& name) const;
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
 };
 
 }  // namespace pu
+
+namespace pu::tools {
+
+// Canonical structured result for every tool (built-in and MCP); the executor
+// stores this JSON verbatim in the transcript so the model sees the outcome.
+inline std::string MakeToolResultJson(bool success,
+                                      const std::string& stdout_content,
+                                      const std::string& stderr_content,
+                                      const std::string& error,
+                                      int exit_code) {
+  nlohmann::json j;
+  j["success"] = success;
+  j["stdout"] = stdout_content;
+  j["stderr"] = stderr_content;
+  j["error"] = error;
+  j["exit_code"] = exit_code;
+  return j.dump();
+}
+
+}  // namespace pu::tools

@@ -31,7 +31,7 @@ pu-cli is built around four principles:
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
 | `ConfigCli` | `pu config` CLI: agent CRUD (`list`/`show`/`add`/`remove`/`rename`/`set-default`), interactive wizard, `refresh-models`, `probe`; stateless free functions, no `Runtime` dependency |
-| `config_tools` | Implementation modules behind `pu config`: `AgentCrud` (config file mutation), `InteractiveWizard`, `PromptTemplates`, `ModelScanner` (NIM/Ollama/OpenAI-compatible), `SystemProbe` |
+| `config_tools` | Implementation modules behind `pu config`: `AgentCrud` (config file mutation), `InteractiveWizard`, `ModelScanner` (NIM/Ollama/OpenAI-compatible), `SystemProbe` |
 
 ---
 
@@ -261,10 +261,10 @@ include/pu/
 ├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
 ├── mcp/                  # McpClient, JsonRpcClient, StdioTransport
 ├── session/              # Session, Workspace, Transcript, Memory
-└── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
+└── tools/                # Toolbox, built-in tools, MCP adapter
 
 src/
-├── app/                  # CLI entry (main), UI helpers
+├── main.cpp, cli.cpp     # CLI entry, chat UI
 ├── config_cli.cpp        # `pu config` subcommand dispatch
 ├── config_tools/         # Agent CRUD, wizard, model scanner, system probe
 ├── agent_config.cpp, agent_manager.cpp

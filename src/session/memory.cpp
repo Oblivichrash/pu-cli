@@ -13,14 +13,6 @@ std::optional<nlohmann::json> Memory::GetVar(const std::string& key) const {
   return std::optional<nlohmann::json>(it->second);
 }
 
-bool Memory::HasVar(const std::string& key) const {
-  return variables_.find(key) != variables_.end();
-}
-
-void Memory::RemoveVar(const std::string& key) {
-  variables_.erase(key);
-}
-
 nlohmann::json Memory::Serialize() const {
   nlohmann::json j;
   nlohmann::json vars_obj = nlohmann::json::object();

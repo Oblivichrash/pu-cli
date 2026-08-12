@@ -38,8 +38,9 @@ private:
   static Registry BuildRegistry();
   static const Registry kRegistry;
 
-  bool RequireMinArgs(const std::vector<std::string>& args, size_t min,
-                      const std::string& usage, std::string& output) const;
+  // Returns true when args are too few and usage was written to output.
+  bool OutputUsageIfTooFewArgs(const std::vector<std::string>& args, size_t min,
+                               const std::string& usage, std::string& output) const;
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 

@@ -14,7 +14,7 @@
 
 namespace pu {
 
-bool CommandRouter::RequireMinArgs(const std::vector<std::string>& args, size_t min,
+bool CommandRouter::OutputUsageIfTooFewArgs(const std::vector<std::string>& args, size_t min,
                                    const std::string& usage, std::string& output) const {
   if (args.size() < min) {
     output = usage;
@@ -125,7 +125,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     return true;
   }
 
-  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
+  if (OutputUsageIfTooFewArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
   config::BackendConfig new_cfg;
@@ -223,7 +223,7 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output) {
-  if (RequireMinArgs(args, 1, FormatUsage("/load", "<id>"), output))
+  if (OutputUsageIfTooFewArgs(args, 1, FormatUsage("/load", "<id>"), output))
     return true;
 
   auto& store = runtime_.GetSessionStore();

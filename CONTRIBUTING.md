@@ -36,14 +36,14 @@ ctest --test-dir build --output-on-failure
 
 ```
 src/
-  app/           CLI entry (main), chat UI
-  config_tools/  `pu config`: agent CRUD, wizard, model scanner, system probe
-  core/          Logging
-  infra/         CurlHttpClient, platform utils
-  llm/           Providers, streaming parser
-  mcp/           MCP transport, JSON-RPC client, high-level client
-  session/       Session, Workspace, Transcript, Memory
-  tools/         Toolbox, built-in tools, MCP tool adapter
+  main.cpp, cli.cpp  CLI entry, chat UI
+  config_tools/      `pu config`: agent CRUD, wizard, model scanner, system probe
+  core/              Logging
+  infra/             CurlHttpClient, platform utils
+  llm/               Providers, streaming parser
+  mcp/               MCP transport, JSON-RPC client, high-level client
+  session/           Session, Workspace, Transcript, Memory
+  tools/             Toolbox, built-in tools, MCP tool adapter
   agent_config.cpp, agent_manager.cpp, command_router.cpp, config_cli.cpp,
   executor.cpp, runtime.cpp, session_store.cpp
 include/pu/      Public headers
