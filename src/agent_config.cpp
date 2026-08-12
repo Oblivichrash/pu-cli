@@ -193,16 +193,8 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
     security["forbidden_patterns"] = entry.security.forbidden_patterns;
     item["security"] = security;
 
-    json backend;
-    backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
-    backend["host"] = entry.backend.host;
-    backend["model"] = entry.backend.model;
-    if (entry.backend.api_key) backend["api_key"] = *entry.backend.api_key;
-    backend["temperature"] = entry.backend.temperature;
-    if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
-    backend["enable_thinking"] = entry.backend.enable_thinking;
-    backend["tool_call_style"] = "default";
-    item["backend"] = backend;
+    // Reuses the to_json above so no backend field is dropped on config rewrite.
+    item["backend"] = entry.backend;
 
     if (!entry.mcp_servers.empty()) {
       json mcp_array = json::array();

@@ -21,8 +21,7 @@ void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
 
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
-  bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
-  pu::InitLogging(log_level, trace);
+  pu::InitLogging(log_level);
 
   auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
@@ -144,6 +143,13 @@ bool Runtime::DestroySession(const std::string& id) {
   sessions_.erase(id);
   session_store_->DeleteSession(id);
   return true;
+}
+
+SessionStore& Runtime::GetSessionStore() {
+  // CommandRouter handlers can be invoked before Initialize() (unit tests);
+  // create the store on first use so /save,/load,/list always have a target.
+  if (!session_store_) session_store_ = std::make_unique<SessionStore>();
+  return *session_store_;
 }
 
 std::shared_ptr<Session> Runtime::GetDefaultSession() {

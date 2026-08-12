@@ -5,15 +5,10 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "pu/agent_config.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::mcp {
-
-struct McpServerConfig {
-    std::string name;
-    std::string command;
-    std::vector<std::string> args;
-};
 
 class McpClient {
 public:

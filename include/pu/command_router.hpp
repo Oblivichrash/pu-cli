@@ -43,8 +43,6 @@ private:
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
-  SessionStore GetSessionStore() const;
-
   bool HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);

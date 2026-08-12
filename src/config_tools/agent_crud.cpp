@@ -29,15 +29,9 @@ json AgentToJson(const config::AgentEntry& entry) {
   security["forbidden_patterns"] = entry.security.forbidden_patterns;
   j["security"] = security;
 
-  json backend;
-  backend["type"] = (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama";
-  backend["host"] = entry.backend.host;
-  backend["model"] = entry.backend.model;
-  if (entry.backend.api_key) backend["api_key"] = *entry.backend.api_key;
-  backend["temperature"] = entry.backend.temperature;
-  if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
-  backend["enable_thinking"] = entry.backend.enable_thinking;
-  j["backend"] = backend;
+  // Reuses config::to_json so max_tokens/parameters_as_string/system_prompt are
+  // never dropped when listing or showing agents.
+  j["backend"] = entry.backend;
 
   return j;
 }

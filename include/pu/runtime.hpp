@@ -36,6 +36,10 @@ class Runtime {
   std::vector<std::string> ListSessions() const;
   bool DestroySession(const std::string& id);
 
+  // Single store instance shared by Runtime autosave and the /save,/load,/list
+  // command handlers, so all persistence goes through one directory.
+  SessionStore& GetSessionStore();
+
   std::shared_ptr<Session> GetDefaultSession();
 
   bool ProcessInput(const std::string& session_id, const std::string& input,

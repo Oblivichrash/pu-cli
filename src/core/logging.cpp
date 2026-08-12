@@ -115,7 +115,7 @@ std::unique_ptr<spdlog::formatter> JsonLogFormatter::clone() const {
   return std::make_unique<JsonLogFormatter>();
 }
 
-void InitLogging(const std::string& log_level, bool /*trace_enabled*/) {
+void InitLogging(const std::string& log_level) {
   spdlog::level::level_enum level = spdlog::level::info;
   if (!log_level.empty()) {
     if (log_level == "trace") level = spdlog::level::trace;

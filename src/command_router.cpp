@@ -2,7 +2,6 @@
 #include "pu/command_router.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session_store.hpp"
-#include "pu/path_utils.hpp"
 #include "pu/runtime.hpp"
 
 #include <algorithm>
@@ -26,10 +25,6 @@ bool CommandRouter::RequireMinArgs(const std::vector<std::string>& args, size_t 
 
 std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string& usage) const {
   return "Usage: " + cmd + " " + usage;
-}
-
-SessionStore CommandRouter::GetSessionStore() const {
-  return SessionStore(pu::path::GetDataDir() / "sessions");
 }
 
 CommandRouter::Registry CommandRouter::BuildRegistry() {
@@ -203,7 +198,7 @@ bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& se
     save_name = ss.str();
   }
 
-  auto store = GetSessionStore();
+  auto& store = runtime_.GetSessionStore();
 
   auto session_copy = Session(save_name, "cli");
   auto history = session.GetWorkspace().GetHistory();
@@ -231,7 +226,7 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
   if (RequireMinArgs(args, 1, FormatUsage("/load", "<id>"), output))
     return true;
 
-  auto store = GetSessionStore();
+  auto& store = runtime_.GetSessionStore();
 
   try {
     auto loaded = store.LoadSession(args[0]);
@@ -252,7 +247,7 @@ bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& se
 }
 
 bool CommandRouter::HandleList(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
-  auto store = GetSessionStore();
+  auto& store = runtime_.GetSessionStore();
   auto metadata = store.ListAllMetadata();
 
   std::ostringstream oss;

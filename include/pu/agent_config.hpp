@@ -10,7 +10,16 @@
 
 #include "pu/llm/llm_provider.hpp"
 #include "pu/http_client.hpp"
-#include "pu/mcp/mcp_client.hpp"
+
+// MCP servers are configured per-agent; the struct lives here (not in the MCP
+// client header) so config parsing never drags in the MCP/LLM stack.
+namespace pu::mcp {
+struct McpServerConfig {
+    std::string name;
+    std::string command;
+    std::vector<std::string> args;
+};
+}  // namespace pu::mcp
 
 namespace pu::config {
 
@@ -38,6 +47,8 @@ struct BackendConfig {
 };
 
 // Keeps the old SessionBackendConfig JSON format (type as string, api_key as string).
+// This is the single serializer for BackendConfig: agents.json writes (AgentCrud,
+// SaveAgentsConfig) and session persistence all reuse it so no field is dropped.
 inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
   j = nlohmann::json{
     {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
@@ -47,6 +58,9 @@ inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
     {"temperature", cfg.temperature},
     {"max_tokens", cfg.max_tokens},
     {"parameters_as_string", cfg.parameters_as_string},
+    {"system_prompt", cfg.system_prompt.value_or("")},
+    {"enable_thinking", cfg.enable_thinking},
+    {"tool_call_style", "default"},
   };
 }
 
@@ -62,10 +76,15 @@ inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
   cfg.temperature = j.value("temperature", 0.7f);
   cfg.max_tokens = j.value("max_tokens", 2048);
   cfg.parameters_as_string = j.value("parameters_as_string", false);
-  // The following fields may not be present in old session files; defaults are fine.
-  cfg.system_prompt = std::nullopt;
+  // Old session files may lack these fields; defaults keep them loadable.
+  if (j.contains("system_prompt") && j["system_prompt"].is_string()) {
+    auto sp = j["system_prompt"].get<std::string>();
+    cfg.system_prompt = sp.empty() ? std::optional<std::string>{} : sp;
+  } else {
+    cfg.system_prompt = std::nullopt;
+  }
+  cfg.enable_thinking = j.value("enable_thinking", true);
   cfg.tool_call_style = ToolCallStyle::kDefault;
-  cfg.enable_thinking = true;
 }
 
 struct HistoryCompactionConfig {

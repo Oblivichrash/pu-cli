@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session_store.hpp"
 #include "pu/error.hpp"
+#include "pu/path_utils.hpp"
 #include <spdlog/spdlog.h>
 #include <fstream>
 
@@ -8,9 +9,9 @@ namespace pu {
 
 SessionStore::SessionStore(const std::filesystem::path& storage_dir) {
   if (storage_dir.empty()) {
-    // Use default path
-    auto home = std::getenv("HOME") ? std::getenv("HOME") : ".";
-    dir_ = std::filesystem::path(home) / ".pu" / "sessions";
+    // Default path honors PU_HOME and project .pu/ like every other data dir,
+    // so Runtime autosave and /save,/load,/list cannot diverge.
+    dir_ = pu::path::GetDataDir() / "sessions";
   } else {
     dir_ = storage_dir;
   }
