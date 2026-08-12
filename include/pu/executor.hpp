@@ -37,7 +37,6 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider);
 
-  const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
 
  private:

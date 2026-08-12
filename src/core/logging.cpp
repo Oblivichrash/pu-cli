@@ -88,8 +88,6 @@ std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) {
 void SetLogSessionId(const std::string& session_id) { g_session_id = session_id; }
 void ClearLogSessionId() { g_session_id.clear(); }
 void BeginRequest() { g_request_id = GenerateUuid(); }
-void SetLogRequestId(const std::string& request_id) { g_request_id = request_id; }
-void ClearLogRequestId() { g_request_id.clear(); }
 void SetLogToolName(const std::string& tool_name) { g_tool_name = tool_name; }
 void ClearLogToolName() { g_tool_name.clear(); }
 void SetLogDurationMs(int64_t duration_ms) { g_duration_ms = duration_ms; }

@@ -127,7 +127,12 @@ AgentEntry ParseAgentEntry(const json& j) {
 std::string FindConfigPath() {
   if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
   if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  throw pu::Error("Configuration file not found. Set PU_AGENTS_CONFIG or place agents.json in current directory.");
+  if (const char* home = std::getenv("HOME")) {
+    auto user_cfg = std::filesystem::path(home) / ".pu" / "agents.json";
+    if (std::filesystem::exists(user_cfg)) return user_cfg.string();
+  }
+  throw pu::Error("Configuration file not found. Set PU_AGENTS_CONFIG or place "
+                  "agents.json in the current directory or ~/.pu/.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {

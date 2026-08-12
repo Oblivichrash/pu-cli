@@ -12,9 +12,9 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   ctx.Append("assistant", "Hi there!");
 
   REQUIRE(ctx.HistorySize() == 2);
-  auto recent = ctx.Recent(1);
-  REQUIRE(recent.size() == 1);
-  REQUIRE(recent[0].role == "assistant");
+  auto history = ctx.GetHistory();
+  REQUIRE(history.size() == 2);
+  REQUIRE(history[1].role == "assistant");
 
   ctx.SetVar("foo", nlohmann::json("bar"));
   auto val = ctx.GetVar("foo");

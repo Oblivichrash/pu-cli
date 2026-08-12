@@ -21,9 +21,9 @@ public:
     bool Connect();
     void Disconnect();
 
-    virtual std::vector<ToolDefinition> ListTools();
-    virtual std::string CallTool(const std::string& name, const nlohmann::json& arguments);
-    virtual bool IsConnected() const;
+    std::vector<ToolDefinition> ListTools();
+    std::string CallTool(const std::string& name, const nlohmann::json& arguments);
+    bool IsConnected() const;
 
 private:
     bool Handshake();

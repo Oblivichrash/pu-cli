@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/builtin_tools.hpp"
 
-#include "pu/agent_manager.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/tools/tool_result.hpp"
 
@@ -25,6 +24,10 @@ namespace pu::tools {
 
 namespace {
 
+// Used only by the execute_bash risk assessment below; kept local because no
+// other module needs it.
+enum class RiskLevel { kSafe, kNeutral, kDangerous };
+
 bool MatchAnyPattern(const std::string& command, const std::vector<std::string>& patterns,
                      std::string* matched = nullptr) {
   for (const auto& pattern : patterns) {
@@ -39,7 +42,7 @@ bool MatchAnyPattern(const std::string& command, const std::vector<std::string>&
 }
 
 struct RiskAssessment {
-  pu::executor::RiskLevel level = pu::executor::RiskLevel::kSafe;
+  RiskLevel level = RiskLevel::kSafe;
   std::string reason;
 };
 
@@ -60,20 +63,20 @@ class CommandExecutor {
     RiskAssessment result;
     std::string pattern;
     if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
-      result.level = pu::executor::RiskLevel::kDangerous;
+      result.level = RiskLevel::kDangerous;
       result.reason = "Matches dangerous pattern: " + pattern;
       return result;
     }
     result.level = MatchAnyPattern(command, safe_commands_)
-                       ? pu::executor::RiskLevel::kSafe
-                       : pu::executor::RiskLevel::kNeutral;
+                       ? RiskLevel::kSafe
+                       : RiskLevel::kNeutral;
     return result;
   }
 
   CommandResult Execute(const std::string& command) {
     CommandResult result;
     auto risk = AssessRisk(command);
-    if (risk.level == pu::executor::RiskLevel::kDangerous) {
+    if (risk.level == RiskLevel::kDangerous) {
       result.was_intercepted = true;
       result.intercept_reason = risk.reason;
       result.exit_code = -1;

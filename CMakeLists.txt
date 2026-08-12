@@ -48,7 +48,6 @@ add_library(pu::agent ALIAS pu_agent)
 add_library(pu_config_tools STATIC
     src/config_tools/agent_crud.cpp
     src/config_tools/interactive_wizard.cpp
-    src/config_tools/prompt_templates.cpp
     src/config_tools/model_scanner.cpp
     src/config_tools/provider_registry.cpp
     src/config_tools/system_probe.cpp

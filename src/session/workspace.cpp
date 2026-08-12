@@ -45,11 +45,6 @@ std::vector<ChatMessage> Workspace::GetHistory() const {
   return transcript_->GetHistory();
 }
 
-std::vector<ChatMessage> Workspace::Recent(int n) const {
-  if (!transcript_) return {};
-  return transcript_->Recent(n);
-}
-
 size_t Workspace::HistorySize() const {
   if (!transcript_) return 0;
   return transcript_->Size();

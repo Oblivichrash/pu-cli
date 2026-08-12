@@ -95,15 +95,6 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines",
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
-TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info",
-          "[executor]") {
-  Executor executor(nullptr);
-  const auto& info = executor.GetStaticEnvInfo();
-  REQUIRE(info.probed);
-  REQUIRE(!info.os_name.empty());
-  REQUIRE(!info.kernel_version.empty());
-}
-
 namespace {
 
 class MockLLM : public LLMProvider {

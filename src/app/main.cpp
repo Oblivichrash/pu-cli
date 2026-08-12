@@ -2,7 +2,6 @@
 #include "pu/cli.hpp"
 
 #include "pu/agent_manager.hpp"
-#include "pu/config_cli.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/runtime.hpp"
 

@@ -13,3 +13,6 @@ int RunChat(int argc, char* argv[], Runtime& runtime);
 
 }  // namespace pu::cli
 }  // namespace pu
+
+// `pu config` entry point; kept independent of Runtime.
+int RunConfig(int argc, char* argv[]);

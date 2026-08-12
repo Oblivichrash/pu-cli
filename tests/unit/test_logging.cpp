@@ -35,14 +35,12 @@ TEST_CASE("JsonLogFormatter emits structured fields", "[logging]") {
   REQUIRE(j.contains("timestamp"));
 
   ClearLogSessionId();
-  ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();
 }
 
 TEST_CASE("JsonLogFormatter omits unset optional fields", "[logging]") {
   ClearLogSessionId();
-  ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();
 
@@ -69,12 +67,10 @@ TEST_CASE("BeginRequest generates a valid UUID v4", "[logging]") {
   REQUIRE(rid[14] == '4');  // version nibble
 
   ClearLogSessionId();
-  ClearLogRequestId();
 }
 
 TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
   ClearLogSessionId();
-  ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();
 

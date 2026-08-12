@@ -121,25 +121,6 @@ std::shared_ptr<Session> Runtime::GetSession(const std::string& id) {
   return nullptr;
 }
 
-std::vector<std::string> Runtime::ListSessions() const {
-  std::vector<std::string> ids;
-  for (const auto& [id, _] : sessions_) ids.push_back(id);
-  auto metadata = session_store_->ListAllMetadata();
-  for (const auto& meta : metadata) {
-    if (sessions_.find(meta.id) == sessions_.end()) {
-      ids.push_back(meta.id);
-    }
-  }
-  return ids;
-}
-
-bool Runtime::DestroySession(const std::string& id) {
-  if (id == default_session_id_) return false;
-  sessions_.erase(id);
-  session_store_->DeleteSession(id);
-  return true;
-}
-
 SessionStore& Runtime::GetSessionStore() {
   // CommandRouter handlers can be invoked before Initialize() (unit tests);
   // create the store on first use so /save,/load,/list always have a target.

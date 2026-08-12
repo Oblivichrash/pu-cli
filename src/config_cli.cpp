@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/config_cli.hpp"
+#include "pu/cli.hpp"
 
 #include <cstdlib>
 #include <iostream>

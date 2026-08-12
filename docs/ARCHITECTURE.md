@@ -8,7 +8,9 @@ pu-cli is built around four principles:
 
 1. **Session isolation** — Each session owns its workspace and history.
 2. **Dynamic backend switching** — Switch LLM providers without losing state.
-3. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
+3. **Stateless execution** — `Executor` keeps no conversation state; the only
+   mutable member is a tool-call ID counter used to generate unique call IDs.
+   All conversation state lives in `Workspace`/`Session`.
 4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
 
 ---
@@ -20,7 +22,7 @@ pu-cli is built around four principles:
 | `Runtime` | Plain object created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
-| `Executor` | Stateless tool loop; reads/writes `Workspace`; injects system context and processes structured tool output |
+| `Executor` | Tool loop; reads/writes `Workspace`; injects system context and processes structured tool output (only mutable state: the tool-call ID counter) |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
@@ -65,8 +67,9 @@ main()
                   └─ probe ──► SystemProbe (HttpClient::Get)
 ```
 
-- `AgentCrud` reads/writes `agents.json` (located via `FindConfigPath()`,
-  honoring `PU_AGENTS_CONFIG`/`PU_HOME`) and preserves unknown fields.
+- `AgentCrud` reads/writes `agents.json` (located via `FindConfigPath()`:
+  `PU_AGENTS_CONFIG`, then `./agents.json`, then `~/.pu/agents.json`). It
+  rewrites the file from parsed structs, so unknown fields are **not** preserved.
 - `ModelScanner` probes NVIDIA NIM (`NVIDIA_API_KEY`), Ollama
   (`GET /api/tags`), and OpenAI-compatible endpoints (`OPENAI_API_KEY`).
 - `SystemProbe` reports OS, kernel, arch, working dir, and provider status.
@@ -178,7 +181,7 @@ Runtime.ProcessInput(session_id, input, ...)
     └── Is message? ──► Session.CreateProvider()
                          │
                          ▼
-                       Executor.Execute()          (stateless)
+                       Executor.Execute()          (stateless tool loop)
                          │
                          ├── Inject system context into chat history
                          ├── Read Workspace.Transcript
@@ -219,7 +222,7 @@ MCP servers are configured per-agent via `mcp_servers`. When an agent becomes ac
 `Transcript::Compact(keep_head, keep_tail)` keeps the head and tail messages and discards the middle. It preserves tool‑call pairing by scanning backward and ensuring all tool‑call IDs have matching responses.
 
 Compaction runs automatically in `Executor::Execute()` if:
-- The provider does not support tools (or `tools` list is empty)
+- The provider does not support tools and a non-empty tool list is registered
 - Compaction is enabled in the agent config
 - The provider is **not** in thinking mode (otherwise compaction is skipped and a warning is logged)
 
@@ -248,7 +251,7 @@ include/pu/
 ├── agent_manager.hpp     # AgentManager
 ├── command_router.hpp    # CommandRouter
 ├── runtime.hpp           # Runtime
-├── executor.hpp          # Executor (stateless, with system context injection)
+├── executor.hpp          # Executor (stateless tool loop, with system context injection)
 ├── http_client.hpp       # HttpClient interface
 ├── config_cli.hpp        # `pu config` CLI entry (RunConfig)
 ├── session_store.hpp     # SessionStore

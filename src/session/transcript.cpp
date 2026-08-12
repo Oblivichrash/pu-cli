@@ -13,12 +13,6 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
   return messages_;
 }
 
-std::vector<ChatMessage> Transcript::Recent(int n) const {
-  if (n <= 0) return {};
-  if (static_cast<size_t>(n) >= messages_.size()) return messages_;
-  return std::vector<ChatMessage>(messages_.end() - n, messages_.end());
-}
-
 void Transcript::Compact(size_t keep_head, size_t keep_tail) {
   if (messages_.size() <= keep_head + keep_tail) return;
 

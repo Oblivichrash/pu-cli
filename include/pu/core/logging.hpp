@@ -18,8 +18,6 @@ void ShutdownLogging();
 void SetLogSessionId(const std::string& session_id);
 void ClearLogSessionId();
 void BeginRequest();
-void SetLogRequestId(const std::string& request_id);
-void ClearLogRequestId();
 void SetLogToolName(const std::string& tool_name);
 void ClearLogToolName();
 void SetLogDurationMs(int64_t duration_ms);

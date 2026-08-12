@@ -14,12 +14,6 @@
 #include "pu/agent_config.hpp"
 
 namespace pu {
-namespace executor {
-enum class RiskLevel { kSafe, kNeutral, kDangerous };
-}
-}  // namespace pu
-
-namespace pu {
 
 class AgentManager {
  public:

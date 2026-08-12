@@ -10,7 +10,6 @@ class Transcript {
 public:
   void Append(const ChatMessage& msg);
   std::vector<ChatMessage> GetHistory() const;
-  std::vector<ChatMessage> Recent(int n) const;
   void Compact(size_t keep_head = 10, size_t keep_tail = 50);
   bool HasPendingToolCalls() const;
   size_t Size() const { return messages_.size(); }
