@@ -150,16 +150,8 @@ void InitLogging(const std::string& log_level) {
   bool use_json = json_env && std::string(json_env) == "1";
 
   std::shared_ptr<spdlog::logger> logger;
-  if (use_json) {
-    logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
-  } else {
-    spdlog::init_thread_pool(8192, 1);
-    logger = std::make_shared<spdlog::async_logger>(
-        "pu", sinks.begin(), sinks.end(),
-        spdlog::thread_pool(), spdlog::async_overflow_policy::block);
-  }
+  logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
   logger->set_level(level);
-  logger->flush_on(spdlog::level::err);
   if (use_json) {
     logger->set_formatter(std::make_unique<JsonLogFormatter>());
   }
@@ -170,4 +162,4 @@ void ShutdownLogging() {
   spdlog::shutdown();
 }
 
-} // namespace pu
+}  // namespace pu
