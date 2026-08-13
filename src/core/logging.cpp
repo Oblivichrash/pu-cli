@@ -128,10 +128,7 @@ void InitLogging(const std::string& log_level) {
   std::vector<spdlog::sink_ptr> sinks;
 
   const char* console_env = std::getenv("PU_LOG_CONSOLE");
-  bool enable_console = true;
-  if (console_env && std::string(console_env) == "0") {
-    enable_console = false;
-  }
+  bool enable_console = console_env && std::string(console_env) == "1";
   if (enable_console) {
     auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
     console_sink->set_level(level);

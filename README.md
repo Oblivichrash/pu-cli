@@ -146,7 +146,8 @@ This allows the executor to distinguish success from failure and provide clear f
         "host": "http://localhost:11434",
         "model": "qwen3.5:4b",
         "temperature": 0.7,
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "reasoning_effort": "medium"
       },
       "tools": ["execute_bash", "write_file"],
       "security": {
@@ -157,6 +158,10 @@ This allows the executor to distinguish success from failure and provide clear f
   ]
 }
 ```
+
+- `reasoning_effort` – optional; one of `low`, `medium`, `high`. Only honored by
+  OpenAI-compatible backends that support reasoning (e.g. DeepSeek); ignored by
+  Ollama. See [Thinking Mode & History Compaction](#thinking-mode--history-compaction).
 
 ### Security
 
@@ -206,6 +211,7 @@ This allows the executor to distinguish success from failure and provide clear f
         "model": "deepseek-reasoner",
         "api_key": "${DEEPSEEK_API_KEY}",
         "enable_thinking": true,
+        "reasoning_effort": "medium",
         "temperature": 0.1
       },
       "history_compaction": {
@@ -218,6 +224,12 @@ This allows the executor to distinguish success from failure and provide clear f
 }
 ```
 
+| `enable_thinking` | `reasoning_effort` | Request behavior |
+|-------------------|--------------------|------------------|
+| `false` | any (including unset) | Thinking is forcibly disabled (`extra_body.thinking.type="disabled"`); `reasoning_effort` is ignored |
+| `true` | `low` / `medium` / `high` | `reasoning_effort` is sent to the backend as a top-level request field |
+| `true` | unset | No reasoning-control fields are sent |
+
 ### Environment Variables
 
 | Variable | Purpose |
@@ -226,13 +238,14 @@ This allows the executor to distinguish success from failure and provide clear f
 | `PU_HOME` | Data directory (default `~/.pu/`) |
 | `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_LOG_CONSOLE=0` | Disable console logging |
+| `PU_LOG_CONSOLE=1` | Enable console logging (default: off, no console output) |
 | `NVIDIA_API_KEY` | API key for NVIDIA NIM (`pu config refresh-models`) |
 | `OPENAI_API_KEY` | API key for OpenAI-compatible endpoints (`pu config refresh-models`) |
 
 ### Logging
 
 Log files stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+Console logging is disabled by default; set `PU_LOG_CONSOLE=1` to also print log lines to stderr.
 
 ---
 

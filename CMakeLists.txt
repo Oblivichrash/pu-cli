@@ -8,29 +8,28 @@ find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
 
-# Core library: HTTP client, platform utilities, Workspace, LLM providers, and MCP
-add_library(pu_core STATIC
+# Engine library: infra, session, LLM providers, MCP, core logging, agent
+# config/manager, executor, tools, runtime, and command router
+add_library(pu_engine STATIC
+    # core / infra
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
+    src/core/logging.cpp
+    # session
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/memory.cpp
     src/session/session.cpp
     src/session_store.cpp
-    src/core/logging.cpp
+    # llm
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/streaming_json_parser.cpp
+    # mcp
     src/mcp/stdio_transport.cpp
     src/mcp/json_rpc_client.cpp
     src/mcp/mcp_client.cpp
-)
-target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
-add_library(pu::core ALIAS pu_core)
-
-# Agent library: Agent manager, executor, tools, toolbox, MCP tool
-add_library(pu_agent STATIC
+    # agent
     src/agent_config.cpp
     src/agent_manager.cpp
     src/executor.cpp
@@ -40,9 +39,9 @@ add_library(pu_agent STATIC
     src/runtime.cpp
     src/command_router.cpp
 )
-target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
-add_library(pu::agent ALIAS pu_agent)
+target_include_directories(pu_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(pu_engine PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
+add_library(pu::engine ALIAS pu_engine)
 
 # Config-tools library: agent CRUD, interactive wizard, prompt templates, model scanning, system probe
 add_library(pu_config_tools STATIC
@@ -53,7 +52,7 @@ add_library(pu_config_tools STATIC
     src/config_tools/system_probe.cpp
 )
 target_include_directories(pu_config_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_config_tools PUBLIC pu_agent nlohmann_json::nlohmann_json)
+target_link_libraries(pu_config_tools PUBLIC pu_engine nlohmann_json::nlohmann_json)
 add_library(pu::config_tools ALIAS pu_config_tools)
 
 # CLI application: entry point, chat/ask/learn commands, UI helpers, session management
@@ -63,17 +62,15 @@ add_executable(pu
     src/config_cli.cpp
 )
 target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu PRIVATE pu_agent pu_config_tools pu_core spdlog::spdlog)
+target_link_libraries(pu PRIVATE pu_engine pu_config_tools spdlog::spdlog)
 
 # Compiler warnings
 if(MSVC)
-    target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-    target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(pu_engine PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu_config_tools PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
 else()
-    target_compile_options(pu_core PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_engine PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_config_tools PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
 endif()

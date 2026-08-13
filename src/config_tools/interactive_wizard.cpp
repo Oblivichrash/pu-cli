@@ -158,6 +158,18 @@ config::AgentEntry RunInteractiveWizard() {
 
   entry.backend.model = PickModel(*chosen);
 
+  // Reasoning effort is only meaningful for openai_compatible providers.
+  if (chosen->type == "openai_compatible") {
+    std::string effort = ReadLine("Reasoning effort (default, low, medium, high)", "default");
+    if (effort == "low" || effort == "medium" || effort == "high") {
+      entry.backend.reasoning_effort = effort;
+    } else if (effort != "default") {
+      std::cerr << "Unknown reasoning effort '" << effort
+                << "', using default (none).\n";
+    }
+    // "default" (or empty input) leaves reasoning_effort as nullopt.
+  }
+
   // Tools multi-select
   std::vector<std::string> tool_options = {"execute_bash", "write_file", "ask_user"};
   entry.tools = MultiSelect("Select tools", tool_options);

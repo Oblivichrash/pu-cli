@@ -99,7 +99,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   }
   auto session_id = session->GetId();
 
-  spdlog::info("Connected to session: {}", session_id);
+  spdlog::debug("Connected to session: {}", session_id);
   std::string agent_info = "Connected to agent: " + current_name;
   const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
@@ -110,8 +110,8 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   if (entry_ptr && !entry_ptr->description.empty()) {
     agent_info += " (" + entry_ptr->description + ")";
   }
-  spdlog::info("{}", agent_info);
-  spdlog::info("Type /help for available commands.");
+  spdlog::debug("{}", agent_info);
+  spdlog::debug("Type /help for available commands.");
 
   std::string input;
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {

@@ -26,7 +26,7 @@ target_include_directories(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_agent pu_config_tools pu_core
+    pu_engine pu_config_tools
     Catch2::Catch2WithMain
     nlohmann_json::nlohmann_json
 )

@@ -17,22 +17,9 @@ namespace {
 using json = nlohmann::json;
 
 json AgentToJson(const config::AgentEntry& entry) {
-  json j;
-  j["name"] = entry.name;
-  j["description"] = entry.description;
-  j["tools"] = entry.tools;
-
-  json security;
-  security["sandbox_root"] = entry.security.sandbox_root;
-  security["allowed_paths"] = entry.security.allowed_paths;
-  security["max_command_length"] = entry.security.max_command_length;
-  security["forbidden_patterns"] = entry.security.forbidden_patterns;
-  j["security"] = security;
-
-  // Reuses config::to_json so max_tokens/system_prompt/enable_thinking are
-  // never dropped when listing or showing agents.
-  j["backend"] = entry.backend;
-
+  // AgentEntry::to_json serializes every field (backend, security, tools,
+  // mcp_servers, history_compaction) so list/show output never drops data.
+  json j = entry;
   return j;
 }
 

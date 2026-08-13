@@ -45,7 +45,7 @@ bool McpClient::Connect() {
     }
 
     pimpl_->connected = true;
-    spdlog::info("MCP client connected: {}", pimpl_->config.name);
+    spdlog::debug("MCP client connected: {}", pimpl_->config.name);
     return true;
 }
 

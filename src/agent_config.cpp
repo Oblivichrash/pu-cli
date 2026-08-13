@@ -29,99 +29,6 @@ std::string ExpandEnvVars(const std::string& input) {
   return result;
 }
 
-std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
-  if (s == "openai") return BackendType::kOpenAI;
-  if (s == "ollama") return BackendType::kOllama;
-  return std::nullopt;
-}
-
-SecurityPolicy ParseSecurityPolicy(const json& j) {
-  SecurityPolicy policy;
-  if (j.contains("sandbox_root") && j["sandbox_root"].is_string())
-    policy.sandbox_root = j["sandbox_root"];
-  if (j.contains("allowed_paths") && j["allowed_paths"].is_array()) {
-    for (const auto& p : j["allowed_paths"])
-      if (p.is_string()) policy.allowed_paths.push_back(p.get<std::string>());
-  }
-  if (j.contains("max_command_length") && j["max_command_length"].is_number())
-    policy.max_command_length = j["max_command_length"];
-  if (j.contains("forbidden_patterns") && j["forbidden_patterns"].is_array()) {
-    for (const auto& pat : j["forbidden_patterns"])
-      if (pat.is_string()) policy.forbidden_patterns.push_back(pat.get<std::string>());
-  }
-  return policy;
-}
-
-BackendConfig ParseBackendConfig(const json& j) {
-  BackendConfig cfg;
-  auto type = ParseBackendType(j.value("type", "ollama"));
-  if (!type) throw pu::Error("Unknown backend type");
-  cfg.type = *type;
-  cfg.host = ExpandEnvVars(j.value("host", ""));
-  cfg.model = ExpandEnvVars(j.value("model", ""));
-  if (j.contains("api_key")) cfg.api_key = ExpandEnvVars(j["api_key"].get<std::string>());
-  cfg.temperature = j.value("temperature", 0.7f);
-  if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
-  cfg.max_tokens = j.value("max_tokens", 2048);
-  cfg.enable_thinking = j.value("enable_thinking", true);
-  return cfg;
-}
-
-std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
-  std::vector<pu::mcp::McpServerConfig> servers;
-  if (!j.is_array()) return servers;
-  for (const auto& item : j) {
-    pu::mcp::McpServerConfig srv;
-    srv.name = item.value("name", "");
-    srv.command = item.value("command", "");
-    if (item.contains("args") && item["args"].is_array()) {
-      for (const auto& a : item["args"])
-        if (a.is_string()) srv.args.push_back(a.get<std::string>());
-    }
-    if (!srv.name.empty() && !srv.command.empty())
-      servers.push_back(std::move(srv));
-    else
-      spdlog::warn("Skipping MCP server entry with missing name or command");
-  }
-  return servers;
-}
-
-HistoryCompactionConfig ParseCompactionConfig(const json& j) {
-  HistoryCompactionConfig cfg;
-  if (j.contains("history_compaction") && j["history_compaction"].is_object()) {
-    const auto& c = j["history_compaction"];
-    cfg.enabled = c.value("enabled", true);
-    cfg.keep_head = c.value("keep_head", 10);
-    cfg.keep_tail = c.value("keep_tail", 50);
-    cfg.strategy = c.value("strategy", "truncate");
-  }
-  return cfg;
-}
-
-AgentEntry ParseAgentEntry(const json& j) {
-  AgentEntry entry;
-  entry.name = j.value("name", "");
-  if (entry.name.empty()) throw pu::Error("Missing agent name");
-  entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object())
-    throw pu::Error("Missing backend field");
-  entry.backend = ParseBackendConfig(j["backend"]);
-  if (entry.backend.host.empty() || entry.backend.model.empty())
-    throw pu::Error("Missing host or model in backend");
-
-  if (j.contains("tools") && j["tools"].is_array()) {
-    for (const auto& t : j["tools"])
-      if (t.is_string()) entry.tools.push_back(t.get<std::string>());
-  }
-  if (j.contains("security") && j["security"].is_object())
-    entry.security = ParseSecurityPolicy(j["security"]);
-  if (j.contains("mcp_servers") && j["mcp_servers"].is_array())
-    entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
-
-  entry.compaction = ParseCompactionConfig(j);
-  return entry;
-}
-
 } // unnamed namespace
 
 std::string FindConfigPath() {
@@ -152,8 +59,21 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
   if (!j.contains("agents") || !j["agents"].is_array())
     throw pu::Error("Missing agents array");
-  for (const auto& item : j["agents"])
-    result.agents.push_back(ParseAgentEntry(item));
+  for (const auto& item : j["agents"]) {
+    // from_json parses every AgentEntry field (backend, tools, security,
+    // mcp_servers, history_compaction) using the shared serializers above.
+    AgentEntry entry = item.get<AgentEntry>();
+    // Env-var expansion happens after parsing so the header serializers stay
+    // environment-free (raw values are preserved in to_json round-trips).
+    entry.backend.host = ExpandEnvVars(entry.backend.host);
+    entry.backend.model = ExpandEnvVars(entry.backend.model);
+    if (entry.backend.api_key) entry.backend.api_key = ExpandEnvVars(*entry.backend.api_key);
+    if (entry.backend.system_prompt) entry.backend.system_prompt = ExpandEnvVars(*entry.backend.system_prompt);
+    // A ${VAR} that expands to empty must still fail validation, as before.
+    if (entry.backend.host.empty() || entry.backend.model.empty())
+      throw pu::Error("Missing host or model in backend");
+    result.agents.push_back(std::move(entry));
+  }
 
   if (result.default_agent.empty() && !result.agents.empty())
     result.default_agent = result.agents[0].name;
@@ -164,43 +84,8 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
   json j;
   j["default_agent"] = cfg.default_agent;
   json agents_array = json::array();
-  for (const auto& entry : cfg.agents) {
-    json item;
-    item["name"] = entry.name;
-    item["description"] = entry.description;
-    item["tools"] = entry.tools;
-
-    json security;
-    security["sandbox_root"] = entry.security.sandbox_root;
-    security["allowed_paths"] = entry.security.allowed_paths;
-    security["max_command_length"] = entry.security.max_command_length;
-    security["forbidden_patterns"] = entry.security.forbidden_patterns;
-    item["security"] = security;
-
-    // Reuses the to_json above so no backend field is dropped on config rewrite.
-    item["backend"] = entry.backend;
-
-    if (!entry.mcp_servers.empty()) {
-      json mcp_array = json::array();
-      for (const auto& srv : entry.mcp_servers) {
-        json srv_json;
-        srv_json["name"] = srv.name;
-        srv_json["command"] = srv.command;
-        srv_json["args"] = srv.args;
-        mcp_array.push_back(srv_json);
-      }
-      item["mcp_servers"] = mcp_array;
-    }
-
-    json compaction;
-    compaction["enabled"] = entry.compaction.enabled;
-    compaction["keep_head"] = entry.compaction.keep_head;
-    compaction["keep_tail"] = entry.compaction.keep_tail;
-    compaction["strategy"] = entry.compaction.strategy;
-    item["history_compaction"] = compaction;
-
-    agents_array.push_back(item);
-  }
+  for (const auto& entry : cfg.agents)
+    agents_array.push_back(entry);  // AgentEntry::to_json serializes all fields
   j["agents"] = agents_array;
 
   std::ofstream file(config_path);
@@ -230,6 +115,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
       openai_cfg.api_key = cfg.api_key.value_or("");
         openai_cfg.max_tokens = cfg.max_tokens;
       openai_cfg.enable_thinking = cfg.enable_thinking;
+      openai_cfg.reasoning_effort = cfg.reasoning_effort;
       return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
     }
     default:

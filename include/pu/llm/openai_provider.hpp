@@ -21,6 +21,7 @@ class OpenAIProvider : public LLMProvider {
     std::string api_key;
     int max_tokens = 2048;
     bool enable_thinking = true;   // for DeepSeek/vLLM
+    std::optional<std::string> reasoning_effort;  // e.g. "low"/"medium"/"high"
   };
 
   explicit OpenAIProvider(const Config& config,

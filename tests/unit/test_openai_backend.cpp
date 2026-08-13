@@ -207,3 +207,86 @@ TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") 
   OpenAIProvider nothinking(config, std::move(mock_http));
   REQUIRE(nothinking.IsThinkingMode() == false);
 }
+
+TEST_CASE("OpenAIProvider sends top-level reasoning_effort when thinking enabled", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = true;
+  config.reasoning_effort = "high";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE(body["reasoning_effort"] == "high");
+  REQUIRE_FALSE(body.contains("extra_body"));
+}
+
+TEST_CASE("OpenAIProvider sends reasoning_effort in tool request too", "[openai][tools]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = true;
+  config.reasoning_effort = "medium";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  ToolDefinition tool;
+  tool.name = "exec";
+  tool.parameters_schema = "{}";
+  provider.Chat(history, {tool});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE(body["reasoning_effort"] == "medium");
+  REQUIRE_FALSE(body.contains("extra_body"));
+}
+
+TEST_CASE("OpenAIProvider omits reasoning_effort when thinking enabled and effort unset", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = true;
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE_FALSE(body.contains("reasoning_effort"));
+  REQUIRE_FALSE(body.contains("extra_body"));
+}
+
+TEST_CASE("OpenAIProvider disables thinking and ignores reasoning_effort when thinking disabled", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+  config.host = "https://api.deepseek.com/v1";
+  config.api_key = "test-key";
+  config.enable_thinking = false;
+  config.reasoning_effort = "high";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  provider.Chat(history, {});
+
+  auto body = nlohmann::json::parse(mock_ptr->last_body);
+  REQUIRE(body.contains("extra_body"));
+  REQUIRE(body["extra_body"]["thinking"]["type"] == "disabled");
+  REQUIRE_FALSE(body.contains("reasoning_effort"));
+}

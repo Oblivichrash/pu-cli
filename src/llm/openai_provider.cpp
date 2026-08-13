@@ -92,6 +92,8 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
     json extra_body;
     extra_body["thinking"]["type"] = "disabled";
     req["extra_body"] = extra_body;
+  } else if (config_.reasoning_effort) {
+    req["reasoning_effort"] = *config_.reasoning_effort;
   }
 
   auto messages = history;
@@ -121,6 +123,8 @@ std::string OpenAIProvider::BuildRequestWithTools(
     json extra_body;
     extra_body["thinking"]["type"] = "disabled";
     req["extra_body"] = extra_body;
+  } else if (config_.reasoning_effort) {
+    req["reasoning_effort"] = *config_.reasoning_effort;
   }
 
   auto messages = history;

@@ -278,3 +278,149 @@ TEST_CASE("SaveAgentsConfig round-trips enable_thinking and compaction", "[agent
   REQUIRE(loaded.agents[0].compaction.keep_tail == 60);
   REQUIRE(loaded.agents[0].compaction.strategy == "truncate");
 }
+
+TEST_CASE("BackendConfig to_json omits reasoning_effort when unset", "[agent_config]") {
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kOpenAI;
+  cfg.host = "https://api.test.com/v1";
+  cfg.model = "m";
+  nlohmann::json j = cfg;
+  REQUIRE_FALSE(j.contains("reasoning_effort"));
+}
+
+TEST_CASE("BackendConfig to_json emits reasoning_effort when set", "[agent_config]") {
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kOpenAI;
+  cfg.host = "https://api.test.com/v1";
+  cfg.model = "m";
+  cfg.reasoning_effort = "high";
+  nlohmann::json j = cfg;
+  REQUIRE(j["reasoning_effort"] == "high");
+}
+
+TEST_CASE("BackendConfig from_json handles reasoning_effort", "[agent_config]") {
+  nlohmann::json j = nlohmann::json::object();
+  j["type"] = "openai";
+  j["host"] = "https://api.test.com/v1";
+  j["model"] = "m";
+  j["reasoning_effort"] = "medium";
+  auto cfg = j.get<config::BackendConfig>();
+  REQUIRE(cfg.reasoning_effort.has_value());
+  REQUIRE(*cfg.reasoning_effort == "medium");
+
+  // Absent field -> nullopt (old agents.json keeps loading).
+  nlohmann::json j2 = nlohmann::json::object();
+  j2["type"] = "openai";
+  j2["host"] = "https://api.test.com/v1";
+  j2["model"] = "m";
+  auto cfg2 = j2.get<config::BackendConfig>();
+  REQUIRE_FALSE(cfg2.reasoning_effort.has_value());
+}
+
+TEST_CASE("SaveAgentsConfig round-trips reasoning_effort", "[agent_config]") {
+  TempConfigFile tmp;
+  config::AgentsConfig original;
+  original.default_agent = "deepseek";
+  config::AgentEntry entry;
+  entry.name = "deepseek";
+  entry.backend.type = config::BackendType::kOpenAI;
+  entry.backend.host = "https://api.deepseek.com/v1";
+  entry.backend.model = "deepseek-reasoner";
+  entry.backend.enable_thinking = true;
+  entry.backend.reasoning_effort = "high";
+  original.agents.push_back(entry);
+
+  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
+  auto loaded = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(loaded.agents[0].backend.reasoning_effort.has_value());
+  REQUIRE(*loaded.agents[0].backend.reasoning_effort == "high");
+
+  // Round-trip again to ensure serialization is stable.
+  config::SaveAgentsConfig(tmp.path.string(), loaded);
+  auto loaded2 = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(loaded2.agents[0].backend.reasoning_effort.has_value());
+  REQUIRE(*loaded2.agents[0].backend.reasoning_effort == "high");
+}
+
+TEST_CASE("AgentEntry full Save->Load round-trip preserves all fields", "[agent_config]") {
+  TempConfigFile tmp;
+  config::AgentsConfig original;
+  original.default_agent = "full";
+
+  config::AgentEntry entry;
+  entry.name = "full";
+  entry.description = "round-trip coverage";
+  entry.backend.type = config::BackendType::kOpenAI;
+  entry.backend.host = "https://api.test.com/v1";
+  entry.backend.model = "model-x";
+  entry.backend.enable_thinking = true;
+  entry.backend.reasoning_effort = "high";
+
+  entry.tools = {"execute_bash", "write_file", "ask_user"};
+  entry.security.sandbox_root = "/srv/work";
+  entry.security.allowed_paths = {"/srv/work", "/tmp/shared"};
+  entry.security.max_command_length = 8192;
+  entry.security.forbidden_patterns = {"rm -rf", "sudo", "mkfs"};
+
+  pu::mcp::McpServerConfig fs;
+  fs.name = "filesystem";
+  fs.command = "npx";
+  fs.args = {"-y", "@modelcontextprotocol/server-filesystem", "/srv/work"};
+  pu::mcp::McpServerConfig git;
+  git.name = "git";
+  git.command = "mcp-git";
+  git.args = {"--verbose"};
+  entry.mcp_servers = {fs, git};
+
+  entry.compaction.enabled = false;
+  entry.compaction.keep_head = 20;
+  entry.compaction.keep_tail = 80;
+  entry.compaction.strategy = "summary";  // non-default strategy
+
+  original.agents.push_back(entry);
+
+  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
+  auto loaded = config::LoadAgentsConfig(tmp.path.string());
+
+  REQUIRE(loaded.agents.size() == 1);
+  const auto& a = loaded.agents[0];
+  REQUIRE(a.name == "full");
+  REQUIRE(a.description == "round-trip coverage");
+
+  // tools
+  REQUIRE(a.tools.size() == 3);
+  REQUIRE(a.tools[0] == "execute_bash");
+  REQUIRE(a.tools[1] == "write_file");
+  REQUIRE(a.tools[2] == "ask_user");
+
+  // security
+  REQUIRE(a.security.sandbox_root == "/srv/work");
+  REQUIRE(a.security.allowed_paths.size() == 2);
+  REQUIRE(a.security.allowed_paths[0] == "/srv/work");
+  REQUIRE(a.security.allowed_paths[1] == "/tmp/shared");
+  REQUIRE(a.security.max_command_length == 8192);
+  REQUIRE(a.security.forbidden_patterns.size() == 3);
+  REQUIRE(a.security.forbidden_patterns[1] == "sudo");
+  REQUIRE(a.security.forbidden_patterns[2] == "mkfs");
+
+  // mcp_servers (multiple, with args)
+  REQUIRE(a.mcp_servers.size() == 2);
+  REQUIRE(a.mcp_servers[0].name == "filesystem");
+  REQUIRE(a.mcp_servers[0].command == "npx");
+  REQUIRE(a.mcp_servers[0].args.size() == 3);
+  REQUIRE(a.mcp_servers[0].args[1] == "@modelcontextprotocol/server-filesystem");
+  REQUIRE(a.mcp_servers[1].name == "git");
+  REQUIRE(a.mcp_servers[1].command == "mcp-git");
+  REQUIRE(a.mcp_servers[1].args.size() == 1);
+  REQUIRE(a.mcp_servers[1].args[0] == "--verbose");
+
+  // history_compaction with non-default strategy
+  REQUIRE(a.compaction.enabled == false);
+  REQUIRE(a.compaction.keep_head == 20);
+  REQUIRE(a.compaction.keep_tail == 80);
+  REQUIRE(a.compaction.strategy == "summary");
+
+  // backend extras survive too
+  REQUIRE(a.backend.reasoning_effort.has_value());
+  REQUIRE(*a.backend.reasoning_effort == "high");
+}
