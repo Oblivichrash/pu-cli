@@ -21,6 +21,7 @@ namespace pu {
 using json = nlohmann::json;
 
 namespace {
+constexpr int kMaxIterations = 20;
 
 #ifdef _WIN32
 // RtlGetVersion bypasses the manifest compatibility layer and reports the true OS version.
@@ -188,20 +189,12 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   }
 
   auto tools = toolbox_->GetToolDefinitions();
-  bool tool_was_called = false;
-  const int max_iterations = 20;
+  bool should_continue = true;
   int iteration = 0;
-  bool hit_max_iterations = false;
-  bool stop_after_clarification = false;
 
-  do {
-    if (iteration >= max_iterations) {
-      hit_max_iterations = true;
-      spdlog::warn("Tool loop reached max_iterations ({}), breaking", max_iterations);
-      break;
-    }
+  while (should_continue && iteration < kMaxIterations) {
     ++iteration;
-    tool_was_called = false;
+    bool tool_was_called = false;
 
     std::vector<ChatMessage> chat_history = PrepareChatHistory(workspace);
 
@@ -226,19 +219,26 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
       if (!tool_was_called) {
         result.final_response = chat_result.content;
-        break;
+        should_continue = false;
       }
     } catch (const std::exception& e) {
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);
       workspace.Append("assistant", result.error_message);
-      break;
+      should_continue = false;
     }
 
-    ProcessToolCalls(workspace, chat_result, collected_calls, result,
-                     stop_after_clarification);
-  } while (tool_was_called && !stop_after_clarification);
+    if (should_continue) {
+      should_continue = ProcessToolCalls(workspace, chat_result, collected_calls, result);
+    }
+  }
+
+  // Natural exit with the counter at the cap means the loop ran out of budget.
+  bool hit_max_iterations = (iteration == kMaxIterations);
+  if (hit_max_iterations) {
+    spdlog::warn("Tool loop reached max_iterations ({}), breaking", kMaxIterations);
+  }
 
   FinalizeResult(workspace, result, hit_max_iterations);
 
@@ -279,13 +279,12 @@ std::vector<ChatMessage> Executor::PrepareChatHistory(Workspace& workspace) cons
 
 // Records the assistant turn, executes every collected tool call, appends the
 // tool results to the transcript, and stops early when ask_user asks a
-// clarification question.
-void Executor::ProcessToolCalls(Workspace& workspace,
+// clarification question. Returns true to continue the tool loop, false to stop.
+bool Executor::ProcessToolCalls(Workspace& workspace,
                                 const ChatResult& chat_result,
                                 std::vector<ToolCall>& collected_calls,
-                                ToolLoopResult& result,
-                                bool& stop_after_clarification) {
-  if (collected_calls.empty()) return;
+                                ToolLoopResult& result) {
+  if (collected_calls.empty()) return false;
 
   for (auto& tc : collected_calls) {
     if (tc.id.empty()) {
@@ -356,16 +355,16 @@ void Executor::ProcessToolCalls(Workspace& workspace,
         if (j.value("error", "") == "clarification_needed") {
           result.final_response = j.value("question", "");
           result.was_streamed = false;
-          stop_after_clarification = true;
-          break;
+          return false;
         }
       } catch (const std::exception&) {
         // Malformed result: let the model see the tool error and retry.
       }
     }
   }
-}
 
+  return true;
+}
 // Falls back to the last non-empty assistant turn in the transcript when the
 // provider returned no final response, or emits a generic message.
 void Executor::FinalizeResult(Workspace& workspace, ToolLoopResult& result,

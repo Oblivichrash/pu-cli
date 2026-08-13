@@ -51,10 +51,10 @@ class Executor {
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
 
   // RunToolLoop split into focused helpers (logic unchanged).
-  std::vector<ChatMessage> PrepareChatHistory(Workspace& workspace) const;
-  void ProcessToolCalls(Workspace& workspace, const ChatResult& chat_result,
+  bool ProcessToolCalls(Workspace& workspace, const ChatResult& chat_result,
                         std::vector<ToolCall>& collected_calls,
-                        ToolLoopResult& result, bool& stop_after_clarification);
+                        ToolLoopResult& result);
+  std::vector<ChatMessage> PrepareChatHistory(Workspace& workspace) const;
   void FinalizeResult(Workspace& workspace, ToolLoopResult& result,
                       bool hit_max_iterations) const;
 
