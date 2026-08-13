@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
+#include <array>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -17,18 +19,90 @@
 
 namespace {
 
+// Forward declarations used by the subcommand table below.
+int RefreshModels(const std::optional<std::string>& provider_opt, bool json_output);
+int Probe(bool json_output);
+
+struct Subcommand {
+  const char* key;          // dispatch key (argv[1])
+  const char* usage;        // help column, e.g. "show <name>"
+  const char* description;  // help text
+  bool needs_config;        // whether FindConfigPath must resolve before dispatch
+  int (*handler)(const std::string& config_path,
+                 const std::vector<std::string>& args,
+                 bool json_output,
+                 const std::optional<std::string>& provider_opt);
+};
+
+// Single source of truth for both dispatch and help text.
+constexpr std::array<Subcommand, 8> kSubcommands = {{
+    {"list", "list", "List all agents", true,
+     [](const std::string& cfg, const std::vector<std::string>&, bool json,
+        const std::optional<std::string>&) {
+       return pu::config_tools::ListAgents(cfg, json);
+     }},
+    {"show", "show <name>", "Show agent details", true,
+     [](const std::string& cfg, const std::vector<std::string>& args, bool json,
+        const std::optional<std::string>&) {
+       if (args.empty()) {
+         std::cerr << "Usage: pu config show <name>\n";
+         return 1;
+       }
+       return pu::config_tools::ShowAgent(cfg, args[0], json);
+     }},
+    {"add", "add [name]", "Add a new agent (interactive wizard)", true,
+     [](const std::string& cfg, const std::vector<std::string>& args, bool,
+        const std::optional<std::string>&) {
+       std::string name = args.empty() ? "" : args[0];
+       return pu::config_tools::AddAgent(cfg, name);
+     }},
+    {"remove", "remove <name>", "Remove an agent", true,
+     [](const std::string& cfg, const std::vector<std::string>& args, bool,
+        const std::optional<std::string>&) {
+       if (args.empty()) {
+         std::cerr << "Usage: pu config remove <name>\n";
+         return 1;
+       }
+       return pu::config_tools::RemoveAgent(cfg, args[0]);
+     }},
+    {"rename", "rename <old> <new>", "Rename an agent", true,
+     [](const std::string& cfg, const std::vector<std::string>& args, bool,
+        const std::optional<std::string>&) {
+       if (args.size() < 2) {
+         std::cerr << "Usage: pu config rename <old> <new>\n";
+         return 1;
+       }
+       return pu::config_tools::RenameAgent(cfg, args[0], args[1]);
+     }},
+    {"set-default", "set-default <name>", "Set the default agent", true,
+     [](const std::string& cfg, const std::vector<std::string>& args, bool,
+        const std::optional<std::string>&) {
+       if (args.empty()) {
+         std::cerr << "Usage: pu config set-default <name>\n";
+         return 1;
+       }
+       return pu::config_tools::SetDefaultAgent(cfg, args[0]);
+     }},
+    {"refresh-models", "refresh-models", "Scan providers for available models", false,
+     [](const std::string&, const std::vector<std::string>&, bool json,
+        const std::optional<std::string>& provider) {
+       return RefreshModels(provider, json);
+     }},
+    {"probe", "probe", "Show system and provider status", false,
+     [](const std::string&, const std::vector<std::string>&, bool json,
+        const std::optional<std::string>&) {
+       return Probe(json);
+     }},
+}};
+
 void PrintUsage() {
   std::cout << "Usage: pu config <subcommand> [options]\n"
-            << "Subcommands:\n"
-            << "  list                 List all agents\n"
-            << "  show <name>          Show agent details\n"
-            << "  add [name]           Add a new agent (interactive wizard)\n"
-            << "  remove <name>        Remove an agent\n"
-            << "  rename <old> <new>   Rename an agent\n"
-            << "  set-default <name>   Set the default agent\n"
-            << "  refresh-models       Scan providers for available models\n"
-            << "  probe                Show system and provider status\n"
-            << "Options:\n"
+            << "Subcommands:\n";
+  for (const auto& cmd : kSubcommands) {
+    std::cout << "  " << std::left << std::setw(21) << cmd.usage
+              << cmd.description << "\n";
+  }
+  std::cout << "Options:\n"
             << "  --json               Output in JSON format (list, show, refresh-models, probe)\n"
             << "  --provider=<name>    Only scan one provider (see providers.json)\n"
             << "  -h, --help           Show this help message\n";
@@ -162,60 +236,28 @@ int RunConfig(int argc, char* argv[]) {
     }
   }
 
-  if (subcmd == "refresh-models") {
-    return RefreshModels(provider_opt, json_output);
+  const Subcommand* cmd = nullptr;
+  for (const auto& c : kSubcommands) {
+    if (subcmd == c.key) {
+      cmd = &c;
+      break;
+    }
   }
-  if (subcmd == "probe") {
-    return Probe(json_output);
-  }
-
-  std::string config_path;
-  try {
-    config_path = pu::config::FindConfigPath().string();
-  } catch (const std::exception& e) {
-    std::cerr << e.what() << "\n";
+  if (!cmd) {
+    std::cerr << "Unknown config subcommand: " << subcmd << "\n";
+    PrintUsage();
     return 1;
   }
 
-  using namespace pu::config_tools;
-
-  if (subcmd == "list") {
-    return ListAgents(config_path, json_output);
-  }
-  if (subcmd == "show") {
-    if (args.empty()) {
-      std::cerr << "Usage: pu config show <name>\n";
+  std::string config_path;
+  if (cmd->needs_config) {
+    try {
+      config_path = pu::config::FindConfigPath().string();
+    } catch (const std::exception& e) {
+      std::cerr << e.what() << "\n";
       return 1;
     }
-    return ShowAgent(config_path, args[0], json_output);
-  }
-  if (subcmd == "add") {
-    std::string name = args.empty() ? "" : args[0];
-    return AddAgent(config_path, name);
-  }
-  if (subcmd == "remove") {
-    if (args.empty()) {
-      std::cerr << "Usage: pu config remove <name>\n";
-      return 1;
-    }
-    return RemoveAgent(config_path, args[0]);
-  }
-  if (subcmd == "rename") {
-    if (args.size() < 2) {
-      std::cerr << "Usage: pu config rename <old> <new>\n";
-      return 1;
-    }
-    return RenameAgent(config_path, args[0], args[1]);
-  }
-  if (subcmd == "set-default") {
-    if (args.empty()) {
-      std::cerr << "Usage: pu config set-default <name>\n";
-      return 1;
-    }
-    return SetDefaultAgent(config_path, args[0]);
   }
 
-  std::cerr << "Unknown config subcommand: " << subcmd << "\n";
-  PrintUsage();
-  return 1;
+  return cmd->handler(config_path, args, json_output, provider_opt);
 }

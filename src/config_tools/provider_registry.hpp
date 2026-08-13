@@ -20,8 +20,10 @@ struct ProviderConfig {
   std::string model_list_key;   // e.g. "data[].id" or "models[].name"
 };
 
-// Reads ./providers.json, then ~/.pu/providers.json. Falls back to built-in
-// defaults for nim/ollama/openai so a fresh checkout still works offline.
+// Reads ./providers.json, then ~/.pu/providers.json. On first run (neither
+// file exists) a default providers.json with nim/ollama/openai is written to
+// ~/.pu/ and loaded, so a fresh checkout works offline and users can freely
+// edit or extend the file afterwards.
 std::vector<ProviderConfig> LoadProviders();
 
 }  // namespace pu::config_tools

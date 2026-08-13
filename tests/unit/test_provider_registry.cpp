@@ -78,7 +78,7 @@ class ScopedEnv {
 
 }  // unnamed namespace
 
-TEST_CASE("LoadProviders falls back to built-ins when no file exists",
+TEST_CASE("LoadProviders auto-creates default providers when no file exists",
           "[provider_registry]") {
   ScopedHome home;
 

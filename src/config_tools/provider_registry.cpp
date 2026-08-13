@@ -24,16 +24,39 @@ std::filesystem::path UserProvidersPath() {
   return {};
 }
 
-// Kept in sync with the pre-externalization hardcoded scanners.
-std::vector<ProviderConfig> BuiltinProviders() {
-  return {
-      {"nim", "openai_compatible", "https://integrate.api.nvidia.com/v1",
-       {"NVIDIA_API_KEY"}, "/models", "data[].id"},
-      {"ollama", "ollama", "http://localhost:11434", {}, "/api/tags",
-       "models[].name"},
-      {"openai", "openai_compatible", "https://api.openai.com/v1",
-       {"OPENAI_API_KEY"}, "/models", "data[].id"},
-  };
+// First-run default: mirrors the providers that used to be hardcoded, so a
+// fresh install behaves exactly as before while remaining fully file-driven.
+void WriteDefaultProviders(const std::filesystem::path& path) {
+  nlohmann::json j = {
+      {"providers", nlohmann::json::array({
+          {{"name", "nim"},
+           {"type", "openai_compatible"},
+           {"base_url", "https://integrate.api.nvidia.com/v1"},
+           {"auth", {{"env_var", "NVIDIA_API_KEY"}}},
+           {"model_endpoint", "/models"},
+           {"model_list_key", "data[].id"}},
+          {{"name", "ollama"},
+           {"type", "ollama"},
+           {"base_url", "http://localhost:11434"},
+           {"model_endpoint", "/api/tags"},
+           {"model_list_key", "models[].name"}},
+          {{"name", "openai"},
+           {"type", "openai_compatible"},
+           {"base_url", "https://api.openai.com/v1"},
+           {"auth", {{"env_var", "OPENAI_API_KEY"}}},
+           {"model_endpoint", "/models"},
+           {"model_list_key", "data[].id"}},
+      })}};
+
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  std::ofstream file(path);
+  if (!file.is_open()) {
+    spdlog::warn("Failed to write default providers file: {}", path.string());
+    return;
+  }
+  file << j.dump(2) << "\n";
+  spdlog::info("Created default providers file: {}", path.string());
 }
 
 // Accepts either a bare array or {"providers": [...]}; the object shape allows
@@ -64,9 +87,20 @@ std::vector<ProviderConfig> ParseProvidersJson(const nlohmann::json& j) {
 }  // namespace
 
 std::vector<ProviderConfig> LoadProviders() {
-  // A malformed file silently falls back to defaults instead of making the
-  // whole CLI unusable; the warning points the user at the offending file.
-  for (const auto& path : {LocalProvidersPath(), UserProvidersPath()}) {
+  const auto local = LocalProvidersPath();
+  const auto user = UserProvidersPath();
+
+  // First install: no providers.json anywhere yet. Write the default set to
+  // the user directory (or the local file when HOME is unavailable) and load
+  // it, so provider config is file-driven from the very first run. Users can
+  // freely edit or extend the file afterwards.
+  if ((local.empty() || !std::filesystem::exists(local)) &&
+      (user.empty() || !std::filesystem::exists(user))) {
+    auto default_path = user.empty() ? local : user;
+    if (!default_path.empty()) WriteDefaultProviders(default_path);
+  }
+
+  for (const auto& path : {local, user}) {
     if (path.empty() || !std::filesystem::exists(path)) continue;
     std::ifstream file(path);
     if (!file.is_open()) continue;
@@ -74,16 +108,14 @@ std::vector<ProviderConfig> LoadProviders() {
     try {
       file >> j;
     } catch (const std::exception& e) {
-      spdlog::warn("Failed to parse {}: {}; using built-in providers",
-                   path.string(), e.what());
-      return BuiltinProviders();
+      spdlog::warn("Failed to parse {}: {}", path.string(), e.what());
+      return {};
     }
     auto providers = ParseProvidersJson(j);
     if (!providers.empty()) return providers;
-    spdlog::warn("No providers found in {}; using built-in providers",
-                 path.string());
+    spdlog::warn("No providers found in {}", path.string());
   }
-  return BuiltinProviders();
+  return {};
 }
 
 }  // namespace pu::config_tools
