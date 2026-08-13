@@ -22,7 +22,7 @@ void Runtime::Initialize(const std::string& config_path) {
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   pu::InitLogging(log_level);
 
-  auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
+  auto cfg_path = config_path.empty() ? config::FindConfigPath().string() : config_path;
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
   agent_manager_ = std::make_unique<AgentManager>();

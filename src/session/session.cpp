@@ -3,6 +3,7 @@
 #include "pu/http_client.hpp"
 #include "infra/curl_http_client.hpp"
 #include "pu/error.hpp"
+#include "pu/llm/provider_factory.hpp"
 
 namespace pu {
 

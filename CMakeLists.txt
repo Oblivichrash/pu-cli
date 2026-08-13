@@ -25,6 +25,7 @@ add_library(pu_engine STATIC
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/streaming_json_parser.cpp
+    src/llm/provider_factory.cpp
     # mcp
     src/mcp/stdio_transport.cpp
     src/mcp/json_rpc_client.cpp

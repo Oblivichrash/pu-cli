@@ -20,7 +20,7 @@ void CurlSlist::append(const char* str) { list = curl_slist_append(list, str); }
 
 CurlHttpClient::CurlHttpClient() {
   handle_ = curl_easy_init();
-  if (!handle_) throw pu::Error("Failed to initialize libcurl");
+  if (!handle_) throw pu::RuntimeError("Failed to initialize libcurl");
   interrupt_checker_ = [] { return pu::platform::IsInterrupted(); };
 }
 

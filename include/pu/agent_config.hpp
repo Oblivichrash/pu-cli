@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -179,13 +180,13 @@ inline void to_json(nlohmann::json& j, const AgentEntry& entry) {
 
 inline void from_json(const nlohmann::json& j, AgentEntry& entry) {
   entry.name = j.value("name", "");
-  if (entry.name.empty()) throw pu::Error("Missing agent name");
+  if (entry.name.empty()) throw pu::RuntimeError("AgentEntry missing field: name");
   entry.description = j.value("description", "");
   if (!j.contains("backend") || !j["backend"].is_object())
-    throw pu::Error("Missing backend field");
+    throw pu::RuntimeError("AgentEntry missing field: backend");
   entry.backend = j["backend"].get<BackendConfig>();
   if (entry.backend.host.empty() || entry.backend.model.empty())
-    throw pu::Error("Missing host or model in backend");
+    throw pu::RuntimeError("AgentEntry missing field: backend.host or backend.model");
 
   entry.tools.clear();
   if (j.contains("tools") && j["tools"].is_array()) {
@@ -215,10 +216,8 @@ struct AgentsConfig {
   std::vector<AgentEntry> agents;
 };
 
-std::string FindConfigPath();
+std::filesystem::path FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
-std::unique_ptr<pu::LLMProvider> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config

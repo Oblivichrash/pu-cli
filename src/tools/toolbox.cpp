@@ -16,10 +16,10 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   std::string name = tool->Name();
   // Empty name would cause ambiguous lookup and potential security issues.
   if (name.empty()) {
-    throw pu::Error("Tool name cannot be empty");
+    throw pu::RuntimeError("Tool name cannot be empty");
   }
   if (tools_.find(name) != tools_.end()) {
-    throw pu::Error("Tool already registered: " + name);
+    throw pu::RuntimeError("Tool already registered: " + name);
   }
   tools_[name] = std::move(tool);
 }

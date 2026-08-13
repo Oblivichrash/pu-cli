@@ -50,8 +50,15 @@ class Executor {
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
 
-  void ProbeStaticEnvironment();
+  // RunToolLoop split into focused helpers (logic unchanged).
+  std::vector<ChatMessage> PrepareChatHistory(Workspace& workspace) const;
+  void ProcessToolCalls(Workspace& workspace, const ChatResult& chat_result,
+                        std::vector<ToolCall>& collected_calls,
+                        ToolLoopResult& result, bool& stop_after_clarification);
+  void FinalizeResult(Workspace& workspace, ToolLoopResult& result,
+                      bool hit_max_iterations) const;
 
+  void ProbeStaticEnvironment();
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   config::HistoryCompactionConfig compaction_config_;

@@ -203,31 +203,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     ++iteration;
     tool_was_called = false;
 
-    std::vector<ChatMessage> chat_history;
-    for (const auto& msg : workspace.GetHistory()) {
-      chat_history.push_back(msg);
-    }
-
-    bool has_system = false;
-    for (const auto& msg : chat_history) {
-      if (msg.role == "system") {
-        has_system = true;
-        break;
-      }
-    }
-
-    if (!has_system) {
-      std::string static_context = BuildStaticSystemContext();
-      auto system_prompt_var = workspace.GetVar("system_prompt");
-      if (system_prompt_var && system_prompt_var->is_string() &&
-          !system_prompt_var->get<std::string>().empty()) {
-        static_context = system_prompt_var->get<std::string>() + "\n\n" + static_context;
-      }
-      ChatMessage sys;
-      sys.role = "system";
-      sys.content = static_context;
-      chat_history.insert(chat_history.begin(), std::move(sys));
-    }
+    std::vector<ChatMessage> chat_history = PrepareChatHistory(workspace);
 
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;
@@ -260,87 +236,140 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       break;
     }
 
-    if (!collected_calls.empty()) {
-      for (auto& tc : collected_calls) {
-        if (tc.id.empty()) {
-          tc.id = "call_" + std::to_string(++next_tool_call_id_);
-        }
-      }
-
-      ChatMessage assistant_msg;
-      assistant_msg.role = "assistant";
-      assistant_msg.content = chat_result.content;
-      assistant_msg.reasoning_content = chat_result.reasoning_content;
-
-      json j_calls = json::array();
-      for (const auto& tc : collected_calls) {
-        json jc;
-        jc["id"] = tc.id;
-        jc["type"] = "function";
-        jc["function"]["name"] = tc.name;
-        jc["function"]["arguments"] = tc.arguments;
-        j_calls.push_back(jc);
-      }
-      assistant_msg.tool_calls_json = j_calls.dump();
-      workspace.Append(assistant_msg);
-
-      ToolContext tool_ctx;
-      if (security_policy_.has_value()) {
-        tool_ctx.security = &security_policy_.value();
-      } else {
-        static config::SecurityPolicy empty_policy;
-        tool_ctx.security = &empty_policy;
-        spdlog::warn("No security policy set for Executor. Using empty policy.");
-      }
-      if (!tool_ctx.request_confirmation) {
-        tool_ctx.request_confirmation = [](const std::string&) { return true; };
-      }
-
-      for (const auto& call : collected_calls) {
-        ++result.tool_call_count;
-        std::string tool_result;
-        SetLogToolName(call.name);
-        auto tool_start = std::chrono::steady_clock::now();
-        try {
-          tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
-        } catch (const std::exception& e) {
-          tool_result = std::string("Tool execution error: ") + e.what();
-        }
-        auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - tool_start).count();
-        SetLogDurationMs(tool_ms);
-        spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
-        ClearLogToolName();
-        ClearLogDurationMs();
-
-        ChatMessage tool_msg;
-        tool_msg.role = "tool";
-        tool_msg.content = tool_result;
-        tool_msg.tool_name = call.name;
-        tool_msg.tool_call_id = call.id;
-        workspace.Append(tool_msg);
-
-        // ask_user is a clarification request, not a tool outcome: surface the
-        // question as the final response and stop the loop. The exchange is
-        // already in the transcript (assistant tool call + tool result), and
-        // the question is appended as the assistant turn by the caller.
-        if (call.name == "ask_user") {
-          try {
-            auto j = json::parse(tool_result);
-            if (j.value("error", "") == "clarification_needed") {
-              result.final_response = j.value("question", "");
-              result.was_streamed = false;
-              stop_after_clarification = true;
-              break;
-            }
-          } catch (const std::exception&) {
-            // Malformed result: let the model see the tool error and retry.
-          }
-        }
-      }
-    }
+    ProcessToolCalls(workspace, chat_result, collected_calls, result,
+                     stop_after_clarification);
   } while (tool_was_called && !stop_after_clarification);
 
+  FinalizeResult(workspace, result, hit_max_iterations);
+
+  return result;
+}
+
+// Builds the chat history for the next provider call, injecting the static
+// system context when the transcript has no system message yet.
+std::vector<ChatMessage> Executor::PrepareChatHistory(Workspace& workspace) const {
+  std::vector<ChatMessage> chat_history;
+  for (const auto& msg : workspace.GetHistory()) {
+    chat_history.push_back(msg);
+  }
+
+  bool has_system = false;
+  for (const auto& msg : chat_history) {
+    if (msg.role == "system") {
+      has_system = true;
+      break;
+    }
+  }
+
+  if (!has_system) {
+    std::string static_context = BuildStaticSystemContext();
+    auto system_prompt_var = workspace.GetVar("system_prompt");
+    if (system_prompt_var && system_prompt_var->is_string() &&
+        !system_prompt_var->get<std::string>().empty()) {
+      static_context = system_prompt_var->get<std::string>() + "\n\n" + static_context;
+    }
+    ChatMessage sys;
+    sys.role = "system";
+    sys.content = static_context;
+    chat_history.insert(chat_history.begin(), std::move(sys));
+  }
+
+  return chat_history;
+}
+
+// Records the assistant turn, executes every collected tool call, appends the
+// tool results to the transcript, and stops early when ask_user asks a
+// clarification question.
+void Executor::ProcessToolCalls(Workspace& workspace,
+                                const ChatResult& chat_result,
+                                std::vector<ToolCall>& collected_calls,
+                                ToolLoopResult& result,
+                                bool& stop_after_clarification) {
+  if (collected_calls.empty()) return;
+
+  for (auto& tc : collected_calls) {
+    if (tc.id.empty()) {
+      tc.id = "call_" + std::to_string(++next_tool_call_id_);
+    }
+  }
+
+  ChatMessage assistant_msg;
+  assistant_msg.role = "assistant";
+  assistant_msg.content = chat_result.content;
+  assistant_msg.reasoning_content = chat_result.reasoning_content;
+
+  json j_calls = json::array();
+  for (const auto& tc : collected_calls) {
+    json jc;
+    jc["id"] = tc.id;
+    jc["type"] = "function";
+    jc["function"]["name"] = tc.name;
+    jc["function"]["arguments"] = tc.arguments;
+    j_calls.push_back(jc);
+  }
+  assistant_msg.tool_calls_json = j_calls.dump();
+  workspace.Append(assistant_msg);
+
+  ToolContext tool_ctx;
+  if (security_policy_.has_value()) {
+    tool_ctx.security = &security_policy_.value();
+  } else {
+    static config::SecurityPolicy empty_policy;
+    tool_ctx.security = &empty_policy;
+    spdlog::warn("No security policy set for Executor. Using empty policy.");
+  }
+  if (!tool_ctx.request_confirmation) {
+    tool_ctx.request_confirmation = [](const std::string&) { return true; };
+  }
+
+  for (const auto& call : collected_calls) {
+    ++result.tool_call_count;
+    std::string tool_result;
+    SetLogToolName(call.name);
+    auto tool_start = std::chrono::steady_clock::now();
+    try {
+      tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
+    } catch (const std::exception& e) {
+      tool_result = std::string("Tool execution error: ") + e.what();
+    }
+    auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - tool_start).count();
+    SetLogDurationMs(tool_ms);
+    spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
+    ClearLogToolName();
+    ClearLogDurationMs();
+
+    ChatMessage tool_msg;
+    tool_msg.role = "tool";
+    tool_msg.content = tool_result;
+    tool_msg.tool_name = call.name;
+    tool_msg.tool_call_id = call.id;
+    workspace.Append(tool_msg);
+
+    // ask_user is a clarification request, not a tool outcome: surface the
+    // question as the final response and stop the loop. The exchange is
+    // already in the transcript (assistant tool call + tool result), and
+    // the question is appended as the assistant turn by the caller.
+    if (call.name == "ask_user") {
+      try {
+        auto j = json::parse(tool_result);
+        if (j.value("error", "") == "clarification_needed") {
+          result.final_response = j.value("question", "");
+          result.was_streamed = false;
+          stop_after_clarification = true;
+          break;
+        }
+      } catch (const std::exception&) {
+        // Malformed result: let the model see the tool error and retry.
+      }
+    }
+  }
+}
+
+// Falls back to the last non-empty assistant turn in the transcript when the
+// provider returned no final response, or emits a generic message.
+void Executor::FinalizeResult(Workspace& workspace, ToolLoopResult& result,
+                              bool hit_max_iterations) const {
   if (result.final_response.empty()) {
     auto history = workspace.GetHistory();
     for (auto it = history.rbegin(); it != history.rend(); ++it) {
@@ -361,8 +390,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
           "Tool execution completed but no final answer was generated. Please rephrase your request.";
     }
   }
-
-  return result;
 }
 
 }  // namespace pu

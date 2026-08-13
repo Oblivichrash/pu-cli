@@ -25,7 +25,7 @@ struct AppContext {
 AppContext SetupAppContext(const std::string& requested_agent) {
   AppContext ctx;
   try {
-    ctx.config_path = config::FindConfigPath();
+    ctx.config_path = config::FindConfigPath().string();
   } catch (const std::exception& e) {
     spdlog::error("{}", e.what());
     std::exit(1);

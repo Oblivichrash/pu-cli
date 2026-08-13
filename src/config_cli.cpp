@@ -171,7 +171,7 @@ int RunConfig(int argc, char* argv[]) {
 
   std::string config_path;
   try {
-    config_path = pu::config::FindConfigPath();
+    config_path = pu::config::FindConfigPath().string();
   } catch (const std::exception& e) {
     std::cerr << e.what() << "\n";
     return 1;
