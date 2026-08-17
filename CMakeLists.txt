@@ -85,3 +85,8 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pu)
+
+# Prompt templates data file
+set(PU_DATA_DIR "${CMAKE_INSTALL_FULL_DATADIR}/pu")
+target_compile_definitions(pu PRIVATE PU_DATA_DIR="${PU_DATA_DIR}")
+install(FILES data/prompts.json DESTINATION ${CMAKE_INSTALL_DATADIR}/pu)

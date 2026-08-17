@@ -3,11 +3,16 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include "model_scanner.hpp"
 #include "provider_registry.hpp"
@@ -16,7 +21,10 @@ namespace pu::config_tools {
 
 namespace {
 
-const std::map<std::string, std::string>& GetPromptTemplates() {
+// Hardcoded fallback templates used when no prompts.json file is found,
+// unreadable, or malformed. Kept identical to the original hardcoded set so
+// behavior is unchanged when no external file is present.
+const std::map<std::string, std::string>& HardcodedPromptTemplates() {
   static const std::map<std::string, std::string> templates = {
       {"general",
        "You are a helpful AI assistant. Answer the user's questions accurately and concisely."},
@@ -30,6 +38,91 @@ const std::map<std::string, std::string>& GetPromptTemplates() {
        "You are a DevOps engineer. Help with system administration, deployment, "
        "monitoring, and infrastructure tasks. Prioritize safety and best practices."},
   };
+  return templates;
+}
+
+// Returns the first prompts.json found, in priority order:
+//   1. ./prompts.json          (current directory)
+//   2. ~/.pu/prompts.json      (user directory)
+//   3. PU_DATA_DIR/prompts.json (system install directory)
+// Returns an empty path if none exist.
+std::filesystem::path FindPromptsFile() {
+  const std::filesystem::path local = "./prompts.json";
+  if (std::filesystem::exists(local)) return local;
+
+  if (const char* home = std::getenv("HOME")) {
+    const std::filesystem::path user = std::filesystem::path(home) / ".pu" / "prompts.json";
+    if (std::filesystem::exists(user)) return user;
+  }
+
+#ifdef PU_DATA_DIR
+  const std::filesystem::path system = std::filesystem::path(PU_DATA_DIR) / "prompts.json";
+  if (std::filesystem::exists(system)) return system;
+#endif
+
+  return {};
+}
+
+// Loads templates from a prompts.json file. Returns true on success and
+// populates `out`. Returns false if the file is missing, unparseable, or
+// contains no templates.
+bool LoadTemplatesFromFile(const std::filesystem::path& path,
+                           std::map<std::string, std::string>& out) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    spdlog::debug("Failed to open prompts file: {}", path.string());
+    return false;
+  }
+
+  nlohmann::json j;
+  try {
+    file >> j;
+  } catch (const std::exception& e) {
+    spdlog::debug("Failed to parse prompts file {}: {}", path.string(), e.what());
+    return false;
+  }
+
+  if (!j.contains("templates") || !j["templates"].is_array()) {
+    spdlog::debug("Prompts file {} has no 'templates' array", path.string());
+    return false;
+  }
+
+  out.clear();
+  for (const auto& item : j["templates"]) {
+    if (!item.is_object()) continue;
+    const std::string name = item.value("name", "");
+    const std::string prompt = item.value("prompt", "");
+    if (name.empty() || prompt.empty()) continue;
+    out[name] = prompt;
+  }
+
+  if (out.empty()) {
+    spdlog::debug("Prompts file {} contains no valid templates", path.string());
+    return false;
+  }
+
+  return true;
+}
+
+// Returns the effective prompt templates: tries to load from the first
+// available prompts.json file; falls back to the hardcoded map on any failure.
+const std::map<std::string, std::string>& GetPromptTemplates() {
+  static const std::map<std::string, std::string> templates = []() {
+    const auto path = FindPromptsFile();
+    if (path.empty()) {
+      spdlog::debug("No prompts.json found; using hardcoded templates");
+      return HardcodedPromptTemplates();
+    }
+
+    std::map<std::string, std::string> loaded;
+    if (LoadTemplatesFromFile(path, loaded)) {
+      spdlog::debug("Loaded {} prompt templates from {}", loaded.size(), path.string());
+      return loaded;
+    }
+
+    spdlog::debug("Failed to load prompts from {}; using hardcoded templates", path.string());
+    return HardcodedPromptTemplates();
+  }();
   return templates;
 }
 
