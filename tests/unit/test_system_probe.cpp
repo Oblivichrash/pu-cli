@@ -10,6 +10,7 @@
 #include "pu/error.hpp"
 #include "mocks/mock_http_client.hpp"
 #include "src/config_tools/system_probe.hpp"
+#include "test_helpers.hpp"
 
 namespace {
 
@@ -19,16 +20,16 @@ class ScopedEnv {
     old_ = std::getenv(name) ? std::getenv(name) : "";
     had_old_ = std::getenv(name) != nullptr;
     if (value) {
-      setenv(name, value, 1);
+      test_helpers::set_env(name, value, 1);
     } else {
-      unsetenv(name);
+      test_helpers::unset_env(name);
     }
   }
   ~ScopedEnv() {
     if (had_old_) {
-      setenv(name_.c_str(), old_.c_str(), 1);
+      test_helpers::set_env(name_.c_str(), old_.c_str(), 1);
     } else {
-      unsetenv(name_.c_str());
+      test_helpers::unset_env(name_.c_str());
     }
   }
 
@@ -48,14 +49,14 @@ class ScopedHome {
     std::filesystem::create_directories(dir_);
     old_ = std::getenv("HOME") ? std::getenv("HOME") : "";
     had_old_ = std::getenv("HOME") != nullptr;
-    setenv("HOME", dir_.c_str(), 1);
+    test_helpers::set_env("HOME", dir_.c_str(), 1);
   }
   ~ScopedHome() {
     std::filesystem::remove_all(dir_);
     if (had_old_) {
-      setenv("HOME", old_.c_str(), 1);
+      test_helpers::set_env("HOME", old_.c_str(), 1);
     } else {
-      unsetenv("HOME");
+      test_helpers::unset_env("HOME");
     }
   }
 
