@@ -4,24 +4,19 @@
 #include <cstdlib>
 #include <string>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 namespace test_helpers {
 
-inline void set_env(const char* name, const char* value, int overwrite) {
+inline void set_env(const char* name, const char* value) {
 #ifdef _WIN32
-  (void)overwrite;
-  _putenv_s(name, value ? value : "");
+  _putenv((std::string(name) + "=" + value).c_str());
 #else
-  setenv(name, value, overwrite);
+  setenv(name, value, 1);
 #endif
 }
 
 inline void unset_env(const char* name) {
 #ifdef _WIN32
-  _putenv_s(name, "");
+  _putenv((std::string(name) + "=").c_str());
 #else
   unsetenv(name);
 #endif
