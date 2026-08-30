@@ -28,16 +28,13 @@ struct RuntimeSpec {
 
 class Session {
 public:
-  Session(const std::string& id, const std::string& owner_id);
-  Session(const std::string& id, const std::string& owner_id,
-          std::shared_ptr<Workspace> workspace,
-          const RuntimeSpec& spec);
+  Session();
+  explicit Session(std::shared_ptr<Workspace> workspace);
+  Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec);
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
-
-  std::string GetId() const { return id_; }
 
   Workspace& GetWorkspace() { return *workspace_; }
   const Workspace& GetWorkspace() const { return *workspace_; }
@@ -56,8 +53,6 @@ public:
   static std::unique_ptr<Session> Deserialize(const nlohmann::json& j);
 
 private:
-  std::string id_;
-  std::string owner_id_;
   std::chrono::system_clock::time_point created_at_;
   std::chrono::system_clock::time_point last_access_at_;
   std::shared_ptr<Workspace> workspace_;

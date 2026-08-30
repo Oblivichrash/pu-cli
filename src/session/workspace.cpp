@@ -23,11 +23,6 @@ std::string CurrentTimestamp() {
 
 } // namespace
 
-Workspace::Workspace(const std::string& id)
-  : id_(id),
-      transcript_(std::make_unique<Transcript>()),
-      memory_(std::make_unique<Memory>()) {}
-
 void Workspace::Append(const ChatMessage& msg) {
   if (!transcript_) transcript_ = std::make_unique<Transcript>();
   transcript_->Append(msg);
@@ -101,7 +96,6 @@ void Workspace::ClearArtifacts() {
 
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
-  j["id"] = id_;
 
   if (transcript_) {
     j["history"] = transcript_->Serialize();
@@ -149,7 +143,6 @@ std::shared_ptr<Workspace> Workspace::Load(const std::filesystem::path& path) {
 
 std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   auto ws = std::make_shared<Workspace>();
-  ws->id_ = j.value("id", "");
   ws->transcript_ = std::make_unique<Transcript>();
 
   if (j.contains("history") && j["history"].is_array()) {

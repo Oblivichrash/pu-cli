@@ -32,10 +32,4 @@ private:
     std::string detail_;
 };
 
-// Storage / persistence errors (from SessionStore)
-class StoreError : public Error {
-public:
-    explicit StoreError(const std::string& msg) : Error(msg) {}
-};
-
 }  // namespace pu

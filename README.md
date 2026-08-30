@@ -2,7 +2,7 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist CLI orchestrator for LLMs with **multi-session isolation** and **dynamic backend switching**.
+A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence** and **dynamic backend switching**.
 
 ---
 
@@ -47,6 +47,8 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
 > /backend deepseek-pro    # switch to predefined agent
 ```
 
+Your conversation is automatically saved to `./.pu/session.json` after every interaction, and restored when you restart. Each directory has its own independent session.
+
 ---
 
 ## Core Commands
@@ -57,10 +59,6 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
 | `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
 | `/backend <type> <model>` | Manual backend switch |
 | `/agents` | List available agents |
-| `/save [name]` | Save conversation |
-| `/load <id>` | Load conversation |
-| `/list` | List saved conversations |
-| `/export <id>` | Export conversation as Markdown |
 | `/note add <text> \| /note show` | Add or show notes |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |

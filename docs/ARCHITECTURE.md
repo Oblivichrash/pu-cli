@@ -6,7 +6,7 @@
 
 pu-cli is built around four principles:
 
-1. **Session isolation** — Each session owns its workspace and history.
+1. **Single-session auto-persistence** — One session owns the workspace and history, transparently persisted.
 2. **Dynamic backend switching** — Switch LLM providers without losing state.
 3. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
 4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
@@ -17,14 +17,13 @@ pu-cli is built around four principles:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `Runtime` | Plain object created by `main()`; owns `AgentManager`, `SessionStore`, `Toolbox`, `Executor`, `CommandRouter`; routes input, manages sessions, rebuilds tool registry on agent switch |
+| `Runtime` | Plain object created by `main()`; owns `AgentManager`, `Toolbox`, `Executor`, `CommandRouter`; routes input, holds the single `Session`, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
 | `Executor` | Stateless tool loop; reads/writes `Workspace`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
-| `SessionStore` | Persists sessions to `<data-dir>/sessions/` (data dir is `PU_HOME` or `./.pu/`) |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
@@ -39,8 +38,7 @@ All non-recoverable runtime errors derive from a single base class:
 ```
 pu::RuntimeError : std::runtime_error
   ├── pu::Error            (e.g. configuration parsing)
-  │     ├── pu::HttpError  (HttpClient failures)
-  │     └── pu::StoreError (SessionStore persistence failures)
+  │     └── pu::HttpError  (HttpClient failures)
 ```
 
 `main()` wraps top-level dispatch in a `try/catch (const std::exception&)` so any
@@ -85,7 +83,7 @@ This context is merged with the user‑defined `system_prompt` (if any) and prep
 
 ### Forbidden Patterns
 
-The security policy’s `forbidden_patterns` is enforced at the tool execution layer. Commands matching any pattern are rejected with a JSON error response. It is strongly recommended to include `"cd"` to prevent the model from changing the working directory.
+The security policy's `forbidden_patterns` is enforced at the tool execution layer. Commands matching any pattern are rejected with a JSON error response. It is strongly recommended to include `"cd"` to prevent the model from changing the working directory.
 
 ---
 
@@ -103,10 +101,19 @@ main()
 
 Key responsibilities:
 
-- `Initialize(config_path)` — loads `agents.json` (from `./.pu/` or `~/.pu/`), creates `AgentManager`, `SessionStore`, `Executor`, `CommandRouter`, then builds the default toolbox.
-- `CreateSession(owner, agent, backend)` — creates a session; `backend` is optional.
+- `Initialize(config_path)` — loads `agents.json` (from `./.pu/` or `~/.pu/`), creates `AgentManager`, `Executor`, `CommandRouter`, builds the default toolbox, then restores the single session from `<data-dir>/session.json` if present.
+- `ProcessInput(input, ...)` — routes either to `CommandRouter` (commands) or to `Executor` (messages), then saves the session.
+- `Shutdown()` — saves the single session to `<data-dir>/session.json`.
 - `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
-- `ProcessInput(...)` — routes either to `CommandRouter` (commands) or to `Executor` (messages).
+
+### Single-session auto-persistence
+
+`Runtime` maintains a single `std::shared_ptr<Session> current_session_`. On
+`Initialize()` it loads `<data-dir>/session.json` (if the file exists) via
+`Session::Deserialize`. After every `ProcessInput()` call and on `Shutdown()`, the
+session is serialized back to the same file via `Session::Serialize`. There is no
+manual save/load/list/export; persistence is fully automatic and scoped to the data
+directory (`PU_HOME` or `./.pu/`).
 
 ### Toolbox & MCP lifecycle
 
@@ -130,7 +137,7 @@ RebuildToolbox(agent)
 User Input
     │
     ▼
-Runtime.ProcessInput(session_id, input, ...)
+Runtime.ProcessInput(input, ...)
     │
     ├── Is command? ──► CommandRouter ──► Session mutation
     │
@@ -148,7 +155,7 @@ Runtime.ProcessInput(session_id, input, ...)
                          └── Return final response
                          │
                          ▼
-                       SessionStore.SaveSession()
+                       Session::Serialize() → session.json
 ```
 
 ---
@@ -187,12 +194,11 @@ Compaction runs automatically in `Executor::Execute()` if:
 ## Persistence
 
 ```
-<data-dir>/sessions/
-├── session_123456.json   # Full session state
-└── session_123457.json
+<data-dir>/session.json   # Single session state
 ```
 
-Each session file contains serialized `Workspace` and `RuntimeSpec`.
+The session file contains serialized `Workspace` and `RuntimeSpec`. It is written
+automatically after every interaction and on shutdown, and restored on startup.
 
 ---
 
@@ -209,7 +215,6 @@ include/pu/
 ├── runtime.hpp           # Runtime
 ├── executor.hpp          # Executor (stateless, with system context injection)
 ├── http_client.hpp       # HttpClient interface
-├── session_store.hpp     # SessionStore
 ├── cli.hpp, error.hpp, path_utils.hpp
 ├── core/                 # Logging
 ├── infra/                # Platform utilities
@@ -223,7 +228,6 @@ src/
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
-├── session_store.cpp
 ├── core/                 # Logging
 ├── infra/                # CurlHttpClient, platform
 ├── llm/                  # Providers, streaming parser

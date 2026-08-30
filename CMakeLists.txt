@@ -16,7 +16,6 @@ add_library(pu_core STATIC
     src/session/transcript.cpp
     src/session/memory.cpp
     src/session/session.cpp
-    src/session_store.cpp
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp

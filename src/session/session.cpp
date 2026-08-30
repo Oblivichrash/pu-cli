@@ -8,18 +8,20 @@
 
 namespace pu {
 
-Session::Session(const std::string& id, const std::string& owner_id)
-  : id_(id), owner_id_(owner_id),
-    created_at_(std::chrono::system_clock::now()),
+Session::Session()
+  : created_at_(std::chrono::system_clock::now()),
     last_access_at_(created_at_),
     workspace_(std::make_shared<Workspace>()),
     runtime_spec_() {}
 
-Session::Session(const std::string& id, const std::string& owner_id,
-                 std::shared_ptr<Workspace> workspace,
-                 const RuntimeSpec& spec)
-  : id_(id), owner_id_(owner_id),
-    created_at_(std::chrono::system_clock::now()),
+Session::Session(std::shared_ptr<Workspace> workspace)
+  : created_at_(std::chrono::system_clock::now()),
+    last_access_at_(created_at_),
+    workspace_(std::move(workspace)),
+    runtime_spec_() {}
+
+Session::Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec)
+  : created_at_(std::chrono::system_clock::now()),
     last_access_at_(created_at_),
     workspace_(std::move(workspace)),
     runtime_spec_(spec) {}
@@ -71,8 +73,6 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
 
 nlohmann::json Session::Serialize() const {
   nlohmann::json j;
-  j["id"] = id_;
-  j["owner_id"] = owner_id_;
   j["created_at"] = std::chrono::duration_cast<std::chrono::seconds>(
       created_at_.time_since_epoch()).count();
   j["last_access_at"] = std::chrono::duration_cast<std::chrono::seconds>(
@@ -83,11 +83,9 @@ nlohmann::json Session::Serialize() const {
 }
 
 std::unique_ptr<Session> Session::Deserialize(const nlohmann::json& j) {
-  auto id = j["id"].get<std::string>();
-  auto owner_id = j["owner_id"].get<std::string>();
   auto ws = Workspace::Deserialize(j["workspace"]);
   auto spec = RuntimeSpec::Deserialize(j["runtime_spec"]);
-  auto session = std::make_unique<Session>(id, owner_id, ws, spec);
+  auto session = std::make_unique<Session>(ws, spec);
   if (j.contains("created_at")) {
     auto secs = std::chrono::seconds(j["created_at"].get<int64_t>());
     session->created_at_ = std::chrono::system_clock::time_point(secs);

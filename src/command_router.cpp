@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/command_router.hpp"
 #include "pu/session/workspace.hpp"
-#include "pu/session_store.hpp"
 #include "pu/path_utils.hpp"
 #include "pu/runtime.hpp"
 
@@ -28,10 +27,6 @@ std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string
   return "Usage: " + cmd + " " + usage;
 }
 
-SessionStore CommandRouter::GetSessionStore() const {
-  return SessionStore(pu::path::GetDataDir() / "sessions");
-}
-
 CommandRouter::Registry CommandRouter::BuildRegistry() {
   Registry reg;
   auto add = [&reg](const std::string& cmd, CommandHandler handler, const std::string& help) {
@@ -43,11 +38,6 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /backend <agent_name>  Switch to a predefined agent\n"
       "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
-  add("/save", &CommandRouter::HandleSave, "  /save [name]           Save conversation\n");
-  add("/load", &CommandRouter::HandleLoad, "  /load <id>             Load conversation\n");
-  add("/list", &CommandRouter::HandleList, "  /list                  List saved conversations\n");
-  add("/export", &CommandRouter::HandleExport,
-      "  /export <id>           Export conversation as Markdown\n");
   add("/note", &CommandRouter::HandleNote,
       "  /note add <text>       Add a note\n"
       "  /note show             Show notes\n");
@@ -186,118 +176,6 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
     oss << "\n";
   }
   output = oss.str();
-  return true;
-}
-
-bool CommandRouter::HandleSave(const std::vector<std::string>& args, Session& session, std::string& output) {
-  std::string save_name;
-
-  for (const auto& arg : args) {
-    if (arg == "--no-summary") continue;  // Accepted for CLI compatibility; summary is not generated on save.
-    save_name = arg;
-  }
-
-  if (save_name.empty()) {
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    std::ostringstream ss;
-    ss << in_time_t;
-    save_name = ss.str();
-  }
-
-  auto store = GetSessionStore();
-
-  auto session_copy = Session(save_name, "cli");
-  auto history = session.GetWorkspace().GetHistory();
-  for (const auto& msg : history) {
-    ChatMessage session_msg;
-    session_msg.id = msg.id;
-    session_msg.timestamp = msg.timestamp;
-    session_msg.role = msg.role;
-    session_msg.content = msg.content;
-    session_msg.tool_name = msg.tool_name;
-    session_msg.tool_calls_json = msg.tool_calls_json;
-    session_copy.GetWorkspace().Append(session_msg);
-  }
-
-  try {
-    store.SaveSession(session_copy);
-    output = "Conversation saved as '" + save_name + "'";
-  } catch (const std::exception& e) {
-    output = std::string("Error saving conversation: ") + e.what();
-  }
-  return true;
-}
-
-bool CommandRouter::HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output) {
-  if (RequireMinArgs(args, 1, FormatUsage("/load", "<id>"), output))
-    return true;
-
-  auto store = GetSessionStore();
-
-  try {
-    auto loaded = store.LoadSession(args[0]);
-    if (!loaded) {
-      output = "Error: session not found: " + args[0];
-      return true;
-    }
-    auto& ws = session.GetWorkspace();
-    auto history = loaded->GetWorkspace().GetHistory();
-    for (const auto& msg : history) {
-      ws.Append(msg);
-    }
-    output = "Loaded conversation '" + args[0] + "'";
-  } catch (const std::exception& e) {
-    output = std::string("Error loading conversation: ") + e.what();
-  }
-  return true;
-}
-
-bool CommandRouter::HandleList(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
-  auto store = GetSessionStore();
-  auto metadata = store.ListAllMetadata();
-
-  std::ostringstream oss;
-  if (metadata.empty()) {
-    oss << "No saved conversations.";
-  } else {
-    oss << "Saved conversations:\n";
-    for (const auto& meta : metadata) {
-      oss << "  " << meta.id << " (created: " << meta.created_at << ")\n";
-    }
-  }
-  output = oss.str();
-  return true;
-}
-
-bool CommandRouter::HandleExport(const std::vector<std::string>& args, Session& /*session*/, std::string& output) {
-  if (RequireMinArgs(args, 1, FormatUsage("/export", "<id>"), output))
-    return true;
-
-  auto store = GetSessionStore();
-
-  try {
-    auto loaded = store.LoadSession(args[0]);
-    if (!loaded) {
-      output = "Error: session not found: " + args[0];
-      return true;
-    }
-
-    std::string filename = "conversation_" + args[0] + ".md";
-    std::ofstream out(filename);
-    if (!out) {
-      output = "Error: cannot write to " + filename;
-    } else {
-      out << "# Conversation: " << loaded->GetId() << "\n\n";
-      auto history = loaded->GetWorkspace().GetHistory();
-      for (const auto& msg : history) {
-        out << "**" << msg.role << "** (" << msg.timestamp << "):\n\n" << msg.content << "\n\n---\n\n";
-      }
-      output = "Exported to " + filename;
-    }
-  } catch (const std::exception& e) {
-    output = std::string("Error exporting conversation: ") + e.what();
-  }
   return true;
 }
 

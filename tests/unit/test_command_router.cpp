@@ -31,7 +31,7 @@ std::string MakeTempHome() {
 struct RouterFixture {
   AgentManager manager;
   Runtime runtime;
-  Session session{"test-session", "tester"};
+  Session session;
   CommandRouter router;
 
   RouterFixture() : router(manager, runtime) {
@@ -62,7 +62,6 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(f.Route("/help", output));
   REQUIRE(output.find("/help") != std::string::npos);
   REQUIRE(output.find("/backend") != std::string::npos);
-  REQUIRE(output.find("/save") != std::string::npos);
   REQUIRE(output.find("/exit, /quit") != std::string::npos);
 
   REQUIRE(f.Route("/clear", output));
@@ -71,9 +70,6 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(f.Route("/agents", output));
   REQUIRE(output.find("chat") != std::string::npos);
   REQUIRE(output.find("coder") != std::string::npos);
-
-  REQUIRE(f.Route("/list", output));
-  REQUIRE(output == "No saved conversations.");
 }
 
 TEST_CASE("CommandRouter handles /exit and /quit outside the registry",
@@ -100,12 +96,6 @@ TEST_CASE("CommandRouter rejects unknown and non-command input", "[router]") {
 TEST_CASE("CommandRouter validates arguments with RequireMinArgs", "[router]") {
   RouterFixture f;
   std::string output;
-
-  REQUIRE(f.Route("/load", output));
-  REQUIRE(output == "Usage: /load <id>");
-
-  REQUIRE(f.Route("/export", output));
-  REQUIRE(output == "Usage: /export <id>");
 
   REQUIRE(f.Route("/note", output));
   REQUIRE(output == "Usage: /note add <text> | show");

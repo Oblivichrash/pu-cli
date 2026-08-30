@@ -46,7 +46,6 @@ src/
   mcp/           MCP transport, JSON-RPC client, high-level client
   runtime/       Runtime, CommandRouter
   session/       Session, Workspace, Transcript, Memory
-  storage/       SessionStore
   tools/         Toolbox, tools (including McpTool adapter)
 include/pu/      Public headers
 tests/unit/      Unit tests

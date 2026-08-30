@@ -152,15 +152,9 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
 
     runtime.Initialize();
 
-    auto session = runtime.GetDefaultSession();
-    if (!session) {
-      spdlog::error("could not create session");
-      return 1;
-    }
-
     ExecutionResult result;
     bool is_command = false;
-    if (runtime.ProcessInput(session->GetId(), prompt, result, is_command)) {
+    if (runtime.ProcessInput(prompt, result, is_command)) {
       if (result.has_error) {
         spdlog::error("{}", result.error_message);
       } else if (!result.content.empty()) {
@@ -211,14 +205,6 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
 
   runtime.Initialize();
 
-  auto session = runtime.GetDefaultSession();
-  if (!session) {
-    spdlog::error("could not create session");
-    return 1;
-  }
-  auto session_id = session->GetId();
-
-  spdlog::info("Connected to session: {}", session_id);
   std::string agent_info = "Connected to agent: " + current_name;
   const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
@@ -243,7 +229,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
     try {
       ExecutionResult result;
       bool is_command = false;
-      if (runtime.ProcessInput(session_id, input, result, is_command)) {
+      if (runtime.ProcessInput(input, result, is_command)) {
         if (result.has_error) {
           spdlog::error("{}", result.error_message);
         } else if (!result.was_streamed) {
