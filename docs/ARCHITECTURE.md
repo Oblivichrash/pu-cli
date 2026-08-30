@@ -24,7 +24,7 @@ pu-cli is built around four principles:
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
-| `SessionStore` | Persists sessions to `~/.pu/sessions/` |
+| `SessionStore` | Persists sessions to `<data-dir>/sessions/` (data dir is `PU_HOME` or `./.pu/`) |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
@@ -103,7 +103,7 @@ main()
 
 Key responsibilities:
 
-- `Initialize(config_path)` — loads `agents.json`, creates `AgentManager`, `SessionStore`, `Executor`, `CommandRouter`, then builds the default toolbox.
+- `Initialize(config_path)` — loads `agents.json` (from `./.pu/` or `~/.pu/`), creates `AgentManager`, `SessionStore`, `Executor`, `CommandRouter`, then builds the default toolbox.
 - `CreateSession(owner, agent, backend)` — creates a session; `backend` is optional.
 - `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
 - `ProcessInput(...)` — routes either to `CommandRouter` (commands) or to `Executor` (messages).
@@ -187,7 +187,7 @@ Compaction runs automatically in `Executor::Execute()` if:
 ## Persistence
 
 ```
-~/.pu/sessions/
+<data-dir>/sessions/
 ├── session_123456.json   # Full session state
 └── session_123457.json
 ```

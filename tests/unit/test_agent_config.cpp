@@ -51,6 +51,78 @@ struct TempConfigFile {
   }
 };
 
+TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
+  // Use a temporary current directory and empty HOME so we do not disturb the
+  // repo layout or the real user configuration.
+  auto dir = fs::temp_directory_path() / "pu_findconfig_project";
+  auto home = fs::temp_directory_path() / "pu_findconfig_home";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+  fs::create_directories(dir / ".pu");
+  fs::create_directories(home);
+
+  auto old = fs::current_path();
+  fs::current_path(dir);
+  set_env("HOME", home.string().c_str());
+
+  {
+    std::ofstream f(dir / ".pu" / "agents.json");
+    f << "{}";
+  }
+
+  REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+
+  fs::current_path(old);
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+}
+
+TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
+  auto dir = fs::temp_directory_path() / "pu_findconfig_project2";
+  auto home = fs::temp_directory_path() / "pu_findconfig_home2";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+  fs::create_directories(dir);
+  fs::create_directories(home / ".pu");
+
+  auto old = fs::current_path();
+  fs::current_path(dir);
+  set_env("HOME", home.string().c_str());
+
+  {
+    std::ofstream f(home / ".pu" / "agents.json");
+    f << "{}";
+  }
+
+  REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
+
+  fs::current_path(old);
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+}
+
+TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]") {
+  auto dir = fs::temp_directory_path() / "pu_findconfig_empty";
+  auto home = fs::temp_directory_path() / "pu_findconfig_empty_home";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+  fs::create_directories(dir);
+  fs::create_directories(home);
+
+  auto old = fs::current_path();
+  fs::current_path(dir);
+  set_env("HOME", home.string().c_str());
+
+  REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+
+  fs::current_path(old);
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+}
+
 TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({

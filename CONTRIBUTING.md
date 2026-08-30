@@ -28,12 +28,14 @@ ctest --test-dir build --output-on-failure
 
 ## Logging
 
-- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical`.
-- Log files are stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The console only shows `error` and `critical` messages; `info`, `warn`, `debug`, and `trace` are never printed to the console.
+- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical` to control the file log verbosity (default `info`).
+- Log files are stored in `<data-dir>/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The data directory is `PU_HOME` if set, otherwise `./.pu/`.
 
 ## Directory Structure
 
-```
+```text
 src/
   agent/         AgentManager (config metadata only)
   app/           CLI, UI, session manager
@@ -49,6 +51,11 @@ src/
 include/pu/      Public headers
 tests/unit/      Unit tests
 ```
+
+## Configuration
+
+- The configuration file must be located in a `.pu/` directory.
+- Search order is `./.pu/agents.json` then `~/.pu/agents.json`.
 
 ## Adding Features
 

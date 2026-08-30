@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime.hpp"
 
+#include <filesystem>
 #include <iostream>
 
 #include <spdlog/spdlog.h>
@@ -22,6 +23,10 @@ void Runtime::Initialize(const std::string& config_path) {
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
+
+  // Ensure the data directory layout exists before any session/log access.
+  std::filesystem::create_directories(pu::path::GetDataDir() / "sessions");
+  std::filesystem::create_directories(pu::path::GetDataDir() / "logs");
 
   auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);

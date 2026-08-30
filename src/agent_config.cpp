@@ -137,9 +137,18 @@ RuntimeLimits ParseRuntimeLimits(const json& j) {
 } // unnamed namespace
 
 std::string FindConfigPath() {
-  if (auto* env = std::getenv("PU_AGENTS_CONFIG")) return env;
-  if (std::filesystem::exists("./agents.json")) return "./agents.json";
-  throw pu::Error("Configuration file not found. Set PU_AGENTS_CONFIG or place agents.json in current directory.");
+  const std::filesystem::path project = "./.pu/agents.json";
+  if (std::filesystem::exists(project)) return project.string();
+
+  const char* home = std::getenv("HOME");
+  if (home) {
+    const std::filesystem::path user =
+        std::filesystem::path(home) / ".pu" / "agents.json";
+    if (std::filesystem::exists(user)) return user.string();
+  }
+
+  throw pu::Error(
+      "Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {

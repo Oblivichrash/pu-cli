@@ -17,7 +17,7 @@ cmake --build build -j$(nproc)
 
 ### Configure
 
-Create `agents.json` in current directory or `~/.pu/`:
+Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (project-level) or `~/.pu/agents.json` (user-level):
 
 ```json
 {
@@ -95,6 +95,8 @@ This allows the executor to distinguish success from failure and provide clear f
 ## Configuration
 
 ### `agents.json`
+
+The configuration file must be located in a `.pu/` directory. Search order is `./.pu/agents.json` then `~/.pu/agents.json`.
 
 ```json
 {
@@ -183,15 +185,16 @@ This allows the executor to distinguish success from failure and provide clear f
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_AGENTS_CONFIG` | Path to agents.json |
-| `PU_HOME` | Data directory (default `~/.pu/`) |
-| `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `PU_HOME` | Overrides the data directory (default `./.pu/`) |
+| `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_LOG_CONSOLE=0` | Disable console logging |
 
 ### Logging
 
-Log files stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The console only shows `error` and `critical` messages; `info`, `warn`, `debug`, and `trace` are never printed to the console.
+- Use `PU_LOG_LEVEL` to control the file log verbosity (default `info`).
+- Log files are stored in `<data-dir>/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The data directory is `PU_HOME` if set, otherwise `./.pu/`.
 
 ---
 
