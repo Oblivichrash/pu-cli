@@ -22,7 +22,6 @@ namespace pu {
 
 namespace {
 
-thread_local std::string g_session_id;
 thread_local std::string g_request_id;
 thread_local std::string g_tool_name;
 thread_local int64_t g_duration_ms = -1;
@@ -86,8 +85,6 @@ std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) {
 
 }  // namespace
 
-void SetLogSessionId(const std::string& session_id) { g_session_id = session_id; }
-void ClearLogSessionId() { g_session_id.clear(); }
 void BeginRequest() { g_request_id = GenerateUuid(); }
 void SetLogRequestId(const std::string& request_id) { g_request_id = request_id; }
 void ClearLogRequestId() { g_request_id.clear(); }
@@ -102,7 +99,6 @@ void JsonLogFormatter::format(const spdlog::details::log_msg& msg,
   out += "\"timestamp\":\"" + FormatTimestamp(msg.time) + "\",";
   auto level_view = spdlog::level::to_string_view(msg.level);
   out += "\"level\":\"" + std::string(level_view.data(), level_view.size()) + "\",";
-  if (!g_session_id.empty()) out += "\"session_id\":\"" + JsonEscape(g_session_id) + "\",";
   if (!g_request_id.empty()) out += "\"request_id\":\"" + JsonEscape(g_request_id) + "\",";
   if (!g_tool_name.empty()) out += "\"tool_name\":\"" + JsonEscape(g_tool_name) + "\",";
   if (g_duration_ms >= 0) out += "\"duration_ms\":" + std::to_string(g_duration_ms) + ",";

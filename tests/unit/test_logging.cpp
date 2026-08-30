@@ -19,14 +19,12 @@ std::string FormatRecord(const std::string& level) {
 }  // namespace
 
 TEST_CASE("JsonLogFormatter emits structured fields", "[logging]") {
-  SetLogSessionId("sess-1");
   BeginRequest();
   SetLogToolName("execute_bash");
   SetLogDurationMs(42);
 
   auto j = nlohmann::json::parse(FormatRecord("info"));
   REQUIRE(j["level"] == "info");
-  REQUIRE(j["session_id"] == "sess-1");
   REQUIRE(j["request_id"].is_string());
   REQUIRE(j["request_id"].get<std::string>().size() == 36);
   REQUIRE(j["tool_name"] == "execute_bash");
@@ -34,14 +32,12 @@ TEST_CASE("JsonLogFormatter emits structured fields", "[logging]") {
   REQUIRE(j["message"] == "hello world");
   REQUIRE(j.contains("timestamp"));
 
-  ClearLogSessionId();
   ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();
 }
 
 TEST_CASE("JsonLogFormatter omits unset optional fields", "[logging]") {
-  ClearLogSessionId();
   ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();
@@ -49,14 +45,12 @@ TEST_CASE("JsonLogFormatter omits unset optional fields", "[logging]") {
   auto j = nlohmann::json::parse(FormatRecord("warn"));
   REQUIRE(j["level"] == "warning");
   REQUIRE(j["message"] == "hello world");
-  REQUIRE(!j.contains("session_id"));
   REQUIRE(!j.contains("request_id"));
   REQUIRE(!j.contains("tool_name"));
   REQUIRE(!j.contains("duration_ms"));
 }
 
 TEST_CASE("BeginRequest generates a valid UUID v4", "[logging]") {
-  SetLogSessionId("sess");
   BeginRequest();
 
   auto j = nlohmann::json::parse(FormatRecord("info"));
@@ -68,12 +62,10 @@ TEST_CASE("BeginRequest generates a valid UUID v4", "[logging]") {
   REQUIRE(rid[23] == '-');
   REQUIRE(rid[14] == '4');  // version nibble
 
-  ClearLogSessionId();
   ClearLogRequestId();
 }
 
 TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
-  ClearLogSessionId();
   ClearLogRequestId();
   ClearLogToolName();
   ClearLogDurationMs();

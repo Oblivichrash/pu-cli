@@ -179,6 +179,8 @@ The configuration file must be located in a `.pu/` directory. Search order is `.
 }
 ```
 
+Note: The limits configuration section (max_sessions, max_history_messages, max_branches) is no longer effective and should not be used.
+
 ### Environment Variables
 
 | Variable | Purpose |

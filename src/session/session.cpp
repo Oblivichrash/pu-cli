@@ -9,21 +9,15 @@
 namespace pu {
 
 Session::Session()
-  : created_at_(std::chrono::system_clock::now()),
-    last_access_at_(created_at_),
-    workspace_(std::make_shared<Workspace>()),
+  : workspace_(std::make_shared<Workspace>()),
     runtime_spec_() {}
 
 Session::Session(std::shared_ptr<Workspace> workspace)
-  : created_at_(std::chrono::system_clock::now()),
-    last_access_at_(created_at_),
-    workspace_(std::move(workspace)),
+  : workspace_(std::move(workspace)),
     runtime_spec_() {}
 
 Session::Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec)
-  : created_at_(std::chrono::system_clock::now()),
-    last_access_at_(created_at_),
-    workspace_(std::move(workspace)),
+  : workspace_(std::move(workspace)),
     runtime_spec_(spec) {}
 
 void Session::SwitchAgent(const std::string& agent_name) {
@@ -73,10 +67,6 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
 
 nlohmann::json Session::Serialize() const {
   nlohmann::json j;
-  j["created_at"] = std::chrono::duration_cast<std::chrono::seconds>(
-      created_at_.time_since_epoch()).count();
-  j["last_access_at"] = std::chrono::duration_cast<std::chrono::seconds>(
-      last_access_at_.time_since_epoch()).count();
   j["workspace"] = workspace_->Serialize();
   j["runtime_spec"] = runtime_spec_.Serialize();
   return j;
@@ -86,14 +76,6 @@ std::unique_ptr<Session> Session::Deserialize(const nlohmann::json& j) {
   auto ws = Workspace::Deserialize(j["workspace"]);
   auto spec = RuntimeSpec::Deserialize(j["runtime_spec"]);
   auto session = std::make_unique<Session>(ws, spec);
-  if (j.contains("created_at")) {
-    auto secs = std::chrono::seconds(j["created_at"].get<int64_t>());
-    session->created_at_ = std::chrono::system_clock::time_point(secs);
-  }
-  if (j.contains("last_access_at")) {
-    auto secs = std::chrono::seconds(j["last_access_at"].get<int64_t>());
-    session->last_access_at_ = std::chrono::system_clock::time_point(secs);
-  }
   return session;
 }
 

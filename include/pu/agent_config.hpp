@@ -85,16 +85,9 @@ struct AgentEntry {
   HistoryCompactionConfig compaction;
 };
 
-struct RuntimeLimits {
-  size_t max_history_messages = 10000;
-  size_t max_branches = 20;
-  size_t max_sessions = 10;
-};
-
 struct AgentsConfig {
   std::string default_agent;
   std::vector<AgentEntry> agents;
-  RuntimeLimits limits;
 };
 
 std::string FindConfigPath();
