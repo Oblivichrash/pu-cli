@@ -15,7 +15,6 @@
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI };
-enum class ToolCallStyle { kDefault };
 
 struct SecurityPolicy {
   std::string sandbox_root;
@@ -31,7 +30,6 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-  ToolCallStyle tool_call_style = ToolCallStyle::kDefault;
   bool parameters_as_string = false;
   int max_tokens = 2048;
   bool enable_thinking = true;  // for DeepSeek/vLLM only
@@ -64,7 +62,6 @@ inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
   cfg.parameters_as_string = j.value("parameters_as_string", false);
   // The following fields may not be present in old session files; defaults are fine.
   cfg.system_prompt = std::nullopt;
-  cfg.tool_call_style = ToolCallStyle::kDefault;
   cfg.enable_thinking = true;
 }
 

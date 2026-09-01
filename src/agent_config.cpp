@@ -191,7 +191,6 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
     backend["temperature"] = entry.backend.temperature;
     if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
     backend["enable_thinking"] = entry.backend.enable_thinking;
-    backend["tool_call_style"] = "default";
     item["backend"] = backend;
 
     if (!entry.mcp_servers.empty()) {

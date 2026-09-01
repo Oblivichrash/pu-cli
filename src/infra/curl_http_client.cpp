@@ -9,7 +9,6 @@
 #include <curl/curl.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include <fstream>
 #include <chrono>
 #include <mutex>
 #include <nlohmann/json.hpp>
