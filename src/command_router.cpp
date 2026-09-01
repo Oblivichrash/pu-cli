@@ -38,9 +38,6 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /backend <agent_name>  Switch to a predefined agent\n"
       "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
-  add("/note", &CommandRouter::HandleNote,
-      "  /note add <text>       Add a note\n"
-      "  /note show             Show notes\n");
   add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
   return reg;
 }
@@ -176,52 +173,6 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
     oss << "\n";
   }
   output = oss.str();
-  return true;
-}
-
-bool CommandRouter::HandleNote(const std::vector<std::string>& args, Session& session, std::string& output) {
-  if (args.empty()) {
-    output = FormatUsage("/note", "add <text> | show");
-    return true;
-  }
-
-  auto& ws = session.GetWorkspace();
-
-  if (args[0] == "show") {
-    std::string var_key = "notes/" + session.GetRuntimeSpec().agent_name;
-    auto val = ws.GetVar(var_key);
-    if (!val.has_value() || !val->is_array() || val->empty()) {
-      output = "No notes yet.";
-    } else {
-      std::ostringstream oss;
-      oss << "Notes for " << session.GetRuntimeSpec().agent_name << ":\n";
-      for (const auto& item : *val) {
-        if (item.is_string()) oss << item.get<std::string>() << "\n";
-      }
-      output = oss.str();
-    }
-    return true;
-  }
-
-  if (args[0] == "add" && args.size() > 1) {
-    std::string text;
-    for (size_t i = 1; i < args.size(); ++i) {
-      if (i > 1) text += " ";
-      text += args[i];
-    }
-
-    std::string var_key = "notes/" + session.GetRuntimeSpec().agent_name;
-    auto existing = ws.GetVar(var_key);
-    nlohmann::json new_notes = existing.has_value() ? *existing : nlohmann::json::array();
-    if (new_notes.is_array()) {
-      new_notes.push_back(text);
-      ws.SetVar(var_key, new_notes);
-    }
-    output = "Note added.";
-    return true;
-  }
-
-  output = FormatUsage("note", "add <text> | show");
   return true;
 }
 

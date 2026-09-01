@@ -59,7 +59,6 @@ Your conversation is automatically saved to `./.pu/session.json` after every int
 | `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
 | `/backend <type> <model>` | Manual backend switch |
 | `/agents` | List available agents |
-| `/note add <text> \| /note show` | Add or show notes |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |
 

@@ -93,21 +93,11 @@ TEST_CASE("CommandRouter rejects unknown and non-command input", "[router]") {
   REQUIRE_FALSE(f.Route("   ", output));
 }
 
-TEST_CASE("CommandRouter validates arguments with RequireMinArgs", "[router]") {
+TEST_CASE("CommandRouter rejects removed /note command", "[router]") {
   RouterFixture f;
   std::string output;
 
-  REQUIRE(f.Route("/note", output));
-  REQUIRE(output == "Usage: /note add <text> | show");
-}
-
-TEST_CASE("CommandRouter /note add and show roundtrip per agent", "[router]") {
-  RouterFixture f;
-  std::string output;
-
-  REQUIRE(f.Route("/note add remember this", output));
-  REQUIRE(output == "Note added.");
-
-  REQUIRE(f.Route("/note show", output));
-  REQUIRE(output.find("remember this") != std::string::npos);
+  REQUIRE_FALSE(f.Route("/note", output));
+  REQUIRE_FALSE(f.Route("/note add remember this", output));
+  REQUIRE_FALSE(f.Route("/note show", output));
 }
