@@ -27,6 +27,7 @@ pu-cli is built around four principles:
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
+| `HttpTransport` | remote streamable-HTTP transport (curl POST, line-delimited responses) |
 | `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
 
 ---
@@ -172,11 +173,22 @@ Runtime.ProcessInput(input, ...)
 └──────────────────────┬───────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────┐
-│          pu::mcp::StdioTransport             │  ← Child process stdio, line-delimited JSON
-└──────────────────────────────────────────────┘
+│          pu::mcp::Transport (interface)      │  ← Start / Stop / WriteLine
+└──────────────────────┬───────────────────────┘
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+┌──────────────────────────────────────┐   ┌──────────────────────────────────────┐
+│  StdioTransport                     │   │  HttpTransport                       │
+│  Child process stdio, line JSON     │   │  CurlHttpClient POST, line JSON      │
+└──────────────────────────────────────┘   └──────────────────────────────────────┘
 ```
 
-MCP servers are configured per-agent via `mcp_servers`. When an agent becomes active, `Runtime::RebuildToolbox` spawns its servers, performs the handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
+MCP servers are configured per-agent via `mcp_servers`. The transport is selected
+automatically in `McpClient::Connect()`: a non-empty `url` selects the remote
+`HttpTransport`, otherwise the stdio subprocess transport is spawned. When an
+agent becomes active, `Runtime::RebuildToolbox` starts its servers, performs the
+handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 
 ---
 
@@ -219,7 +231,7 @@ include/pu/
 ├── core/                 # Logging
 ├── infra/                # Platform utilities
 ├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
-├── mcp/                  # McpClient, JsonRpcClient, StdioTransport
+├── mcp/                  # McpClient, JsonRpcClient, StdioTransport, HttpTransport
 ├── session/              # Session, Workspace, Transcript, Memory
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
@@ -249,7 +261,7 @@ src/
 
 ## Known Limitations
 
-- MCP transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes).
+- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses libcurl and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.

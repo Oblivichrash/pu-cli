@@ -79,10 +79,21 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
       for (const auto& a : item["args"])
         if (a.is_string()) srv.args.push_back(a.get<std::string>());
     }
-    if (!srv.name.empty() && !srv.command.empty())
+    // Remote HTTP MCP endpoint (streamable HTTP). When present, McpClient
+    // connects over HTTP instead of spawning the stdio command.
+    if (item.contains("url") && item["url"].is_string())
+      srv.url = ExpandEnvVars(item["url"].get<std::string>());
+    if (item.contains("headers") && item["headers"].is_object()) {
+      for (auto it = item["headers"].begin(); it != item["headers"].end(); ++it) {
+        if (it.value().is_string())
+          srv.headers[it.key()] = ExpandEnvVars(it.value().get<std::string>());
+      }
+    }
+
+    if (!srv.name.empty() && (!srv.command.empty() || !srv.url.empty()))
       servers.push_back(std::move(srv));
     else
-      spdlog::warn("Skipping MCP server entry with missing name or command");
+      spdlog::warn("Skipping MCP server entry with missing name, command, or url");
   }
   return servers;
 }
@@ -200,6 +211,12 @@ void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
         srv_json["name"] = srv.name;
         srv_json["command"] = srv.command;
         srv_json["args"] = srv.args;
+        if (!srv.url.empty()) srv_json["url"] = srv.url;
+        if (!srv.headers.empty()) {
+          json headers = json::object();
+          for (const auto& [k, v] : srv.headers) headers[k] = v;
+          srv_json["headers"] = headers;
+        }
         mcp_array.push_back(srv_json);
       }
       item["mcp_servers"] = mcp_array;

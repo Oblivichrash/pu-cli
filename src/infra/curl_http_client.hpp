@@ -19,6 +19,11 @@ class CurlHttpClient : public HttpClient {
   void PostStream(const std::string& url, const std::string& body,
                   const std::vector<std::string>& headers, WriteCallback write_cb) override;
 
+  // Replace the callback consulted by the progress hook to abort an in-flight
+  // transfer. Returning true cancels the request (e.g. transport shutdown).
+  // Defaults to checking the global platform interrupt flag.
+  void SetInterruptChecker(std::function<bool()> checker);
+
   std::string GetErrorDetail() const;
 
  private:

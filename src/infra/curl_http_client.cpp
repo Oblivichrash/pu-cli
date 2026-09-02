@@ -26,6 +26,10 @@ CurlHttpClient::CurlHttpClient() {
 
 CurlHttpClient::~CurlHttpClient() { if (handle_) curl_easy_cleanup(handle_); }
 
+void CurlHttpClient::SetInterruptChecker(std::function<bool()> checker) {
+  interrupt_checker_ = std::move(checker);
+}
+
 int CurlHttpClient::ProgressCallback(void* clientp, curl_off_t, curl_off_t,
                                      curl_off_t, curl_off_t) {
   auto* self = static_cast<CurlHttpClient*>(clientp);

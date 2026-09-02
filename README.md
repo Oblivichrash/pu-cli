@@ -126,6 +126,12 @@ The configuration file must be located in a `.pu/` directory. Search order is `.
 
 ### MCP Servers
 
+MCP servers can be launched as local subprocesses (stdio) or reached over a
+remote HTTP endpoint (streamable HTTP). The transport is selected automatically:
+if `url` is present the client uses HTTP, otherwise it spawns the `command`.
+
+**stdio (local subprocess):**
+
 ```json
 {
   "default_agent": "chat",
@@ -146,11 +152,37 @@ The configuration file must be located in a `.pu/` directory. Search order is `.
 }
 ```
 
+**HTTP (remote):**
+
+```json
+{
+  "default_agent": "chat",
+  "agents": [
+    {
+      "name": "chat",
+      "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:4b" },
+      "tools": ["execute_bash", "write_file"],
+      "mcp_servers": [
+        {
+          "name": "remote-fs",
+          "url": "https://mcp.example.com/mcp",
+          "headers": {
+            "Authorization": "Bearer ${MCP_API_TOKEN}"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
 | Field | Description |
 |-------|-------------|
 | `name` | Display name for the MCP server |
-| `command` | Executable to launch |
-| `args` | Arguments passed to the executable |
+| `command` | Executable to launch (stdio transport; ignored when `url` is set) |
+| `args` | Arguments passed to the executable (stdio transport) |
+| `url` | Remote streamable-HTTP MCP endpoint. When present, HTTP transport is used instead of stdio |
+| `headers` | Optional HTTP headers sent with every request, e.g. `Authorization` (values support `${ENV_VAR}` expansion) |
 
 ### Thinking Mode & History Compaction
 

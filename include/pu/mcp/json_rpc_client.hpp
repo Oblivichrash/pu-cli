@@ -11,7 +11,7 @@ namespace pu::mcp {
 
 class JsonRpcClient {
 public:
-    explicit JsonRpcClient(StdioTransport& transport);
+    explicit JsonRpcClient(Transport& transport);
     ~JsonRpcClient() = default;
 
     // Send a request, returning a future for the async response
@@ -24,7 +24,7 @@ public:
     void OnMessage(const std::string& line);
 
 private:
-    StdioTransport& transport_;
+    Transport& transport_;
     int next_id_ = 1;
     std::unordered_map<int, std::promise<nlohmann::json>> pending_;
     std::mutex mutex_;

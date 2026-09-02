@@ -4,7 +4,7 @@
 
 namespace pu::mcp {
 
-JsonRpcClient::JsonRpcClient(StdioTransport& transport) : transport_(transport) {}
+JsonRpcClient::JsonRpcClient(Transport& transport) : transport_(transport) {}
 
 std::future<nlohmann::json> JsonRpcClient::SendRequest(
     const std::string& method,
