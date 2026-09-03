@@ -7,7 +7,6 @@
 
 #include "pu/agent_manager.hpp"
 #include "pu/session/session.hpp"
-#include "pu/session_store.hpp"
 
 namespace pu {
 
@@ -43,16 +42,9 @@ private:
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
-  SessionStore GetSessionStore() const;
-
   bool HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleSave(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleLoad(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleList(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleExport(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleNote(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
 
   AgentManager& manager_;

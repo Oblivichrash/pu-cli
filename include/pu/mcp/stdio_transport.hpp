@@ -18,17 +18,27 @@ namespace pu::mcp {
 
 using MessageCallback = std::function<void(const std::string&)>;
 
-class StdioTransport {
+// Common transport interface shared by the stdio subprocess transport and the
+// remote HTTP transport. McpClient/JsonRpcClient only depend on this interface.
+class Transport {
+ public:
+  virtual ~Transport() = default;
+  virtual bool Start(MessageCallback on_message) = 0;
+  virtual void Stop() = 0;
+  virtual bool WriteLine(const std::string& line) = 0;
+};
+
+class StdioTransport : public Transport {
  public:
   StdioTransport(const std::string& command, const std::vector<std::string>& args);
-  ~StdioTransport();
+  ~StdioTransport() override;
 
   StdioTransport(const StdioTransport&) = delete;
   StdioTransport& operator=(const StdioTransport&) = delete;
 
-  bool Start(MessageCallback on_message);
-  void Stop();
-  bool WriteLine(const std::string& line);
+  bool Start(MessageCallback on_message) override;
+  void Stop() override;
+  bool WriteLine(const std::string& line) override;
 
   bool IsRunning() const { return running_; }
 

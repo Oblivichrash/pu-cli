@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/logging.hpp"
+#include "pu/path_utils.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
@@ -21,7 +22,6 @@ namespace pu {
 
 namespace {
 
-thread_local std::string g_session_id;
 thread_local std::string g_request_id;
 thread_local std::string g_tool_name;
 thread_local int64_t g_duration_ms = -1;
@@ -85,8 +85,6 @@ std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) {
 
 }  // namespace
 
-void SetLogSessionId(const std::string& session_id) { g_session_id = session_id; }
-void ClearLogSessionId() { g_session_id.clear(); }
 void BeginRequest() { g_request_id = GenerateUuid(); }
 void SetLogRequestId(const std::string& request_id) { g_request_id = request_id; }
 void ClearLogRequestId() { g_request_id.clear(); }
@@ -101,7 +99,6 @@ void JsonLogFormatter::format(const spdlog::details::log_msg& msg,
   out += "\"timestamp\":\"" + FormatTimestamp(msg.time) + "\",";
   auto level_view = spdlog::level::to_string_view(msg.level);
   out += "\"level\":\"" + std::string(level_view.data(), level_view.size()) + "\",";
-  if (!g_session_id.empty()) out += "\"session_id\":\"" + JsonEscape(g_session_id) + "\",";
   if (!g_request_id.empty()) out += "\"request_id\":\"" + JsonEscape(g_request_id) + "\",";
   if (!g_tool_name.empty()) out += "\"tool_name\":\"" + JsonEscape(g_tool_name) + "\",";
   if (g_duration_ms >= 0) out += "\"duration_ms\":" + std::to_string(g_duration_ms) + ",";
@@ -116,60 +113,54 @@ std::unique_ptr<spdlog::formatter> JsonLogFormatter::clone() const {
 }
 
 void InitLogging(const std::string& log_level, bool /*trace_enabled*/) {
-    spdlog::level::level_enum level = spdlog::level::info;
-    if (!log_level.empty()) {
-        if (log_level == "trace") level = spdlog::level::trace;
-        else if (log_level == "debug") level = spdlog::level::debug;
-        else if (log_level == "info") level = spdlog::level::info;
-        else if (log_level == "warn") level = spdlog::level::warn;
-        else if (log_level == "error") level = spdlog::level::err;
-        else if (log_level == "critical") level = spdlog::level::critical;
-    }
+  spdlog::level::level_enum level = spdlog::level::info;
+  if (!log_level.empty()) {
+    if (log_level == "trace") level = spdlog::level::trace;
+    else if (log_level == "debug") level = spdlog::level::debug;
+    else if (log_level == "info") level = spdlog::level::info;
+    else if (log_level == "warn") level = spdlog::level::warn;
+    else if (log_level == "error") level = spdlog::level::err;
+    else if (log_level == "critical") level = spdlog::level::critical;
+  }
 
-    std::vector<spdlog::sink_ptr> sinks;
+  std::vector<spdlog::sink_ptr> sinks;
 
-    const char* console_env = std::getenv("PU_LOG_CONSOLE");
-    bool enable_console = true;
-    if (console_env && std::string(console_env) == "0") {
-        enable_console = false;
-    }
-    if (enable_console) {
-        auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
-        console_sink->set_level(level);
-        sinks.push_back(console_sink);
-    }
+  // The console sink is always present but only emits error/critical records.
+  // Info/warn/trace/debug are intentionally never written to the console so
+  // that normal use stays quiet while failures remain visible.
+  auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+  console_sink->set_level(spdlog::level::err);
+  sinks.push_back(console_sink);
 
-    std::filesystem::path log_dir = std::getenv("HOME")
-        ? std::filesystem::path(std::getenv("HOME")) / ".pu" / "logs"
-        : "/tmp/pu_logs";
-    std::filesystem::create_directories(log_dir);
-    auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);
-    file_sink->set_level(level);
-    sinks.push_back(file_sink);
+  std::filesystem::path log_dir = pu::path::GetDataDir() / "logs";
+  std::filesystem::create_directories(log_dir);
+  auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+      (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);
+  file_sink->set_level(level);
+  sinks.push_back(file_sink);
 
-    const char* json_env = std::getenv("PU_LOG_JSON");
-    bool use_json = json_env && std::string(json_env) == "1";
+  const char* json_env = std::getenv("PU_LOG_JSON");
+  bool use_json = json_env && std::string(json_env) == "1";
 
-    std::shared_ptr<spdlog::logger> logger;
-    if (use_json) {
-        logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
-    } else {
-        spdlog::init_thread_pool(8192, 1);
-        logger = std::make_shared<spdlog::async_logger>(
-            "pu", sinks.begin(), sinks.end(),
-            spdlog::thread_pool(), spdlog::async_overflow_policy::block);
-    }
-    logger->set_level(level);
-    logger->flush_on(spdlog::level::err);
-    if (use_json) {
-        logger->set_formatter(std::make_unique<JsonLogFormatter>());
-    }
-    spdlog::set_default_logger(logger);
+  std::shared_ptr<spdlog::logger> logger;
+  if (use_json) {
+    logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
+  } else {
+    spdlog::init_thread_pool(8192, 1);
+    logger = std::make_shared<spdlog::async_logger>(
+        "pu", sinks.begin(), sinks.end(),
+        spdlog::thread_pool(), spdlog::async_overflow_policy::block);
+  }
+  logger->set_level(level);
+  logger->flush_on(spdlog::level::err);
+  if (use_json) {
+    logger->set_formatter(std::make_unique<JsonLogFormatter>());
+  }
+  spdlog::set_default_logger(logger);
 }
 
 void ShutdownLogging() {
-    spdlog::shutdown();
+  spdlog::shutdown();
 }
 
 } // namespace pu

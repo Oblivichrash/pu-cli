@@ -2,7 +2,7 @@
 
 > "朴散则为器"——《老子》
 
-A minimalist CLI orchestrator for LLMs with **multi-session isolation** and **dynamic backend switching**.
+A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence** and **dynamic backend switching**.
 
 ---
 
@@ -17,7 +17,7 @@ cmake --build build -j$(nproc)
 
 ### Configure
 
-Create `agents.json` in current directory or `~/.pu/`:
+Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (project-level) or `~/.pu/agents.json` (user-level):
 
 ```json
 {
@@ -47,6 +47,8 @@ Create `agents.json` in current directory or `~/.pu/`:
 > /backend deepseek-pro    # switch to predefined agent
 ```
 
+Your conversation is automatically saved to `./.pu/session.json` after every interaction, and restored when you restart. Each directory has its own independent session.
+
 ---
 
 ## Core Commands
@@ -57,11 +59,6 @@ Create `agents.json` in current directory or `~/.pu/`:
 | `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
 | `/backend <type> <model>` | Manual backend switch |
 | `/agents` | List available agents |
-| `/save [name]` | Save conversation |
-| `/load <id>` | Load conversation |
-| `/list` | List saved conversations |
-| `/export <id>` | Export conversation as Markdown |
-| `/note add <text> \| /note show` | Add or show notes |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |
 
@@ -96,6 +93,8 @@ This allows the executor to distinguish success from failure and provide clear f
 
 ### `agents.json`
 
+The configuration file must be located in a `.pu/` directory. Search order is `./.pu/agents.json` then `~/.pu/agents.json`.
+
 ```json
 {
   "default_agent": "chat",
@@ -127,6 +126,12 @@ This allows the executor to distinguish success from failure and provide clear f
 
 ### MCP Servers
 
+MCP servers can be launched as local subprocesses (stdio) or reached over a
+remote HTTP endpoint (streamable HTTP). The transport is selected automatically:
+if `url` is present the client uses HTTP, otherwise it spawns the `command`.
+
+**stdio (local subprocess):**
+
 ```json
 {
   "default_agent": "chat",
@@ -147,11 +152,37 @@ This allows the executor to distinguish success from failure and provide clear f
 }
 ```
 
+**HTTP (remote):**
+
+```json
+{
+  "default_agent": "chat",
+  "agents": [
+    {
+      "name": "chat",
+      "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:4b" },
+      "tools": ["execute_bash", "write_file"],
+      "mcp_servers": [
+        {
+          "name": "remote-fs",
+          "url": "https://mcp.example.com/mcp",
+          "headers": {
+            "Authorization": "Bearer ${MCP_API_TOKEN}"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
 | Field | Description |
 |-------|-------------|
 | `name` | Display name for the MCP server |
-| `command` | Executable to launch |
-| `args` | Arguments passed to the executable |
+| `command` | Executable to launch (stdio transport; ignored when `url` is set) |
+| `args` | Arguments passed to the executable (stdio transport) |
+| `url` | Remote streamable-HTTP MCP endpoint. When present, HTTP transport is used instead of stdio |
+| `headers` | Optional HTTP headers sent with every request, e.g. `Authorization` (values support `${ENV_VAR}` expansion) |
 
 ### Thinking Mode & History Compaction
 
@@ -179,19 +210,22 @@ This allows the executor to distinguish success from failure and provide clear f
 }
 ```
 
+Note: The limits configuration section (max_sessions, max_history_messages, max_branches) is no longer effective and should not be used.
+
 ### Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_AGENTS_CONFIG` | Path to agents.json |
-| `PU_HOME` | Data directory (default `~/.pu/`) |
-| `PU_LOG_LEVEL` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `PU_HOME` | Overrides the data directory (default `./.pu/`) |
+| `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_LOG_CONSOLE=0` | Disable console logging |
 
 ### Logging
 
-Log files stored in `~/.pu/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The console only shows `error` and `critical` messages; `info`, `warn`, `debug`, and `trace` are never printed to the console.
+- Use `PU_LOG_LEVEL` to control the file log verbosity (default `info`).
+- Log files are stored in `<data-dir>/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
+- The data directory is `PU_HOME` if set, otherwise `./.pu/`.
 
 ---
 

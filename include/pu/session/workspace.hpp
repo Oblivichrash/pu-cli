@@ -3,7 +3,6 @@
 #include <memory>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include <filesystem>
 #include "pu/session/transcript.hpp"
 #include "pu/session/memory.hpp"
 
@@ -12,10 +11,6 @@ namespace pu {
 class Workspace {
 public:
   Workspace() = default;
-  explicit Workspace(const std::string& id);
-
-  const std::string& GetId() const { return id_; }
-  void SetId(const std::string& id) { id_ = id; }
 
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
@@ -37,13 +32,9 @@ public:
   void ClearArtifacts();
 
   nlohmann::json Serialize() const;
-  void Save(const std::filesystem::path& path) const;
-  static std::shared_ptr<Workspace> Load(const std::filesystem::path& path);
   static std::shared_ptr<Workspace> Deserialize(const nlohmann::json& j);
 
 private:
-  std::string id_;
-
   std::unique_ptr<Transcript> transcript_;
   std::unique_ptr<Memory> memory_;
 };

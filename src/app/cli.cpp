@@ -24,8 +24,6 @@
 namespace pu::cli {
 
 std::string Trim(const std::string& s);
-std::string CurrentTimestamp();
-std::string GenerateId();
 void PrintAgents(const pu::config::AgentsConfig& cfg, const std::string& current);
 void PrintChatHelp();
 
@@ -77,22 +75,6 @@ std::string Trim(const std::string& s) {
   if (start == std::string::npos) return {};
   auto end = s.find_last_not_of(" \t");
   return s.substr(start, end - start + 1);
-}
-
-std::string CurrentTimestamp() {
-  auto now = std::chrono::system_clock::now();
-  auto in_time_t = std::chrono::system_clock::to_time_t(now);
-  std::ostringstream ss;
-  ss << std::put_time(std::gmtime(&in_time_t), "%Y-%m-%dT%H:%M:%SZ");
-  return ss.str();
-}
-
-std::string GenerateId() {
-  auto now = std::chrono::high_resolution_clock::now();
-  auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-  std::ostringstream ss;
-  ss << std::hex << nanos;
-  return "conv-" + ss.str();
 }
 
 void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
@@ -152,15 +134,9 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
 
     runtime.Initialize();
 
-    auto session = runtime.GetDefaultSession();
-    if (!session) {
-      spdlog::error("could not create session");
-      return 1;
-    }
-
     ExecutionResult result;
     bool is_command = false;
-    if (runtime.ProcessInput(session->GetId(), prompt, result, is_command)) {
+    if (runtime.ProcessInput(prompt, result, is_command)) {
       if (result.has_error) {
         spdlog::error("{}", result.error_message);
       } else if (!result.content.empty()) {
@@ -211,14 +187,6 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
 
   runtime.Initialize();
 
-  auto session = runtime.GetDefaultSession();
-  if (!session) {
-    spdlog::error("could not create session");
-    return 1;
-  }
-  auto session_id = session->GetId();
-
-  spdlog::info("Connected to session: {}", session_id);
   std::string agent_info = "Connected to agent: " + current_name;
   const auto* entry_ptr = [&]() -> const config::AgentEntry* {
     for (const auto& e : agents_config.agents) {
@@ -243,7 +211,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
     try {
       ExecutionResult result;
       bool is_command = false;
-      if (runtime.ProcessInput(session_id, input, result, is_command)) {
+      if (runtime.ProcessInput(input, result, is_command)) {
         if (result.has_error) {
           spdlog::error("{}", result.error_message);
         } else if (!result.was_streamed) {

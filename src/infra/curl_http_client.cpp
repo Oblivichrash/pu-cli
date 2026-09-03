@@ -9,7 +9,6 @@
 #include <curl/curl.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include <fstream>
 #include <chrono>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -26,6 +25,10 @@ CurlHttpClient::CurlHttpClient() {
 }
 
 CurlHttpClient::~CurlHttpClient() { if (handle_) curl_easy_cleanup(handle_); }
+
+void CurlHttpClient::SetInterruptChecker(std::function<bool()> checker) {
+  interrupt_checker_ = std::move(checker);
+}
 
 int CurlHttpClient::ProgressCallback(void* clientp, curl_off_t, curl_off_t,
                                      curl_off_t, curl_off_t) {

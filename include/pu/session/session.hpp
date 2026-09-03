@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <map>
 #include <memory>
 #include <string>
-#include <chrono>
 #include <nlohmann/json.hpp>
 #include "pu/session/workspace.hpp"
 #include "pu/llm/llm_provider.hpp"
@@ -16,28 +14,22 @@ namespace pu {
 struct RuntimeSpec {
   config::BackendConfig backend;
   std::string agent_name;
-  int max_delegation_depth = 5;
-  std::map<std::string, nlohmann::json> overrides;
 
   nlohmann::json Serialize() const { return nlohmann::json(*this); }
   static RuntimeSpec Deserialize(const nlohmann::json& j) { return j.get<RuntimeSpec>(); }
 
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(RuntimeSpec, backend, agent_name,
-                                max_delegation_depth, overrides)
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(RuntimeSpec, backend, agent_name)
 };
 
 class Session {
 public:
-  Session(const std::string& id, const std::string& owner_id);
-  Session(const std::string& id, const std::string& owner_id,
-          std::shared_ptr<Workspace> workspace,
-          const RuntimeSpec& spec);
+  Session();
+  explicit Session(std::shared_ptr<Workspace> workspace);
+  Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec);
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
-
-  std::string GetId() const { return id_; }
 
   Workspace& GetWorkspace() { return *workspace_; }
   const Workspace& GetWorkspace() const { return *workspace_; }
@@ -46,7 +38,6 @@ public:
 
   void SwitchBackend(const config::BackendConfig& new_config);
   void SwitchAgent(const std::string& agent_name);
-  void Touch() { last_access_at_ = std::chrono::system_clock::now(); }
 
   bool HasPendingToolCalls() const { return workspace_->HasPendingToolCalls(); }
 
@@ -56,10 +47,6 @@ public:
   static std::unique_ptr<Session> Deserialize(const nlohmann::json& j);
 
 private:
-  std::string id_;
-  std::string owner_id_;
-  std::chrono::system_clock::time_point created_at_;
-  std::chrono::system_clock::time_point last_access_at_;
   std::shared_ptr<Workspace> workspace_;
   RuntimeSpec runtime_spec_;
 };
