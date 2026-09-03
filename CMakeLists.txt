@@ -8,8 +8,13 @@ find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
 
-# cpp-httplib - system-installed header-only HTTP server/client used by `pu serve`.
-find_package(cpp-httplib REQUIRED)
+# cpp-httplib - header-only HTTP server/client used by `pu serve`.
+# Distro packages (e.g. Arch's cpp-httplib, Ubuntu's libcpp-httplib-dev) ship no
+# CMake config file, so locate httplib.h directly instead of find_package.
+find_path(HTTPLIB_INCLUDE_DIR NAMES httplib.h)
+if(NOT HTTPLIB_INCLUDE_DIR)
+  message(FATAL_ERROR "cpp-httplib headers not found (install cpp-httplib / libcpp-httplib-dev)")
+endif()
 
 # Core library: HTTP client, platform utilities, Workspace, LLM providers, and MCP
 add_library(pu_core STATIC
@@ -53,8 +58,8 @@ add_executable(pu
     src/app/cli.cpp
     src/app/serve.cpp
 )
-target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu PRIVATE pu_agent pu_core cpp-httplib::cpp-httplib spdlog::spdlog)
+target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app ${HTTPLIB_INCLUDE_DIR})
+target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
 
 # Compiler warnings
 if(MSVC)
