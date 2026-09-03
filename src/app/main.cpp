@@ -20,7 +20,8 @@ int main(int argc, char* argv[]) {
   if (argc < 2) {
     std::cerr << "Usage: pu <command> [options]\n"
               << "Commands:\n  ask    Send a single prompt to a model\n"
-              << "  chat   Start interactive conversation\n";
+              << "  chat   Start interactive conversation\n"
+              << "  serve  Start a web chat server\n";
     return 1;
   }
   std::string cmd = argv[1];
@@ -30,6 +31,7 @@ int main(int argc, char* argv[]) {
   try {
     if (cmd == "ask") return pu::cli::RunAsk(argc - 1, argv + 1, runtime);
     if (cmd == "chat") return pu::cli::RunChat(argc - 1, argv + 1, runtime);
+    if (cmd == "serve") return pu::cli::RunServe(argc - 1, argv + 1, runtime);
     std::cerr << "Unknown command: " << cmd << '\n';
     return 1;
   } catch (const std::exception& e) {
