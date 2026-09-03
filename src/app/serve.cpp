@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <libgen.h>
+#include <unistd.h>
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -8,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -22,7 +30,40 @@ namespace pu::cli {
 
 namespace {
 
-constexpr const char* kWebDir = "./web";
+// Directory containing the running executable, or "." if it cannot be resolved.
+std::string GetExecutableDir() {
+#ifdef _WIN32
+  char buf[MAX_PATH];
+  const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return ".";
+  const std::string path(buf, n);
+  const std::string::size_type pos = path.find_last_of("\\/");
+  return pos == std::string::npos ? "." : path.substr(0, pos);
+#else
+  char buf[4096];
+  const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  if (n < 0) return ".";
+  buf[n] = '\0';
+  const std::string dir = dirname(buf);
+  return dir.empty() ? "." : dir;
+#endif
+}
+
+// Candidate web roots in priority order: env override, install/share layout,
+// build-tree layout next to the repo, CWD, then system-wide locations.
+std::vector<std::string> GetWebDirCandidates() {
+  std::vector<std::string> dirs;
+  if (const char* env = std::getenv("PU_WEB_DIR"); env != nullptr && *env != '\0') {
+    dirs.emplace_back(env);
+  }
+  const std::string exe_dir = GetExecutableDir();
+  dirs.push_back(exe_dir + "/../share/pu/web");
+  dirs.push_back(exe_dir + "/../web");
+  dirs.push_back("./web");
+  dirs.push_back("/usr/share/pu/web");
+  dirs.push_back("/usr/local/share/pu/web");
+  return dirs;
+}
 
 nlohmann::json SessionInfoJson(const std::shared_ptr<Session>& session) {
   nlohmann::json j;
@@ -97,8 +138,16 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
 
   // Static front-end. Mount points only serve GET/HEAD; specific API routes
   // registered below take precedence through regular handler dispatch.
-  if (!svr.set_mount_point("/", kWebDir)) {
-    spdlog::warn("Web root '{}' not found - serving API only", kWebDir);
+  bool mounted = false;
+  for (const auto& dir : GetWebDirCandidates()) {
+    if (svr.set_mount_point("/", dir.c_str())) {
+      spdlog::info("Web UI mounted at {}", dir);
+      mounted = true;
+      break;
+    }
+  }
+  if (!mounted) {
+    spdlog::warn("No web directory found; serving API only");
   }
 
   // POST /api/chat - send a message to the active agent.
