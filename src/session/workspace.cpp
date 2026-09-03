@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/workspace.hpp"
-#include "pu/error.hpp"
 #include <chrono>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -22,11 +19,6 @@ std::string CurrentTimestamp() {
 }
 
 } // namespace
-
-Workspace::Workspace(const std::string& id)
-  : id_(id),
-      transcript_(std::make_unique<Transcript>()),
-      memory_(std::make_unique<Memory>()) {}
 
 void Workspace::Append(const ChatMessage& msg) {
   if (!transcript_) transcript_ = std::make_unique<Transcript>();
@@ -101,7 +93,6 @@ void Workspace::ClearArtifacts() {
 
 nlohmann::json Workspace::Serialize() const {
   nlohmann::json j;
-  j["id"] = id_;
 
   if (transcript_) {
     j["history"] = transcript_->Serialize();
@@ -121,35 +112,8 @@ nlohmann::json Workspace::Serialize() const {
   return j;
 }
 
-void Workspace::Save(const std::filesystem::path& path) const {
-  auto j = Serialize();
-  std::filesystem::create_directories(path.parent_path());
-  std::ofstream file(path);
-  if (file.is_open()) {
-    file << j.dump(2);
-  }
-}
-
-std::shared_ptr<Workspace> Workspace::Load(const std::filesystem::path& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    return nullptr;
-  }
-
-  nlohmann::json j;
-  try {
-    file >> j;
-  } catch (const std::exception&) {
-    return nullptr;
-  }
-
-  return Deserialize(j);
-}
-
-
 std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
   auto ws = std::make_shared<Workspace>();
-  ws->id_ = j.value("id", "");
   ws->transcript_ = std::make_unique<Transcript>();
 
   if (j.contains("history") && j["history"].is_array()) {

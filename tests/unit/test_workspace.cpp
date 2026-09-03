@@ -7,7 +7,7 @@
 using namespace pu;
 
 TEST_CASE("Workspace basic operations", "[workspace]") {
-  Workspace ctx("test");
+  Workspace ctx;
   ctx.Append("user", "Hello");
   ctx.Append("assistant", "Hi there!");
 
@@ -101,7 +101,7 @@ TEST_CASE("Transcript::Compact preserves tool-call pairing", "[workspace]") {
 }
 
 TEST_CASE("Workspace::Compact forwards keep_head/keep_tail", "[workspace]") {
-  Workspace ws("test");
+  Workspace ws;
   for (int i = 1; i <= 20; ++i) {
     ws.Append("user", "msg" + std::to_string(i));
   }

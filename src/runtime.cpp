@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 #include <spdlog/spdlog.h>
@@ -16,12 +18,36 @@
 
 namespace pu {
 
+namespace {
+
+std::filesystem::path SessionFilePath() {
+  return pu::path::GetDataDir() / "session.json";
+}
+
+void SaveCurrentSession(const std::shared_ptr<Session>& session) {
+  if (!session) return;
+  auto j = session->Serialize();
+  auto path = SessionFilePath();
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream file(path);
+  if (file.is_open()) {
+    file << j.dump(2);
+  } else {
+    spdlog::warn("Failed to write session file: {}", path.string());
+  }
+}
+
+}  // namespace
+
 void Runtime::Initialize(const std::string& config_path) {
   if (is_initialized_) return;
 
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
+
+  // Ensure the data directory layout exists before any session/log access.
+  std::filesystem::create_directories(pu::path::GetDataDir() / "logs");
 
   auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
@@ -41,7 +67,6 @@ void Runtime::Initialize(const std::string& config_path) {
     default_backend_config_ = default_entry->backend;
   }
 
-  session_store_ = std::make_unique<SessionStore>();
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
 
   executor_ = std::make_unique<Executor>(nullptr);
@@ -62,9 +87,20 @@ void Runtime::Initialize(const std::string& config_path) {
     spdlog::warn("No default agent found for security policy. Using permissive fallback.");
   }
 
-  auto metadata = session_store_->ListAllMetadata();
-  if (!metadata.empty()) {
-    default_session_id_ = metadata[0].id;
+  // Automatically load the single session from session.json if present.
+  auto path = SessionFilePath();
+  if (std::filesystem::exists(path)) {
+    std::ifstream file(path);
+    if (file.is_open()) {
+      nlohmann::json j;
+      try {
+        file >> j;
+        current_session_ = Session::Deserialize(j);
+      } catch (const std::exception& e) {
+        spdlog::warn("Failed to load session from {}: {}", path.string(), e.what());
+        current_session_.reset();
+      }
+    }
   }
 
   is_initialized_ = true;
@@ -73,100 +109,32 @@ void Runtime::Initialize(const std::string& config_path) {
 
 void Runtime::Shutdown() {
   if (!is_initialized_) return;
-  for (const auto& [id, session] : sessions_) {
-    session_store_->SaveSession(*session);
-  }
+  SaveCurrentSession(current_session_);
   is_running_ = false;
 }
 
-std::string Runtime::CreateSession(const std::string& owner_id,
-                                   const std::string& agent_name,
-                                   const config::BackendConfig* backend) {
-  if (sessions_.size() >= static_cast<size_t>(max_sessions_)) {
-    throw RuntimeError("Maximum sessions reached");
-  }
-
-  auto id = "session_" +
-            std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-  auto session = std::make_shared<Session>(id, owner_id);
-
-  std::string active_agent = agent_name.empty() ? agent_manager_->GetActiveAgent() : agent_name;
-  if (active_agent.empty()) active_agent = "chat";
-  session->SwitchAgent(active_agent);
-
-  if (backend) {
-    session->SwitchBackend(*backend);
-  } else {
-    session->SwitchBackend(default_backend_config_);
-  }
-
-  sessions_[id] = session;
-  session_store_->SaveSession(*session);
-  return id;
-}
-
-std::shared_ptr<Session> Runtime::GetSession(const std::string& id) {
-  auto it = sessions_.find(id);
-  if (it != sessions_.end()) {
-    it->second->Touch();
-    return it->second;
-  }
-
-  auto session = session_store_->LoadSession(id);
-  if (session) {
-    if (session->GetRuntimeSpec().backend.host.empty() &&
-        session->GetRuntimeSpec().backend.model.empty()) {
-      session->SwitchBackend(default_backend_config_);
-      session_store_->SaveSession(*session);
-    }
-    sessions_[id] = std::move(session);
-    sessions_[id]->Touch();
-    return sessions_[id];
-  }
-  return nullptr;
-}
-
-std::vector<std::string> Runtime::ListSessions() const {
-  std::vector<std::string> ids;
-  for (const auto& [id, _] : sessions_) ids.push_back(id);
-  auto metadata = session_store_->ListAllMetadata();
-  for (const auto& meta : metadata) {
-    if (sessions_.find(meta.id) == sessions_.end()) {
-      ids.push_back(meta.id);
-    }
-  }
-  return ids;
-}
-
-bool Runtime::DestroySession(const std::string& id) {
-  if (id == default_session_id_) return false;
-  sessions_.erase(id);
-  session_store_->DeleteSession(id);
-  return true;
-}
-
 std::shared_ptr<Session> Runtime::GetDefaultSession() {
-  if (!default_session_id_.empty()) {
-    auto session = GetSession(default_session_id_);
-    if (session) return session;
-  }
   return GetOrCreateDefaultSession();
 }
 
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
-  auto owner = getenv("USER") ? getenv("USER") : "default";
-  std::string agent = default_agent_override_.empty() ? agent_manager_->GetActiveAgent()
-                                                      : default_agent_override_;
-  auto id = CreateSession(owner, agent);
-  default_session_id_ = id;
-  return GetSession(id);
+  if (current_session_) return current_session_;
+
+  auto session = std::make_shared<Session>();
+
+  std::string active_agent =
+      default_agent_override_.empty() ? agent_manager_->GetActiveAgent() : default_agent_override_;
+  if (active_agent.empty()) active_agent = "chat";
+  session->SwitchAgent(active_agent);
+  session->SwitchBackend(default_backend_config_);
+
+  current_session_ = session;
+  return current_session_;
 }
 
-bool Runtime::ProcessInput(const std::string& session_id,
-                           const std::string& input,
+bool Runtime::ProcessInput(const std::string& input,
                            ExecutionResult& result,
                            bool& is_command) {
-  SetLogSessionId(session_id);
   BeginRequest();
 
   if (!is_running_) {
@@ -175,7 +143,7 @@ bool Runtime::ProcessInput(const std::string& session_id,
     return false;
   }
 
-  auto session = session_id.empty() ? GetDefaultSession() : GetSession(session_id);
+  auto session = GetOrCreateDefaultSession();
   if (!session) {
     result.has_error = true;
     result.error_message = "Session not found.";
@@ -190,6 +158,7 @@ bool Runtime::ProcessInput(const std::string& session_id,
     result.was_streamed = false;
     result.has_error = !ok;
     if (!ok) result.error_message = output;
+    SaveCurrentSession(session);
     return ok;
   }
 
@@ -198,7 +167,7 @@ bool Runtime::ProcessInput(const std::string& session_id,
   auto provider = session->CreateProvider();
   auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get());
   result = std::move(exec_result);
-  session_store_->SaveSession(*session);
+  SaveCurrentSession(session);
   return true;
 }
 
@@ -271,14 +240,11 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   current_agent_name_ = new_agent.name;
   RebuildToolbox(new_agent);
 
-  if (!default_session_id_.empty()) {
-    auto session = GetSession(default_session_id_);
-    if (session) {
-      try {
-        session->SwitchAgent(new_agent.name);
-      } catch (const std::exception& e) {
-        spdlog::warn("Failed to sync default session agent name: {}", e.what());
-      }
+  if (current_session_) {
+    try {
+      current_session_->SwitchAgent(new_agent.name);
+    } catch (const std::exception& e) {
+      spdlog::warn("Failed to sync default session agent name: {}", e.what());
     }
   }
 }

@@ -310,6 +310,10 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
 
       for (const auto& call : collected_calls) {
+        if (call.name.empty()) {
+          spdlog::warn("Skipping tool call with empty name");
+          continue;
+        }
         ++result.tool_call_count;
         std::string tool_result;
         SetLogToolName(call.name);
@@ -336,14 +340,12 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
   } while (tool_was_called);
 
-  if (result.final_response.empty()) {
-    auto history = workspace.GetHistory();
-    for (auto it = history.rbegin(); it != history.rend(); ++it) {
-      if (it->role == "assistant" && !it->content.empty()) {
-        result.final_response = it->content;
-        break;
-      }
-    }
+  if (tool_was_called && result.final_response.empty()) {
+    result.final_response =
+        "Tool execution completed but no final answer was generated. Please rephrase your request or provide more context.";
+    result.error_message = result.final_response;
+    result.has_error = true;
+    spdlog::error("{}", result.final_response);
   }
 
   if (result.final_response.empty() && !result.has_error) {
