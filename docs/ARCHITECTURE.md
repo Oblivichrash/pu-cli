@@ -24,6 +24,7 @@ pu-cli is built around four principles:
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
+| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`): cpp-httplib HTTP server exposing the session as a JSON/SSE API and mounting the `web/` UI |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
@@ -107,6 +108,24 @@ Key responsibilities:
 - `Shutdown()` — saves the single session to `<data-dir>/session.json`.
 - `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
 
+### Web server lifecycle
+
+`pu serve` runs the same `Runtime` instance behind an HTTP front-end
+(`RunServe` in `src/app/serve.cpp`):
+
+1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
+   server mounts the static `web/` UI and registers the API routes.
+2. All chat handlers serialize on a single `io_mutex` — `ProcessInput` mutates
+   the one persistent `Session`, so the lock is shared with the CLI paths.
+3. `POST /api/chat/stream` registers a `CancelToken` under a `request_id`, spawns
+   a worker thread that runs `ProcessInput`, and returns a chunked SSE response
+   that flushes tokens as they arrive.
+4. `POST /api/chat/cancel` flips the `CancelToken` for a `request_id`; the entry
+   is erased from `active_requests` once processing finishes (or the client
+   disconnects).
+5. `svr.listen()` runs on its own thread; on Ctrl+C the server stops and
+   `Runtime::Shutdown()` persists the session.
+
 ### Single-session auto-persistence
 
 `Runtime` maintains a single `std::shared_ptr<Session> current_session_`. On
@@ -131,6 +150,33 @@ RebuildToolbox(agent)
 ```
 
 ---
+
+## Streaming & Cancellation
+
+### Cancel token
+
+A `CancelToken` (`std::shared_ptr<std::atomic<bool>>`) is threaded through the
+whole request stack — `Runtime::ProcessInput` → `Executor::Execute` →
+`LLMProvider::Chat` → `HttpClient::PostStream`. Providers poll the flag between
+chunks and stop early, so a cancellation surfaces quickly instead of waiting for
+the model to finish. `POST /api/chat/cancel` looks up the token registered under
+the client-supplied `request_id` and sets it; the SSE provider also sets the same
+token when it detects that the client disconnected.
+
+### SSE streaming
+
+`POST /api/chat/stream` answers with `Content-Type: text/event-stream` and
+`Cache-Control: no-cache`. `ProcessInput` runs on a worker thread and its
+`content_callback` pushes `data: {"token": "<chunk>"}\n\n` events into a shared
+`SseStream` queue; a cpp-httplib chunked content provider
+(`Response::set_chunked_content_provider`) drains the queue on the connection
+thread and writes each event to the socket as it arrives, which is what produces
+the typewriter effect in the browser. Completion is signalled with
+`data: [DONE]\n\n`, failures with `data: {"error": "..."}\n\n`, and commands or
+non-streaming backends deliver their full text as a single token event. The
+front-end (`web/app.js`) parses the stream line by line and falls back to the
+non-streaming `POST /api/chat` endpoint on HTTP/network errors or when
+`ReadableStream` is unsupported.
 
 ## Data Flow
 
@@ -157,6 +203,21 @@ Runtime.ProcessInput(input, ...)
                          │
                          ▼
                        Session::Serialize() → session.json
+```
+
+### Web request (streaming)
+
+```
+Browser ──POST /api/chat/stream──► RunServe handler
+     │  register CancelToken in active_requests
+     ▼
+Worker thread: Runtime.ProcessInput(message, ..., content_callback)
+     │  content_callback → PushSseEvent("data: {\"token\": ...}\n\n")
+     ▼
+SseStream queue (mutex + condition_variable)
+     │  drained by httplib chunked content provider on the connection thread
+     ▼
+Browser: ReadableStream → parse SSE → append token to pending message
 ```
 
 ---

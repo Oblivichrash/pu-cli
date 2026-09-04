@@ -49,6 +49,27 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
 
 Your conversation is automatically saved to `./.pu/session.json` after every interaction, and restored when you restart. Each directory has its own independent session.
 
+### Web Server (`pu serve`)
+
+`pu serve` starts a local web UI on top of the same single-session runtime. Open
+`http://127.0.0.1:8080` in a browser and chat with the active agent:
+
+```bash
+./build/pu serve                       # listen on 127.0.0.1:8080
+./build/pu serve --host 0.0.0.0 --port 9000
+```
+
+The Web UI supports:
+
+- **Real-time streaming chat** — replies appear token by token (typewriter effect) via `POST /api/chat/stream` (SSE).
+- **Request cancellation** — the Send button turns into Cancel while a request is in flight (`POST /api/chat/cancel`).
+- **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
+- **History loading** — previous messages are restored from the persisted session (`GET /api/history`).
+
+The front-end lives in `web/` and talks to the runtime through a small JSON API;
+when streaming is unavailable (old browser or server) it automatically falls back
+to the non-streaming `POST /api/chat` endpoint.
+
 ---
 
 ## Core Commands
@@ -60,6 +81,7 @@ Your conversation is automatically saved to `./.pu/session.json` after every int
 | `/backend <type> <model>` | Manual backend switch |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
+| `/serve` | Start the Web chat server (see `pu serve` in Usage) |
 | `/exit`, `/quit` | Exit |
 
 ---
@@ -219,6 +241,7 @@ Note: The limits configuration section (max_sessions, max_history_messages, max_
 | `PU_HOME` | Overrides the data directory (default `./.pu/`) |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
+| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve` (default: auto-detected `web/` next to the binary or in the working directory) |
 
 ### Logging
 

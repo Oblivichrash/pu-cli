@@ -63,6 +63,36 @@ tests/unit/      Unit tests
 - **New command**: Add to `CommandRouter`, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered and registered automatically via the MCP client.
 
+## Web Development
+
+- Front-end sources live in `web/` (`index.html`, `app.js`, `style.css`). They are
+  served verbatim by `pu serve` — there is no build step for the UI.
+- The browser talks to the runtime through the API implemented in
+  `src/app/serve.cpp` (`RunServe`): `POST /api/chat/stream` (SSE),
+  `POST /api/chat` (non-streaming), `POST /api/chat/cancel`,
+  `POST /api/agent/switch`, `POST /api/clear`, `GET /api/session`,
+  `GET /api/history`, `GET /api/agents`.
+- After editing C++ or any file under `web/`, rebuild (`cmake --build build`) and
+  restart `pu serve`; the server mounts `web/` at startup, so a plain restart is
+  enough to pick up front-end changes.
+- Manual checks (server on default port 8080):
+  ```bash
+  curl -N -X POST http://127.0.0.1:8080/api/chat/stream \
+    -H 'Content-Type: application/json' \
+    -d '{"message":"hi","request_id":"1"}'
+  # expect data: {"token": ...} events followed by data: [DONE]
+
+  curl -X POST http://127.0.0.1:8080/api/chat/cancel \
+    -H 'Content-Type: application/json' \
+    -d '{"request_id":"1"}'
+  # expect {"success":true} while the request is in flight
+  ```
+- In a browser, verify the typewriter (streaming) output, the Send→Cancel button,
+  agent switching from the dropdown, and history loading on refresh.
+- The front-end falls back to the non-streaming `POST /api/chat` endpoint when the
+  browser lacks `ReadableStream` or the server returns an HTTP error, so keep that
+  route working when changing the chat API.
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE)
