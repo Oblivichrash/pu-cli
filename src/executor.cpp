@@ -246,8 +246,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
           [&](const std::string& token) {
             if (!token.empty()) {
               result.was_streamed = true;
-              if (content_callback) content_callback(token);
-              std::cout << token << std::flush;
+              if (content_callback) {
+                content_callback(token);  // web mode: push SSE, stay silent
+              } else {
+                std::cout << token << std::flush;  // CLI typewriter
+              }
               content_stream << token;
             }
           },
