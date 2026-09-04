@@ -247,24 +247,48 @@ async function loadAgents() {
   }
 }
 
+// In-flight request state; the Send button turns into Cancel while it runs.
+let currentRequestId = null;
+let currentController = null;
+
+function showError(msgEl, text) {
+  msgEl.classList.remove("typing");
+  msgEl.classList.remove("assistant");
+  msgEl.classList.add("error");
+  msgEl.textContent = "";
+  const label = document.createElement("span");
+  label.className = "role";
+  label.textContent = "Error";
+  msgEl.appendChild(label);
+  msgEl.appendChild(document.createTextNode(text));
+}
+
 async function sendMessage() {
+  if (currentController) return;
   const text = inputEl.value.trim();
   if (!text) return;
+
+  const requestId = Date.now() + "-" + Math.random().toString(36).slice(2);
+  const controller = new AbortController();
+  currentRequestId = requestId;
+  currentController = controller;
+
   inputEl.value = "";
   autoResize();
   addMessage("user", text);
 
-  sendBtn.disabled = true;
+  sendBtn.textContent = "Cancel";
+  sendBtn.disabled = false;
   const pending = addMessage("assistant", "");
   pending.classList.add("typing");
-  pending.textContent = "";
   pending.appendChild(document.createTextNode("Thinking"));
 
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({ message: text, request_id: requestId }),
+      signal: controller.signal
     });
     const data = await res.json();
     pending.classList.remove("typing");
@@ -273,23 +297,38 @@ async function sendMessage() {
     if (data.success) {
       pending.appendChild(document.createTextNode(data.content || "(empty response)"));
     } else {
-      pending.classList.remove("assistant");
-      pending.classList.add("error");
-      const label = document.createElement("span");
-      label.className = "role";
-      label.textContent = "Error";
-      pending.appendChild(label);
-      pending.appendChild(document.createTextNode(data.error || "Request failed"));
+      showError(pending, data.error || "Request failed");
     }
   } catch (e) {
-    pending.classList.remove("typing");
-    pending.classList.remove("assistant");
-    pending.classList.add("error");
-    pending.textContent = "Network error: " + e.message;
+    if (e && e.name === "AbortError") {
+      showError(pending, "Request cancelled.");
+    } else {
+      showError(pending, "Network error: " + (e && e.message ? e.message : e));
+    }
   } finally {
+    currentRequestId = null;
+    currentController = null;
+    sendBtn.textContent = "Send";
     sendBtn.disabled = false;
     inputEl.focus();
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+async function cancelRequest() {
+  const controller = currentController;
+  const requestId = currentRequestId;
+  if (controller) controller.abort();
+  if (requestId) {
+    try {
+      await fetch("/api/chat/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: requestId })
+      });
+    } catch (e) {
+      console.warn("Cancel request failed:", e);
+    }
   }
 }
 
@@ -315,12 +354,18 @@ function autoResize() {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
 }
 
-sendBtn.addEventListener("click", sendMessage);
+sendBtn.addEventListener("click", () => {
+  if (currentController) {
+    cancelRequest();
+  } else {
+    sendMessage();
+  }
+});
 clearBtn.addEventListener("click", clearChat);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    sendMessage();
+    if (!currentController) sendMessage();
   }
 });
 inputEl.addEventListener("input", autoResize);

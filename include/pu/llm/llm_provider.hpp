@@ -6,6 +6,8 @@
 #include <functional>
 #include <nlohmann/json.hpp>
 
+#include "pu/http_client.hpp"  // pu::CancelToken
+
 namespace pu {
 
 struct ChatMessage {
@@ -51,7 +53,8 @@ public:
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr
+    std::function<void(const ToolCall&)> tool_callback = nullptr,
+    CancelToken cancel_token = nullptr
   ) = 0;
 
   virtual bool SupportsTools() const = 0;

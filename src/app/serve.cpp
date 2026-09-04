@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <httplib.h>
@@ -83,6 +84,27 @@ void SendJson(httplib::Response& res, int status, const nlohmann::json& j) {
   res.body = j.dump();
 }
 
+// Erases the request from active_requests when the handler exits.
+class ActiveRequestGuard {
+ public:
+  ActiveRequestGuard(std::mutex& mutex,
+                     std::unordered_map<std::string, CancelToken>& requests,
+                     std::string request_id)
+      : mutex_(&mutex), requests_(&requests), request_id_(std::move(request_id)) {}
+  ~ActiveRequestGuard() {
+    if (!mutex_ || !requests_ || request_id_.empty()) return;
+    std::lock_guard<std::mutex> lock(*mutex_);
+    requests_->erase(request_id_);
+  }
+  ActiveRequestGuard(const ActiveRequestGuard&) = delete;
+  ActiveRequestGuard& operator=(const ActiveRequestGuard&) = delete;
+
+ private:
+  std::mutex* mutex_;
+  std::unordered_map<std::string, CancelToken>* requests_;
+  std::string request_id_;
+};
+
 }  // namespace
 
 int RunServe(int argc, char* argv[], Runtime& runtime) {
@@ -134,6 +156,8 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
   // ProcessInput mutates the single persistent Session (workspace + history),
   // so all handlers that touch the runtime/session share one lock.
   std::mutex io_mutex;
+  std::mutex cancel_mutex;
+  std::unordered_map<std::string, CancelToken> active_requests;
   httplib::Server svr;
 
   // Static front-end. Mount points only serve GET/HEAD; specific API routes
@@ -180,11 +204,30 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       return;
     }
 
+    std::string request_id;
+    auto rid_it = body.find("request_id");
+    if (rid_it != body.end() && rid_it->is_string() &&
+        !rid_it->get<std::string>().empty()) {
+      request_id = rid_it->get<std::string>();
+    } else {
+      static std::atomic<uint64_t> s_request_seq{0};
+      request_id =
+          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+          "-" + std::to_string(s_request_seq.fetch_add(1));
+    }
+    resp["request_id"] = request_id;
+    auto token = std::make_shared<std::atomic<bool>>(false);
+    {
+      std::lock_guard<std::mutex> lock(cancel_mutex);
+      active_requests[request_id] = token;
+    }
+    ActiveRequestGuard cleanup(cancel_mutex, active_requests, request_id);
+
     ExecutionResult result;
     bool is_command = false;
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
-      bool ok = runtime.ProcessInput(message, result, is_command);
+      bool ok = runtime.ProcessInput(message, result, is_command, token);
       resp["success"] = ok && !result.has_error;
       resp["content"] = result.content;
       resp["error"] = result.has_error ? result.error_message : "";
@@ -192,10 +235,52 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       resp["tool_call_count"] = result.tool_call_count;
       if (!ok && result.error_message.empty()) resp["error"] = "Processing failed";
     } catch (const std::exception& e) {
+      // Cancellation surfaces as an HttpError; the guard cleans up the map.
       resp["success"] = false;
       resp["content"] = "";
       resp["error"] = e.what();
     }
+    SendJson(res, 200, resp);
+  });
+
+  // POST /api/chat/cancel - abort an in-flight request by id.
+  svr.Post("/api/chat/cancel", [&](const httplib::Request& req,
+                                   httplib::Response& res) {
+    nlohmann::json resp;
+    nlohmann::json body;
+    try {
+      body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+      resp["success"] = false;
+      resp["error"] = "Invalid JSON body";
+      SendJson(res, 400, resp);
+      return;
+    }
+    auto it = body.find("request_id");
+    if (it == body.end() || !it->is_string() || it->get<std::string>().empty()) {
+      resp["success"] = false;
+      resp["error"] = "Missing or invalid 'request_id' field";
+      SendJson(res, 400, resp);
+      return;
+    }
+    const std::string request_id = it->get<std::string>();
+    CancelToken token;
+    {
+      std::lock_guard<std::mutex> lock(cancel_mutex);
+      auto found = active_requests.find(request_id);
+      if (found == active_requests.end()) {
+        resp["success"] = false;
+        resp["error"] = "request not found";
+        SendJson(res, 404, resp);
+        return;
+      }
+      token = found->second;
+    }
+    if (token) {
+      token->store(true);
+      spdlog::info("Cancel requested for request '{}'", request_id);
+    }
+    resp["success"] = true;
     SendJson(res, 200, resp);
   });
 

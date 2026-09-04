@@ -168,7 +168,8 @@ class MockLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  std::function<void(const ToolCall&)> tool_callback) override {
+                  std::function<void(const ToolCall&)> tool_callback,
+                  CancelToken /*cancel_token*/) override {
     ChatResult r;
     r.content = content_;
     for (const auto& c : calls_) {

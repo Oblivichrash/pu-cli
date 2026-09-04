@@ -173,7 +173,8 @@ ChatResult OllamaProvider::Chat(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback,
-    std::function<void(const ToolCall&)> tool_callback) {
+    std::function<void(const ToolCall&)> tool_callback,
+    CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
 
@@ -204,6 +205,9 @@ ChatResult OllamaProvider::Chat(
             content_stream << msg["content"].get<std::string>();
           }
         }
+      } catch (const nlohmann::json::parse_error& e) {
+        // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+        spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
       } catch (const std::exception&) {}
     },
     [](const std::string& msg) { throw HttpError("Streaming error: " + msg); }
@@ -212,10 +216,11 @@ ChatResult OllamaProvider::Chat(
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (platform::IsInterrupted()) return 0;
+    if (cancel_token && cancel_token->load(std::memory_order_acquire)) return 0;
     return total;
   };
 
-  http_->PostStream(url, body, headers, write_cb);
+  http_->PostStream(url, body, headers, write_cb, cancel_token);
 
   result.content = content_stream.str();
   return result;

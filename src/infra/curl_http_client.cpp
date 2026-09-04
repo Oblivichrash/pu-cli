@@ -22,6 +22,7 @@ CurlHttpClient::CurlHttpClient() {
   handle_ = curl_easy_init();
   if (!handle_) throw pu::Error("Failed to initialize libcurl");
   interrupt_checker_ = [] { return pu::platform::IsInterrupted(); };
+  current_cancel_token_.reset();
 }
 
 CurlHttpClient::~CurlHttpClient() { if (handle_) curl_easy_cleanup(handle_); }
@@ -34,6 +35,10 @@ int CurlHttpClient::ProgressCallback(void* clientp, curl_off_t, curl_off_t,
                                      curl_off_t, curl_off_t) {
   auto* self = static_cast<CurlHttpClient*>(clientp);
   if (self->interrupt_checker_ && self->interrupt_checker_()) return 1;
+  if (self->current_cancel_token_ &&
+      self->current_cancel_token_->load(std::memory_order_acquire)) {
+    return 1;
+  }
   return 0;
 }
 
@@ -51,11 +56,20 @@ size_t WriteCallbackTrampoline(char* ptr, size_t size, size_t nmemb, void* userd
   return ctx->cb(ptr, bytes);
 }
 
+// Resets the in-flight token on scope exit to avoid a dangling reference.
+struct CancelTokenGuard {
+  CancelToken* slot;
+  ~CancelTokenGuard() {
+    if (slot) slot->reset();
+  }
+};
+
 }  // namespace
 
 void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
                                 const std::vector<std::string>& headers,
-                                WriteCallback write_cb) {
+                                WriteCallback write_cb,
+                                CancelToken cancel_token) {
   auto start = std::chrono::steady_clock::now();
   std::string trace_id = std::to_string(start.time_since_epoch().count());
 
@@ -63,6 +77,9 @@ void CurlHttpClient::PostStream(const std::string& url, const std::string& body,
 
   error_detail_.clear();
   response_body_.clear();
+
+  current_cancel_token_ = std::move(cancel_token);
+  CancelTokenGuard guard{&current_cancel_token_};
 
   curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
   curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, body.c_str());

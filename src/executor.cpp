@@ -137,7 +137,8 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 
 ExecutionResult Executor::Execute(const std::string& input,
                                   Workspace& workspace,
-                                  LLMProvider* provider) {
+                                  LLMProvider* provider,
+                                  CancelToken cancel_token) {
   if (!toolbox_) {
     ExecutionResult err;
     err.has_error = true;
@@ -157,7 +158,7 @@ ExecutionResult Executor::Execute(const std::string& input,
     }
   }
 
-  auto result = RunToolLoop(workspace, provider);
+  auto result = RunToolLoop(workspace, provider, cancel_token);
   ExecutionResult exec_result;
   if (result.has_error) {
     exec_result.has_error = true;
@@ -176,7 +177,8 @@ ExecutionResult Executor::Execute(const std::string& input,
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
-                                               LLMProvider* provider) {
+                                               LLMProvider* provider,
+                                               CancelToken cancel_token) {
   ToolLoopResult result;
   result.was_streamed = false;
 
@@ -249,7 +251,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
           [&](const ToolCall& call) {
             tool_was_called = true;
             collected_calls.push_back(call);
-          });
+          },
+          cancel_token);
 
       if (!tool_was_called) {
         std::string response = chat_result.content;

@@ -8,6 +8,7 @@
 #include "pu/agent_manager.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/executor.hpp"
+#include "pu/http_client.hpp"  // pu::CancelToken
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
@@ -29,7 +30,8 @@ class Runtime {
 
   std::shared_ptr<Session> GetDefaultSession();
 
-  bool ProcessInput(const std::string& input, ExecutionResult& result, bool& is_command);
+  bool ProcessInput(const std::string& input, ExecutionResult& result, bool& is_command,
+                    CancelToken cancel_token = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);

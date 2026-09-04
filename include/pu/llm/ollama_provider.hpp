@@ -29,7 +29,8 @@ class OllamaProvider : public LLMProvider {
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr
+    std::function<void(const ToolCall&)> tool_callback = nullptr,
+    CancelToken cancel_token = nullptr
   ) override;
 
   bool SupportsTools() const override { return true; }

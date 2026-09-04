@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "pu/agent_config.hpp"
+#include "pu/http_client.hpp"  // pu::CancelToken
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -35,7 +36,8 @@ class Executor {
   void SetCompactionConfig(const config::HistoryCompactionConfig& cfg) { compaction_config_ = cfg; }
 
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
-                          LLMProvider* provider);
+                          LLMProvider* provider,
+                          CancelToken cancel_token = nullptr);
 
   static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
@@ -51,7 +53,8 @@ class Executor {
     std::string error_message;
   };
 
-  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider);
+  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider,
+                             CancelToken cancel_token);
 
   void ProbeStaticEnvironment();
 
