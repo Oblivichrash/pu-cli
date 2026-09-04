@@ -4,7 +4,6 @@ const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const clearBtn = document.getElementById("clear-btn");
-const statusEl = document.getElementById("session-status");
 const agentSelect = document.getElementById("agent-select");
 
 function addMessage(role, text) {
@@ -32,19 +31,11 @@ async function loadSession() {
   try {
     const res = await fetch("/api/session");
     const data = await res.json();
-    if (data.ok) {
-      const model = data.backend_model ? " · " + data.backend_model : "";
-      statusEl.textContent = "Agent: " + (data.agent_name || "?") +
-        " · Backend: " + (data.backend_type || "?") + model;
-      // 设置下拉框选中当前 Agent
-      if (data.agent_name) {
-        agentSelect.value = data.agent_name;
-      }
-    } else {
-      statusEl.textContent = "Session unavailable: " + (data.error || "unknown");
+    if (data.ok && data.agent_name) {
+      agentSelect.value = data.agent_name;
     }
   } catch (e) {
-    statusEl.textContent = "Session unavailable";
+    console.warn("Failed to load session:", e);
   }
 }
 
@@ -224,6 +215,7 @@ inputEl.addEventListener("keydown", (e) => {
 inputEl.addEventListener("input", autoResize);
 
 addSystem("Connected to pu serve. Send a message to start chatting.");
+// Populate the agent list first so loadSession() can select the current agent.
+await loadAgents();
 await loadSession();
 await loadHistory();
-await loadAgents();
