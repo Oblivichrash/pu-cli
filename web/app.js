@@ -107,6 +107,7 @@ function showError(msgEl, text) {
   msgEl.appendChild(document.createTextNode(text));
 }
 
+// Non-streaming fallback that talks to /api/chat.
 async function sendMessage() {
   if (currentController) return;
   const text = inputEl.value.trim();
@@ -159,6 +160,129 @@ async function sendMessage() {
   }
 }
 
+// Streaming send: consumes /api/chat/stream SSE and appends each token to
+// the pending message as it arrives. Falls back to sendMessage() when the
+// browser or the request cannot stream.
+async function sendMessageStream() {
+  if (currentController) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  // Browsers without ReadableStream fall back to the plain endpoint.
+  if (!window.ReadableStream) {
+    sendMessage();
+    return;
+  }
+
+  const requestId = Date.now() + "-" + Math.random().toString(36).slice(2);
+  const controller = new AbortController();
+  currentRequestId = requestId;
+  currentController = controller;
+  sendBtn.textContent = "Cancel";
+  sendBtn.disabled = false;
+
+  let res;
+  try {
+    res = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, request_id: requestId }),
+      signal: controller.signal
+    });
+  } catch (e) {
+    // Cancelled before the stream started: nothing was sent, keep the input.
+    if (e && e.name === "AbortError") {
+      resetSendState();
+      return;
+    }
+    // Network error: retry through the non-streaming endpoint.
+    resetSendState();
+    sendMessage();
+    return;
+  }
+  if (!res.ok || !res.body) {
+    // HTTP error (e.g. server without /api/chat/stream): fall back.
+    resetSendState();
+    sendMessage();
+    return;
+  }
+
+  // The stream is live: commit the UI and read SSE events.
+  inputEl.value = "";
+  autoResize();
+  addMessage("user", text);
+
+  const pending = addMessage("assistant", "");
+  pending.classList.add("typing");
+  const body = document.createTextNode("Thinking");
+  pending.appendChild(body);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done = false;
+  try {
+    while (!done) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, idx).replace(/\r$/, "");
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload) continue;
+        if (payload === "[DONE]") {
+          done = true;
+          break;
+        }
+        let ev;
+        try {
+          ev = JSON.parse(payload);
+        } catch (e) {
+          continue;
+        }
+        if (ev && typeof ev.error === "string") {
+          showError(pending, ev.error);
+          done = true;
+          break;
+        }
+        if (ev && typeof ev.token === "string" && ev.token) {
+          if (body.data === "Thinking") {
+            body.data = ev.token;
+          } else {
+            body.data += ev.token;
+          }
+        }
+      }
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      showError(pending, "Request cancelled.");
+    } else {
+      showError(pending, "Network error: " + (e && e.message ? e.message : e));
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch (e) {}
+    if (body.data === "Thinking") body.data = "(empty response)";
+    pending.classList.remove("typing");
+    resetSendState();
+  }
+}
+
+function resetSendState() {
+  currentRequestId = null;
+  currentController = null;
+  sendBtn.textContent = "Send";
+  sendBtn.disabled = false;
+  inputEl.focus();
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
 async function cancelRequest() {
   const controller = currentController;
   const requestId = currentRequestId;
@@ -202,14 +326,14 @@ sendBtn.addEventListener("click", () => {
   if (currentController) {
     cancelRequest();
   } else {
-    sendMessage();
+    sendMessageStream();
   }
 });
 clearBtn.addEventListener("click", clearChat);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    if (!currentController) sendMessage();
+    if (!currentController) sendMessageStream();
   }
 });
 inputEl.addEventListener("input", autoResize);

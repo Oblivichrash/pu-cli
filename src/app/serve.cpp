@@ -10,8 +10,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
+#include <deque>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -82,6 +86,23 @@ void SendJson(httplib::Response& res, int status, const nlohmann::json& j) {
   res.status = status;
   res.set_header("Content-Type", "application/json");
   res.body = j.dump();
+}
+
+// SSE event queue shared between the ProcessInput worker and the
+// chunked-content provider that flushes events to the client.
+struct SseStream {
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::deque<std::string> events;
+  bool finished = false;
+};
+
+void PushSseEvent(const std::shared_ptr<SseStream>& sse, std::string event) {
+  {
+    std::lock_guard<std::mutex> lock(sse->mutex);
+    sse->events.push_back(std::move(event));
+  }
+  sse->cv.notify_one();
 }
 
 // Erases the request from active_requests when the handler exits.
@@ -241,6 +262,139 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       resp["error"] = e.what();
     }
     SendJson(res, 200, resp);
+  });
+
+  // POST /api/chat/stream - SSE streaming variant of /api/chat.
+  svr.Post("/api/chat/stream", [&](const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json resp;
+    nlohmann::json body;
+    try {
+      body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+      resp["success"] = false;
+      resp["content"] = "";
+      resp["error"] = "Invalid JSON body";
+      SendJson(res, 400, resp);
+      return;
+    }
+    auto it = body.find("message");
+    if (it == body.end() || !it->is_string()) {
+      resp["success"] = false;
+      resp["content"] = "";
+      resp["error"] = "Missing or invalid 'message' field";
+      SendJson(res, 400, resp);
+      return;
+    }
+    const std::string message = it->get<std::string>();
+    if (message.empty()) {
+      resp["success"] = false;
+      resp["content"] = "";
+      resp["error"] = "'message' must not be empty";
+      SendJson(res, 400, resp);
+      return;
+    }
+
+    std::string request_id;
+    auto rid_it = body.find("request_id");
+    if (rid_it != body.end() && rid_it->is_string() &&
+        !rid_it->get<std::string>().empty()) {
+      request_id = rid_it->get<std::string>();
+    } else {
+      static std::atomic<uint64_t> s_request_seq{0};
+      request_id =
+          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+          "-" + std::to_string(s_request_seq.fetch_add(1));
+    }
+    auto token = std::make_shared<std::atomic<bool>>(false);
+    {
+      std::lock_guard<std::mutex> lock(cancel_mutex);
+      active_requests[request_id] = token;
+    }
+
+    auto sse = std::make_shared<SseStream>();
+
+    // Run processing on a worker so the handler can return and the chunked
+    // provider below can flush tokens to the client as they are produced.
+    std::thread worker([&, sse, token, request_id, message]() {
+      ExecutionResult result;
+      bool is_command = false;
+      bool ok = false;
+      bool streamed = false;
+      try {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        ok = runtime.ProcessInput(
+            message, result, is_command, token,
+            [&](const std::string& chunk) {
+              if (chunk.empty()) return;
+              streamed = true;
+              nlohmann::json ev;
+              ev["token"] = chunk;
+              PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+            });
+      } catch (const std::exception& e) {
+        result.has_error = true;
+        result.error_message = e.what();
+        ok = false;
+      }
+
+      // Processing is done; stop tracking the request for cancellation.
+      {
+        std::lock_guard<std::mutex> lock(cancel_mutex);
+        active_requests.erase(request_id);
+      }
+
+      if (!ok || result.has_error) {
+        nlohmann::json ev;
+        ev["error"] = result.has_error && !result.error_message.empty()
+                          ? result.error_message
+                          : "Processing failed";
+        PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+      } else if (!streamed && !result.content.empty()) {
+        // Commands / non-streaming backends deliver the full text at once.
+        nlohmann::json ev;
+        ev["token"] = result.content;
+        PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+      }
+      PushSseEvent(sse, "data: [DONE]\n\n");
+      {
+        std::lock_guard<std::mutex> lock(sse->mutex);
+        sse->finished = true;
+      }
+      sse->cv.notify_all();
+    });
+    worker.detach();
+
+    res.set_header("Cache-Control", "no-cache");
+    // set_chunked_content_provider also sets Content-Type: text/event-stream.
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [sse, token](size_t /*offset*/, httplib::DataSink& sink) -> bool {
+          std::string event;
+          {
+            std::unique_lock<std::mutex> lock(sse->mutex);
+            sse->cv.wait_for(lock, std::chrono::milliseconds(250), [&] {
+              return !sse->events.empty() || sse->finished || !sink.is_writable();
+            });
+            if (!sse->events.empty()) {
+              event = std::move(sse->events.front());
+              sse->events.pop_front();
+            } else if (sse->finished) {
+              sink.done();
+              return true;
+            } else if (!sink.is_writable()) {
+              // Client went away: cancel the worker early.
+              token->store(true);
+              return false;
+            } else {
+              return true;
+            }
+          }
+          if (!sink.write(event.data(), event.size())) {
+            token->store(true);
+            return false;
+          }
+          return true;
+        });
   });
 
   // POST /api/chat/cancel - abort an in-flight request by id.

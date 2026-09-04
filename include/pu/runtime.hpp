@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,7 +32,8 @@ class Runtime {
   std::shared_ptr<Session> GetDefaultSession();
 
   bool ProcessInput(const std::string& input, ExecutionResult& result, bool& is_command,
-                    CancelToken cancel_token = nullptr);
+                    CancelToken cancel_token = nullptr,
+                    std::function<void(const std::string&)> content_callback = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);

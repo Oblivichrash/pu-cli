@@ -135,7 +135,8 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
 bool Runtime::ProcessInput(const std::string& input,
                            ExecutionResult& result,
                            bool& is_command,
-                           CancelToken cancel_token) {
+                           CancelToken cancel_token,
+                           std::function<void(const std::string&)> content_callback) {
   BeginRequest();
 
   if (!is_running_) {
@@ -167,7 +168,7 @@ bool Runtime::ProcessInput(const std::string& input,
 
   auto provider = session->CreateProvider();
   auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
-                                        cancel_token);
+                                        cancel_token, content_callback);
   result = std::move(exec_result);
   SaveCurrentSession(session);
   return true;

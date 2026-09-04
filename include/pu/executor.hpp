@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,7 +38,8 @@ class Executor {
 
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider,
-                          CancelToken cancel_token = nullptr);
+                          CancelToken cancel_token = nullptr,
+                          std::function<void(const std::string&)> content_callback = nullptr);
 
   static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
@@ -54,7 +56,8 @@ class Executor {
   };
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider,
-                             CancelToken cancel_token);
+                             CancelToken cancel_token,
+                             std::function<void(const std::string&)> content_callback);
 
   void ProbeStaticEnvironment();
 
