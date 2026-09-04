@@ -24,7 +24,6 @@ using json = nlohmann::json;
 namespace {
 
 #ifdef _WIN32
-// RtlGetVersion bypasses the manifest compatibility layer and reports the true OS version.
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
   auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
@@ -193,19 +192,19 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   }
 
   auto tools = toolbox_->GetToolDefinitions();
-  bool tool_was_called = false;
   const int max_iterations = 20;
   int iteration = 0;
   bool hit_max_iterations = false;
+  bool tool_was_called = false;
 
   do {
+    tool_was_called = false;
     if (iteration >= max_iterations) {
       hit_max_iterations = true;
       spdlog::warn("Tool loop reached max_iterations ({}), breaking", max_iterations);
       break;
     }
     ++iteration;
-    tool_was_called = false;
 
     std::vector<ChatMessage> chat_history;
     for (const auto& msg : workspace.GetHistory()) {
@@ -253,7 +252,12 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
           });
 
       if (!tool_was_called) {
-        result.final_response = chat_result.content;
+        std::string response = chat_result.content;
+        if (response.empty() && !chat_result.reasoning_content.empty()) {
+          response = chat_result.reasoning_content;
+          spdlog::debug("Using reasoning_content as final response (thinking mode)");
+        }
+        result.final_response = response;
         break;
       }
     } catch (const std::exception& e) {
@@ -264,99 +268,100 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       break;
     }
 
-    if (!collected_calls.empty()) {
-      for (const auto& call : collected_calls) {
-        if (call.name == "ask_user") {
-          result.final_response = call.arguments.value("question", "");
-          result.completed = true;
-          result.was_streamed = false;
-          return result;
-        }
-      }
-
-      for (auto& tc : collected_calls) {
-        if (tc.id.empty()) {
-          tc.id = "call_" + std::to_string(++next_tool_call_id_);
-        }
-      }
-
-      ChatMessage assistant_msg;
-      assistant_msg.role = "assistant";
-      assistant_msg.content = chat_result.content;
-      assistant_msg.reasoning_content = chat_result.reasoning_content;
-
-      json j_calls = json::array();
-      for (const auto& tc : collected_calls) {
-        json jc;
-        jc["id"] = tc.id;
-        jc["type"] = "function";
-        jc["function"]["name"] = tc.name;
-        jc["function"]["arguments"] = tc.arguments;
-        j_calls.push_back(jc);
-      }
-      assistant_msg.tool_calls_json = j_calls.dump();
-      workspace.Append(assistant_msg);
-
-      ToolContext tool_ctx;
-      if (security_policy_.has_value()) {
-        tool_ctx.security = &security_policy_.value();
-      } else {
-        static config::SecurityPolicy empty_policy;
-        tool_ctx.security = &empty_policy;
-        spdlog::warn("No security policy set for Executor. Using empty policy.");
-      }
-      if (!tool_ctx.request_confirmation) {
-        tool_ctx.request_confirmation = [](const std::string&) { return true; };
-      }
-
-      for (const auto& call : collected_calls) {
-        if (call.name.empty()) {
-          spdlog::warn("Skipping tool call with empty name");
-          continue;
-        }
-        ++result.tool_call_count;
-        std::string tool_result;
-        SetLogToolName(call.name);
-        auto tool_start = std::chrono::steady_clock::now();
-        try {
-          tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
-        } catch (const std::exception& e) {
-          tool_result = std::string("Tool execution error: ") + e.what();
-        }
-        auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - tool_start).count();
-        SetLogDurationMs(tool_ms);
-        spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
-        ClearLogToolName();
-        ClearLogDurationMs();
-
-        ChatMessage tool_msg;
-        tool_msg.role = "tool";
-        tool_msg.content = tool_result;
-        tool_msg.tool_name = call.name;
-        tool_msg.tool_call_id = call.id;
-        workspace.Append(tool_msg);
+    for (const auto& call : collected_calls) {
+      if (call.name == "ask_user") {
+        result.final_response = call.arguments.value("question", "");
+        result.completed = true;
+        result.was_streamed = false;
+        return result;
       }
     }
+
+    for (auto& tc : collected_calls) {
+      if (tc.id.empty()) {
+        tc.id = "call_" + std::to_string(++next_tool_call_id_);
+      }
+    }
+
+    ChatMessage assistant_msg;
+    assistant_msg.role = "assistant";
+    assistant_msg.content = chat_result.content;
+    assistant_msg.reasoning_content = chat_result.reasoning_content;
+
+    json j_calls = json::array();
+    for (const auto& tc : collected_calls) {
+      json jc;
+      jc["id"] = tc.id;
+      jc["type"] = "function";
+      jc["function"]["name"] = tc.name;
+      jc["function"]["arguments"] = tc.arguments;
+      j_calls.push_back(jc);
+    }
+    assistant_msg.tool_calls_json = j_calls.dump();
+    workspace.Append(assistant_msg);
+
+    ToolContext tool_ctx;
+    if (security_policy_.has_value()) {
+      tool_ctx.security = &security_policy_.value();
+    } else {
+      static config::SecurityPolicy empty_policy;
+      tool_ctx.security = &empty_policy;
+      spdlog::warn("No security policy set for Executor. Using empty policy.");
+    }
+    if (!tool_ctx.request_confirmation) {
+      tool_ctx.request_confirmation = [](const std::string&) { return true; };
+    }
+
+    for (const auto& call : collected_calls) {
+      if (call.name.empty()) {
+        spdlog::warn("Skipping tool call with empty name");
+        continue;
+      }
+      ++result.tool_call_count;
+      std::string tool_result;
+      SetLogToolName(call.name);
+      auto tool_start = std::chrono::steady_clock::now();
+      try {
+        tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
+      } catch (const std::exception& e) {
+        tool_result = std::string("Tool execution error: ") + e.what();
+      }
+      auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - tool_start).count();
+      SetLogDurationMs(tool_ms);
+      spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
+      ClearLogToolName();
+      ClearLogDurationMs();
+
+      ChatMessage tool_msg;
+      tool_msg.role = "tool";
+      tool_msg.content = tool_result;
+      tool_msg.tool_name = call.name;
+      tool_msg.tool_call_id = call.id;
+      workspace.Append(tool_msg);
+    }
+
   } while (tool_was_called);
 
-  if (tool_was_called && result.final_response.empty()) {
+  if (hit_max_iterations && result.final_response.empty()) {
     result.final_response =
-        "Tool execution completed but no final answer was generated. Please rephrase your request or provide more context.";
-    result.error_message = result.final_response;
+        "Tool execution reached the maximum number of iterations without generating a final answer. "
+        "Please rephrase your request or narrow the scope.";
     result.has_error = true;
     spdlog::error("{}", result.final_response);
+    return result;
   }
 
-  if (result.final_response.empty() && !result.has_error) {
-    if (hit_max_iterations) {
-      result.final_response =
-          "Tool execution reached the maximum number of iterations without generating a final answer. "
-          "Please rephrase your request or narrow the scope.";
-    } else {
-      result.final_response =
-          "Tool execution completed but no final answer was generated. Please rephrase your request.";
-    }
+  if (result.final_response.empty() && result.tool_call_count == 0) {
+    result.has_error = true;
+    result.error_message = "Model returned an empty response without any tool calls. "
+                           "Please check the backend service or try again.";
+    spdlog::error("{}", result.error_message);
+    return result;
+  }
+
+  if (result.final_response.empty() && result.tool_call_count > 0) {
+    spdlog::info("Tool execution completed without a final text response – considered successful.");
   }
 
   return result;
