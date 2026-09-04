@@ -37,6 +37,15 @@
     flex-wrap: wrap;
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #agent-select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 13px;
+    max-width: 240px;
+  }
   #session-status {
     margin-left: auto;
     font-size: 12px;
@@ -123,6 +132,7 @@
 <body>
 <header>
   <h1>pu-cli · Web Chat</h1>
+  <select id="agent-select"></select>
   <button id="clear-btn" title="Clear conversation history">New chat</button>
   <span id="session-status">Loading session…</span>
 </header>
@@ -134,7 +144,7 @@
   <button id="send">Send</button>
 </div>
 
-<script>
+<script type="module">
 "use strict";
 
 const messagesEl = document.getElementById("messages");
@@ -142,20 +152,7 @@ const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const clearBtn = document.getElementById("clear-btn");
 const statusEl = document.getElementById("session-status");
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
-}
-
-function renderThinking(container, text) {
-  if (!text) return;
-  const t = document.createElement("div");
-  t.className = "thinking";
-  t.textContent = text;
-  container.appendChild(t);
-}
+const agentSelect = document.getElementById("agent-select");
 
 function addMessage(role, text) {
   const el = document.createElement("div");
@@ -180,17 +177,73 @@ function addSystem(text) {
 
 async function loadSession() {
   try {
-    const res = await fetch("/api/session", { headers: { "Accept": "application/json" } });
+    const res = await fetch("/api/session");
     const data = await res.json();
     if (data.ok) {
       const model = data.backend_model ? " · " + data.backend_model : "";
       statusEl.textContent = "Agent: " + (data.agent_name || "?") +
         " · Backend: " + (data.backend_type || "?") + model;
+      // 设置下拉框选中当前 Agent
+      if (data.agent_name) {
+        agentSelect.value = data.agent_name;
+      }
     } else {
       statusEl.textContent = "Session unavailable: " + (data.error || "unknown");
     }
   } catch (e) {
     statusEl.textContent = "Session unavailable";
+  }
+}
+
+async function loadHistory() {
+  try {
+    const res = await fetch("/api/history");
+    const history = await res.json();
+    if (Array.isArray(history)) {
+      for (const msg of history) {
+        if (msg.role === "system") continue;
+        addMessage(msg.role, msg.content);
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to load history:", e);
+  }
+}
+
+async function loadAgents() {
+  try {
+    const res = await fetch("/api/agents");
+    const data = await res.json();
+    agentSelect.innerHTML = "";
+    for (const agent of data.agents || []) {
+      const opt = document.createElement("option");
+      opt.value = agent.name;
+      opt.textContent = agent.name + (agent.description ? " (" + agent.description + ")" : "");
+      agentSelect.appendChild(opt);
+    }
+    agentSelect.addEventListener("change", async function() {
+      const name = this.value;
+      try {
+        const res = await fetch("/api/agent/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent_name: name })
+        });
+        const data = await res.json();
+        if (data.success) {
+          messagesEl.innerHTML = "";
+          addSystem("Switched to agent: " + name);
+          await loadSession();
+          await loadHistory();
+        } else {
+          addSystem("Switch failed: " + (data.error || "unknown"));
+        }
+      } catch (e) {
+        addSystem("Switch failed: " + e.message);
+      }
+    });
+  } catch (e) {
+    console.warn("Failed to load agents:", e);
   }
 }
 
@@ -248,6 +301,7 @@ async function clearChat() {
     messagesEl.innerHTML = "";
     addSystem(data.success ? "Conversation cleared." : "Clear failed: " + (data.error || "unknown"));
     await loadSession();
+    await loadHistory();
   } catch (e) {
     messagesEl.innerHTML = "";
     addSystem("Clear failed: " + e.message);
@@ -272,7 +326,9 @@ inputEl.addEventListener("keydown", (e) => {
 inputEl.addEventListener("input", autoResize);
 
 addSystem("Connected to pu serve. Send a message to start chatting.");
-loadSession();
+await loadSession();
+await loadHistory();
+await loadAgents();
 </script>
 </body>
 </html>

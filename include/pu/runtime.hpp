@@ -34,6 +34,9 @@ class Runtime {
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
 
+  // Expose AgentManager for Web UI.
+  AgentManager& GetAgentManager() { return *agent_manager_; }
+
  private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 

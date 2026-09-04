@@ -218,6 +218,89 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, j);
   });
 
+  // GET /api/history - return conversation history.
+  svr.Get("/api/history", [&](const httplib::Request&, httplib::Response& res) {
+    nlohmann::json j = nlohmann::json::array();
+    try {
+      std::lock_guard<std::mutex> lock(io_mutex);
+      auto session = runtime.GetDefaultSession();
+      if (session) {
+        auto history = session->GetWorkspace().GetHistory();
+        for (const auto& msg : history) {
+          nlohmann::json item;
+          item["id"] = msg.id;
+          item["role"] = msg.role;
+          item["content"] = msg.content;
+          item["timestamp"] = msg.timestamp;
+          j.push_back(item);
+        }
+      }
+    } catch (const std::exception&) {
+      // return empty array on error
+    }
+    SendJson(res, 200, j);
+  });
+
+  // GET /api/agents - return real agent list.
+  svr.Get("/api/agents", [&](const httplib::Request&, httplib::Response& res) {
+    nlohmann::json j;
+    auto agents = nlohmann::json::array();
+    try {
+      std::lock_guard<std::mutex> lock(io_mutex);
+      auto& mgr = runtime.GetAgentManager();
+      auto names = mgr.GetAgentNames();
+      for (const auto& name : names) {
+        auto* cfg = mgr.GetAgentConfig(name);
+        nlohmann::json item;
+        item["name"] = name;
+        item["description"] = cfg ? cfg->description : "";
+        agents.push_back(item);
+      }
+    } catch (...) {}
+    j["agents"] = agents;
+    SendJson(res, 200, j);
+  });
+
+  // POST /api/agent/switch - switch to a different agent.
+  svr.Post("/api/agent/switch", [&](const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json resp;
+    nlohmann::json body;
+    try {
+      body = nlohmann::json::parse(req.body);
+    } catch (...) {
+      resp["success"] = false;
+      resp["error"] = "Invalid JSON";
+      SendJson(res, 400, resp);
+      return;
+    }
+    auto it = body.find("agent_name");
+    if (it == body.end() || !it->is_string()) {
+      resp["success"] = false;
+      resp["error"] = "Missing or invalid 'agent_name'";
+      SendJson(res, 400, resp);
+      return;
+    }
+    std::string agent_name = it->get<std::string>();
+    try {
+      std::lock_guard<std::mutex> lock(io_mutex);
+      auto& mgr = runtime.GetAgentManager();
+      auto* cfg = mgr.GetAgentConfig(agent_name);
+      if (!cfg) {
+        resp["success"] = false;
+        resp["error"] = "Agent not found: " + agent_name;
+        SendJson(res, 404, resp);
+        return;
+      }
+      runtime.SwitchAgent(*cfg);
+      resp["success"] = true;
+      resp["agent"] = agent_name;
+    } catch (const std::exception& e) {
+      resp["success"] = false;
+      resp["error"] = e.what();
+    }
+    SendJson(res, 200, resp);
+  });
+
   // POST /api/clear - wipe conversation history and artifacts.
   svr.Post("/api/clear", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j;
@@ -236,13 +319,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       j["success"] = false;
       j["error"] = e.what();
     }
-    SendJson(res, 200, j);
-  });
-
-  // GET /api/agents - available agent list (placeholder for now).
-  svr.Get("/api/agents", [](const httplib::Request&, httplib::Response& res) {
-    nlohmann::json j;
-    j["agents"] = nlohmann::json::array();
     SendJson(res, 200, j);
   });
 
