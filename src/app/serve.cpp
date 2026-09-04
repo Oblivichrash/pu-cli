@@ -132,6 +132,22 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
   std::string host = "127.0.0.1";
   int port = 8080;
 
+  // Environment variables provide defaults; --host/--port override them below.
+  if (const char* env_host = std::getenv("PU_SERVE_HOST");
+      env_host != nullptr && *env_host != '\0') {
+    host = env_host;
+  }
+  if (const char* env_port = std::getenv("PU_SERVE_PORT");
+      env_port != nullptr && *env_port != '\0') {
+    char* end = nullptr;
+    long parsed = std::strtol(env_port, &end, 10);
+    if (!end || *end != '\0' || parsed < 1 || parsed > 65535) {
+      spdlog::warn("invalid PU_SERVE_PORT '{}', using default 8080", env_port);
+    } else {
+      port = static_cast<int>(parsed);
+    }
+  }
+
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {

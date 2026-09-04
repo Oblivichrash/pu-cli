@@ -242,6 +242,8 @@ Note: The limits configuration section (max_sessions, max_history_messages, max_
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve` (default: auto-detected `web/` next to the binary or in the working directory) |
+| `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
+| `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
 
 ### Logging
 
