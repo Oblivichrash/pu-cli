@@ -23,10 +23,6 @@
 
 namespace pu::cli {
 
-std::string Trim(const std::string& s);
-void PrintAgents(const pu::config::AgentsConfig& cfg, const std::string& current);
-void PrintChatHelp();
-
 namespace {
 
 struct AppContext {
@@ -68,15 +64,6 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   return ctx;
 }
 
-}  // namespace
-
-std::string Trim(const std::string& s) {
-  auto start = s.find_first_not_of(" \t");
-  if (start == std::string::npos) return {};
-  auto end = s.find_last_not_of(" \t");
-  return s.substr(start, end - start + 1);
-}
-
 void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
   std::cout << "Available agents:\n";
   for (const auto& entry : cfg.agents) {
@@ -95,43 +82,13 @@ void PrintChatHelp() {
   std::cout << CommandRouter::GetHelpText() << "\n";
 }
 
-int RunAsk(int argc, char* argv[], Runtime& runtime) {
-  std::string requested_agent;
-  std::string prompt;
+}  // namespace
 
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu ask [--agent <name>] <prompt>\n"
-                << "Options:\n"
-                << "  --agent <name>          Specify the agent to use\n"
-                << "  -h, --help              Show this help message\n";
-      return 0;
-    } else if (arg == "--agent") {
-      if (i + 1 < argc) requested_agent = argv[++i];
-      else {
-        spdlog::error("--agent requires an argument");
-        return 1;
-      }
-    } else if (prompt.empty()) {
-      prompt = arg;
-    } else {
-      spdlog::error("unexpected argument '{}'", arg);
-      return 1;
-    }
-  }
+int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
+  auto ctx = SetupAppContext(agent);
 
-  if (prompt.empty()) {
-    spdlog::error("prompt is required");
-    return 1;
-  }
-
-  auto ctx = SetupAppContext(requested_agent);
   try {
-    if (!requested_agent.empty()) {
-      runtime.SetDefaultAgent(requested_agent);
-    }
-
+    if (!agent.empty()) runtime.SetDefaultAgent(agent);
     runtime.Initialize();
 
     ExecutionResult result;
@@ -156,35 +113,12 @@ int RunAsk(int argc, char* argv[], Runtime& runtime) {
   return 0;
 }
 
-int RunChat(int argc, char* argv[], Runtime& runtime) {
-  std::string initial_agent;
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu chat [--agent <name>]\n";
-      return 0;
-    } else if (arg == "--agent") {
-      if (i + 1 < argc) {
-        initial_agent = argv[++i];
-      } else {
-        spdlog::error("--agent requires an argument");
-        return 1;
-      }
-    } else {
-      spdlog::error("unexpected argument '{}'", arg);
-      return 1;
-    }
-  }
-
-  auto ctx = SetupAppContext(initial_agent);
+int RunChat(const std::string& agent, Runtime& runtime) {
+  auto ctx = SetupAppContext(agent);
   const auto& agents_config = ctx.agents_config;
   std::string current_name = ctx.active_agent;
 
-  if (!initial_agent.empty()) {
-    runtime.SetDefaultAgent(initial_agent);
-  }
-
+  if (!agent.empty()) runtime.SetDefaultAgent(agent);
   runtime.Initialize();
 
   std::string agent_info = "Connected to agent: " + current_name;
@@ -204,9 +138,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
     if (input.empty()) continue;
 
-    if (input == "/exit" || input == "/quit") {
-      break;
-    }
+    if (input == "/exit" || input == "/quit") break;
 
     try {
       ExecutionResult result;
@@ -221,9 +153,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
             std::cout << "\n";
           }
         } else {
-          if (!is_command) {
-            std::cout << "\n";
-          }
+          if (!is_command) std::cout << "\n";
         }
       } else if (is_command && result.error_message.empty()) {
         std::cout << "Unknown command. ";
@@ -240,5 +170,7 @@ int RunChat(int argc, char* argv[], Runtime& runtime) {
   std::cout << "\nGoodbye!\n";
   return 0;
 }
+
+// RunServe is implemented in serve.cpp
 
 }  // namespace pu::cli

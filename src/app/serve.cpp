@@ -35,7 +35,6 @@ namespace pu::cli {
 
 namespace {
 
-// Directory containing the running executable, or "." if it cannot be resolved.
 std::string GetExecutableDir() {
 #ifdef _WIN32
   char buf[MAX_PATH];
@@ -54,11 +53,9 @@ std::string GetExecutableDir() {
 #endif
 }
 
-// Candidate web roots in priority order: env override, install/share layout,
-// build-tree layout next to the repo, CWD, then system-wide locations.
 std::vector<std::string> GetWebDirCandidates() {
   std::vector<std::string> dirs;
-  if (const char* env = std::getenv("PU_WEB_DIR"); env != nullptr && *env != '\0') {
+  if (const char* env = std::getenv("PU_WEB_DIR"); env && *env != '\0') {
     dirs.emplace_back(env);
   }
   const std::string exe_dir = GetExecutableDir();
@@ -75,8 +72,7 @@ nlohmann::json SessionInfoJson(const std::shared_ptr<Session>& session) {
   if (!session) return j;
   const auto& spec = session->GetRuntimeSpec();
   j["agent_name"] = spec.agent_name;
-  j["backend_type"] =
-      spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
+  j["backend_type"] = spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
   j["backend_model"] = spec.backend.model;
   j["backend_host"] = spec.backend.host;
   return j;
@@ -88,8 +84,6 @@ void SendJson(httplib::Response& res, int status, const nlohmann::json& j) {
   res.body = j.dump();
 }
 
-// SSE event queue shared between the ProcessInput worker and the
-// chunked‑content provider that flushes events to the client.
 struct SseStream {
   std::mutex mutex;
   std::condition_variable cv;
@@ -105,7 +99,6 @@ void PushSseEvent(const std::shared_ptr<SseStream>& sse, std::string event) {
   sse->cv.notify_one();
 }
 
-// Erases the request from active_requests when the handler exits.
 class ActiveRequestGuard {
  public:
   ActiveRequestGuard(std::mutex& mutex,
@@ -128,61 +121,7 @@ class ActiveRequestGuard {
 
 }  // namespace
 
-int RunServe(int argc, char* argv[], Runtime& runtime) {
-  std::string host = "127.0.0.1";
-  int port = 8080;
-
-  // Environment variables provide defaults; --host/--port override them below.
-  if (const char* env_host = std::getenv("PU_SERVE_HOST");
-      env_host != nullptr && *env_host != '\0') {
-    host = env_host;
-  }
-  if (const char* env_port = std::getenv("PU_SERVE_PORT");
-      env_port != nullptr && *env_port != '\0') {
-    char* end = nullptr;
-    long parsed = std::strtol(env_port, &end, 10);
-    if (!end || *end != '\0' || parsed < 1 || parsed > 65535) {
-      spdlog::warn("invalid PU_SERVE_PORT '{}', using default 8080", env_port);
-    } else {
-      port = static_cast<int>(parsed);
-    }
-  }
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "-h" || arg == "--help") {
-      std::cout << "Usage: pu serve [--host <host>] [--port <port>]\n"
-                << "Options:\n"
-                << "  --host <host>   Address to bind (default 127.0.0.1)\n"
-                << "  --port <port>   TCP port to listen on (default 8080)\n"
-                << "  -h, --help      Show this help message\n";
-      return 0;
-    } else if (arg == "--host") {
-      if (i + 1 < argc) {
-        host = argv[++i];
-      } else {
-        spdlog::error("--host requires an argument");
-        return 1;
-      }
-    } else if (arg == "--port") {
-      if (i + 1 >= argc) {
-        spdlog::error("--port requires an argument");
-        return 1;
-      }
-      std::string val = argv[++i];
-      char* end = nullptr;
-      long parsed = std::strtol(val.c_str(), &end, 10);
-      if (!end || *end != '\0' || parsed < 1 || parsed > 65535) {
-        spdlog::error("invalid port '{}'", val);
-        return 1;
-      }
-      port = static_cast<int>(parsed);
-    } else {
-      spdlog::error("unexpected argument '{}'", arg);
-      return 1;
-    }
-  }
-
+int RunServe(const std::string& host, int port, Runtime& runtime) {
   try {
     runtime.Initialize();
   } catch (const std::exception& e) {
@@ -190,19 +129,11 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     return 1;
   }
 
-  // ProcessInput mutates the single persistent Session (workspace + history),
-  // so all handlers that touch the runtime/session share one lock.
   std::mutex io_mutex;
-
-  // Registry of in-flight chat requests keyed by request_id. Guarded by its
-  // own mutex so /api/chat/cancel can set a cancel token without ever waiting
-  // on io_mutex (the chat handler holds io_mutex for the whole request).
   std::mutex cancel_mutex;
   std::unordered_map<std::string, CancelToken> active_requests;
   httplib::Server svr;
 
-  // Static front-end. Mount points only serve GET/HEAD; specific API routes
-  // registered below take precedence through regular handler dispatch.
   bool mounted = false;
   for (const auto& dir : GetWebDirCandidates()) {
     if (svr.set_mount_point("/", dir.c_str())) {
@@ -215,7 +146,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     spdlog::warn("No web directory found; serving API only");
   }
 
-  // POST /api/chat - send a message to the active agent.
   svr.Post("/api/chat", [&](const httplib::Request& req, httplib::Response& res) {
     nlohmann::json resp;
     nlohmann::json body;
@@ -245,8 +175,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       return;
     }
 
-    // Use the caller-supplied id (so the front-end can cancel the same
-    // request later) or mint a unique one when absent.
     std::string request_id;
     auto rid_it = body.find("request_id");
     if (rid_it != body.end() && rid_it->is_string() &&
@@ -260,9 +188,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     }
     resp["request_id"] = request_id;
 
-    // Shared cancel token observed by the transport layer. Register it before
-    // processing so /api/chat/cancel can find it; the RAII guard removes the
-    // entry when the request finishes (success, failure or cancellation).
     auto token = std::make_shared<std::atomic<bool>>(false);
     {
       std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -282,9 +207,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       resp["tool_call_count"] = result.tool_call_count;
       if (!ok && result.error_message.empty()) resp["error"] = "Processing failed";
     } catch (const std::exception& e) {
-      // A canceled request surfaces as an HttpError/RuntimeError from the
-      // transport layer; report it (the front-end may already be gone, but the
-      // active_requests entry is still cleaned up by the RAII guard above).
       resp["success"] = false;
       resp["content"] = "";
       resp["error"] = e.what();
@@ -292,7 +214,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, resp);
   });
 
-  // POST /api/chat/stream - SSE streaming variant of /api/chat.
   svr.Post("/api/chat/stream", [&](const httplib::Request& req, httplib::Response& res) {
     nlohmann::json resp;
     nlohmann::json body;
@@ -341,8 +262,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
 
     auto sse = std::make_shared<SseStream>();
 
-    // Run processing on a worker so the handler can return and the chunked
-    // provider below can flush tokens to the client as they are produced.
     std::thread worker([&, sse, token, request_id, message]() {
       ExecutionResult result;
       bool is_command = false;
@@ -365,7 +284,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
         ok = false;
       }
 
-      // Processing is done; stop tracking the request for cancellation.
       {
         std::lock_guard<std::mutex> lock(cancel_mutex);
         active_requests.erase(request_id);
@@ -378,7 +296,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
                           : "Processing failed";
         PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
       } else if (!streamed && !result.content.empty()) {
-        // Commands / non-streaming backends deliver the full text at once.
         nlohmann::json ev;
         ev["token"] = result.content;
         PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
@@ -393,7 +310,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     worker.detach();
 
     res.set_header("Cache-Control", "no-cache");
-    // set_chunked_content_provider also sets Content-Type: text/event-stream.
     res.set_chunked_content_provider(
         "text/event-stream",
         [sse, token](size_t /*offset*/, httplib::DataSink& sink) -> bool {
@@ -410,7 +326,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
               sink.done();
               return true;
             } else if (!sink.is_writable()) {
-              // Client went away: cancel the worker early.
               token->store(true);
               return false;
             } else {
@@ -425,8 +340,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
         });
   });
 
-  // POST /api/chat/cancel - abort an in-flight LLM request by id. Uses only
-  // cancel_mutex so it never blocks behind a running chat request.
   svr.Post("/api/chat/cancel", [&](const httplib::Request& req,
                                    httplib::Response& res) {
     nlohmann::json resp;
@@ -467,7 +380,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, resp);
   });
 
-  // GET /api/session - current session info.
   svr.Get("/api/session", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j;
     try {
@@ -486,7 +398,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, j);
   });
 
-  // GET /api/history - return conversation history with tool call details.
   svr.Get("/api/history", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j = nlohmann::json::array();
     try {
@@ -516,12 +427,10 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
         }
       }
     } catch (const std::exception&) {
-      // return empty array on error
     }
     SendJson(res, 200, j);
   });
 
-  // GET /api/agents - return real agent list.
   svr.Get("/api/agents", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j;
     auto agents = nlohmann::json::array();
@@ -541,7 +450,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, j);
   });
 
-  // POST /api/agent/switch - switch to a different agent.
   svr.Post("/api/agent/switch", [&](const httplib::Request& req, httplib::Response& res) {
     nlohmann::json resp;
     nlohmann::json body;
@@ -581,7 +489,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, resp);
   });
 
-  // POST /api/clear - wipe conversation history and artifacts.
   svr.Post("/api/clear", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j;
     try {
@@ -611,8 +518,6 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     listen_done = true;
   });
 
-  // main() installed a SIGINT handler that sets pu::platform's interrupt flag;
-  // poll it so Ctrl+C stops the blocking listen and shuts down cleanly.
   while (!listen_done && !pu::platform::IsInterrupted()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
