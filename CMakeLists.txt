@@ -7,16 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
 
-# cpp-httplib - header-only HTTP server/client used by `pu serve`.
-# Distro packages (e.g. Arch's cpp-httplib, Ubuntu's libcpp-httplib-dev) ship no
-# CMake config file, so locate httplib.h directly instead of find_package.
 find_path(HTTPLIB_INCLUDE_DIR NAMES httplib.h)
 if(NOT HTTPLIB_INCLUDE_DIR)
-  message(FATAL_ERROR "cpp-httplib headers not found (install cpp-httplib / libcpp-httplib-dev)")
+  message(FATAL_ERROR "cpp-httplib headers not found")
 endif()
 
-# Core library: HTTP client, platform utilities, Workspace, LLM providers, and MCP
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
@@ -34,10 +31,14 @@ add_library(pu_core STATIC
     src/mcp/mcp_client.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
+target_link_libraries(pu_core PUBLIC
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+    Boost::system
+)
 add_library(pu::core ALIAS pu_core)
 
-# Agent library: Agent manager, executor, tools, toolbox, MCP tool
 add_library(pu_agent STATIC
     src/agent_config.cpp
     src/agent_manager.cpp
@@ -52,16 +53,19 @@ target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include 
 target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
-# CLI application: entry point, chat/ask/serve commands, UI helpers, session management
 add_executable(pu
     src/app/main.cpp
     src/app/cli.cpp
     src/app/serve.cpp
 )
-target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app ${HTTPLIB_INCLUDE_DIR})
+target_include_directories(pu PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+    ${HTTPLIB_INCLUDE_DIR}
+)
 target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
 
-# Compiler warnings
 if(MSVC)
     target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
@@ -80,5 +84,4 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pu)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web/ DESTINATION ${CMAKE_INSTALL_DATADIR}/pu/web)
