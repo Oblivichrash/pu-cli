@@ -7,7 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
+
 #include "pu/llm/llm_provider.hpp"
 #include "pu/agent_config.hpp"
 
@@ -24,7 +25,7 @@ class Tool {
   virtual std::string Name() const = 0;
   virtual std::string Description() const = 0;
   virtual std::string ParametersSchema() const = 0;
-  virtual std::string Execute(const nlohmann::json& args, ToolContext& ctx) = 0;
+  virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
 };
 
 class Toolbox {
@@ -34,7 +35,7 @@ class Toolbox {
   Tool* GetTool(const std::string& name) const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
   std::string ExecuteTool(const std::string& name,
-                          const nlohmann::json& args,
+                          const boost::json::value& args,
                           ToolContext& ctx);
 
  private:

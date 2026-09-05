@@ -5,9 +5,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(CURL REQUIRED)
-find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system program_options)
+find_package(Boost REQUIRED COMPONENTS system program_options json)
 
 find_path(HTTPLIB_INCLUDE_DIR NAMES httplib.h)
 if(NOT HTTPLIB_INCLUDE_DIR)
@@ -33,8 +32,8 @@ add_library(pu_core STATIC
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_core PUBLIC
     CURL::libcurl
-    nlohmann_json::nlohmann_json
     spdlog::spdlog
+    Boost::json
     Boost::system
     Boost::program_options
 )
@@ -51,7 +50,7 @@ add_library(pu_agent STATIC
     src/command_router.cpp
 )
 target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
+target_link_libraries(pu_agent PUBLIC pu_core spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
 add_executable(pu

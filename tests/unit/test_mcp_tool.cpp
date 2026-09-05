@@ -2,7 +2,7 @@
 #include "pu/tools/mcp_tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include <string>
 
@@ -19,7 +19,7 @@ class StubMcpClient : public pu::mcp::McpClient {
   StubMcpClient() : McpClient(pu::mcp::McpServerConfig{}) {}
 
   std::string CallTool(const std::string& /*name*/,
-                       const nlohmann::json& /*arguments*/) override {
+                       const boost::json::value& /*arguments*/) override {
     return canned_response_;
   }
 
@@ -47,16 +47,16 @@ TEST_CASE("McpTool wraps successful raw output into JSON schema",
 
   McpTool tool(&client, def, "files");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == true);
-  REQUIRE(j.value("stdout") == "Hello from MCP server");
-  REQUIRE(j.value("stderr") == "");
-  REQUIRE(j.value("error") == "");
-  REQUIRE(j.value("exit_code") == 0);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == true);
+  REQUIRE(j.at("stdout") == "Hello from MCP server");
+  REQUIRE(j.at("stderr") == "");
+  REQUIRE(j.at("error") == "");
+  REQUIRE(j.at("exit_code") == 0);
 }
 
 TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON",
@@ -71,15 +71,15 @@ TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON",
 
   McpTool tool(&client, def, "mcp");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("stdout") == "Error: something went wrong");
-  REQUIRE(j.value("error") == "Error: something went wrong");
-  REQUIRE(j.value("exit_code") == 1);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("stdout") == "Error: something went wrong");
+  REQUIRE(j.at("error") == "Error: something went wrong");
+  REQUIRE(j.at("exit_code") == 1);
 }
 
 TEST_CASE("McpTool wraps MCP error: output as error", "[mcp_tool]") {
@@ -93,14 +93,14 @@ TEST_CASE("McpTool wraps MCP error: output as error", "[mcp_tool]") {
 
   McpTool tool(&client, def, "mcp");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "MCP error: timeout");
-  REQUIRE(j.value("exit_code") == 1);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "MCP error: timeout");
+  REQUIRE(j.at("exit_code") == 1);
 }
 
 TEST_CASE("McpTool wraps MCP call error: output as error", "[mcp_tool]") {
@@ -114,14 +114,14 @@ TEST_CASE("McpTool wraps MCP call error: output as error", "[mcp_tool]") {
 
   McpTool tool(&client, def, "mcp");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "MCP call error: connection refused");
-  REQUIRE(j.value("exit_code") == 1);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "MCP call error: connection refused");
+  REQUIRE(j.at("exit_code") == 1);
 }
 
 TEST_CASE("McpTool returns error JSON when client is null", "[mcp_tool]") {
@@ -132,14 +132,14 @@ TEST_CASE("McpTool returns error JSON when client is null", "[mcp_tool]") {
 
   McpTool tool(nullptr, def, "mcp");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "MCP client is null");
-  REQUIRE(j.value("exit_code") == -1);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "MCP client is null");
+  REQUIRE(j.at("exit_code") == -1);
 }
 
 TEST_CASE("McpTool returns error JSON when client is not connected",
@@ -154,12 +154,12 @@ TEST_CASE("McpTool returns error JSON when client is not connected",
 
   McpTool tool(&client, def, "mcp");
 
-  nlohmann::json args;
+  boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
   std::string result = tool.Execute(args, ctx);
 
-  auto j = nlohmann::json::parse(result);
-  REQUIRE(j.value("success") == false);
-  REQUIRE(j.value("error") == "MCP client is not connected");
-  REQUIRE(j.value("exit_code") == -1);
+  auto j = boost::json::parse(result);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "MCP client is not connected");
+  REQUIRE(j.at("exit_code") == -1);
 }

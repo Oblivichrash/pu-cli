@@ -23,11 +23,12 @@
 #include <vector>
 
 #include <httplib.h>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "pu/agent_config.hpp"
 #include "pu/infra/platform.hpp"
+#include "pu/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 
@@ -67,21 +68,22 @@ std::vector<std::string> GetWebDirCandidates() {
   return dirs;
 }
 
-nlohmann::json SessionInfoJson(const std::shared_ptr<Session>& session) {
-  nlohmann::json j;
+boost::json::value SessionInfoJson(const std::shared_ptr<Session>& session) {
+  boost::json::value j = boost::json::object{};
   if (!session) return j;
   const auto& spec = session->GetRuntimeSpec();
-  j["agent_name"] = spec.agent_name;
-  j["backend_type"] = spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
-  j["backend_model"] = spec.backend.model;
-  j["backend_host"] = spec.backend.host;
+  j.as_object()["agent_name"] = spec.agent_name;
+  j.as_object()["backend_type"] =
+      spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
+  j.as_object()["backend_model"] = spec.backend.model;
+  j.as_object()["backend_host"] = spec.backend.host;
   return j;
 }
 
-void SendJson(httplib::Response& res, int status, const nlohmann::json& j) {
+void SendJson(httplib::Response& res, int status, const boost::json::value& j) {
   res.status = status;
   res.set_header("Content-Type", "application/json");
-  res.body = j.dump();
+  res.body = boost::json::serialize(j);
 }
 
 struct SseStream {
@@ -147,46 +149,45 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   }
 
   svr.Post("/api/chat", [&](const httplib::Request& req, httplib::Response& res) {
-    nlohmann::json resp;
-    nlohmann::json body;
+    boost::json::value resp = boost::json::object{};
+    boost::json::value body;
     try {
-      body = nlohmann::json::parse(req.body);
+      body = boost::json::parse(req.body);
     } catch (const std::exception&) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "Invalid JSON body";
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "Invalid JSON body";
       SendJson(res, 400, resp);
       return;
     }
-    auto it = body.find("message");
-    if (it == body.end() || !it->is_string()) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "Missing or invalid 'message' field";
+    if (!json::HasKey(body, "message") || !body.at("message").is_string()) {
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "Missing or invalid 'message' field";
       SendJson(res, 400, resp);
       return;
     }
-    const std::string message = it->get<std::string>();
+    const std::string message =
+        boost::json::value_to<std::string>(body.at("message"));
     if (message.empty()) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "'message' must not be empty";
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "'message' must not be empty";
       SendJson(res, 400, resp);
       return;
     }
 
     std::string request_id;
-    auto rid_it = body.find("request_id");
-    if (rid_it != body.end() && rid_it->is_string() &&
-        !rid_it->get<std::string>().empty()) {
-      request_id = rid_it->get<std::string>();
+    if (json::HasKey(body, "request_id") && body.at("request_id").is_string() &&
+        !boost::json::value_to<std::string>(body.at("request_id")).empty()) {
+      request_id = boost::json::value_to<std::string>(body.at("request_id"));
     } else {
       static std::atomic<uint64_t> s_request_seq{0};
       request_id =
           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
           "-" + std::to_string(s_request_seq.fetch_add(1));
     }
-    resp["request_id"] = request_id;
+    resp.as_object()["request_id"] = request_id;
 
     auto token = std::make_shared<std::atomic<bool>>(false);
     {
@@ -200,54 +201,55 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       bool ok = runtime.ProcessInput(message, result, is_command, token);
-      resp["success"] = ok && !result.has_error;
-      resp["content"] = result.content;
-      resp["error"] = result.has_error ? result.error_message : "";
-      resp["is_command"] = is_command;
-      resp["tool_call_count"] = result.tool_call_count;
-      if (!ok && result.error_message.empty()) resp["error"] = "Processing failed";
+      resp.as_object()["success"] = ok && !result.has_error;
+      resp.as_object()["content"] = result.content;
+      resp.as_object()["error"] = result.has_error ? result.error_message : "";
+      resp.as_object()["is_command"] = is_command;
+      resp.as_object()["tool_call_count"] = result.tool_call_count;
+      if (!ok && result.error_message.empty())
+        resp.as_object()["error"] = "Processing failed";
     } catch (const std::exception& e) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = e.what();
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = e.what();
     }
     SendJson(res, 200, resp);
   });
 
-  svr.Post("/api/chat/stream", [&](const httplib::Request& req, httplib::Response& res) {
-    nlohmann::json resp;
-    nlohmann::json body;
+  svr.Post("/api/chat/stream", [&](const httplib::Request& req,
+                                   httplib::Response& res) {
+    boost::json::value resp = boost::json::object{};
+    boost::json::value body;
     try {
-      body = nlohmann::json::parse(req.body);
+      body = boost::json::parse(req.body);
     } catch (const std::exception&) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "Invalid JSON body";
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "Invalid JSON body";
       SendJson(res, 400, resp);
       return;
     }
-    auto it = body.find("message");
-    if (it == body.end() || !it->is_string()) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "Missing or invalid 'message' field";
+    if (!json::HasKey(body, "message") || !body.at("message").is_string()) {
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "Missing or invalid 'message' field";
       SendJson(res, 400, resp);
       return;
     }
-    const std::string message = it->get<std::string>();
+    const std::string message =
+        boost::json::value_to<std::string>(body.at("message"));
     if (message.empty()) {
-      resp["success"] = false;
-      resp["content"] = "";
-      resp["error"] = "'message' must not be empty";
+      resp.as_object()["success"] = false;
+      resp.as_object()["content"] = "";
+      resp.as_object()["error"] = "'message' must not be empty";
       SendJson(res, 400, resp);
       return;
     }
 
     std::string request_id;
-    auto rid_it = body.find("request_id");
-    if (rid_it != body.end() && rid_it->is_string() &&
-        !rid_it->get<std::string>().empty()) {
-      request_id = rid_it->get<std::string>();
+    if (json::HasKey(body, "request_id") && body.at("request_id").is_string() &&
+        !boost::json::value_to<std::string>(body.at("request_id")).empty()) {
+      request_id = boost::json::value_to<std::string>(body.at("request_id"));
     } else {
       static std::atomic<uint64_t> s_request_seq{0};
       request_id =
@@ -274,9 +276,8 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
             [&](const std::string& chunk) {
               if (chunk.empty()) return;
               streamed = true;
-              nlohmann::json ev;
-              ev["token"] = chunk;
-              PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+              boost::json::value ev = {{"token", chunk}};
+              PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
             });
       } catch (const std::exception& e) {
         result.has_error = true;
@@ -290,15 +291,15 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
       }
 
       if (!ok || result.has_error) {
-        nlohmann::json ev;
-        ev["error"] = result.has_error && !result.error_message.empty()
-                          ? result.error_message
-                          : "Processing failed";
-        PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+        boost::json::value ev = {
+          {"error",
+           result.has_error && !result.error_message.empty()
+               ? result.error_message
+               : "Processing failed"}};
+        PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
       } else if (!streamed && !result.content.empty()) {
-        nlohmann::json ev;
-        ev["token"] = result.content;
-        PushSseEvent(sse, "data: " + ev.dump() + "\n\n");
+        boost::json::value ev = {{"token", result.content}};
+        PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
       }
       PushSseEvent(sse, "data: [DONE]\n\n");
       {
@@ -342,31 +343,32 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
 
   svr.Post("/api/chat/cancel", [&](const httplib::Request& req,
                                    httplib::Response& res) {
-    nlohmann::json resp;
-    nlohmann::json body;
+    boost::json::value resp = boost::json::object{};
+    boost::json::value body;
     try {
-      body = nlohmann::json::parse(req.body);
+      body = boost::json::parse(req.body);
     } catch (const std::exception&) {
-      resp["success"] = false;
-      resp["error"] = "Invalid JSON body";
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Invalid JSON body";
       SendJson(res, 400, resp);
       return;
     }
-    auto it = body.find("request_id");
-    if (it == body.end() || !it->is_string() || it->get<std::string>().empty()) {
-      resp["success"] = false;
-      resp["error"] = "Missing or invalid 'request_id' field";
+    if (!json::HasKey(body, "request_id") || !body.at("request_id").is_string() ||
+        boost::json::value_to<std::string>(body.at("request_id")).empty()) {
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Missing or invalid 'request_id' field";
       SendJson(res, 400, resp);
       return;
     }
-    const std::string request_id = it->get<std::string>();
+    const std::string request_id =
+        boost::json::value_to<std::string>(body.at("request_id"));
     CancelToken token;
     {
       std::lock_guard<std::mutex> lock(cancel_mutex);
       auto found = active_requests.find(request_id);
       if (found == active_requests.end()) {
-        resp["success"] = false;
-        resp["error"] = "request not found";
+        resp.as_object()["success"] = false;
+        resp.as_object()["error"] = "request not found";
         SendJson(res, 404, resp);
         return;
       }
@@ -376,54 +378,55 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
       token->store(true);
       spdlog::info("Cancel requested for request '{}'", request_id);
     }
-    resp["success"] = true;
+    resp.as_object()["success"] = true;
     SendJson(res, 200, resp);
   });
 
   svr.Get("/api/session", [&](const httplib::Request&, httplib::Response& res) {
-    nlohmann::json j;
+    boost::json::value j = boost::json::object{};
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       auto session = runtime.GetDefaultSession();
-      j["ok"] = session != nullptr;
+      j.as_object()["ok"] = session != nullptr;
       if (session) {
-        j.update(SessionInfoJson(session));
+        json::Merge(j, SessionInfoJson(session));
       } else {
-        j["error"] = "No active session";
+        j.as_object()["error"] = "No active session";
       }
     } catch (const std::exception& e) {
-      j["ok"] = false;
-      j["error"] = e.what();
+      j.as_object()["ok"] = false;
+      j.as_object()["error"] = e.what();
     }
     SendJson(res, 200, j);
   });
 
   svr.Get("/api/history", [&](const httplib::Request&, httplib::Response& res) {
-    nlohmann::json j = nlohmann::json::array();
+    boost::json::value j = boost::json::array{};
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       auto session = runtime.GetDefaultSession();
       if (session) {
         auto history = session->GetWorkspace().GetHistory();
         for (const auto& msg : history) {
-          nlohmann::json item;
-          item["id"] = msg.id;
-          item["role"] = msg.role;
-          item["content"] = msg.content;
-          item["timestamp"] = msg.timestamp;
+          boost::json::value item = {
+            {"id", msg.id},
+            {"role", msg.role},
+            {"content", msg.content},
+            {"timestamp", msg.timestamp},
+          };
           if (!msg.tool_calls_json.empty()) {
-            item["tool_calls_json"] = msg.tool_calls_json;
+            item.as_object()["tool_calls_json"] = msg.tool_calls_json;
           }
           if (!msg.tool_call_id.empty()) {
-            item["tool_call_id"] = msg.tool_call_id;
+            item.as_object()["tool_call_id"] = msg.tool_call_id;
           }
           if (!msg.tool_name.empty()) {
-            item["tool_name"] = msg.tool_name;
+            item.as_object()["tool_name"] = msg.tool_name;
           }
           if (!msg.reasoning_content.empty()) {
-            item["reasoning_content"] = msg.reasoning_content;
+            item.as_object()["reasoning_content"] = msg.reasoning_content;
           }
-          j.push_back(item);
+          j.as_array().push_back(item);
         }
       }
     } catch (const std::exception&) {
@@ -432,79 +435,80 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   });
 
   svr.Get("/api/agents", [&](const httplib::Request&, httplib::Response& res) {
-    nlohmann::json j;
-    auto agents = nlohmann::json::array();
+    boost::json::value j = boost::json::object{};
+    boost::json::array agents;
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       auto& mgr = runtime.GetAgentManager();
       auto names = mgr.GetAgentNames();
       for (const auto& name : names) {
         auto* cfg = mgr.GetAgentConfig(name);
-        nlohmann::json item;
-        item["name"] = name;
-        item["description"] = cfg ? cfg->description : "";
+        boost::json::value item = {
+          {"name", name},
+          {"description", cfg ? cfg->description : ""},
+        };
         agents.push_back(item);
       }
     } catch (...) {}
-    j["agents"] = agents;
+    j.as_object()["agents"] = agents;
     SendJson(res, 200, j);
   });
 
   svr.Post("/api/agent/switch", [&](const httplib::Request& req, httplib::Response& res) {
-    nlohmann::json resp;
-    nlohmann::json body;
+    boost::json::value resp = boost::json::object{};
+    boost::json::value body;
     try {
-      body = nlohmann::json::parse(req.body);
+      body = boost::json::parse(req.body);
     } catch (...) {
-      resp["success"] = false;
-      resp["error"] = "Invalid JSON";
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Invalid JSON";
       SendJson(res, 400, resp);
       return;
     }
-    auto it = body.find("agent_name");
-    if (it == body.end() || !it->is_string()) {
-      resp["success"] = false;
-      resp["error"] = "Missing or invalid 'agent_name'";
+    if (!json::HasKey(body, "agent_name") || !body.at("agent_name").is_string()) {
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Missing or invalid 'agent_name'";
       SendJson(res, 400, resp);
       return;
     }
-    std::string agent_name = it->get<std::string>();
+    std::string agent_name =
+        boost::json::value_to<std::string>(body.at("agent_name"));
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       auto& mgr = runtime.GetAgentManager();
       auto* cfg = mgr.GetAgentConfig(agent_name);
       if (!cfg) {
-        resp["success"] = false;
-        resp["error"] = "Agent not found: " + agent_name;
+        resp.as_object()["success"] = false;
+        resp.as_object()["error"] = "Agent not found: " + agent_name;
         SendJson(res, 404, resp);
         return;
       }
       runtime.SwitchAgent(*cfg);
-      resp["success"] = true;
-      resp["agent"] = agent_name;
+      resp.as_object()["success"] = true;
+      resp.as_object()["agent"] = agent_name;
     } catch (const std::exception& e) {
-      resp["success"] = false;
-      resp["error"] = e.what();
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = e.what();
     }
     SendJson(res, 200, resp);
   });
 
   svr.Post("/api/clear", [&](const httplib::Request&, httplib::Response& res) {
-    nlohmann::json j;
+    boost::json::value j = boost::json::object{};
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
       auto session = runtime.GetDefaultSession();
       if (session) {
         session->GetWorkspace().ClearHistory();
         session->GetWorkspace().ClearArtifacts();
-        j["success"] = true;
+        j.as_object()["success"] = true;
       } else {
-        j["success"] = false;
-        j["error"] = "No active session";
+        j.as_object()["success"] = false;
+        j.as_object()["error"] = "No active session";
       }
     } catch (const std::exception& e) {
-      j["success"] = false;
-      j["error"] = e.what();
+      j.as_object()["success"] = false;
+      j.as_object()["error"] = e.what();
     }
     SendJson(res, 200, j);
   });

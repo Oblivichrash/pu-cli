@@ -3,16 +3,15 @@
 #include "pu/error.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
-#include <nlohmann/json.hpp>
+#include "pu/json.hpp"
 #include <spdlog/spdlog.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <sstream>
 
 namespace pu::config {
-
-using json = nlohmann::json;
 
 namespace {
 
@@ -35,58 +34,62 @@ std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
   return std::nullopt;
 }
 
-SecurityPolicy ParseSecurityPolicy(const json& j) {
+SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   SecurityPolicy policy;
-  if (j.contains("sandbox_root") && j["sandbox_root"].is_string())
-    policy.sandbox_root = j["sandbox_root"];
-  if (j.contains("allowed_paths") && j["allowed_paths"].is_array()) {
-    for (const auto& p : j["allowed_paths"])
-      if (p.is_string()) policy.allowed_paths.push_back(p.get<std::string>());
+  if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
+    policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
+  if (json::HasKey(j, "allowed_paths") && j.at("allowed_paths").is_array()) {
+    for (const auto& p : j.at("allowed_paths").as_array())
+      if (p.is_string()) policy.allowed_paths.push_back(boost::json::value_to<std::string>(p));
   }
-  if (j.contains("max_command_length") && j["max_command_length"].is_number())
-    policy.max_command_length = j["max_command_length"];
-  if (j.contains("forbidden_patterns") && j["forbidden_patterns"].is_array()) {
-    for (const auto& pat : j["forbidden_patterns"])
-      if (pat.is_string()) policy.forbidden_patterns.push_back(pat.get<std::string>());
+  if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
+    policy.max_command_length =
+        boost::json::value_to<std::size_t>(j.at("max_command_length"));
+  if (json::HasKey(j, "forbidden_patterns") && j.at("forbidden_patterns").is_array()) {
+    for (const auto& pat : j.at("forbidden_patterns").as_array())
+      if (pat.is_string()) policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
   }
   return policy;
 }
 
-BackendConfig ParseBackendConfig(const json& j) {
+BackendConfig ParseBackendConfig(const json::value& j) {
   BackendConfig cfg;
-  auto type = ParseBackendType(j.value("type", "ollama"));
+  auto type = ParseBackendType(json::ValueOrDefault<std::string>(j, "type", "ollama"));
   if (!type) throw pu::Error("Unknown backend type");
   cfg.type = *type;
-  cfg.host = ExpandEnvVars(j.value("host", ""));
-  cfg.model = ExpandEnvVars(j.value("model", ""));
-  if (j.contains("api_key")) cfg.api_key = ExpandEnvVars(j["api_key"].get<std::string>());
-  cfg.temperature = j.value("temperature", 0.7f);
-  if (j.contains("system_prompt")) cfg.system_prompt = ExpandEnvVars(j["system_prompt"].get<std::string>());
-  cfg.parameters_as_string = j.value("parameters_as_string", false);
-  cfg.max_tokens = j.value("max_tokens", 2048);
-  cfg.enable_thinking = j.value("enable_thinking", true);
+  cfg.host = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "host", ""));
+  cfg.model = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "model", ""));
+  if (json::HasKey(j, "api_key"))
+    cfg.api_key = ExpandEnvVars(boost::json::value_to<std::string>(j.at("api_key")));
+  cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
+  if (json::HasKey(j, "system_prompt"))
+    cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
+  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
+  cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
   return cfg;
 }
 
-std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
+std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
   std::vector<pu::mcp::McpServerConfig> servers;
   if (!j.is_array()) return servers;
-  for (const auto& item : j) {
+  for (const auto& item : j.as_array()) {
     pu::mcp::McpServerConfig srv;
-    srv.name = item.value("name", "");
-    srv.command = item.value("command", "");
-    if (item.contains("args") && item["args"].is_array()) {
-      for (const auto& a : item["args"])
-        if (a.is_string()) srv.args.push_back(a.get<std::string>());
+    srv.name = json::ValueOrDefault<std::string>(item, "name", "");
+    srv.command = json::ValueOrDefault<std::string>(item, "command", "");
+    if (json::HasKey(item, "args") && item.at("args").is_array()) {
+      for (const auto& a : item.at("args").as_array())
+        if (a.is_string()) srv.args.push_back(boost::json::value_to<std::string>(a));
     }
     // Remote HTTP MCP endpoint (streamable HTTP). When present, McpClient
     // connects over HTTP instead of spawning the stdio command.
-    if (item.contains("url") && item["url"].is_string())
-      srv.url = ExpandEnvVars(item["url"].get<std::string>());
-    if (item.contains("headers") && item["headers"].is_object()) {
-      for (auto it = item["headers"].begin(); it != item["headers"].end(); ++it) {
-        if (it.value().is_string())
-          srv.headers[it.key()] = ExpandEnvVars(it.value().get<std::string>());
+    if (json::HasKey(item, "url") && item.at("url").is_string())
+      srv.url = ExpandEnvVars(boost::json::value_to<std::string>(item.at("url")));
+    if (json::HasKey(item, "headers") && item.at("headers").is_object()) {
+      for (const auto& kv : item.at("headers").as_object()) {
+        if (kv.value().is_string())
+          srv.headers[std::string(kv.key())] =
+              ExpandEnvVars(boost::json::value_to<std::string>(kv.value()));
       }
     }
 
@@ -98,37 +101,37 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json& j) {
   return servers;
 }
 
-HistoryCompactionConfig ParseCompactionConfig(const json& j) {
+HistoryCompactionConfig ParseCompactionConfig(const json::value& j) {
   HistoryCompactionConfig cfg;
-  if (j.contains("history_compaction") && j["history_compaction"].is_object()) {
-    const auto& c = j["history_compaction"];
-    cfg.enabled = c.value("enabled", true);
-    cfg.keep_head = c.value("keep_head", 10);
-    cfg.keep_tail = c.value("keep_tail", 50);
-    cfg.strategy = c.value("strategy", "truncate");
+  if (json::HasKey(j, "history_compaction") && j.at("history_compaction").is_object()) {
+    const auto& c = j.at("history_compaction");
+    cfg.enabled = json::ValueOrDefault<bool>(c, "enabled", true);
+    cfg.keep_head = json::ValueOrDefault<std::size_t>(c, "keep_head", 10);
+    cfg.keep_tail = json::ValueOrDefault<std::size_t>(c, "keep_tail", 50);
+    cfg.strategy = json::ValueOrDefault<std::string>(c, "strategy", "truncate");
   }
   return cfg;
 }
 
-AgentEntry ParseAgentEntry(const json& j) {
+AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
-  entry.name = j.value("name", "");
+  entry.name = json::ValueOrDefault<std::string>(j, "name", "");
   if (entry.name.empty()) throw pu::Error("Missing agent name");
-  entry.description = j.value("description", "");
-  if (!j.contains("backend") || !j["backend"].is_object())
+  entry.description = json::ValueOrDefault<std::string>(j, "description", "");
+  if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::Error("Missing backend field");
-  entry.backend = ParseBackendConfig(j["backend"]);
+  entry.backend = ParseBackendConfig(j.at("backend"));
   if (entry.backend.host.empty() || entry.backend.model.empty())
     throw pu::Error("Missing host or model in backend");
 
-  if (j.contains("tools") && j["tools"].is_array()) {
-    for (const auto& t : j["tools"])
-      if (t.is_string()) entry.tools.push_back(t.get<std::string>());
+  if (json::HasKey(j, "tools") && j.at("tools").is_array()) {
+    for (const auto& t : j.at("tools").as_array())
+      if (t.is_string()) entry.tools.push_back(boost::json::value_to<std::string>(t));
   }
-  if (j.contains("security") && j["security"].is_object())
-    entry.security = ParseSecurityPolicy(j["security"]);
-  if (j.contains("mcp_servers") && j["mcp_servers"].is_array())
-    entry.mcp_servers = ParseMcpServers(j["mcp_servers"]);
+  if (json::HasKey(j, "security") && j.at("security").is_object())
+    entry.security = ParseSecurityPolicy(j.at("security"));
+  if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
+    entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
 
   entry.compaction = ParseCompactionConfig(j);
   return entry;
@@ -157,18 +160,22 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   if (!file.is_open())
     throw pu::Error("Configuration file not found: " + config_path);
 
-  json j;
-  try { file >> j; } catch (const json::parse_error&) {
+  json::value j;
+  try {
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    j = json::parse(buffer.str());
+  } catch (const boost::system::system_error&) {
     throw pu::Error("Failed to parse configuration JSON");
   }
 
-  if (!j.contains("default_agent") || !j["default_agent"].is_string())
+  if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
     throw pu::Error("Missing default_agent field");
-  result.default_agent = j["default_agent"];
+  result.default_agent = boost::json::value_to<std::string>(j.at("default_agent"));
 
-  if (!j.contains("agents") || !j["agents"].is_array())
+  if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
     throw pu::Error("Missing agents array");
-  for (const auto& item : j["agents"])
+  for (const auto& item : j.at("agents").as_array())
     result.agents.push_back(ParseAgentEntry(item));
 
   if (result.default_agent.empty() && !result.agents.empty())
@@ -177,65 +184,69 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 }
 
 void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
-  json j;
-  j["default_agent"] = cfg.default_agent;
+  json::value j = {{"default_agent", cfg.default_agent}};
 
-  json agents_array = json::array();
+  json::array agents_array;
   for (const auto& entry : cfg.agents) {
-    json item;
-    item["name"] = entry.name;
-    item["description"] = entry.description;
-    item["tools"] = entry.tools;
+    json::value item = {
+      {"name", entry.name},
+      {"description", entry.description},
+    };
+    item.as_object()["tools"] = boost::json::value_from(entry.tools);
 
-    json security;
-    security["sandbox_root"] = entry.security.sandbox_root;
-    security["allowed_paths"] = entry.security.allowed_paths;
-    security["max_command_length"] = entry.security.max_command_length;
-    security["forbidden_patterns"] = entry.security.forbidden_patterns;
-    item["security"] = security;
+    json::value security = {
+      {"sandbox_root", entry.security.sandbox_root},
+      {"max_command_length", entry.security.max_command_length},
+    };
+    security.as_object()["allowed_paths"] = boost::json::value_from(entry.security.allowed_paths);
+    security.as_object()["forbidden_patterns"] = boost::json::value_from(entry.security.forbidden_patterns);
+    item.as_object()["security"] = security;
 
-    json backend;
-    backend["type"] = (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama";
-    backend["host"] = entry.backend.host;
-    backend["model"] = entry.backend.model;
-    if (entry.backend.api_key) backend["api_key"] = *entry.backend.api_key;
-    backend["temperature"] = entry.backend.temperature;
-    if (entry.backend.system_prompt) backend["system_prompt"] = *entry.backend.system_prompt;
-    backend["enable_thinking"] = entry.backend.enable_thinking;
-    item["backend"] = backend;
+    json::value backend = {
+      {"type", (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama"},
+      {"host", entry.backend.host},
+      {"model", entry.backend.model},
+      {"temperature", entry.backend.temperature},
+      {"enable_thinking", entry.backend.enable_thinking},
+    };
+    if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
+    if (entry.backend.system_prompt) backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
+    item.as_object()["backend"] = backend;
 
     if (!entry.mcp_servers.empty()) {
-      json mcp_array = json::array();
+      json::array mcp_array;
       for (const auto& srv : entry.mcp_servers) {
-        json srv_json;
-        srv_json["name"] = srv.name;
-        srv_json["command"] = srv.command;
-        srv_json["args"] = srv.args;
-        if (!srv.url.empty()) srv_json["url"] = srv.url;
+        json::value srv_json = {
+          {"name", srv.name},
+          {"command", srv.command},
+        };
+        srv_json.as_object()["args"] = boost::json::value_from(srv.args);
+        if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
         if (!srv.headers.empty()) {
-          json headers = json::object();
-          for (const auto& [k, v] : srv.headers) headers[k] = v;
-          srv_json["headers"] = headers;
+          json::value headers = json::object{};
+          for (const auto& [k, v] : srv.headers) headers.as_object()[k] = v;
+          srv_json.as_object()["headers"] = headers;
         }
         mcp_array.push_back(srv_json);
       }
-      item["mcp_servers"] = mcp_array;
+      item.as_object()["mcp_servers"] = mcp_array;
     }
 
-    json compaction;
-    compaction["enabled"] = entry.compaction.enabled;
-    compaction["keep_head"] = entry.compaction.keep_head;
-    compaction["keep_tail"] = entry.compaction.keep_tail;
-    compaction["strategy"] = entry.compaction.strategy;
-    item["history_compaction"] = compaction;
+    json::value compaction = {
+      {"enabled", entry.compaction.enabled},
+      {"keep_head", entry.compaction.keep_head},
+      {"keep_tail", entry.compaction.keep_tail},
+      {"strategy", entry.compaction.strategy},
+    };
+    item.as_object()["history_compaction"] = compaction;
 
     agents_array.push_back(item);
   }
-  j["agents"] = agents_array;
+  j.as_object()["agents"] = agents_array;
 
   std::ofstream file(config_path);
   if (!file.is_open()) throw pu::Error("Failed to open config file for writing: " + config_path);
-  file << j.dump(2);
+  file << json::PrettyPrint(j);
 }
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(

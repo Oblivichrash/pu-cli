@@ -3,7 +3,9 @@
 
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
+
+#include "pu/json.hpp"
 
 namespace pu::tools {
 
@@ -21,26 +23,27 @@ inline std::string MakeToolResultJson(bool success,
                                       const std::string& stderr_content,
                                       const std::string& error,
                                       int exit_code) {
-  nlohmann::json j;
-  j["success"] = success;
-  j["stdout"] = stdout_content;
-  j["stderr"] = stderr_content;
-  j["error"] = error;
-  j["exit_code"] = exit_code;
-  return j.dump();
+  boost::json::value j = {
+    {"success", success},
+    {"stdout", stdout_content},
+    {"stderr", stderr_content},
+    {"error", error},
+    {"exit_code", exit_code},
+  };
+  return boost::json::serialize(j);
 }
 
 inline ToolResult ParseToolResult(const std::string& raw) {
   ToolResult r;
   try {
-    auto j = nlohmann::json::parse(raw);
-    if (j.is_object() && j.contains("success")) {
+    auto j = boost::json::parse(raw);
+    if (j.is_object() && j.as_object().contains("success")) {
       r.valid = true;
-      r.success = j["success"].get<bool>();
-      r.stdout_content = j.value("stdout", std::string{});
-      r.stderr_content = j.value("stderr", std::string{});
-      r.error = j.value("error", std::string{});
-      r.exit_code = j.value("exit_code", 0);
+      r.success = boost::json::value_to<bool>(j.at("success"));
+      r.stdout_content = json::ValueOrDefault<std::string>(j, "stdout", "");
+      r.stderr_content = json::ValueOrDefault<std::string>(j, "stderr", "");
+      r.error = json::ValueOrDefault<std::string>(j, "error", "");
+      r.exit_code = json::ValueOrDefault<int>(j, "exit_code", 0);
     }
   } catch (...) {
   }

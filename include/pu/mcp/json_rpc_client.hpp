@@ -5,7 +5,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include "pu/mcp/stdio_transport.hpp"
 
@@ -17,7 +17,8 @@ public:
   ~JsonRpcClient() = default;
 
   // Send a request, returning a future for the async response.
-  std::future<nlohmann::json> SendRequest(const std::string& method, const nlohmann::json& params = nullptr);
+  std::future<boost::json::value> SendRequest(const std::string& method,
+                                              const boost::json::value& params = {});
 
   // Handle incoming messages (called by transport callback).
   void OnMessage(const std::string& line);
@@ -25,7 +26,7 @@ public:
 private:
   Transport& transport_;
   int next_id_ = 1;
-  std::unordered_map<int, std::promise<nlohmann::json>> pending_;
+  std::unordered_map<int, std::promise<boost::json::value>> pending_;
   std::mutex mutex_;
 };
 

@@ -3,7 +3,6 @@
 
 #include "pu/error.hpp"
 
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <cctype>
@@ -85,7 +84,7 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   return defs;
 }
 
-std::string Toolbox::ExecuteTool(const std::string& name, const nlohmann::json& args, ToolContext& ctx) {
+std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args, ToolContext& ctx) {
   if (name.empty()) {
     spdlog::error("Attempted to execute tool with empty name");
     return "Error: tool name is empty";

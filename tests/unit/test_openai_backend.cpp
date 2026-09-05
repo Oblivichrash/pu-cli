@@ -4,7 +4,8 @@
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/error.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
+#include "pu/json.hpp"
 
 using namespace pu;
 using namespace pu::tests;
@@ -26,10 +27,10 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
 
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body["model"] == "gpt-4o-mini");
-  REQUIRE(body["stream"] == true);
-  REQUIRE(body["temperature"] == 0.7f);
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(body.at("model") == "gpt-4o-mini");
+  REQUIRE(body.at("stream") == true);
+  REQUIRE(body.at("temperature") == 0.7f);
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -172,9 +173,9 @@ TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinki
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body.contains("extra_body"));
-  REQUIRE(body["extra_body"]["thinking"]["type"] == "disabled");
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(json::HasKey(body, "extra_body"));
+  REQUIRE(body.at("extra_body").at("thinking").at("type") == "disabled");
 }
 
 TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]") {
@@ -191,8 +192,8 @@ TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE_FALSE(body.contains("extra_body"));
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE_FALSE(json::HasKey(body, "extra_body"));
 }
 
 TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") {

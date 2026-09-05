@@ -4,7 +4,8 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
+
+#include <boost/json.hpp>
 
 namespace pu {
 
@@ -17,16 +18,17 @@ struct Artifact {
   std::string source;
   double confidence = 1.0;
 
-  nlohmann::json Serialize() const { return nlohmann::json(*this); }
-  static Artifact Deserialize(const nlohmann::json& j) { return j.get<Artifact>(); }
-
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(Artifact, type, content, source, confidence)
+  // Boost.JSON equivalents of the former NLOHMANN_DEFINE_TYPE_INTRUSIVE macro.
+  // The enum is stored as its integer value to stay compatible with older
+  // session files produced by nlohmann::json.
+  boost::json::value Serialize() const;
+  static Artifact Deserialize(const boost::json::value& j);
 };
 
 class Memory {
 public:
-  void SetVar(const std::string& key, const nlohmann::json& value);
-  std::optional<nlohmann::json> GetVar(const std::string& key) const;
+  void SetVar(const std::string& key, const boost::json::value& value);
+  std::optional<boost::json::value> GetVar(const std::string& key) const;
   bool HasVar(const std::string& key) const;
   void RemoveVar(const std::string& key);
 
@@ -34,11 +36,11 @@ public:
   std::vector<Artifact> GetArtifacts() const;
   void ClearArtifacts();
 
-  nlohmann::json Serialize() const;
-  static Memory Deserialize(const nlohmann::json& j);
+  boost::json::value Serialize() const;
+  static Memory Deserialize(const boost::json::value& j);
 
 private:
-  std::map<std::string, nlohmann::json> variables_;
+  std::map<std::string, boost::json::value> variables_;
   std::vector<Artifact> artifacts_;
 };
 

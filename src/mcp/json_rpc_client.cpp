@@ -1,30 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/json_rpc_client.hpp"
+#include "pu/json.hpp"
 #include <spdlog/spdlog.h>
 
 namespace pu::mcp {
 
 JsonRpcClient::JsonRpcClient(Transport& transport) : transport_(transport) {}
 
-std::future<nlohmann::json> JsonRpcClient::SendRequest(
+std::future<boost::json::value> JsonRpcClient::SendRequest(
     const std::string& method,
-    const nlohmann::json& params) {
+    const boost::json::value& params) {
     int id = next_id_++;
-    std::promise<nlohmann::json> promise;
+    std::promise<boost::json::value> promise;
     auto future = promise.get_future();
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_[id] = std::move(promise);
     }
 
-    nlohmann::json req = {
+    boost::json::value req = {
         {"jsonrpc", "2.0"},
         {"id", id},
         {"method", method}
     };
-    if (!params.is_null()) req["params"] = params;
+    if (!params.is_null()) req.as_object()["params"] = params;
 
-    if (!transport_.WriteLine(req.dump())) {
+    if (!transport_.WriteLine(boost::json::serialize(req))) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = pending_.find(id);
         if (it != pending_.end()) {
@@ -37,15 +38,15 @@ std::future<nlohmann::json> JsonRpcClient::SendRequest(
 
 void JsonRpcClient::OnMessage(const std::string& line) {
     try {
-        auto j = nlohmann::json::parse(line);
-        if (j.contains("id") && j["id"].is_number_integer()) {
-            int id = j["id"];
+        auto j = boost::json::parse(line);
+        if (json::HasKey(j, "id") && j.at("id").is_int64()) {
+            int id = boost::json::value_to<int>(j.at("id"));
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = pending_.find(id);
             if (it != pending_.end()) {
-                if (j.contains("error")) {
+                if (json::HasKey(j, "error")) {
                     it->second.set_exception(
-                        std::make_exception_ptr(std::runtime_error(j["error"].dump()))
+                        std::make_exception_ptr(std::runtime_error(boost::json::serialize(j.at("error"))))
                     );
                 } else {
                     it->second.set_value(j);

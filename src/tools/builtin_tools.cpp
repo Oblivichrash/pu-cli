@@ -4,8 +4,9 @@
 #include "pu/agent_manager.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/tools/tool_result.hpp"
+#include "pu/json.hpp"
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -131,10 +132,10 @@ std::string ExecuteBashToolStandard::ParametersSchema() const {
   return R"##({"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"}},"required":["command"]})##";
 }
 
-std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   std::string command;
-  if (args.is_object() && args.contains("command")) {
-    command = args["command"].get<std::string>();
+  if (args.is_object() && json::HasKey(args, "command")) {
+    command = boost::json::value_to<std::string>(args.at("command"));
   }
   if (command.empty()) {
     return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
@@ -189,9 +190,9 @@ std::string WriteFileTool::ParametersSchema() const {
   return R"##({"type":"object","properties":{"path":{"type":"string","description":"File path (relative to sandbox)"},"content":{"type":"string","description":"Text to write"}},"required":["path","content"]})##";
 }
 
-std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  std::string path = args.value("path", "");
-  std::string content = args.value("content", "");
+std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
+  std::string path = json::ValueOrDefault<std::string>(args, "path", "");
+  std::string content = json::ValueOrDefault<std::string>(args, "content", "");
   if (path.empty()) {
     return tools::MakeToolResultJson(false, "", "", "'path' is required", -1);
   }
@@ -247,19 +248,20 @@ std::string AskUserTool::ParametersSchema() const {
   return R"##({"type":"object","properties":{"question":{"type":"string","description":"The question to ask"}},"required":["question"]})##";
 }
 
-std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   (void)ctx;
-  nlohmann::json result;
-  result["success"] = false;
-  result["error"] = "clarification_needed";
+  boost::json::value result = {
+    {"success", false},
+    {"error", "clarification_needed"},
+  };
 
   std::string question;
-  if (args.is_object() && args.contains("question")) {
-    question = args["question"].get<std::string>();
+  if (args.is_object() && json::HasKey(args, "question")) {
+    question = boost::json::value_to<std::string>(args.at("question"));
   }
-  result["question"] = question;
+  result.as_object()["question"] = question;
 
-  return result.dump();
+  return boost::json::serialize(result);
 }
 
 }  // namespace pu::tools

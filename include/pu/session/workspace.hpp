@@ -2,7 +2,9 @@
 #pragma once
 #include <memory>
 #include <vector>
-#include <nlohmann/json.hpp>
+
+#include <boost/json.hpp>
+
 #include "pu/session/transcript.hpp"
 #include "pu/session/memory.hpp"
 
@@ -22,8 +24,8 @@ public:
 
   void ClearHistory();
 
-  void SetVar(const std::string& key, const nlohmann::json& value);
-  std::optional<nlohmann::json> GetVar(const std::string& key) const;
+  void SetVar(const std::string& key, const boost::json::value& value);
+  std::optional<boost::json::value> GetVar(const std::string& key) const;
   bool HasVar(const std::string& key) const;
   void RemoveVar(const std::string& key);
 
@@ -31,8 +33,8 @@ public:
   std::vector<Artifact> GetArtifacts() const;
   void ClearArtifacts();
 
-  nlohmann::json Serialize() const;
-  static std::shared_ptr<Workspace> Deserialize(const nlohmann::json& j);
+  boost::json::value Serialize() const;
+  static std::shared_ptr<Workspace> Deserialize(const boost::json::value& j);
 
 private:
   std::unique_ptr<Transcript> transcript_;

@@ -3,7 +3,7 @@
 #include "pu/tools/builtin_tools.hpp"
 
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include <functional>
 #include <memory>
@@ -15,28 +15,28 @@ using namespace pu;
 
 TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
           "[executor]") {
-  nlohmann::json j;
-  j["success"] = true;
-  j["stdout"] = "hello world";
-  j["stderr"] = "";
-  j["error"] = "";
-  j["exit_code"] = 0;
+  boost::json::value j = boost::json::object{};
+  j.as_object()["success"] = true;
+  j.as_object()["stdout"] = "hello world";
+  j.as_object()["stderr"] = "";
+  j.as_object()["error"] = "";
+  j.as_object()["exit_code"] = 0;
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
+  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "hello world");
 }
 
 TEST_CASE(
     "ExtractToolResultContent parses failure JSON and returns error field",
     "[executor]") {
-  nlohmann::json j;
-  j["success"] = false;
-  j["stdout"] = "";
-  j["stderr"] = "some stderr";
-  j["error"] = "Command failed (exit 1)";
-  j["exit_code"] = 1;
+  boost::json::value j = boost::json::object{};
+  j.as_object()["success"] = false;
+  j.as_object()["stdout"] = "";
+  j.as_object()["stderr"] = "some stderr";
+  j.as_object()["error"] = "Command failed (exit 1)";
+  j.as_object()["exit_code"] = 1;
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
+  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "Command failed (exit 1)");
 }
 
@@ -51,20 +51,20 @@ TEST_CASE(
 TEST_CASE(
     "ExtractToolResultContent returns raw string for JSON without success key",
     "[executor]") {
-  nlohmann::json j;
-  j["other"] = "data";
+  boost::json::value j = boost::json::object{};
+  j.as_object()["other"] = "data";
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
+  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  REQUIRE(result == boost::json::serialize(j));
 }
 
 TEST_CASE(
     "ExtractToolResultContent returns raw string for JSON array",
     "[executor]") {
-  nlohmann::json j = nlohmann::json::array({"a", "b"});
+  boost::json::value j = boost::json::value(boost::json::array{"a", "b"});
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
+  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  REQUIRE(result == boost::json::serialize(j));
 }
 
 TEST_CASE("BuildStaticSystemContext includes environment info",
@@ -193,7 +193,7 @@ class TrackingTool : public Tool {
   std::string ParametersSchema() const override {
     return R"({"type":"object"})";
   }
-  std::string Execute(const nlohmann::json& /*args*/,
+  std::string Execute(const boost::json::value& /*args*/,
                       ToolContext& /*ctx*/) override {
     ++executions;
     return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
@@ -220,7 +220,7 @@ TEST_CASE("Executor returns ask_user question without running other tools",
   ToolCall call;
   call.id = "call_ask_1";
   call.name = "ask_user";
-  call.arguments["question"] = "Should I overwrite the existing file?";
+  call.arguments = boost::json::value{{"question", "Should I overwrite the existing file?"}};
 
   MockLLM mock({call}, "thinking out loud");
   Workspace ws;

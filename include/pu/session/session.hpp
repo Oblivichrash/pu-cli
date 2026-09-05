@@ -3,22 +3,35 @@
 
 #include <memory>
 #include <string>
-#include <nlohmann/json.hpp>
+
+#include <boost/json.hpp>
+
 #include "pu/session/workspace.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/json.hpp"
 
 namespace pu {
 
-// Serialized via NLOHMANN_DEFINE_TYPE_INTRUSIVE using the custom to_json/from_json in agent_config.hpp.
+// Serialized with the custom tag_invoke conversions declared in agent_config.hpp.
 struct RuntimeSpec {
   config::BackendConfig backend;
   std::string agent_name;
 
-  nlohmann::json Serialize() const { return nlohmann::json(*this); }
-  static RuntimeSpec Deserialize(const nlohmann::json& j) { return j.get<RuntimeSpec>(); }
+  boost::json::value Serialize() const {
+    boost::json::value jv = {{"agent_name", agent_name}};
+    jv.as_object()["backend"] = boost::json::value_from(backend);
+    return jv;
+  }
 
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(RuntimeSpec, backend, agent_name)
+  static RuntimeSpec Deserialize(const boost::json::value& jv) {
+    RuntimeSpec spec;
+    if (json::HasKey(jv, "backend")) {
+      spec.backend = boost::json::value_to<config::BackendConfig>(jv.at("backend"));
+    }
+    spec.agent_name = json::ValueOrDefault<std::string>(jv, "agent_name", "");
+    return spec;
+  }
 };
 
 class Session {
@@ -43,8 +56,8 @@ public:
 
   std::unique_ptr<LLMProvider> CreateProvider() const;
 
-  nlohmann::json Serialize() const;
-  static std::unique_ptr<Session> Deserialize(const nlohmann::json& j);
+  boost::json::value Serialize() const;
+  static std::unique_ptr<Session> Deserialize(const boost::json::value& j);
 
 private:
   std::shared_ptr<Workspace> workspace_;

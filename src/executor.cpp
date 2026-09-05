@@ -5,7 +5,8 @@
 #include "pu/core/logging.hpp"
 #include "pu/tools/tool_result.hpp"
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
+#include "pu/json.hpp"
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -19,7 +20,6 @@
 
 namespace pu {
 
-using json = nlohmann::json;
 
 namespace {
 
@@ -227,8 +227,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       std::string static_context = BuildStaticSystemContext();
       auto system_prompt_var = workspace.GetVar("system_prompt");
       if (system_prompt_var && system_prompt_var->is_string() &&
-          !system_prompt_var->get<std::string>().empty()) {
-        static_context = system_prompt_var->get<std::string>() + "\n\n" + static_context;
+          !boost::json::value_to<std::string>(*system_prompt_var).empty()) {
+        static_context = boost::json::value_to<std::string>(*system_prompt_var) + "\n\n" + static_context;
       }
       ChatMessage sys;
       sys.role = "system";
@@ -279,7 +279,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     for (const auto& call : collected_calls) {
       if (call.name == "ask_user") {
-        result.final_response = call.arguments.value("question", "");
+        result.final_response = json::ValueOrDefault<std::string>(call.arguments, "question", "");
         result.completed = true;
         result.was_streamed = false;
         return result;
@@ -297,16 +297,19 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     assistant_msg.content = chat_result.content;
     assistant_msg.reasoning_content = chat_result.reasoning_content;
 
-    json j_calls = json::array();
+    boost::json::array j_calls;
     for (const auto& tc : collected_calls) {
-      json jc;
-      jc["id"] = tc.id;
-      jc["type"] = "function";
-      jc["function"]["name"] = tc.name;
-      jc["function"]["arguments"] = tc.arguments;
+      boost::json::value jc = {
+        {"id", tc.id},
+        {"type", "function"},
+        {"function", {
+          {"name", tc.name},
+          {"arguments", tc.arguments},
+        }},
+      };
       j_calls.push_back(jc);
     }
-    assistant_msg.tool_calls_json = j_calls.dump();
+    assistant_msg.tool_calls_json = boost::json::serialize(j_calls);
     workspace.Append(assistant_msg);
 
     ToolContext tool_ctx;

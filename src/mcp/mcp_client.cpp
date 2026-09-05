@@ -4,6 +4,7 @@
 #include "mcp/http_transport.hpp"
 #include "pu/mcp/json_rpc_client.hpp"
 #include "pu/error.hpp"
+#include "pu/json.hpp"
 #include <spdlog/spdlog.h>
 #include <future>
 #include <chrono>
@@ -69,17 +70,17 @@ void McpClient::Disconnect() {
 }
 
 bool McpClient::Handshake() {
-  nlohmann::json init_params = {
+  boost::json::value init_params = {
       {"protocolVersion", "2024-11-05"},
       {"clientInfo", {{"name", "pu-cli"}, {"version", "0.3.1"}}},
       {"capabilities", {{"tools", true}}}};
   try {
     auto resp = SendRequest("initialize", init_params);
-    if (!resp.contains("result")) return false;
+    if (!json::HasKey(resp, "result")) return false;
     // Send initialized notification (no response needed)
-    pimpl_->transport->WriteLine(nlohmann::json{
+    pimpl_->transport->WriteLine(boost::json::serialize(boost::json::value{
         {"jsonrpc", "2.0"},
-        {"method", "initialized"}}.dump());
+        {"method", "initialized"}}));
     return true;
   } catch (const std::exception& e) {
     spdlog::error("Handshake error: {}", e.what());
@@ -87,9 +88,9 @@ bool McpClient::Handshake() {
   }
 }
 
-nlohmann::json McpClient::SendRequest(const std::string& method,
-                                      const nlohmann::json& params,
-                                      int timeout_ms) {
+boost::json::value McpClient::SendRequest(const std::string& method,
+                                          const boost::json::value& params,
+                                          int timeout_ms) {
   // Only check that rpc exists; connected may be false during handshake.
   if (!pimpl_->rpc) {
     throw RuntimeError("MCP client not connected");
@@ -110,15 +111,15 @@ std::vector<ToolDefinition> McpClient::ListTools() {
   if (!pimpl_->cached_tools.empty()) return pimpl_->cached_tools;
 
   try {
-    auto resp = SendRequest("tools/list", nullptr);
-    if (resp.contains("result") && resp["result"].contains("tools")) {
+    auto resp = SendRequest("tools/list", {});
+    if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "tools")) {
       std::vector<ToolDefinition> defs;
-      for (const auto& t : resp["result"]["tools"]) {
+      for (const auto& t : resp.at("result").at("tools").as_array()) {
         ToolDefinition def;
-        def.name = t.value("name", "");
-        def.description = t.value("description", "");
-        if (t.contains("inputSchema")) {
-          def.parameters_schema = t["inputSchema"].dump();
+        def.name = json::ValueOrDefault<std::string>(t, "name", "");
+        def.description = json::ValueOrDefault<std::string>(t, "description", "");
+        if (json::HasKey(t, "inputSchema")) {
+          def.parameters_schema = boost::json::serialize(t.at("inputSchema"));
         } else {
           def.parameters_schema = "{}";
         }
@@ -134,26 +135,26 @@ std::vector<ToolDefinition> McpClient::ListTools() {
 }
 
 std::string McpClient::CallTool(const std::string& name,
-                                const nlohmann::json& arguments) {
+                                const boost::json::value& arguments) {
   if (!pimpl_->connected) {
     return "Error: MCP client not connected";
   }
   try {
-    nlohmann::json params = {{"name", name}, {"arguments", arguments}};
+    boost::json::value params = {{"name", name}, {"arguments", arguments}};
     auto resp = SendRequest("tools/call", params);
-    if (resp.contains("result") && resp["result"].contains("content")) {
+    if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "content")) {
       std::string output;
-      for (const auto& item : resp["result"]["content"]) {
-        if (item.contains("type") && item["type"] == "text") {
-          output += item.value("text", "") + "\n";
+      for (const auto& item : resp.at("result").at("content").as_array()) {
+        if (json::HasKey(item, "type") && item.at("type") == "text") {
+          output += json::ValueOrDefault<std::string>(item, "text", "") + "\n";
         }
       }
       if (!output.empty()) return output;
-      return resp["result"].dump();
-    } else if (resp.contains("error")) {
-      return "MCP error: " + resp["error"].dump();
+      return boost::json::serialize(resp.at("result"));
+    } else if (json::HasKey(resp, "error")) {
+      return "MCP error: " + boost::json::serialize(resp.at("error"));
     }
-    return resp.dump();
+    return boost::json::serialize(resp);
   } catch (const std::exception& e) {
     spdlog::error("CallTool failed: {}", e.what());
     return std::string("MCP call error: ") + e.what();

@@ -3,7 +3,7 @@
 #include "pu/llm/ollama_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 using namespace pu;
 using namespace pu::tests;
@@ -24,10 +24,10 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
 
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body["model"] == "llama3.2:1b");
-  REQUIRE(body["stream"] == true);
-  REQUIRE(body["options"]["temperature"] == 0.5f);
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(body.at("model") == "llama3.2:1b");
+  REQUIRE(body.at("stream") == true);
+  REQUIRE(body.at("options").at("temperature") == 0.5f);
 }
 
 TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
@@ -130,10 +130,10 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
 
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body["messages"][0]["role"] == "tool");
-  REQUIRE(body["messages"][0]["tool_name"] == "execute_bash");
-  REQUIRE(body["messages"][0]["tool_call_id"] == "call_42");
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(body.at("messages").at(0).at("role") == "tool");
+  REQUIRE(body.at("messages").at(0).at("tool_name") == "execute_bash");
+  REQUIRE(body.at("messages").at(0).at("tool_call_id") == "call_42");
 }
 
 TEST_CASE("OllamaProvider IsThinkingMode returns false", "[ollama]") {

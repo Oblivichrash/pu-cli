@@ -6,11 +6,12 @@
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
 #include "pu/http_client.hpp"
 #include "pu/mcp/mcp_client.hpp"
+#include "pu/json.hpp"
 
 namespace pu::config {
 
@@ -36,8 +37,10 @@ struct BackendConfig {
 };
 
 // Keeps the old SessionBackendConfig JSON format (type as string, api_key as string).
-inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
-  j = nlohmann::json{
+inline void tag_invoke(boost::json::value_from_tag,
+                       boost::json::value& j,
+                       const BackendConfig& cfg) {
+  j = {
     {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
     {"host", cfg.host},
     {"model", cfg.model},
@@ -48,21 +51,24 @@ inline void to_json(nlohmann::json& j, const BackendConfig& cfg) {
   };
 }
 
-inline void from_json(const nlohmann::json& j, BackendConfig& cfg) {
-  auto type_str = j.value("type", "ollama");
+inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
+                                const boost::json::value& j) {
+  BackendConfig cfg;
+  auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
   cfg.type = (type_str == "openai") ? BackendType::kOpenAI : BackendType::kOllama;
-  cfg.host = j.value("host", "");
-  cfg.model = j.value("model", "");
-  if (j.contains("api_key") && j["api_key"].is_string()) {
-    auto key = j["api_key"].get<std::string>();
+  cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
+  cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
+  if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {
+    auto key = boost::json::value_to<std::string>(j.at("api_key"));
     cfg.api_key = key.empty() ? std::optional<std::string>{} : key;
   }
-  cfg.temperature = j.value("temperature", 0.7f);
-  cfg.max_tokens = j.value("max_tokens", 2048);
-  cfg.parameters_as_string = j.value("parameters_as_string", false);
+  cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
+  cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
   // The following fields may not be present in old session files; defaults are fine.
   cfg.system_prompt = std::nullopt;
   cfg.enable_thinking = true;
+  return cfg;
 }
 
 struct HistoryCompactionConfig {

@@ -10,8 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include "pu/agent_config.hpp"
 
 namespace pu {

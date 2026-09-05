@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "pu/session/workspace.hpp"
 #include "pu/session/memory.hpp"
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 using namespace pu;
 
@@ -16,10 +16,10 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   REQUIRE(recent.size() == 1);
   REQUIRE(recent[0].role == "assistant");
 
-  ctx.SetVar("foo", nlohmann::json("bar"));
+  ctx.SetVar("foo", boost::json::value("bar"));
   auto val = ctx.GetVar("foo");
   REQUIRE(val.has_value());
-  REQUIRE(val->get<std::string>() == "bar");
+  REQUIRE(boost::json::value_to<std::string>(*val) == "bar");
 }
 
 TEST_CASE("Artifact operations", "[workspace]") {

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/workspace.hpp"
+
+#include "pu/json.hpp"
+
+#include <boost/json.hpp>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -58,12 +62,12 @@ bool Workspace::HasPendingToolCalls() const {
   return transcript_->HasPendingToolCalls();
 }
 
-void Workspace::SetVar(const std::string& key, const nlohmann::json& value) {
+void Workspace::SetVar(const std::string& key, const boost::json::value& value) {
   if (!memory_) memory_ = std::make_unique<Memory>();
   memory_->SetVar(key, value);
 }
 
-std::optional<nlohmann::json> Workspace::GetVar(const std::string& key) const {
+std::optional<boost::json::value> Workspace::GetVar(const std::string& key) const {
   if (!memory_) return std::nullopt;
   return memory_->GetVar(key);
 }
@@ -91,41 +95,43 @@ void Workspace::ClearArtifacts() {
   if (memory_) memory_->ClearArtifacts();
 }
 
-nlohmann::json Workspace::Serialize() const {
-  nlohmann::json j;
+boost::json::value Workspace::Serialize() const {
+  boost::json::value j = boost::json::object{};
 
   if (transcript_) {
-    j["history"] = transcript_->Serialize();
+    j.as_object()["history"] = transcript_->Serialize();
   } else {
-    j["history"] = nlohmann::json::array();
+    j.as_object()["history"] = boost::json::array{};
   }
 
   if (memory_) {
     auto mem_j = memory_->Serialize();
-    j["variables"] = mem_j["variables"];
-    j["artifacts"] = mem_j["artifacts"];
+    j.as_object()["variables"] = mem_j.at("variables");
+    j.as_object()["artifacts"] = mem_j.at("artifacts");
   } else {
-    j["variables"] = nlohmann::json::object();
-    j["artifacts"] = nlohmann::json::array();
+    j.as_object()["variables"] = boost::json::object{};
+    j.as_object()["artifacts"] = boost::json::array{};
   }
 
   return j;
 }
 
-std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
+std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   auto ws = std::make_shared<Workspace>();
   ws->transcript_ = std::make_unique<Transcript>();
 
-  if (j.contains("history") && j["history"].is_array()) {
-    *ws->transcript_ = Transcript::Deserialize(j["history"]);
+  if (json::HasKey(j, "history") && j.at("history").is_array()) {
+    *ws->transcript_ = Transcript::Deserialize(j.at("history"));
   }
 
   ws->memory_ = std::make_unique<Memory>();
-  nlohmann::json mem_j;
-  mem_j["variables"] = j.value("variables", nlohmann::json::object());
+  boost::json::value mem_j = boost::json::object{};
+  mem_j.as_object()["variables"] =
+      json::ValueOrDefault<boost::json::value>(j, "variables", boost::json::object{});
   // "artifacts" is the current key; "facts" remains as a legacy fallback.
-  mem_j["artifacts"] = j.contains("artifacts")
-      ? j["artifacts"] : j.value("facts", nlohmann::json::array());
+  mem_j.as_object()["artifacts"] = json::HasKey(j, "artifacts")
+      ? j.at("artifacts")
+      : json::ValueOrDefault<boost::json::value>(j, "facts", boost::json::array{});
   *ws->memory_ = Memory::Deserialize(mem_j);
 
   return ws;

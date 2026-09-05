@@ -7,7 +7,9 @@
 #include <thread>
 
 #include <boost/asio.hpp>
+#include <boost/json.hpp>
 #include <spdlog/spdlog.h>
+#include "pu/json.hpp"
 
 #include "infra/curl_http_client.hpp"
 #include "pu/agent_config.hpp"
@@ -32,7 +34,7 @@ void SaveCurrentSession(const std::shared_ptr<Session>& session) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream file(path);
   if (file.is_open()) {
-    file << j.dump(2);
+    file << json::PrettyPrint(j);
   } else {
     spdlog::warn("Failed to write session file: {}", path.string());
   }
@@ -142,7 +144,7 @@ void Runtime::Initialize(const std::string& config_path) {
   if (std::filesystem::exists(path)) {
     std::ifstream file(path);
     if (file.is_open()) {
-      nlohmann::json j;
+      boost::json::value j;
       try {
         file >> j;
         current_session_ = Session::Deserialize(j);

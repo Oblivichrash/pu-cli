@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/transcript.hpp"
+
+#include "pu/json.hpp"
+
 #include <algorithm>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 namespace pu {
 
@@ -28,9 +31,12 @@ void Transcript::Compact(size_t keep_head, size_t keep_tail) {
     if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {
       std::vector<std::string> ids;
       try {
-        auto j = nlohmann::json::parse(msg.tool_calls_json);
-        for (const auto& tc : j) {
-          if (tc.contains("id")) ids.push_back(tc["id"].get<std::string>());
+        auto j = boost::json::parse(msg.tool_calls_json);
+        if (j.is_array()) {
+          for (const auto& tc : j.as_array()) {
+            if (json::HasKey(tc, "id"))
+              ids.push_back(boost::json::value_to<std::string>(tc.at("id")));
+          }
         }
       } catch (...) { continue; }
 
@@ -74,15 +80,15 @@ bool Transcript::HasPendingToolCalls() const {
   const auto& last = messages_.back();
   if (last.role == "assistant" && !last.tool_calls_json.empty()) {
     try {
-      auto j = nlohmann::json::parse(last.tool_calls_json);
-      return j.is_array() && !j.empty();
+      auto j = boost::json::parse(last.tool_calls_json);
+      return j.is_array() && !j.as_array().empty();
     } catch (...) { return false; }
   }
   return false;
 }
 
-nlohmann::json Transcript::Serialize() const {
-  nlohmann::json arr = nlohmann::json::array();
+boost::json::value Transcript::Serialize() const {
+  boost::json::array arr;
   for (const auto& msg : messages_) {
     arr.push_back({
       {"id", msg.id},
@@ -98,19 +104,19 @@ nlohmann::json Transcript::Serialize() const {
   return arr;
 }
 
-Transcript Transcript::Deserialize(const nlohmann::json& j) {
+Transcript Transcript::Deserialize(const boost::json::value& j) {
   Transcript t;
   if (j.is_array()) {
-    for (const auto& item : j) {
+    for (const auto& item : j.as_array()) {
       ChatMessage msg;
-      msg.id = item.value("id", 0);
-      msg.timestamp = item.value("timestamp", "");
-      msg.role = item.value("role", "");
-      msg.content = item.value("content", "");
-      msg.tool_name = item.value("tool_name", "");
-      msg.tool_calls_json = item.value("tool_calls_json", "");
-      msg.reasoning_content = item.value("reasoning_content", "");
-      msg.tool_call_id = item.value("tool_call_id", "");
+      msg.id = json::ValueOrDefault<int>(item, "id", 0);
+      msg.timestamp = json::ValueOrDefault<std::string>(item, "timestamp", "");
+      msg.role = json::ValueOrDefault<std::string>(item, "role", "");
+      msg.content = json::ValueOrDefault<std::string>(item, "content", "");
+      msg.tool_name = json::ValueOrDefault<std::string>(item, "tool_name", "");
+      msg.tool_calls_json = json::ValueOrDefault<std::string>(item, "tool_calls_json", "");
+      msg.reasoning_content = json::ValueOrDefault<std::string>(item, "reasoning_content", "");
+      msg.tool_call_id = json::ValueOrDefault<std::string>(item, "tool_call_id", "");
       t.messages_.push_back(msg);
     }
   }

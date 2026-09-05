@@ -11,7 +11,6 @@
 #include <stdexcept>
 #include <chrono>
 #include <mutex>
-#include <nlohmann/json.hpp>
 
 namespace pu::http {
 

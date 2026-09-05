@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include <vector>
-#include <nlohmann/json.hpp>
+
+#include <boost/json.hpp>
+
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu {
@@ -15,8 +17,8 @@ public:
   bool HasPendingToolCalls() const;
   size_t Size() const { return messages_.size(); }
 
-  nlohmann::json Serialize() const;
-  static Transcript Deserialize(const nlohmann::json& j);
+  boost::json::value Serialize() const;
+  static Transcript Deserialize(const boost::json::value& j);
 
 private:
   std::vector<ChatMessage> messages_;

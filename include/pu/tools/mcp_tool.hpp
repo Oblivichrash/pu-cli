@@ -3,8 +3,11 @@
 
 #include "pu/tools/toolbox.hpp"
 #include "pu/mcp/mcp_client.hpp"
+
 #include <memory>
 #include <string>
+
+#include <boost/json.hpp>
 
 namespace pu::tools {
 
@@ -22,7 +25,7 @@ public:
     }
     std::string Description() const override { return def_.description; }
     std::string ParametersSchema() const override { return def_.parameters_schema; }
-    std::string Execute(const nlohmann::json& args, ToolContext& ctx) override;
+    std::string Execute(const boost::json::value& args, ToolContext& ctx) override;
 
 private:
     mcp::McpClient* client_;
