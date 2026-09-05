@@ -1,19 +1,89 @@
 "use strict";
 
+const toolCallMap = new Map(); // Maps tool_call_id to the tool result content.
+
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const clearBtn = document.getElementById("clear-btn");
+const statusEl = document.getElementById("session-status");
 const agentSelect = document.getElementById("agent-select");
 
-function addMessage(role, text) {
+// State for cancellation
+let currentRequestId = null;
+let currentController = null;
+
+function addMessage(role, text, extra) {
   const el = document.createElement("div");
   el.className = "msg " + (role === "user" ? "user" : (role === "error" ? "error" : "assistant"));
   const label = document.createElement("span");
   label.className = "role";
   label.textContent = role === "user" ? "You" : "Assistant";
   el.appendChild(label);
-  el.appendChild(document.createTextNode(text == null ? "" : String(text)));
+
+  const body = document.createTextNode(text == null ? "" : String(text));
+  el.appendChild(body);
+
+  const toolCalls = extra && Array.isArray(extra.tool_calls) ? extra.tool_calls : null;
+  if (role === "assistant" && toolCalls && toolCalls.length > 0) {
+    const toggle = document.createElement("button");
+    toggle.className = "toggle-details";
+    toggle.textContent = "▶ 查看工具调用";
+    const details = document.createElement("div");
+    details.className = "details";
+    details.hidden = true;
+
+    for (const call of toolCalls) {
+      const fn = (call && call.function) ? call.function : {};
+      const name = fn.name || "(unknown tool)";
+      let argsText = "";
+      try {
+        const args = fn.arguments;
+        if (args === undefined || args === null) {
+          argsText = "{}";
+        } else if (typeof args === "string") {
+          argsText = JSON.stringify(JSON.parse(args), null, 2);
+        } else {
+          argsText = JSON.stringify(args, null, 2);
+        }
+      } catch (e) {
+        argsText = String(fn.arguments || "{}");
+      }
+
+      const callId = call.id || "";
+      const resultText = callId && toolCallMap.has(callId) ? toolCallMap.get(callId) : "No result";
+
+      const detail = document.createElement("div");
+      detail.className = "tool-call-detail";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "tool-name";
+      nameEl.textContent = name;
+
+      const argsEl = document.createElement("pre");
+      argsEl.className = "tool-arguments";
+      argsEl.textContent = argsText;
+
+      const resultEl = document.createElement("div");
+      resultEl.className = "tool-result";
+      resultEl.textContent = "Result: " + resultText;
+
+      detail.appendChild(nameEl);
+      detail.appendChild(argsEl);
+      detail.appendChild(resultEl);
+      details.appendChild(detail);
+    }
+
+    toggle.addEventListener("click", () => {
+      const hidden = details.hidden;
+      details.hidden = !hidden;
+      toggle.textContent = hidden ? "▼ 收起工具调用" : "▶ 查看工具调用";
+    });
+
+    el.appendChild(toggle);
+    el.appendChild(details);
+  }
+
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
@@ -31,11 +101,18 @@ async function loadSession() {
   try {
     const res = await fetch("/api/session");
     const data = await res.json();
-    if (data.ok && data.agent_name) {
-      agentSelect.value = data.agent_name;
+    if (data.ok) {
+      const model = data.backend_model ? " · " + data.backend_model : "";
+      statusEl.textContent = "Agent: " + (data.agent_name || "?") +
+        " · Backend: " + (data.backend_type || "?") + model;
+      if (data.agent_name) {
+        agentSelect.value = data.agent_name;
+      }
+    } else {
+      statusEl.textContent = "Session unavailable: " + (data.error || "unknown");
     }
   } catch (e) {
-    console.warn("Failed to load session:", e);
+    statusEl.textContent = "Session unavailable";
   }
 }
 
@@ -44,9 +121,29 @@ async function loadHistory() {
     const res = await fetch("/api/history");
     const history = await res.json();
     if (Array.isArray(history)) {
+      toolCallMap.clear();
+
       for (const msg of history) {
-        if (msg.role === "system") continue;
-        addMessage(msg.role, msg.content);
+        if (msg.role === "tool" && msg.tool_call_id) {
+          toolCallMap.set(msg.tool_call_id, msg.content);
+        }
+      }
+
+      for (const msg of history) {
+        if (msg.role === "system" || msg.role === "tool") continue;
+
+        let extra = {};
+        if (msg.role === "assistant" && msg.tool_calls_json) {
+          try {
+            const parsed = JSON.parse(msg.tool_calls_json);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              extra.tool_calls = parsed;
+            }
+          } catch (e) {
+            console.warn("Failed to parse tool_calls_json:", e);
+          }
+        }
+        addMessage(msg.role, msg.content, extra);
       }
     }
   } catch (e) {
@@ -90,10 +187,6 @@ async function loadAgents() {
     console.warn("Failed to load agents:", e);
   }
 }
-
-// In-flight request state; the Send button turns into Cancel while it runs.
-let currentRequestId = null;
-let currentController = null;
 
 function showError(msgEl, text) {
   msgEl.classList.remove("typing");
@@ -168,7 +261,6 @@ async function sendMessageStream() {
   const text = inputEl.value.trim();
   if (!text) return;
 
-  // Browsers without ReadableStream fall back to the plain endpoint.
   if (!window.ReadableStream) {
     sendMessage();
     return;
@@ -190,37 +282,31 @@ async function sendMessageStream() {
       signal: controller.signal
     });
   } catch (e) {
-    // Cancelled before the stream started: nothing was sent, keep the input.
     if (e && e.name === "AbortError") {
       resetSendState();
       return;
     }
-    // Network error: retry through the non-streaming endpoint.
     resetSendState();
     sendMessage();
     return;
   }
   if (!res.ok || !res.body) {
-    // HTTP error (e.g. server without /api/chat/stream): fall back.
     resetSendState();
     sendMessage();
     return;
   }
 
-  // The stream is live: commit the UI and read SSE events.
   inputEl.value = "";
   autoResize();
   addMessage("user", text);
 
-  const pending = addMessage("assistant", "");
-  pending.classList.add("typing");
-  const body = document.createTextNode("Thinking");
-  pending.appendChild(body);
-
-  const reader = res.body.getReader();
+  let textMsgEl = null;
+  let textBody = null;
+  let reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let done = false;
+
   try {
     while (!done) {
       const { value, done: streamDone } = await reader.read();
@@ -244,32 +330,62 @@ async function sendMessageStream() {
           continue;
         }
         if (ev && typeof ev.error === "string") {
-          showError(pending, ev.error);
+          if (!textMsgEl) {
+            textMsgEl = addMessage("assistant", "");
+            textMsgEl.classList.add("typing");
+            textBody = document.createTextNode("");
+            textMsgEl.appendChild(textBody);
+          }
+          showError(textMsgEl, ev.error);
           done = true;
           break;
         }
+        if (ev && Array.isArray(ev.tool_calls) && ev.tool_calls.length > 0) {
+          addMessage("assistant", "", { tool_calls: ev.tool_calls });
+          textMsgEl = null;
+          textBody = null;
+          continue;
+        }
         if (ev && typeof ev.token === "string" && ev.token) {
-          if (body.data === "Thinking") {
-            body.data = ev.token;
-          } else {
-            body.data += ev.token;
+          if (!textMsgEl) {
+            textMsgEl = addMessage("assistant", "");
+            textMsgEl.classList.add("typing");
+            textBody = document.createTextNode("");
+            textMsgEl.appendChild(textBody);
           }
+          textBody.data += ev.token;
         }
       }
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   } catch (e) {
     if (e && e.name === "AbortError") {
-      showError(pending, "Request cancelled.");
+      if (!textMsgEl) {
+        textMsgEl = addMessage("assistant", "");
+        textMsgEl.classList.add("typing");
+        textBody = document.createTextNode("");
+        textMsgEl.appendChild(textBody);
+      }
+      showError(textMsgEl, "Request cancelled.");
     } else {
-      showError(pending, "Network error: " + (e && e.message ? e.message : e));
+      if (!textMsgEl) {
+        textMsgEl = addMessage("assistant", "");
+        textMsgEl.classList.add("typing");
+        textBody = document.createTextNode("");
+        textMsgEl.appendChild(textBody);
+      }
+      showError(textMsgEl, "Network error: " + (e && e.message ? e.message : e));
     }
   } finally {
     try {
       await reader.cancel();
     } catch (e) {}
-    if (body.data === "Thinking") body.data = "(empty response)";
-    pending.classList.remove("typing");
+    if (textMsgEl) {
+      if (textBody && textBody.data === "") {
+        textBody.data = "(empty response)";
+      }
+      textMsgEl.classList.remove("typing");
+    }
     resetSendState();
   }
 }
@@ -339,7 +455,6 @@ inputEl.addEventListener("keydown", (e) => {
 inputEl.addEventListener("input", autoResize);
 
 addSystem("Connected to pu serve. Send a message to start chatting.");
-// Populate the agent list first so loadSession() can select the current agent.
-await loadAgents();
 await loadSession();
 await loadHistory();
+await loadAgents();

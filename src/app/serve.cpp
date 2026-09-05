@@ -89,7 +89,7 @@ void SendJson(httplib::Response& res, int status, const nlohmann::json& j) {
 }
 
 // SSE event queue shared between the ProcessInput worker and the
-// chunked-content provider that flushes events to the client.
+// chunked‑content provider that flushes events to the client.
 struct SseStream {
   std::mutex mutex;
   std::condition_variable cv;
@@ -193,6 +193,10 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
   // ProcessInput mutates the single persistent Session (workspace + history),
   // so all handlers that touch the runtime/session share one lock.
   std::mutex io_mutex;
+
+  // Registry of in-flight chat requests keyed by request_id. Guarded by its
+  // own mutex so /api/chat/cancel can set a cancel token without ever waiting
+  // on io_mutex (the chat handler holds io_mutex for the whole request).
   std::mutex cancel_mutex;
   std::unordered_map<std::string, CancelToken> active_requests;
   httplib::Server svr;
@@ -241,6 +245,8 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       return;
     }
 
+    // Use the caller-supplied id (so the front-end can cancel the same
+    // request later) or mint a unique one when absent.
     std::string request_id;
     auto rid_it = body.find("request_id");
     if (rid_it != body.end() && rid_it->is_string() &&
@@ -253,6 +259,10 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
           "-" + std::to_string(s_request_seq.fetch_add(1));
     }
     resp["request_id"] = request_id;
+
+    // Shared cancel token observed by the transport layer. Register it before
+    // processing so /api/chat/cancel can find it; the RAII guard removes the
+    // entry when the request finishes (success, failure or cancellation).
     auto token = std::make_shared<std::atomic<bool>>(false);
     {
       std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -272,7 +282,9 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
       resp["tool_call_count"] = result.tool_call_count;
       if (!ok && result.error_message.empty()) resp["error"] = "Processing failed";
     } catch (const std::exception& e) {
-      // Cancellation surfaces as an HttpError; the guard cleans up the map.
+      // A canceled request surfaces as an HttpError/RuntimeError from the
+      // transport layer; report it (the front-end may already be gone, but the
+      // active_requests entry is still cleaned up by the RAII guard above).
       resp["success"] = false;
       resp["content"] = "";
       resp["error"] = e.what();
@@ -413,7 +425,8 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
         });
   });
 
-  // POST /api/chat/cancel - abort an in-flight request by id.
+  // POST /api/chat/cancel - abort an in-flight LLM request by id. Uses only
+  // cancel_mutex so it never blocks behind a running chat request.
   svr.Post("/api/chat/cancel", [&](const httplib::Request& req,
                                    httplib::Response& res) {
     nlohmann::json resp;
@@ -473,7 +486,7 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
     SendJson(res, 200, j);
   });
 
-  // GET /api/history - return conversation history.
+  // GET /api/history - return conversation history with tool call details.
   svr.Get("/api/history", [&](const httplib::Request&, httplib::Response& res) {
     nlohmann::json j = nlohmann::json::array();
     try {
@@ -487,6 +500,18 @@ int RunServe(int argc, char* argv[], Runtime& runtime) {
           item["role"] = msg.role;
           item["content"] = msg.content;
           item["timestamp"] = msg.timestamp;
+          if (!msg.tool_calls_json.empty()) {
+            item["tool_calls_json"] = msg.tool_calls_json;
+          }
+          if (!msg.tool_call_id.empty()) {
+            item["tool_call_id"] = msg.tool_call_id;
+          }
+          if (!msg.tool_name.empty()) {
+            item["tool_name"] = msg.tool_name;
+          }
+          if (!msg.reasoning_content.empty()) {
+            item["reasoning_content"] = msg.reasoning_content;
+          }
           j.push_back(item);
         }
       }

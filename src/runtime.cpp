@@ -4,7 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <thread>
 
+#include <boost/asio.hpp>
 #include <spdlog/spdlog.h>
 
 #include "infra/curl_http_client.hpp"
@@ -17,7 +19,6 @@
 #include "pu/tools/mcp_tool.hpp"
 
 namespace pu {
-
 namespace {
 
 std::filesystem::path SessionFilePath() {
@@ -37,6 +38,57 @@ void SaveCurrentSession(const std::shared_ptr<Session>& session) {
   }
 }
 
+class AsioTimer {
+public:
+  static AsioTimer& Instance() {
+    static AsioTimer instance;
+    return instance;
+  }
+
+  void Start() {
+    if (started_) return;
+    const char* env = std::getenv("PU_ASIO_TIMER_ENABLED");
+    if (!env) return;
+    std::string val = env;
+    if (val != "1" && val != "true") return;
+
+    io_context_ = std::make_unique<boost::asio::io_context>();
+    timer_ = std::make_unique<boost::asio::steady_timer>(*io_context_, std::chrono::seconds(10));
+    started_ = true;
+
+    timer_->async_wait([this](const boost::system::error_code& ec) {
+      if (!ec) {
+        spdlog::info("Boost.Asio timer fired (PU_ASIO_TIMER_ENABLED demo)");
+      }
+    });
+
+    thread_ = std::make_unique<std::thread>([this]() {
+      io_context_->run();
+    });
+
+    spdlog::debug("Boost.Asio timer thread started");
+  }
+
+  void Stop() {
+    if (!started_) return;
+    if (io_context_) io_context_->stop();
+    if (thread_ && thread_->joinable()) thread_->join();
+    timer_.reset();
+    io_context_.reset();
+    started_ = false;
+    spdlog::debug("Boost.Asio timer thread stopped");
+  }
+
+  ~AsioTimer() { Stop(); }
+
+private:
+  AsioTimer() = default;
+  std::unique_ptr<boost::asio::io_context> io_context_;
+  std::unique_ptr<boost::asio::steady_timer> timer_;
+  std::unique_ptr<std::thread> thread_;
+  bool started_ = false;
+};
+
 }  // namespace
 
 void Runtime::Initialize(const std::string& config_path) {
@@ -46,7 +98,6 @@ void Runtime::Initialize(const std::string& config_path) {
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
 
-  // Ensure the data directory layout exists before any session/log access.
   std::filesystem::create_directories(pu::path::GetDataDir() / "logs");
 
   auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
@@ -84,10 +135,9 @@ void Runtime::Initialize(const std::string& config_path) {
     toolbox_ = std::make_unique<Toolbox>();
     RegisterBuiltinTools();
     executor_->SetToolbox(toolbox_.get());
-    spdlog::warn("No default agent found for security policy. Using permissive fallback.");
+    spdlog::warn("No default agent found. Using permissive fallback.");
   }
 
-  // Automatically load the single session from session.json if present.
   auto path = SessionFilePath();
   if (std::filesystem::exists(path)) {
     std::ifstream file(path);
@@ -103,6 +153,8 @@ void Runtime::Initialize(const std::string& config_path) {
     }
   }
 
+  AsioTimer::Instance().Start();
+
   is_initialized_ = true;
   is_running_ = true;
 }
@@ -110,6 +162,7 @@ void Runtime::Initialize(const std::string& config_path) {
 void Runtime::Shutdown() {
   if (!is_initialized_) return;
   SaveCurrentSession(current_session_);
+  AsioTimer::Instance().Stop();
   is_running_ = false;
 }
 
@@ -180,9 +233,7 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
 
 void Runtime::ShutdownMCP() {
   for (auto& client : mcp_clients_) {
-    if (client) {
-      client->Disconnect();
-    }
+    if (client) client->Disconnect();
   }
   mcp_clients_.clear();
 }
@@ -192,10 +243,9 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
   if (client->Connect()) {
     mcp_clients_.push_back(std::move(client));
     return true;
-  } else {
-    spdlog::warn("MCP server '{}' connection failed", config.name);
-    return false;
   }
+  spdlog::warn("MCP server '{}' connection failed", config.name);
+  return false;
 }
 
 void Runtime::RegisterBuiltinTools() {
@@ -211,7 +261,6 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   ShutdownMCP();
 
   toolbox_ = std::make_unique<Toolbox>();
-
   RegisterBuiltinTools();
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
@@ -220,14 +269,12 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
       continue;
     }
 
-    // The last client pushed by StartMCP is the one we just connected.
     auto* client = mcp_clients_.back().get();
     auto tools = client->ListTools();
     for (const auto& t : tools) {
       auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
       toolbox_->RegisterTool(std::move(mcp_tool));
-      spdlog::debug("Registered MCP tool: mcp.{}.{} from server {}",
-                    mcp_cfg.name, t.name, mcp_cfg.name);
+      spdlog::debug("Registered MCP tool: mcp.{}.{}", mcp_cfg.name, t.name);
     }
   }
 
