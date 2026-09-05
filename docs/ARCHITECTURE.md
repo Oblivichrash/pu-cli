@@ -48,6 +48,27 @@ pu::RuntimeError : std::runtime_error
 
 ---
 
+## JSON Handling
+
+All JSON parsing and serialization is provided by **Boost.JSON**
+(`boost::json::value`; Boost >= 1.75). `include/pu/json.hpp` is a thin
+convenience layer over the Boost API for the operations the codebase uses most:
+
+- `pu::json::parse` / `pu::json::serialize` — parse and serialize
+  (`boost::json::parse` throws `boost::system::system_error` on malformed input).
+- `pu::json::ValueOrDefault(value, key, def)` — optional member read with default.
+- `pu::json::HasKey(value, key)` — safe key-existence check.
+- `pu::json::Merge(dst, src)` — shallow object merge.
+- `pu::json::PrettyPrint(value)` — indented output for `agents.json` and
+  `session.json`.
+
+JSON is used for configuration (`agents.json`), session persistence
+(`Session::Serialize` / `Session::Deserialize`), structured tool output
+(`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the HTTP/SSE API in
+`src/app/serve.cpp`.
+
+---
+
 ## Executor Enhancements (since v0.4)
 
 ### Structured Tool Output

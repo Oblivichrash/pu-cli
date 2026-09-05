@@ -8,7 +8,39 @@ A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence*
 
 ## Quick Start
 
+### Build Dependencies
+
+pu-cli uses **Boost.JSON** (Boost >= 1.75) for all JSON parsing and
+serialization. The other runtime dependencies are libcurl, spdlog, and
+cpp-httplib (Catch2 is only needed for the unit tests).
+
+Install the dependencies first:
+
+- **Linux (Debian/Ubuntu)** — either the full Boost package or the individual
+  libraries:
+
+  ```bash
+  sudo apt-get install -y libcurl4-openssl-dev libspdlog-dev libcpp-httplib-dev \
+      libboost-system-dev libboost-program-options-dev libboost-json-dev catch2
+  # or: sudo apt-get install -y libboost-all-dev
+  ```
+
+- **macOS**:
+
+  ```bash
+  brew install curl catch2 spdlog cpp-httplib boost
+  ```
+
+- **Windows (vcpkg)**:
+
+  ```bash
+  vcpkg install curl catch2 spdlog cpp-httplib boost-system boost-program-options boost-json
+  ```
+
 ### Build
+
+A C++23 compiler and CMake >= 3.16 are required. Point CMake at your vcpkg
+toolchain on Windows (`-DCMAKE_TOOLCHAIN_FILE=...`).
 
 ```bash
 cmake -B build -DBUILD_TESTS=ON

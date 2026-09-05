@@ -13,6 +13,34 @@
 - No decorative comments (`// ====`).
 - Comments explain **why**, not **what**.
 - Use `clang-format` for formatting.
+- JSON code uses Boost.JSON (`boost::json::value`) through the
+  `include/pu/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
+  `pu::json::ValueOrDefault`, `pu::json::HasKey`, `pu::json::Merge`,
+  `pu::json::PrettyPrint`) instead of raw hand-rolled parsing.
+
+## Build Dependencies
+
+Build/test requirements match `README.md`; the key C++ dependencies are
+Boost (>= 1.75) with the `system`, `program_options`, and `json` components.
+
+- **Linux (Debian/Ubuntu)**
+
+  ```bash
+  sudo apt-get install -y libcurl4-openssl-dev libspdlog-dev libcpp-httplib-dev \
+      libboost-system-dev libboost-program-options-dev libboost-json-dev catch2
+  ```
+
+- **macOS**
+
+  ```bash
+  brew install curl catch2 spdlog cpp-httplib boost
+  ```
+
+- **Windows (vcpkg)**
+
+  ```bash
+  vcpkg install curl catch2 spdlog cpp-httplib boost-system boost-program-options boost-json
+  ```
 
 ## Testing
 Run before submitting:
@@ -47,7 +75,7 @@ src/
   runtime/       Runtime, CommandRouter
   session/       Session, Workspace, Transcript, Memory
   tools/         Toolbox, tools (including McpTool adapter)
-include/pu/      Public headers
+include/pu/      Public headers (incl. `pu/json.hpp` Boost.JSON helpers)
 tests/unit/      Unit tests
 ```
 
