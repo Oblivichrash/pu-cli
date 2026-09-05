@@ -108,7 +108,6 @@ HistoryCompactionConfig ParseCompactionConfig(const json::value& j) {
     cfg.enabled = json::ValueOrDefault<bool>(c, "enabled", true);
     cfg.keep_head = json::ValueOrDefault<std::size_t>(c, "keep_head", 10);
     cfg.keep_tail = json::ValueOrDefault<std::size_t>(c, "keep_tail", 50);
-    cfg.strategy = json::ValueOrDefault<std::string>(c, "strategy", "truncate");
   }
   return cfg;
 }
@@ -181,72 +180,6 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   if (result.default_agent.empty() && !result.agents.empty())
     result.default_agent = result.agents[0].name;
   return result;
-}
-
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& cfg) {
-  json::value j = {{"default_agent", cfg.default_agent}};
-
-  json::array agents_array;
-  for (const auto& entry : cfg.agents) {
-    json::value item = {
-      {"name", entry.name},
-      {"description", entry.description},
-    };
-    item.as_object()["tools"] = boost::json::value_from(entry.tools);
-
-    json::value security = {
-      {"sandbox_root", entry.security.sandbox_root},
-      {"max_command_length", entry.security.max_command_length},
-    };
-    security.as_object()["allowed_paths"] = boost::json::value_from(entry.security.allowed_paths);
-    security.as_object()["forbidden_patterns"] = boost::json::value_from(entry.security.forbidden_patterns);
-    item.as_object()["security"] = security;
-
-    json::value backend = {
-      {"type", (entry.backend.type == BackendType::kOpenAI) ? "openai" : "ollama"},
-      {"host", entry.backend.host},
-      {"model", entry.backend.model},
-      {"temperature", entry.backend.temperature},
-      {"enable_thinking", entry.backend.enable_thinking},
-    };
-    if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
-    if (entry.backend.system_prompt) backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
-    item.as_object()["backend"] = backend;
-
-    if (!entry.mcp_servers.empty()) {
-      json::array mcp_array;
-      for (const auto& srv : entry.mcp_servers) {
-        json::value srv_json = {
-          {"name", srv.name},
-          {"command", srv.command},
-        };
-        srv_json.as_object()["args"] = boost::json::value_from(srv.args);
-        if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
-        if (!srv.headers.empty()) {
-          json::value headers = json::object{};
-          for (const auto& [k, v] : srv.headers) headers.as_object()[k] = v;
-          srv_json.as_object()["headers"] = headers;
-        }
-        mcp_array.push_back(srv_json);
-      }
-      item.as_object()["mcp_servers"] = mcp_array;
-    }
-
-    json::value compaction = {
-      {"enabled", entry.compaction.enabled},
-      {"keep_head", entry.compaction.keep_head},
-      {"keep_tail", entry.compaction.keep_tail},
-      {"strategy", entry.compaction.strategy},
-    };
-    item.as_object()["history_compaction"] = compaction;
-
-    agents_array.push_back(item);
-  }
-  j.as_object()["agents"] = agents_array;
-
-  std::ofstream file(config_path);
-  if (!file.is_open()) throw pu::Error("Failed to open config file for writing: " + config_path);
-  file << json::PrettyPrint(j);
 }
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(

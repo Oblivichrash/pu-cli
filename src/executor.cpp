@@ -320,10 +320,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
-    if (!tool_ctx.request_confirmation) {
-      tool_ctx.request_confirmation = [](const std::string&) { return true; };
-    }
-
     for (const auto& call : collected_calls) {
       if (call.name.empty()) {
         spdlog::warn("Skipping tool call with empty name");

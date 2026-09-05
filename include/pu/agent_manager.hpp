@@ -3,7 +3,6 @@
 
 #include "pu/llm/llm_provider.hpp"
 
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,20 +23,6 @@ enum class RiskLevel { kSafe, kNeutral, kDangerous };
 
 namespace pu {
 
-enum class ConfirmationChoice {
-  kDeny,
-  kApproveOnce,
-  kApproveAllSafe,
-  kDenyAll
-};
-
-struct ConfirmationRequest {
-  std::string description;
-  executor::RiskLevel highest_risk;
-};
-
-using ConfirmationCallback = std::function<ConfirmationChoice(const ConfirmationRequest&)>;
-
 class AgentManager {
  public:
   AgentManager();
@@ -51,12 +36,8 @@ class AgentManager {
   void SetActiveAgent(const std::string& name);
   std::string GetActiveAgent() const;
 
-  ConfirmationCallback GetConfirmationCallback() const { return confirmation_callback_; }
-  void SetConfirmationCallback(ConfirmationCallback cb) { confirmation_callback_ = std::move(cb); }
-
  private:
   std::string active_agent_;
-  ConfirmationCallback confirmation_callback_;
 
   std::vector<config::AgentEntry> agent_configs_;
 };

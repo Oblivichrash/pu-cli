@@ -75,7 +75,6 @@ struct HistoryCompactionConfig {
   bool enabled = true;
   size_t keep_head = 10;
   size_t keep_tail = 50;
-  std::string strategy = "truncate";  // reserved for future
 };
 
 struct AgentEntry {
@@ -95,7 +94,6 @@ struct AgentsConfig {
 
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
-void SaveAgentsConfig(const std::string& config_path, const AgentsConfig& config);
 std::unique_ptr<pu::LLMProvider> CreateBackend(
     const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -16,7 +15,6 @@ namespace pu {
 
 struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
-  std::function<bool(const std::string& message)> request_confirmation;
 };
 
 class Tool {
