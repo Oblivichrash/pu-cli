@@ -4,9 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <thread>
 
-#include <boost/asio.hpp>
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 #include "pu/json.hpp"
@@ -39,57 +37,6 @@ void SaveCurrentSession(const std::shared_ptr<Session>& session) {
     spdlog::warn("Failed to write session file: {}", path.string());
   }
 }
-
-class AsioTimer {
-public:
-  static AsioTimer& Instance() {
-    static AsioTimer instance;
-    return instance;
-  }
-
-  void Start() {
-    if (started_) return;
-    const char* env = std::getenv("PU_ASIO_TIMER_ENABLED");
-    if (!env) return;
-    std::string val = env;
-    if (val != "1" && val != "true") return;
-
-    io_context_ = std::make_unique<boost::asio::io_context>();
-    timer_ = std::make_unique<boost::asio::steady_timer>(*io_context_, std::chrono::seconds(10));
-    started_ = true;
-
-    timer_->async_wait([this](const boost::system::error_code& ec) {
-      if (!ec) {
-        spdlog::info("Boost.Asio timer fired (PU_ASIO_TIMER_ENABLED demo)");
-      }
-    });
-
-    thread_ = std::make_unique<std::thread>([this]() {
-      io_context_->run();
-    });
-
-    spdlog::debug("Boost.Asio timer thread started");
-  }
-
-  void Stop() {
-    if (!started_) return;
-    if (io_context_) io_context_->stop();
-    if (thread_ && thread_->joinable()) thread_->join();
-    timer_.reset();
-    io_context_.reset();
-    started_ = false;
-    spdlog::debug("Boost.Asio timer thread stopped");
-  }
-
-  ~AsioTimer() { Stop(); }
-
-private:
-  AsioTimer() = default;
-  std::unique_ptr<boost::asio::io_context> io_context_;
-  std::unique_ptr<boost::asio::steady_timer> timer_;
-  std::unique_ptr<std::thread> thread_;
-  bool started_ = false;
-};
 
 }  // namespace
 
@@ -155,8 +102,6 @@ void Runtime::Initialize(const std::string& config_path) {
     }
   }
 
-  AsioTimer::Instance().Start();
-
   is_initialized_ = true;
   is_running_ = true;
 }
@@ -164,7 +109,6 @@ void Runtime::Initialize(const std::string& config_path) {
 void Runtime::Shutdown() {
   if (!is_initialized_) return;
   SaveCurrentSession(current_session_);
-  AsioTimer::Instance().Stop();
   is_running_ = false;
 }
 

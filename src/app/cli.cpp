@@ -64,20 +64,6 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   return ctx;
 }
 
-void PrintAgents(const config::AgentsConfig& cfg, const std::string& current) {
-  std::cout << "Available agents:\n";
-  for (const auto& entry : cfg.agents) {
-    std::cout << "  " << entry.name;
-    if (!entry.description.empty()) {
-      std::cout << " - " << entry.description;
-    }
-    if (entry.name == current) {
-      std::cout << " [current]";
-    }
-    std::cout << '\n';
-  }
-}
-
 void PrintChatHelp() {
   std::cout << CommandRouter::GetHelpText() << "\n";
 }

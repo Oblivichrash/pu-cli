@@ -2,6 +2,7 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(pu_tests
     unit/test_ollama_backend.cpp
+    ../src/app/serve.cpp
     unit/test_openai_backend.cpp
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
@@ -12,6 +13,8 @@ add_executable(pu_tests
     unit/test_command_router.cpp
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
+    unit/test_serve_api.cpp
+    unit/test_boost_integration.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -19,6 +22,8 @@ target_include_directories(pu_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/tests
+    ${HTTPLIB_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/app
 )
 
 target_link_libraries(pu_tests PRIVATE
