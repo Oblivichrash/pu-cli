@@ -196,23 +196,19 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
     }
     ActiveRequestGuard cleanup(cancel_mutex, active_requests, request_id);
 
-    ExecutionResult result;
     bool is_command = false;
-    try {
+    ExecutionResult result;
+    {
       std::lock_guard<std::mutex> lock(io_mutex);
-      bool ok = runtime.ProcessInput(message, result, is_command, token);
-      resp.as_object()["success"] = ok && !result.has_error;
-      resp.as_object()["content"] = result.content;
-      resp.as_object()["error"] = result.has_error ? result.error_message : "";
-      resp.as_object()["is_command"] = is_command;
-      resp.as_object()["tool_call_count"] = result.tool_call_count;
-      if (!ok && result.error_message.empty())
-        resp.as_object()["error"] = "Processing failed";
-    } catch (const std::exception& e) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = e.what();
+      result = runtime.ProcessInput(message, is_command, token);
     }
+    resp.as_object()["success"] = !result.has_error;
+    resp.as_object()["content"] = result.content;
+    resp.as_object()["error"] = result.has_error ? result.error_message : "";
+    resp.as_object()["is_command"] = is_command;
+    resp.as_object()["tool_call_count"] = result.tool_call_count;
+    if (result.has_error && result.error_message.empty())
+      resp.as_object()["error"] = "Processing failed";
     SendJson(res, 200, resp);
   });
 
@@ -265,24 +261,19 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
     auto sse = std::make_shared<SseStream>();
 
     std::thread worker([&, sse, token, request_id, message]() {
-      ExecutionResult result;
       bool is_command = false;
-      bool ok = false;
       bool streamed = false;
-      try {
+      ExecutionResult result;
+      {
         std::lock_guard<std::mutex> lock(io_mutex);
-        ok = runtime.ProcessInput(
-            message, result, is_command, token,
+        result = runtime.ProcessInput(
+            message, is_command, token,
             [&](const std::string& chunk) {
               if (chunk.empty()) return;
               streamed = true;
               boost::json::value ev = {{"token", chunk}};
               PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
             });
-      } catch (const std::exception& e) {
-        result.has_error = true;
-        result.error_message = e.what();
-        ok = false;
       }
 
       {
@@ -290,12 +281,10 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
         active_requests.erase(request_id);
       }
 
-      if (!ok || result.has_error) {
+      if (result.has_error) {
         boost::json::value ev = {
           {"error",
-           result.has_error && !result.error_message.empty()
-               ? result.error_message
-               : "Processing failed"}};
+           result.error_message.empty() ? "Processing failed" : result.error_message}};
         PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
       } else if (!streamed && !result.content.empty()) {
         boost::json::value ev = {{"token", result.content}};

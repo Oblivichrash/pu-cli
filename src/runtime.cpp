@@ -131,46 +131,52 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   return current_session_;
 }
 
-bool Runtime::ProcessInput(const std::string& input,
-                           ExecutionResult& result,
-                           bool& is_command,
-                           CancelToken cancel_token,
-                           std::function<void(const std::string&)> content_callback) {
-  BeginRequest();
+ExecutionResult Runtime::ProcessInput(const std::string& input,
+                                      bool& is_command,
+                                      CancelToken cancel_token,
+                                      std::function<void(const std::string&)> content_callback) {
+  ExecutionResult result;
+  try {
+    BeginRequest();
 
-  if (!is_running_) {
-    result.has_error = true;
-    result.error_message = "Runtime is not running.";
-    return false;
-  }
+    if (!is_running_) {
+      result.has_error = true;
+      result.error_message = "Runtime is not running.";
+      return result;
+    }
 
-  auto session = GetOrCreateDefaultSession();
-  if (!session) {
-    result.has_error = true;
-    result.error_message = "Session not found.";
-    return false;
-  }
+    auto session = GetOrCreateDefaultSession();
+    if (!session) {
+      result.has_error = true;
+      result.error_message = "Session not found.";
+      return result;
+    }
 
-  if (!input.empty() && input[0] == '/') {
-    is_command = true;
-    std::string output;
-    bool ok = command_router_->Route(input, *session, output);
-    result.content = output;
-    result.was_streamed = false;
-    result.has_error = !ok;
-    if (!ok) result.error_message = output;
+    if (!input.empty() && input[0] == '/') {
+      is_command = true;
+      std::string output;
+      bool ok = command_router_->Route(input, *session, output);
+      result.content = output;
+      result.was_streamed = false;
+      result.has_error = !ok;
+      if (!ok) result.error_message = output;
+      SaveCurrentSession(session);
+      return result;
+    }
+
+    is_command = false;
+
+    auto provider = session->CreateProvider();
+    auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
+                                          cancel_token, content_callback);
+    result = std::move(exec_result);
     SaveCurrentSession(session);
-    return ok;
+    return result;
+  } catch (const std::exception& e) {
+    result.has_error = true;
+    result.error_message = e.what();
+    return result;
   }
-
-  is_command = false;
-
-  auto provider = session->CreateProvider();
-  auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
-                                        cancel_token, content_callback);
-  result = std::move(exec_result);
-  SaveCurrentSession(session);
-  return true;
 }
 
 void Runtime::SetDefaultAgent(const std::string& agent_name) {

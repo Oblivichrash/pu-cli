@@ -77,18 +77,15 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     if (!agent.empty()) runtime.SetDefaultAgent(agent);
     runtime.Initialize();
 
-    ExecutionResult result;
     bool is_command = false;
-    if (runtime.ProcessInput(prompt, result, is_command)) {
-      if (result.has_error) {
-        spdlog::error("{}", result.error_message);
-      } else if (!result.content.empty()) {
-        std::cout << result.content << "\n";
-      } else if (!is_command) {
-        std::cout << "\n";
-      }
-    } else {
-      spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
+    ExecutionResult result = runtime.ProcessInput(prompt, is_command);
+    if (result.has_error) {
+      spdlog::error("{}",
+                    result.error_message.empty() ? "Request failed" : result.error_message);
+    } else if (!result.content.empty()) {
+      std::cout << result.content << "\n";
+    } else if (!is_command) {
+      std::cout << "\n";
     }
 
     runtime.Shutdown();
@@ -127,25 +124,24 @@ int RunChat(const std::string& agent, Runtime& runtime) {
     if (input == "/exit" || input == "/quit") break;
 
     try {
-      ExecutionResult result;
       bool is_command = false;
-      if (runtime.ProcessInput(input, result, is_command)) {
-        if (result.has_error) {
-          spdlog::error("{}", result.error_message);
-        } else if (!result.was_streamed) {
-          if (!result.content.empty()) {
-            std::cout << result.content << "\n";
-          } else if (!is_command) {
-            std::cout << "\n";
-          }
+      ExecutionResult result = runtime.ProcessInput(input, is_command);
+      if (result.has_error) {
+        if (is_command && result.error_message.empty()) {
+          std::cout << "Unknown command. ";
+          PrintChatHelp();
         } else {
-          if (!is_command) std::cout << "\n";
+          spdlog::error("{}",
+                        result.error_message.empty() ? "Processing failed" : result.error_message);
         }
-      } else if (is_command && result.error_message.empty()) {
-        std::cout << "Unknown command. ";
-        PrintChatHelp();
+      } else if (!result.was_streamed) {
+        if (!result.content.empty()) {
+          std::cout << result.content << "\n";
+        } else if (!is_command) {
+          std::cout << "\n";
+        }
       } else {
-        spdlog::error("{}", result.error_message.empty() ? "Processing failed" : result.error_message);
+        if (!is_command) std::cout << "\n";
       }
     } catch (const std::exception& e) {
       spdlog::error("{}", e.what());
