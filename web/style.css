@@ -9,9 +9,7 @@
   --user: #2b4a8f;
   --assistant: #22262f;
   --error: #e5534b;
-  --ok: #3fb68b;
 }
-
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -21,7 +19,6 @@ body {
   display: flex;
   flex-direction: column;
 }
-
 header {
   display: flex;
   align-items: center;
@@ -41,15 +38,6 @@ header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   font-size: 13px;
   max-width: 240px;
 }
-#session-status {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-dim);
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  padding: 4px 10px;
-  border-radius: 999px;
-}
 header button {
   background: var(--panel-2);
   color: var(--text);
@@ -60,7 +48,6 @@ header button {
   cursor: pointer;
 }
 header button:hover { border-color: var(--accent); }
-
 #messages {
   flex: 1;
   overflow-y: auto;
@@ -70,7 +57,6 @@ header button:hover { border-color: var(--accent); }
   gap: 14px;
   scroll-behavior: smooth;
 }
-
 .msg {
   max-width: 78%;
   padding: 10px 14px;
@@ -85,16 +71,6 @@ header button:hover { border-color: var(--accent); }
 .msg.error { align-self: flex-start; background: rgba(229,83,75,0.12); border: 1px solid var(--error); color: #ffb3ad; }
 .msg.system { align-self: center; background: transparent; color: var(--text-dim); font-size: 12px; border: none; padding: 2px 8px; }
 .msg .role { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
-
-.thinking {
-  color: var(--text-dim);
-  font-style: italic;
-  font-size: 13px;
-  border-left: 3px solid var(--accent);
-  padding-left: 10px;
-  margin: 6px 0;
-}
-
 #composer {
   display: flex;
   gap: 10px;
@@ -113,6 +89,7 @@ header button:hover { border-color: var(--accent); }
   font-size: 14px;
   font-family: inherit;
   outline: none;
+  field-sizing: content;
   min-height: 44px;
   max-height: 160px;
 }
@@ -128,81 +105,3 @@ header button:hover { border-color: var(--accent); }
   font-weight: 600;
 }
 #send:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.typing::after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 14px;
-  background: var(--text-dim);
-  margin-left: 2px;
-  vertical-align: -2px;
-  animation: blink 1s steps(2) infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-
-/* Collapsible tool call details */
-.toggle-details {
-  display: inline-block;
-  margin-top: 8px;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: var(--text-dim);
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  user-select: none;
-}
-.toggle-details:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-.details {
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.details[hidden] {
-  display: none;
-}
-.tool-call-detail {
-  border-left: 2px solid var(--accent);
-  padding-left: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.tool-call-detail .tool-name {
-  font-weight: bold;
-  color: var(--text);
-}
-.tool-call-detail pre {
-  margin: 4px 0;
-  padding: 6px 10px;
-  background: var(--bg);
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.tool-result {
-  color: var(--text-dim);
-  font-size: 13px;
-}
-.tool-result pre {
-  margin: 4px 0 0 0;
-  padding: 6px 10px;
-  background: var(--bg);
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}

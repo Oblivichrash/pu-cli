@@ -1,30 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <libgen.h>
-#include <unistd.h>
-#endif
+#include <boost/asio.hpp>
+#include <boost/beast.hpp>
+#include <boost/beast/websocket.hpp>
+#include <boost/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <cstdlib>
-#include <deque>
-#include <functional>
-#include <iostream>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
-
-#include <httplib.h>
-#include <boost/json.hpp>
-#include <spdlog/spdlog.h>
 
 #include "pu/agent_config.hpp"
 #include "pu/infra/platform.hpp"
@@ -33,95 +24,257 @@
 #include "pu/session/session.hpp"
 
 namespace pu::cli {
-
 namespace {
 
-std::string GetExecutableDir() {
-#ifdef _WIN32
-  char buf[MAX_PATH];
-  const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-  if (n == 0 || n >= MAX_PATH) return ".";
-  const std::string path(buf, n);
-  const std::string::size_type pos = path.find_last_of("\\/");
-  return pos == std::string::npos ? "." : path.substr(0, pos);
-#else
-  char buf[4096];
-  const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-  if (n < 0) return ".";
-  buf[n] = '\0';
-  const std::string dir = dirname(buf);
-  return dir.empty() ? "." : dir;
-#endif
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace websocket = beast::websocket;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
+
+void SendJson(http::response<http::string_body>& res, unsigned status,
+              const boost::json::value& jv) {
+  res.result(status);
+  res.set(http::field::content_type, "application/json");
+  res.body() = boost::json::serialize(jv);
+  res.prepare_payload();
 }
 
-std::vector<std::string> GetWebDirCandidates() {
-  std::vector<std::string> dirs;
-  if (const char* env = std::getenv("PU_WEB_DIR"); env && *env != '\0') {
-    dirs.emplace_back(env);
+std::string GetWebDir() {
+  static std::string dir;
+  static std::once_flag flag;
+  std::call_once(flag, []() {
+    const char* env = std::getenv("PU_WEB_DIR");
+    if (env && *env) {
+      dir = env;
+      return;
+    }
+    std::vector<std::string> candidates = {
+      "./web",
+      "../share/pu/web",
+      "/usr/share/pu/web",
+      "/usr/local/share/pu/web",
+    };
+    for (const auto& d : candidates) {
+      if (std::filesystem::exists(d) && std::filesystem::is_directory(d)) {
+        dir = d;
+        return;
+      }
+    }
+    dir = "./web";
+  });
+  return dir;
+}
+
+void ServeFile(const std::string& target, http::response<http::string_body>& res) {
+  std::string base = GetWebDir();
+  std::string path = base + target;
+  if (target == "/")
+    path = base + "/index.html";
+
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    res.result(http::status::not_found);
+    res.prepare_payload();
+    return;
   }
-  const std::string exe_dir = GetExecutableDir();
-  dirs.push_back(exe_dir + "/../share/pu/web");
-  dirs.push_back(exe_dir + "/../web");
-  dirs.push_back("./web");
-  dirs.push_back("/usr/share/pu/web");
-  dirs.push_back("/usr/local/share/pu/web");
-  return dirs;
+  std::string content((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+  res.result(http::status::ok);
+  res.body() = std::move(content);
+  if (path.ends_with(".html"))
+    res.set(http::field::content_type, "text/html");
+  else if (path.ends_with(".css"))
+    res.set(http::field::content_type, "text/css");
+  else if (path.ends_with(".js"))
+    res.set(http::field::content_type, "application/javascript");
+  else
+    res.set(http::field::content_type, "application/octet-stream");
+  res.prepare_payload();
 }
 
-boost::json::value SessionInfoJson(const std::shared_ptr<Session>& session) {
-  boost::json::value j = boost::json::object{};
-  if (!session) return j;
-  const auto& spec = session->GetRuntimeSpec();
-  j.as_object()["agent_name"] = spec.agent_name;
-  j.as_object()["backend_type"] =
-      spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
-  j.as_object()["backend_model"] = spec.backend.model;
-  j.as_object()["backend_host"] = spec.backend.host;
-  return j;
+void HandleApiSession(Runtime& runtime, std::mutex& io_mutex,
+                      http::request<http::string_body>&&,
+                      http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto session = runtime.GetDefaultSession();
+    jv.as_object()["ok"] = session != nullptr;
+    if (session) {
+      const auto& spec = session->GetRuntimeSpec();
+      jv.as_object()["agent_name"] = spec.agent_name;
+      jv.as_object()["backend_type"] =
+          spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
+      jv.as_object()["backend_model"] = spec.backend.model;
+      jv.as_object()["backend_host"] = spec.backend.host;
+    } else {
+      jv.as_object()["error"] = "No active session";
+    }
+  } catch (const std::exception& e) {
+    jv.as_object()["ok"] = false;
+    jv.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, jv);
 }
 
-void SendJson(httplib::Response& res, int status, const boost::json::value& j) {
-  res.status = status;
-  res.set_header("Content-Type", "application/json");
-  res.body = boost::json::serialize(j);
+void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
+                      http::request<http::string_body>&&,
+                      http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::array{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto session = runtime.GetDefaultSession();
+    if (session) {
+      auto history = session->GetWorkspace().GetHistory();
+      for (const auto& msg : history) {
+        boost::json::value item = {
+          {"id", msg.id},
+          {"role", msg.role},
+          {"content", msg.content},
+          {"timestamp", msg.timestamp},
+        };
+        if (!msg.tool_calls_json.empty())
+          item.as_object()["tool_calls_json"] = msg.tool_calls_json;
+        if (!msg.tool_call_id.empty())
+          item.as_object()["tool_call_id"] = msg.tool_call_id;
+        if (!msg.tool_name.empty())
+          item.as_object()["tool_name"] = msg.tool_name;
+        if (!msg.reasoning_content.empty())
+          item.as_object()["reasoning_content"] = msg.reasoning_content;
+        jv.as_array().push_back(item);
+      }
+    }
+  } catch (...) {}
+  SendJson(res, 200, jv);
 }
 
-struct SseStream {
-  std::mutex mutex;
-  std::condition_variable cv;
-  std::deque<std::string> events;
-  bool finished = false;
+void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex,
+                     http::request<http::string_body>&&,
+                     http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  boost::json::array agents;
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto& mgr = runtime.GetAgentManager();
+    auto names = mgr.GetAgentNames();
+    for (const auto& name : names) {
+      auto* cfg = mgr.GetAgentConfig(name);
+      boost::json::value item = {
+        {"name", name},
+        {"description", cfg ? cfg->description : ""},
+      };
+      agents.push_back(item);
+    }
+  } catch (...) {}
+  jv.as_object()["agents"] = agents;
+  SendJson(res, 200, jv);
+}
+
+void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
+                          http::request<http::string_body>&& req,
+                          http::response<http::string_body>& res) {
+  boost::json::value body;
+  try {
+    body = boost::json::parse(req.body());
+  } catch (...) {
+    boost::json::value err = {{"success", false}, {"error", "Invalid JSON"}};
+    SendJson(res, 400, err);
+    return;
+  }
+  if (!json::HasKey(body, "agent_name") || !body.at("agent_name").is_string()) {
+    boost::json::value err = {{"success", false}, {"error", "Missing or invalid 'agent_name'"}};
+    SendJson(res, 400, err);
+    return;
+  }
+  std::string agent_name = boost::json::value_to<std::string>(body.at("agent_name"));
+  boost::json::value resp = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto& mgr = runtime.GetAgentManager();
+    auto* cfg = mgr.GetAgentConfig(agent_name);
+    if (!cfg) {
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Agent not found: " + agent_name;
+      SendJson(res, 404, resp);
+      return;
+    }
+    runtime.SwitchAgent(*cfg);
+    resp.as_object()["success"] = true;
+    resp.as_object()["agent"] = agent_name;
+  } catch (const std::exception& e) {
+    resp.as_object()["success"] = false;
+    resp.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, resp);
+}
+
+void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
+                    http::request<http::string_body>&&,
+                    http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto session = runtime.GetDefaultSession();
+    if (session) {
+      session->GetWorkspace().ClearHistory();
+      session->GetWorkspace().ClearArtifacts();
+      jv.as_object()["success"] = true;
+    } else {
+      jv.as_object()["success"] = false;
+      jv.as_object()["error"] = "No active session";
+    }
+  } catch (const std::exception& e) {
+    jv.as_object()["success"] = false;
+    jv.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, jv);
+}
+
+struct ActiveWebSocket {
+  std::unique_ptr<websocket::stream<tcp::socket>> ws;
+  std::thread worker_thread;
+  CancelToken cancel_token;
+  std::atomic<bool> running{false};
+  std::mutex mtx;
 };
 
-void PushSseEvent(const std::shared_ptr<SseStream>& sse, std::string event) {
-  {
-    std::lock_guard<std::mutex> lock(sse->mutex);
-    sse->events.push_back(std::move(event));
+void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
+                         http::request<http::string_body>&& req,
+                         http::response<http::string_body>& res) {
+  auto target = req.target();
+
+  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js") {
+    ServeFile(target, res);
+    return;
   }
-  sse->cv.notify_one();
+
+  if (target == "/api/session" && req.method() == http::verb::get) {
+    HandleApiSession(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/history" && req.method() == http::verb::get) {
+    HandleApiHistory(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/agents" && req.method() == http::verb::get) {
+    HandleApiAgents(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/agent/switch" && req.method() == http::verb::post) {
+    HandleApiAgentSwitch(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/clear" && req.method() == http::verb::post) {
+    HandleApiClear(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+
+  res.result(http::status::not_found);
+  res.prepare_payload();
 }
 
-class ActiveRequestGuard {
- public:
-  ActiveRequestGuard(std::mutex& mutex,
-                     std::unordered_map<std::string, CancelToken>& requests,
-                     std::string request_id)
-      : mutex_(&mutex), requests_(&requests), request_id_(std::move(request_id)) {}
-  ~ActiveRequestGuard() {
-    if (!mutex_ || !requests_ || request_id_.empty()) return;
-    std::lock_guard<std::mutex> lock(*mutex_);
-    requests_->erase(request_id_);
-  }
-  ActiveRequestGuard(const ActiveRequestGuard&) = delete;
-  ActiveRequestGuard& operator=(const ActiveRequestGuard&) = delete;
-
- private:
-  std::mutex* mutex_;
-  std::unordered_map<std::string, CancelToken>* requests_;
-  std::string request_id_;
-};
-
-}  // namespace
+} // namespace
 
 int RunServe(const std::string& host, int port, Runtime& runtime) {
   try {
@@ -131,406 +284,182 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
     return 1;
   }
 
+  spdlog::info("pu serve listening on http://{}:{}", host, port);
+  spdlog::info("WebSocket endpoint: ws://{}:{}/ws", host, port);
+
+  net::io_context ioc;
+  tcp::acceptor acceptor(ioc, tcp::endpoint(net::ip::make_address(host), port));
+
   std::mutex io_mutex;
-  std::mutex cancel_mutex;
-  std::unordered_map<std::string, CancelToken> active_requests;
-  httplib::Server svr;
+  auto active_ws = std::make_shared<ActiveWebSocket>();
+  active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
 
-  bool mounted = false;
-  for (const auto& dir : GetWebDirCandidates()) {
-    if (svr.set_mount_point("/", dir.c_str())) {
-      spdlog::info("Web UI mounted at {}", dir);
-      mounted = true;
-      break;
-    }
-  }
-  if (!mounted) {
-    spdlog::warn("No web directory found; serving API only");
-  }
-
-  svr.Post("/api/chat", [&](const httplib::Request& req, httplib::Response& res) {
-    boost::json::value resp = boost::json::object{};
-    boost::json::value body;
-    try {
-      body = boost::json::parse(req.body);
-    } catch (const std::exception&) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "Invalid JSON body";
-      SendJson(res, 400, resp);
-      return;
-    }
-    if (!json::HasKey(body, "message") || !body.at("message").is_string()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "Missing or invalid 'message' field";
-      SendJson(res, 400, resp);
-      return;
-    }
-    const std::string message =
-        boost::json::value_to<std::string>(body.at("message"));
-    if (message.empty()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "'message' must not be empty";
-      SendJson(res, 400, resp);
+  // Asynchronous accept loop
+  std::function<void(beast::error_code, tcp::socket)> do_accept =
+      [&](beast::error_code ec, tcp::socket socket) {
+    if (ec) {
+      if (ec != net::error::operation_aborted)
+        spdlog::warn("Accept error: {}", ec.message());
       return;
     }
 
-    std::string request_id;
-    if (json::HasKey(body, "request_id") && body.at("request_id").is_string() &&
-        !boost::json::value_to<std::string>(body.at("request_id")).empty()) {
-      request_id = boost::json::value_to<std::string>(body.at("request_id"));
-    } else {
-      static std::atomic<uint64_t> s_request_seq{0};
-      request_id =
-          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
-          "-" + std::to_string(s_request_seq.fetch_add(1));
-    }
-    resp.as_object()["request_id"] = request_id;
-
-    auto token = std::make_shared<std::atomic<bool>>(false);
-    {
-      std::lock_guard<std::mutex> lock(cancel_mutex);
-      active_requests[request_id] = token;
-    }
-    ActiveRequestGuard cleanup(cancel_mutex, active_requests, request_id);
-
-    bool is_command = false;
-    ExecutionResult result;
-    {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      result = runtime.ProcessInput(message, is_command, token);
-    }
-    resp.as_object()["success"] = !result.has_error;
-    resp.as_object()["content"] = result.content;
-    resp.as_object()["error"] = result.has_error ? result.error_message : "";
-    resp.as_object()["is_command"] = is_command;
-    resp.as_object()["tool_call_count"] = result.tool_call_count;
-    if (result.has_error && result.error_message.empty())
-      resp.as_object()["error"] = "Processing failed";
-    SendJson(res, 200, resp);
-  });
-
-  svr.Post("/api/chat/stream", [&](const httplib::Request& req,
-                                   httplib::Response& res) {
-    boost::json::value resp = boost::json::object{};
-    boost::json::value body;
-    try {
-      body = boost::json::parse(req.body);
-    } catch (const std::exception&) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "Invalid JSON body";
-      SendJson(res, 400, resp);
-      return;
-    }
-    if (!json::HasKey(body, "message") || !body.at("message").is_string()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "Missing or invalid 'message' field";
-      SendJson(res, 400, resp);
-      return;
-    }
-    const std::string message =
-        boost::json::value_to<std::string>(body.at("message"));
-    if (message.empty()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["content"] = "";
-      resp.as_object()["error"] = "'message' must not be empty";
-      SendJson(res, 400, resp);
-      return;
-    }
-
-    std::string request_id;
-    if (json::HasKey(body, "request_id") && body.at("request_id").is_string() &&
-        !boost::json::value_to<std::string>(body.at("request_id")).empty()) {
-      request_id = boost::json::value_to<std::string>(body.at("request_id"));
-    } else {
-      static std::atomic<uint64_t> s_request_seq{0};
-      request_id =
-          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
-          "-" + std::to_string(s_request_seq.fetch_add(1));
-    }
-    auto token = std::make_shared<std::atomic<bool>>(false);
-    {
-      std::lock_guard<std::mutex> lock(cancel_mutex);
-      active_requests[request_id] = token;
-    }
-
-    auto sse = std::make_shared<SseStream>();
-
-    std::thread worker([&, sse, token, request_id, message]() {
-      bool is_command = false;
-      bool streamed = false;
-      ExecutionResult result;
-      {
-        std::lock_guard<std::mutex> lock(io_mutex);
-        result = runtime.ProcessInput(
-            message, is_command, token,
-            [&](const std::string& chunk) {
-              if (chunk.empty()) return;
-              streamed = true;
-              boost::json::value ev = {{"token", chunk}};
-              PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
-            });
+    // Handle connection in a separate thread
+    std::thread([&, socket = std::move(socket)]() mutable {
+      beast::flat_buffer buffer;
+      http::request<http::string_body> req;
+      beast::error_code ec;
+      http::read(socket, buffer, req, ec);
+      if (ec) {
+        spdlog::warn("HTTP read error: {}", ec.message());
+        return;
       }
 
-      {
-        std::lock_guard<std::mutex> lock(cancel_mutex);
-        active_requests.erase(request_id);
-      }
+      if (websocket::is_upgrade(req)) {
+        if (active_ws->running) {
+          active_ws->cancel_token->store(true);
+          if (active_ws->worker_thread.joinable()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            active_ws->worker_thread.detach();
+          }
+          if (active_ws->ws && active_ws->ws->is_open()) {
+            beast::error_code close_ec;
+            active_ws->ws->close(websocket::close_code::normal, close_ec);
+          }
+          active_ws->running = false;
+        }
 
-      if (result.has_error) {
-        boost::json::value ev = {
-          {"error",
-           result.error_message.empty() ? "Processing failed" : result.error_message}};
-        PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
-      } else if (!streamed && !result.content.empty()) {
-        boost::json::value ev = {{"token", result.content}};
-        PushSseEvent(sse, "data: " + boost::json::serialize(ev) + "\n\n");
-      }
-      PushSseEvent(sse, "data: [DONE]\n\n");
-      {
-        std::lock_guard<std::mutex> lock(sse->mutex);
-        sse->finished = true;
-      }
-      sse->cv.notify_all();
-    });
-    worker.detach();
+        auto new_ws = std::make_unique<websocket::stream<tcp::socket>>(std::move(socket));
+        new_ws->accept(req, ec);
+        if (ec) {
+          spdlog::warn("WebSocket accept error: {}", ec.message());
+          return;
+        }
 
-    res.set_header("Cache-Control", "no-cache");
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [sse, token](size_t /*offset*/, httplib::DataSink& sink) -> bool {
-          std::string event;
-          {
-            std::unique_lock<std::mutex> lock(sse->mutex);
-            sse->cv.wait_for(lock, std::chrono::milliseconds(250), [&] {
-              return !sse->events.empty() || sse->finished || !sink.is_writable();
-            });
-            if (!sse->events.empty()) {
-              event = std::move(sse->events.front());
-              sse->events.pop_front();
-            } else if (sse->finished) {
-              sink.done();
-              return true;
-            } else if (!sink.is_writable()) {
-              token->store(true);
-              return false;
-            } else {
-              return true;
+        {
+          std::lock_guard<std::mutex> lock(active_ws->mtx);
+          active_ws->ws = std::move(new_ws);
+          active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
+          active_ws->running = true;
+        }
+
+        active_ws->worker_thread = std::thread([&runtime, &io_mutex, active_ws]() {
+          while (active_ws->running) {
+            beast::flat_buffer buffer;
+            std::string text;
+            beast::error_code ec;
+            active_ws->ws->read(buffer, ec);
+            if (ec) {
+              if (ec != websocket::error::closed)
+                spdlog::warn("WebSocket read error: {}", ec.message());
+              active_ws->cancel_token->store(true);
+              active_ws->running = false;
+              break;
+            }
+            text = beast::buffers_to_string(buffer.data());
+
+            boost::json::value jv;
+            try {
+              jv = boost::json::parse(text);
+            } catch (...) {
+              continue;
+            }
+            if (!jv.is_object())
+              continue;
+
+            std::string type = json::ValueOrDefault<std::string>(jv, "type", "");
+            if (type == "cancel") {
+              active_ws->cancel_token->store(true);
+              continue;
+            } else if (type == "run") {
+              active_ws->cancel_token->store(true);
+              active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
+              auto token = active_ws->cancel_token;
+
+              std::string payload_text = json::ValueOrDefault<std::string>(
+                  json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}),
+                  "text", "");
+              if (payload_text.empty())
+                continue;
+
+              std::thread worker([&runtime, &io_mutex, active_ws, token, payload_text]() {
+                bool is_command = false;
+                ExecutionResult result;
+                {
+                  std::lock_guard<std::mutex> lock(io_mutex);
+                  result = runtime.ProcessInput(
+                      payload_text, is_command, token,
+                      [&](const std::string& chunk) {
+                        if (chunk.empty())
+                          return;
+                        boost::json::value ev = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
+                        std::string msg = boost::json::serialize(ev);
+                        beast::error_code ec;
+                        std::lock_guard<std::mutex> ws_lock(active_ws->mtx);
+                        if (active_ws->ws && active_ws->ws->is_open())
+                          active_ws->ws->write(net::buffer(msg), ec);
+                      });
+                }
+
+                boost::json::value final;
+                if (result.has_error)
+                  final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};
+                else
+                  final = {{"type", "done"}};
+                std::string msg = boost::json::serialize(final);
+                beast::error_code ec;
+                std::lock_guard<std::mutex> ws_lock(active_ws->mtx);
+                if (active_ws->ws && active_ws->ws->is_open())
+                  active_ws->ws->write(net::buffer(msg), ec);
+              });
+              worker.detach();
             }
           }
-          if (!sink.write(event.data(), event.size())) {
-            token->store(true);
-            return false;
-          }
-          return true;
         });
-  });
+        active_ws->worker_thread.detach();
 
-  svr.Post("/api/chat/cancel", [&](const httplib::Request& req,
-                                   httplib::Response& res) {
-    boost::json::value resp = boost::json::object{};
-    boost::json::value body;
-    try {
-      body = boost::json::parse(req.body);
-    } catch (const std::exception&) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = "Invalid JSON body";
-      SendJson(res, 400, resp);
-      return;
-    }
-    if (!json::HasKey(body, "request_id") || !body.at("request_id").is_string() ||
-        boost::json::value_to<std::string>(body.at("request_id")).empty()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = "Missing or invalid 'request_id' field";
-      SendJson(res, 400, resp);
-      return;
-    }
-    const std::string request_id =
-        boost::json::value_to<std::string>(body.at("request_id"));
-    CancelToken token;
-    {
-      std::lock_guard<std::mutex> lock(cancel_mutex);
-      auto found = active_requests.find(request_id);
-      if (found == active_requests.end()) {
-        resp.as_object()["success"] = false;
-        resp.as_object()["error"] = "request not found";
-        SendJson(res, 404, resp);
-        return;
-      }
-      token = found->second;
-    }
-    if (token) {
-      token->store(true);
-      spdlog::info("Cancel requested for request '{}'", request_id);
-    }
-    resp.as_object()["success"] = true;
-    SendJson(res, 200, resp);
-  });
-
-  svr.Get("/api/session", [&](const httplib::Request&, httplib::Response& res) {
-    boost::json::value j = boost::json::object{};
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      auto session = runtime.GetDefaultSession();
-      j.as_object()["ok"] = session != nullptr;
-      if (session) {
-        json::Merge(j, SessionInfoJson(session));
       } else {
-        j.as_object()["error"] = "No active session";
+        http::response<http::string_body> res;
+        DispatchHttpRequest(runtime, io_mutex, std::move(req), res);
+        http::write(socket, res, ec);
+        if (ec)
+          spdlog::warn("HTTP write error: {}", ec.message());
       }
-    } catch (const std::exception& e) {
-      j.as_object()["ok"] = false;
-      j.as_object()["error"] = e.what();
-    }
-    SendJson(res, 200, j);
-  });
+    }).detach();
 
-  svr.Get("/api/history", [&](const httplib::Request&, httplib::Response& res) {
-    boost::json::value j = boost::json::array{};
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      auto session = runtime.GetDefaultSession();
-      if (session) {
-        auto history = session->GetWorkspace().GetHistory();
-        for (const auto& msg : history) {
-          boost::json::value item = {
-            {"id", msg.id},
-            {"role", msg.role},
-            {"content", msg.content},
-            {"timestamp", msg.timestamp},
-          };
-          if (!msg.tool_calls_json.empty()) {
-            item.as_object()["tool_calls_json"] = msg.tool_calls_json;
-          }
-          if (!msg.tool_call_id.empty()) {
-            item.as_object()["tool_call_id"] = msg.tool_call_id;
-          }
-          if (!msg.tool_name.empty()) {
-            item.as_object()["tool_name"] = msg.tool_name;
-          }
-          if (!msg.reasoning_content.empty()) {
-            item.as_object()["reasoning_content"] = msg.reasoning_content;
-          }
-          j.as_array().push_back(item);
-        }
-      }
-    } catch (const std::exception&) {
-    }
-    SendJson(res, 200, j);
-  });
+    // Accept next connection
+    acceptor.async_accept(ioc, do_accept);
+  };
 
-  svr.Get("/api/agents", [&](const httplib::Request&, httplib::Response& res) {
-    boost::json::value j = boost::json::object{};
-    boost::json::array agents;
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      auto& mgr = runtime.GetAgentManager();
-      auto names = mgr.GetAgentNames();
-      for (const auto& name : names) {
-        auto* cfg = mgr.GetAgentConfig(name);
-        boost::json::value item = {
-          {"name", name},
-          {"description", cfg ? cfg->description : ""},
-        };
-        agents.push_back(item);
-      }
-    } catch (...) {}
-    j.as_object()["agents"] = agents;
-    SendJson(res, 200, j);
-  });
+  // Start first accept
+  acceptor.async_accept(ioc, do_accept);
 
-  svr.Post("/api/agent/switch", [&](const httplib::Request& req, httplib::Response& res) {
-    boost::json::value resp = boost::json::object{};
-    boost::json::value body;
-    try {
-      body = boost::json::parse(req.body);
-    } catch (...) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = "Invalid JSON";
-      SendJson(res, 400, resp);
-      return;
-    }
-    if (!json::HasKey(body, "agent_name") || !body.at("agent_name").is_string()) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = "Missing or invalid 'agent_name'";
-      SendJson(res, 400, resp);
-      return;
-    }
-    std::string agent_name =
-        boost::json::value_to<std::string>(body.at("agent_name"));
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      auto& mgr = runtime.GetAgentManager();
-      auto* cfg = mgr.GetAgentConfig(agent_name);
-      if (!cfg) {
-        resp.as_object()["success"] = false;
-        resp.as_object()["error"] = "Agent not found: " + agent_name;
-        SendJson(res, 404, resp);
-        return;
-      }
-      runtime.SwitchAgent(*cfg);
-      resp.as_object()["success"] = true;
-      resp.as_object()["agent"] = agent_name;
-    } catch (const std::exception& e) {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = e.what();
-    }
-    SendJson(res, 200, resp);
-  });
+  // Run io_context in a separate thread so we can stop it
+  std::thread ioc_thread([&]() { ioc.run(); });
 
-  svr.Post("/api/clear", [&](const httplib::Request&, httplib::Response& res) {
-    boost::json::value j = boost::json::object{};
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      auto session = runtime.GetDefaultSession();
-      if (session) {
-        session->GetWorkspace().ClearHistory();
-        session->GetWorkspace().ClearArtifacts();
-        j.as_object()["success"] = true;
-      } else {
-        j.as_object()["success"] = false;
-        j.as_object()["error"] = "No active session";
-      }
-    } catch (const std::exception& e) {
-      j.as_object()["success"] = false;
-      j.as_object()["error"] = e.what();
-    }
-    SendJson(res, 200, j);
-  });
-
-  spdlog::info("pu serve listening on http://{}:{} (web UI at /)", host, port);
-
-  std::atomic<bool> listen_done{false};
-  bool listen_ok = false;
-  std::thread server_thread([&]() {
-    listen_ok = svr.listen(host.c_str(), port);
-    listen_done = true;
-  });
-
-  while (!listen_done && !pu::platform::IsInterrupted()) {
+  // Wait for interrupt
+  while (!pu::platform::IsInterrupted())
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Stop io_context and wait for it to finish
+  ioc.stop();
+  if (ioc_thread.joinable())
+    ioc_thread.join();
+
+  // Clean up active WebSocket
+  if (active_ws->running) {
+    active_ws->cancel_token->store(true);
+    if (active_ws->worker_thread.joinable()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      active_ws->worker_thread.detach();
+    }
+    if (active_ws->ws && active_ws->ws->is_open()) {
+      beast::error_code ec;
+      active_ws->ws->close(websocket::close_code::normal, ec);
+    }
   }
-  if (!listen_done) {
-    spdlog::info("Stopping HTTP server...");
-    svr.stop();
-  }
-  server_thread.join();
 
   runtime.Shutdown();
-
-  if (pu::platform::IsInterrupted()) {
-    std::cout << "\nGoodbye!\n";
-    return 0;
-  }
-  if (!listen_ok) {
-    spdlog::error("Failed to listen on {}:{}", host, port);
-    return 1;
-  }
   return 0;
 }
 
-}  // namespace pu::cli
+} // namespace pu::cli

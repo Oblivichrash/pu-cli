@@ -8,11 +8,6 @@ find_package(CURL REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options json)
 
-find_path(HTTPLIB_INCLUDE_DIR NAMES httplib.h)
-if(NOT HTTPLIB_INCLUDE_DIR)
-  message(FATAL_ERROR "cpp-httplib headers not found")
-endif()
-
 add_library(pu_core STATIC
     src/infra/curl_http_client.cpp
     src/infra/platform.cpp
@@ -62,7 +57,6 @@ target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app
-    ${HTTPLIB_INCLUDE_DIR}
 )
 target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
 

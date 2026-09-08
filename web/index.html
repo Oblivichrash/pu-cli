@@ -5,21 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>pu-cli · Web Chat</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
 </head>
 <body>
 <header>
   <h1>pu-cli · Web Chat</h1>
   <select id="agent-select"></select>
-  <button id="clear-btn" title="Clear conversation history">New chat</button>
+  <button id="clear-btn">New chat</button>
 </header>
-
 <div id="messages"></div>
-
 <div id="composer">
   <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
   <button id="send">Send</button>
 </div>
-
 <script type="module" src="app.js"></script>
 </body>
 </html>
