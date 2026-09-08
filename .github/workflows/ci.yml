@@ -21,16 +21,16 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libcurl4-openssl-dev catch2 libspdlog-dev libcpp-httplib-dev libboost-system-dev
+        sudo apt-get install -y catch2 libspdlog-dev libboost-system-dev libboost-program-options-dev libboost-json-dev libssl-dev
 
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
-      run: brew install curl catch2 spdlog cpp-httplib boost
+      run: brew install catch2 spdlog boost openssl
 
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        vcpkg install curl catch2 spdlog cpp-httplib boost-system
+        vcpkg install catch2 spdlog boost-system boost-program-options boost-json openssl
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
     - name: Configure CMake
