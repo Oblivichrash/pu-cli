@@ -105,3 +105,9 @@ header button:hover { border-color: var(--accent); }
   font-weight: 600;
 }
 #send:disabled { opacity: 0.5; cursor: not-allowed; }
+.msg p {
+  margin: 0 0 0.5em 0;
+}
+.msg p:last-child {
+  margin-bottom: 0;
+}

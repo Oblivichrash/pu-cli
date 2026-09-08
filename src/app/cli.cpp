@@ -131,8 +131,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
           std::cout << "Unknown command. ";
           PrintChatHelp();
         } else {
-          spdlog::error("{}",
-                        result.error_message.empty() ? "Processing failed" : result.error_message);
+          spdlog::error("{}", result.error_message.empty() ? "Processing failed" : result.error_message);
         }
       } else if (!result.was_streamed) {
         if (!result.content.empty()) {
@@ -141,7 +140,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
           std::cout << "\n";
         }
       } else {
-        if (!is_command) std::cout << "\n";
+        // streamed output already handles its own line breaks
       }
     } catch (const std::exception& e) {
       spdlog::error("{}", e.what());

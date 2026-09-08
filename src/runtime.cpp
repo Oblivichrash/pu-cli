@@ -244,9 +244,11 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
 
   if (current_session_) {
     try {
+      // Update both backend and agent name in the session
+      current_session_->SwitchBackend(new_agent.backend);
       current_session_->SwitchAgent(new_agent.name);
     } catch (const std::exception& e) {
-      spdlog::warn("Failed to sync default session agent name: {}", e.what());
+      spdlog::warn("Failed to sync session config: {}", e.what());
     }
   }
 }

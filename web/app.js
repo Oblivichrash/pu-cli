@@ -13,6 +13,7 @@ let rawContent = "";
 let isAtBottom = true;
 
 const markedOptions = {
+  breaks: true,
   highlight: (code, lang) => {
     if (lang && hljs.getLanguage(lang)) {
       try { return hljs.highlight(code, { language: lang }).value; } catch (_) {}
