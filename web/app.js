@@ -60,7 +60,8 @@ function updateAssistantBubble(text) {
     rawContent = "";
   }
   rawContent += text;
-  currentAssistantEl.innerHTML = renderMarkdown(rawContent);
+  const normalized = rawContent.replace(/\n{2,}/g, '\n');
+  currentAssistantEl.innerHTML = renderMarkdown(normalized);
   if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -183,9 +184,68 @@ async function loadHistory() {
     const res = await fetch("/api/history");
     const history = await res.json();
     if (!Array.isArray(history)) return;
+
     for (const msg of history) {
-      if (msg.role === "system" || msg.role === "tool") continue;
-      createMessage(msg.role, msg.content || "");
+      const role = msg.role;
+      const content = msg.content || "";
+
+      if (role === "system") {
+        createSystemMessage(content);
+      } else if (role === "tool") {
+        const toolLabel = msg.tool_name ? `Tool: ${msg.tool_name}` : "Tool";
+        const el = document.createElement("div");
+        el.className = "msg assistant";
+        const label = document.createElement("span");
+        label.className = "role";
+        label.textContent = toolLabel;
+        el.appendChild(label);
+        const textNode = document.createTextNode(content);
+        el.appendChild(textNode);
+        messagesEl.appendChild(el);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else if (role === "assistant") {
+        const el = document.createElement("div");
+        el.className = "msg assistant";
+        const label = document.createElement("span");
+        label.className = "role";
+        label.textContent = "Assistant";
+        el.appendChild(label);
+
+        if (content) {
+          const contentDiv = document.createElement("div");
+          contentDiv.innerHTML = renderMarkdown(content);
+          el.appendChild(contentDiv);
+        }
+
+        if (msg.tool_calls_json) {
+          try {
+            const toolCalls = JSON.parse(msg.tool_calls_json);
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              const details = document.createElement("div");
+              details.className = "tool-call-details";
+              details.style.cssText = "margin-top: 8px; padding: 6px 10px; background: var(--paper); border-radius: 2px; font-size: 13px; border-left: 3px solid var(--accent);";
+              for (const tc of toolCalls) {
+                const fn = tc.function || {};
+                const name = fn.name || "unknown";
+                const args = fn.arguments || {};
+                const argsStr = typeof args === "string" ? args : JSON.stringify(args, null, 2);
+                const item = document.createElement("div");
+                item.innerHTML = `<strong>🔧 ${name}</strong><pre style="margin: 4px 0 0 0; white-space: pre-wrap; background: var(--paper); padding: 4px 8px; border-radius: 2px;">${argsStr}</pre>`;
+                details.appendChild(item);
+              }
+              el.appendChild(details);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        messagesEl.appendChild(el);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else {
+        // user
+        createMessage(role, content);
+      }
     }
   } catch (_) {}
 }
