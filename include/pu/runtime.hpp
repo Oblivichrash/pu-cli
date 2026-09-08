@@ -5,11 +5,12 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include "pu/agent_manager.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/executor.hpp"
-#include "pu/http_client.hpp"  // pu::CancelToken
+#include "pu/http_client.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
@@ -38,13 +39,18 @@ class Runtime {
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
 
-  // Expose AgentManager for Web UI.
+  bool SwitchWorkspace(const std::filesystem::path& new_root);
+  std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
+  std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
+  std::string GetWorkspaceName() const { return workspace_root_.filename().string(); }
+
   AgentManager& GetAgentManager() { return *agent_manager_; }
 
  private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
   void RebuildToolbox(const config::AgentEntry& agent);
+  void SaveCurrentSession();
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
   void RegisterBuiltinTools();
@@ -55,6 +61,7 @@ class Runtime {
   std::unique_ptr<CommandRouter> command_router_;
   std::unique_ptr<Toolbox> toolbox_;
   std::unique_ptr<Executor> executor_;
+  std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
   config::BackendConfig default_backend_config_;
 

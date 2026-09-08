@@ -167,7 +167,7 @@ ExecutionResult Executor::Execute(const std::string& input,
     return exec_result;
   }
 
-  if (!result.final_response.empty() && result.tool_call_count > 0) {
+  if (!result.final_response.empty()) {
     workspace.Append("assistant", result.final_response);
   }
 

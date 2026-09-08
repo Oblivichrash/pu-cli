@@ -231,6 +231,60 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, jv);
 }
 
+void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex,
+                         http::request<http::string_body>&&,
+                         http::response<http::string_body>& res) {
+  boost::json::value resp = boost::json::object{};
+  boost::json::array ws_array;
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    auto workspaces = runtime.ListWorkspaces();
+    for (const auto& [name, path] : workspaces) {
+      boost::json::value item = {
+        {"name", name},
+        {"path", path}
+      };
+      ws_array.push_back(item);
+    }
+  } catch (...) {}
+  resp.as_object()["workspaces"] = ws_array;
+  SendJson(res, 200, resp);
+}
+
+void HandleApiWorkspaceSwitch(Runtime& runtime, std::mutex& io_mutex,
+                              http::request<http::string_body>&& req,
+                              http::response<http::string_body>& res) {
+  boost::json::value body;
+  try {
+    body = boost::json::parse(req.body());
+  } catch (...) {
+    boost::json::value err = {{"success", false}, {"error", "Invalid JSON"}};
+    SendJson(res, 400, err);
+    return;
+  }
+  if (!json::HasKey(body, "path") || !body.at("path").is_string()) {
+    boost::json::value err = {{"success", false}, {"error", "Missing or invalid 'path'"}};
+    SendJson(res, 400, err);
+    return;
+  }
+  std::string path_str = boost::json::value_to<std::string>(body.at("path"));
+  boost::json::value resp = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    if (runtime.SwitchWorkspace(path_str)) {
+      resp.as_object()["success"] = true;
+      resp.as_object()["current"] = runtime.GetWorkspaceName();
+    } else {
+      resp.as_object()["success"] = false;
+      resp.as_object()["error"] = "Switch failed";
+    }
+  } catch (const std::exception& e) {
+    resp.as_object()["success"] = false;
+    resp.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, resp);
+}
+
 struct ActiveWebSocket {
   std::unique_ptr<websocket::stream<tcp::socket>> ws;
   std::thread worker_thread;
@@ -269,12 +323,20 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
     HandleApiClear(runtime, io_mutex, std::move(req), res);
     return;
   }
+  if (target == "/api/workspaces" && req.method() == http::verb::get) {
+    HandleApiWorkspaces(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/workspace/switch" && req.method() == http::verb::post) {
+    HandleApiWorkspaceSwitch(runtime, io_mutex, std::move(req), res);
+    return;
+  }
 
   res.result(http::status::not_found);
   res.prepare_payload();
 }
 
-} // namespace
+}  // namespace
 
 int RunServe(const std::string& host, int port, Runtime& runtime) {
   try {
@@ -286,6 +348,7 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
 
   spdlog::info("pu serve listening on http://{}:{}", host, port);
   spdlog::info("WebSocket endpoint: ws://{}:{}/ws", host, port);
+  spdlog::info("Workspace: {}", runtime.GetWorkspaceRoot().string());
 
   net::io_context ioc;
   tcp::acceptor acceptor(ioc, tcp::endpoint(net::ip::make_address(host), port));
@@ -294,7 +357,6 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   auto active_ws = std::make_shared<ActiveWebSocket>();
   active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
 
-  // Asynchronous accept loop
   std::function<void(beast::error_code, tcp::socket)> do_accept =
       [&](beast::error_code ec, tcp::socket socket) {
     if (ec) {
@@ -303,7 +365,6 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
       return;
     }
 
-    // Handle connection in a separate thread
     std::thread([&, socket = std::move(socket)]() mutable {
       beast::flat_buffer buffer;
       http::request<http::string_body> req;
@@ -426,26 +487,20 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
       }
     }).detach();
 
-    // Accept next connection
     acceptor.async_accept(ioc, do_accept);
   };
 
-  // Start first accept
   acceptor.async_accept(ioc, do_accept);
 
-  // Run io_context in a separate thread so we can stop it
   std::thread ioc_thread([&]() { ioc.run(); });
 
-  // Wait for interrupt
   while (!pu::platform::IsInterrupted())
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  // Stop io_context and wait for it to finish
   ioc.stop();
   if (ioc_thread.joinable())
     ioc_thread.join();
 
-  // Clean up active WebSocket
   if (active_ws->running) {
     active_ws->cancel_token->store(true);
     if (active_ws->worker_thread.joinable()) {
@@ -462,4 +517,4 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   return 0;
 }
 
-} // namespace pu::cli
+}  // namespace pu::cli

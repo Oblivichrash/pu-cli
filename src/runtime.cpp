@@ -21,35 +21,45 @@
 namespace pu {
 namespace {
 
-std::filesystem::path SessionFilePath() {
-  return pu::path::GetDataDir() / "session.json";
-}
-
-void SaveCurrentSession(const std::shared_ptr<Session>& session) {
-  if (!session) return;
-  auto j = session->Serialize();
-  auto path = SessionFilePath();
-  std::filesystem::create_directories(path.parent_path());
-  std::ofstream file(path);
-  if (file.is_open()) {
-    file << json::PrettyPrint(j);
-  } else {
-    spdlog::warn("Failed to write session file: {}", path.string());
+std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
+  if (!std::filesystem::exists(path))
+    return nullptr;
+  std::ifstream file(path);
+  if (!file.is_open())
+    return nullptr;
+  try {
+    boost::json::value j;
+    file >> j;
+    return Session::Deserialize(j);
+  } catch (const std::exception& e) {
+    spdlog::warn("Failed to parse session from {}: {}", path.string(), e.what());
+    return nullptr;
   }
 }
 
 }  // namespace
 
 void Runtime::Initialize(const std::string& config_path) {
-  if (is_initialized_) return;
+  if (is_initialized_)
+    return;
+
+  if (workspace_root_.empty())
+    workspace_root_ = std::filesystem::current_path();
 
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
 
-  std::filesystem::create_directories(pu::path::GetDataDir() / "logs");
+  std::filesystem::create_directories(workspace_root_ / "logs");
 
-  auto cfg_path = config_path.empty() ? config::FindConfigPath() : config_path;
+  std::string cfg_path = config_path.empty()
+      ? (workspace_root_ / ".pu" / "agents.json").string()
+      : config_path;
+
+  if (!std::filesystem::exists(cfg_path)) {
+    cfg_path = config::FindConfigPath();
+  }
+
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
   agent_manager_ = std::make_unique<AgentManager>();
@@ -87,18 +97,11 @@ void Runtime::Initialize(const std::string& config_path) {
     spdlog::warn("No default agent found. Using permissive fallback.");
   }
 
-  auto path = SessionFilePath();
-  if (std::filesystem::exists(path)) {
-    std::ifstream file(path);
-    if (file.is_open()) {
-      boost::json::value j;
-      try {
-        file >> j;
-        current_session_ = Session::Deserialize(j);
-      } catch (const std::exception& e) {
-        spdlog::warn("Failed to load session from {}: {}", path.string(), e.what());
-        current_session_.reset();
-      }
+  auto session_path = workspace_root_ / ".pu" / "session.json";
+  if (std::filesystem::exists(session_path)) {
+    current_session_ = LoadSessionFromFile(session_path);
+    if (!current_session_) {
+      spdlog::warn("Failed to load session from {}", session_path.string());
     }
   }
 
@@ -107,9 +110,22 @@ void Runtime::Initialize(const std::string& config_path) {
 }
 
 void Runtime::Shutdown() {
-  if (!is_initialized_) return;
-  SaveCurrentSession(current_session_);
+  SaveCurrentSession();
   is_running_ = false;
+}
+
+void Runtime::SaveCurrentSession() {
+  if (!current_session_)
+    return;
+  auto path = workspace_root_ / ".pu" / "session.json";
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream file(path);
+  if (file.is_open()) {
+    auto j = current_session_->Serialize();
+    file << json::PrettyPrint(j);
+  } else {
+    spdlog::warn("Failed to write session file: {}", path.string());
+  }
 }
 
 std::shared_ptr<Session> Runtime::GetDefaultSession() {
@@ -117,13 +133,15 @@ std::shared_ptr<Session> Runtime::GetDefaultSession() {
 }
 
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
-  if (current_session_) return current_session_;
+  if (current_session_)
+    return current_session_;
 
   auto session = std::make_shared<Session>();
 
   std::string active_agent =
       default_agent_override_.empty() ? agent_manager_->GetActiveAgent() : default_agent_override_;
-  if (active_agent.empty()) active_agent = "chat";
+  if (active_agent.empty())
+    active_agent = "chat";
   session->SwitchAgent(active_agent);
   session->SwitchBackend(default_backend_config_);
 
@@ -159,8 +177,9 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
       result.content = output;
       result.was_streamed = false;
       result.has_error = !ok;
-      if (!ok) result.error_message = output;
-      SaveCurrentSession(session);
+      if (!ok)
+        result.error_message = output;
+      SaveCurrentSession();
       return result;
     }
 
@@ -170,7 +189,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
     auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
                                           cancel_token, content_callback);
     result = std::move(exec_result);
-    SaveCurrentSession(session);
+    SaveCurrentSession();
     return result;
   } catch (const std::exception& e) {
     result.has_error = true;
@@ -179,13 +198,53 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
   }
 }
 
+bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
+  if (new_root == workspace_root_)
+    return true;
+
+  if (!std::filesystem::exists(new_root / ".pu" / "agents.json")) {
+    spdlog::error("No agents.json found in {}", new_root.string());
+    return false;
+  }
+
+  SaveCurrentSession();
+
+  current_session_.reset();
+  ShutdownMCP();
+  toolbox_.reset();
+  executor_.reset();
+  agent_manager_.reset();
+  command_router_.reset();
+
+  workspace_root_ = new_root;
+  std::filesystem::current_path(workspace_root_);
+
+  is_initialized_ = false;
+  Initialize("");
+  return true;
+}
+
+std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {
+  std::vector<std::pair<std::string, std::string>> workspaces;
+  for (const auto& entry : std::filesystem::directory_iterator(".")) {
+    if (entry.is_directory()) {
+      auto agents_path = entry.path() / ".pu" / "agents.json";
+      if (std::filesystem::exists(agents_path)) {
+        workspaces.emplace_back(entry.path().filename().string(), entry.path().string());
+      }
+    }
+  }
+  return workspaces;
+}
+
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
 
 void Runtime::ShutdownMCP() {
   for (auto& client : mcp_clients_) {
-    if (client) client->Disconnect();
+    if (client)
+      client->Disconnect();
   }
   mcp_clients_.clear();
 }
@@ -237,14 +296,14 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 }
 
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
-  if (current_agent_name_ == new_agent.name) return;
+  if (current_agent_name_ == new_agent.name)
+    return;
   current_agent_config_ = new_agent;
   current_agent_name_ = new_agent.name;
   RebuildToolbox(new_agent);
 
   if (current_session_) {
     try {
-      // Update both backend and agent name in the session
       current_session_->SwitchBackend(new_agent.backend);
       current_session_->SwitchAgent(new_agent.name);
     } catch (const std::exception& e) {

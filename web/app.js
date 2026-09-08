@@ -3,8 +3,8 @@
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
-const clearBtn = document.getElementById("clear-btn");
-const agentSelect = document.getElementById("agent-select");
+let agentSelect = document.getElementById("agent-select");
+let agentChangeHandler = null;
 
 let ws = null;
 let isStreaming = false;
@@ -165,14 +165,15 @@ async function loadSession() {
     const res = await fetch("/api/session");
     const data = await res.json();
     if (data.ok) {
-      const agent = data.agent_name || "?";
       const model = data.backend_model ? " · " + data.backend_model : "";
       document.getElementById("session-status")?.remove();
       const status = document.createElement("span");
       status.id = "session-status";
-      status.textContent = `Agent: ${agent} · Backend: ${data.backend_type || "?"}${model}`;
+      status.textContent = `Backend: ${data.backend_type || "?"}${model}`;
       document.querySelector("header").appendChild(status);
-      agentSelect.value = agent;
+      if (data.agent_name) {
+        agentSelect.value = data.agent_name;
+      }
     }
   } catch (_) {}
 }
@@ -192,16 +193,31 @@ async function loadHistory() {
 async function loadAgents() {
   try {
     const res = await fetch("/api/agents");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+
+    if (agentChangeHandler) {
+      agentSelect.removeEventListener("change", agentChangeHandler);
+    }
+
     agentSelect.innerHTML = "";
-    for (const agent of data.agents || []) {
+    if (data.agents && data.agents.length > 0) {
+      for (const agent of data.agents) {
+        const opt = document.createElement("option");
+        opt.value = agent.name;
+        opt.textContent = agent.name + (agent.description ? " (" + agent.description + ")" : "");
+        agentSelect.appendChild(opt);
+      }
+    } else {
       const opt = document.createElement("option");
-      opt.value = agent.name;
-      opt.textContent = agent.name + (agent.description ? " (" + agent.description + ")" : "");
+      opt.value = "";
+      opt.textContent = "No agents available";
       agentSelect.appendChild(opt);
     }
-    agentSelect.addEventListener("change", async () => {
+
+    agentChangeHandler = async () => {
       const name = agentSelect.value;
+      if (!name) return;
       try {
         const res = await fetch("/api/agent/switch", {
           method: "POST",
@@ -215,29 +231,16 @@ async function loadAgents() {
           await loadSession();
           await loadHistory();
         } else {
-          createSystemMessage("Switch failed: " + (data.error || "unknown"));
+          createSystemMessage("Switch failed: " + (data.error || "unknown error"));
         }
       } catch (e) {
         createSystemMessage("Switch failed: " + e.message);
       }
-    });
-  } catch (_) {}
-}
-
-async function clearChat() {
-  clearBtn.disabled = true;
-  try {
-    const res = await fetch("/api/clear", { method: "POST" });
-    const data = await res.json();
-    messagesEl.innerHTML = "";
-    createSystemMessage(data.success ? "Conversation cleared." : "Clear failed: " + (data.error || "unknown"));
-    await loadSession();
-    await loadHistory();
+    };
+    agentSelect.addEventListener("change", agentChangeHandler);
   } catch (e) {
-    messagesEl.innerHTML = "";
-    createSystemMessage("Clear failed: " + e.message);
-  } finally {
-    clearBtn.disabled = false;
+    createSystemMessage("Failed to load agents: " + e.message);
+    console.error("loadAgents error:", e);
   }
 }
 
@@ -248,7 +251,6 @@ messagesEl.addEventListener("scroll", () => {
 });
 
 sendBtn.addEventListener("click", sendMessage);
-clearBtn.addEventListener("click", clearChat);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -260,6 +262,9 @@ inputEl.addEventListener("input", () => {
 });
 
 connectWebSocket();
-loadSession();
-loadHistory();
-loadAgents();
+
+(async () => {
+  await loadAgents();
+  await loadSession();
+  await loadHistory();
+})();
