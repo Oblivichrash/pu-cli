@@ -11,6 +11,8 @@
 #include <regex>
 #include <sstream>
 
+#include "infra/beast_http_client.hpp"
+
 namespace pu::config {
 
 namespace {
@@ -81,8 +83,6 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
       for (const auto& a : item.at("args").as_array())
         if (a.is_string()) srv.args.push_back(boost::json::value_to<std::string>(a));
     }
-    // Remote HTTP MCP endpoint (streamable HTTP). When present, McpClient
-    // connects over HTTP instead of spawning the stdio command.
     if (json::HasKey(item, "url") && item.at("url").is_string())
       srv.url = ExpandEnvVars(boost::json::value_to<std::string>(item.at("url")));
     if (json::HasKey(item, "headers") && item.at("headers").is_object()) {

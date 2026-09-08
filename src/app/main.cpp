@@ -6,7 +6,6 @@
 #include "pu/runtime.hpp"
 
 #include <boost/program_options.hpp>
-#include <curl/curl.h>
 
 #include <cstdlib>
 #include <iostream>
@@ -15,8 +14,6 @@
 namespace po = boost::program_options;
 
 int main(int argc, char* argv[]) {
-  curl_global_init(CURL_GLOBAL_DEFAULT);
-  std::atexit(curl_global_cleanup);
 
   pu::platform::SetupSignalHandler();
 

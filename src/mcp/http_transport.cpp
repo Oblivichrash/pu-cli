@@ -2,6 +2,7 @@
 #include "mcp/http_transport.hpp"
 
 #include "pu/infra/platform.hpp"
+#include "infra/beast_http_client.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -20,8 +21,6 @@ bool HttpTransport::Start(MessageCallback on_message) {
   on_message_ = std::move(on_message);
   stopping_ = false;
 
-  // Abort an in-flight transfer when Stop() is requested (or the global
-  // interrupt flag is raised). The curl progress hook polls this callback.
   http_.SetInterruptChecker([this] {
     return stopping_.load(std::memory_order_acquire) ||
            pu::platform::IsInterrupted();
@@ -79,13 +78,11 @@ void HttpTransport::EmitLine(const std::string& line) {
 
   std::string payload;
   if (line.rfind("data:", 0) == 0) {
-    // SSE framing: JSON-RPC messages arrive on "data:" lines.
     payload = line.substr(5);
     if (!payload.empty() && payload[0] == ' ') payload.erase(0, 1);
     if (payload == "[DONE]") return;
   } else if (line.rfind("event:", 0) == 0 || line.rfind("id:", 0) == 0 ||
              line.rfind("retry:", 0) == 0) {
-    // SSE metadata lines carry no JSON-RPC payload.
     return;
   } else {
     payload = line;
@@ -112,7 +109,6 @@ void HttpTransport::WorkerLoop() {
                          DispatchChunk(data, size);
                          return size;
                        });
-      // Flush any trailing data that arrived without a newline.
       if (!leftover_.empty()) {
         EmitLine(leftover_);
         leftover_.clear();

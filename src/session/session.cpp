@@ -3,7 +3,7 @@
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "pu/http_client.hpp"
-#include "infra/curl_http_client.hpp"
+#include "infra/beast_http_client.hpp"
 #include "pu/error.hpp"
 
 #include <boost/json.hpp>
@@ -38,13 +38,12 @@ void Session::SwitchBackend(const config::BackendConfig& new_config) {
       "Please let the current tool finish or /clear.");
   }
   runtime_spec_.backend = new_config;
-  // Include the configured system prompt in the static system message.
   workspace_->SetVar("system_prompt", boost::json::value(new_config.system_prompt.value_or("")));
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider() const {
   const auto& cfg = runtime_spec_.backend;
-  auto http = std::make_unique<pu::http::CurlHttpClient>();
+  auto http = std::make_unique<pu::http::BeastHttpClient>();
   if (cfg.type == config::BackendType::kOllama) {
     OllamaProvider::Config ollama_cfg;
     ollama_cfg.model = cfg.model;

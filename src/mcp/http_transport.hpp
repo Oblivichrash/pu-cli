@@ -9,15 +9,11 @@
 #include <string>
 #include <thread>
 
-#include "infra/curl_http_client.hpp"
+#include "infra/beast_http_client.hpp"
 #include "pu/mcp/stdio_transport.hpp"
 
 namespace pu::mcp {
 
-// Remote streamable-HTTP MCP transport: WriteLine() POSTs a JSON-RPC body via
-// CurlHttpClient on a worker thread; response lines (including SSE "data:"
-// payloads) are forwarded to the MessageCallback. Stop() aborts in-flight
-// requests through the curl progress hook.
 class HttpTransport : public Transport {
  public:
   HttpTransport(std::string url, std::map<std::string, std::string> headers);
@@ -38,7 +34,7 @@ class HttpTransport : public Transport {
 
   std::string url_;
   std::map<std::string, std::string> headers_;
-  pu::http::CurlHttpClient http_;
+  pu::http::BeastHttpClient http_;
   MessageCallback on_message_;
 
   std::thread worker_;
@@ -48,7 +44,7 @@ class HttpTransport : public Transport {
   std::mutex mutex_;
   std::condition_variable cv_;
   std::queue<std::string> queue_;
-  std::string leftover_;  // worker-thread only
+  std::string leftover_;
 };
 
 }  // namespace pu::mcp

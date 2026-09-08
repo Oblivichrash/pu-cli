@@ -4,12 +4,12 @@ project(pu-cli VERSION 0.4.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(CURL REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options json)
+find_package(OpenSSL REQUIRED)
 
 add_library(pu_core STATIC
-    src/infra/curl_http_client.cpp
+    src/infra/beast_http_client.cpp
     src/infra/platform.cpp
     src/session/workspace.cpp
     src/session/transcript.cpp
@@ -26,11 +26,12 @@ add_library(pu_core STATIC
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(pu_core PUBLIC
-    CURL::libcurl
     spdlog::spdlog
     Boost::json
     Boost::system
     Boost::program_options
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 add_library(pu::core ALIAS pu_core)
 
