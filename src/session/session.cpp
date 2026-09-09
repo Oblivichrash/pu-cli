@@ -7,6 +7,7 @@
 #include "pu/error.hpp"
 
 #include <boost/json.hpp>
+#include <spdlog/spdlog.h>
 
 namespace pu {
 
@@ -68,12 +69,19 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
 
 boost::json::value Session::Serialize() const {
   boost::json::value j = boost::json::object{};
+  j.as_object()["schema_version"] = kSchemaVersion;
   j.as_object()["workspace"] = workspace_->Serialize();
   j.as_object()["runtime_spec"] = runtime_spec_.Serialize();
   return j;
 }
 
 std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
+  int version = json::ValueOrDefault<int>(j, "schema_version", 0);
+  if (version > kSchemaVersion) {
+    spdlog::warn(
+        "session.json schema_version {} is newer than this build supports ({})",
+        version, kSchemaVersion);
+  }
   auto ws = Workspace::Deserialize(j.at("workspace"));
   auto spec = RuntimeSpec::Deserialize(j.at("runtime_spec"));
   auto session = std::make_unique<Session>(ws, spec);

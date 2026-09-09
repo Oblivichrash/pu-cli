@@ -8,7 +8,7 @@ pu-cli is built around four principles:
 
 1. **Single-session auto-persistence** — One session owns the workspace and history, transparently persisted.
 2. **Dynamic backend switching** — Switch LLM providers without losing state.
-3. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
+3. **Stateless execution** — `Executor` keeps no per-session state; all session state lives in `Workspace`/`Session` (`Executor` holds only configuration and an environment-probe cache).
 4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
 
 ---
@@ -36,7 +36,7 @@ The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
 | `Runtime` | Plain object created by `main()`; owns `AgentManager`, `Toolbox`, `Executor`, `CommandRouter`; routes input, holds the single `Session`, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
-| `Executor` | Stateless tool loop; reads/writes `Workspace`; injects system context and processes structured tool output |
+| `Executor` | Session-state-free tool loop (holds config + probe cache); reads/writes `Workspace`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
@@ -45,7 +45,6 @@ The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
 | `HttpTransport` | remote streamable-HTTP transport (BeastHttpClient POST, line-delimited responses) |
-| `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
 
 ---
 
@@ -108,17 +107,23 @@ The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==f
 `Executor` automatically builds a system message containing:
 
 - OS name and kernel version (probed once at startup)
-- Available system tools (detected via `which`)
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
-- Last known file paths (extracted from artifacts)
-- Recent tool executions (up to 2) with success/failure status and truncated output
+- Tool-use guidelines for the model
 
-This context is merged with the user‑defined `system_prompt` (if any) and prepended to the chat history on every request. This gives the model full awareness of its environment, dramatically reducing blind attempts.
+Artifacts are persisted in the session (`Workspace`/`Memory`) but are **not**
+currently injected into the prompt. Injecting "last known file paths" or
+"recent tool executions" into the system context is reserved future work.
+
+This context is merged with the user-defined `system_prompt` (if any) and
+prepended to the chat history on every request.
 
 ### Environment Probing
 
-`Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`, `uname -r`, and `which` to detect the OS and common tools (`bash`, `python3`, `gcc`, `git`, `curl`, `jq`). The result is cached and included in the system context.
+`Executor::ProbeStaticEnvironment()` runs once during construction and uses
+`uname -s` / `uname -r` on POSIX (or the Windows kernel API) to detect the OS
+name and kernel version. The result is cached and included in the system
+context. No tool-binary detection (`which`) is performed.
 
 ### Forbidden Patterns
 
@@ -230,7 +235,7 @@ Runtime.ProcessInput(input, ...)
     └── Is message? ──► Session.CreateProvider()
                          │
                          ▼
-                       Executor.Execute()          (stateless)
+                       Executor.Execute()          (session-state-free)
                          │
                          ├── Inject system context into chat history
                          ├── Read Workspace.Transcript
@@ -328,7 +333,7 @@ include/pu/
 ├── agent_manager.hpp     # AgentManager
 ├── command_router.hpp    # CommandRouter
 ├── runtime.hpp           # Runtime
-├── executor.hpp          # Executor (stateless, with system context injection)
+├── executor.hpp          # Executor (session-state-free, with system context injection)
 ├── http_client.hpp       # HttpClient interface
 ├── cli.hpp, error.hpp, path_utils.hpp
 ├── core/                 # Logging
@@ -368,7 +373,7 @@ src/
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.
-- Environment probing uses `uname` and `which`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
+- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
 
 ---
 

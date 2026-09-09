@@ -56,6 +56,10 @@ public:
 
   std::unique_ptr<LLMProvider> CreateProvider() const;
 
+  // Version of the on-disk session.json layout. Bump when an incompatible
+  // change is made so older binaries can warn instead of mis-parsing.
+  static constexpr int kSchemaVersion = 1;
+
   boost::json::value Serialize() const;
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);
 

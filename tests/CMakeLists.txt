@@ -22,7 +22,6 @@ target_include_directories(pu_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/tests
-    ${HTTPLIB_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/src/app
 )
 

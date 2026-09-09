@@ -18,9 +18,9 @@ struct Artifact {
   std::string source;
   double confidence = 1.0;
 
-  // Boost.JSON equivalents of the former NLOHMANN_DEFINE_TYPE_INTRUSIVE macro.
+  // Boost.JSON (de)serialization helpers.
   // The enum is stored as its integer value to stay compatible with older
-  // session files produced by nlohmann::json.
+  // session files.
   boost::json::value Serialize() const;
   static Artifact Deserialize(const boost::json::value& j);
 };

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Thin convenience layer over Boost.JSON used throughout pu-cli.  It keeps the
-// handful of nlohmann-style lookups (value-with-default, has-key, shallow
+// Thin convenience layer over Boost.JSON used throughout pu-cli. It keeps the
+// handful of frequently used lookups (value-with-default, has-key, shallow
 // merge, pretty printing) readable while all JSON storage/parsing is handled
 // by boost::json.
 
@@ -35,7 +35,8 @@ T ValueOrDefault(const value& j, boost::json::string_view key, const T& def) {
   return boost::json::value_to<T>(it->value());
 }
 
-// nlohmann::json::value("key", "literal") returns a std::string.
+// Convenience overload so ValueOrDefault(j, "key", "literal") yields a
+// std::string (matching the const char* default argument).
 inline std::string ValueOrDefault(const value& j, boost::json::string_view key,
                                   const char* def) {
   return ValueOrDefault<std::string>(j, key, std::string(def));
@@ -47,7 +48,7 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
   return obj != nullptr && obj->contains(key);
 }
 
-// Shallow merge of `src`'s members into `dst` (mirrors nlohmann::json::update).
+// Shallow merge of `src`'s members into `dst`.
 inline void Merge(value& dst, const value& src) {
   if (!dst.is_object() || !src.is_object()) return;
   for (const auto& kv : src.as_object()) {
@@ -102,8 +103,7 @@ inline void AppendPretty(const value& jv, std::string& out, int depth,
 
 }  // namespace detail
 
-// Serialize `jv` with pretty printing using `indent` spaces per level
-// (comparable to nlohmann::json::dump(indent)).
+// Serialize `jv` with pretty printing using `indent` spaces per level.
 inline std::string PrettyPrint(const value& jv, int indent = 2) {
   std::string out;
   detail::AppendPretty(jv, out, 0, indent);
