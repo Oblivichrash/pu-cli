@@ -50,8 +50,6 @@ void Runtime::Initialize(const std::string& config_path) {
   bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
   pu::InitLogging(log_level, trace);
 
-  std::filesystem::create_directories(workspace_root_ / "logs");
-
   std::string cfg_path = config_path.empty()
       ? (workspace_root_ / ".pu" / "agents.json").string()
       : config_path;

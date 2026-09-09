@@ -8,9 +8,16 @@ let agentChangeHandler = null;
 
 let ws = null;
 let isStreaming = false;
-let currentAssistantEl = null;
-let rawContent = "";
 let isAtBottom = true;
+
+const BLOCK_TYPES = {
+  THINKING: "thinking",
+  TOOL_CALL: "tool_call",
+  TEXT: "text",
+};
+
+let currentAssistantBlocks = [];
+let currentAssistantEl = null;
 
 const markedOptions = {
   breaks: true,
@@ -22,24 +29,7 @@ const markedOptions = {
     return code;
   },
 };
-
 marked.setOptions(markedOptions);
-
-function createMessage(role, text = "") {
-  const el = document.createElement("div");
-  el.className = "msg " + role;
-  const label = document.createElement("span");
-  label.className = "role";
-  label.textContent = role === "user" ? "You" : "Assistant";
-  el.appendChild(label);
-  if (text) {
-    const content = document.createTextNode(text);
-    el.appendChild(content);
-  }
-  messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return el;
-}
 
 function createSystemMessage(text) {
   const el = document.createElement("div");
@@ -50,41 +40,230 @@ function createSystemMessage(text) {
   return el;
 }
 
+function createMessage(role, blocks) {
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+
+  const label = document.createElement("span");
+  label.className = "role";
+  label.textContent = role === "user" ? "You" : "Assistant";
+  el.appendChild(label);
+
+  const container = document.createElement("div");
+  container.className = "blocks-container";
+  el.appendChild(container);
+
+  if (blocks) {
+    renderBlocks(blocks, container);
+  }
+
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return el;
+}
+
+function renderBlocks(blocks, container) {
+  container.innerHTML = "";
+  for (const block of blocks) {
+    const el = renderBlock(block);
+    if (el) container.appendChild(el);
+  }
+}
+
+function renderBlock(block) {
+  switch (block.type) {
+    case BLOCK_TYPES.THINKING:
+      return renderThinkingBlock(block);
+    case BLOCK_TYPES.TOOL_CALL:
+      return renderToolBlock(block);
+    case BLOCK_TYPES.TEXT:
+      return renderTextBlock(block);
+    default:
+      return null;
+  }
+}
+
+function renderThinkingBlock(block) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "block-thinking";
+
+  const header = document.createElement("div");
+  header.className = "block-header";
+  header.textContent = "💭 Thinking";
+  header.onclick = () => toggleBlock(header);
+
+  const icon = document.createElement("span");
+  icon.className = "toggle-icon";
+  icon.textContent = block.collapsed ? "▶" : "▼";
+  header.appendChild(icon);
+
+  const body = document.createElement("div");
+  body.className = "block-body" + (block.collapsed ? " collapsed" : "");
+  body.textContent = block.content;
+
+  wrapper.appendChild(header);
+  wrapper.appendChild(body);
+  return wrapper;
+}
+
+function renderToolBlock(block) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "block-tool";
+  wrapper.dataset.toolId = block.id || "";
+
+  const header = document.createElement("div");
+  header.className = "block-header";
+  header.textContent = "🔧 " + (block.name || "unknown");
+  header.onclick = () => toggleBlock(header);
+
+  const statusSpan = document.createElement("span");
+  statusSpan.className = "tool-status";
+  if (block.status === "running") {
+    statusSpan.textContent = " ⏳ Running...";
+  } else if (block.error) {
+    statusSpan.textContent = " ❌ Failed";
+  } else {
+    statusSpan.textContent = " ✅ Done";
+  }
+  header.appendChild(statusSpan);
+
+  const icon = document.createElement("span");
+  icon.className = "toggle-icon";
+  icon.textContent = block.collapsed ? "▶" : "▼";
+  header.appendChild(icon);
+
+  const body = document.createElement("div");
+  body.className = "block-body" + (block.collapsed ? " collapsed" : "");
+
+  const argsDiv = document.createElement("div");
+  argsDiv.className = "tool-args";
+  argsDiv.innerHTML = "<strong>Arguments</strong><pre>" +
+    JSON.stringify(block.args, null, 2) + "</pre>";
+  body.appendChild(argsDiv);
+
+  if (block.status === "done") {
+    const resultDiv = document.createElement("div");
+    resultDiv.className = "tool-result";
+    if (block.error) {
+      resultDiv.innerHTML = "<strong>Error</strong><pre class=\"tool-error\">" +
+        block.error + "</pre>";
+    } else {
+      const output = block.output || "(no output)";
+      resultDiv.innerHTML = "<strong>Output</strong><pre>" + output + "</pre>";
+    }
+    body.appendChild(resultDiv);
+  }
+
+  wrapper.appendChild(header);
+  wrapper.appendChild(body);
+  return wrapper;
+}
+
+function renderTextBlock(block) {
+  const div = document.createElement("div");
+  div.className = "block-text";
+  div.innerHTML = renderMarkdown(block.content);
+  return div;
+}
+
 function renderMarkdown(text) {
   return DOMPurify.sanitize(marked.parse(text));
 }
 
-function updateAssistantBubble(text) {
-  if (!currentAssistantEl) {
-    currentAssistantEl = createMessage("assistant", "");
-    rawContent = "";
-  }
-  rawContent += text;
-  const normalized = rawContent.replace(/\n{2,}/g, '\n');
-  currentAssistantEl.innerHTML = renderMarkdown(normalized);
-  if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+function toggleBlock(headerEl) {
+  const body = headerEl.parentElement.querySelector(".block-body");
+  const icon = headerEl.querySelector(".toggle-icon");
+  if (!body) return;
+  const isCollapsed = body.classList.toggle("collapsed");
+  if (icon) icon.textContent = isCollapsed ? "▶" : "▼";
 }
 
-function finishAssistantBubble() {
+function startAssistantMessage() {
+  currentAssistantBlocks = [];
+  currentAssistantEl = createMessage("assistant", currentAssistantBlocks);
+  currentAssistantEl.classList.add("typing");
+}
+
+function finishAssistantMessage() {
   if (currentAssistantEl) {
     currentAssistantEl.classList.remove("typing");
     currentAssistantEl = null;
-    rawContent = "";
+    currentAssistantBlocks = [];
   }
 }
 
-function removeCurrentAssistantBubble() {
+function removeCurrentAssistantMessage() {
   if (currentAssistantEl) {
     currentAssistantEl.remove();
     currentAssistantEl = null;
-    rawContent = "";
+    currentAssistantBlocks = [];
   }
 }
 
-function setSendButtonState(streaming) {
-  isStreaming = streaming;
-  sendBtn.textContent = streaming ? "Stop" : "Send";
-  sendBtn.disabled = false;
+function updateCurrentAssistantBlocks() {
+  if (!currentAssistantEl) return;
+  const container = currentAssistantEl.querySelector(".blocks-container");
+  if (container) {
+    renderBlocks(currentAssistantBlocks, container);
+    if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function handleToolStart(payload) {
+  const block = {
+    type: BLOCK_TYPES.TOOL_CALL,
+    id: payload.id,
+    name: payload.name,
+    args: payload.args,
+    output: "",
+    error: "",
+    status: "running",
+    collapsed: true,
+  };
+  currentAssistantBlocks.push(block);
+  updateCurrentAssistantBlocks();
+}
+
+function handleToolEnd(payload) {
+  const block = currentAssistantBlocks.find(b =>
+    b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id
+  );
+  if (block) {
+    block.output = payload.output || "";
+    block.error = payload.error || "";
+    block.status = "done";
+    updateCurrentAssistantBlocks();
+  }
+}
+
+function handleChunk(payload) {
+  const text = payload.text || "";
+  let lastBlock = currentAssistantBlocks[currentAssistantBlocks.length - 1];
+  if (!lastBlock || lastBlock.type !== BLOCK_TYPES.TEXT) {
+    lastBlock = { type: BLOCK_TYPES.TEXT, content: "" };
+    currentAssistantBlocks.push(lastBlock);
+  }
+  lastBlock.content += text;
+  updateCurrentAssistantBlocks();
+}
+
+function handleDone() {
+  finishAssistantMessage();
+  setSendButtonState(false);
+}
+
+function handleError(payload) {
+  const errMsg = payload.text || "Unknown error";
+  if (currentAssistantEl) {
+    currentAssistantEl.classList.remove("typing");
+    currentAssistantEl.className = "msg error";
+    currentAssistantEl.innerHTML = errMsg;
+    currentAssistantEl = null;
+    currentAssistantBlocks = [];
+  } else {
+    createSystemMessage("Error: " + errMsg);
+  }
+  setSendButtonState(false);
 }
 
 function connectWebSocket() {
@@ -99,32 +278,32 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
-    const type = data.type;
-    if (type === "chunk") {
-      const text = data.payload?.text || "";
-      if (text) updateAssistantBubble(text);
-    } else if (type === "done") {
-      finishAssistantBubble();
-      setSendButtonState(false);
-    } else if (type === "error") {
-      const errMsg = data.payload?.text || "Unknown error";
-      if (currentAssistantEl) {
-        currentAssistantEl.classList.remove("typing");
-        currentAssistantEl.className = "msg error";
-        currentAssistantEl.innerHTML = errMsg;
-        currentAssistantEl = null;
-        rawContent = "";
-      } else {
-        createMessage("error", errMsg);
-      }
-      setSendButtonState(false);
+
+    switch (data.type) {
+      case "tool_start":
+        handleToolStart(data.payload);
+        break;
+      case "tool_end":
+        handleToolEnd(data.payload);
+        break;
+      case "chunk":
+        handleChunk(data.payload);
+        break;
+      case "done":
+        handleDone();
+        break;
+      case "error":
+        handleError(data.payload);
+        break;
+      default:
+        break;
     }
   };
 
   ws.onclose = () => {
     createSystemMessage("Disconnected from server.");
     if (isStreaming) {
-      removeCurrentAssistantBubble();
+      removeCurrentAssistantMessage();
       setSendButtonState(false);
     }
   };
@@ -132,17 +311,23 @@ function connectWebSocket() {
   ws.onerror = () => {
     createSystemMessage("WebSocket error.");
     if (isStreaming) {
-      removeCurrentAssistantBubble();
+      removeCurrentAssistantMessage();
       setSendButtonState(false);
     }
   };
+}
+
+function setSendButtonState(streaming) {
+  isStreaming = streaming;
+  sendBtn.textContent = streaming ? "Stop" : "Send";
+  sendBtn.disabled = false;
 }
 
 function sendMessage() {
   if (isStreaming) {
     ws.send(JSON.stringify({ type: "cancel" }));
     ws.close();
-    removeCurrentAssistantBubble();
+    removeCurrentAssistantMessage();
     setSendButtonState(false);
     return;
   }
@@ -152,13 +337,78 @@ function sendMessage() {
   inputEl.value = "";
   inputEl.style.height = "auto";
 
-  createMessage("user", text);
-  currentAssistantEl = createMessage("assistant", "");
-  currentAssistantEl.classList.add("typing");
-  rawContent = "";
+  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }]);
+  startAssistantMessage();
   setSendButtonState(true);
 
   ws.send(JSON.stringify({ type: "run", payload: { text } }));
+}
+
+async function loadHistory() {
+  try {
+    const res = await fetch("/api/history");
+    const history = await res.json();
+    if (!Array.isArray(history)) return;
+
+    for (const msg of history) {
+      const role = msg.role;
+      const content = msg.content || "";
+
+      if (role === "system") {
+        createSystemMessage(content);
+        continue;
+      }
+
+      if (role === "tool") {
+        continue;
+      }
+
+      if (role === "assistant") {
+        const blocks = [];
+        const toolCallsJson = msg.tool_calls_json || "";
+
+        let toolCalls = [];
+        if (toolCallsJson) {
+          try {
+            const parsed = JSON.parse(toolCallsJson);
+            if (Array.isArray(parsed)) toolCalls = parsed;
+          } catch (_) {}
+        }
+
+        if (msg.reasoning_content) {
+          blocks.push({
+            type: BLOCK_TYPES.THINKING,
+            content: msg.reasoning_content,
+            collapsed: true,
+          });
+        }
+
+        for (const tc of toolCalls) {
+          const fn = tc.function || {};
+          const args = fn.arguments || {};
+          blocks.push({
+            type: BLOCK_TYPES.TOOL_CALL,
+            id: tc.id || "unknown",
+            name: fn.name || "unknown",
+            args: typeof args === "string" ? JSON.parse(args) : args,
+            output: "",
+            error: "",
+            status: "done",
+            collapsed: true,
+          });
+        }
+
+        if (content) {
+          blocks.push({ type: BLOCK_TYPES.TEXT, content });
+        }
+
+        createMessage("assistant", blocks);
+        continue;
+      }
+
+      createMessage("user", [{ type: BLOCK_TYPES.TEXT, content }]);
+    }
+  } catch (_) {}
 }
 
 async function loadSession() {
@@ -174,77 +424,6 @@ async function loadSession() {
       document.querySelector("header").appendChild(status);
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
-      }
-    }
-  } catch (_) {}
-}
-
-async function loadHistory() {
-  try {
-    const res = await fetch("/api/history");
-    const history = await res.json();
-    if (!Array.isArray(history)) return;
-
-    for (const msg of history) {
-      const role = msg.role;
-      const content = msg.content || "";
-
-      if (role === "system") {
-        createSystemMessage(content);
-      } else if (role === "tool") {
-        const toolLabel = msg.tool_name ? `Tool: ${msg.tool_name}` : "Tool";
-        const el = document.createElement("div");
-        el.className = "msg assistant";
-        const label = document.createElement("span");
-        label.className = "role";
-        label.textContent = toolLabel;
-        el.appendChild(label);
-        const textNode = document.createTextNode(content);
-        el.appendChild(textNode);
-        messagesEl.appendChild(el);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      } else if (role === "assistant") {
-        const el = document.createElement("div");
-        el.className = "msg assistant";
-        const label = document.createElement("span");
-        label.className = "role";
-        label.textContent = "Assistant";
-        el.appendChild(label);
-
-        if (content) {
-          const contentDiv = document.createElement("div");
-          contentDiv.innerHTML = renderMarkdown(content);
-          el.appendChild(contentDiv);
-        }
-
-        if (msg.tool_calls_json) {
-          try {
-            const toolCalls = JSON.parse(msg.tool_calls_json);
-            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-              const details = document.createElement("div");
-              details.className = "tool-call-details";
-              details.style.cssText = "margin-top: 8px; padding: 6px 10px; background: var(--paper); border-radius: 2px; font-size: 13px; border-left: 3px solid var(--accent);";
-              for (const tc of toolCalls) {
-                const fn = tc.function || {};
-                const name = fn.name || "unknown";
-                const args = fn.arguments || {};
-                const argsStr = typeof args === "string" ? args : JSON.stringify(args, null, 2);
-                const item = document.createElement("div");
-                item.innerHTML = `<strong>🔧 ${name}</strong><pre style="margin: 4px 0 0 0; white-space: pre-wrap; background: var(--paper); padding: 4px 8px; border-radius: 2px;">${argsStr}</pre>`;
-                details.appendChild(item);
-              }
-              el.appendChild(details);
-            }
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        messagesEl.appendChild(el);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      } else {
-        // user
-        createMessage(role, content);
       }
     }
   } catch (_) {}
