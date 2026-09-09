@@ -21,25 +21,27 @@
 ## Build Dependencies
 
 Build/test requirements match `README.md`; the key C++ dependencies are
-Boost (>= 1.75) with the `system`, `program_options`, and `json` components.
+**Boost** (>= 1.75) with the `system`, `program_options`, `json`, and
+`beast`/`asio` components, **spdlog**, and **OpenSSL**.
 
 - **Linux (Debian/Ubuntu)**
 
   ```bash
-  sudo apt-get install -y libcurl4-openssl-dev libspdlog-dev libcpp-httplib-dev \
-      libboost-system-dev libboost-program-options-dev libboost-json-dev catch2
+  sudo apt-get install -y libboost-system-dev libboost-program-options-dev \
+      libboost-json-dev libspdlog-dev libssl-dev catch2
+  # or: sudo apt-get install -y libboost-all-dev
   ```
 
 - **macOS**
 
   ```bash
-  brew install curl catch2 spdlog cpp-httplib boost
+  brew install boost spdlog openssl catch2
   ```
 
 - **Windows (vcpkg)**
 
   ```bash
-  vcpkg install curl catch2 spdlog cpp-httplib boost-system boost-program-options boost-json
+  vcpkg install boost-system boost-program-options boost-json spdlog openssl catch2
   ```
 
 ## Testing
@@ -95,31 +97,24 @@ tests/unit/      Unit tests
 
 - Front-end sources live in `web/` (`index.html`, `app.js`, `style.css`). They are
   served verbatim by `pu serve` — there is no build step for the UI.
-- The browser talks to the runtime through the API implemented in
-  `src/app/serve.cpp` (`RunServe`): `POST /api/chat/stream` (SSE),
-  `POST /api/chat` (non-streaming), `POST /api/chat/cancel`,
-  `POST /api/agent/switch`, `POST /api/clear`, `GET /api/session`,
-  `GET /api/history`, `GET /api/agents`.
+- The browser talks to the runtime through a **WebSocket** for chat (`ws://`) and
+  REST endpoints for control/status. The chat API is **not** SSE‑based.
+- WebSocket protocol:
+  - Client → Server: `{"type":"run","payload":{"text":"..."}}` or `{"type":"cancel"}`
+  - Server → Client: `{"type":"chunk","payload":{"text":"..."}}`, `{"type":"done"}`, or `{"type":"error","payload":{"text":"..."}}`
+- REST endpoints:
+  - `GET /api/session` – current session info
+  - `GET /api/history` – full conversation history
+  - `GET /api/agents` – list available agents
+  - `POST /api/agent/switch` – switch agent (`{"agent_name":"..."}`)
+  - `GET /api/workspaces` – list workspaces
+  - `POST /api/workspace/switch` – switch workspace (`{"path":"..."}`)
+  - `POST /api/clear` – clear history
 - After editing C++ or any file under `web/`, rebuild (`cmake --build build`) and
   restart `pu serve`; the server mounts `web/` at startup, so a plain restart is
   enough to pick up front-end changes.
-- Manual checks (server on default port 8080):
-  ```bash
-  curl -N -X POST http://127.0.0.1:8080/api/chat/stream \
-    -H 'Content-Type: application/json' \
-    -d '{"message":"hi","request_id":"1"}'
-  # expect data: {"token": ...} events followed by data: [DONE]
-
-  curl -X POST http://127.0.0.1:8080/api/chat/cancel \
-    -H 'Content-Type: application/json' \
-    -d '{"request_id":"1"}'
-  # expect {"success":true} while the request is in flight
-  ```
 - In a browser, verify the typewriter (streaming) output, the Send→Cancel button,
   agent switching from the dropdown, and history loading on refresh.
-- The front-end falls back to the non-streaming `POST /api/chat` endpoint when the
-  browser lacks `ReadableStream` or the server returns an HTTP error, so keep that
-  route working when changing the chat API.
 
 ## License
 
