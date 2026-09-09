@@ -9,6 +9,7 @@
 #include "pu/json.hpp"
 #include <spdlog/spdlog.h>
 
+#include <chrono>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -139,7 +140,8 @@ ExecutionResult Executor::Execute(const std::string& input,
                                   Workspace& workspace,
                                   LLMProvider* provider,
                                   CancelToken cancel_token,
-                                  std::function<void(const std::string&)> content_callback) {
+                                  std::function<void(const std::string&)> content_callback,
+                                  ToolCallbacks tool_callbacks) {
   if (!toolbox_) {
     ExecutionResult err;
     err.has_error = true;
@@ -159,7 +161,8 @@ ExecutionResult Executor::Execute(const std::string& input,
     }
   }
 
-  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback);
+  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback,
+                            tool_callbacks);
   ExecutionResult exec_result;
   if (result.has_error) {
     exec_result.has_error = true;
@@ -180,7 +183,8 @@ ExecutionResult Executor::Execute(const std::string& input,
 Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
                                                LLMProvider* provider,
                                                CancelToken cancel_token,
-                                               std::function<void(const std::string&)> content_callback) {
+                                               std::function<void(const std::string&)> content_callback,
+                                               Executor::ToolCallbacks tool_callbacks) {
   ToolLoopResult result;
   result.was_streamed = false;
 
@@ -288,7 +292,9 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     for (auto& tc : collected_calls) {
       if (tc.id.empty()) {
-        tc.id = "call_" + std::to_string(++next_tool_call_id_);
+        tc.id = "call_" + std::to_string(
+                   std::chrono::steady_clock::now().time_since_epoch().count()) +
+               "_" + std::to_string(++next_tool_call_id_);
       }
     }
 
@@ -326,13 +332,20 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         continue;
       }
       ++result.tool_call_count;
+
+      // Notify the UI/streaming layer that a tool is about to run.
+      if (tool_callbacks.on_start) {
+        tool_callbacks.on_start(call.id, call.name, call.arguments);
+      }
+
       std::string tool_result;
       SetLogToolName(call.name);
       auto tool_start = std::chrono::steady_clock::now();
       try {
         tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
       } catch (const std::exception& e) {
-        tool_result = std::string("Tool execution error: ") + e.what();
+        tool_result = tools::MakeToolResultJson(
+            false, "", "", std::string("Tool execution error: ") + e.what(), -1);
       }
       auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - tool_start).count();
@@ -340,6 +353,17 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
       ClearLogToolName();
       ClearLogDurationMs();
+
+      // Notify the UI/streaming layer that the tool finished (success or error).
+      if (tool_callbacks.on_end) {
+        auto parsed = tools::ParseToolResult(tool_result);
+        if (parsed.valid) {
+          tool_callbacks.on_end(call.id, parsed.stdout_content, parsed.error);
+        } else {
+          // Non-standard JSON output: push it verbatim as output.
+          tool_callbacks.on_end(call.id, tool_result, "");
+        }
+      }
 
       ChatMessage tool_msg;
       tool_msg.role = "tool";

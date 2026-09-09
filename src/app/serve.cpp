@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "pu/agent_config.hpp"
+#include "pu/executor.hpp"
 #include "pu/infra/platform.hpp"
 #include "pu/json.hpp"
 #include "pu/runtime.hpp"
@@ -445,6 +446,36 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
               std::thread worker([&runtime, &io_mutex, active_ws, token, payload_text]() {
                 bool is_command = false;
                 ExecutionResult result;
+
+                // Serialize and send one JSON frame to the WebSocket client.
+                auto send_frame = [&](const boost::json::value& ev) {
+                  std::string msg = boost::json::serialize(ev);
+                  beast::error_code ec;
+                  std::lock_guard<std::mutex> ws_lock(active_ws->mtx);
+                  if (active_ws->ws && active_ws->ws->is_open())
+                    active_ws->ws->write(net::buffer(msg), ec);
+                };
+
+                // Tool call lifecycle callbacks: forward start/end events so the
+                // front-end can display tool invocations in real time.
+                Executor::ToolCallbacks tool_cb;
+                tool_cb.on_start = [&](const std::string& id,
+                                       const std::string& name,
+                                       const boost::json::value& args) {
+                  boost::json::value frame = {
+                      {"type", "tool_start"},
+                      {"payload", {{"id", id}, {"name", name}, {"args", args}}}};
+                  send_frame(frame);
+                };
+                tool_cb.on_end = [&](const std::string& id,
+                                     const std::string& output,
+                                     const std::string& error) {
+                  boost::json::value frame = {
+                      {"type", "tool_end"},
+                      {"payload", {{"id", id}, {"output", output}, {"error", error}}}};
+                  send_frame(frame);
+                };
+
                 {
                   std::lock_guard<std::mutex> lock(io_mutex);
                   result = runtime.ProcessInput(
@@ -453,12 +484,9 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
                         if (chunk.empty())
                           return;
                         boost::json::value ev = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
-                        std::string msg = boost::json::serialize(ev);
-                        beast::error_code ec;
-                        std::lock_guard<std::mutex> ws_lock(active_ws->mtx);
-                        if (active_ws->ws && active_ws->ws->is_open())
-                          active_ws->ws->write(net::buffer(msg), ec);
-                      });
+                        send_frame(ev);
+                      },
+                      tool_cb);
                 }
 
                 boost::json::value final;
@@ -466,11 +494,7 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
                   final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};
                 else
                   final = {{"type", "done"}};
-                std::string msg = boost::json::serialize(final);
-                beast::error_code ec;
-                std::lock_guard<std::mutex> ws_lock(active_ws->mtx);
-                if (active_ws->ws && active_ws->ws->is_open())
-                  active_ws->ws->write(net::buffer(msg), ec);
+                send_frame(final);
               });
               worker.detach();
             }

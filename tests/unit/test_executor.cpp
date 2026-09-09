@@ -162,8 +162,10 @@ namespace {
 
 class MockLLM : public LLMProvider {
  public:
-  explicit MockLLM(std::vector<ToolCall> calls, std::string content = "")
-      : calls_(std::move(calls)), content_(std::move(content)) {}
+  explicit MockLLM(std::vector<ToolCall> calls, std::string content = "",
+                   bool fire_calls_once = false)
+      : calls_(std::move(calls)), content_(std::move(content)),
+        fire_calls_once_(fire_calls_once) {}
 
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
@@ -175,6 +177,7 @@ class MockLLM : public LLMProvider {
     for (const auto& c : calls_) {
       if (tool_callback) tool_callback(c);
     }
+    if (fire_calls_once_) calls_.clear();
     return r;
   }
 
@@ -184,6 +187,7 @@ class MockLLM : public LLMProvider {
  private:
   std::vector<ToolCall> calls_;
   std::string content_;
+  bool fire_calls_once_ = false;
 };
 
 class TrackingTool : public Tool {
@@ -230,4 +234,81 @@ TEST_CASE("Executor returns ask_user question without running other tools",
   REQUIRE(result.was_streamed == false);
   REQUIRE(result.has_error == false);
   REQUIRE(tracking_ptr->executions == 0);
+}
+
+TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
+          "[executor][tool_loop][tool_callbacks]") {
+  Toolbox toolbox;
+  auto tracking = std::make_unique<TrackingTool>();
+  auto* tracking_ptr = tracking.get();
+  toolbox.RegisterTool(std::move(tracking));
+
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.id = "";  // let Executor assign a generated id
+  call.name = "tracking_tool";
+  call.arguments = boost::json::value{{"flag", true}};
+
+  // Emit the tool call only on the first turn so the tool loop terminates
+  // after the tool runs and the mock returns its final text response.
+  MockLLM mock(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
+
+  std::vector<std::string> started_ids;
+  std::vector<std::string> started_names;
+  std::vector<boost::json::value> started_args;
+  std::vector<std::string> ended_ids;
+  std::vector<std::string> ended_outputs;
+  std::vector<std::string> ended_errors;
+
+  Executor::ToolCallbacks cb;
+  cb.on_start = [&](const std::string& id, const std::string& name,
+                    const boost::json::value& args) {
+    started_ids.push_back(id);
+    started_names.push_back(name);
+    started_args.push_back(args);
+  };
+  cb.on_end = [&](const std::string& id, const std::string& output,
+                  const std::string& error) {
+    ended_ids.push_back(id);
+    ended_outputs.push_back(output);
+    ended_errors.push_back(error);
+  };
+
+  Workspace ws;
+  ExecutionResult result =
+      executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "done");
+  REQUIRE(tracking_ptr->executions == 1);
+
+  REQUIRE(started_ids.size() == 1);
+  REQUIRE(ended_ids.size() == 1);
+
+  // start and end must reference the same, non-empty tool id.
+  REQUIRE_FALSE(started_ids[0].empty());
+  REQUIRE(started_ids[0] == ended_ids[0]);
+
+  REQUIRE(started_names[0] == "tracking_tool");
+  REQUIRE(started_args[0].is_object());
+  REQUIRE(started_args[0].as_object().at("flag") == true);
+
+  // Success result: stdout is pushed as output, error stays empty.
+  REQUIRE(ended_outputs[0] == "ran");
+  REQUIRE(ended_errors[0].empty());
+
+  // The workspace history must pair the tool message with the same id that was
+  // streamed to the caller.
+  bool found_paired_tool_msg = false;
+  for (const auto& msg : ws.GetHistory()) {
+    if (msg.role == "tool" && msg.tool_call_id == started_ids[0]) {
+      found_paired_tool_msg = true;
+      break;
+    }
+  }
+  REQUIRE(found_paired_tool_msg);
 }
