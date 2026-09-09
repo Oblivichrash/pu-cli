@@ -11,30 +11,29 @@ A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence*
 ### Build Dependencies
 
 pu-cli uses **Boost.JSON** (Boost >= 1.75) for all JSON parsing and
-serialization. The other runtime dependencies are libcurl, spdlog, and
-cpp-httplib (Catch2 is only needed for the unit tests).
+serialization. The runtime dependencies are **Boost** (Beast, Asio, JSON,
+ProgramOptions), **spdlog**, and **OpenSSL** (Catch2 is only needed for unit tests).
 
 Install the dependencies first:
 
-- **Linux (Debian/Ubuntu)** — either the full Boost package or the individual
-  libraries:
+- **Linux (Debian/Ubuntu)** — either the full Boost package or individual libraries:
 
   ```bash
-  sudo apt-get install -y libcurl4-openssl-dev libspdlog-dev libcpp-httplib-dev \
-      libboost-system-dev libboost-program-options-dev libboost-json-dev catch2
+  sudo apt-get install -y libboost-system-dev libboost-program-options-dev \
+      libboost-json-dev libspdlog-dev libssl-dev catch2
   # or: sudo apt-get install -y libboost-all-dev
   ```
 
 - **macOS**:
 
   ```bash
-  brew install curl catch2 spdlog cpp-httplib boost
+  brew install boost spdlog openssl catch2
   ```
 
 - **Windows (vcpkg)**:
 
   ```bash
-  vcpkg install curl catch2 spdlog cpp-httplib boost-system boost-program-options boost-json
+  vcpkg install boost-system boost-program-options boost-json spdlog openssl catch2
   ```
 
 ### Build
@@ -93,14 +92,48 @@ Your conversation is automatically saved to `./.pu/session.json` after every int
 
 The Web UI supports:
 
-- **Real-time streaming chat** — replies appear token by token (typewriter effect) via `POST /api/chat/stream` (SSE).
-- **Request cancellation** — the Send button turns into Cancel while a request is in flight (`POST /api/chat/cancel`).
+- **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
+- **Request cancellation** — the Send button turns into Cancel while a request is in flight; click it to abort the current generation.
 - **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
 - **History loading** — previous messages are restored from the persisted session (`GET /api/history`).
+- **Workspace switching** — switch between different project directories (each with its own `.pu/` configuration and session).
 
-The front-end lives in `web/` and talks to the runtime through a small JSON API;
-when streaming is unavailable (old browser or server) it automatically falls back
-to the non-streaming `POST /api/chat` endpoint.
+The front-end lives in `web/` and talks to the runtime through a small JSON API over WebSocket for chat, plus REST endpoints for state queries and actions.
+
+#### WebSocket Protocol
+
+**Endpoint**: `ws://<host>:<port>/ws`
+
+**Client → Server**:
+
+```json
+{"type":"run","payload":{"text":"user message"}}
+{"type":"cancel"}
+```
+
+**Server → Client**:
+
+```json
+{"type":"chunk","payload":{"text":"token part"}}
+{"type":"done"}
+{"type":"error","payload":{"text":"error description"}}
+```
+
+The server streams back chunks as they are generated; the front-end renders them incrementally. Cancellation immediately interrupts the LLM request and closes the WebSocket.
+
+#### REST API Endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `GET` | `/api/session` | Current session info (agent, backend type/model) |
+| `GET` | `/api/history` | Full conversation history (including system and tool messages) |
+| `GET` | `/api/agents` | List all available agents with descriptions |
+| `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
+| `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
+| `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
+| `POST` | `/api/clear` | Clear the conversation history |
+
+All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
 ---
 
@@ -263,8 +296,6 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
   ]
 }
 ```
-
-Note: The limits configuration section (max_sessions, max_history_messages, max_branches) is no longer effective and should not be used.
 
 ### Environment Variables
 
