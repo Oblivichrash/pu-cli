@@ -13,6 +13,22 @@ pu-cli is built around four principles:
 
 ---
 
+## Tech Stack
+
+The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
+**spdlog**, and **OpenSSL**:
+
+- **Boost.Beast** — HTTP/WebSocket server (`pu serve`) and HTTP client
+  (`BeastHttpClient`), built on top of **Boost.Asio**.
+- **Boost.Asio** — asynchronous I/O core underneath Beast.
+- **Boost.JSON** — JSON parsing/serialization (config, session persistence,
+  WebSocket protocol, MCP, REST API).
+- **Boost.ProgramOptions** — CLI option parsing.
+- **OpenSSL** — TLS for `https://`/`wss://` connections in `BeastHttpClient`.
+- **spdlog** — structured logging.
+
+---
+
 ## Core Components
 
 | Component | Responsibility |
@@ -24,11 +40,11 @@ pu-cli is built around four principles:
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
-| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`): cpp-httplib HTTP server exposing the session as a JSON/SSE API and mounting the `web/` UI |
+| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`): Boost.Beast HTTP/WebSocket server exposing the session via WebSocket (`/ws`) for chat and REST endpoints for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `StdioTransport` | stdio subprocess transport |
-| `HttpTransport` | remote streamable-HTTP transport (curl POST, line-delimited responses) |
+| `HttpTransport` | remote streamable-HTTP transport (BeastHttpClient POST, line-delimited responses) |
 | `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
 
 ---
@@ -64,8 +80,8 @@ convenience layer over the Boost API for the operations the codebase uses most:
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
-(`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the HTTP/SSE API in
-`src/app/serve.cpp`.
+(`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
+API in `src/app/serve.cpp`.
 
 ---
 
@@ -131,20 +147,25 @@ Key responsibilities:
 
 ### Web server lifecycle
 
-`pu serve` runs the same `Runtime` instance behind an HTTP front-end
+`pu serve` runs the same `Runtime` instance behind a Boost.Beast front-end
 (`RunServe` in `src/app/serve.cpp`):
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
-   server mounts the static `web/` UI and registers the API routes.
-2. All chat handlers serialize on a single `io_mutex` — `ProcessInput` mutates
-   the one persistent `Session`, so the lock is shared with the CLI paths.
-3. `POST /api/chat/stream` registers a `CancelToken` under a `request_id`, spawns
-   a worker thread that runs `ProcessInput`, and returns a chunked SSE response
-   that flushes tokens as they arrive.
-4. `POST /api/chat/cancel` flips the `CancelToken` for a `request_id`; the entry
-   is erased from `active_requests` once processing finishes (or the client
-   disconnects).
-5. `svr.listen()` runs on its own thread; on Ctrl+C the server stops and
+   server mounts the static `web/` UI and registers the HTTP routes.
+2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
+   accepted connection is handled on a detached thread.
+3. A plain HTTP request is dispatched to the static/REST routes; a request with a
+   WebSocket upgrade on `/ws` is accepted and replaces any previously active
+   WebSocket session.
+4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
+   spawns a worker thread that runs `Runtime::ProcessInput` under the shared
+   `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
+5. The runtime's `content_callback` writes `{"type":"chunk","payload":{"text":"..."}}`
+   frames back over the socket as tokens arrive; completion is signalled with
+   `{"type":"done"}` and failures with `{"type":"error","payload":{"text":"..."}}`.
+6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
+   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/clear`)
+   handle control and status queries. On Ctrl+C the server stops and
    `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
@@ -180,24 +201,21 @@ A `CancelToken` (`std::shared_ptr<std::atomic<bool>>`) is threaded through the
 whole request stack — `Runtime::ProcessInput` → `Executor::Execute` →
 `LLMProvider::Chat` → `HttpClient::PostStream`. Providers poll the flag between
 chunks and stop early, so a cancellation surfaces quickly instead of waiting for
-the model to finish. `POST /api/chat/cancel` looks up the token registered under
-the client-supplied `request_id` and sets it; the SSE provider also sets the same
-token when it detects that the client disconnected.
+the model to finish. In `pu serve` the token is owned by the active WebSocket
+session: a `{"type":"cancel"}` message — or a dropped connection — sets it, and
+`BeastHttpClient` aborts the in-flight HTTP request on the next poll.
 
-### SSE streaming
+### WebSocket streaming
 
-`POST /api/chat/stream` answers with `Content-Type: text/event-stream` and
-`Cache-Control: no-cache`. `ProcessInput` runs on a worker thread and its
-`content_callback` pushes `data: {"token": "<chunk>"}\n\n` events into a shared
-`SseStream` queue; a cpp-httplib chunked content provider
-(`Response::set_chunked_content_provider`) drains the queue on the connection
-thread and writes each event to the socket as it arrives, which is what produces
-the typewriter effect in the browser. Completion is signalled with
-`data: [DONE]\n\n`, failures with `data: {"error": "..."}\n\n`, and commands or
-non-streaming backends deliver their full text as a single token event. The
-front-end (`web/app.js`) parses the stream line by line and falls back to the
-non-streaming `POST /api/chat` endpoint on HTTP/network errors or when
-`ReadableStream` is unsupported.
+Chat runs exclusively over the `/ws` WebSocket. A `{"type":"run"}` message runs
+`ProcessInput` on a detached worker thread; its `content_callback` serializes
+each chunk as `{"type":"chunk","payload":{"text":"..."}}` and writes the frame to
+the socket as it arrives, which produces the typewriter effect in the browser.
+Completion is signalled with `{"type":"done"}`, failures with
+`{"type":"error","payload":{"text":"..."}}`, and commands or non-streaming
+backends deliver their full text as a single chunk frame. The front-end
+(`web/app.js`) parses each JSON frame and appends the text to the pending
+message.
 
 ## Data Flow
 
@@ -229,16 +247,19 @@ Runtime.ProcessInput(input, ...)
 ### Web request (streaming)
 
 ```
-Browser ──POST /api/chat/stream──► RunServe handler
-     │  register CancelToken in active_requests
+Browser ──WebSocket (/ws)──► RunServe handler
+     │  WebSocket connection established
      ▼
-Worker thread: Runtime.ProcessInput(message, ..., content_callback)
-     │  content_callback → PushSseEvent("data: {\"token\": ...}\n\n")
+Client sends: {"type":"run","payload":{"text":"..."}}
+     │
      ▼
-SseStream queue (mutex + condition_variable)
-     │  drained by httplib chunked content provider on the connection thread
+Worker thread: Runtime.ProcessInput(..., content_callback)
+     │  content_callback → ws->write({"type":"chunk","payload":{"text":"..."}})
      ▼
-Browser: ReadableStream → parse SSE → append token to pending message
+Browser: WebSocket onmessage → parse JSON → append token to Markdown renderer
+
+Cancellation:
+Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
 ```
 
 ---
@@ -262,7 +283,7 @@ Browser: ReadableStream → parse SSE → append token to pending message
         ▼                             ▼
 ┌──────────────────────────────────────┐   ┌──────────────────────────────────────┐
 │  StdioTransport                     │   │  HttpTransport                       │
-│  Child process stdio, line JSON     │   │  CurlHttpClient POST, line JSON      │
+│  Child process stdio, line JSON     │   │  BeastHttpClient POST, line JSON     │
 └──────────────────────────────────────┘   └──────────────────────────────────────┘
 ```
 
@@ -323,7 +344,7 @@ src/
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
 ├── core/                 # Logging
-├── infra/                # CurlHttpClient, platform
+├── infra/                # BeastHttpClient, platform
 ├── llm/                  # Providers, streaming parser
 ├── mcp/                  # MCP transport, JSON-RPC, client
 ├── session/              # Session, Workspace, etc.
@@ -343,7 +364,7 @@ src/
 
 ## Known Limitations
 
-- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses libcurl and works on both platforms.
+- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.

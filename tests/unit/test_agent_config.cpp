@@ -2,39 +2,17 @@
 
 #include "pu/agent_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 #include "pu/error.hpp"
 #include "pu/json.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
-#include <cstdlib>
 #include <filesystem>
-
-#ifdef _WIN32
-#include <cstring>
-#endif
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace fs = std::filesystem;
-
-#ifdef _WIN32
-static void set_env(const char* name, const char* value) {
-    std::string s = std::string(name) + "=" + std::string(value);
-    _putenv(s.c_str());
-}
-static void unset_env(const char* name) {
-    std::string s = std::string(name) + "=";
-    _putenv(s.c_str());
-}
-#else
-static void set_env(const char* name, const char* value) {
-    setenv(name, value, 1);
-}
-static void unset_env(const char* name) {
-    unsetenv(name);
-}
-#endif
 
 struct TempConfigFile {
   fs::path path;
@@ -142,14 +120,14 @@ TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
   {
+    ScopedEnvVar env("HOME", home.string());
     std::ofstream f(dir / ".pu" / "agents.json");
     f << "{}";
-  }
 
-  REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+    REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -167,14 +145,14 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
   {
+    ScopedEnvVar env("HOME", home.string());
     std::ofstream f(home / ".pu" / "agents.json");
     f << "{}";
-  }
 
-  REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
+    REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -192,9 +170,11 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
-  REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+  {
+    ScopedEnvVar env("HOME", home.string());
+    REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -235,20 +215,19 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   })";
   tmp.write(json);
 
-  set_env("OPENAI_KEY", "test-key-123");
+  {
+    ScopedEnvVar env("OPENAI_KEY", "test-key-123");
+    config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
 
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-
-  REQUIRE(cfg.default_agent == "chat");
-  REQUIRE(cfg.agents.size() == 2);
-  REQUIRE(cfg.agents[0].name == "chat");
-  REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
-  REQUIRE(cfg.agents[1].name == "bash");
-  REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
-  REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
-  REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
-
-  unset_env("OPENAI_KEY");
+    REQUIRE(cfg.default_agent == "chat");
+    REQUIRE(cfg.agents.size() == 2);
+    REQUIRE(cfg.agents[0].name == "chat");
+    REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
+    REQUIRE(cfg.agents[1].name == "bash");
+    REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
+    REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
+    REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
+  }
 }
 
 TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {

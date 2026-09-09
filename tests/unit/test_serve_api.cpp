@@ -5,6 +5,7 @@
 #include "pu/runtime.hpp"
 #include "pu/infra/platform.hpp"
 #include "infra/beast_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -124,42 +125,6 @@ bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   }
   return false;
 }
-
-class ScopedEnvVar {
-public:
-  ScopedEnvVar(const std::string& name, const std::string& value) : name_(name) {
-    const char* prev = std::getenv(name.c_str());
-    had_prev_ = (prev != nullptr);
-    if (had_prev_) prev_ = prev;
-    Set(value);
-  }
-
-  ~ScopedEnvVar() {
-    if (had_prev_) Set(prev_);
-    else Unset();
-  }
-
-private:
-  void Set(const std::string& value) {
-#ifdef _WIN32
-    _putenv_s(name_.c_str(), value.c_str());
-#else
-    setenv(name_.c_str(), value.c_str(), 1);
-#endif
-  }
-
-  void Unset() {
-#ifdef _WIN32
-    _putenv_s(name_.c_str(), "");
-#else
-    unsetenv(name_.c_str());
-#endif
-  }
-
-  std::string name_;
-  std::string prev_;
-  bool had_prev_ = false;
-};
 
 class FakeBackend {
 public:
@@ -321,8 +286,8 @@ public:
     home_ = fs::temp_directory_path() / ("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
-    home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", home_.string());
+    home_env_ = std::make_unique<pu::tests::ScopedEnvVar>("HOME", home_.string());
+    data_env_ = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", home_.string());
 
     backend_ = std::make_unique<FakeBackend>();
     WriteAgentsFile(home_, backend_->Port());
@@ -362,8 +327,8 @@ public:
 
 private:
   fs::path home_;
-  std::unique_ptr<ScopedEnvVar> home_env_;
-  std::unique_ptr<ScopedEnvVar> data_env_;
+  std::unique_ptr<pu::tests::ScopedEnvVar> home_env_;
+  std::unique_ptr<pu::tests::ScopedEnvVar> data_env_;
   std::unique_ptr<FakeBackend> backend_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
