@@ -12,7 +12,11 @@
 - SPDX license header in every file (`// SPDX-License-Identifier: GPL-3.0-only`).
 - No decorative comments (`// ====`).
 - Comments explain **why**, not **what**.
-- Use `clang-format` for formatting.
+- Use `clang-format` for formatting; the config lives in `.clang-format`
+  (Google style, 100-column limit). Run `clang-format -i <files>` before
+  committing. Without the config file, `clang-format` would fall back to the
+  LLVM defaults and reformat the whole tree, so always run it from the repo
+  root.
 - JSON code uses Boost.JSON (`boost::json::value`) through the
   `include/pu/core/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
   `pu::json::ValueOrDefault`, `pu::json::HasKey`, `pu::json::Merge`,
@@ -68,10 +72,12 @@ ctest --test-dir build --output-on-failure
 ```text
 src/
   app/           main(), CLI parsing, `pu serve` web server
+                 (serve.cpp = lifecycle, serve_http_routes.cpp = REST/static,
+                  serve_websocket.cpp = /ws protocol)
   core/          Base layer: logging, platform probing
   infra/         Adapters: Beast HTTP client implementation
   llm/           Providers (Ollama, OpenAI, streaming parser)
-  mcp/           MCP transport, JSON-RPC client, high-level client
+  mcp/           MCP transport implementations, JSON-RPC client, high-level client
   session/       Session, Workspace, Transcript, Memory
   tools/         Toolbox, built-in tools, McpTool adapter
   *.cpp          Orchestration layer: agent_config, agent_manager,
@@ -79,19 +85,32 @@ src/
 include/pu/
   core/          Base utilities: cancel_token, error, json, path_utils,
                  logging, platform
-  infra/         http_client interface (Beast implementation in src/infra)
-  llm/            Public headers for the llm layer
-  mcp/            Public headers for the mcp layer
-  session/        Public headers for the session layer
-  tools/          Public headers for the tools layer
+  infra/         http_client interface + beast_http_client header
+  llm/           Public headers for the llm layer
+  mcp/           Public headers for the mcp layer (transport, stdio_transport, ...)
+  session/       Public headers for the session layer
+  tools/         Public headers for the tools layer
   *.hpp          Orchestration-layer headers (agent_config, executor, ...)
 tests/unit/      Unit tests
 tests/mocks/     Test doubles
 ```
 
+A header belongs in `include/pu/` when code outside its own directory uses it
+(including tests); otherwise it stays next to its `.cpp` under `src/`.
+
 The layering is: `core/` (no dependencies, no domain knowledge) →
 `infra/`, `session/`, `llm/`, `mcp/`, `tools/` (domain modules) →
 orchestration headers at the root of `include/pu/`.
+
+### CMake Targets
+
+- `pu_core` — base static library: `core/`, `infra/`, `llm/`, `mcp/`, `session/`.
+- `pu_agent` — orchestration layer: `agent_config`, `agent_manager`, `executor`,
+  `runtime`, `command_router`, `tools/`.
+- `pu_app` — app layer: `src/app/cli.cpp` and the `pu serve` modules. Linked by
+  both the `pu` executable and `pu_tests`, so tests never compile app sources
+  directly.
+- `pu` — executable: `src/app/main.cpp`.
 
 ## Configuration
 

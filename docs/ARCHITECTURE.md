@@ -40,9 +40,10 @@ The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
-| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`): Boost.Beast HTTP/WebSocket server exposing the session via WebSocket (`/ws`) for chat and REST endpoints for control/status |
+| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`, with REST handlers in `serve_http_routes.cpp` and the WebSocket protocol in `serve_websocket.cpp`): Boost.Beast HTTP/WebSocket server exposing the session via WebSocket (`/ws`) for chat and REST endpoints for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
+| `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
 | `StdioTransport` | stdio subprocess transport |
 | `HttpTransport` | remote streamable-HTTP transport (BeastHttpClient POST, line-delimited responses) |
 
@@ -80,7 +81,7 @@ convenience layer over the Boost API for the operations the codebase uses most:
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
 (`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
-API in `src/app/serve.cpp`.
+API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ---
 
@@ -344,28 +345,37 @@ include/pu/
 │   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
 │   └── platform.hpp      # OS/kernel probing
 ├── infra/                # Adapters
-│   └── http_client.hpp   # HttpClient interface (Beast impl in src/infra)
+│   ├── http_client.hpp   # HttpClient interface
+│   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
 ├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
-├── mcp/                  # McpClient, JsonRpcClient, StdioTransport
+├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
 ├── session/              # Session, Workspace, Transcript, Memory
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
 ├── app/                  # Entry points: main, CLI parsing, serve (web server)
+│   ├── main.cpp
+│   ├── cli.cpp
+│   ├── serve.cpp              # RunServe: acceptor, dispatch, lifecycle
+│   ├── serve_http_routes.cpp  # Static files + REST handlers
+│   ├── serve_websocket.cpp    # /ws upgrade + chat frame protocol
+│   └── serve_internal.hpp     # Declarations shared by the serve modules
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
 ├── core/                 # Base layer: logging, platform
 ├── infra/                # BeastHttpClient (network adapter)
 ├── llm/                  # Providers, streaming parser
-├── mcp/                  # MCP transport, JSON-RPC, client
+├── mcp/                  # MCP transport implementations, JSON-RPC, client
 ├── session/              # Session, Workspace, etc.
 └── tools/                # Toolbox, tools
 ```
 
-The `pu_core` CMake target is named after the whole *base* static library
-(base + domain modules), not the `core/` directory; orchestration code lives in
-`pu_agent`, and the `pu` executable adds only `src/app/`.
+A header lives in `include/pu/` when code outside its own directory uses it
+(including tests); otherwise it stays next to its `.cpp`. The CMake targets
+follow the layering: `pu_core` is the *base* static library (core + domain
+modules), `pu_agent` holds the orchestration layer, `pu_app` holds `src/app/`,
+and the `pu` executable adds only `main.cpp`.
 
 ---
 
