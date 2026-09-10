@@ -8,9 +8,10 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <vector>
 
-#include "infra/beast_http_client.hpp"
-#include "pu/mcp/stdio_transport.hpp"
+#include "pu/infra/beast_http_client.hpp"
+#include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
 

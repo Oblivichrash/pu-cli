@@ -9,7 +9,7 @@
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
 
-#include "infra/beast_http_client.hpp"
+#include "pu/infra/beast_http_client.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/error.hpp"

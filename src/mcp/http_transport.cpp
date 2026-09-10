@@ -2,7 +2,7 @@
 #include "mcp/http_transport.hpp"
 
 #include "pu/core/platform.hpp"
-#include "infra/beast_http_client.hpp"
+#include "pu/infra/beast_http_client.hpp"
 
 #include <spdlog/spdlog.h>
 

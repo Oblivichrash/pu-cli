@@ -7,7 +7,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/mcp/stdio_transport.hpp"
+#include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
 
