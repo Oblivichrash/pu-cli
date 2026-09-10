@@ -2,7 +2,6 @@ find_package(Catch2 3 REQUIRED)
 
 add_executable(pu_tests
     unit/test_ollama_backend.cpp
-    ../src/app/serve.cpp
     unit/test_openai_backend.cpp
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
@@ -22,11 +21,10 @@ target_include_directories(pu_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/tests
-    ${CMAKE_SOURCE_DIR}/src/app
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_agent pu_core
+    pu_app pu_agent pu_core
     Catch2::Catch2WithMain
 )
 

@@ -49,25 +49,38 @@ target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include 
 target_link_libraries(pu_agent PUBLIC pu_core spdlog::spdlog)
 add_library(pu::agent ALIAS pu_agent)
 
-add_executable(pu
-    src/app/main.cpp
+add_library(pu_app STATIC
     src/app/cli.cpp
     src/app/serve.cpp
+    src/app/serve_http_routes.cpp
+    src/app/serve_websocket.cpp
 )
-target_include_directories(pu PRIVATE
+target_include_directories(pu_app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
-target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
+target_link_libraries(pu_app PUBLIC pu_agent pu_core spdlog::spdlog)
+add_library(pu::app ALIAS pu_app)
+
+add_executable(pu
+    src/app/main.cpp
+)
+target_include_directories(pu PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(pu PRIVATE pu_app pu_agent pu_core spdlog::spdlog)
 
 if(MSVC)
     target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(pu_app PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     target_compile_options(pu PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(pu_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pu_app PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
