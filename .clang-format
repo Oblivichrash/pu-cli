@@ -1,0 +1,7 @@
+---
+# Google C++ Style (see CONTRIBUTING.md). The column limit is widened to 100 to
+# match the existing codebase; every other setting follows Google defaults so
+# that running clang-format stays a no-op on already-formatted code.
+BasedOnStyle: Google
+ColumnLimit: 100
+...
