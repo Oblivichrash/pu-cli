@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/logging.hpp"
 #include <boost/json.hpp>
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 using namespace pu;
 

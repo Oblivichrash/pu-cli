@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "mcp/http_transport.hpp"
 
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 #include "infra/beast_http_client.hpp"
 
 #include <spdlog/spdlog.h>

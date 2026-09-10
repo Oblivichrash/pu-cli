@@ -3,8 +3,8 @@
 
 #include "pu/runtime.hpp"
 #include "pu/cli.hpp"
-#include "pu/json.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/json.hpp"
+#include "pu/core/platform.hpp"
 
 #include <boost/program_options.hpp>
 #include <spdlog/spdlog.h>

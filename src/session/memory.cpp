@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/memory.hpp"
 
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 namespace pu {
 

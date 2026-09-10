@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "infra/beast_http_client.hpp"
 
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 #include "pu/core/logging.hpp"
 
 #include <boost/beast/version.hpp>

@@ -14,7 +14,7 @@
 - Comments explain **why**, not **what**.
 - Use `clang-format` for formatting.
 - JSON code uses Boost.JSON (`boost::json::value`) through the
-  `include/pu/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
+  `include/pu/core/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
   `pu::json::ValueOrDefault`, `pu::json::HasKey`, `pu::json::Merge`,
   `pu::json::PrettyPrint`) instead of raw hand-rolled parsing.
 
@@ -67,19 +67,31 @@ ctest --test-dir build --output-on-failure
 
 ```text
 src/
-  agent/         AgentManager (config metadata only)
-  app/           CLI, UI, session manager
-  core/          SummaryGenerator, ArtifactExtractor
-  executor/      Executor (stateless)
-  infra/         HTTP client, platform utils
-  llm/           Providers
+  app/           main(), CLI parsing, `pu serve` web server
+  core/          Base layer: logging, platform probing
+  infra/         Adapters: Beast HTTP client implementation
+  llm/           Providers (Ollama, OpenAI, streaming parser)
   mcp/           MCP transport, JSON-RPC client, high-level client
-  runtime/       Runtime, CommandRouter
   session/       Session, Workspace, Transcript, Memory
-  tools/         Toolbox, tools (including McpTool adapter)
-include/pu/      Public headers (incl. `pu/json.hpp` Boost.JSON helpers)
+  tools/         Toolbox, built-in tools, McpTool adapter
+  *.cpp          Orchestration layer: agent_config, agent_manager,
+                 executor, runtime, command_router
+include/pu/
+  core/          Base utilities: cancel_token, error, json, path_utils,
+                 logging, platform
+  infra/         http_client interface (Beast implementation in src/infra)
+  llm/            Public headers for the llm layer
+  mcp/            Public headers for the mcp layer
+  session/        Public headers for the session layer
+  tools/          Public headers for the tools layer
+  *.hpp          Orchestration-layer headers (agent_config, executor, ...)
 tests/unit/      Unit tests
+tests/mocks/     Test doubles
 ```
+
+The layering is: `core/` (no dependencies, no domain knowledge) →
+`infra/`, `session/`, `llm/`, `mcp/`, `tools/` (domain modules) →
+orchestration headers at the root of `include/pu/`.
 
 ## Configuration
 

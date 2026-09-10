@@ -5,7 +5,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 namespace pu::tools {
 

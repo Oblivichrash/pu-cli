@@ -2,10 +2,10 @@
 
 #include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 using namespace pu;
 using namespace pu::tests;

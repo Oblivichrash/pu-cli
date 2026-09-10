@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 
 #include "pu/core/logging.hpp"
 #include "pu/tools/tool_result.hpp"
 
 #include <boost/json.hpp>
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 #include <spdlog/spdlog.h>
 
 #include <chrono>

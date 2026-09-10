@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/json_rpc_client.hpp"
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 #include <spdlog/spdlog.h>
 
 namespace pu::mcp {

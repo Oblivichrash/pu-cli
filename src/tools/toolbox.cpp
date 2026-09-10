@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/toolbox.hpp"
 
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 
 #include <spdlog/spdlog.h>
 

@@ -7,13 +7,13 @@
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 #include "infra/beast_http_client.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/error.hpp"
-#include "pu/path_utils.hpp"
+#include "pu/core/error.hpp"
+#include "pu/core/path_utils.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"

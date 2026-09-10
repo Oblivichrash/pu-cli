@@ -2,7 +2,7 @@
 #include "pu/cli.hpp"
 
 #include "pu/agent_manager.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/runtime.hpp"
 
 #include <boost/program_options.hpp>

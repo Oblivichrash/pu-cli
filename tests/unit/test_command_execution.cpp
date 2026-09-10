@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

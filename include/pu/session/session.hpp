@@ -9,7 +9,7 @@
 #include "pu/session/workspace.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/agent_config.hpp"
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 namespace pu {
 

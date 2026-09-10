@@ -2,9 +2,9 @@
 #include "pu/session/session.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
-#include "pu/http_client.hpp"
+#include "pu/infra/http_client.hpp"
 #include "infra/beast_http_client.hpp"
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>

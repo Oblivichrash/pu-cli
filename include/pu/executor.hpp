@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/agent_config.hpp"
-#include "pu/http_client.hpp"  // pu::CancelToken
+#include "pu/core/cancel_token.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"

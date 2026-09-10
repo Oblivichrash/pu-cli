@@ -10,7 +10,7 @@ find_package(OpenSSL REQUIRED)
 
 add_library(pu_core STATIC
     src/infra/beast_http_client.cpp
-    src/infra/platform.cpp
+    src/core/platform.cpp
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/memory.cpp

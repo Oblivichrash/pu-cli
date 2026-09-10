@@ -66,7 +66,7 @@ pu::RuntimeError : std::runtime_error
 ## JSON Handling
 
 All JSON parsing and serialization is provided by **Boost.JSON**
-(`boost::json::value`; Boost >= 1.75). `include/pu/json.hpp` is a thin
+(`boost::json::value`; Boost >= 1.75). `include/pu/core/json.hpp` is a thin
 convenience layer over the Boost API for the operations the codebase uses most:
 
 - `pu::json::parse` / `pu::json::serialize` — parse and serialize
@@ -324,8 +324,9 @@ automatically after every interaction and on shutdown, and restored on startup.
 
 ## Directory Structure
 
-Single-file modules live directly under `include/pu/` and `src/`; directories are kept
-only where a module has multiple files.
+The tree is layered bottom-up: `core/` holds dependency-free base utilities,
+the domain modules sit beside it, and the orchestration headers/modules live at
+the root of `include/pu/` and `src/`.
 
 ```
 include/pu/
@@ -334,27 +335,37 @@ include/pu/
 ├── command_router.hpp    # CommandRouter
 ├── runtime.hpp           # Runtime
 ├── executor.hpp          # Executor (session-state-free, with system context injection)
-├── http_client.hpp       # HttpClient interface
-├── cli.hpp, error.hpp, path_utils.hpp
-├── core/                 # Logging
-├── infra/                # Platform utilities
+├── cli.hpp               # CLI helpers
+├── core/                 # Base layer: no dependencies, no domain knowledge
+│   ├── cancel_token.hpp  # Shared cancellation token (transport-agnostic)
+│   ├── error.hpp         # RuntimeError / Error / HttpError
+│   ├── json.hpp          # Boost.JSON convenience helpers
+│   ├── logging.hpp       # spdlog setup + JSON log formatter
+│   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
+│   └── platform.hpp      # OS/kernel probing
+├── infra/                # Adapters
+│   └── http_client.hpp   # HttpClient interface (Beast impl in src/infra)
 ├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
-├── mcp/                  # McpClient, JsonRpcClient, StdioTransport, HttpTransport
+├── mcp/                  # McpClient, JsonRpcClient, StdioTransport
 ├── session/              # Session, Workspace, Transcript, Memory
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
-├── app/                  # CLI entry (main), UI helpers
+├── app/                  # Entry points: main, CLI parsing, serve (web server)
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
-├── core/                 # Logging
-├── infra/                # BeastHttpClient, platform
+├── core/                 # Base layer: logging, platform
+├── infra/                # BeastHttpClient (network adapter)
 ├── llm/                  # Providers, streaming parser
 ├── mcp/                  # MCP transport, JSON-RPC, client
 ├── session/              # Session, Workspace, etc.
 └── tools/                # Toolbox, tools
 ```
+
+The `pu_core` CMake target is named after the whole *base* static library
+(base + domain modules), not the `core/` directory; orchestration code lives in
+`pu_agent`, and the `pu` executable adds only `src/app/`.
 
 ---
 

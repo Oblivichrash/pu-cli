@@ -2,9 +2,9 @@
 #include "pu/tools/builtin_tools.hpp"
 
 #include "pu/agent_manager.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/tools/tool_result.hpp"
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 #include <boost/json.hpp>
 

@@ -7,8 +7,8 @@
 
 #include <boost/json.hpp>
 
-#include "pu/http_client.hpp"  // pu::CancelToken
-#include "pu/json.hpp"
+#include "pu/core/cancel_token.hpp"
+#include "pu/core/json.hpp"
 
 namespace pu {
 

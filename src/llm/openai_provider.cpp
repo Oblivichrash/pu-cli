@@ -2,9 +2,9 @@
 #include "pu/llm/openai_provider.hpp"
 
 #include "pu/llm/streaming_json_parser.hpp"
-#include "pu/infra/platform.hpp"
-#include "pu/error.hpp"
-#include "pu/json.hpp"
+#include "pu/core/platform.hpp"
+#include "pu/core/error.hpp"
+#include "pu/core/json.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>

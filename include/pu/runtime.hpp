@@ -9,8 +9,8 @@
 
 #include "pu/agent_manager.hpp"
 #include "pu/agent_config.hpp"
+#include "pu/core/cancel_token.hpp"
 #include "pu/executor.hpp"
-#include "pu/http_client.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"

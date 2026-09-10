@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/transcript.hpp"
 
-#include "pu/json.hpp"
+#include "pu/core/json.hpp"
 
 #include <algorithm>
 #include <boost/json.hpp>

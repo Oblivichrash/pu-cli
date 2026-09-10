@@ -3,8 +3,8 @@
 #include "pu/mcp/stdio_transport.hpp"
 #include "mcp/http_transport.hpp"
 #include "pu/mcp/json_rpc_client.hpp"
-#include "pu/error.hpp"
-#include "pu/json.hpp"
+#include "pu/core/error.hpp"
+#include "pu/core/json.hpp"
 #include <spdlog/spdlog.h>
 #include <future>
 #include <chrono>

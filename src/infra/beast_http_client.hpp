@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/http_client.hpp"
+#include "pu/infra/http_client.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>

@@ -19,8 +19,8 @@
 
 #include "pu/agent_config.hpp"
 #include "pu/executor.hpp"
-#include "pu/infra/platform.hpp"
-#include "pu/json.hpp"
+#include "pu/core/platform.hpp"
+#include "pu/core/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 

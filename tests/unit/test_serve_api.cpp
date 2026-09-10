@@ -3,7 +3,7 @@
 
 #include "pu/cli.hpp"
 #include "pu/runtime.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 #include "infra/beast_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
