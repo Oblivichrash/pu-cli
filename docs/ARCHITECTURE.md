@@ -166,9 +166,12 @@ Key responsibilities:
 4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
    spawns a worker thread that runs `Runtime::ProcessInput` under the shared
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
-5. The runtime's `content_callback` writes `{"type":"chunk","payload":{"text":"..."}}`
-   frames back over the socket as tokens arrive; completion is signalled with
-   `{"type":"done"}` and failures with `{"type":"error","payload":{"text":"..."}}`.
+5. Frames are written back over the socket as the run progresses:
+   `{"type":"chunk","payload":{"text":"..."}}` for each streamed token,
+   `{"type":"tool_start","payload":{"id","name","args"}}` and
+   `{"type":"tool_end","payload":{"id","output","error"}}` around each tool
+   execution, `{"type":"done"}` on completion, and
+   `{"type":"error","payload":{"text":"..."}}` on failure.
 6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
    `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/clear`)
    handle control and status queries. On Ctrl+C the server stops and
@@ -217,7 +220,9 @@ Chat runs exclusively over the `/ws` WebSocket. A `{"type":"run"}` message runs
 `ProcessInput` on a detached worker thread; its `content_callback` serializes
 each chunk as `{"type":"chunk","payload":{"text":"..."}}` and writes the frame to
 the socket as it arrives, which produces the typewriter effect in the browser.
-Completion is signalled with `{"type":"done"}`, failures with
+The `ToolCallbacks` passed alongside it emit `tool_start` before a tool executes
+and `tool_end` with its output, both keyed by the tool call `id`. Completion is
+signalled with `{"type":"done"}`, failures with
 `{"type":"error","payload":{"text":"..."}}`, and commands or non-streaming
 backends deliver their full text as a single chunk frame. The front-end
 (`web/app.js`) parses each JSON frame and appends the text to the pending

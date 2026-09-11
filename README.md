@@ -115,11 +115,13 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 
 ```json
 {"type":"chunk","payload":{"text":"token part"}}
+{"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
+{"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"done"}
 {"type":"error","payload":{"text":"error description"}}
 ```
 
-The server streams back chunks as they are generated; the front-end renders them incrementally. Cancellation immediately interrupts the LLM request and closes the WebSocket.
+The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation immediately interrupts the LLM request and closes the WebSocket.
 
 #### REST API Endpoints
 

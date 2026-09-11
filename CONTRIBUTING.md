@@ -132,7 +132,7 @@ orchestration headers at the root of `include/pu/`.
   REST endpoints for control/status. The chat API is **not** SSE‑based.
 - WebSocket protocol:
   - Client → Server: `{"type":"run","payload":{"text":"..."}}` or `{"type":"cancel"}`
-  - Server → Client: `{"type":"chunk","payload":{"text":"..."}}`, `{"type":"done"}`, or `{"type":"error","payload":{"text":"..."}}`
+  - Server → Client: `{"type":"chunk","payload":{"text":"..."}}`, `{"type":"tool_start","payload":{"id","name","args"}}`, `{"type":"tool_end","payload":{"id","output","error"}}`, `{"type":"done"}`, or `{"type":"error","payload":{"text":"..."}}`
 - REST endpoints:
   - `GET /api/session` – current session info
   - `GET /api/history` – full conversation history
