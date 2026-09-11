@@ -311,7 +311,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       };
       j_calls.push_back(jc);
     }
-    assistant_msg.tool_calls_json = boost::json::serialize(j_calls);
+    assistant_msg.tool_calls = std::move(j_calls);
     workspace.Append(assistant_msg);
 
     ToolContext tool_ctx;

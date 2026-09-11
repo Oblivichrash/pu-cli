@@ -22,7 +22,7 @@ class Tool {
   virtual ~Tool() = default;
   virtual std::string Name() const = 0;
   virtual std::string Description() const = 0;
-  virtual std::string ParametersSchema() const = 0;
+  virtual boost::json::value ParametersSchema() const = 0;
   virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
 };
 

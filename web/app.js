@@ -365,15 +365,7 @@ async function loadHistory() {
 
       if (role === "assistant") {
         const blocks = [];
-        const toolCallsJson = msg.tool_calls_json || "";
-
-        let toolCalls = [];
-        if (toolCallsJson) {
-          try {
-            const parsed = JSON.parse(toolCallsJson);
-            if (Array.isArray(parsed)) toolCalls = parsed;
-          } catch (_) {}
-        }
+        const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
 
         if (msg.reasoning_content) {
           blocks.push({

@@ -128,9 +128,9 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   boost::json::value mem_j = boost::json::object{};
   mem_j.as_object()["variables"] =
       json::ValueOrDefault<boost::json::value>(j, "variables", boost::json::object{});
-  // "artifacts" is the current key; "facts" is a legacy fallback for files
-  // written before the session schema was versioned (schema_version 1).
-  // Remove once schema_version >= 2 is the minimum supported layout.
+  // "artifacts" is the current key; "facts" is the legacy key written by
+  // schema_version <= 1 sessions. Keep the fallback as long as v1 files still
+  // have to load.
   mem_j.as_object()["artifacts"] = json::HasKey(j, "artifacts")
       ? j.at("artifacts")
       : json::ValueOrDefault<boost::json::value>(j, "facts", boost::json::array{});

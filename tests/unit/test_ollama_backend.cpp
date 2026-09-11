@@ -19,7 +19,7 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hello", "", ""}
+    ChatMessage{1, "now", "user", "Hello"}
   };
 
   provider.Chat(history, {});
@@ -57,7 +57,7 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hi", "", ""}
+    ChatMessage{1, "now", "user", "Hi"}
   };
 
   std::string accumulated;
@@ -95,10 +95,10 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
 
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list files", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "list files"}};
   ToolDefinition tool;
   tool.name = "execute_bash";
-  tool.parameters_schema = "{}";
+  tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
   bool tool_fired = false;

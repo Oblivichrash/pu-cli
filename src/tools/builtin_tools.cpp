@@ -126,8 +126,19 @@ std::string ExecuteBashToolStandard::Description() const {
   return "Execute a shell command.";
 }
 
-std::string ExecuteBashToolStandard::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"}},"required":["command"]})##";
+boost::json::value ExecuteBashToolStandard::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"command",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "The shell command to execute"},
+            }},
+       }},
+      {"required", boost::json::array{"command"}},
+  };
 }
 
 std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
@@ -184,8 +195,24 @@ std::string WriteFileTool::Description() const {
   return "Write text to a file.";
 }
 
-std::string WriteFileTool::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"path":{"type":"string","description":"File path (relative to sandbox)"},"content":{"type":"string","description":"Text to write"}},"required":["path","content"]})##";
+boost::json::value WriteFileTool::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"path",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "File path (relative to sandbox)"},
+            }},
+           {"content",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "Text to write"},
+            }},
+       }},
+      {"required", boost::json::array{"path", "content"}},
+  };
 }
 
 std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
@@ -242,8 +269,19 @@ std::string AskUserTool::Description() const {
   return "Ask user for clarification.";
 }
 
-std::string AskUserTool::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"question":{"type":"string","description":"The question to ask"}},"required":["question"]})##";
+boost::json::value AskUserTool::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"question",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "The question to ask"},
+            }},
+       }},
+      {"required", boost::json::array{"question"}},
+  };
 }
 
 std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {

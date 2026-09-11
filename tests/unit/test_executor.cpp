@@ -195,8 +195,8 @@ class TrackingTool : public Tool {
  public:
   std::string Name() const override { return "tracking_tool"; }
   std::string Description() const override { return "records execution"; }
-  std::string ParametersSchema() const override {
-    return R"({"type":"object"})";
+  boost::json::value ParametersSchema() const override {
+    return boost::json::object{{"type", "object"}};
   }
   std::string Execute(const boost::json::value& /*args*/,
                       ToolContext& /*ctx*/) override {

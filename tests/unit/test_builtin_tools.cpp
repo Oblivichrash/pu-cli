@@ -233,7 +233,7 @@ TEST_CASE("Ask_user metadata exposes name, description, and schema",
   REQUIRE(tool.Name() == "ask_user");
   REQUIRE(tool.Description() == "Ask user for clarification.");
 
-  auto schema = boost::json::parse(tool.ParametersSchema());
+  auto schema = tool.ParametersSchema();
   REQUIRE(schema.at("type") == "object");
   REQUIRE(schema.at("required") == boost::json::value(boost::json::array{"question"}));
   REQUIRE(schema.at("properties").at("question").at("type") == "string");

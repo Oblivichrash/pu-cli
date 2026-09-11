@@ -43,7 +43,7 @@ TEST_CASE("McpTool wraps successful raw output into JSON schema",
   ToolDefinition def;
   def.name = "read_file";
   def.description = "Reads a file";
-  def.parameters_schema = R"({"type":"object"})";
+  def.parameters = boost::json::parse(R"({"type":"object"})");
 
   McpTool tool(&client, def, "files");
 
@@ -67,7 +67,7 @@ TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON",
   ToolDefinition def;
   def.name = "bad_tool";
   def.description = "A tool that fails";
-  def.parameters_schema = "{}";
+  def.parameters = boost::json::object{};
 
   McpTool tool(&client, def, "mcp");
 
@@ -89,7 +89,7 @@ TEST_CASE("McpTool wraps MCP error: output as error", "[mcp_tool]") {
   ToolDefinition def;
   def.name = "slow_tool";
   def.description = "A slow tool";
-  def.parameters_schema = "{}";
+  def.parameters = boost::json::object{};
 
   McpTool tool(&client, def, "mcp");
 
@@ -110,7 +110,7 @@ TEST_CASE("McpTool wraps MCP call error: output as error", "[mcp_tool]") {
   ToolDefinition def;
   def.name = "broken_tool";
   def.description = "Broken tool";
-  def.parameters_schema = "{}";
+  def.parameters = boost::json::object{};
 
   McpTool tool(&client, def, "mcp");
 
@@ -128,7 +128,7 @@ TEST_CASE("McpTool returns error JSON when client is null", "[mcp_tool]") {
   ToolDefinition def;
   def.name = "test";
   def.description = "test";
-  def.parameters_schema = "{}";
+  def.parameters = boost::json::object{};
 
   McpTool tool(nullptr, def, "mcp");
 
@@ -150,7 +150,7 @@ TEST_CASE("McpTool returns error JSON when client is not connected",
   ToolDefinition def;
   def.name = "test";
   def.description = "test";
-  def.parameters_schema = "{}";
+  def.parameters = boost::json::object{};
 
   McpTool tool(&client, def, "mcp");
 

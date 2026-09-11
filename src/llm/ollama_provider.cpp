@@ -51,10 +51,8 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
         m.as_object()["tool_call_id"] = msg.tool_call_id;
       }
     }
-    if (!msg.tool_calls_json.empty()) {
-      try {
-        m.as_object()["tool_calls"] = boost::json::parse(msg.tool_calls_json);
-      } catch (const std::exception&) {}
+    if (msg.HasToolCalls()) {
+      m.as_object()["tool_calls"] = msg.tool_calls;
     }
     msgs.push_back(m);
   }
@@ -91,34 +89,33 @@ std::string OllamaProvider::BuildRequestWithTools(
         m.as_object()["tool_call_id"] = msg.tool_call_id;
       }
     }
-    if (!msg.tool_calls_json.empty()) {
-      try {
-        auto tool_calls = boost::json::parse(msg.tool_calls_json);
-        boost::json::array tcs;
-        for (const auto& tc : tool_calls.as_array()) {
-          boost::json::value func = {
-            {"name", json::ValueOrDefault<std::string>(tc, "name", "")}
-          };
-          if (json::HasKey(tc, "arguments")) {
-            const auto& args = tc.at("arguments");
-            if (args.is_string()) {
-              try {
-                func.as_object()["arguments"] =
-                    boost::json::parse(boost::json::value_to<std::string>(args));
-              } catch (...) {
-                func.as_object()["arguments"] = args;
-              }
-            } else if (args.is_object() || args.is_array()) {
+    if (msg.HasToolCalls()) {
+      // Ollama wants `arguments` as an object, but messages persisted from the
+      // OpenAI backend carry it as a JSON-encoded string.
+      boost::json::array tcs;
+      for (const auto& tc : msg.tool_calls.as_array()) {
+        boost::json::value func = {
+          {"name", json::ValueOrDefault<std::string>(tc, "name", "")}
+        };
+        if (json::HasKey(tc, "arguments")) {
+          const auto& args = tc.at("arguments");
+          if (args.is_string()) {
+            try {
+              func.as_object()["arguments"] =
+                  boost::json::parse(boost::json::value_to<std::string>(args));
+            } catch (...) {
               func.as_object()["arguments"] = args;
             }
+          } else if (args.is_object() || args.is_array()) {
+            func.as_object()["arguments"] = args;
           }
-          boost::json::value tc_entry = boost::json::object{};
-          if (json::HasKey(tc, "id")) tc_entry.as_object()["id"] = tc.at("id");
-          tc_entry.as_object()["function"] = func;
-          tcs.push_back(tc_entry);
         }
-        m.as_object()["tool_calls"] = tcs;
-      } catch (const std::exception&) {}
+        boost::json::value tc_entry = boost::json::object{};
+        if (json::HasKey(tc, "id")) tc_entry.as_object()["id"] = tc.at("id");
+        tc_entry.as_object()["function"] = func;
+        tcs.push_back(tc_entry);
+      }
+      m.as_object()["tool_calls"] = std::move(tcs);
     }
     msgs.push_back(m);
   }
@@ -126,18 +123,14 @@ std::string OllamaProvider::BuildRequestWithTools(
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {
-    boost::json::value t = {{"type", "function"}};
-    try {
-      t.as_object()["function"] = {
-        {"name", tool.name},
-        {"description", tool.description},
-        {"parameters", boost::json::parse(tool.parameters_schema)},
-      };
-    } catch (const std::exception& e) {
-      spdlog::error("[OllamaProvider] Failed to parse schema for tool '{}': {}", tool.name, e.what());
-      continue;
-    }
-    tools_json.push_back(t);
+    tools_json.push_back(boost::json::value{
+        {"type", "function"},
+        {"function",
+         {
+             {"name", tool.name},
+             {"description", tool.description},
+             {"parameters", tool.Parameters()},
+         }}});
   }
   req.as_object()["tools"] = tools_json;
   return boost::json::serialize(req);

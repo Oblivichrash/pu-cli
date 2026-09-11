@@ -125,8 +125,8 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
           {"content", msg.content},
           {"timestamp", msg.timestamp},
         };
-        if (!msg.tool_calls_json.empty())
-          item.as_object()["tool_calls_json"] = msg.tool_calls_json;
+        if (msg.HasToolCalls())
+          item.as_object()["tool_calls"] = msg.tool_calls;
         if (!msg.tool_call_id.empty())
           item.as_object()["tool_call_id"] = msg.tool_call_id;
         if (!msg.tool_name.empty())

@@ -118,11 +118,8 @@ std::vector<ToolDefinition> McpClient::ListTools() {
         ToolDefinition def;
         def.name = json::ValueOrDefault<std::string>(t, "name", "");
         def.description = json::ValueOrDefault<std::string>(t, "description", "");
-        if (json::HasKey(t, "inputSchema")) {
-          def.parameters_schema = boost::json::serialize(t.at("inputSchema"));
-        } else {
-          def.parameters_schema = "{}";
-        }
+        def.parameters = json::HasKey(t, "inputSchema") ? t.at("inputSchema")
+                                                        : boost::json::value(boost::json::object{});
         defs.push_back(def);
       }
       pimpl_->cached_tools = defs;

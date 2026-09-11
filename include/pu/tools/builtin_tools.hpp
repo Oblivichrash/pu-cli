@@ -19,7 +19,7 @@ class ExecuteBashToolStandard : public pu::Tool {
   explicit ExecuteBashToolStandard(std::string sandbox_root);
   std::string Name() const override;
   std::string Description() const override;
-  std::string ParametersSchema() const override;
+  boost::json::value ParametersSchema() const override;
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 
  private:
@@ -30,7 +30,7 @@ class WriteFileTool : public pu::Tool {
  public:
   std::string Name() const override;
   std::string Description() const override;
-  std::string ParametersSchema() const override;
+  boost::json::value ParametersSchema() const override;
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 };
 
@@ -38,7 +38,7 @@ class AskUserTool : public pu::Tool {
  public:
   std::string Name() const override;
   std::string Description() const override;
-  std::string ParametersSchema() const override;
+  boost::json::value ParametersSchema() const override;
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 };
 

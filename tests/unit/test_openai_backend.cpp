@@ -22,7 +22,7 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hello", "", ""}
+    ChatMessage{1, "now", "user", "Hello"}
   };
 
   provider.Chat(history, {});
@@ -49,7 +49,7 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
   bool has_auth = false;
@@ -87,7 +87,7 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hi", "", ""}
+    ChatMessage{1, "now", "user", "Hi"}
   };
 
   std::string accumulated;
@@ -118,7 +118,7 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
 
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   REQUIRE_THROWS_AS(provider.Chat(history, {}), pu::HttpError);
 }
 
@@ -144,10 +144,10 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
 
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
   ToolDefinition tool;
   tool.name = "exec";
-  tool.parameters_schema = "{}";
+  tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
   bool tool_fired = false;
@@ -170,7 +170,7 @@ TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinki
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
   auto body = boost::json::parse(mock_ptr->last_body);
@@ -189,7 +189,7 @@ TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
   auto body = boost::json::parse(mock_ptr->last_body);

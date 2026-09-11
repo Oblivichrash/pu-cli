@@ -32,7 +32,7 @@ boost::json::value BuildMessagesJson(const std::vector<ChatMessage>& history) {
       {"role", role}
     };
 
-    bool has_tool_calls = !msg.tool_calls_json.empty();
+    bool has_tool_calls = msg.HasToolCalls();
 
     if (has_tool_calls) {
       j.as_object()["content"] = boost::json::value();
@@ -49,21 +49,19 @@ boost::json::value BuildMessagesJson(const std::vector<ChatMessage>& history) {
     }
 
     if (has_tool_calls) {
-      try {
-        auto tool_calls = boost::json::parse(msg.tool_calls_json);
-        for (auto& tc : tool_calls.as_array()) {
-          if (json::HasKey(tc, "function") &&
-              json::HasKey(tc.at("function"), "arguments")) {
-            auto& args = tc.at("function").at("arguments");
-            if (args.is_object() || args.is_array()) {
-              args = boost::json::serialize(args);
-            }
+      // The API expects `arguments` as a JSON-encoded string; a message may
+      // hold either form depending on which provider produced it.
+      boost::json::value tool_calls = msg.tool_calls;
+      for (auto& tc : tool_calls.as_array()) {
+        if (json::HasKey(tc, "function") &&
+            json::HasKey(tc.at("function"), "arguments")) {
+          auto& args = tc.at("function").at("arguments");
+          if (args.is_object() || args.is_array()) {
+            args = boost::json::serialize(args);
           }
         }
-        j.as_object()["tool_calls"] = tool_calls;
-      } catch (const std::exception&) {
-        // ignore malformed tool_calls_json
       }
+      j.as_object()["tool_calls"] = std::move(tool_calls);
     }
 
     messages.push_back(j);
@@ -139,17 +137,10 @@ std::string OpenAIProvider::BuildRequestWithTools(
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {
-    boost::json::value params_json;
-    try {
-      params_json = boost::json::parse(tool.parameters_schema);
-    } catch (const std::exception&) {
-      params_json = boost::json::object{};
-    }
-
     boost::json::value function_obj = {
       {"name", tool.name},
       {"description", tool.description},
-      {"parameters", params_json}
+      {"parameters", tool.Parameters()}
     };
 
     tools_json.push_back(
