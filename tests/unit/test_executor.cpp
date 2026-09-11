@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
 #include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/tool_result.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -22,7 +23,7 @@ TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
   j.as_object()["error"] = "";
   j.as_object()["exit_code"] = 0;
 
-  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "hello world");
 }
 
@@ -36,7 +37,7 @@ TEST_CASE(
   j.as_object()["error"] = "Command failed (exit 1)";
   j.as_object()["exit_code"] = 1;
 
-  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "Command failed (exit 1)");
 }
 
@@ -44,7 +45,7 @@ TEST_CASE(
     "ExtractToolResultContent returns raw string for non-JSON input",
     "[executor]") {
   std::string raw = "plain text output";
-  std::string result = Executor::ExtractToolResultContent(raw);
+  std::string result = tools::ExtractToolResultContent(raw);
   REQUIRE(result == raw);
 }
 
@@ -54,7 +55,7 @@ TEST_CASE(
   boost::json::value j = boost::json::object{};
   j.as_object()["other"] = "data";
 
-  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == boost::json::serialize(j));
 }
 
@@ -63,7 +64,7 @@ TEST_CASE(
     "[executor]") {
   boost::json::value j = boost::json::value(boost::json::array{"a", "b"});
 
-  std::string result = Executor::ExtractToolResultContent(boost::json::serialize(j));
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == boost::json::serialize(j));
 }
 
@@ -264,7 +265,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   std::vector<std::string> ended_outputs;
   std::vector<std::string> ended_errors;
 
-  Executor::ToolCallbacks cb;
+  ToolCallbacks cb;
   cb.on_start = [&](const std::string& id, const std::string& name,
                     const boost::json::value& args) {
     started_ids.push_back(id);

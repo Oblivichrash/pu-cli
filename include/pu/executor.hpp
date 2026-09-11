@@ -44,10 +44,6 @@ struct StaticEnvInfo {
 
 class Executor {
  public:
-  // Expose the namespace-level type as Executor::ToolCallbacks for callers
-  // that reference it through the Executor type (e.g. Runtime::ProcessInput).
-  using ToolCallbacks = ::pu::ToolCallbacks;
-
   explicit Executor(Toolbox* toolbox);
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
@@ -60,7 +56,6 @@ class Executor {
                           std::function<void(const std::string&)> content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {});
 
-  static std::string ExtractToolResultContent(const std::string& tool_result);
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
 

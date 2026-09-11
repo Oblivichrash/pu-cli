@@ -11,6 +11,10 @@
 #include <iostream>
 #include <string>
 
+#ifndef PU_VERSION
+#  define PU_VERSION "unknown"
+#endif
+
 namespace po = boost::program_options;
 
 int main(int argc, char* argv[]) {
@@ -20,6 +24,7 @@ int main(int argc, char* argv[]) {
   po::options_description global("Global options");
   global.add_options()
     ("help,h", "show help message")
+    ("version", "show version and exit")
     ("command", po::value<std::string>(), "command to execute (ask/chat/serve)")
   ;
 
@@ -57,6 +62,11 @@ int main(int argc, char* argv[]) {
   } catch (const po::error& e) {
     std::cerr << "Error: " << e.what() << "\n\n" << all << "\n";
     return 1;
+  }
+
+  if (vm.count("version")) {
+    std::cout << "pu " << PU_VERSION << "\n";
+    return 0;
   }
 
   if (vm.count("help") || !vm.count("command")) {

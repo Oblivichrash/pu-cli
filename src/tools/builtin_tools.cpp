@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/builtin_tools.hpp"
 
-#include "pu/agent_manager.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/tools/tool_result.hpp"
 #include "pu/core/json.hpp"
@@ -40,7 +39,7 @@ bool MatchAnyPattern(const std::string& command, const std::vector<std::string>&
 }
 
 struct RiskAssessment {
-  pu::executor::RiskLevel level = pu::executor::RiskLevel::kSafe;
+  RiskLevel level = RiskLevel::kSafe;
   std::string reason;
 };
 
@@ -61,20 +60,19 @@ class CommandExecutor {
     RiskAssessment result;
     std::string pattern;
     if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
-      result.level = pu::executor::RiskLevel::kDangerous;
+      result.level = RiskLevel::kDangerous;
       result.reason = "Matches dangerous pattern: " + pattern;
       return result;
     }
-    result.level = MatchAnyPattern(command, safe_commands_)
-                       ? pu::executor::RiskLevel::kSafe
-                       : pu::executor::RiskLevel::kNeutral;
+    result.level = MatchAnyPattern(command, safe_commands_) ? RiskLevel::kSafe
+                                                           : RiskLevel::kNeutral;
     return result;
   }
 
   CommandResult Execute(const std::string& command) {
     CommandResult result;
     auto risk = AssessRisk(command);
-    if (risk.level == pu::executor::RiskLevel::kDangerous) {
+    if (risk.level == RiskLevel::kDangerous) {
       result.was_intercepted = true;
       result.intercept_reason = risk.reason;
       result.exit_code = -1;
@@ -160,7 +158,7 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
 
   CommandExecutor executor(sandbox_root_);
   auto risk = executor.AssessRisk(command);
-  if (risk.level == pu::executor::RiskLevel::kDangerous) {
+  if (risk.level == RiskLevel::kDangerous) {
     return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
   }
 

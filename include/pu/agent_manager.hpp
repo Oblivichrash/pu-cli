@@ -12,16 +12,6 @@
 #include "pu/agent_config.hpp"
 
 namespace pu {
-class Workspace;
-namespace http {
-class HttpClient;
-}
-namespace executor {
-enum class RiskLevel { kSafe, kNeutral, kDangerous };
-}
-}  // namespace pu
-
-namespace pu {
 
 class AgentManager {
  public:

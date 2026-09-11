@@ -11,8 +11,6 @@
 #include <regex>
 #include <sstream>
 
-#include "pu/infra/beast_http_client.hpp"
-
 namespace pu::config {
 
 namespace {

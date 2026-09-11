@@ -71,6 +71,7 @@ target_include_directories(pu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(pu PRIVATE pu_app pu_agent pu_core spdlog::spdlog)
+target_compile_definitions(pu PRIVATE PU_VERSION="${PROJECT_VERSION}")
 
 if(MSVC)
     target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)

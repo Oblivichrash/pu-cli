@@ -23,13 +23,7 @@ public:
 // HTTP / network errors (from HttpClient)
 class HttpError : public Error {
 public:
-    explicit HttpError(const std::string& msg) : Error(msg), detail_(msg) {}
-    explicit HttpError(const std::string& msg, const std::string& detail)
-        : Error(msg), detail_(detail) {}
-    const std::string& detail() const { return detail_; }
-
-private:
-    std::string detail_;
+    explicit HttpError(const std::string& msg) : Error(msg) {}
 };
 
 }  // namespace pu

@@ -35,7 +35,7 @@ class Runtime {
   ExecutionResult ProcessInput(const std::string& input, bool& is_command,
                                CancelToken cancel_token = nullptr,
                                std::function<void(const std::string&)> content_callback = nullptr,
-                               Executor::ToolCallbacks tool_callbacks = {});
+                               ToolCallbacks tool_callbacks = {});
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);

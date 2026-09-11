@@ -8,7 +8,6 @@
 #include <boost/json.hpp>
 
 #include "pu/core/cancel_token.hpp"
-#include "pu/core/json.hpp"
 
 namespace pu {
 
@@ -21,40 +20,6 @@ struct ChatMessage {
   std::string tool_calls_json;   // Serialized tool_calls for assistant messages
   std::string reasoning_content; // for DeepSeek thinking mode
   std::string tool_call_id;      // for tool messages: ID of the tool call
-
-  // Boost.JSON value_from/value_to equivalents of the former
-  // NLOHMANN_DEFINE_TYPE_INTRUSIVE(ChatMessage, ...) macro.
-  friend void tag_invoke(boost::json::value_from_tag,
-                         boost::json::value& jv,
-                         const ChatMessage& m) {
-    jv = {
-      {"id", m.id},
-      {"timestamp", m.timestamp},
-      {"role", m.role},
-      {"content", m.content},
-      {"tool_name", m.tool_name},
-      {"tool_calls_json", m.tool_calls_json},
-      {"reasoning_content", m.reasoning_content},
-      {"tool_call_id", m.tool_call_id},
-    };
-  }
-
-  friend ChatMessage tag_invoke(boost::json::value_to_tag<ChatMessage>,
-                                const boost::json::value& jv) {
-    ChatMessage m;
-    const boost::json::object* o = jv.if_object();
-    if (o) {
-      m.id = json::ValueOrDefault<int>(jv, "id", 0);
-      m.timestamp = json::ValueOrDefault<std::string>(jv, "timestamp", "");
-      m.role = json::ValueOrDefault<std::string>(jv, "role", "");
-      m.content = json::ValueOrDefault<std::string>(jv, "content", "");
-      m.tool_name = json::ValueOrDefault<std::string>(jv, "tool_name", "");
-      m.tool_calls_json = json::ValueOrDefault<std::string>(jv, "tool_calls_json", "");
-      m.reasoning_content = json::ValueOrDefault<std::string>(jv, "reasoning_content", "");
-      m.tool_call_id = json::ValueOrDefault<std::string>(jv, "tool_call_id", "");
-    }
-    return m;
-  }
 };
 
 struct ToolDefinition {

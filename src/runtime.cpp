@@ -9,7 +9,6 @@
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
 
-#include "pu/infra/beast_http_client.hpp"
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/error.hpp"
@@ -151,7 +150,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
                                       bool& is_command,
                                       CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
-                                      Executor::ToolCallbacks tool_callbacks) {
+                                      ToolCallbacks tool_callbacks) {
   ExecutionResult result;
   try {
     BeginRequest();

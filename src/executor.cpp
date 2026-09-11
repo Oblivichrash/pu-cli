@@ -73,10 +73,6 @@ std::string OsKernelVersion() {
 
 }  // namespace
 
-std::string Executor::ExtractToolResultContent(const std::string& tool_result) {
-  return tools::ExtractToolResultContent(tool_result);
-}
-
 void Executor::ProbeStaticEnvironment() {
   if (static_env_info_.probed) return;
 
@@ -184,7 +180,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
                                                LLMProvider* provider,
                                                CancelToken cancel_token,
                                                std::function<void(const std::string&)> content_callback,
-                                               Executor::ToolCallbacks tool_callbacks) {
+                                               ToolCallbacks tool_callbacks) {
   ToolLoopResult result;
   result.was_streamed = false;
 

@@ -110,7 +110,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
 
           // Tool call lifecycle callbacks: forward start/end events so the
           // front-end can display tool invocations in real time.
-          Executor::ToolCallbacks tool_cb;
+          ToolCallbacks tool_cb;
           tool_cb.on_start = [&](const std::string& id,
                                  const std::string& name,
                                  const boost::json::value& args) {
