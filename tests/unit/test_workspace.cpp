@@ -21,7 +21,6 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   REQUIRE(val.has_value());
   REQUIRE(boost::json::value_to<std::string>(*val) == "bar");
 }
-
 TEST_CASE("Artifact operations", "[workspace]") {
   Workspace ctx;
   Artifact f;
@@ -130,35 +129,3 @@ TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
   REQUIRE(restored.HasPendingToolCalls());
 }
 
-TEST_CASE("Transcript upgrades schema_version 1 tool_calls_json on read",
-          "[transcript]") {
-  // schema_version 1 stored tool calls as a JSON-encoded string.
-  boost::json::value legacy = boost::json::array{
-      boost::json::object{
-          {"id", 1},
-          {"role", "assistant"},
-          {"content", ""},
-          {"tool_calls_json",
-           R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])"},
-      },
-  };
-
-  auto restored = Transcript::Deserialize(legacy);
-  auto h = restored.GetHistory();
-  REQUIRE(h.size() == 1);
-  REQUIRE(h[0].HasToolCalls());
-  REQUIRE(h[0].tool_calls.as_array()[0].at("id") == "call_1");
-}
-
-TEST_CASE("Transcript tolerates a malformed legacy tool_calls_json",
-          "[transcript]") {
-  boost::json::value legacy = boost::json::array{
-      boost::json::object{{"role", "assistant"}, {"tool_calls_json", "not json"}},
-  };
-
-  auto restored = Transcript::Deserialize(legacy);
-  auto h = restored.GetHistory();
-  REQUIRE(h.size() == 1);
-  REQUIRE_FALSE(h[0].HasToolCalls());
-  REQUIRE_FALSE(restored.HasPendingToolCalls());
-}

@@ -4,28 +4,8 @@
 #include "pu/core/json.hpp"
 
 #include <algorithm>
-#include <boost/json.hpp>
 
 namespace pu {
-
-namespace {
-
-// Session files written with schema_version 1 stored tool calls as a JSON
-// string under "tool_calls_json"; later versions store the array directly.
-boost::json::value ReadToolCalls(const boost::json::value& item) {
-  if (json::HasKey(item, "tool_calls")) return item.at("tool_calls");
-  if (!json::HasKey(item, "tool_calls_json")) return nullptr;
-
-  const auto& legacy = item.at("tool_calls_json");
-  if (!legacy.is_string()) return nullptr;
-  try {
-    return boost::json::parse(boost::json::value_to<std::string>(legacy));
-  } catch (const std::exception&) {
-    return nullptr;
-  }
-}
-
-}  // namespace
 
 void Transcript::Append(const ChatMessage& msg) {
   messages_.push_back(msg);
@@ -118,7 +98,8 @@ Transcript Transcript::Deserialize(const boost::json::value& j) {
       msg.role = json::ValueOrDefault<std::string>(item, "role", "");
       msg.content = json::ValueOrDefault<std::string>(item, "content", "");
       msg.tool_name = json::ValueOrDefault<std::string>(item, "tool_name", "");
-      msg.tool_calls = ReadToolCalls(item);
+        msg.tool_calls = json::ValueOrDefault<boost::json::value>(
+          item, "tool_calls", boost::json::value(nullptr));
       msg.reasoning_content = json::ValueOrDefault<std::string>(item, "reasoning_content", "");
       msg.tool_call_id = json::ValueOrDefault<std::string>(item, "tool_call_id", "");
       t.messages_.push_back(std::move(msg));

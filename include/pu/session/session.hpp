@@ -56,12 +56,6 @@ public:
 
   std::unique_ptr<LLMProvider> CreateProvider() const;
 
-  // Version of the on-disk session.json layout. Bump when an incompatible
-  // change is made so older binaries can warn instead of mis-parsing.
-  // 2: tool calls live in "tool_calls" as a JSON array; version 1 stored the
-  //    same data as a JSON-encoded string in "tool_calls_json".
-  static constexpr int kSchemaVersion = 2;
-
   boost::json::value Serialize() const;
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);
 

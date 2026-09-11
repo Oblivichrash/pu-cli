@@ -82,11 +82,6 @@ Memory Memory::Deserialize(const boost::json::value& j) {
     for (const auto& item : j.at("artifacts").as_array()) {
       m.artifacts_.push_back(Artifact::Deserialize(item));
     }
-  } else if (json::HasKey(j, "facts") && j.at("facts").is_array()) {
-    // Legacy sessions (pre-v0.4) stored artifacts under the "facts" key.
-    for (const auto& item : j.at("facts").as_array()) {
-      m.artifacts_.push_back(Artifact::Deserialize(item));
-    }
   }
   return m;
 }

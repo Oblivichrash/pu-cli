@@ -37,8 +37,8 @@ public:
   static std::shared_ptr<Workspace> Deserialize(const boost::json::value& j);
 
 private:
-  std::unique_ptr<Transcript> transcript_;
-  std::unique_ptr<Memory> memory_;
+  Transcript transcript_;
+  Memory memory_;
 };
 
 } // namespace pu
