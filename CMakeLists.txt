@@ -12,9 +12,16 @@ find_package(spdlog REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options json)
 find_package(OpenSSL REQUIRED)
 
+set(PU_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/pu_build_config.hpp.in
+    ${PU_GENERATED_INCLUDE_DIR}/pu/build_config.hpp
+)
+
 function(pu_configure_target target)
     target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_include_directories(${target} PRIVATE ${PU_GENERATED_INCLUDE_DIR})
 
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
@@ -79,7 +86,6 @@ add_executable(pu
     src/app/main.cpp
 )
 target_link_libraries(pu PRIVATE pu_app pu_agent pu_core spdlog::spdlog)
-target_compile_definitions(pu PRIVATE PU_VERSION="${PROJECT_VERSION}")
 pu_configure_target(pu)
 
 option(BUILD_TESTS "Build unit tests" ON)

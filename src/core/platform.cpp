@@ -8,6 +8,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 #ifdef _WIN32
@@ -41,8 +42,20 @@ void SetupSignalHandler() {
 bool IsInterrupted() { return interrupted; }
 void ClearInterruptFlag() { interrupted = false; }
 
-int ExecuteCommand(const std::string& command, std::string& output) {
-  std::string full_cmd = command + " 2>&1";
+int ExecuteCommand(const std::string& command, std::string& output,
+                   const std::string& working_dir) {
+  std::string full_cmd;
+  if (working_dir.empty()) {
+    full_cmd = command;
+  } else {
+    const auto quoted_dir = std::filesystem::path(working_dir).string();
+#ifdef _WIN32
+    full_cmd = "cd /d \"" + quoted_dir + "\" && (" + command + ")";
+#else
+    full_cmd = "cd \"" + quoted_dir + "\" && (" + command + ")";
+#endif
+  }
+  full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();
 

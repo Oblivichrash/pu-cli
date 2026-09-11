@@ -257,6 +257,21 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
   REQUIRE(cfg.default_agent == "only");
 }
 
+TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "missing",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+      }
+    ]
+  })");
+
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+}
+
 TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   config::AgentsConfig original;

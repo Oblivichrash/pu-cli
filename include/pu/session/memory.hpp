@@ -19,8 +19,6 @@ struct Artifact {
   double confidence = 1.0;
 
   // Boost.JSON (de)serialization helpers.
-  // The enum is stored as its integer value to stay compatible with older
-  // session files.
   boost::json::value Serialize() const;
   static Artifact Deserialize(const boost::json::value& j);
 };

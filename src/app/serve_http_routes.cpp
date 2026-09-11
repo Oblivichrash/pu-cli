@@ -136,7 +136,11 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
         jv.as_array().push_back(item);
       }
     }
-  } catch (...) {}
+  } catch (const std::exception& e) {
+    jv = boost::json::object{{"ok", false}, {"error", e.what()}};
+    SendJson(res, 500, jv);
+    return;
+  }
   SendJson(res, 200, jv);
 }
 
@@ -157,7 +161,10 @@ void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex,
       };
       agents.push_back(item);
     }
-  } catch (...) {}
+  } catch (const std::exception& e) {
+    SendJson(res, 500, boost::json::object{{"success", false}, {"error", e.what()}});
+    return;
+  }
   jv.as_object()["agents"] = agents;
   SendJson(res, 200, jv);
 }
@@ -168,7 +175,7 @@ void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value body;
   try {
     body = boost::json::parse(req.body());
-  } catch (...) {
+  } catch (const std::exception&) {
     boost::json::value err = {{"success", false}, {"error", "Invalid JSON"}};
     SendJson(res, 400, err);
     return;
@@ -237,7 +244,10 @@ void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex,
       };
       ws_array.push_back(item);
     }
-  } catch (...) {}
+  } catch (const std::exception& e) {
+    SendJson(res, 500, boost::json::object{{"success", false}, {"error", e.what()}});
+    return;
+  }
   resp.as_object()["workspaces"] = ws_array;
   SendJson(res, 200, resp);
 }
@@ -248,7 +258,7 @@ void HandleApiWorkspaceSwitch(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value body;
   try {
     body = boost::json::parse(req.body());
-  } catch (...) {
+  } catch (const std::exception&) {
     boost::json::value err = {{"success", false}, {"error", "Invalid JSON"}};
     SendJson(res, 400, err);
     return;

@@ -74,7 +74,15 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       boost::json::value jv;
       try {
         jv = boost::json::parse(text);
-      } catch (...) {
+      } catch (const std::exception& e) {
+        boost::json::value error = {
+            {"type", "error"},
+            {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}};
+        auto message = boost::json::serialize(error);
+        beast::error_code write_ec;
+        std::lock_guard<std::mutex> lock(active_ws->mtx);
+        if (active_ws->ws && active_ws->ws->is_open())
+          active_ws->ws->write(net::buffer(message), write_ec);
         continue;
       }
       if (!jv.is_object())

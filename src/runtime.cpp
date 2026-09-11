@@ -20,6 +20,13 @@
 namespace pu {
 namespace {
 
+std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
+                                           const std::string& configured_path) {
+  const auto path = configured_path.empty() ? std::filesystem::path(".")
+                                            : std::filesystem::path(configured_path);
+  return path.is_absolute() ? path : root / path;
+}
+
 std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path))
     return nullptr;
@@ -59,40 +66,25 @@ void Runtime::Initialize(const std::string& config_path) {
 
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
-  agent_manager_ = std::make_unique<AgentManager>();
-  agent_manager_->SetActiveAgent(agents_cfg.default_agent);
-  agent_manager_->LoadAgentConfigs(agents_cfg.agents);
+  const std::string active_agent = default_agent_override_.empty()
+      ? agents_cfg.default_agent
+      : default_agent_override_;
+  const auto default_entry = std::find_if(
+      agents_cfg.agents.begin(), agents_cfg.agents.end(), [&](const config::AgentEntry& entry) {
+        return entry.name == active_agent;
+      });
+  if (default_entry == agents_cfg.agents.end())
+    throw Error("Requested agent is not configured: " + active_agent);
 
-  const config::AgentEntry* default_entry = nullptr;
-  for (const auto& entry : agents_cfg.agents) {
-    if (entry.name == agents_cfg.default_agent) {
-      default_entry = &entry;
-      break;
-    }
-  }
-  if (default_entry) {
-    default_backend_config_ = default_entry->backend;
-  }
+  agent_manager_ = std::make_unique<AgentManager>();
+  agent_manager_->SetActiveAgent(active_agent);
+  agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
 
   executor_ = std::make_unique<Executor>(nullptr);
 
-  if (default_entry) {
-    current_agent_config_ = *default_entry;
-    current_agent_name_ = default_entry->name;
-    RebuildToolbox(*default_entry);
-  } else {
-    config::SecurityPolicy fallback_policy;
-    fallback_policy.sandbox_root = ".";
-    fallback_policy.max_command_length = 0;
-    fallback_policy.forbidden_patterns = {};
-    executor_->SetSecurityPolicy(fallback_policy);
-    toolbox_ = std::make_unique<Toolbox>();
-    RegisterBuiltinTools();
-    executor_->SetToolbox(toolbox_.get());
-    spdlog::warn("No default agent found. Using permissive fallback.");
-  }
+  RebuildToolbox(*default_entry);
 
   auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
@@ -134,13 +126,12 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
     return current_session_;
 
   auto session = std::make_shared<Session>();
-
-  std::string active_agent =
-      default_agent_override_.empty() ? agent_manager_->GetActiveAgent() : default_agent_override_;
-  if (active_agent.empty())
-    active_agent = "chat";
+  const auto active_agent = agent_manager_->GetActiveAgent();
+  const auto* agent = agent_manager_->GetAgentConfig(active_agent);
+  if (!agent)
+    throw Error("Active agent is not configured: " + active_agent);
   session->SwitchAgent(active_agent);
-  session->SwitchBackend(default_backend_config_);
+  session->SwitchBackend(agent->backend);
 
   current_session_ = session;
   return current_session_;
@@ -214,8 +205,7 @@ bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
   agent_manager_.reset();
   command_router_.reset();
 
-  workspace_root_ = new_root;
-  std::filesystem::current_path(workspace_root_);
+  workspace_root_ = std::filesystem::absolute(new_root);
 
   is_initialized_ = false;
   Initialize("");
@@ -224,11 +214,13 @@ bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
 
 std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {
   std::vector<std::pair<std::string, std::string>> workspaces;
-  for (const auto& entry : std::filesystem::directory_iterator(".")) {
+  const auto parent = workspace_root_.parent_path();
+  for (const auto& entry : std::filesystem::directory_iterator(parent)) {
     if (entry.is_directory()) {
       auto agents_path = entry.path() / ".pu" / "agents.json";
       if (std::filesystem::exists(agents_path)) {
-        workspaces.emplace_back(entry.path().filename().string(), entry.path().string());
+        workspaces.emplace_back(entry.path().filename().string(),
+                                std::filesystem::absolute(entry.path()).string());
       }
     }
   }
@@ -257,11 +249,9 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
   return false;
 }
 
-void Runtime::RegisterBuiltinTools() {
+void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      current_agent_config_.security.sandbox_root.empty() ? "."
-                                                          : current_agent_config_.security
-                                                                .sandbox_root));
+  ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
   toolbox_->RegisterTool(std::make_unique<tools::AskUserTool>());
 }
@@ -270,7 +260,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   ShutdownMCP();
 
   toolbox_ = std::make_unique<Toolbox>();
-  RegisterBuiltinTools();
+  RegisterBuiltinTools(agent);
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
     if (!StartMCP(mcp_cfg)) {
@@ -287,17 +277,17 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
     }
   }
 
-  executor_->SetSecurityPolicy(agent.security);
+  auto security = agent.security;
+  security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
+  executor_->SetSecurityPolicy(std::move(security));
   executor_->SetToolbox(toolbox_.get());
   executor_->SetCompactionConfig(agent.compaction);
   agent_manager_->SetActiveAgent(agent.name);
 }
 
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
-  if (current_agent_name_ == new_agent.name)
+  if (agent_manager_->GetActiveAgent() == new_agent.name)
     return;
-  current_agent_config_ = new_agent;
-  current_agent_name_ = new_agent.name;
   RebuildToolbox(new_agent);
 
   if (current_session_) {

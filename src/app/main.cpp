@@ -3,6 +3,7 @@
 
 #include "pu/agent_manager.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/build_config.hpp"
 #include "pu/runtime.hpp"
 
 #include <boost/program_options.hpp>
@@ -10,10 +11,6 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-
-#ifndef PU_VERSION
-#  define PU_VERSION "unknown"
-#endif
 
 namespace po = boost::program_options;
 

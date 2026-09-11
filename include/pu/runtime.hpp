@@ -54,7 +54,7 @@ class Runtime {
   void SaveCurrentSession();
   void ShutdownMCP();
   bool StartMCP(const pu::mcp::McpServerConfig& config);
-  void RegisterBuiltinTools();
+  void RegisterBuiltinTools(const config::AgentEntry& agent);
 
   bool is_initialized_ = false;
   bool is_running_ = false;
@@ -64,13 +64,10 @@ class Runtime {
   std::unique_ptr<Executor> executor_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
-  config::BackendConfig default_backend_config_;
 
   std::string default_agent_override_;
 
   std::vector<std::unique_ptr<mcp::McpClient>> mcp_clients_;
-  std::string current_agent_name_;
-  config::AgentEntry current_agent_config_;
 };
 
 }  // namespace pu

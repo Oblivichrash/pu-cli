@@ -14,13 +14,6 @@
 #include <regex>
 #include <string>
 
-#ifdef _WIN32
-#  include <direct.h>
-#  define chdir _chdir
-#else
-#  include <unistd.h>
-#endif
-
 namespace pu::tools {
 
 namespace {
@@ -79,16 +72,8 @@ class CommandExecutor {
       return result;
     }
 
-    if (!sandbox_path_.empty()) {
-      if (chdir(sandbox_path_.c_str()) != 0) {
-        result.exit_code = -1;
-        result.stderr_content = "Failed to chdir to sandbox: " + sandbox_path_;
-        return result;
-      }
-    }
-
     std::string output;
-    int exit_code = pu::platform::ExecuteCommand(command, output);
+    int exit_code = pu::platform::ExecuteCommand(command, output, sandbox_path_);
     result.exit_code = exit_code;
     result.stdout_content = output;
     if (exit_code != 0) result.stderr_content = output;

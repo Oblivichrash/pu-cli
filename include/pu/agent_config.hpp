@@ -36,7 +36,6 @@ struct BackendConfig {
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
 
-// Keeps the old SessionBackendConfig JSON format (type as string, api_key as string).
 inline void tag_invoke(boost::json::value_from_tag,
                        boost::json::value& j,
                        const BackendConfig& cfg) {
@@ -65,7 +64,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
   cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
-  // The following fields may not be present in old session files; defaults are fine.
   cfg.system_prompt = std::nullopt;
   cfg.enable_thinking = true;
   return cfg;

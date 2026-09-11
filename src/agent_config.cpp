@@ -175,8 +175,12 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   for (const auto& item : j.at("agents").as_array())
     result.agents.push_back(ParseAgentEntry(item));
 
-  if (result.default_agent.empty() && !result.agents.empty())
-    result.default_agent = result.agents[0].name;
+  const auto default_agent = std::find_if(
+      result.agents.begin(), result.agents.end(), [&](const AgentEntry& entry) {
+        return entry.name == result.default_agent;
+      });
+  if (default_agent == result.agents.end())
+    throw pu::Error("default_agent does not match any configured agent");
   return result;
 }
 

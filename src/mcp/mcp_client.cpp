@@ -5,6 +5,7 @@
 #include "pu/mcp/json_rpc_client.hpp"
 #include "pu/core/error.hpp"
 #include "pu/core/json.hpp"
+#include "pu/build_config.hpp"
 #include <spdlog/spdlog.h>
 #include <future>
 #include <chrono>
@@ -72,7 +73,7 @@ void McpClient::Disconnect() {
 bool McpClient::Handshake() {
   boost::json::value init_params = {
       {"protocolVersion", "2024-11-05"},
-      {"clientInfo", {{"name", "pu-cli"}, {"version", "0.3.1"}}},
+      {"clientInfo", {{"name", "pu-cli"}, {"version", PU_VERSION}}},
       {"capabilities", {{"tools", true}}}};
   try {
     auto resp = SendRequest("initialize", init_params);
