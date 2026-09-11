@@ -5,7 +5,17 @@
 - Include `## Description`, `## Why`, `## Related Issue` in body.
 
 ## Commit Messages
-- Follow `type: description` (imperative mood, <72 chars).
+Use a lowercase type and a specific summary under 72 characters. Add a short
+list when the change needs context:
+
+```text
+<type>: <summary>
+
+- <important change>
+- <important change>
+```
+
+Keep one coherent change per commit.
 
 ## Code Style
 - C++23 with Google C++ Style.
