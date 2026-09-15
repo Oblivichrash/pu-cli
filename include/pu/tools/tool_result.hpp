@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <exception>
 #include <string>
 
 #include <boost/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include "pu/core/json.hpp"
 
@@ -45,7 +47,10 @@ inline ToolResult ParseToolResult(const std::string& raw) {
       r.error = json::ValueOrDefault<std::string>(j, "error", "");
       r.exit_code = json::ValueOrDefault<int>(j, "exit_code", 0);
     }
-  } catch (...) {
+  } catch (const std::exception& e) {
+    // Raw built-in/MCP text is valid tool output; keep it, but log so
+    // malformed structured output stays diagnosable.
+    spdlog::debug("Tool result is not structured JSON: {}", e.what());
   }
   return r;
 }

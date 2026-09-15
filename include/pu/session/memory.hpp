@@ -27,8 +27,6 @@ class Memory {
 public:
   void SetVar(const std::string& key, const boost::json::value& value);
   std::optional<boost::json::value> GetVar(const std::string& key) const;
-  bool HasVar(const std::string& key) const;
-  void RemoveVar(const std::string& key);
 
   void AddArtifact(const Artifact& artifact);
   std::vector<Artifact> GetArtifacts() const;

@@ -41,10 +41,6 @@ std::vector<ChatMessage> Workspace::GetHistory() const {
   return transcript_.GetHistory();
 }
 
-std::vector<ChatMessage> Workspace::Recent(int n) const {
-  return transcript_.Recent(n);
-}
-
 size_t Workspace::HistorySize() const {
   return transcript_.Size();
 }
@@ -63,14 +59,6 @@ void Workspace::SetVar(const std::string& key, const boost::json::value& value) 
 
 std::optional<boost::json::value> Workspace::GetVar(const std::string& key) const {
   return memory_.GetVar(key);
-}
-
-bool Workspace::HasVar(const std::string& key) const {
-  return memory_.HasVar(key);
-}
-
-void Workspace::RemoveVar(const std::string& key) {
-  memory_.RemoveVar(key);
 }
 
 void Workspace::AddArtifact(const Artifact& artifact) {

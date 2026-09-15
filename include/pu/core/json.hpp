@@ -48,14 +48,6 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
   return obj != nullptr && obj->contains(key);
 }
 
-// Shallow merge of `src`'s members into `dst`.
-inline void Merge(value& dst, const value& src) {
-  if (!dst.is_object() || !src.is_object()) return;
-  for (const auto& kv : src.as_object()) {
-    dst.as_object()[kv.key()] = kv.value();
-  }
-}
-
 namespace detail {
 
 inline void AppendPretty(const value& jv, std::string& out, int depth,

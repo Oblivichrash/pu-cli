@@ -17,7 +17,6 @@ public:
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
   std::vector<ChatMessage> GetHistory() const;
-  std::vector<ChatMessage> Recent(int n) const;
   size_t HistorySize() const;
   void Compact(size_t keep_head = 10, size_t keep_tail = 50);
   bool HasPendingToolCalls() const;
@@ -26,8 +25,6 @@ public:
 
   void SetVar(const std::string& key, const boost::json::value& value);
   std::optional<boost::json::value> GetVar(const std::string& key) const;
-  bool HasVar(const std::string& key) const;
-  void RemoveVar(const std::string& key);
 
   void AddArtifact(const Artifact& artifact);
   std::vector<Artifact> GetArtifacts() const;

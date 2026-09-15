@@ -74,7 +74,6 @@ convenience layer over the Boost API for the operations the codebase uses most:
   (`boost::json::parse` throws `boost::system::system_error` on malformed input).
 - `pu::json::ValueOrDefault(value, key, def)` — optional member read with default.
 - `pu::json::HasKey(value, key)` — safe key-existence check.
-- `pu::json::Merge(dst, src)` — shallow object merge.
 - `pu::json::PrettyPrint(value)` — indented output for `agents.json` and
   `session.json`.
 

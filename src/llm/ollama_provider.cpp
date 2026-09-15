@@ -103,7 +103,10 @@ std::string OllamaProvider::BuildRequestWithTools(
             try {
               func.as_object()["arguments"] =
                   boost::json::parse(boost::json::value_to<std::string>(args));
-            } catch (...) {
+            } catch (const std::exception& e) {
+              // Some providers send `arguments` as a JSON-encoded string; when
+              // it is not valid JSON, pass the original value through unchanged.
+              spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
               func.as_object()["arguments"] = args;
             }
           } else if (args.is_object() || args.is_array()) {
@@ -161,7 +164,10 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
           if (args.is_string()) {
             try {
               call.arguments = boost::json::parse(boost::json::value_to<std::string>(args));
-            } catch (...) {
+            } catch (const std::exception& e) {
+              // Preserve the raw value when arguments are not valid JSON
+              // instead of dropping the tool call.
+              spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
               call.arguments = args;
             }
           } else if (args.is_object() || args.is_array()) {

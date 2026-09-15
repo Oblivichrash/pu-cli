@@ -15,14 +15,6 @@ std::optional<boost::json::value> Memory::GetVar(const std::string& key) const {
   return std::optional<boost::json::value>(it->second);
 }
 
-bool Memory::HasVar(const std::string& key) const {
-  return variables_.find(key) != variables_.end();
-}
-
-void Memory::RemoveVar(const std::string& key) {
-  variables_.erase(key);
-}
-
 void Memory::AddArtifact(const Artifact& artifact) {
   artifacts_.push_back(artifact);
 }
