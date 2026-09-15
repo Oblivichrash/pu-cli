@@ -21,7 +21,10 @@ Keep one coherent change per commit.
 - C++23 with Google C++ Style.
 - SPDX license header in every file (`// SPDX-License-Identifier: GPL-3.0-only`).
 - No decorative comments (`// ====`).
-- Comments explain **why**, not **what**.
+- Comments explain **why**, not **what**. Prefer self-explanatory code: add a
+  comment only when the reason is not obvious from the code itself.
+- Comments describe current intent, not history. Do not reference removed
+  code, old versions, or phrasing like "previously" / "it used to".
 - Use `clang-format` for formatting; the config lives in `.clang-format`
   (Google style, 100-column limit). Run `clang-format -i <files>` before
   committing. Without the config file, `clang-format` would fall back to the
@@ -29,7 +32,7 @@ Keep one coherent change per commit.
   root.
 - JSON code uses Boost.JSON (`boost::json::value`) through the
   `include/pu/core/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
-  `pu::json::ValueOrDefault`, `pu::json::HasKey`, `pu::json::Merge`,
+  `pu::json::ValueOrDefault`, `pu::json::HasKey`,
   `pu::json::PrettyPrint`) instead of raw hand-rolled parsing.
 
 ## Build Dependencies

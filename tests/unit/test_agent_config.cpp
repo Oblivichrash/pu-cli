@@ -32,9 +32,8 @@ struct TempConfigFile {
 
 namespace {
 
-// Test-only stand-in for the removed config::SaveAgentsConfig. It keeps the
-// agents.json loader round-trip tests meaningful without shipping an unused
-// production writer (HistoryCompactionConfig no longer carries a strategy).
+// Serializes an AgentsConfig in the agents.json shape so the loader's
+// round-trip behavior can be tested without a production writer.
 void WriteAgentsConfigForTest(const std::string& config_path,
                               const config::AgentsConfig& cfg) {
   json::value j = {{"default_agent", cfg.default_agent}};
