@@ -421,7 +421,8 @@ TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
     REQUIRE(j.at("success") == false);
     REQUIRE(j.at("error") == "Invalid JSON");
 
-    stream.socket().shutdown(tcp::socket::shutdown_both);
+    beast::error_code close_ec;
+    stream.socket().shutdown(tcp::socket::shutdown_both, close_ec);
   } catch (const std::exception& e) {
     FAIL("HTTP request failed: " << e.what());
   }
