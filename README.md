@@ -33,7 +33,7 @@ Install the dependencies first:
 - **Windows (vcpkg)**:
 
   ```bash
-  vcpkg install boost-system boost-program-options boost-json spdlog openssl catch2
+  vcpkg install boost-system boost-program-options boost-json boost-asio boost-beast spdlog openssl catch2
   ```
 
 ### Build

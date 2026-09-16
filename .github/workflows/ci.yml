@@ -27,17 +27,32 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install catch2 spdlog boost openssl
 
+    - name: Cache vcpkg binaries (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.vcpkg-cache
+        # Bump the suffix to invalidate when the dependency set changes.
+        key: vcpkg-windows-v1
+
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
+      env:
+        VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+        # Default x64-windows builds debug and release for every port; CI only needs release.
+        VCPKG_BUILD_TYPE: release
       run: |
-        vcpkg install catch2 spdlog boost-system boost-program-options boost-json openssl
+        # The binary cache directory must exist before vcpkg runs (it is absent on a cache miss).
+        New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+        # vcpkg splits Boost into per-library ports; BeastHttpClient also needs asio and beast.
+        vcpkg install catch2 spdlog boost-system boost-program-options boost-json boost-asio boost-beast openssl
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
     - name: Build
-      run: cmake --build build --config Release
+      run: cmake --build build --config Release --parallel
 
     - name: Test
       run: ctest --test-dir build -C Release --output-on-failure

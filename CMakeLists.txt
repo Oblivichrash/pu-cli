@@ -24,6 +24,7 @@ function(pu_configure_target target)
     target_include_directories(${target} PRIVATE ${PU_GENERATED_INCLUDE_DIR})
 
     if(MSVC)
+        target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
         target_compile_options(${target} PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)

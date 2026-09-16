@@ -84,23 +84,15 @@ API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ---
 
-## Executor Enhancements (since v0.4)
+## Executor
 
 ### Structured Tool Output
 
-Every tool (`execute_bash`, `write_file`, MCP tools) returns a JSON object with the following schema:
-
-```json
-{
-  "success": bool,
-  "stdout": string,
-  "stderr": string,
-  "error": string,
-  "exit_code": int
-}
-```
-
-The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==false`) and stores only that content in the transcript. The full JSON is not persisted, keeping history clean and human‑readable.
+Tools return structured JSON instead of free text. `Executor` extracts `stdout`
+(on success) or `error` (on failure) and stores only that content in the
+transcript, so the full JSON is never persisted and history stays readable. The
+field schema lives in `include/pu/tools/tool_result.hpp` and is documented in
+[README](../README.md#tool-output-format).
 
 ### System Context Injection
 
@@ -111,9 +103,8 @@ The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==f
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
 
-Artifacts are persisted in the session (`Workspace`/`Memory`) but are **not**
-currently injected into the prompt. Injecting "last known file paths" or
-"recent tool executions" into the system context is reserved future work.
+Artifacts are persisted in the session (`Workspace`/`Memory`) but are not
+injected into the prompt.
 
 This context is merged with the user-defined `system_prompt` (if any) and
 prepended to the chat history on every request.
@@ -127,7 +118,9 @@ context. No tool-binary detection (`which`) is performed.
 
 ### Forbidden Patterns
 
-The security policy's `forbidden_patterns` is enforced at the tool execution layer. Commands matching any pattern are rejected with a JSON error response. It is strongly recommended to include `"cd"` to prevent the model from changing the working directory.
+`forbidden_patterns` is enforced at the tool execution layer: a command matching
+any pattern is rejected with a JSON error response. See
+[README](../README.md#security) for the recommended patterns.
 
 ---
 
@@ -165,12 +158,9 @@ Key responsibilities:
 4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
    spawns a worker thread that runs `Runtime::ProcessInput` under the shared
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
-5. Frames are written back over the socket as the run progresses:
-   `{"type":"chunk","payload":{"text":"..."}}` for each streamed token,
-   `{"type":"tool_start","payload":{"id","name","args"}}` and
-   `{"type":"tool_end","payload":{"id","output","error"}}` around each tool
-   execution, `{"type":"done"}` on completion, and
-   `{"type":"error","payload":{"text":"..."}}` on failure.
+5. Frames are written back over the socket as the run progresses (streamed
+   chunks, tool start/end, completion, or error). The frame schema is documented
+   in [README](../README.md#websocket-protocol).
 6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
    `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/clear`)
    handle control and status queries. On Ctrl+C the server stops and
@@ -182,8 +172,8 @@ Key responsibilities:
 `Initialize()` it loads `<data-dir>/session.json` (if the file exists) via
 `Session::Deserialize`. After every `ProcessInput()` call and on `Shutdown()`, the
 session is serialized back to the same file via `Session::Serialize`. There is no
-manual save/load/list/export; persistence is fully automatic and scoped to the data
-directory (`PU_HOME` or `./.pu/`).
+manual save/load/list/export; persistence is fully automatic and scoped to the
+data directory.
 
 ### Toolbox & MCP lifecycle
 
@@ -216,16 +206,13 @@ session: a `{"type":"cancel"}` message — or a dropped connection — sets it, 
 ### WebSocket streaming
 
 Chat runs exclusively over the `/ws` WebSocket. A `{"type":"run"}` message runs
-`ProcessInput` on a detached worker thread; its `content_callback` serializes
-each chunk as `{"type":"chunk","payload":{"text":"..."}}` and writes the frame to
-the socket as it arrives, which produces the typewriter effect in the browser.
-The `ToolCallbacks` passed alongside it emit `tool_start` before a tool executes
-and `tool_end` with its output, both keyed by the tool call `id`. Completion is
-signalled with `{"type":"done"}`, failures with
-`{"type":"error","payload":{"text":"..."}}`, and commands or non-streaming
-backends deliver their full text as a single chunk frame. The front-end
-(`web/app.js`) parses each JSON frame and appends the text to the pending
-message.
+`ProcessInput` on a detached worker thread; its `content_callback` writes each
+streamed chunk to the socket as it arrives, which produces the typewriter effect
+in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
+keyed by the tool call `id`. Commands and non-streaming backends deliver their
+full text as a single chunk frame. The frame schema and client-side rendering
+are documented in [README](../README.md#websocket-protocol) and implemented in
+`web/app.js`.
 
 ## Data Flow
 

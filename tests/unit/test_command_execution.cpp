@@ -16,9 +16,16 @@ TEST_CASE("ExecuteCommand runs a simple command", "[platform][command]") {
 
 TEST_CASE("ExecuteCommand runs compound command with pipe", "[platform][command]") {
   std::string output;
+#ifdef _WIN32
+  // cmd.exe has no `tr`; use a native filter to exercise the same pipe path.
+  int rc = ExecuteCommand("echo hello | findstr hello", output);
+  REQUIRE(rc == 0);
+  REQUIRE(output.find("hello") != std::string::npos);
+#else
   int rc = ExecuteCommand("echo hello | tr a-z A-Z", output);
   REQUIRE(rc == 0);
   REQUIRE(output.find("HELLO") != std::string::npos);
+#endif
 }
 
 #ifndef _WIN32
