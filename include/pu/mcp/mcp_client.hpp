@@ -5,7 +5,9 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
+
+#include <boost/json.hpp>
+
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::mcp {
@@ -33,12 +35,15 @@ public:
   void Disconnect();
 
   virtual std::vector<ToolDefinition> ListTools();
-  virtual std::string CallTool(const std::string& name, const nlohmann::json& arguments);
+  virtual std::string CallTool(const std::string& name,
+                               const boost::json::value& arguments);
   virtual bool IsConnected() const;
 
 private:
   bool Handshake();
-  nlohmann::json SendRequest(const std::string& method, const nlohmann::json& params = nullptr, int timeout_ms = 5000);
+  boost::json::value SendRequest(const std::string& method,
+                                 const boost::json::value& params = {},
+                                 int timeout_ms = 5000);
 
   struct Impl;
   std::unique_ptr<Impl> pimpl_;

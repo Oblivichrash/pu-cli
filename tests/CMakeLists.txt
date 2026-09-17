@@ -9,9 +9,12 @@ add_executable(pu_tests
     unit/test_workspace.cpp
     unit/test_command_execution.cpp
     unit/test_logging.cpp
+    unit/test_mcp_tool.cpp
     unit/test_command_router.cpp
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
+    unit/test_serve_api.cpp
+    unit/test_boost_integration.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -22,9 +25,8 @@ target_include_directories(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_agent pu_core
+    pu_app pu_agent pu_core
     Catch2::Catch2WithMain
-    nlohmann_json::nlohmann_json
 )
 
 include(Catch)

@@ -2,11 +2,13 @@
 #pragma once
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/http_client.hpp"
+#include "pu/infra/http_client.hpp"
 
 #include <memory>
-#include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
+
+#include <boost/json.hpp>
 
 namespace pu {
 
@@ -29,7 +31,8 @@ class OllamaProvider : public LLMProvider {
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr
+    std::function<void(const ToolCall&)> tool_callback = nullptr,
+    CancelToken cancel_token = nullptr
   ) override;
 
   bool SupportsTools() const override { return true; }
@@ -40,7 +43,7 @@ class OllamaProvider : public LLMProvider {
   std::string BuildRequest(const std::vector<ChatMessage>& history) const;
   std::string BuildRequestWithTools(const std::vector<ChatMessage>& history,
                                     const std::vector<ToolDefinition>& tools) const;
-  void HandleJsonToken(const nlohmann::json& j,
+  void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb,
                        std::function<void(const ToolCall&)>& tool_cb);
   std::string RoleToString(const std::string& role) const;

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/toolbox.hpp"
 
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 
-#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <cctype>
@@ -79,13 +78,13 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
     ToolDefinition def;
     def.name = display_name;                    // LLM sees sanitized name
     def.description = tool->Description();
-    def.parameters_schema = tool->ParametersSchema();
+    def.parameters = tool->ParametersSchema();
     defs.push_back(def);
   }
   return defs;
 }
 
-std::string Toolbox::ExecuteTool(const std::string& name, const nlohmann::json& args, ToolContext& ctx) {
+std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args, ToolContext& ctx) {
   if (name.empty()) {
     spdlog::error("Attempted to execute tool with empty name");
     return "Error: tool name is empty";

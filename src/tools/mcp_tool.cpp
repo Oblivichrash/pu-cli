@@ -25,7 +25,7 @@ McpTool::McpTool(mcp::McpClient* client, const ToolDefinition& def,
       server_name_(std::move(server_name)),
       original_tool_name_(def.name) {}
 
-std::string McpTool::Execute(const nlohmann::json& args, ToolContext& /*ctx*/) {
+std::string McpTool::Execute(const boost::json::value& args, ToolContext& /*ctx*/) {
     if (!client_) {
         return tools::MakeToolResultJson(false, "", "", "MCP client is null", -1);
     }

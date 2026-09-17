@@ -2,9 +2,10 @@
 
 #include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
-#include "pu/error.hpp"
+#include "pu/core/error.hpp"
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
+#include "pu/core/json.hpp"
 
 using namespace pu;
 using namespace pu::tests;
@@ -21,15 +22,15 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hello", "", ""}
+    ChatMessage{1, "now", "user", "Hello"}
   };
 
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body["model"] == "gpt-4o-mini");
-  REQUIRE(body["stream"] == true);
-  REQUIRE(body["temperature"] == 0.7f);
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(body.at("model") == "gpt-4o-mini");
+  REQUIRE(body.at("stream") == true);
+  REQUIRE(body.at("temperature") == 0.7f);
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -48,7 +49,7 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
   bool has_auth = false;
@@ -86,7 +87,7 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hi", "", ""}
+    ChatMessage{1, "now", "user", "Hi"}
   };
 
   std::string accumulated;
@@ -117,7 +118,7 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
 
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   REQUIRE_THROWS_AS(provider.Chat(history, {}), pu::HttpError);
 }
 
@@ -143,10 +144,10 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
 
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
   ToolDefinition tool;
   tool.name = "exec";
-  tool.parameters_schema = "{}";
+  tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
   bool tool_fired = false;
@@ -169,12 +170,12 @@ TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinki
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE(body.contains("extra_body"));
-  REQUIRE(body["extra_body"]["thinking"]["type"] == "disabled");
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(json::HasKey(body, "extra_body"));
+  REQUIRE(body.at("extra_body").at("thinking").at("type") == "disabled");
 }
 
 TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]") {
@@ -188,11 +189,11 @@ TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi", "", ""}};
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
-  auto body = nlohmann::json::parse(mock_ptr->last_body);
-  REQUIRE_FALSE(body.contains("extra_body"));
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE_FALSE(json::HasKey(body, "extra_body"));
 }
 
 TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") {

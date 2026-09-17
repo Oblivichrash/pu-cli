@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/transcript.hpp"
+
+#include "pu/core/json.hpp"
+
 #include <algorithm>
-#include <nlohmann/json.hpp>
 
 namespace pu {
 
@@ -13,45 +15,32 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
   return messages_;
 }
 
-std::vector<ChatMessage> Transcript::Recent(int n) const {
-  if (n <= 0) return {};
-  if (static_cast<size_t>(n) >= messages_.size()) return messages_;
-  return std::vector<ChatMessage>(messages_.end() - n, messages_.end());
-}
-
 void Transcript::Compact(size_t keep_head, size_t keep_tail) {
   if (messages_.size() <= keep_head + keep_tail) return;
 
   size_t tail_start = messages_.size() - keep_tail;
   for (size_t i = tail_start; i > keep_head; --i) {
     const auto& msg = messages_[i];
-    if (msg.role == "assistant" && !msg.tool_calls_json.empty()) {
-      std::vector<std::string> ids;
-      try {
-        auto j = nlohmann::json::parse(msg.tool_calls_json);
-        for (const auto& tc : j) {
-          if (tc.contains("id")) ids.push_back(tc["id"].get<std::string>());
-        }
-      } catch (...) { continue; }
+    if (msg.role != "assistant" || !msg.HasToolCalls()) continue;
 
-      bool all_found = true;
-      for (const auto& id : ids) {
-        bool found = false;
-        for (size_t j = i + 1; j < messages_.size(); ++j) {
-          if (messages_[j].role == "tool" && messages_[j].tool_call_id == id) {
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          all_found = false;
+    // Keep every tool call together with the tool result it produced.
+    bool all_matched = true;
+    for (const auto& call : msg.tool_calls.as_array()) {
+      const std::string id = json::ValueOrDefault<std::string>(call, "id", "");
+      if (id.empty()) continue;
+      bool matched = false;
+      for (size_t j = i + 1; j < messages_.size(); ++j) {
+        if (messages_[j].role == "tool" && messages_[j].tool_call_id == id) {
+          matched = true;
           break;
         }
       }
-      if (!all_found) {
-        tail_start = i;
+      if (!matched) {
+        all_matched = false;
+        break;
       }
     }
+    if (!all_matched) tail_start = i;
   }
 
   std::vector<ChatMessage> compressed;
@@ -72,46 +61,42 @@ void Transcript::Compact(size_t keep_head, size_t keep_tail) {
 bool Transcript::HasPendingToolCalls() const {
   if (messages_.empty()) return false;
   const auto& last = messages_.back();
-  if (last.role == "assistant" && !last.tool_calls_json.empty()) {
-    try {
-      auto j = nlohmann::json::parse(last.tool_calls_json);
-      return j.is_array() && !j.empty();
-    } catch (...) { return false; }
-  }
-  return false;
+  return last.role == "assistant" && last.HasToolCalls();
 }
 
-nlohmann::json Transcript::Serialize() const {
-  nlohmann::json arr = nlohmann::json::array();
+boost::json::value Transcript::Serialize() const {
+  boost::json::array arr;
   for (const auto& msg : messages_) {
-    arr.push_back({
+    boost::json::object entry = {
       {"id", msg.id},
       {"timestamp", msg.timestamp},
       {"role", msg.role},
       {"content", msg.content},
       {"tool_name", msg.tool_name},
-      {"tool_calls_json", msg.tool_calls_json},
       {"reasoning_content", msg.reasoning_content},
       {"tool_call_id", msg.tool_call_id}
-    });
+    };
+    if (msg.HasToolCalls()) entry["tool_calls"] = msg.tool_calls;
+    arr.push_back(std::move(entry));
   }
   return arr;
 }
 
-Transcript Transcript::Deserialize(const nlohmann::json& j) {
+Transcript Transcript::Deserialize(const boost::json::value& j) {
   Transcript t;
   if (j.is_array()) {
-    for (const auto& item : j) {
+    for (const auto& item : j.as_array()) {
       ChatMessage msg;
-      msg.id = item.value("id", 0);
-      msg.timestamp = item.value("timestamp", "");
-      msg.role = item.value("role", "");
-      msg.content = item.value("content", "");
-      msg.tool_name = item.value("tool_name", "");
-      msg.tool_calls_json = item.value("tool_calls_json", "");
-      msg.reasoning_content = item.value("reasoning_content", "");
-      msg.tool_call_id = item.value("tool_call_id", "");
-      t.messages_.push_back(msg);
+      msg.id = json::ValueOrDefault<int>(item, "id", 0);
+      msg.timestamp = json::ValueOrDefault<std::string>(item, "timestamp", "");
+      msg.role = json::ValueOrDefault<std::string>(item, "role", "");
+      msg.content = json::ValueOrDefault<std::string>(item, "content", "");
+      msg.tool_name = json::ValueOrDefault<std::string>(item, "tool_name", "");
+        msg.tool_calls = json::ValueOrDefault<boost::json::value>(
+          item, "tool_calls", boost::json::value(nullptr));
+      msg.reasoning_content = json::ValueOrDefault<std::string>(item, "reasoning_content", "");
+      msg.tool_call_id = json::ValueOrDefault<std::string>(item, "tool_call_id", "");
+      t.messages_.push_back(std::move(msg));
     }
   }
   return t;

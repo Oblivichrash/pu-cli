@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "pu/session/workspace.hpp"
 #include "pu/session/memory.hpp"
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 using namespace pu;
 
@@ -12,16 +12,15 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   ctx.Append("assistant", "Hi there!");
 
   REQUIRE(ctx.HistorySize() == 2);
-  auto recent = ctx.Recent(1);
-  REQUIRE(recent.size() == 1);
-  REQUIRE(recent[0].role == "assistant");
+  auto history = ctx.GetHistory();
+  REQUIRE(history.size() == 2);
+  REQUIRE(history[1].role == "assistant");
 
-  ctx.SetVar("foo", nlohmann::json("bar"));
+  ctx.SetVar("foo", boost::json::value("bar"));
   auto val = ctx.GetVar("foo");
   REQUIRE(val.has_value());
-  REQUIRE(val->get<std::string>() == "bar");
+  REQUIRE(boost::json::value_to<std::string>(*val) == "bar");
 }
-
 TEST_CASE("Artifact operations", "[workspace]") {
   Workspace ctx;
   Artifact f;
@@ -78,7 +77,8 @@ TEST_CASE("Transcript::Compact preserves tool-call pairing", "[workspace]") {
   ChatMessage asst;
   asst.id = 11;
   asst.role = "assistant";
-  asst.tool_calls_json = R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])";
+  asst.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])");
   t.Append(asst);
   ChatMessage tool;
   tool.id = 12;
@@ -93,7 +93,7 @@ TEST_CASE("Transcript::Compact preserves tool-call pairing", "[workspace]") {
   bool found_asst = false;
   bool found_tool = false;
   for (const auto& m : h) {
-    if (m.role == "assistant" && !m.tool_calls_json.empty()) found_asst = true;
+    if (m.role == "assistant" && m.HasToolCalls()) found_asst = true;
     if (m.role == "tool" && m.tool_call_id == "call_1") found_tool = true;
   }
   REQUIRE(found_asst);
@@ -111,3 +111,21 @@ TEST_CASE("Workspace::Compact forwards keep_head/keep_tail", "[workspace]") {
   REQUIRE(h[0].content == "msg1");
   REQUIRE(h[5].content == "msg20");
 }
+
+TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
+  Transcript t;
+  ChatMessage asst;
+  asst.id = 1;
+  asst.role = "assistant";
+  asst.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
+  t.Append(asst);
+
+  auto restored = Transcript::Deserialize(t.Serialize());
+  auto h = restored.GetHistory();
+  REQUIRE(h.size() == 1);
+  REQUIRE(h[0].HasToolCalls());
+  REQUIRE(h[0].tool_calls.as_array()[0].at("id") == "call_1");
+  REQUIRE(restored.HasPendingToolCalls());
+}
+

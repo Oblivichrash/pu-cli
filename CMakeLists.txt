@@ -1,17 +1,39 @@
 cmake_minimum_required(VERSION 3.16)
 project(pu-cli VERSION 0.4.1 LANGUAGES CXX)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(CURL REQUIRED)
-find_package(nlohmann_json 3.10 REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system program_options json)
+find_package(OpenSSL REQUIRED)
 
-# Core library: HTTP client, platform utilities, Workspace, LLM providers, and MCP
+set(PU_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/pu_build_config.hpp.in
+    ${PU_GENERATED_INCLUDE_DIR}/pu/build_config.hpp
+)
+
+function(pu_configure_target target)
+    target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_include_directories(${target} PRIVATE ${PU_GENERATED_INCLUDE_DIR})
+
+    if(MSVC)
+        target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+        target_compile_options(${target} PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
 add_library(pu_core STATIC
-    src/infra/curl_http_client.cpp
-    src/infra/platform.cpp
+    src/infra/beast_http_client.cpp
+    src/core/platform.cpp
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/memory.cpp
@@ -25,11 +47,17 @@ add_library(pu_core STATIC
     src/mcp/json_rpc_client.cpp
     src/mcp/mcp_client.cpp
 )
-target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_core PUBLIC CURL::libcurl nlohmann_json::nlohmann_json spdlog::spdlog)
+target_link_libraries(pu_core PUBLIC
+    spdlog::spdlog
+    Boost::json
+    Boost::system
+    Boost::program_options
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+pu_configure_target(pu_core)
 add_library(pu::core ALIAS pu_core)
 
-# Agent library: Agent manager, executor, tools, toolbox, MCP tool
 add_library(pu_agent STATIC
     src/agent_config.cpp
     src/agent_manager.cpp
@@ -40,28 +68,26 @@ add_library(pu_agent STATIC
     src/runtime.cpp
     src/command_router.cpp
 )
-target_include_directories(pu_agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(pu_agent PUBLIC pu_core nlohmann_json::nlohmann_json spdlog::spdlog)
+target_link_libraries(pu_agent PUBLIC pu_core spdlog::spdlog)
+pu_configure_target(pu_agent)
 add_library(pu::agent ALIAS pu_agent)
 
-# CLI application: entry point, chat/ask/learn commands, UI helpers, session management
+add_library(pu_app STATIC
+    src/app/cli.cpp
+    src/app/serve.cpp
+    src/app/serve_http_routes.cpp
+    src/app/serve_websocket.cpp
+)
+target_include_directories(pu_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+target_link_libraries(pu_app PUBLIC pu_agent pu_core spdlog::spdlog)
+pu_configure_target(pu_app)
+add_library(pu::app ALIAS pu_app)
+
 add_executable(pu
     src/app/main.cpp
-    src/app/cli.cpp
 )
-target_include_directories(pu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu PRIVATE pu_agent pu_core spdlog::spdlog)
-
-# Compiler warnings
-if(MSVC)
-    target_compile_options(pu_core PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-    target_compile_options(pu_agent PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-    target_compile_options(pu PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(pu_core PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(pu_agent PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(pu PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+target_link_libraries(pu PRIVATE pu_app pu_agent pu_core spdlog::spdlog)
+pu_configure_target(pu)
 
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
@@ -71,4 +97,4 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pu)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web/ DESTINATION ${CMAKE_INSTALL_DATADIR}/pu/web)

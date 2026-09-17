@@ -2,9 +2,11 @@
 #include "pu/session/session.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
-#include "pu/http_client.hpp"
-#include "infra/curl_http_client.hpp"
-#include "pu/error.hpp"
+#include "pu/infra/http_client.hpp"
+#include "pu/infra/beast_http_client.hpp"
+#include "pu/core/error.hpp"
+
+#include <boost/json.hpp>
 
 namespace pu {
 
@@ -36,13 +38,12 @@ void Session::SwitchBackend(const config::BackendConfig& new_config) {
       "Please let the current tool finish or /clear.");
   }
   runtime_spec_.backend = new_config;
-  // Include the configured system prompt in the static system message.
-  workspace_->SetVar("system_prompt", new_config.system_prompt.value_or(""));
+  workspace_->SetVar("system_prompt", boost::json::value(new_config.system_prompt.value_or("")));
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider() const {
   const auto& cfg = runtime_spec_.backend;
-  auto http = std::make_unique<pu::http::CurlHttpClient>();
+  auto http = std::make_unique<pu::http::BeastHttpClient>();
   if (cfg.type == config::BackendType::kOllama) {
     OllamaProvider::Config ollama_cfg;
     ollama_cfg.model = cfg.model;
@@ -65,16 +66,16 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
   throw RuntimeError("Unknown backend type");
 }
 
-nlohmann::json Session::Serialize() const {
-  nlohmann::json j;
-  j["workspace"] = workspace_->Serialize();
-  j["runtime_spec"] = runtime_spec_.Serialize();
+boost::json::value Session::Serialize() const {
+  boost::json::value j = boost::json::object{};
+  j.as_object()["workspace"] = workspace_->Serialize();
+  j.as_object()["runtime_spec"] = runtime_spec_.Serialize();
   return j;
 }
 
-std::unique_ptr<Session> Session::Deserialize(const nlohmann::json& j) {
-  auto ws = Workspace::Deserialize(j["workspace"]);
-  auto spec = RuntimeSpec::Deserialize(j["runtime_spec"]);
+std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
+  auto ws = Workspace::Deserialize(j.at("workspace"));
+  auto spec = RuntimeSpec::Deserialize(j.at("runtime_spec"));
   auto session = std::make_unique<Session>(ws, spec);
   return session;
 }
