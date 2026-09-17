@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <functional>
-#include <string>
-#include <vector>
-#include <thread>
 #include <atomic>
+#include <string>
+#include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -14,19 +13,9 @@
 #  include <unistd.h>
 #endif
 
+#include "pu/mcp/transport.hpp"
+
 namespace pu::mcp {
-
-using MessageCallback = std::function<void(const std::string&)>;
-
-// Common transport interface shared by the stdio subprocess transport and the
-// remote HTTP transport. McpClient/JsonRpcClient only depend on this interface.
-class Transport {
- public:
-  virtual ~Transport() = default;
-  virtual bool Start(MessageCallback on_message) = 0;
-  virtual void Stop() = 0;
-  virtual bool WriteLine(const std::string& line) = 0;
-};
 
 class StdioTransport : public Transport {
  public:

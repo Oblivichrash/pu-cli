@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/workspace.hpp"
+
+#include "pu/core/json.hpp"
+
+#include <boost/json.hpp>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -21,8 +25,7 @@ std::string CurrentTimestamp() {
 } // namespace
 
 void Workspace::Append(const ChatMessage& msg) {
-  if (!transcript_) transcript_ = std::make_unique<Transcript>();
-  transcript_->Append(msg);
+  transcript_.Append(msg);
 }
 
 void Workspace::Append(const std::string& role, const std::string& content) {
@@ -35,108 +38,71 @@ void Workspace::Append(const std::string& role, const std::string& content) {
 }
 
 std::vector<ChatMessage> Workspace::GetHistory() const {
-  if (!transcript_) return {};
-  return transcript_->GetHistory();
-}
-
-std::vector<ChatMessage> Workspace::Recent(int n) const {
-  if (!transcript_) return {};
-  return transcript_->Recent(n);
+  return transcript_.GetHistory();
 }
 
 size_t Workspace::HistorySize() const {
-  if (!transcript_) return 0;
-  return transcript_->Size();
+  return transcript_.Size();
 }
 
 void Workspace::Compact(size_t keep_head, size_t keep_tail) {
-  if (transcript_) transcript_->Compact(keep_head, keep_tail);
+  transcript_.Compact(keep_head, keep_tail);
 }
 
 bool Workspace::HasPendingToolCalls() const {
-  if (!transcript_) return false;
-  return transcript_->HasPendingToolCalls();
+  return transcript_.HasPendingToolCalls();
 }
 
-void Workspace::SetVar(const std::string& key, const nlohmann::json& value) {
-  if (!memory_) memory_ = std::make_unique<Memory>();
-  memory_->SetVar(key, value);
+void Workspace::SetVar(const std::string& key, const boost::json::value& value) {
+  memory_.SetVar(key, value);
 }
 
-std::optional<nlohmann::json> Workspace::GetVar(const std::string& key) const {
-  if (!memory_) return std::nullopt;
-  return memory_->GetVar(key);
-}
-
-bool Workspace::HasVar(const std::string& key) const {
-  if (!memory_) return false;
-  return memory_->HasVar(key);
-}
-
-void Workspace::RemoveVar(const std::string& key) {
-  if (memory_) memory_->RemoveVar(key);
+std::optional<boost::json::value> Workspace::GetVar(const std::string& key) const {
+  return memory_.GetVar(key);
 }
 
 void Workspace::AddArtifact(const Artifact& artifact) {
-  if (!memory_) memory_ = std::make_unique<Memory>();
-  memory_->AddArtifact(artifact);
+  memory_.AddArtifact(artifact);
 }
 
 std::vector<Artifact> Workspace::GetArtifacts() const {
-  if (!memory_) return {};
-  return memory_->GetArtifacts();
+  return memory_.GetArtifacts();
 }
 
 void Workspace::ClearArtifacts() {
-  if (memory_) memory_->ClearArtifacts();
+  memory_.ClearArtifacts();
 }
 
-nlohmann::json Workspace::Serialize() const {
-  nlohmann::json j;
+boost::json::value Workspace::Serialize() const {
+  boost::json::value j = boost::json::object{};
 
-  if (transcript_) {
-    j["history"] = transcript_->Serialize();
-  } else {
-    j["history"] = nlohmann::json::array();
-  }
-
-  if (memory_) {
-    auto mem_j = memory_->Serialize();
-    j["variables"] = mem_j["variables"];
-    j["artifacts"] = mem_j["artifacts"];
-  } else {
-    j["variables"] = nlohmann::json::object();
-    j["artifacts"] = nlohmann::json::array();
-  }
+  j.as_object()["history"] = transcript_.Serialize();
+  auto mem_j = memory_.Serialize();
+  j.as_object()["variables"] = mem_j.at("variables");
+  j.as_object()["artifacts"] = mem_j.at("artifacts");
 
   return j;
 }
 
-std::shared_ptr<Workspace> Workspace::Deserialize(const nlohmann::json& j) {
+std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   auto ws = std::make_shared<Workspace>();
-  ws->transcript_ = std::make_unique<Transcript>();
 
-  if (j.contains("history") && j["history"].is_array()) {
-    *ws->transcript_ = Transcript::Deserialize(j["history"]);
+  if (json::HasKey(j, "history") && j.at("history").is_array()) {
+    ws->transcript_ = Transcript::Deserialize(j.at("history"));
   }
 
-  ws->memory_ = std::make_unique<Memory>();
-  nlohmann::json mem_j;
-  mem_j["variables"] = j.value("variables", nlohmann::json::object());
-  // "artifacts" is the current key; "facts" remains as a legacy fallback.
-  mem_j["artifacts"] = j.contains("artifacts")
-      ? j["artifacts"] : j.value("facts", nlohmann::json::array());
-  *ws->memory_ = Memory::Deserialize(mem_j);
+  boost::json::value mem_j = boost::json::object{};
+  mem_j.as_object()["variables"] =
+      json::ValueOrDefault<boost::json::value>(j, "variables", boost::json::object{});
+    mem_j.as_object()["artifacts"] =
+      json::ValueOrDefault<boost::json::value>(j, "artifacts", boost::json::array{});
+  ws->memory_ = Memory::Deserialize(mem_j);
 
   return ws;
 }
 
 void Workspace::ClearHistory() {
-  if (!transcript_) {
-    transcript_ = std::make_unique<Transcript>();
-  } else {
-    transcript_ = std::make_unique<Transcript>(); // replace with empty
-  }
+  transcript_ = Transcript{};
 }
 
 } // namespace pu

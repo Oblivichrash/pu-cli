@@ -51,22 +51,26 @@ TEST_CASE("AgentManager GetAgentConfig finds entry by name", "[agent]") {
   REQUIRE(not_found == nullptr);
 }
 
-TEST_CASE("AgentManager confirmation callback works", "[agent]") {
+TEST_CASE("AgentManager LoadAgentConfigs replaces previous configs", "[agent]") {
   AgentManager manager;
 
-  bool called = false;
-  manager.SetConfirmationCallback([&called](const ConfirmationRequest&) {
-    called = true;
-    return ConfirmationChoice::kApproveOnce;
-  });
+  config::AgentEntry old_entry;
+  old_entry.name = "old";
+  old_entry.description = "Old agent";
 
-  auto cb = manager.GetConfirmationCallback();
-  REQUIRE(cb != nullptr);
+  config::AgentEntry new_entry;
+  new_entry.name = "new";
+  new_entry.description = "New agent";
 
-  ConfirmationRequest req;
-  req.description = "test";
-  req.highest_risk = pu::executor::RiskLevel::kSafe;
-  auto result = cb(req);
-  REQUIRE(called);
-  REQUIRE(result == ConfirmationChoice::kApproveOnce);
+  manager.LoadAgentConfigs({old_entry});
+  REQUIRE(manager.GetAgentNames().size() == 1);
+  REQUIRE(manager.GetAgentNames()[0] == "old");
+
+  manager.LoadAgentConfigs({new_entry});
+
+  auto names = manager.GetAgentNames();
+  REQUIRE(names.size() == 1);
+  REQUIRE(names[0] == "new");
+  REQUIRE(manager.GetAgentConfig("old") == nullptr);
+  REQUIRE(manager.GetAgentConfig("new") != nullptr);
 }

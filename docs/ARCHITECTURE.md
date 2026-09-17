@@ -8,8 +8,24 @@ pu-cli is built around four principles:
 
 1. **Single-session auto-persistence** — One session owns the workspace and history, transparently persisted.
 2. **Dynamic backend switching** — Switch LLM providers without losing state.
-3. **Stateless execution** — `Executor` holds no state; all state lives in `Workspace`/`Session`.
+3. **Stateless execution** — `Executor` keeps no per-session state; all session state lives in `Workspace`/`Session` (`Executor` holds only configuration and an environment-probe cache).
 4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
+
+---
+
+## Tech Stack
+
+The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
+**spdlog**, and **OpenSSL**:
+
+- **Boost.Beast** — HTTP/WebSocket server (`pu serve`) and HTTP client
+  (`BeastHttpClient`), built on top of **Boost.Asio**.
+- **Boost.Asio** — asynchronous I/O core underneath Beast.
+- **Boost.JSON** — JSON parsing/serialization (config, session persistence,
+  WebSocket protocol, MCP, REST API).
+- **Boost.ProgramOptions** — CLI option parsing.
+- **OpenSSL** — TLS for `https://`/`wss://` connections in `BeastHttpClient`.
+- **spdlog** — structured logging.
 
 ---
 
@@ -20,15 +36,16 @@ pu-cli is built around four principles:
 | `Runtime` | Plain object created by `main()`; owns `AgentManager`, `Toolbox`, `Executor`, `CommandRouter`; routes input, holds the single `Session`, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
 | `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
-| `Executor` | Stateless tool loop; reads/writes `Workspace`; injects system context and processes structured tool output |
+| `Executor` | Session-state-free tool loop (holds config + probe cache); reads/writes `Workspace`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
+| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`, with REST handlers in `serve_http_routes.cpp` and the WebSocket protocol in `serve_websocket.cpp`): Boost.Beast HTTP/WebSocket server exposing the session via WebSocket (`/ws`) for chat and REST endpoints for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
+| `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
 | `StdioTransport` | stdio subprocess transport |
-| `HttpTransport` | remote streamable-HTTP transport (curl POST, line-delimited responses) |
-| `ArtifactExtractor` | Extracts `Artifact`s from workspace history |
+| `HttpTransport` | remote streamable-HTTP transport (BeastHttpClient POST, line-delimited responses) |
 
 ---
 
@@ -47,44 +64,63 @@ pu::RuntimeError : std::runtime_error
 
 ---
 
-## Executor Enhancements (since v0.4)
+## JSON Handling
+
+All JSON parsing and serialization is provided by **Boost.JSON**
+(`boost::json::value`; Boost >= 1.75). `include/pu/core/json.hpp` is a thin
+convenience layer over the Boost API for the operations the codebase uses most:
+
+- `pu::json::parse` / `pu::json::serialize` — parse and serialize
+  (`boost::json::parse` throws `boost::system::system_error` on malformed input).
+- `pu::json::ValueOrDefault(value, key, def)` — optional member read with default.
+- `pu::json::HasKey(value, key)` — safe key-existence check.
+- `pu::json::PrettyPrint(value)` — indented output for `agents.json` and
+  `session.json`.
+
+JSON is used for configuration (`agents.json`), session persistence
+(`Session::Serialize` / `Session::Deserialize`), structured tool output
+(`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
+API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
+
+---
+
+## Executor
 
 ### Structured Tool Output
 
-Every tool (`execute_bash`, `write_file`, MCP tools) returns a JSON object with the following schema:
-
-```json
-{
-  "success": bool,
-  "stdout": string,
-  "stderr": string,
-  "error": string,
-  "exit_code": int
-}
-```
-
-The `Executor` extracts `stdout` (if `success==true`) or `error` (if `success==false`) and stores only that content in the transcript. The full JSON is not persisted, keeping history clean and human‑readable.
+Tools return structured JSON instead of free text. `Executor` extracts `stdout`
+(on success) or `error` (on failure) and stores only that content in the
+transcript, so the full JSON is never persisted and history stays readable. The
+field schema lives in `include/pu/tools/tool_result.hpp` and is documented in
+[README](../README.md#tool-output-format).
 
 ### System Context Injection
 
 `Executor` automatically builds a system message containing:
 
 - OS name and kernel version (probed once at startup)
-- Available system tools (detected via `which`)
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
-- Last known file paths (extracted from artifacts)
-- Recent tool executions (up to 2) with success/failure status and truncated output
+- Tool-use guidelines for the model
 
-This context is merged with the user‑defined `system_prompt` (if any) and prepended to the chat history on every request. This gives the model full awareness of its environment, dramatically reducing blind attempts.
+Artifacts are persisted in the session (`Workspace`/`Memory`) but are not
+injected into the prompt.
+
+This context is merged with the user-defined `system_prompt` (if any) and
+prepended to the chat history on every request.
 
 ### Environment Probing
 
-`Executor::ProbeStaticEnvironment()` runs once during construction and uses `uname -s`, `uname -r`, and `which` to detect the OS and common tools (`bash`, `python3`, `gcc`, `git`, `curl`, `jq`). The result is cached and included in the system context.
+`Executor::ProbeStaticEnvironment()` runs once during construction and uses
+`uname -s` / `uname -r` on POSIX (or the Windows kernel API) to detect the OS
+name and kernel version. The result is cached and included in the system
+context. No tool-binary detection (`which`) is performed.
 
 ### Forbidden Patterns
 
-The security policy's `forbidden_patterns` is enforced at the tool execution layer. Commands matching any pattern are rejected with a JSON error response. It is strongly recommended to include `"cd"` to prevent the model from changing the working directory.
+`forbidden_patterns` is enforced at the tool execution layer: a command matching
+any pattern is rejected with a JSON error response. See
+[README](../README.md#security) for the recommended patterns.
 
 ---
 
@@ -107,14 +143,37 @@ Key responsibilities:
 - `Shutdown()` — saves the single session to `<data-dir>/session.json`.
 - `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
 
+### Web server lifecycle
+
+`pu serve` runs the same `Runtime` instance behind a Boost.Beast front-end
+(`RunServe` in `src/app/serve.cpp`):
+
+1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
+   server mounts the static `web/` UI and registers the HTTP routes.
+2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
+   accepted connection is handled on a detached thread.
+3. A plain HTTP request is dispatched to the static/REST routes; a request with a
+   WebSocket upgrade on `/ws` is accepted and replaces any previously active
+   WebSocket session.
+4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
+   spawns a worker thread that runs `Runtime::ProcessInput` under the shared
+   `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
+5. Frames are written back over the socket as the run progresses (streamed
+   chunks, tool start/end, completion, or error). The frame schema is documented
+   in [README](../README.md#websocket-protocol).
+6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
+   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/clear`)
+   handle control and status queries. On Ctrl+C the server stops and
+   `Runtime::Shutdown()` persists the session.
+
 ### Single-session auto-persistence
 
 `Runtime` maintains a single `std::shared_ptr<Session> current_session_`. On
 `Initialize()` it loads `<data-dir>/session.json` (if the file exists) via
 `Session::Deserialize`. After every `ProcessInput()` call and on `Shutdown()`, the
 session is serialized back to the same file via `Session::Serialize`. There is no
-manual save/load/list/export; persistence is fully automatic and scoped to the data
-directory (`PU_HOME` or `./.pu/`).
+manual save/load/list/export; persistence is fully automatic and scoped to the
+data directory.
 
 ### Toolbox & MCP lifecycle
 
@@ -132,6 +191,29 @@ RebuildToolbox(agent)
 
 ---
 
+## Streaming & Cancellation
+
+### Cancel token
+
+A `CancelToken` (`std::shared_ptr<std::atomic<bool>>`) is threaded through the
+whole request stack — `Runtime::ProcessInput` → `Executor::Execute` →
+`LLMProvider::Chat` → `HttpClient::PostStream`. Providers poll the flag between
+chunks and stop early, so a cancellation surfaces quickly instead of waiting for
+the model to finish. In `pu serve` the token is owned by the active WebSocket
+session: a `{"type":"cancel"}` message — or a dropped connection — sets it, and
+`BeastHttpClient` aborts the in-flight HTTP request on the next poll.
+
+### WebSocket streaming
+
+Chat runs exclusively over the `/ws` WebSocket. A `{"type":"run"}` message runs
+`ProcessInput` on a detached worker thread; its `content_callback` writes each
+streamed chunk to the socket as it arrives, which produces the typewriter effect
+in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
+keyed by the tool call `id`. Commands and non-streaming backends deliver their
+full text as a single chunk frame. The frame schema and client-side rendering
+are documented in [README](../README.md#websocket-protocol) and implemented in
+`web/app.js`.
+
 ## Data Flow
 
 ```
@@ -145,7 +227,7 @@ Runtime.ProcessInput(input, ...)
     └── Is message? ──► Session.CreateProvider()
                          │
                          ▼
-                       Executor.Execute()          (stateless)
+                       Executor.Execute()          (session-state-free)
                          │
                          ├── Inject system context into chat history
                          ├── Read Workspace.Transcript
@@ -157,6 +239,24 @@ Runtime.ProcessInput(input, ...)
                          │
                          ▼
                        Session::Serialize() → session.json
+```
+
+### Web request (streaming)
+
+```
+Browser ──WebSocket (/ws)──► RunServe handler
+     │  WebSocket connection established
+     ▼
+Client sends: {"type":"run","payload":{"text":"..."}}
+     │
+     ▼
+Worker thread: Runtime.ProcessInput(..., content_callback)
+     │  content_callback → ws->write({"type":"chunk","payload":{"text":"..."}})
+     ▼
+Browser: WebSocket onmessage → parse JSON → append token to Markdown renderer
+
+Cancellation:
+Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
 ```
 
 ---
@@ -180,7 +280,7 @@ Runtime.ProcessInput(input, ...)
         ▼                             ▼
 ┌──────────────────────────────────────┐   ┌──────────────────────────────────────┐
 │  StdioTransport                     │   │  HttpTransport                       │
-│  Child process stdio, line JSON     │   │  CurlHttpClient POST, line JSON      │
+│  Child process stdio, line JSON     │   │  BeastHttpClient POST, line JSON     │
 └──────────────────────────────────────┘   └──────────────────────────────────────┘
 ```
 
@@ -216,8 +316,9 @@ automatically after every interaction and on shutdown, and restored on startup.
 
 ## Directory Structure
 
-Single-file modules live directly under `include/pu/` and `src/`; directories are kept
-only where a module has multiple files.
+The tree is layered bottom-up: `core/` holds dependency-free base utilities,
+the domain modules sit beside it, and the orchestration headers/modules live at
+the root of `include/pu/` and `src/`.
 
 ```
 include/pu/
@@ -225,28 +326,47 @@ include/pu/
 ├── agent_manager.hpp     # AgentManager
 ├── command_router.hpp    # CommandRouter
 ├── runtime.hpp           # Runtime
-├── executor.hpp          # Executor (stateless, with system context injection)
-├── http_client.hpp       # HttpClient interface
-├── cli.hpp, error.hpp, path_utils.hpp
-├── core/                 # Logging
-├── infra/                # Platform utilities
+├── executor.hpp          # Executor (session-state-free, with system context injection)
+├── cli.hpp               # CLI helpers
+├── core/                 # Base layer: no dependencies, no domain knowledge
+│   ├── cancel_token.hpp  # Shared cancellation token (transport-agnostic)
+│   ├── error.hpp         # RuntimeError / Error / HttpError
+│   ├── json.hpp          # Boost.JSON convenience helpers
+│   ├── logging.hpp       # spdlog setup + JSON log formatter
+│   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
+│   └── platform.hpp      # OS/kernel probing
+├── infra/                # Adapters
+│   ├── http_client.hpp   # HttpClient interface
+│   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
 ├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
-├── mcp/                  # McpClient, JsonRpcClient, StdioTransport, HttpTransport
+├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
 ├── session/              # Session, Workspace, Transcript, Memory
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
-├── app/                  # CLI entry (main), UI helpers
+├── app/                  # Entry points: main, CLI parsing, serve (web server)
+│   ├── main.cpp
+│   ├── cli.cpp
+│   ├── serve.cpp              # RunServe: acceptor, dispatch, lifecycle
+│   ├── serve_http_routes.cpp  # Static files + REST handlers
+│   ├── serve_websocket.cpp    # /ws upgrade + chat frame protocol
+│   └── serve_internal.hpp     # Declarations shared by the serve modules
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
-├── core/                 # Logging
-├── infra/                # CurlHttpClient, platform
+├── core/                 # Base layer: logging, platform
+├── infra/                # BeastHttpClient (network adapter)
 ├── llm/                  # Providers, streaming parser
-├── mcp/                  # MCP transport, JSON-RPC, client
+├── mcp/                  # MCP transport implementations, JSON-RPC, client
 ├── session/              # Session, Workspace, etc.
 └── tools/                # Toolbox, tools
 ```
+
+A header lives in `include/pu/` when code outside its own directory uses it
+(including tests); otherwise it stays next to its `.cpp`. The CMake targets
+follow the layering: `pu_core` is the *base* static library (core + domain
+modules), `pu_agent` holds the orchestration layer, `pu_app` holds `src/app/`,
+and the `pu` executable adds only `main.cpp`.
 
 ---
 
@@ -261,11 +381,11 @@ src/
 
 ## Known Limitations
 
-- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses libcurl and works on both platforms.
+- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.
-- Environment probing uses `uname` and `which`, which may not be available on all systems (e.g., minimal containers). It gracefully fails and logs a warning.
+- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
 
 ---
 

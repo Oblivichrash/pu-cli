@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/builtin_tools.hpp"
 
-#include "pu/agent_manager.hpp"
-#include "pu/infra/platform.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/tools/tool_result.hpp"
+#include "pu/core/json.hpp"
 
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -13,13 +13,6 @@
 #include <memory>
 #include <regex>
 #include <string>
-
-#ifdef _WIN32
-#  include <direct.h>
-#  define chdir _chdir
-#else
-#  include <unistd.h>
-#endif
 
 namespace pu::tools {
 
@@ -39,7 +32,7 @@ bool MatchAnyPattern(const std::string& command, const std::vector<std::string>&
 }
 
 struct RiskAssessment {
-  pu::executor::RiskLevel level = pu::executor::RiskLevel::kSafe;
+  RiskLevel level = RiskLevel::kSafe;
   std::string reason;
 };
 
@@ -60,36 +53,27 @@ class CommandExecutor {
     RiskAssessment result;
     std::string pattern;
     if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
-      result.level = pu::executor::RiskLevel::kDangerous;
+      result.level = RiskLevel::kDangerous;
       result.reason = "Matches dangerous pattern: " + pattern;
       return result;
     }
-    result.level = MatchAnyPattern(command, safe_commands_)
-                       ? pu::executor::RiskLevel::kSafe
-                       : pu::executor::RiskLevel::kNeutral;
+    result.level = MatchAnyPattern(command, safe_commands_) ? RiskLevel::kSafe
+                                                           : RiskLevel::kNeutral;
     return result;
   }
 
   CommandResult Execute(const std::string& command) {
     CommandResult result;
     auto risk = AssessRisk(command);
-    if (risk.level == pu::executor::RiskLevel::kDangerous) {
+    if (risk.level == RiskLevel::kDangerous) {
       result.was_intercepted = true;
       result.intercept_reason = risk.reason;
       result.exit_code = -1;
       return result;
     }
 
-    if (!sandbox_path_.empty()) {
-      if (chdir(sandbox_path_.c_str()) != 0) {
-        result.exit_code = -1;
-        result.stderr_content = "Failed to chdir to sandbox: " + sandbox_path_;
-        return result;
-      }
-    }
-
     std::string output;
-    int exit_code = pu::platform::ExecuteCommand(command, output);
+    int exit_code = pu::platform::ExecuteCommand(command, output, sandbox_path_);
     result.exit_code = exit_code;
     result.stdout_content = output;
     if (exit_code != 0) result.stderr_content = output;
@@ -127,14 +111,25 @@ std::string ExecuteBashToolStandard::Description() const {
   return "Execute a shell command.";
 }
 
-std::string ExecuteBashToolStandard::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"}},"required":["command"]})##";
+boost::json::value ExecuteBashToolStandard::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"command",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "The shell command to execute"},
+            }},
+       }},
+      {"required", boost::json::array{"command"}},
+  };
 }
 
-std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   std::string command;
-  if (args.is_object() && args.contains("command")) {
-    command = args["command"].get<std::string>();
+  if (args.is_object() && json::HasKey(args, "command")) {
+    command = boost::json::value_to<std::string>(args.at("command"));
   }
   if (command.empty()) {
     return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
@@ -159,7 +154,7 @@ std::string ExecuteBashToolStandard::Execute(const nlohmann::json& args, pu::Too
 
   CommandExecutor executor(sandbox_root_);
   auto risk = executor.AssessRisk(command);
-  if (risk.level == pu::executor::RiskLevel::kDangerous) {
+  if (risk.level == RiskLevel::kDangerous) {
     return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
   }
 
@@ -185,13 +180,29 @@ std::string WriteFileTool::Description() const {
   return "Write text to a file.";
 }
 
-std::string WriteFileTool::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"path":{"type":"string","description":"File path (relative to sandbox)"},"content":{"type":"string","description":"Text to write"}},"required":["path","content"]})##";
+boost::json::value WriteFileTool::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"path",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "File path (relative to sandbox)"},
+            }},
+           {"content",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "Text to write"},
+            }},
+       }},
+      {"required", boost::json::array{"path", "content"}},
+  };
 }
 
-std::string WriteFileTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
-  std::string path = args.value("path", "");
-  std::string content = args.value("content", "");
+std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
+  std::string path = json::ValueOrDefault<std::string>(args, "path", "");
+  std::string content = json::ValueOrDefault<std::string>(args, "content", "");
   if (path.empty()) {
     return tools::MakeToolResultJson(false, "", "", "'path' is required", -1);
   }
@@ -243,23 +254,35 @@ std::string AskUserTool::Description() const {
   return "Ask user for clarification.";
 }
 
-std::string AskUserTool::ParametersSchema() const {
-  return R"##({"type":"object","properties":{"question":{"type":"string","description":"The question to ask"}},"required":["question"]})##";
+boost::json::value AskUserTool::ParametersSchema() const {
+  return boost::json::object{
+      {"type", "object"},
+      {"properties",
+       boost::json::object{
+           {"question",
+            boost::json::object{
+                {"type", "string"},
+                {"description", "The question to ask"},
+            }},
+       }},
+      {"required", boost::json::array{"question"}},
+  };
 }
 
-std::string AskUserTool::Execute(const nlohmann::json& args, pu::ToolContext& ctx) {
+std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   (void)ctx;
-  nlohmann::json result;
-  result["success"] = false;
-  result["error"] = "clarification_needed";
+  boost::json::value result = {
+    {"success", false},
+    {"error", "clarification_needed"},
+  };
 
   std::string question;
-  if (args.is_object() && args.contains("question")) {
-    question = args["question"].get<std::string>();
+  if (args.is_object() && json::HasKey(args, "question")) {
+    question = boost::json::value_to<std::string>(args.at("question"));
   }
-  result["question"] = question;
+  result.as_object()["question"] = question;
 
-  return result.dump();
+  return boost::json::serialize(result);
 }
 
 }  // namespace pu::tools

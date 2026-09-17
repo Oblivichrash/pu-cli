@@ -5,63 +5,56 @@
 - Include `## Description`, `## Why`, `## Related Issue` in body.
 
 ## Commit Messages
-- Follow `type: description` (imperative mood, <72 chars).
+Use a lowercase type and a specific summary under 72 characters. Add a short
+list when the change needs context:
+
+```text
+<type>: <summary>
+
+- <important change>
+- <important change>
+```
+
+Keep one coherent change per commit.
 
 ## Code Style
 - C++23 with Google C++ Style.
 - SPDX license header in every file (`// SPDX-License-Identifier: GPL-3.0-only`).
 - No decorative comments (`// ====`).
-- Comments explain **why**, not **what**.
-- Use `clang-format` for formatting.
+- Comments explain **why**, not **what**. Prefer self-explanatory code: add a
+  comment only when the reason is not obvious from the code itself.
+- Comments describe current intent, not history. Do not reference removed
+  code, old versions, or phrasing like "previously" / "it used to".
+- Use `clang-format` for formatting; the config lives in `.clang-format`
+  (Google style, 100-column limit). Run `clang-format -i <files>` before
+  committing. Without the config file, `clang-format` would fall back to the
+  LLVM defaults and reformat the whole tree, so always run it from the repo
+  root.
+- JSON code uses Boost.JSON (`boost::json::value`) through the
+  `include/pu/core/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
+  `pu::json::ValueOrDefault`, `pu::json::HasKey`,
+  `pu::json::PrettyPrint`) instead of raw hand-rolled parsing.
+- A header belongs in `include/pu/` only when code outside its own directory
+  uses it (including tests); otherwise keep it next to its `.cpp` under `src/`.
 
 ## Testing
-Run before submitting:
+Install the dependencies from [README.md](README.md#build-dependencies), then:
 ```bash
 cmake -B build -DBUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-### Key Test Areas
-- Workspace: Transcript, Memory.
-- LLMProvider: Ollama/OpenAI request building, streaming, tool calling.
+## Where Things Live
 
-## Logging
+Maintain each fact in one place: rules here, usage and behavior in
+[README.md](README.md), structure and layering in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Link instead of copying.
 
-- The console only shows `error` and `critical` messages; `info`, `warn`, `debug`, and `trace` are never printed to the console.
-- Set `PU_LOG_LEVEL` to `trace`, `debug`, `info`, `warn`, `error`, or `critical` to control the file log verbosity (default `info`).
-- Log files are stored in `<data-dir>/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
-- The data directory is `PU_HOME` if set, otherwise `./.pu/`.
-
-## Directory Structure
-
-```text
-src/
-  agent/         AgentManager (config metadata only)
-  app/           CLI, UI, session manager
-  core/          SummaryGenerator, ArtifactExtractor
-  executor/      Executor (stateless)
-  infra/         HTTP client, platform utils
-  llm/           Providers
-  mcp/           MCP transport, JSON-RPC client, high-level client
-  runtime/       Runtime, CommandRouter
-  session/       Session, Workspace, Transcript, Memory
-  tools/         Toolbox, tools (including McpTool adapter)
-include/pu/      Public headers
-tests/unit/      Unit tests
-```
-
-## Configuration
-
-- The configuration file must be located in a `.pu/` directory.
-- Search order is `./.pu/agents.json` then `~/.pu/agents.json`.
-
-## Adding Features
-
-- **New backend**: Implement `pu::LLMProvider`, update `Session::CreateProvider()`.
-- **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
-- **New command**: Add to `CommandRouter`, update help.
-- **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered and registered automatically via the MCP client.
+- Build dependencies, configuration, environment variables, and `pu serve`
+  usage: [README.md](README.md).
+- Layer boundaries, directory layout, CMake targets, and extension points:
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 

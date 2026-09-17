@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
 #include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/tool_result.hpp"
 
 #include <catch2/catch_test_macros.hpp>
-#include <nlohmann/json.hpp>
+#include <boost/json.hpp>
 
 #include <functional>
 #include <memory>
@@ -15,28 +16,28 @@ using namespace pu;
 
 TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
           "[executor]") {
-  nlohmann::json j;
-  j["success"] = true;
-  j["stdout"] = "hello world";
-  j["stderr"] = "";
-  j["error"] = "";
-  j["exit_code"] = 0;
+  boost::json::value j = boost::json::object{};
+  j.as_object()["success"] = true;
+  j.as_object()["stdout"] = "hello world";
+  j.as_object()["stderr"] = "";
+  j.as_object()["error"] = "";
+  j.as_object()["exit_code"] = 0;
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "hello world");
 }
 
 TEST_CASE(
     "ExtractToolResultContent parses failure JSON and returns error field",
     "[executor]") {
-  nlohmann::json j;
-  j["success"] = false;
-  j["stdout"] = "";
-  j["stderr"] = "some stderr";
-  j["error"] = "Command failed (exit 1)";
-  j["exit_code"] = 1;
+  boost::json::value j = boost::json::object{};
+  j.as_object()["success"] = false;
+  j.as_object()["stdout"] = "";
+  j.as_object()["stderr"] = "some stderr";
+  j.as_object()["error"] = "Command failed (exit 1)";
+  j.as_object()["exit_code"] = 1;
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == "Command failed (exit 1)");
 }
 
@@ -44,27 +45,27 @@ TEST_CASE(
     "ExtractToolResultContent returns raw string for non-JSON input",
     "[executor]") {
   std::string raw = "plain text output";
-  std::string result = Executor::ExtractToolResultContent(raw);
+  std::string result = tools::ExtractToolResultContent(raw);
   REQUIRE(result == raw);
 }
 
 TEST_CASE(
     "ExtractToolResultContent returns raw string for JSON without success key",
     "[executor]") {
-  nlohmann::json j;
-  j["other"] = "data";
+  boost::json::value j = boost::json::object{};
+  j.as_object()["other"] = "data";
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
+  REQUIRE(result == boost::json::serialize(j));
 }
 
 TEST_CASE(
     "ExtractToolResultContent returns raw string for JSON array",
     "[executor]") {
-  nlohmann::json j = nlohmann::json::array({"a", "b"});
+  boost::json::value j = boost::json::value(boost::json::array{"a", "b"});
 
-  std::string result = Executor::ExtractToolResultContent(j.dump());
-  REQUIRE(result == j.dump());
+  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
+  REQUIRE(result == boost::json::serialize(j));
 }
 
 TEST_CASE("BuildStaticSystemContext includes environment info",
@@ -162,18 +163,22 @@ namespace {
 
 class MockLLM : public LLMProvider {
  public:
-  explicit MockLLM(std::vector<ToolCall> calls, std::string content = "")
-      : calls_(std::move(calls)), content_(std::move(content)) {}
+  explicit MockLLM(std::vector<ToolCall> calls, std::string content = "",
+                   bool fire_calls_once = false)
+      : calls_(std::move(calls)), content_(std::move(content)),
+        fire_calls_once_(fire_calls_once) {}
 
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  std::function<void(const ToolCall&)> tool_callback) override {
+                  std::function<void(const ToolCall&)> tool_callback,
+                  CancelToken /*cancel_token*/) override {
     ChatResult r;
     r.content = content_;
     for (const auto& c : calls_) {
       if (tool_callback) tool_callback(c);
     }
+    if (fire_calls_once_) calls_.clear();
     return r;
   }
 
@@ -183,16 +188,17 @@ class MockLLM : public LLMProvider {
  private:
   std::vector<ToolCall> calls_;
   std::string content_;
+  bool fire_calls_once_ = false;
 };
 
 class TrackingTool : public Tool {
  public:
   std::string Name() const override { return "tracking_tool"; }
   std::string Description() const override { return "records execution"; }
-  std::string ParametersSchema() const override {
-    return R"({"type":"object"})";
+  boost::json::value ParametersSchema() const override {
+    return boost::json::object{{"type", "object"}};
   }
-  std::string Execute(const nlohmann::json& /*args*/,
+  std::string Execute(const boost::json::value& /*args*/,
                       ToolContext& /*ctx*/) override {
     ++executions;
     return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
@@ -219,7 +225,7 @@ TEST_CASE("Executor returns ask_user question without running other tools",
   ToolCall call;
   call.id = "call_ask_1";
   call.name = "ask_user";
-  call.arguments["question"] = "Should I overwrite the existing file?";
+  call.arguments = boost::json::value{{"question", "Should I overwrite the existing file?"}};
 
   MockLLM mock({call}, "thinking out loud");
   Workspace ws;
@@ -229,4 +235,81 @@ TEST_CASE("Executor returns ask_user question without running other tools",
   REQUIRE(result.was_streamed == false);
   REQUIRE(result.has_error == false);
   REQUIRE(tracking_ptr->executions == 0);
+}
+
+TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
+          "[executor][tool_loop][tool_callbacks]") {
+  Toolbox toolbox;
+  auto tracking = std::make_unique<TrackingTool>();
+  auto* tracking_ptr = tracking.get();
+  toolbox.RegisterTool(std::move(tracking));
+
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.id = "";  // let Executor assign a generated id
+  call.name = "tracking_tool";
+  call.arguments = boost::json::value{{"flag", true}};
+
+  // Emit the tool call only on the first turn so the tool loop terminates
+  // after the tool runs and the mock returns its final text response.
+  MockLLM mock(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
+
+  std::vector<std::string> started_ids;
+  std::vector<std::string> started_names;
+  std::vector<boost::json::value> started_args;
+  std::vector<std::string> ended_ids;
+  std::vector<std::string> ended_outputs;
+  std::vector<std::string> ended_errors;
+
+  ToolCallbacks cb;
+  cb.on_start = [&](const std::string& id, const std::string& name,
+                    const boost::json::value& args) {
+    started_ids.push_back(id);
+    started_names.push_back(name);
+    started_args.push_back(args);
+  };
+  cb.on_end = [&](const std::string& id, const std::string& output,
+                  const std::string& error) {
+    ended_ids.push_back(id);
+    ended_outputs.push_back(output);
+    ended_errors.push_back(error);
+  };
+
+  Workspace ws;
+  ExecutionResult result =
+      executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "done");
+  REQUIRE(tracking_ptr->executions == 1);
+
+  REQUIRE(started_ids.size() == 1);
+  REQUIRE(ended_ids.size() == 1);
+
+  // start and end must reference the same, non-empty tool id.
+  REQUIRE_FALSE(started_ids[0].empty());
+  REQUIRE(started_ids[0] == ended_ids[0]);
+
+  REQUIRE(started_names[0] == "tracking_tool");
+  REQUIRE(started_args[0].is_object());
+  REQUIRE(started_args[0].as_object().at("flag") == true);
+
+  // Success result: stdout is pushed as output, error stays empty.
+  REQUIRE(ended_outputs[0] == "ran");
+  REQUIRE(ended_errors[0].empty());
+
+  // The workspace history must pair the tool message with the same id that was
+  // streamed to the caller.
+  bool found_paired_tool_msg = false;
+  for (const auto& msg : ws.GetHistory()) {
+    if (msg.role == "tool" && msg.tool_call_id == started_ids[0]) {
+      found_paired_tool_msg = true;
+      break;
+    }
+  }
+  REQUIRE(found_paired_tool_msg);
 }

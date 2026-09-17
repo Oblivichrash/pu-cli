@@ -7,7 +7,8 @@ namespace pu::platform {
 
 // Runs a full shell command (popen/_popen) with stderr merged via `2>&1`.
 // Returns the shell exit code, or -1 on error.
-int ExecuteCommand(const std::string& command, std::string& output);
+int ExecuteCommand(const std::string& command, std::string& output,
+				   const std::string& working_dir = {});
 
 void SetupSignalHandler();
 bool IsInterrupted();

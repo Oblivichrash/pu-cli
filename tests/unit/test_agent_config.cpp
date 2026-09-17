@@ -2,39 +2,17 @@
 
 #include "pu/agent_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
-#include "pu/error.hpp"
+#include "tests/mocks/test_helpers.hpp"
+#include "pu/core/error.hpp"
+#include "pu/core/json.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
-#include <nlohmann/json.hpp>
-#include <cstdlib>
 #include <filesystem>
-
-#ifdef _WIN32
-#include <cstring>
-#endif
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace fs = std::filesystem;
-
-#ifdef _WIN32
-static void set_env(const char* name, const char* value) {
-    std::string s = std::string(name) + "=" + std::string(value);
-    _putenv(s.c_str());
-}
-static void unset_env(const char* name) {
-    std::string s = std::string(name) + "=";
-    _putenv(s.c_str());
-}
-#else
-static void set_env(const char* name, const char* value) {
-    setenv(name, value, 1);
-}
-static void unset_env(const char* name) {
-    unsetenv(name);
-}
-#endif
 
 struct TempConfigFile {
   fs::path path;
@@ -51,6 +29,83 @@ struct TempConfigFile {
   }
 };
 
+
+namespace {
+
+// Serializes an AgentsConfig in the agents.json shape so the loader's
+// round-trip behavior can be tested without a production writer.
+void WriteAgentsConfigForTest(const std::string& config_path,
+                              const config::AgentsConfig& cfg) {
+  json::value j = {{"default_agent", cfg.default_agent}};
+
+  json::array agents_array;
+  for (const auto& entry : cfg.agents) {
+    json::value item = {
+      {"name", entry.name},
+      {"description", entry.description},
+    };
+    item.as_object()["tools"] = boost::json::value_from(entry.tools);
+
+    json::value security = {
+      {"sandbox_root", entry.security.sandbox_root},
+      {"max_command_length", entry.security.max_command_length},
+    };
+    security.as_object()["allowed_paths"] =
+        boost::json::value_from(entry.security.allowed_paths);
+    security.as_object()["forbidden_patterns"] =
+        boost::json::value_from(entry.security.forbidden_patterns);
+    item.as_object()["security"] = security;
+
+    json::value backend = {
+      {"type", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
+      {"host", entry.backend.host},
+      {"model", entry.backend.model},
+      {"temperature", entry.backend.temperature},
+      {"enable_thinking", entry.backend.enable_thinking},
+    };
+    if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
+    if (entry.backend.system_prompt)
+      backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
+    item.as_object()["backend"] = backend;
+
+    if (!entry.mcp_servers.empty()) {
+      json::array mcp_array;
+      for (const auto& srv : entry.mcp_servers) {
+        json::value srv_json = {
+          {"name", srv.name},
+          {"command", srv.command},
+        };
+        srv_json.as_object()["args"] = boost::json::value_from(srv.args);
+        if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
+        if (!srv.headers.empty()) {
+          json::value headers = json::object{};
+          for (const auto& [k, v] : srv.headers) headers.as_object()[k] = v;
+          srv_json.as_object()["headers"] = headers;
+        }
+        mcp_array.push_back(srv_json);
+      }
+      item.as_object()["mcp_servers"] = mcp_array;
+    }
+
+    json::value compaction = {
+      {"enabled", entry.compaction.enabled},
+      {"keep_head", entry.compaction.keep_head},
+      {"keep_tail", entry.compaction.keep_tail},
+    };
+    item.as_object()["history_compaction"] = compaction;
+
+    agents_array.push_back(item);
+  }
+  j.as_object()["agents"] = agents_array;
+
+  std::ofstream file(config_path);
+  if (!file.is_open())
+    throw pu::Error("Failed to open config file for writing: " + config_path);
+  file << json::PrettyPrint(j);
+}
+
+}  // namespace
+
 TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
   // Use a temporary current directory and empty HOME so we do not disturb the
   // repo layout or the real user configuration.
@@ -64,14 +119,14 @@ TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
   {
+    ScopedEnvVar env("HOME", home.string());
     std::ofstream f(dir / ".pu" / "agents.json");
     f << "{}";
-  }
 
-  REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+    REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -89,14 +144,14 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
   {
+    ScopedEnvVar env("HOME", home.string());
     std::ofstream f(home / ".pu" / "agents.json");
     f << "{}";
-  }
 
-  REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
+    REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -114,9 +169,11 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
 
   auto old = fs::current_path();
   fs::current_path(dir);
-  set_env("HOME", home.string().c_str());
 
-  REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+  {
+    ScopedEnvVar env("HOME", home.string());
+    REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+  }
 
   fs::current_path(old);
   fs::remove_all(dir, ec);
@@ -157,20 +214,19 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   })";
   tmp.write(json);
 
-  set_env("OPENAI_KEY", "test-key-123");
+  {
+    ScopedEnvVar env("OPENAI_KEY", "test-key-123");
+    config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
 
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-
-  REQUIRE(cfg.default_agent == "chat");
-  REQUIRE(cfg.agents.size() == 2);
-  REQUIRE(cfg.agents[0].name == "chat");
-  REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
-  REQUIRE(cfg.agents[1].name == "bash");
-  REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
-  REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
-  REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
-
-  unset_env("OPENAI_KEY");
+    REQUIRE(cfg.default_agent == "chat");
+    REQUIRE(cfg.agents.size() == 2);
+    REQUIRE(cfg.agents[0].name == "chat");
+    REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
+    REQUIRE(cfg.agents[1].name == "bash");
+    REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
+    REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
+    REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
+  }
 }
 
 TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {
@@ -200,7 +256,22 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
   REQUIRE(cfg.default_agent == "only");
 }
 
-TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
+TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "missing",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+      }
+    ]
+  })");
+
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+}
+
+TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   config::AgentsConfig original;
   original.default_agent = "test";
@@ -213,7 +284,7 @@ TEST_CASE("SaveAgentsConfig writes valid JSON", "[agent_config]") {
   entry.backend.api_key = "secret";
   original.agents.push_back(entry);
 
-  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
+  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
 
   config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.default_agent == "test");
@@ -288,8 +359,7 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[ag
         "history_compaction": {
           "enabled": false,
           "keep_head": 15,
-          "keep_tail": 60,
-          "strategy": "truncate"
+          "keep_tail": 60
         }
       }
     ]
@@ -301,7 +371,6 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[ag
   REQUIRE(cfg.agents[0].compaction.enabled == false);
   REQUIRE(cfg.agents[0].compaction.keep_head == 15);
   REQUIRE(cfg.agents[0].compaction.keep_tail == 60);
-  REQUIRE(cfg.agents[0].compaction.strategy == "truncate");
 }
 
 TEST_CASE("LoadAgentsConfig uses defaults when compaction fields absent", "[agent_config]") {
@@ -321,10 +390,9 @@ TEST_CASE("LoadAgentsConfig uses defaults when compaction fields absent", "[agen
   REQUIRE(cfg.agents[0].compaction.enabled == true);
   REQUIRE(cfg.agents[0].compaction.keep_head == 10);
   REQUIRE(cfg.agents[0].compaction.keep_tail == 50);
-  REQUIRE(cfg.agents[0].compaction.strategy == "truncate");
 }
 
-TEST_CASE("SaveAgentsConfig round-trips enable_thinking and compaction", "[agent_config]") {
+TEST_CASE("Agents config writer round-trips enable_thinking and compaction", "[agent_config]") {
   TempConfigFile tmp;
   config::AgentsConfig original;
   original.default_agent = "deepseek";
@@ -337,10 +405,9 @@ TEST_CASE("SaveAgentsConfig round-trips enable_thinking and compaction", "[agent
   entry.compaction.enabled = false;
   entry.compaction.keep_head = 15;
   entry.compaction.keep_tail = 60;
-  entry.compaction.strategy = "truncate";
   original.agents.push_back(entry);
 
-  REQUIRE_NOTHROW(config::SaveAgentsConfig(tmp.path.string(), original));
+  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
 
   config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.agents.size() == 1);
@@ -348,5 +415,4 @@ TEST_CASE("SaveAgentsConfig round-trips enable_thinking and compaction", "[agent
   REQUIRE(loaded.agents[0].compaction.enabled == false);
   REQUIRE(loaded.agents[0].compaction.keep_head == 15);
   REQUIRE(loaded.agents[0].compaction.keep_tail == 60);
-  REQUIRE(loaded.agents[0].compaction.strategy == "truncate");
 }
