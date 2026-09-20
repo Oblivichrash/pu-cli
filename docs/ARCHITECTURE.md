@@ -214,6 +214,50 @@ full text as a single chunk frame. The frame schema and client-side rendering
 are documented in [README](../README.md#websocket-protocol) and implemented in
 `web/app.js`.
 
+## Provider Differences
+
+`Session::CreateProvider()` maps `BackendType` (`agent_config.hpp`) to a concrete
+provider. `agents.json` selects it by the backend `type` field, and any value other
+than `"openai"` deserialises to Ollama. "OpenAI compatible" means the
+`/chat/completions` SSE contract and covers OpenAI, DeepSeek thinking mode, vLLM
+and compatible gateways.
+
+| Dimension | Ollama | OpenAI compatible |
+|-----------|--------|-------------------|
+| Endpoint | `{host}/api/chat` | `{host}/chat/completions` |
+| Auth | `Authorization: Bearer` only when a key is set | same |
+| Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
+| Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
+| Token cap | not sent | `max_tokens` |
+| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` when `enable_thinking` is false |
+| Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
+| Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
+| Reasoning on request | never sent | sent on assistant messages when non-empty |
+| Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` |
+| `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
+| Call assembly | one complete call per line | `index`-keyed deltas flushed on `done` |
+| Reasoning on response | not parsed; `IsThinkingMode()` is false | `delta.reasoning_content` accumulated |
+| Usage | not parsed | logged at `trace` from `usage` |
+
+| Capability | Ollama | OpenAI compatible |
+|-----------|--------|-------------------|
+| Tools, streaming content, parallel calls | yes | yes |
+| Streaming tool calls | whole call per line | index accumulation |
+| Reasoning | no | yes |
+| Reasoning signature | no | no |
+| Raw provider JSON retained | no | no |
+| Multimodal input or output | no | no |
+| Prompt caching hints | `keep_alive` only | none |
+
+Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
+`ToolDefinition::Parameters()`. `BackendConfig::parameters_as_string` exists but is
+unread: `OpenAIProvider` always encodes `arguments` as a JSON string.
+
+An Anthropic provider would need a `system` request field instead of a system
+message, `tools[].input_schema` instead of `parameters`, `tool_use`/`tool_result`
+content blocks instead of role messages, and `thinking` blocks whose `signature`
+must be echoed back verbatim.
+
 ## Data Flow
 
 ```
