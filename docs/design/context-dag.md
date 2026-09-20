@@ -56,10 +56,11 @@ change to every consumer.
 **Consequence.** Text-only paths need a flatten helper. Ordering is preserved, so
 interleaved parts stay representable.
 
-**Stage 0 ruling (encoding).** A text part holds valid UTF-8, and tool output is
-normalised before it is stored. Two layers implement that: `ExecuteCommand`
-decodes the console code page on Windows, and `MakeToolResultJson` sanitizes the
-three string fields as the single point where tool output becomes JSON.
+**Stage 0 ruling (encoding).** A text part holds valid UTF-8, and text from
+outside pu-cli is normalised where it enters: `ExecuteCommand` for shell output,
+the stdio transport for MCP servers, and `MakeToolResultJson` as the boundary
+where any tool output becomes JSON. A child's encoding follows how it was
+launched, so `platform` distinguishes a console child from a piped one.
 
 ## 3. Reasoning carries provider, signature, and raw JSON
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/stdio_transport.hpp"
 
+#include "pu/core/platform.hpp"
+
 #include <spdlog/spdlog.h>
 #include <cstring>
 #include <cerrno>
@@ -56,12 +58,16 @@ DWORD WINAPI ReaderThreadProc(LPVOID param) {
       std::string line = leftover + chunk.substr(0, pos);
       chunk.erase(0, pos + 1);
       leftover.clear();
-      if (!line.empty() && ctx->on_message) ctx->on_message(line);
+      if (!line.empty() && ctx->on_message) {
+        ctx->on_message(platform::FromPipedOutput(line));
+      }
     }
     leftover += chunk;
   }
 
-  if (!leftover.empty() && ctx->on_message) ctx->on_message(leftover);
+  if (!leftover.empty() && ctx->on_message) {
+    ctx->on_message(platform::FromPipedOutput(leftover));
+  }
 
   ctx->running->store(false, std::memory_order_release);
   return 0;
@@ -359,7 +365,9 @@ void StdioTransport::ReaderLoop() {
       std::string line = leftover + chunk.substr(0, pos);
       chunk.erase(0, pos + 1);
       leftover.clear();
-      if (!line.empty() && on_message_) on_message_(line);
+      if (!line.empty() && on_message_) {
+        on_message_(platform::FromPipedOutput(line));
+      }
     }
     leftover += chunk;
   }

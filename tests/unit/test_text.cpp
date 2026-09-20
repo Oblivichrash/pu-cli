@@ -3,13 +3,86 @@
 
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
+#include "pu/mcp/stdio_transport.hpp"
 #include "pu/tools/tool_result.hpp"
 
 #include <boost/json.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace pu;
+
+namespace {
+
+namespace fs = std::filesystem;
+
+// A child that copies a file to stdout verbatim, so the bytes reaching the
+// transport are exactly the bytes written here.
+class FileEmitter {
+ public:
+  explicit FileEmitter(const std::string& bytes) {
+    static std::atomic<int> counter{0};
+    path_ = fs::temp_directory_path() /
+            ("pu_encoding_" + std::to_string(counter.fetch_add(1)) + ".bin");
+    std::ofstream out(path_, std::ios::binary);
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    out.close();
+#ifdef _WIN32
+    command_ = "cmd";
+    args_ = {"/c", "type", path_.string()};
+#else
+    command_ = "cat";
+    args_ = {path_.string()};
+#endif
+  }
+
+  ~FileEmitter() {
+    std::error_code ec;
+    fs::remove(path_, ec);
+  }
+
+  FileEmitter(const FileEmitter&) = delete;
+  FileEmitter& operator=(const FileEmitter&) = delete;
+
+  const std::string& command() const { return command_; }
+  const std::vector<std::string>& args() const { return args_; }
+
+ private:
+  fs::path path_;
+  std::string command_;
+  std::vector<std::string> args_;
+};
+
+std::string CaptureFirstLine(const std::string& command,
+                             const std::vector<std::string>& args) {
+  mcp::StdioTransport transport(command, args);
+  std::mutex mutex;
+  std::condition_variable ready;
+  std::string received;
+  transport.Start([&](const std::string& line) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (received.empty()) received = line;
+    ready.notify_one();
+  });
+
+  std::unique_lock<std::mutex> lock(mutex);
+  ready.wait_for(lock, std::chrono::seconds(10), [&] { return !received.empty(); });
+  lock.unlock();
+  transport.Stop();
+  return received;
+}
+
+}  // namespace
 
 TEST_CASE("IsValidUtf8 accepts ASCII and well-formed sequences", "[text]") {
   REQUIRE(text::IsValidUtf8(""));
@@ -83,4 +156,50 @@ TEST_CASE("ExecuteCommand returns valid UTF-8 for localized shell output",
 
   REQUIRE_FALSE(output.empty());
   REQUIRE(text::IsValidUtf8(output));
+}
+
+TEST_CASE("Process output decoding repairs non-UTF-8 pipe text",
+          "[platform][text]") {
+  // Bytes Python writes to a pipe on a Chinese Windows host (cp936): invalid as
+  // UTF-8, so a JSON-RPC line carrying them could not be parsed.
+  const std::string piped = "\xD6\xD0\xCE\xC4";
+  REQUIRE_FALSE(text::IsValidUtf8(piped));
+
+  const std::string decoded = pu::platform::FromPipedOutput(piped);
+  REQUIRE(text::IsValidUtf8(decoded));
+#ifdef _WIN32
+  // The pipe path decodes with the ANSI code page; a console code page here
+  // would produce valid but wrong text.
+  if (GetACP() == 936) REQUIRE(decoded == "\xE4\xB8\xAD\xE6\x96\x87");
+#endif
+}
+
+TEST_CASE("Process output decoding leaves UTF-8 untouched", "[platform][text]") {
+  const std::string utf8 = "\xE4\xB8\xAD\xE6\x96\x87";
+  REQUIRE(pu::platform::FromPipedOutput(utf8) == utf8);
+  REQUIRE(pu::platform::FromConsoleOutput(utf8) == utf8);
+}
+
+TEST_CASE("Process output decoding always yields valid UTF-8",
+          "[platform][text]") {
+  // Bytes that no code page maps cleanly still have to produce parseable text.
+  const std::string undecodable = "ok \xFF\xFE tail";
+  REQUIRE(text::IsValidUtf8(pu::platform::FromPipedOutput(undecodable)));
+  REQUIRE(text::IsValidUtf8(pu::platform::FromConsoleOutput(undecodable)));
+  REQUIRE(pu::platform::FromPipedOutput("") == "");
+}
+
+TEST_CASE("MCP stdio transport delivers code-page bytes as UTF-8",
+          "[mcp][text]") {
+  // The child emits its bytes verbatim, so these arrive exactly as a JSON-RPC
+  // response line would: cp936 for two CJK characters, which is not valid UTF-8.
+  const FileEmitter emitter("\xD6\xD0\xCE\xC4\n");
+
+  const std::string received = CaptureFirstLine(emitter.command(), emitter.args());
+
+  REQUIRE_FALSE(received.empty());
+  REQUIRE(text::IsValidUtf8(received));
+#ifdef _WIN32
+  if (GetACP() == 936) REQUIRE(received == "\xE4\xB8\xAD\xE6\x96\x87");
+#endif
 }

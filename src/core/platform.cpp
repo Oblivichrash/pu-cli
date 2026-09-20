@@ -68,21 +68,36 @@ std::string ToUtf8(const std::wstring& wide) {
   return utf8;
 }
 
-// cmd.exe encodes redirected output with the console's output code page, while
-// tools such as git and python emit UTF-8 whatever the console setting is. Only
-// bytes that are not already valid UTF-8 are decoded.
-std::string ConsoleOutputToUtf8(const std::string& raw) {
-  if (pu::text::IsValidUtf8(raw)) return raw;
-
-  const UINT console_code_page = GetConsoleOutputCP();
-  const UINT code_page = console_code_page != 0 ? console_code_page : GetOEMCP();
-
-  const std::string utf8 = ToUtf8(ToWide(raw, code_page));
-  return utf8.empty() ? pu::text::SanitizeUtf8(raw) : utf8;
+std::string DecodeFromCodePage(std::string_view text, UINT code_page) {
+  const std::string source(text);
+  const std::wstring wide = ToWide(source, code_page);
+  if (wide.empty()) return text::SanitizeUtf8(text);
+  const std::string utf8 = ToUtf8(wide);
+  return utf8.empty() ? text::SanitizeUtf8(text) : utf8;
 }
 
 }  // namespace
 #endif
+
+std::string FromConsoleOutput(std::string_view text) {
+  if (text::IsValidUtf8(text)) return std::string(text);
+#ifdef _WIN32
+  const UINT console_code_page = GetConsoleOutputCP();
+  const UINT code_page = console_code_page != 0 ? console_code_page : GetOEMCP();
+  return DecodeFromCodePage(text, code_page);
+#else
+  return text::SanitizeUtf8(text);
+#endif
+}
+
+std::string FromPipedOutput(std::string_view text) {
+  if (text::IsValidUtf8(text)) return std::string(text);
+#ifdef _WIN32
+  return DecodeFromCodePage(text, GetACP());
+#else
+  return text::SanitizeUtf8(text);
+#endif
+}
 
 int ExecuteCommand(const std::string& command, std::string& output,
                    const std::string& working_dir) {
@@ -117,7 +132,7 @@ int ExecuteCommand(const std::string& command, std::string& output,
     output += buffer.data();
 
 #ifdef _WIN32
-  output = ConsoleOutputToUtf8(output);
+  output = FromConsoleOutput(output);
   int status = _pclose(pipe);
   int exit_code = (status == -1) ? -1 : status;
 #else
