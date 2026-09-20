@@ -56,11 +56,10 @@ change to every consumer.
 **Consequence.** Text-only paths need a flatten helper. Ordering is preserved, so
 interleaved parts stay representable.
 
-**Stage 0 ruling (encoding).** A text part holds valid UTF-8, and converting tool
-output is the storage layer's job. Nothing does it today:
-`platform::ExecuteCommand` (`platform.cpp:70`) copies raw shell bytes, so on a
-non-UTF-8 console the result carries locale bytes inside a JSON string and
-`boost::json::parse` throws. Reproduces at `f8fc99a`; tracked as open question 7.
+**Stage 0 ruling (encoding).** A text part holds valid UTF-8, and tool output is
+normalised before it is stored. Two layers implement that: `ExecuteCommand`
+decodes the console code page on Windows, and `MakeToolResultJson` sanitizes the
+three string fields as the single point where tool output becomes JSON.
 
 ## 3. Reasoning carries provider, signature, and raw JSON
 
@@ -288,23 +287,14 @@ added. `ProviderCapabilities::max_context_tokens` reserves the field.
 
 | # | Question | Why it matters |
 | --- | --- | --- |
-| 2 | How are unreachable nodes reclaimed? | Compaction no longer deletes, so the store grows without bound. |
+| 2 | How are unreachable nodes reclaimed? | Decision 9 stops compaction from deleting, so the store grows without bound. |
 | 3 | When is the store persisted? | `SaveCurrentSession()` runs on input and shutdown only (`runtime.cpp:109`), so a crash loses the DAG. |
 | 6 | Who writes `kInterrupted`, and how is `kRunning` repaired on load? | Neither cancellation path records anything today. |
-| 7 | Where is non-UTF-8 tool output converted? | Decision 2 requires valid UTF-8, while capture copies locale bytes. A live defect independent of the DAG. |
 
 ## Verified baseline
 
-Release build with the CI dependency set, via `ctest`.
-
-| Code page | `f8fc99a` | stage 0 tip |
-| --- | --- | --- |
-| 65001 (UTF-8) | 99 / 99 | 99 / 99 |
-| 936 (GBK) | 98 / 99 | 98 / 99 |
-
-The suite holds 99 tests, not the 92 quoted in the original task. The single
-failure is identical at both commits and disappears with the code page, which is
-what identifies it as environmental.
+Release build with the CI dependency set, via `ctest`. The suite holds 106 tests
+and passes under code page 65001 (UTF-8) and code page 936 (GBK).
 
 ## How later stages use this document
 

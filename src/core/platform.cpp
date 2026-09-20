@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/platform.hpp"
 
+#include "pu/core/text.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <array>
@@ -42,6 +44,46 @@ void SetupSignalHandler() {
 bool IsInterrupted() { return interrupted; }
 void ClearInterruptFlag() { interrupted = false; }
 
+#ifdef _WIN32
+namespace {
+
+std::wstring ToWide(const std::string& text, UINT code_page) {
+  const int length = MultiByteToWideChar(code_page, 0, text.data(),
+                                         static_cast<int>(text.size()), nullptr, 0);
+  if (length <= 0) return {};
+  std::wstring wide(static_cast<std::size_t>(length), L'\0');
+  MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()),
+                      wide.data(), length);
+  return wide;
+}
+
+std::string ToUtf8(const std::wstring& wide) {
+  const int length = WideCharToMultiByte(CP_UTF8, 0, wide.data(),
+                                         static_cast<int>(wide.size()), nullptr, 0,
+                                         nullptr, nullptr);
+  if (length <= 0) return {};
+  std::string utf8(static_cast<std::size_t>(length), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+                      utf8.data(), length, nullptr, nullptr);
+  return utf8;
+}
+
+// cmd.exe encodes redirected output with the console's output code page, while
+// tools such as git and python emit UTF-8 whatever the console setting is. Only
+// bytes that are not already valid UTF-8 are decoded.
+std::string ConsoleOutputToUtf8(const std::string& raw) {
+  if (pu::text::IsValidUtf8(raw)) return raw;
+
+  const UINT console_code_page = GetConsoleOutputCP();
+  const UINT code_page = console_code_page != 0 ? console_code_page : GetOEMCP();
+
+  const std::string utf8 = ToUtf8(ToWide(raw, code_page));
+  return utf8.empty() ? pu::text::SanitizeUtf8(raw) : utf8;
+}
+
+}  // namespace
+#endif
+
 int ExecuteCommand(const std::string& command, std::string& output,
                    const std::string& working_dir) {
   std::string full_cmd;
@@ -75,6 +117,7 @@ int ExecuteCommand(const std::string& command, std::string& output,
     output += buffer.data();
 
 #ifdef _WIN32
+  output = ConsoleOutputToUtf8(output);
   int status = _pclose(pipe);
   int exit_code = (status == -1) ? -1 : status;
 #else

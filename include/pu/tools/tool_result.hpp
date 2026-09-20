@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 namespace pu::tools {
 
@@ -25,11 +26,12 @@ inline std::string MakeToolResultJson(bool success,
                                       const std::string& stderr_content,
                                       const std::string& error,
                                       int exit_code) {
+  // JSON strings must be UTF-8; tool output may not be.
   boost::json::value j = {
     {"success", success},
-    {"stdout", stdout_content},
-    {"stderr", stderr_content},
-    {"error", error},
+    {"stdout", text::SanitizeUtf8(stdout_content)},
+    {"stderr", text::SanitizeUtf8(stderr_content)},
+    {"error", text::SanitizeUtf8(error)},
     {"exit_code", exit_code},
   };
   return boost::json::serialize(j);
