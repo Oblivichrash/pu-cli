@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <system_error>
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -41,6 +42,26 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
     spdlog::warn("Failed to parse session from {}: {}", path.string(), e.what());
     return nullptr;
   }
+}
+
+// The v1 session layout cannot be read by the context DAG format, so keep one
+// copy of it before the schema upgrade ships. Never overwrites an existing
+// backup, otherwise the original pre-upgrade state would be lost on the second
+// run.
+void BackupLegacySession(const std::filesystem::path& session_path) {
+  const auto backup_path = session_path.parent_path() / "session.v1.backup.json";
+  if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path))
+    return;
+
+  std::error_code ec;
+  std::filesystem::copy_file(session_path, backup_path,
+                             std::filesystem::copy_options::none, ec);
+  if (ec) {
+    spdlog::warn("Failed to back up legacy session to {}: {}", backup_path.string(),
+                 ec.message());
+    return;
+  }
+  spdlog::info("Backed up legacy session to {}", backup_path.string());
 }
 
 }  // namespace
@@ -87,6 +108,7 @@ void Runtime::Initialize(const std::string& config_path) {
   RebuildToolbox(*default_entry);
 
   auto session_path = workspace_root_ / ".pu" / "session.json";
+  BackupLegacySession(session_path);
   if (std::filesystem::exists(session_path)) {
     current_session_ = LoadSessionFromFile(session_path);
     if (!current_session_) {
