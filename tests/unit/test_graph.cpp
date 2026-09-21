@@ -64,26 +64,6 @@ TEST_CASE("An appended node links to the previous leaf", "[context][graph]") {
   REQUIRE(graph.Size() == 2);
 }
 
-TEST_CASE("Order comes from parent links, not from insertion", "[context][graph]") {
-  context::MessageGraph graph;
-  const context::MessageNode& first = graph.AppendAfterLeaf(User("a"));
-  const context::MessageId first_id = first.id;
-  graph.AppendAfterLeaf(User("b"));
-
-  // Detach the second node and point the leaf back at the first, so the node
-  // that was inserted last is no longer on the chain.
-  const std::vector<const context::MessageNode*> before = graph.Chain();
-  REQUIRE(before.size() == 2);
-
-  graph.SetLeaf(first_id);
-  const std::vector<const context::MessageNode*> after = graph.Chain();
-  REQUIRE(after.size() == 1);
-  REQUIRE(TextOf(*after[0]) == "a");
-
-  // The detached node is still stored, which is what makes rewind possible.
-  REQUIRE(graph.Size() == 2);
-}
-
 TEST_CASE("A receipt completes the record it answers", "[context][graph]") {
   context::MessageGraph graph;
   context::ToolCallRecord record;
@@ -128,38 +108,4 @@ TEST_CASE("A receipt completes a record that sits further back", "[context][grap
       std::get<context::AssistantPayload>(graph.Chain()[0]->payload).tool_calls;
   REQUIRE(calls.at(0).status == context::ToolCallStatus::kCompleted);
   REQUIRE(calls.at(1).status == context::ToolCallStatus::kCompleted);
-}
-
-TEST_CASE("RetainOnly keeps the listed nodes and drops the rest", "[context][graph]") {
-  context::MessageGraph graph;
-  const context::MessageId first = graph.AppendAfterLeaf(User("a")).id;
-  const context::MessageId second = graph.AppendAfterLeaf(User("b")).id;
-  graph.AppendAfterLeaf(User("c"));
-
-  graph.RetainOnly({first, second});
-  graph.SetLeaf(second);
-
-  REQUIRE(graph.Size() == 2);
-  REQUIRE(graph.Chain().size() == 2);
-  REQUIRE(TextOf(*graph.Chain()[1]) == "b");
-  REQUIRE(graph.Find(second) != nullptr);
-}
-
-TEST_CASE("Add inserts without touching the leaf", "[context][graph]") {
-  context::MessageGraph graph;
-  const context::MessageId first = graph.AppendAfterLeaf(User("a")).id;
-
-  context::SystemPayload summary;
-  summary.content.emplace_back(context::TextPart{"[Compressed: 3 messages omitted]"});
-  summary.is_synthetic = true;
-  context::MessageNode node = context::MakeNode(std::move(summary));
-  const context::MessageId summary_id = node.id;
-  graph.Add(std::move(node));
-
-  REQUIRE(graph.leaf() == first);
-  REQUIRE(graph.Chain().size() == 1);
-
-  graph.SetParents(first, {summary_id});
-  REQUIRE(graph.Chain().size() == 2);
-  REQUIRE(std::get<context::SystemPayload>(graph.Chain()[0]->payload).is_synthetic);
 }

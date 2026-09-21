@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,14 +47,6 @@ class MessageGraph {
     return chain;
   }
 
-  // Inserts a node as it is, for a caller that sets the links itself.
-  const MessageNode& Add(MessageNode node) {
-    const MessageId id = node.id;
-    const MessageNode& stored = nodes_.emplace(id, std::move(node)).first->second;
-    CompleteAnsweredRecord(stored.payload);
-    return stored;
-  }
-
   // Appends after the current leaf, linking it and moving the leaf along.
   const MessageNode& AppendAfterLeaf(MessagePayload payload,
                                      std::string timestamp = {}) {
@@ -69,23 +60,18 @@ class MessageGraph {
     return stored;
   }
 
-  void SetParents(const MessageId& id, std::vector<MessageId> parents) {
-    const auto it = nodes_.find(id);
-    if (it != nodes_.end()) it->second.parents = std::move(parents);
+  // True when the last node still has a tool call in flight.
+  bool LeafHasUnfinishedToolCalls() const {
+    const MessageNode* node = Find(leaf_);
+    return node != nullptr && HasUnfinishedToolCalls(*node);
   }
 
-  void SetLeaf(const MessageId& id) { leaf_ = id; }
-
-  // Keeps the listed nodes and drops every other one.
-  void RetainOnly(const std::vector<MessageId>& ids) {
-    const std::set<MessageId> keeping(ids.begin(), ids.end());
-    for (auto it = nodes_.begin(); it != nodes_.end();) {
-      if (keeping.count(it->first) != 0) {
-        ++it;
-      } else {
-        it = nodes_.erase(it);
-      }
-    }
+ private:
+  const MessageNode& Add(MessageNode node) {
+    const MessageId id = node.id;
+    const MessageNode& stored = nodes_.emplace(id, std::move(node)).first->second;
+    CompleteAnsweredRecord(stored.payload);
+    return stored;
   }
 
   // Marks the record that a receipt answers as completed, searching back from
@@ -109,13 +95,6 @@ class MessageGraph {
     }
   }
 
-  // True when the last node still has a tool call in flight.
-  bool LeafHasUnfinishedToolCalls() const {
-    const MessageNode* node = Find(leaf_);
-    return node != nullptr && HasUnfinishedToolCalls(*node);
-  }
-
- private:
   // Every insertion goes through here, so a receipt always answers its record
   // and no caller has to remember to say so.
   void CompleteAnsweredRecord(const MessagePayload& payload) {

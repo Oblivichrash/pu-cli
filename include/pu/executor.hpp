@@ -11,6 +11,7 @@
 #include "pu/agent_config.hpp"
 #include "pu/core/cancel_token.hpp"
 #include "pu/llm/llm_provider.hpp"
+#include "pu/session/request.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"
 
@@ -73,6 +74,10 @@ class Executor {
                              CancelToken cancel_token,
                              std::function<void(const std::string&)> content_callback,
                              ToolCallbacks tool_callbacks);
+
+  // How much of the conversation this turn carries. Nothing is removed from
+  // storage, so the same session can send more to a later request.
+  std::optional<session::KeepRecent> RequestSelection(LLMProvider* provider) const;
 
   void ProbeStaticEnvironment();
 

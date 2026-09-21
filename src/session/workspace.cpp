@@ -44,10 +44,6 @@ size_t Workspace::HistorySize() const {
   return transcript_.Size();
 }
 
-void Workspace::Compact(size_t keep_head, size_t keep_tail) {
-  transcript_.Compact(keep_head, keep_tail);
-}
-
 bool Workspace::HasPendingToolCalls() const {
   return transcript_.HasPendingToolCalls();
 }

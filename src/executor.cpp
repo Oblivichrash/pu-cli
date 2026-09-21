@@ -133,6 +133,22 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
+std::optional<session::KeepRecent> Executor::RequestSelection(
+    LLMProvider* provider) const {
+  if (!compaction_config_.enabled) return std::nullopt;
+  if (provider->SupportsTools()) return std::nullopt;
+  if (toolbox_ == nullptr || toolbox_->GetToolDefinitions().empty()) {
+    return std::nullopt;
+  }
+  if (provider->IsThinkingMode()) {
+    spdlog::warn("Compaction is disabled because the provider is in thinking mode. "
+                 "Set compaction.enabled=false in agents.json to override.");
+    return std::nullopt;
+  }
+  return session::KeepRecent{compaction_config_.keep_head,
+                             compaction_config_.keep_tail};
+}
+
 ExecutionResult Executor::Execute(const std::string& input,
                                   Workspace& workspace,
                                   LLMProvider* provider,
@@ -147,16 +163,6 @@ ExecutionResult Executor::Execute(const std::string& input,
   }
 
   workspace.Append("user", input);
-
-  auto tools = toolbox_->GetToolDefinitions();
-  if (!provider->SupportsTools() && !tools.empty() && compaction_config_.enabled) {
-    if (provider->IsThinkingMode()) {
-      spdlog::warn("Compaction is disabled because the provider is in thinking mode. "
-                   "Set compaction.enabled=false in agents.json to override.");
-    } else {
-      workspace.Compact(compaction_config_.keep_head, compaction_config_.keep_tail);
-    }
-  }
 
   auto result = RunToolLoop(workspace, provider, cancel_token, content_callback,
                             tool_callbacks);
@@ -219,7 +225,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     std::vector<ChatMessage> chat_history = session::BuildRequestPath(
-        workspace.GetGraph(), workspace.GetGraph().leaf(), inputs);
+        workspace.GetGraph(), workspace.GetGraph().leaf(), inputs,
+        RequestSelection(provider));
 
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;

@@ -18,7 +18,6 @@ public:
   void Append(const std::string& role, const std::string& content);
   std::vector<ChatMessage> GetHistory() const;
   size_t HistorySize() const;
-  void Compact(size_t keep_head = 10, size_t keep_tail = 50);
   bool HasPendingToolCalls() const;
 
   // The stored conversation, for a caller that renders its own view of it.

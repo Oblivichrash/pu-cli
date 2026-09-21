@@ -82,65 +82,6 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
 
 size_t Transcript::Size() const { return graph_.Chain().size(); }
 
-void Transcript::Compact(size_t keep_head, size_t keep_tail) {
-  const std::vector<const context::MessageNode*> chain = graph_.Chain();
-  if (chain.size() <= keep_head + keep_tail) return;
-
-  size_t tail_start = chain.size() - keep_tail;
-  for (size_t i = std::min(tail_start, chain.size() - 1); i > keep_head; --i) {
-    const auto* assistant =
-        std::get_if<context::AssistantPayload>(&chain[i]->payload);
-    if (assistant == nullptr || assistant->tool_calls.empty()) continue;
-
-    // Keep every tool call together with the tool result it produced.
-    bool all_matched = true;
-    for (const context::ToolCallRecord& record : assistant->tool_calls) {
-      if (record.id.empty()) continue;
-      bool matched = false;
-      for (size_t j = i + 1; j < chain.size(); ++j) {
-        const auto* receipt =
-            std::get_if<context::ToolPayload>(&chain[j]->payload);
-        if (receipt != nullptr && receipt->tool_call_id == record.id) {
-          matched = true;
-          break;
-        }
-      }
-      if (!matched) {
-        all_matched = false;
-        break;
-      }
-    }
-    if (!all_matched) tail_start = i;
-  }
-
-  std::vector<context::MessageId> kept;
-  kept.reserve(chain.size() + 1);
-  for (size_t i = 0; i < keep_head; ++i) kept.push_back(chain[i]->id);
-
-  if (tail_start > keep_head) {
-    context::SystemPayload summary;
-    summary.content = ToContent("[Compressed: " +
-                                std::to_string(tail_start - keep_head) +
-                                " messages omitted]");
-    summary.is_synthetic = true;
-
-    context::MessageNode node = context::MakeNode(std::move(summary));
-    const context::MessageId summary_id = node.id;
-    graph_.Add(std::move(node));
-    if (!kept.empty()) graph_.SetParents(summary_id, {kept.back()});
-    kept.push_back(summary_id);
-  }
-
-  if (tail_start < chain.size()) {
-    // The first kept tail node pointed at a node that is being dropped.
-    graph_.SetParents(chain[tail_start]->id, {kept.back()});
-    for (size_t i = tail_start; i < chain.size(); ++i) kept.push_back(chain[i]->id);
-  }
-
-  graph_.RetainOnly(kept);
-  graph_.SetLeaf(kept.empty() ? context::MessageId{} : kept.back());
-}
-
 bool Transcript::HasPendingToolCalls() const {
   return graph_.LeafHasUnfinishedToolCalls();
 }

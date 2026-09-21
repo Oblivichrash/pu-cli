@@ -42,9 +42,47 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
   return msg;
 }
 
+namespace {
+
+// The boundary may cut off a tool call that has no receipt yet, which would
+// leave the model unable to act on it. Pull the boundary back until every call
+// near it either has its receipt or is itself kept.
+std::size_t PairingSafeTailStart(const std::vector<const context::MessageNode*>& chain,
+                                 std::size_t tail_start, std::size_t head) {
+  if (chain.empty()) return tail_start;
+  tail_start = std::min(tail_start, chain.size() - 1);
+  for (std::size_t i = tail_start; i > head; --i) {
+    const auto* assistant =
+        std::get_if<context::AssistantPayload>(&chain[i]->payload);
+    if (assistant == nullptr || assistant->tool_calls.empty()) continue;
+
+    bool all_matched = true;
+    for (const context::ToolCallRecord& record : assistant->tool_calls) {
+      if (record.id.empty()) continue;
+      bool matched = false;
+      for (std::size_t j = i + 1; j < chain.size(); ++j) {
+        const auto* receipt = std::get_if<context::ToolPayload>(&chain[j]->payload);
+        if (receipt != nullptr && receipt->tool_call_id == record.id) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        all_matched = false;
+        break;
+      }
+    }
+    if (!all_matched) tail_start = i;
+  }
+  return tail_start;
+}
+
+}  // namespace
+
 std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
                                           const context::MessageId& leaf,
-                                          const RequestInputs& inputs) {
+                                          const RequestInputs& inputs,
+                                          std::optional<KeepRecent> selection) {
   std::vector<ChatMessage> messages;
 
   std::string system_text = inputs.system_prompt;
@@ -59,8 +97,34 @@ std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
     messages.push_back(std::move(system));
   }
 
-  for (const context::MessageNode* node : graph.ChainFrom(leaf)) {
-    messages.push_back(RenderMessage(*node, static_cast<int>(messages.size()) + 1));
+  const auto position = [&] { return static_cast<int>(messages.size()) + 1; };
+  const std::vector<const context::MessageNode*> chain = graph.ChainFrom(leaf);
+
+  const bool trims =
+      selection && chain.size() > selection->head + selection->tail;
+  if (!trims) {
+    for (const context::MessageNode* node : chain) {
+      messages.push_back(RenderMessage(*node, position()));
+    }
+    return messages;
+  }
+
+  const std::size_t head = selection->head;
+  const std::size_t tail_start = PairingSafeTailStart(
+      chain, chain.size() - selection->tail, head);
+
+  for (std::size_t i = 0; i < head; ++i) {
+    messages.push_back(RenderMessage(*chain[i], position()));
+  }
+  if (tail_start > head) {
+    ChatMessage omitted;
+    omitted.role = "system";
+    omitted.content = "[Compressed: " + std::to_string(tail_start - head) +
+                      " messages omitted]";
+    messages.push_back(std::move(omitted));
+  }
+  for (std::size_t i = tail_start; i < chain.size(); ++i) {
+    messages.push_back(RenderMessage(*chain[i], position()));
   }
   return messages;
 }
