@@ -61,17 +61,7 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
     req.as_object()["extra_body"] = extra_body;
   }
 
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
-
-  req.as_object()["messages"] = llm::ProjectMessages(messages, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
   return boost::json::serialize(req);
 }
 
@@ -90,17 +80,7 @@ std::string OpenAIProvider::BuildRequestWithTools(
     req.as_object()["extra_body"] = extra_body;
   }
 
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
-
-  req.as_object()["messages"] = llm::ProjectMessages(messages, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {

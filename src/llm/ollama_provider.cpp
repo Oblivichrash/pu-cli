@@ -42,18 +42,7 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
     {"keep_alive", config_.keep_alive},
   };
 
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
-
-  req.as_object()["messages"] =
-      llm::ProjectMessages(messages, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
   return boost::json::serialize(req);
 }
 
@@ -67,18 +56,7 @@ std::string OllamaProvider::BuildRequestWithTools(
     {"keep_alive", config_.keep_alive},
   };
 
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
-
-  req.as_object()["messages"] =
-      llm::ProjectMessages(messages, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {

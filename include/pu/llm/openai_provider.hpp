@@ -19,7 +19,6 @@ class OpenAIProvider : public LLMProvider {
     std::string host = "https://api.openai.com/v1";
     std::string model;
     float temperature = 0.7f;
-    std::optional<std::string> system_prompt;
     std::string api_key;
     bool parameters_as_string = false;
     int max_tokens = 2048;

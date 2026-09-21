@@ -18,7 +18,6 @@ class OllamaProvider : public LLMProvider {
     std::string host = "http://localhost:11434";
     std::string model;
     float temperature = 0.7f;
-    std::optional<std::string> system_prompt;
     std::string api_key;
     int max_tokens = 2048;
     std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
