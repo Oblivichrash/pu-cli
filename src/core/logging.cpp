@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/logging.hpp"
 #include "pu/core/path_utils.hpp"
+#include "pu/core/uuid.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
@@ -13,7 +14,6 @@
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
-#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -25,20 +25,6 @@ namespace {
 thread_local std::string g_request_id;
 thread_local std::string g_tool_name;
 thread_local int64_t g_duration_ms = -1;
-
-std::string GenerateUuid() {
-  static thread_local std::mt19937 gen(std::random_device{}());
-  std::uniform_int_distribution<int> dist(0, 15);
-  const char* hex = "0123456789abcdef";
-  std::string uuid(36, '-');
-  for (size_t i = 0; i < 36; ++i) {
-    if (i == 8 || i == 13 || i == 18 || i == 23) continue;
-    uuid[i] = hex[dist(gen)];
-  }
-  uuid[14] = '4';
-  uuid[19] = hex[(dist(gen) & 0x3) | 0x8];
-  return uuid;
-}
 
 std::string JsonEscape(const std::string& s) {
   std::string out;
@@ -85,7 +71,7 @@ std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) {
 
 }  // namespace
 
-void BeginRequest() { g_request_id = GenerateUuid(); }
+void BeginRequest() { g_request_id = uuid::Generate(); }
 void SetLogRequestId(const std::string& request_id) { g_request_id = request_id; }
 void ClearLogRequestId() { g_request_id.clear(); }
 void SetLogToolName(const std::string& tool_name) { g_tool_name = tool_name; }
