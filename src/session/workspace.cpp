@@ -30,7 +30,6 @@ void Workspace::Append(const ChatMessage& msg) {
 
 void Workspace::Append(const std::string& role, const std::string& content) {
   ChatMessage msg;
-  msg.id = static_cast<int>(HistorySize()) + 1;
   msg.timestamp = CurrentTimestamp();
   msg.role = role;
   msg.content = content;
