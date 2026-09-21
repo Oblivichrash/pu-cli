@@ -2,6 +2,7 @@
 #include "pu/session/transcript.hpp"
 
 #include "pu/core/json.hpp"
+#include "pu/session/request.hpp"
 
 #include <algorithm>
 #include <set>
@@ -65,45 +66,6 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
   return user;
 }
 
-ChatMessage ToMessage(const context::MessageNode& node, int id) {
-  ChatMessage msg;
-  msg.id = id;
-  msg.timestamp = node.timestamp;
-
-  if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
-    msg.role = "user";
-    msg.content = context::FlattenText(user->content);
-  } else if (const auto* assistant =
-                 std::get_if<context::AssistantPayload>(&node.payload)) {
-    msg.role = "assistant";
-    msg.content = context::FlattenText(assistant->content);
-    if (assistant->reasoning) msg.reasoning_content = assistant->reasoning->raw_json;
-    if (!assistant->tool_calls.empty()) {
-      boost::json::array calls;
-      for (const context::ToolCallRecord& record : assistant->tool_calls) {
-        calls.push_back(boost::json::value{
-            {"id", record.id},
-            {"type", "function"},
-            {"function", {{"name", record.name}, {"arguments", record.arguments}}},
-        });
-      }
-      msg.tool_calls = std::move(calls);
-    }
-  } else if (const auto* system =
-                 std::get_if<context::SystemPayload>(&node.payload)) {
-    msg.role = "system";
-    msg.content = context::FlattenText(system->content);
-  } else {
-    const context::ToolPayload& receipt = std::get<context::ToolPayload>(node.payload);
-    msg.role = "tool";
-    msg.content = context::FlattenText(receipt.content);
-    msg.tool_name = receipt.tool_name;
-    msg.tool_call_id = receipt.tool_call_id;
-  }
-
-  return msg;
-}
-
 }  // namespace
 
 void Transcript::Append(const ChatMessage& msg) {
@@ -113,7 +75,7 @@ void Transcript::Append(const ChatMessage& msg) {
 std::vector<ChatMessage> Transcript::GetHistory() const {
   std::vector<ChatMessage> history;
   for (const context::MessageNode* node : graph_.Chain()) {
-    history.push_back(ToMessage(*node, static_cast<int>(history.size()) + 1));
+    history.push_back(session::RenderMessage(*node, static_cast<int>(history.size()) + 1));
   }
   return history;
 }

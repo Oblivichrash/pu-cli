@@ -36,6 +36,7 @@ add_library(pu_core STATIC
     src/core/platform.cpp
     src/session/workspace.cpp
     src/session/transcript.cpp
+    src/session/request.cpp
     src/session/memory.cpp
     src/session/session.cpp
     src/core/logging.cpp

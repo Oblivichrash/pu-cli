@@ -33,9 +33,13 @@ class MessageGraph {
 
   // Nodes from the root to the leaf, in order. The only ordering the graph
   // defines, because there is no positional index to fall back on.
-  std::vector<const MessageNode*> Chain() const {
+  std::vector<const MessageNode*> Chain() const { return ChainFrom(leaf_); }
+
+  // The same walk from any node, which is what lets a caller render a view
+  // other than the current position.
+  std::vector<const MessageNode*> ChainFrom(const MessageId& id) const {
     std::vector<const MessageNode*> chain;
-    const MessageNode* node = Find(leaf_);
+    const MessageNode* node = Find(id);
     while (node != nullptr) {
       chain.push_back(node);
       node = node->parents.empty() ? nullptr : Find(node->parents.front());

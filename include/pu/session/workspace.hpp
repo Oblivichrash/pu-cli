@@ -21,6 +21,9 @@ public:
   void Compact(size_t keep_head = 10, size_t keep_tail = 50);
   bool HasPendingToolCalls() const;
 
+  // The stored conversation, for a caller that renders its own view of it.
+  const context::MessageGraph& GetGraph() const { return transcript_.GetGraph(); }
+
   void ClearHistory();
 
   void SetVar(const std::string& key, const boost::json::value& value);

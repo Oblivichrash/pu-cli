@@ -9,6 +9,7 @@ add_executable(pu_tests
     unit/test_workspace.cpp
     unit/test_message.cpp
     unit/test_graph.cpp
+    unit/test_request.cpp
     unit/test_text.cpp
     unit/test_command_execution.cpp
     unit/test_logging.cpp

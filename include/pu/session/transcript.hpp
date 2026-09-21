@@ -20,6 +20,9 @@ public:
   bool HasPendingToolCalls() const;
   size_t Size() const;
 
+  // The stored conversation, for a caller that renders its own view of it.
+  const context::MessageGraph& GetGraph() const { return graph_; }
+
   boost::json::value Serialize() const;
   static Transcript Deserialize(const boost::json::value& j);
 
