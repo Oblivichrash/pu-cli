@@ -136,6 +136,60 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
   REQUIRE(body.at("messages").at(0).at("tool_call_id") == "call_42");
 }
 
+TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"ls","arguments":{"path":"."}}}])");
+  std::vector<ChatMessage> history = {assistant};
+
+  ToolDefinition tool;
+  tool.name = "ls";
+  tool.parameters = boost::json::object{};
+  provider.Chat(history, {tool});
+
+  auto body = boost::json::parse(mock_ptr->last_body);
+  auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
+  REQUIRE(sent.at("id") == "call_1");
+  REQUIRE(sent.at("function").at("name") == "ls");
+  REQUIRE(sent.at("function").at("arguments").at("path") == ".");
+}
+
+TEST_CASE("OllamaProvider decodes arguments sent as a JSON string",
+          "[ollama][tools]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","function":{"name":"ls","arguments":"{\"path\":\".\"}"}}])");
+  std::vector<ChatMessage> history = {assistant};
+
+  ToolDefinition tool;
+  tool.name = "ls";
+  tool.parameters = boost::json::object{};
+  provider.Chat(history, {tool});
+
+  auto body = boost::json::parse(mock_ptr->last_body);
+  auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
+  REQUIRE(sent.at("function").at("arguments").is_object());
+  REQUIRE(sent.at("function").at("arguments").at("path") == ".");
+}
+
 TEST_CASE("OllamaProvider IsThinkingMode returns false", "[ollama]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";
