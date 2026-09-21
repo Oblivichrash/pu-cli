@@ -1,5 +1,8 @@
 # Context DAG Migration Inventory
 
+Delete this file once stage 6 lands: it describes the linear model that the DAG
+replaces.
+
 Baseline commit `f8fc99a`. A read-only snapshot of every place the current linear
 context model is referenced. Line numbers are 1-based and will drift once stage 1
 lands, so re-run the commands rather than trusting them. References into

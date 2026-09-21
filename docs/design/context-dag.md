@@ -2,6 +2,9 @@
 
 Frozen for stage 0 of `refactor/context-dag`. Baseline commit `f8fc99a`.
 
+Delete this file once stage 6 lands: by then every decision lives in code or in a
+commit message, and a stale copy here would only mislead.
+
 The ten decisions below are fixed. Change this document before changing the code.
 A `Stage 0 ruling` closes a point left open during review and binds as strongly as
 the decision it follows.
@@ -13,8 +16,9 @@ Evidence lives in the companions; this file states decisions, not findings:
 - `../ARCHITECTURE.md` (Provider Differences) — wire-format differences the
   projection must absorb.
 
-Line references point at the frozen tree. The two `FROZEN` comments shift
-`llm_provider.hpp` and `transcript.hpp` two lines relative to `f8fc99a`.
+Source references are pinned by name where possible and by line otherwise; the
+lines are a reading aid from the frozen tree, not a contract. Verification
+results belong to commit messages, which stay true for the commit they describe.
 
 ---
 
@@ -39,6 +43,15 @@ lets each payload own only the fields legal for its role.
 
 **Consequence.** Illegal states disappear: a `user` payload has no `tool_calls`, a
 `tool` payload always has a tool call id.
+
+**Stage 0 ruling (module).** The types live in `include/pu/context/message.hpp`.
+
+A message DAG is a domain concept, while `core/` is reserved for dependency-free
+base utilities (`ARCHITECTURE.md`, Directory Structure). The type is used by both
+`llm/` (projection) and `session/` (storage), so it must sit below them; a
+`context/` module is that layer without redefining what `core/` means.
+
+The two `FROZEN` comments name this path, so they move with the type.
 
 ## 2. Content representation: `std::vector<ContentPart>`
 
@@ -112,6 +125,20 @@ there is no state to record.
   deleted — and no reader. It goes with the branch.
 - The `ask_user` case in `test_executor.cpp` asserts the removed behaviour and is
   rewritten in the same change.
+
+**Stage 0 ruling (kInterrupted).** `kInterrupted` is introduced together with the
+code that writes it, not before. Stage 1 defines only `kPending`, `kRunning` and
+`kCompleted`, because neither cancellation path records anything today: both
+`CancelToken` and `platform::IsInterrupted()` only stop the data flow.
+
+Repeating the pattern of declaring state before its producer is what produced the
+unreachable structures already in the tree: the compaction branch that no provider
+can reach, `parameters_as_string` plumbed but never read, `ToolLoopResult::completed`
+with no reader, and the unused token counters on `ChatResult`.
+
+The writer lands in stage 2 or 3 for a normal cancellation, and in stage 6 for
+crash recovery (load repairs `kRunning` to `kInterrupted`). Stage 1 gains the value
+in whichever change first needs it.
 
 ## 6. Storage: DAG with parent references and a current leaf
 
@@ -290,21 +317,28 @@ added. `ProviderCapabilities::max_context_tokens` reserves the field.
 | --- | --- | --- |
 | 2 | How are unreachable nodes reclaimed? | Decision 9 stops compaction from deleting, so the store grows without bound. |
 | 3 | When is the store persisted? | `SaveCurrentSession()` runs on input and shutdown only (`runtime.cpp:109`), so a crash loses the DAG. |
-| 6 | Who writes `kInterrupted`, and how is `kRunning` repaired on load? | Neither cancellation path records anything today. |
+
+Items 1, 4, 5 and 6 were closed during the stage 0 review and their rulings are in
+the decisions above; the numbers are left unshifted so earlier discussion stays
+traceable.
 
 ## Verified baseline
 
-Release build with the CI dependency set, via `ctest`. The suite holds 106 tests
-and passes under code page 65001 (UTF-8) and code page 936 (GBK).
+The suite must pass under both a UTF-8 code page and a non-UTF-8 one, which is the
+requirement the encoding rulings exist to satisfy. Measured results are recorded in
+the commit messages that produced them.
 
 ## How later stages use this document
 
 | Stage | Change |
 | --- | --- |
-| 1 | Node and payload types; tool record, payload and status; `MessageId` as UUID v4 string. |
+| 1 | Node and payload types; tool record, payload and status; `MessageId` as UUID v4 string. Shares one UUID generator with the logging layer instead of copying it. |
 | 2 | `BuildRequestPath` taking both system inputs; `ProviderCapabilities` and the projection visitor. |
 | 3 | Collapse the two provider switches and delete the four dead injection branches. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
+
+Stage 1 adds no caller, so its tests assert the types rather than behaviour; its
+value is fixing the vocabulary that stages 2 to 6 target.
 
 Every behaviour removal carries its test rewrite: the `ask_user` case and the two
 `Compact` assertions.

@@ -12,7 +12,7 @@
 namespace pu {
 
 // FROZEN: no new fields. New context features go through MessageNode
-// (include/pu/core/message.hpp) once the DAG refactor lands.
+// (include/pu/context/message.hpp) once the DAG refactor lands.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;

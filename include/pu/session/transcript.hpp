@@ -9,7 +9,7 @@
 namespace pu {
 
 // FROZEN: no new fields or methods. The linear ordering is replaced by the
-// MessageNode DAG (include/pu/core/message.hpp) once the DAG refactor lands.
+// MessageNode DAG (include/pu/context/message.hpp) once the DAG refactor lands.
 class Transcript {
 public:
   void Append(const ChatMessage& msg);
