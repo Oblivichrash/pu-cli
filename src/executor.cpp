@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
-#include "pu/core/platform.hpp"
 
+#include "pu/core/platform.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/session/request.hpp"
 #include "pu/tools/tool_result.hpp"
 
 #include <boost/json.hpp>
@@ -210,31 +211,15 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
     ++iteration;
 
-    std::vector<ChatMessage> chat_history;
-    for (const auto& msg : workspace.GetHistory()) {
-      chat_history.push_back(msg);
+    session::RequestInputs inputs;
+    inputs.environment = BuildStaticSystemContext();
+    auto system_prompt_var = workspace.GetVar("system_prompt");
+    if (system_prompt_var && system_prompt_var->is_string()) {
+      inputs.system_prompt = boost::json::value_to<std::string>(*system_prompt_var);
     }
 
-    bool has_system = false;
-    for (const auto& msg : chat_history) {
-      if (msg.role == "system") {
-        has_system = true;
-        break;
-      }
-    }
-
-    if (!has_system) {
-      std::string static_context = BuildStaticSystemContext();
-      auto system_prompt_var = workspace.GetVar("system_prompt");
-      if (system_prompt_var && system_prompt_var->is_string() &&
-          !boost::json::value_to<std::string>(*system_prompt_var).empty()) {
-        static_context = boost::json::value_to<std::string>(*system_prompt_var) + "\n\n" + static_context;
-      }
-      ChatMessage sys;
-      sys.role = "system";
-      sys.content = static_context;
-      chat_history.insert(chat_history.begin(), std::move(sys));
-    }
+    std::vector<ChatMessage> chat_history = session::BuildRequestPath(
+        workspace.GetGraph(), workspace.GetGraph().leaf(), inputs);
 
     std::vector<ToolCall> collected_calls;
     std::ostringstream content_stream;

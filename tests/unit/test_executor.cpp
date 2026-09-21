@@ -191,6 +191,30 @@ class MockLLM : public LLMProvider {
   bool fire_calls_once_ = false;
 };
 
+// Records what the executor sends, which is the only way to observe the request
+// view from the outside.
+class CapturingLLM : public LLMProvider {
+ public:
+  ChatResult Chat(const std::vector<ChatMessage>& history,
+                  const std::vector<ToolDefinition>& /*tools*/,
+                  std::function<void(const std::string&)> /*content_callback*/,
+                  std::function<void(const ToolCall&)> /*tool_callback*/,
+                  CancelToken /*cancel_token*/) override {
+    history_ = history;
+    ChatResult r;
+    r.content = "done";
+    return r;
+  }
+
+  bool SupportsTools() const override { return true; }
+  std::string GetModelName() const override { return "capturing"; }
+
+  const std::vector<ChatMessage>& captured() const { return history_; }
+
+ private:
+  std::vector<ChatMessage> history_;
+};
+
 class TrackingTool : public Tool {
  public:
   std::string Name() const override { return "tracking_tool"; }
@@ -312,4 +336,31 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     }
   }
   REQUIRE(found_paired_tool_msg);
+}
+
+TEST_CASE("The executor sends the system inputs ahead of the stored turns",
+          "[executor][request]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  Workspace ws;
+  ws.SetVar("system_prompt", boost::json::value("be brief"));
+
+  CapturingLLM provider;
+  ExecutionResult result = executor.Execute("hello", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+
+  const std::vector<ChatMessage>& sent = provider.captured();
+  REQUIRE(sent.size() == 2);
+
+  REQUIRE(sent[0].role == "system");
+  REQUIRE(sent[0].content.find("be brief") == 0);
+  REQUIRE(sent[0].content.find("=== Environment ===") != std::string::npos);
+
+  REQUIRE(sent[1].role == "user");
+  REQUIRE(sent[1].content == "hello");
 }
