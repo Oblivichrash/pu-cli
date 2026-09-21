@@ -334,13 +334,14 @@ the commit messages that produced them.
 | --- | --- |
 | 1 | Node and payload types; tool record, payload and status; `MessageId` as UUID v4 string. Shares one UUID generator with the logging layer instead of copying it. |
 | 2a | The DAG becomes the storage: nodes keyed by id plus a current leaf, behind the existing `Transcript` API. |
-| 2b | `BuildRequestPath` taking both system inputs; `ProviderCapabilities` and the projection visitor; the executor moves onto the request view. |
+| 2b-i | The graph moves into `context/`, so the layer that will render a request view owns it. `Transcript` becomes the legacy view over it. |
+| 2b-ii | `BuildRequestPath(timestamped inputs, policy, caps)`; `ProviderCapabilities`; the executor moves onto the request view. |
 | 2c | Compaction stops rewriting stored nodes. |
 | 3 | Collapse the two provider switches and delete the four dead injection branches. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
 
-Stages 1 and 2a add no caller and change no observable behaviour, so their tests
-assert the types and exercise the existing transcript behaviour unchanged.
+Stages 1, 2a and 2b-i add no caller and change no observable behaviour, so their
+tests assert the types and exercise the existing transcript behaviour unchanged.
 
 ### Stage 2a translation rules
 
@@ -355,8 +356,9 @@ models map while the persisted layout stays the v1 array:
   on the encoding and the projection decides it.
 - Storage roles are the canonical four, and the `tool_result` alias a provider
   accepts becomes a tool receipt.
-- A tool receipt completes the record it answers, so status is stored rather than
-  inferred. Nothing reads status until 2b adds the guard that does.
+- A tool receipt completes the record it answers, because every insertion path in
+  the graph routes through one place. Nothing reads status until 2b-ii adds the
+  guard that does, so status is stored and verified but not yet load-bearing.
 - Compaction keeps its current observable behaviour and still discards the dropped
   range, so it diverges from decision 9 until 2c.
 

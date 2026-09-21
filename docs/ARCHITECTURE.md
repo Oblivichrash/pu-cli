@@ -378,7 +378,10 @@ include/pu/
 │   ├── json.hpp          # Boost.JSON convenience helpers
 │   ├── logging.hpp       # spdlog setup + JSON log formatter
 │   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
-│   └── platform.hpp      # OS/kernel probing
+│   ├── platform.hpp      # OS/kernel probing, subprocess output capture
+│   ├── text.hpp          # UTF-8 validation and repair
+│   └── uuid.hpp          # RFC 4122 v4 identifier
+├── context/              # Message model: nodes, payloads, message graph
 ├── infra/                # Adapters
 │   ├── http_client.hpp   # HttpClient interface
 │   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
