@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
+#include "pu/core/text.hpp"
 #include "pu/session/workspace.hpp"
+#include "pu/session/session.hpp"
 #include "pu/session/memory.hpp"
 #include <boost/json.hpp>
 
@@ -29,6 +31,57 @@ TEST_CASE("Artifact operations", "[workspace]") {
   f.source = "user_input";
   ctx.AddArtifact(f);
   REQUIRE(ctx.GetArtifacts().size() == 1);
+}
+
+TEST_CASE("Workspace serialization round-trips", "[transcript]") {
+  Workspace ws;
+  ws.Append("user", "hello");
+  ws.SetVar("system_prompt", boost::json::value("be brief"));
+
+  const boost::json::value saved = ws.Serialize();
+  auto restored = Workspace::Deserialize(saved);
+
+  REQUIRE(restored->HistorySize() == 1);
+  auto var = restored->GetVar("system_prompt");
+  REQUIRE(var.has_value());
+  REQUIRE(boost::json::value_to<std::string>(*var) == "be brief");
+}
+
+TEST_CASE("Session serialization round-trips", "[transcript]") {
+  Session session;
+  config::BackendConfig backend;
+  backend.type = config::BackendType::kOllama;
+  backend.host = "http://127.0.0.1:11434";
+  backend.model = "llama3.2:1b";
+  backend.temperature = 0.7f;
+  session.SwitchAgent("chat");
+  session.SwitchBackend(backend);
+  session.GetWorkspace().Append("user", "hello");
+
+  const boost::json::value saved = session.Serialize();
+  const std::string written = json::PrettyPrint(saved);
+  const boost::json::value reparsed = boost::json::parse(written);
+
+  auto restored = Session::Deserialize(reparsed);
+  REQUIRE(restored != nullptr);
+  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
+  REQUIRE(restored->GetWorkspace().GetHistory()[0].content == "hello");
+  REQUIRE(restored->GetRuntimeSpec().backend.model == "llama3.2:1b");
+}
+
+TEST_CASE("A message holding invalid UTF-8 survives a save and load",
+          "[transcript]") {
+  Session session;
+  // Bytes a localized library error carries: cp936 for two CJK characters,
+  // which is what a Boost.Asio failure message contains on a Chinese Windows.
+  session.GetWorkspace().Append("assistant", "Request failed: \xB2\xBB\xCA\xC7");
+
+  const std::string written = json::PrettyPrint(session.Serialize());
+  REQUIRE(text::IsValidUtf8(written));
+
+  auto restored = Session::Deserialize(boost::json::parse(written));
+  REQUIRE(restored != nullptr);
+  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
 }
 
 TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {

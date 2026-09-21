@@ -2,10 +2,10 @@
 #include "pu/session/transcript.hpp"
 
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 #include "pu/session/request.hpp"
 
 #include <algorithm>
-#include <set>
 
 namespace pu {
 
@@ -66,10 +66,27 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
   return user;
 }
 
+// Storage holds text that arrived from outside pu-cli, which may be in the
+// producer's encoding: a localized library message, for instance, is written in
+// the system locale. It is normalised here, the one way into storage, so that
+// neither the request view nor the session file can inherit invalid bytes.
+ChatMessage Normalized(const ChatMessage& msg) {
+  if (text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
+      text::IsValidUtf8(msg.reasoning_content) && text::IsValidUtf8(msg.tool_call_id)) {
+    return msg;
+  }
+  ChatMessage clean = msg;
+  clean.content = text::SanitizeUtf8(msg.content);
+  clean.tool_name = text::SanitizeUtf8(msg.tool_name);
+  clean.reasoning_content = text::SanitizeUtf8(msg.reasoning_content);
+  clean.tool_call_id = text::SanitizeUtf8(msg.tool_call_id);
+  return clean;
+}
+
 }  // namespace
 
 void Transcript::Append(const ChatMessage& msg) {
-  graph_.AppendAfterLeaf(ToPayload(msg), msg.timestamp);
+  graph_.AppendAfterLeaf(ToPayload(Normalized(msg)), msg.timestamp);
 }
 
 std::vector<ChatMessage> Transcript::GetHistory() const {
