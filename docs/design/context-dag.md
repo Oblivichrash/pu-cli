@@ -71,9 +71,13 @@ interleaved parts stay representable.
 
 **Stage 0 ruling (encoding).** A text part holds valid UTF-8, and text from
 outside pu-cli is normalised where it enters: `ExecuteCommand` for shell output,
-the stdio transport for MCP servers, and `MakeToolResultJson` as the boundary
-where any tool output becomes JSON. A child's encoding follows how it was
-launched, so `platform` distinguishes a console child from a piped one.
+the stdio transport for MCP servers, `MakeToolResultJson` for tool results, and
+`Transcript::Append` for everything that reaches storage. The last one is the
+guarantee rather than a point fix: a library message carries the system locale,
+so a localized network error would otherwise store bytes that make the session
+file unreadable. When that happened the next start failed to load and the
+conversation was silently replaced, which is why storage normalises rather than
+trusting its callers.
 
 ## 3. Reasoning carries provider, signature, and raw JSON
 
