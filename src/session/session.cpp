@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/session.hpp"
-#include "pu/llm/ollama_provider.hpp"
-#include "pu/llm/openai_provider.hpp"
 #include "pu/infra/http_client.hpp"
 #include "pu/infra/beast_http_client.hpp"
 #include "pu/core/error.hpp"
@@ -41,28 +39,8 @@ void Session::SwitchBackend(const config::BackendConfig& new_config) {
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider() const {
-  const auto& cfg = runtime_spec_.backend;
-  auto http = std::make_unique<pu::http::BeastHttpClient>();
-  if (cfg.type == config::BackendType::kOllama) {
-    OllamaProvider::Config ollama_cfg;
-    ollama_cfg.model = cfg.model;
-    ollama_cfg.temperature = cfg.temperature;
-    ollama_cfg.host = cfg.host;
-    ollama_cfg.api_key = cfg.api_key.value_or("");
-    ollama_cfg.max_tokens = cfg.max_tokens;
-    return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
-  } else if (cfg.type == config::BackendType::kOpenAI) {
-    OpenAIProvider::Config openai_cfg;
-    openai_cfg.model = cfg.model;
-    openai_cfg.temperature = cfg.temperature;
-    openai_cfg.host = cfg.host;
-    openai_cfg.api_key = cfg.api_key.value_or("");
-    openai_cfg.parameters_as_string = cfg.parameters_as_string;
-    openai_cfg.max_tokens = cfg.max_tokens;
-    openai_cfg.enable_thinking = cfg.enable_thinking;
-    return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
-  }
-  throw RuntimeError("Unknown backend type");
+  return config::CreateBackend(runtime_spec_.backend,
+                               std::make_unique<pu::http::BeastHttpClient>());
 }
 
 boost::json::value Session::Serialize() const {
