@@ -23,7 +23,9 @@ public:
   const context::MessageGraph& GetGraph() const { return graph_; }
 
   boost::json::value Serialize() const;
-  static Transcript Deserialize(const boost::json::value& j);
+  // Returns false for a value that is not DAG storage, so the caller can tell a
+  // foreign layout from an empty conversation.
+  static bool Deserialize(const boost::json::value& j, Transcript& out);
 
 private:
   context::MessageGraph graph_;

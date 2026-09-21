@@ -32,6 +32,7 @@ function(pu_configure_target target)
 endfunction()
 
 add_library(pu_core STATIC
+    src/context/graph.cpp
     src/infra/beast_http_client.cpp
     src/core/platform.cpp
     src/session/workspace.cpp

@@ -45,16 +45,29 @@ std::unique_ptr<LLMProvider> Session::CreateProvider() const {
 
 boost::json::value Session::Serialize() const {
   boost::json::value j = boost::json::object{};
+  j.as_object()["schema_version"] = context::kSchemaVersion;
   j.as_object()["workspace"] = workspace_->Serialize();
   j.as_object()["runtime_spec"] = runtime_spec_.Serialize();
   return j;
 }
 
 std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
+  const bool has_version = json::HasKey(j, "schema_version");
+  const int version = json::ValueOrDefault<int>(j, "schema_version", 0);
+  if (!has_version || version != context::kSchemaVersion) return nullptr;
+
+  // A version field alone is not enough: an unreachable branch used the same
+  // number for a different layout, so the storage itself has to look like a DAG.
+  if (!json::HasKey(j, "workspace") ||
+      !json::HasKey(j.at("workspace"), "history") ||
+      !j.at("workspace").at("history").is_object()) {
+    return nullptr;
+  }
+
   auto ws = Workspace::Deserialize(j.at("workspace"));
+  if (!ws) return nullptr;
   auto spec = RuntimeSpec::Deserialize(j.at("runtime_spec"));
-  auto session = std::make_unique<Session>(ws, spec);
-  return session;
+  return std::make_unique<Session>(ws, spec);
 }
 
 } // namespace pu

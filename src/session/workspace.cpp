@@ -82,8 +82,8 @@ boost::json::value Workspace::Serialize() const {
 std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   auto ws = std::make_shared<Workspace>();
 
-  if (json::HasKey(j, "history") && j.at("history").is_array()) {
-    ws->transcript_ = Transcript::Deserialize(j.at("history"));
+  if (json::HasKey(j, "history")) {
+    if (!Transcript::Deserialize(j.at("history"), ws->transcript_)) return nullptr;
   }
 
   boost::json::value mem_j = boost::json::object{};

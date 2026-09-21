@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <system_error>
 
 #include <boost/json.hpp>
@@ -34,14 +35,40 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   std::ifstream file(path);
   if (!file.is_open())
     return nullptr;
+
+  boost::json::value j;
   try {
-    boost::json::value j;
     file >> j;
-    return Session::Deserialize(j);
   } catch (const std::exception& e) {
-    spdlog::warn("Failed to parse session from {}: {}", path.string(), e.what());
+    spdlog::error("Session file {} could not be parsed: {}", path.string(), e.what());
     return nullptr;
   }
+
+  auto session = Session::Deserialize(j);
+  if (session) return session;
+
+  // The format changed incompatibly, so the file is reported rather than
+  // guessed at. The backup is the copy that still holds the original.
+  const std::string reason =
+      json::HasKey(j, "schema_version")
+          ? "schema_version " + std::to_string(
+                json::ValueOrDefault<int>(j, "schema_version", 0)) +
+                " without DAG node storage"
+          : "missing schema_version";
+  const std::filesystem::path backup =
+      path.parent_path() / "session.v1.backup.json";
+
+  std::ostringstream message;
+  message << "session.json uses the pre-DAG (v1) layout and cannot be loaded.\n"
+          << "  file:    " << path.string() << "\n"
+          << "  reason:  " << reason << "\n";
+  if (std::filesystem::exists(backup)) {
+    message << "  backup:  " << backup.string() << "\n";
+  }
+  message << "\nThe original conversation is preserved in the backup file only. "
+          << "The main file is overwritten on the next save.";
+  spdlog::error("{}", message.str());
+  return nullptr;
 }
 
 // The v1 session layout cannot be read by the context DAG format, so keep one
@@ -110,10 +137,9 @@ void Runtime::Initialize(const std::string& config_path) {
   auto session_path = workspace_root_ / ".pu" / "session.json";
   BackupLegacySession(session_path);
   if (std::filesystem::exists(session_path)) {
+    // A refused file has already been reported with its reason and backup, so a
+    // second, vaguer line here would only add noise.
     current_session_ = LoadSessionFromFile(session_path);
-    if (!current_session_) {
-      spdlog::warn("Failed to load session from {}", session_path.string());
-    }
   }
 
   is_initialized_ = true;

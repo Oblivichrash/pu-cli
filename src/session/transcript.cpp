@@ -103,43 +103,13 @@ bool Transcript::HasPendingToolCalls() const {
   return graph_.LeafHasUnfinishedToolCalls();
 }
 
-boost::json::value Transcript::Serialize() const {
-  boost::json::array arr;
-  for (const ChatMessage& msg : GetHistory()) {
-    boost::json::object entry = {
-      {"id", msg.id},
-      {"timestamp", msg.timestamp},
-      {"role", msg.role},
-      {"content", msg.content},
-      {"tool_name", msg.tool_name},
-      {"reasoning_content", msg.reasoning_content},
-      {"tool_call_id", msg.tool_call_id}
-    };
-    if (msg.HasToolCalls()) entry["tool_calls"] = msg.tool_calls;
-    arr.push_back(std::move(entry));
-  }
-  return arr;
-}
+boost::json::value Transcript::Serialize() const { return graph_.Serialize(); }
 
-Transcript Transcript::Deserialize(const boost::json::value& j) {
-  Transcript t;
-  if (!j.is_array()) return t;
-
-  for (const boost::json::value& item : j.as_array()) {
-    ChatMessage msg;
-    msg.id = json::ValueOrDefault<int>(item, "id", 0);
-    msg.timestamp = json::ValueOrDefault<std::string>(item, "timestamp", "");
-    msg.role = json::ValueOrDefault<std::string>(item, "role", "");
-    msg.content = json::ValueOrDefault<std::string>(item, "content", "");
-    msg.tool_name = json::ValueOrDefault<std::string>(item, "tool_name", "");
-    msg.tool_calls = json::ValueOrDefault<boost::json::value>(
-        item, "tool_calls", boost::json::value(nullptr));
-    msg.reasoning_content =
-        json::ValueOrDefault<std::string>(item, "reasoning_content", "");
-    msg.tool_call_id = json::ValueOrDefault<std::string>(item, "tool_call_id", "");
-    t.Append(msg);
-  }
-  return t;
+bool Transcript::Deserialize(const boost::json::value& j, Transcript& out) {
+  context::MessageGraph graph;
+  if (!context::MessageGraph::Deserialize(j, graph)) return false;
+  out.graph_ = std::move(graph);
+  return true;
 }
 
 } // namespace pu

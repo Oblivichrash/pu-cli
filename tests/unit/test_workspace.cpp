@@ -93,7 +93,8 @@ TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
       R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
   t.Append(asst);
 
-  auto restored = Transcript::Deserialize(t.Serialize());
+  auto restored = Transcript{};
+  REQUIRE(Transcript::Deserialize(t.Serialize(), restored));
   auto h = restored.GetHistory();
   REQUIRE(h.size() == 1);
   REQUIRE(h[0].HasToolCalls());
@@ -148,14 +149,23 @@ TEST_CASE("Serialization is stable across repeated round trips", "[transcript]")
   t.Append(tool);
 
   const std::string first = boost::json::serialize(t.Serialize());
-  const std::string second =
-      boost::json::serialize(Transcript::Deserialize(t.Serialize()).Serialize());
-  const std::string third =
-      boost::json::serialize(Transcript::Deserialize(boost::json::parse(second)).Serialize());
+
+  Transcript once;
+  REQUIRE(Transcript::Deserialize(t.Serialize(), once));
+  const std::string second = boost::json::serialize(once.Serialize());
+
+  Transcript twice;
+  REQUIRE(Transcript::Deserialize(boost::json::parse(second), twice));
+  const std::string third = boost::json::serialize(twice.Serialize());
 
   REQUIRE(second == first);
   REQUIRE(third == first);
-  REQUIRE(boost::json::parse(first).as_array().size() == 3);
+
+  // Storage is an object with nodes and a leaf, not the list the old layout used.
+  const boost::json::value stored = boost::json::parse(first);
+  REQUIRE(stored.is_object());
+  REQUIRE(stored.at("nodes").as_array().size() == 3);
+  REQUIRE(stored.at("leaf").is_string());
 }
 
 TEST_CASE("Appending continues from the leaf without dropping anything",

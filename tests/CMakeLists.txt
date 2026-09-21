@@ -8,6 +8,7 @@ add_executable(pu_tests
     unit/test_agent_config.cpp
     unit/test_streaming_json_parser.cpp
     unit/test_workspace.cpp
+    unit/test_session_schema.cpp
     unit/test_message.cpp
     unit/test_graph.cpp
     unit/test_request.cpp

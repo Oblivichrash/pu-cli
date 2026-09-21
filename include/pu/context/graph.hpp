@@ -16,7 +16,13 @@
 
 #include "pu/context/message.hpp"
 
+#include <boost/json.hpp>
+
 namespace pu::context {
+
+// The persisted layout of the context model. Bumped when the shape changes in a
+// way an older reader cannot interpret; there is no reader for older values.
+inline constexpr int kSchemaVersion = 2;
 
 class MessageGraph {
  public:
@@ -65,6 +71,15 @@ class MessageGraph {
     const MessageNode* node = Find(leaf_);
     return node != nullptr && HasUnfinishedToolCalls(*node);
   }
+
+  // Nodes plus the leaf, which is everything needed to resume. Written as an
+  // object rather than a list because a position is not derivable from order.
+  boost::json::value Serialize() const;
+
+  // Reads what Serialize wrote. Returns false for anything else, including a
+  // list of messages, so a file from another layout is refused rather than
+  // half-read.
+  static bool Deserialize(const boost::json::value& value, MessageGraph& out);
 
  private:
   const MessageNode& Add(MessageNode node) {
