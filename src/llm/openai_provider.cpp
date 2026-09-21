@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/openai_provider.hpp"
 
+#include "pu/llm/projection.hpp"
 #include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/core/error.hpp"
@@ -22,52 +23,18 @@ std::string SafeString(const boost::json::value& j, const char* key) {
              : "";
 }
 
-boost::json::value BuildMessagesJson(const std::vector<ChatMessage>& history) {
-  boost::json::array messages;
-  for (const auto& msg : history) {
-    std::string role = msg.role;
-    if (role == "tool_result") role = "tool";
-
-    boost::json::value j = {
-      {"role", role}
-    };
-
-    bool has_tool_calls = msg.HasToolCalls();
-
-    if (has_tool_calls) {
-      j.as_object()["content"] = boost::json::value();
-    } else {
-      j.as_object()["content"] = msg.content.empty() ? "" : msg.content;
-    }
-
-    if (role == "assistant" && !msg.reasoning_content.empty()) {
-      j.as_object()["reasoning_content"] = msg.reasoning_content;
-    }
-
-    if (role == "tool") {
-      j.as_object()["tool_call_id"] = msg.tool_call_id;
-    }
-
-    if (has_tool_calls) {
-      // The API expects `arguments` as a JSON-encoded string; a message may
-      // hold either form depending on which provider produced it.
-      boost::json::value tool_calls = msg.tool_calls;
-      for (auto& tc : tool_calls.as_array()) {
-        if (json::HasKey(tc, "function") &&
-            json::HasKey(tc.at("function"), "arguments")) {
-          auto& args = tc.at("function").at("arguments");
-          if (args.is_object() || args.is_array()) {
-            args = boost::json::serialize(args);
-          }
-        }
-      }
-      j.as_object()["tool_calls"] = std::move(tool_calls);
-    }
-
-    messages.push_back(j);
-  }
-  return messages;
-}
+// What this provider needs, as data rather than branches: reasoning is echoed
+// back, content is nulled beside tool calls, and arguments travel as a
+// JSON-encoded string.
+constexpr llm::ProviderCapabilities kCapabilities{
+    .role_naming = llm::RoleNaming::kAliasToolResult,
+    .echo_reasoning_content = true,
+    .allows_content_with_tool_calls = false,
+    .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
+    .tool_calls_carry_type = true,
+    .sends_tool_name = false,
+    .omits_empty_tool_call_id = false,
+};
 
 }  // namespace
 
@@ -104,7 +71,7 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
     messages.insert(messages.begin(), std::move(sys));
   }
 
-  req.as_object()["messages"] = BuildMessagesJson(messages);
+  req.as_object()["messages"] = llm::ProjectMessages(messages, kCapabilities);
   return boost::json::serialize(req);
 }
 
@@ -133,7 +100,7 @@ std::string OpenAIProvider::BuildRequestWithTools(
     messages.insert(messages.begin(), std::move(sys));
   }
 
-  req.as_object()["messages"] = BuildMessagesJson(messages);
+  req.as_object()["messages"] = llm::ProjectMessages(messages, kCapabilities);
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {

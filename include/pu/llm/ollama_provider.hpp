@@ -46,7 +46,6 @@ class OllamaProvider : public LLMProvider {
   void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb,
                        std::function<void(const ToolCall&)>& tool_cb);
-  std::string RoleToString(const std::string& role) const;
 
   Config config_;
   std::string host_;

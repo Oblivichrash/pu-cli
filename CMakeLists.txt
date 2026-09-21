@@ -42,6 +42,7 @@ add_library(pu_core STATIC
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
+    src/llm/projection.cpp
     src/llm/streaming_json_parser.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/ollama_provider.hpp"
 
+#include "pu/llm/projection.hpp"
 #include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/core/error.hpp"
@@ -12,17 +13,26 @@
 
 namespace pu {
 
+namespace {
+
+// What this provider needs, as data rather than branches: roles are a closed
+// set, reasoning is not echoed, content may accompany tool calls, arguments
+// travel as an object, and a tool result names the tool that produced it.
+constexpr llm::ProviderCapabilities kCapabilities{
+    .role_naming = llm::RoleNaming::kKnownRolesOnly,
+    .echo_reasoning_content = false,
+    .allows_content_with_tool_calls = true,
+    .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
+    .tool_calls_carry_type = false,
+    .sends_tool_name = true,
+    .omits_empty_tool_call_id = true,
+};
+
+}  // namespace
+
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
     : config_(std::move(config)), host_(config_.host),
       api_key_(std::move(config_.api_key)), http_(std::move(http)) {}
-
-std::string OllamaProvider::RoleToString(const std::string& role) const {
-  if (role == "user") return "user";
-  if (role == "assistant") return "assistant";
-  if (role == "system") return "system";
-  if (role == "tool") return "tool";
-  return "user";
-}
 
 std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
   boost::json::value req = {
@@ -42,21 +52,8 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
     messages.insert(messages.begin(), std::move(sys));
   }
 
-  boost::json::array msgs;
-  for (const auto& msg : messages) {
-    boost::json::value m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
-    if (msg.role == "tool") {
-      m.as_object()["tool_name"] = msg.tool_name;
-      if (!msg.tool_call_id.empty()) {
-        m.as_object()["tool_call_id"] = msg.tool_call_id;
-      }
-    }
-    if (msg.HasToolCalls()) {
-      m.as_object()["tool_calls"] = msg.tool_calls;
-    }
-    msgs.push_back(m);
-  }
-  req.as_object()["messages"] = msgs;
+  req.as_object()["messages"] =
+      llm::ProjectMessages(messages, kCapabilities);
   return boost::json::serialize(req);
 }
 
@@ -80,49 +77,8 @@ std::string OllamaProvider::BuildRequestWithTools(
     messages.insert(messages.begin(), std::move(sys));
   }
 
-  boost::json::array msgs;
-  for (const auto& msg : messages) {
-    boost::json::value m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
-    if (msg.role == "tool") {
-      m.as_object()["tool_name"] = msg.tool_name;
-      if (!msg.tool_call_id.empty()) {
-        m.as_object()["tool_call_id"] = msg.tool_call_id;
-      }
-    }
-    if (msg.HasToolCalls()) {
-      // Ollama wants `arguments` as an object, but messages persisted from the
-      // OpenAI backend carry it as a JSON-encoded string.
-      boost::json::array tcs;
-      for (const auto& tc : msg.tool_calls.as_array()) {
-        boost::json::value func = {
-          {"name", json::ValueOrDefault<std::string>(tc, "name", "")}
-        };
-        if (json::HasKey(tc, "arguments")) {
-          const auto& args = tc.at("arguments");
-          if (args.is_string()) {
-            try {
-              func.as_object()["arguments"] =
-                  boost::json::parse(boost::json::value_to<std::string>(args));
-            } catch (const std::exception& e) {
-              // Some providers send `arguments` as a JSON-encoded string; when
-              // it is not valid JSON, pass the original value through unchanged.
-              spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
-              func.as_object()["arguments"] = args;
-            }
-          } else if (args.is_object() || args.is_array()) {
-            func.as_object()["arguments"] = args;
-          }
-        }
-        boost::json::value tc_entry = boost::json::object{};
-        if (json::HasKey(tc, "id")) tc_entry.as_object()["id"] = tc.at("id");
-        tc_entry.as_object()["function"] = func;
-        tcs.push_back(tc_entry);
-      }
-      m.as_object()["tool_calls"] = std::move(tcs);
-    }
-    msgs.push_back(m);
-  }
-  req.as_object()["messages"] = msgs;
+  req.as_object()["messages"] =
+      llm::ProjectMessages(messages, kCapabilities);
 
   boost::json::array tools_json;
   for (const auto& tool : tools) {
