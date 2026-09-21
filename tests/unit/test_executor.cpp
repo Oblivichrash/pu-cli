@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
+#include "pu/core/error.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/tool_result.hpp"
 
@@ -189,6 +190,22 @@ class MockLLM : public LLMProvider {
   std::vector<ToolCall> calls_;
   std::string content_;
   bool fire_calls_once_ = false;
+};
+
+// A provider whose request always fails, which is how an over-length or
+// unauthorised request looks to the executor.
+class FailingLLM : public LLMProvider {
+ public:
+  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
+                  const std::vector<ToolDefinition>& /*tools*/,
+                  std::function<void(const std::string&)> /*content_callback*/,
+                  std::function<void(const ToolCall&)> /*tool_callback*/,
+                  CancelToken /*cancel_token*/) override {
+    throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
+  }
+
+  bool SupportsTools() const override { return true; }
+  std::string GetModelName() const override { return "failing"; }
 };
 
 // Records what the executor sends, which is the only way to observe the request
@@ -382,4 +399,27 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
   REQUIRE(sent[0].content.find("=== Environment ===") == 0);
+}
+
+TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  Workspace ws;
+  FailingLLM provider;
+  const ExecutionResult result = executor.Execute("hello", ws, &provider);
+
+  REQUIRE(result.has_error);
+  // What the server said reaches the caller.
+  REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
+
+  // The failure is not a turn: a model never said it, and storing it would grow
+  // the conversation on every refusal, making the next request longer.
+  const std::vector<ChatMessage> history = ws.GetHistory();
+  REQUIRE(history.size() == 1);
+  REQUIRE(history[0].role == "user");
+  REQUIRE(history[0].content == "hello");
 }

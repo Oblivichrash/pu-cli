@@ -262,7 +262,9 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);
-      workspace.Append("assistant", result.error_message);
+      // The failure is reported to the caller and not stored: a model never said
+      // it, and appending it would grow the conversation every time a request is
+      // refused, which for an over-length request makes the next one worse.
       break;
     }
 
@@ -369,7 +371,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     return result;
   }
 
-  if (result.final_response.empty() && result.tool_call_count == 0) {
+  // Only diagnose an empty response when nothing else already failed: a request
+  // that was refused returns no content either, and replacing its reason with
+  // this generic one is what hid an over-length or unauthorised request.
+  if (!result.has_error && result.final_response.empty() &&
+      result.tool_call_count == 0) {
     result.has_error = true;
     result.error_message = "Model returned an empty response without any tool calls. "
                            "Please check the backend service or try again.";
