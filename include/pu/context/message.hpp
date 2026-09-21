@@ -14,6 +14,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/json.hpp>
+
 #include "pu/core/uuid.hpp"
 
 namespace pu::context {
@@ -60,7 +62,9 @@ enum class ToolCallStatus {
 struct ToolCallRecord {
   std::string id;
   std::string name;
-  std::string arguments;
+  // Kept as JSON rather than a string: providers disagree on whether arguments
+  // travel as an object or an encoded string, and the projection decides that.
+  boost::json::value arguments;
   ToolCallStatus status = ToolCallStatus::kPending;
 };
 
@@ -84,8 +88,8 @@ struct SystemPayload {
 // The result of running a tool, answering the record with the same id.
 struct ToolPayload {
   std::string tool_call_id;
+  std::string tool_name;
   std::vector<ContentPart> content;
-  bool is_error = false;
 };
 
 using MessagePayload =
@@ -93,13 +97,15 @@ using MessagePayload =
 
 struct MessageNode {
   MessageId id;
+  std::string timestamp;
   MessagePayload payload;
   std::vector<MessageId> parents;
 };
 
 inline MessageNode MakeNode(MessagePayload payload,
                             std::vector<MessageId> parents = {}) {
-  return MessageNode{NewMessageId(), std::move(payload), std::move(parents)};
+  return MessageNode{NewMessageId(), std::string{}, std::move(payload),
+                     std::move(parents)};
 }
 
 inline bool HasToolCalls(const MessageNode& node) {

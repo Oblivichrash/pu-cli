@@ -94,7 +94,8 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
   context::AssistantPayload assistant;
   assistant.content.emplace_back(context::TextPart{"let me check"});
   assistant.reasoning = context::Reasoning{"openai", "sig", R"({"raw":true})"};
-  assistant.tool_calls.push_back(context::ToolCallRecord{"call_1", "read_file", "{}"});
+  assistant.tool_calls.push_back(
+      context::ToolCallRecord{"call_1", "read_file", boost::json::object{}});
 
   const context::MessageNode node = context::MakeNode(std::move(assistant));
 
@@ -104,24 +105,47 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
 
   context::AssistantPayload done;
   done.tool_calls.push_back(context::ToolCallRecord{
-      "call_1", "read_file", "{}", context::ToolCallStatus::kCompleted});
+      "call_1", "read_file", boost::json::object{}, context::ToolCallStatus::kCompleted});
   const context::MessageNode finished = context::MakeNode(std::move(done));
 
   REQUIRE(context::HasToolCalls(finished));
   REQUIRE_FALSE(context::HasUnfinishedToolCalls(finished));
 }
 
+TEST_CASE("Tool call arguments keep their JSON shape", "[context][message]") {
+  context::AssistantPayload assistant;
+  assistant.tool_calls.push_back(context::ToolCallRecord{
+      "call_1", "read_file", boost::json::parse(R"({"path":"."})")});
+
+  const context::MessageNode node = context::MakeNode(std::move(assistant));
+
+  const auto& record =
+      std::get<context::AssistantPayload>(node.payload).tool_calls.at(0);
+  REQUIRE(record.arguments.is_object());
+  REQUIRE(record.arguments.at("path") == ".");
+}
+
 TEST_CASE("Only a tool payload responds to a tool call", "[context][message]") {
   context::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
+  receipt.tool_name = "read_file";
   receipt.content.emplace_back(context::TextPart{"file contents"});
   const context::MessageNode node = context::MakeNode(std::move(receipt));
 
   const context::ToolPayload& payload = std::get<context::ToolPayload>(node.payload);
   REQUIRE(payload.tool_call_id == "call_1");
-  REQUIRE_FALSE(payload.is_error);
+  REQUIRE(payload.tool_name == "read_file");
   REQUIRE_FALSE(context::HasToolCalls(node));
   REQUIRE_FALSE(context::HasUnfinishedToolCalls(node));
+}
+
+TEST_CASE("A node carries a timestamp and parent links", "[context][message]") {
+  context::MessageNode node = context::MakeNode(context::UserPayload{});
+  REQUIRE(node.timestamp.empty());
+
+  node.timestamp = "2026-09-21T10:00:00Z";
+  REQUIRE(node.timestamp == "2026-09-21T10:00:00Z");
+  REQUIRE(node.parents.empty());
 }
 
 TEST_CASE("The shared UUID generator meets the v4 contract", "[context][message]") {
