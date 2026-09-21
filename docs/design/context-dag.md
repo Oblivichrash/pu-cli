@@ -333,12 +333,32 @@ the commit messages that produced them.
 | Stage | Change |
 | --- | --- |
 | 1 | Node and payload types; tool record, payload and status; `MessageId` as UUID v4 string. Shares one UUID generator with the logging layer instead of copying it. |
-| 2 | `BuildRequestPath` taking both system inputs; `ProviderCapabilities` and the projection visitor. |
+| 2a | The DAG becomes the storage: nodes keyed by id plus a current leaf, behind the existing `Transcript` API. |
+| 2b | `BuildRequestPath` taking both system inputs; `ProviderCapabilities` and the projection visitor; the executor moves onto the request view. |
+| 2c | Compaction stops rewriting stored nodes. |
 | 3 | Collapse the two provider switches and delete the four dead injection branches. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
 
-Stage 1 adds no caller, so its tests assert the types rather than behaviour; its
-value is fixing the vocabulary that stages 2 to 6 target.
+Stages 1 and 2a add no caller and change no observable behaviour, so their tests
+assert the types and exercise the existing transcript behaviour unchanged.
+
+### Stage 2a translation rules
+
+The legacy `ChatMessage` view is rendered from the DAG, which fixes how the two
+models map while the persisted layout stays the v1 array:
+
+- `id` is the message's position, which is what the linear model assigned on
+  append; the DAG keeps UUID identity internally.
+- `reasoning_content` maps to `Reasoning::raw_json`; `provider` and `signature`
+  stay empty until a provider fills them.
+- Tool call arguments stay JSON rather than a string, because providers disagree
+  on the encoding and the projection decides it.
+- Storage roles are the canonical four, and the `tool_result` alias a provider
+  accepts becomes a tool receipt.
+- A tool receipt completes the record it answers, so status is stored rather than
+  inferred. Nothing reads status until 2b adds the guard that does.
+- Compaction keeps its current observable behaviour and still discards the dropped
+  range, so it diverges from decision 9 until 2c.
 
 Every behaviour removal carries its test rewrite: the `ask_user` case and the two
 `Compact` assertions.
