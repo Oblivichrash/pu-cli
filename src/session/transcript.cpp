@@ -106,76 +106,22 @@ ChatMessage ToMessage(const context::MessageNode& node, int id) {
 
 }  // namespace
 
-const context::MessageNode* Transcript::Find(const context::MessageId& id) const {
-  const auto it = nodes_.find(id);
-  return it == nodes_.end() ? nullptr : &it->second;
-}
-
-std::vector<const context::MessageNode*> Transcript::Chain() const {
-  std::vector<const context::MessageNode*> chain;
-  const context::MessageNode* node = Find(leaf_);
-  while (node != nullptr) {
-    chain.push_back(node);
-    node = node->parents.empty() ? nullptr : Find(node->parents.front());
-  }
-  std::reverse(chain.begin(), chain.end());
-  return chain;
-}
-
-void Transcript::MarkToolCallCompleted(const std::string& tool_call_id) {
-  if (tool_call_id.empty()) return;
-
-  context::MessageId id = leaf_;
-  while (!id.empty()) {
-    const auto it = nodes_.find(id);
-    if (it == nodes_.end()) return;
-
-    if (auto* assistant =
-            std::get_if<context::AssistantPayload>(&it->second.payload)) {
-      for (context::ToolCallRecord& record : assistant->tool_calls) {
-        if (record.id == tool_call_id) {
-          record.status = context::ToolCallStatus::kCompleted;
-          return;
-        }
-      }
-    }
-    id = it->second.parents.empty() ? context::MessageId{}
-                                    : it->second.parents.front();
-  }
-}
-
 void Transcript::Append(const ChatMessage& msg) {
-  context::MessagePayload payload = ToPayload(msg);
-
-  std::string answered_call;
-  if (const auto* receipt = std::get_if<context::ToolPayload>(&payload)) {
-    answered_call = receipt->tool_call_id;
-  }
-
-  context::MessageNode node;
-  node.id = context::NewMessageId();
-  node.timestamp = msg.timestamp;
-  node.payload = std::move(payload);
-  if (!leaf_.empty()) node.parents.push_back(leaf_);
-
-  leaf_ = node.id;
-  nodes_.emplace(node.id, std::move(node));
-
-  MarkToolCallCompleted(answered_call);
+  graph_.AppendAfterLeaf(ToPayload(msg), msg.timestamp);
 }
 
 std::vector<ChatMessage> Transcript::GetHistory() const {
   std::vector<ChatMessage> history;
-  for (const context::MessageNode* node : Chain()) {
+  for (const context::MessageNode* node : graph_.Chain()) {
     history.push_back(ToMessage(*node, static_cast<int>(history.size()) + 1));
   }
   return history;
 }
 
-size_t Transcript::Size() const { return Chain().size(); }
+size_t Transcript::Size() const { return graph_.Chain().size(); }
 
 void Transcript::Compact(size_t keep_head, size_t keep_tail) {
-  const std::vector<const context::MessageNode*> chain = Chain();
+  const std::vector<const context::MessageNode*> chain = graph_.Chain();
   if (chain.size() <= keep_head + keep_tail) return;
 
   size_t tail_start = chain.size() - keep_tail;
@@ -190,7 +136,8 @@ void Transcript::Compact(size_t keep_head, size_t keep_tail) {
       if (record.id.empty()) continue;
       bool matched = false;
       for (size_t j = i + 1; j < chain.size(); ++j) {
-        const auto* receipt = std::get_if<context::ToolPayload>(&chain[j]->payload);
+        const auto* receipt =
+            std::get_if<context::ToolPayload>(&chain[j]->payload);
         if (receipt != nullptr && receipt->tool_call_id == record.id) {
           matched = true;
           break;
@@ -210,40 +157,30 @@ void Transcript::Compact(size_t keep_head, size_t keep_tail) {
 
   if (tail_start > keep_head) {
     context::SystemPayload summary;
-    summary.content = ToContent("[Compressed: " + std::to_string(tail_start - keep_head) +
+    summary.content = ToContent("[Compressed: " +
+                                std::to_string(tail_start - keep_head) +
                                 " messages omitted]");
     summary.is_synthetic = true;
 
-    context::MessageNode node;
-    node.id = context::NewMessageId();
-    node.payload = std::move(summary);
-    if (!kept.empty()) node.parents.push_back(kept.back());
-
-    kept.push_back(node.id);
-    nodes_.emplace(node.id, std::move(node));
+    context::MessageNode node = context::MakeNode(std::move(summary));
+    const context::MessageId summary_id = node.id;
+    graph_.Add(std::move(node));
+    if (!kept.empty()) graph_.SetParents(summary_id, {kept.back()});
+    kept.push_back(summary_id);
   }
 
   if (tail_start < chain.size()) {
     // The first kept tail node pointed at a node that is being dropped.
-    nodes_[chain[tail_start]->id].parents = {kept.back()};
+    graph_.SetParents(chain[tail_start]->id, {kept.back()});
     for (size_t i = tail_start; i < chain.size(); ++i) kept.push_back(chain[i]->id);
   }
 
-  const std::set<context::MessageId> keeping(kept.begin(), kept.end());
-  for (auto it = nodes_.begin(); it != nodes_.end();) {
-    if (keeping.count(it->first) != 0) {
-      ++it;
-    } else {
-      it = nodes_.erase(it);
-    }
-  }
-
-  leaf_ = kept.empty() ? context::MessageId{} : kept.back();
+  graph_.RetainOnly(kept);
+  graph_.SetLeaf(kept.empty() ? context::MessageId{} : kept.back());
 }
 
 bool Transcript::HasPendingToolCalls() const {
-  const context::MessageNode* last = Find(leaf_);
-  return last != nullptr && context::HasUnfinishedToolCalls(*last);
+  return graph_.LeafHasUnfinishedToolCalls();
 }
 
 boost::json::value Transcript::Serialize() const {
