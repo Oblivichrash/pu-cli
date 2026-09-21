@@ -21,6 +21,7 @@ add_executable(pu_tests
     unit/test_executor.cpp
     unit/test_serve_api.cpp
     unit/test_boost_integration.cpp
+    unit/test_http_errors.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
