@@ -232,19 +232,35 @@ message loop.
 the visitor cannot project. Gaps become explicit: the projection refuses or drops
 data rather than mis-encoding it.
 
-**Stage 0 ruling (field set).** `caps` starts at four fields:
+**Stage 0 ruling (field set, as implemented).** The stage 0 estimate named four
+fields. Implementation found that two of them, `supports_multimodal` and
+`max_context_tokens`, have no consumer yet, and the remaining differences needed
+more precision. Adding an unused field is the pattern this refactor keeps removing,
+so the set now holds only what the projection branches on:
 
-| Field | Type |
-| --- | --- |
-| `echo_reasoning_content` | `bool` |
-| `allows_content_with_tool_calls` | `bool` |
-| `supports_multimodal` | `bool` |
-| `max_context_tokens` | `std::optional<int>` |
+| Field | Kind | What it decides |
+| --- | --- | --- |
+| `role_naming` | `RoleNaming` | whether `tool_result` is an alias and unknown roles fall back to `user` |
+| `echo_reasoning_content` | `bool` | whether assistant reasoning is sent back |
+| `allows_content_with_tool_calls` | `bool` | whether `content` accompanies tool calls or is `null` |
+| `tool_arguments` | `ToolArgumentsEncoding` | whether arguments travel as an object or an encoded string |
+| `tool_calls_carry_type` | `bool` | whether the call carries the `type` envelope |
+| `sends_tool_name` | `bool` | whether a tool result names the tool that produced it |
+| `omits_empty_tool_call_id` | `bool` | whether an empty tool call id is dropped or sent |
 
-The first three mirror projection rules that exist today: echoing reasoning,
-forcing `content` to `null` when tool calls are present, and rejecting non-text
-parts. The fourth is optional because the token budget is deferred, but reserving
-it now avoids changing the signature twice. The set is a floor, not a ceiling.
+`supports_multimodal` arrives with a provider that accepts a non-text part, and
+`max_context_tokens` with the budget that reads it. Both are floors the stage 0
+text reserved, not fields the code should carry while nothing reads them.
+
+**Stage 0 ruling (defect the unification fixed).** Ollama's conversion read
+`name` and `arguments` from the top level of a tool call (`ollama_provider.cpp`),
+while every stored call nests them under `function` (`executor.cpp` builds that
+shape). Every tool call therefore reached the server as `{"name": ""}` with no
+arguments, so a multi-turn Ollama tool loop lost the correlation between a result
+and the call that produced it. Two tests now cover it: they failed against the old
+code and pass against the shared projection. The no-tools request builder also
+sent raw arguments where the tools builder decoded them; the shared projection
+removes that inconsistency.
 
 ## 9. Compaction never deletes conversation nodes
 
@@ -324,7 +340,7 @@ exists to avoid.
 token budget is out of scope: `ChatResult::input_tokens` and `output_tokens` are
 never assigned, OpenAI logs usage at trace level only (`openai_provider.cpp:192-197`),
 and Ollama does not parse it. No usage pipeline and no tokeniser dependency is
-added. `ProviderCapabilities::max_context_tokens` reserves the field.
+added. The field arrives with the budget that reads it, not before.
 
 ## Open questions
 

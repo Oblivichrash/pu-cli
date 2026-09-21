@@ -385,9 +385,9 @@ include/pu/
 ├── infra/                # Adapters
 │   ├── http_client.hpp   # HttpClient interface
 │   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
-├── llm/                  # LLMProvider, Ollama/OpenAI providers, streaming parser
+├── llm/                  # LLMProvider, providers, projection, streaming parser
 ├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
-├── session/              # Session, Workspace, Transcript, Memory
+├── session/              # Session, Workspace, Transcript, request view, Memory
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
