@@ -51,6 +51,11 @@ class Executor {
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
   void SetCompactionConfig(const config::HistoryCompactionConfig& cfg) { compaction_config_ = cfg; }
 
+  // The agent's configured prompt, supplied by the runtime rather than read back
+  // out of session state, so a request depends only on the conversation and the
+  // named inputs the caller provides.
+  void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
+
   ExecutionResult Execute(const std::string& input, Workspace& workspace,
                           LLMProvider* provider,
                           CancelToken cancel_token = nullptr,
@@ -84,6 +89,7 @@ class Executor {
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   config::HistoryCompactionConfig compaction_config_;
+  std::string system_prompt_;
   int next_tool_call_id_ = 0;
 
   StaticEnvInfo static_env_info_;

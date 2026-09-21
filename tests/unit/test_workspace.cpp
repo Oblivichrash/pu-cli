@@ -36,15 +36,15 @@ TEST_CASE("Artifact operations", "[workspace]") {
 TEST_CASE("Workspace serialization round-trips", "[transcript]") {
   Workspace ws;
   ws.Append("user", "hello");
-  ws.SetVar("system_prompt", boost::json::value("be brief"));
+  ws.SetVar("scratch", boost::json::value("note"));
 
   const boost::json::value saved = ws.Serialize();
   auto restored = Workspace::Deserialize(saved);
 
   REQUIRE(restored->HistorySize() == 1);
-  auto var = restored->GetVar("system_prompt");
+  auto var = restored->GetVar("scratch");
   REQUIRE(var.has_value());
-  REQUIRE(boost::json::value_to<std::string>(*var) == "be brief");
+  REQUIRE(boost::json::value_to<std::string>(*var) == "note");
 }
 
 TEST_CASE("Session serialization round-trips", "[transcript]") {

@@ -345,9 +345,9 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns",
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
+  executor.SetSystemPrompt("be brief");
 
   Workspace ws;
-  ws.SetVar("system_prompt", boost::json::value("be brief"));
 
   CapturingLLM provider;
   ExecutionResult result = executor.Execute("hello", ws, &provider);
@@ -363,4 +363,23 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns",
 
   REQUIRE(sent[1].role == "user");
   REQUIRE(sent[1].content == "hello");
+}
+
+TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  Workspace ws;
+
+  CapturingLLM provider;
+  executor.Execute("hello", ws, &provider);
+
+  // The environment context still leads the request; what is absent is the
+  // agent's prompt, which only the runtime supplies.
+  const std::vector<ChatMessage>& sent = provider.captured();
+  REQUIRE(sent.size() == 2);
+  REQUIRE(sent[0].content.find("=== Environment ===") == 0);
 }

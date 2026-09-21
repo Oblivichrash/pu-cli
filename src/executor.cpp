@@ -218,11 +218,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     ++iteration;
 
     session::RequestInputs inputs;
+    inputs.system_prompt = system_prompt_;
     inputs.environment = BuildStaticSystemContext();
-    auto system_prompt_var = workspace.GetVar("system_prompt");
-    if (system_prompt_var && system_prompt_var->is_string()) {
-      inputs.system_prompt = boost::json::value_to<std::string>(*system_prompt_var);
-    }
 
     std::vector<ChatMessage> chat_history = session::BuildRequestPath(
         workspace.GetGraph(), workspace.GetGraph().leaf(), inputs,
