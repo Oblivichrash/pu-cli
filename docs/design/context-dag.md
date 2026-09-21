@@ -218,9 +218,34 @@ hidden input.
 Actions: delete the `SetVar` write, delete the four branches, and collapse the two
 switches into one. The input is already passed explicitly.
 
-**Stage 0 ruling (deferral).** Stage 0 records this only. The deletions ship in
-stage 3, after `BuildRequestPath` lands in stage 2, so that no window is left with
-no working system prompt.
+**Stage 0 ruling (deferral).** Stage 0 records this only. The deletions shipped in
+stage 3, after `BuildRequestPath` landed in stage 2, so that no window was left
+with no working system prompt.
+
+**Stage 0 ruling (as implemented).** The prompt now travels from the agent config
+to the request without touching session state: `Runtime::RebuildToolbox` calls
+`Executor::SetSystemPrompt` with `agent.backend.system_prompt`, the executor hands
+it to the view, and `Session::SwitchBackend` no longer writes a `Memory` variable.
+The four injection branches and the provider config field they read are gone, and
+`Session::CreateProvider` delegates to `config::CreateBackend`, so one factory
+builds a provider.
+
+Three behaviour consequences follow, and they are the reason this is a fix rather
+than a relocation:
+
+- The prompt could be stale. It travelled through a session variable, written when
+  a backend was applied, so a session saved earlier kept sending the prompt it was
+  saved with. Measured before the change: `agents.json` declared one prompt and the
+  persisted variable held another, and the persisted one is what reached the model.
+- A session that had never been written could send no prompt at all, because
+  nothing populated the variable on that path.
+- Switching the backend by hand blanked the prompt. `/backend` builds a fresh
+  `BackendConfig` with no prompt, which overwrote the variable with an empty string
+  while the agent config still declared one.
+
+`BackendConfig::system_prompt` stays out of the session file, which now matches the
+design: the prompt is configuration, and `RuntimeSpec` is restored from
+`agents.json` rather than carrying a copy that could disagree with it.
 
 ## 8. Provider differences: `ProviderCapabilities` plus a visitor projection
 
@@ -394,7 +419,7 @@ the commit messages that produced them.
 | 2b-ii | `BuildRequestPath(graph, leaf, inputs)`: the system inputs and the stored path, rendered as the messages a provider receives. The executor moves onto it. |
 | 2b-iii | `ProviderCapabilities` and the projection: the wire-format rules leave the providers' request builders. |
 | 2c | Compaction becomes a view selection: `KeepRecent`, no path removes a stored node, and the markers are rendered rather than stored. |
-| 3 | Collapse the two provider switches and delete the four dead injection branches. |
+| 3 | One provider factory, and the system prompt reaches a request from the agent config instead of session state. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
 
 Stages 1, 2a and 2b-i add no caller and change no observable behaviour, so their

@@ -106,8 +106,11 @@ field schema lives in `include/pu/tools/tool_result.hpp` and is documented in
 Artifacts are persisted in the session (`Workspace`/`Memory`) but are not
 injected into the prompt.
 
-This context is merged with the user-defined `system_prompt` (if any) and
-prepended to the chat history on every request.
+This context is merged with the agent's configured `system_prompt` and prepended
+to the stored turns when the request view is rendered. `Runtime::RebuildToolbox`
+passes the prompt to `Executor::SetSystemPrompt`, so the prompt comes from the
+agent configuration that declares it; it is not session state, and switching the
+backend no longer clears it.
 
 ### Environment Probing
 
@@ -216,8 +219,9 @@ are documented in [README](../README.md#websocket-protocol) and implemented in
 
 ## Provider Differences
 
-`Session::CreateProvider()` maps `BackendType` (`agent_config.hpp`) to a concrete
-provider. `agents.json` selects it by the backend `type` field, and any value other
+`config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent_config.hpp`)
+to a concrete provider, and `Session::CreateProvider()` is its only caller. The
+`agents.json` backend `type` field selects it, and any value other
 than `"openai"` deserialises to Ollama. "OpenAI compatible" means the
 `/chat/completions` SSE contract and covers OpenAI, DeepSeek thinking mode, vLLM
 and compatible gateways.
@@ -425,7 +429,7 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Extension Points
 
-- **New backend**: Implement `LLMProvider` and register in `Session::CreateProvider()`.
+- **New backend**: Implement `LLMProvider` and register it in `config::CreateBackend()`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
