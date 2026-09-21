@@ -338,12 +338,18 @@ handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 
 ## Transcript Compaction
 
-`Transcript::Compact(keep_head, keep_tail)` keeps the head and tail messages and discards the middle. It preserves tool‑call pairing by scanning backward and ensuring all tool‑call IDs have matching responses.
+A request carries a `KeepRecent{head, tail}` selection, which `BuildRequestPath`
+applies while rendering: the first `head` and last `tail` nodes are sent, the
+omitted middle becomes a marker message, and nothing is removed from storage. A
+later request can therefore carry the whole conversation again, and the boundary
+moves back while it would otherwise cut off a tool call whose result has not
+arrived.
 
-Compaction runs automatically in `Executor::Execute()` if:
-- The provider does not support tools (or `tools` list is empty)
-- Compaction is enabled in the agent config
-- The provider is **not** in thinking mode (otherwise compaction is skipped and a warning is logged)
+`Executor::RequestSelection` supplies the policy when compaction is enabled in the
+agent config and the provider is not in thinking mode (otherwise a warning is
+logged). It requires a provider that does **not** support tools, and `RunToolLoop`
+returns early in exactly that case, so no request currently trims. `history_compaction`
+in `agents.json` is parsed and plumbed but does not take effect.
 
 ---
 

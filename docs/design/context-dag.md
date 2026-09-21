@@ -285,6 +285,27 @@ replay, export and the UI can rely on.
 `Transcript::Compact` is void, and the tests asserting it are replaced by tests on
 the request path: `test_workspace.cpp:48` and `:103`.
 
+**Stage 0 ruling (as implemented).** Trimming is a `KeepRecent` selection passed
+when rendering, and `Transcript::Compact` / `Workspace::Compact` are gone, so no
+path can remove a stored node. The omitted middle is represented by a marker
+message the view builds rather than a node that is stored, which is what makes a
+later request able to carry the whole conversation again.
+
+The boundary moves back while a kept region would start after a tool call whose
+receipt never arrived, so the model still sees the request it made. It does not
+move back for the mirror case, a receipt whose call falls outside the boundary:
+the view can then carry a tool result the model cannot attribute. That gap is
+recorded rather than fixed.
+
+**Stage 0 ruling (the selection cannot take effect).** `Executor::RequestSelection`
+returns a policy only when the provider does **not** support tools, and
+`RunToolLoop` returns early in exactly that case. A long conversation therefore
+still grows without bound, and `history_compaction` in `agents.json` remains a
+setting nothing reads. The guard predates this refactor, and correcting it is a
+behaviour change - trimming would start happening - so it is left for a decision
+rather than changed here. The machinery is in place for a one-line change once
+that decision is made.
+
 ## 10. Serialization: `schema_version = 2`, breaking, no back-compat
 
 **Decision.** The session root carries `schema_version = 2` beside `workspace` and
@@ -346,7 +367,7 @@ added. The field arrives with the budget that reads it, not before.
 
 | # | Question | Why it matters |
 | --- | --- | --- |
-| 2 | How are unreachable nodes reclaimed? | Decision 9 stops compaction from deleting, so the store grows without bound. |
+| 2 | How are unreachable nodes reclaimed? | Nothing removes a node any more, so the store grows without bound. |
 | 3 | When is the store persisted? | `SaveCurrentSession()` runs on input and shutdown only (`runtime.cpp:109`), so a crash loses the DAG. |
 
 Items 1, 4, 5 and 6 were closed during the stage 0 review and their rulings are in
@@ -368,7 +389,7 @@ the commit messages that produced them.
 | 2b-i | The graph moves into `context/`, so the layer that will render a request view owns it. `Transcript` becomes the legacy view over it. |
 | 2b-ii | `BuildRequestPath(graph, leaf, inputs)`: the system inputs and the stored path, rendered as the messages a provider receives. The executor moves onto it. |
 | 2b-iii | `ProviderCapabilities` and the projection: the wire-format rules leave the providers' request builders. |
-| 2c | Compaction stops rewriting stored nodes. |
+| 2c | Compaction becomes a view selection: `KeepRecent`, no path removes a stored node, and the markers are rendered rather than stored. |
 | 3 | Collapse the two provider switches and delete the four dead injection branches. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
 
@@ -391,10 +412,9 @@ models map while the persisted layout stays the v1 array:
 - Storage roles are the canonical four, and the `tool_result` alias a provider
   accepts becomes a tool receipt.
 - A tool receipt completes the record it answers, because every insertion path in
-  the graph routes through one place. Nothing reads status until 2b-ii adds the
-  guard that does, so status is stored and verified but not yet load-bearing.
-- Compaction keeps its current observable behaviour and still discards the dropped
-  range, so it diverges from decision 9 until 2c.
+  the graph routes through one place. Status is stored and verified; the guard
+  that reads it arrives with the executor's selection in 2c.
 
-Every behaviour removal carries its test rewrite: the `ask_user` case and the two
-`Compact` assertions.
+Stage 2a temporarily kept compaction's storage-rewriting behaviour; 2c replaced it
+with the selection described in decision 9, and the tests that asserted the old
+behaviour were rewritten against the request path.
