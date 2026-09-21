@@ -181,23 +181,38 @@ one is absent — in four places (`ollama_provider.cpp:36`, `:74`,
 `openai_provider.cpp:98`, `:127`). Selection and injection are both implicit.
 
 **Consequence.** The executor stops copying. What the model sees becomes a pure
-function of stored state plus explicit inputs, testable without a provider.
+function of stored state plus explicit inputs, testable without a provider, and
+the same stored conversation can be rendered as different views.
 
-**Stage 0 ruling (system context).** The system prompt is neither a stored node nor
-a `Memory` variable. It and the generated static context are explicit inputs that
-the projection prepends.
+**Stage 0 ruling (capabilities are projection, not selection).** `caps` is not a
+parameter of `BuildRequestPath`. Rendering a view decides *which* messages are
+sent; `ProviderCapabilities` describes *how* they are encoded on the wire -
+reasoning echo, `content` beside tool calls, role naming. Those rules live inside
+the providers' request builders today, so a capability handed to the view would
+have nothing to drive. `caps` arrives with the projection step that consumes it.
+
+**Stage 0 ruling (system context).** The system prompt is neither a stored node
+nor a `Memory` variable. It and the generated static context are explicit inputs
+that the view places before the stored turns.
+
+The view always places them there, replacing the previous "insert only when the
+history has no system message" heuristic. A conversation cannot contain a system
+turn today: nothing appends one, and the only producer would have been the
+compaction marker, which no provider reaches. The heuristic therefore never
+fired, and the behaviour is unchanged in practice while the edge case is now
+pinned by a test.
 
 This repairs a live defect. The four injection branches are dead in production:
 only `config::CreateBackend` (`agent_config.cpp:194`, `:204`) copies
 `system_prompt`, and it is called solely from tests. The live path,
 `Session::CreateProvider` (`session.cpp:44`), is a second copy of the same switch
-that drops the field. What reaches the model is the `Memory` variable written at
-`session.cpp:41` and read at `executor.cpp:228`. A `SetVar` / `GetVar` audit
-confirms `system_prompt` is the only `Memory` variable that reaches the request
-view, so removing this channel removes the only hidden input.
+that drops the field. What reaches the model is still the `Memory` variable
+written by `Session::SwitchBackend`; it is the only input the view receives that
+a `SetVar` / `GetVar` audit found, so removing this channel removes the only
+hidden input.
 
-Actions: delete the `SetVar` write, delete the four branches, collapse the two
-switches into one, and pass both inputs as parameters.
+Actions: delete the `SetVar` write, delete the four branches, and collapse the two
+switches into one. The input is already passed explicitly.
 
 **Stage 0 ruling (deferral).** Stage 0 records this only. The deletions ship in
 stage 3, after `BuildRequestPath` lands in stage 2, so that no window is left with
@@ -335,13 +350,16 @@ the commit messages that produced them.
 | 1 | Node and payload types; tool record, payload and status; `MessageId` as UUID v4 string. Shares one UUID generator with the logging layer instead of copying it. |
 | 2a | The DAG becomes the storage: nodes keyed by id plus a current leaf, behind the existing `Transcript` API. |
 | 2b-i | The graph moves into `context/`, so the layer that will render a request view owns it. `Transcript` becomes the legacy view over it. |
-| 2b-ii | `BuildRequestPath(timestamped inputs, policy, caps)`; `ProviderCapabilities`; the executor moves onto the request view. |
+| 2b-ii | `BuildRequestPath(graph, leaf, inputs)`: the system inputs and the stored path, rendered as the messages a provider receives. The executor moves onto it. |
+| 2b-iii | `ProviderCapabilities` and the projection: the wire-format rules leave the providers' request builders. |
 | 2c | Compaction stops rewriting stored nodes. |
 | 3 | Collapse the two provider switches and delete the four dead injection branches. |
 | 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
 
 Stages 1, 2a and 2b-i add no caller and change no observable behaviour, so their
 tests assert the types and exercise the existing transcript behaviour unchanged.
+Stage 2b-ii does change behaviour, and its tests capture what the executor
+actually sends rather than trusting the view's own unit tests.
 
 ### Stage 2a translation rules
 
