@@ -376,6 +376,19 @@ overwritten on the next save.
 storage`. The `backup:` line appears only when the backup exists. This replaces the
 `spdlog::warn` in `LoadSessionFromFile` (`runtime.cpp:43`).
 
+**Stage 0 ruling (as implemented).** `Session::Serialize` writes
+`schema_version: 2` beside `workspace` and `runtime_spec`, and `history` is now an
+object: `nodes`, each carrying its id, timestamp, parents and one role payload,
+plus the `leaf` that marks the position. `Session::Deserialize` refuses any file
+without the version, with a different one, or with the right number but a history
+that is not node storage - the last check because an unreachable branch used the
+same number for a different layout. A leaf naming no node is refused as well,
+since loading it would silently produce an empty conversation.
+
+Text parts are written as `{"type": "text", "text": ...}`. A part type a reader
+does not know is skipped rather than turned into empty text, so a future addition
+degrades visibly.
+
 **Stage 0 ruling (no migration prompt).** Stage 6 reports and stops. No release
 ever wrote a version field, so every existing file is the old layout and the guard
 fires on all of them; a machine search found no `session.json` at all. An automatic
@@ -420,7 +433,7 @@ the commit messages that produced them.
 | 2b-iii | `ProviderCapabilities` and the projection: the wire-format rules leave the providers' request builders. |
 | 2c | Compaction becomes a view selection: `KeepRecent`, no path removes a stored node, and the markers are rendered rather than stored. |
 | 3 | One provider factory, and the system prompt reaches a request from the agent config instead of session state. |
-| 6 | Persist at `schema_version = 2`, delete the old reader, report with the message above. |
+| 6 | Persist at `schema_version = 2` with the DAG as the stored shape, refuse any other layout, and report a refusal with the message above. |
 
 Stages 1, 2a and 2b-i add no caller and change no observable behaviour, so their
 tests assert the types and exercise the existing transcript behaviour unchanged.

@@ -363,8 +363,20 @@ in `agents.json` is parsed and plumbed but does not take effect.
 <data-dir>/session.json   # Single session state
 ```
 
-The session file contains serialized `Workspace` and `RuntimeSpec`. It is written
-automatically after every interaction and on shutdown, and restored on startup.
+The session file carries `schema_version` (currently 2) beside `workspace` and
+`runtime_spec`. It is written automatically after every interaction and on
+shutdown, and restored on startup.
+
+Version 2 stores the conversation as a DAG: `workspace.history` holds `nodes`,
+each with its id, timestamp, parents and one role payload, plus the `leaf` that
+marks the current position. A file without the version, with another one, or whose
+history is not node storage is refused rather than guessed at; `pu` reports the
+reason, names `<data-dir>/session.v1.backup.json` when that backup exists, and
+starts a fresh conversation. The older layout is a flat list of messages, which is
+what the stage 0 backup preserves.
+
+The session file contains no system prompt: the prompt is configuration and is
+read from `agents.json` on every start.
 
 ---
 
