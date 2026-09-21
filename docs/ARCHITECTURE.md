@@ -351,9 +351,7 @@ arrived.
 
 `Executor::RequestSelection` supplies the policy when compaction is enabled in the
 agent config and the provider is not in thinking mode (otherwise a warning is
-logged). It requires a provider that does **not** support tools, and `RunToolLoop`
-returns early in exactly that case, so no request currently trims. `history_compaction`
-in `agents.json` is parsed and plumbed but does not take effect.
+logged). See Known Limitations for why no request currently trims.
 
 ---
 
@@ -455,6 +453,13 @@ and the `pu` executable adds only `main.cpp`.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Compaction only supports truncation; `"summarize"` strategy is reserved.
 - Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
+- **Compaction does not take effect.** `Executor::RequestSelection` supplies a policy only for a provider that does not support tools, which is the same condition under which `RunToolLoop` returns early, so no request trims. `history_compaction` in `agents.json` is parsed and plumbed but changes nothing, and a long conversation grows until the provider refuses it.
+- **A request is bounded by message count, not tokens.** `ChatResult::input_tokens` and `output_tokens` are never assigned; the OpenAI path only logs `usage` at trace level and the Ollama path does not parse it. Nothing can warn before a context limit is reached.
+- **The selection boundary does not pull back a receipt whose call was omitted.** Trimming keeps a tool call that has no result yet, but a result whose call falls outside the kept region travels alone, so the model can see a tool output it cannot attribute.
+- **Tool call status has no writer for `kRunning` or `kInterrupted`.** A record goes from `kPending` to `kCompleted`; an interrupted run is not distinguishable from one that never started, because neither cancellation path records anything.
+- **`ask_user` is answered by the tool loop, not by the tool.** `AskUserTool::Execute` returns a stub, and `RunToolLoop` intercepts the call to end the turn with the question as the response, so no real answer channel exists.
+- **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
+- **Unreachable nodes are never reclaimed.** Nothing removes a node any more, so the store grows without bound within a session.
 
 ---
 
