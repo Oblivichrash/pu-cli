@@ -11,8 +11,9 @@
 
 namespace pu {
 
-// FROZEN: no new fields. New context features go through MessageNode
-// (include/pu/context/message.hpp) once the DAG refactor lands.
+// FROZEN: no new fields. Context features belong to MessageNode
+// (include/pu/context/message.hpp); this struct is the compatibility view the
+// request path renders from it.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
