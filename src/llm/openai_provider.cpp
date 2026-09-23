@@ -46,6 +46,7 @@ OpenAIProvider::OpenAIProvider(const Config& config,
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
   current_reasoning_content_.clear();
+  tool_calls_.clear();
 }
 
 std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
@@ -98,8 +99,7 @@ std::string OpenAIProvider::BuildRequestWithTools(
 }
 
 void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb,
-                                     std::function<void(const ToolCall&)>& tool_cb) {
+                                     std::function<void(const std::string&)>& content_cb) {
   bool is_final = false;
   if (json::HasKey(j, "done") && boost::json::value_to<bool>(j.at("done"))) is_final = true;
 
@@ -156,7 +156,7 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
           call.arguments = acc.arguments;
         }
       }
-      if (tool_cb) tool_cb(call);
+      tool_calls_.push_back(std::move(call));
     }
     pending_tools_.clear();
   }
@@ -166,7 +166,6 @@ ChatResult OpenAIProvider::Chat(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback,
-    std::function<void(const ToolCall&)> tool_callback,
     CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
@@ -186,7 +185,6 @@ ChatResult OpenAIProvider::Chat(
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   std::ostringstream content_stream;
-  std::vector<ToolCall> collected_calls;
 
   llm::StreamingJsonParser parser(
     [&](std::string_view line) {
@@ -198,12 +196,12 @@ ChatResult OpenAIProvider::Chat(
       std::string_view data = trimmed.substr(kDataPrefix.size());
       if (data == "[DONE]") {
         boost::json::value done_obj = {{"done", true}};
-        HandleJsonToken(done_obj, content_callback, tool_callback);
+        HandleJsonToken(done_obj, content_callback);
         return;
       }
       try {
         auto j = boost::json::parse(data);
-        HandleJsonToken(j, content_callback, tool_callback);
+        HandleJsonToken(j, content_callback);
 
         if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
             !j.at("choices").as_array().empty()) {
@@ -233,7 +231,7 @@ ChatResult OpenAIProvider::Chat(
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
   result.content = content_stream.str();
-  result.tool_calls = std::move(collected_calls);
+  result.tool_calls = std::move(tool_calls_);
   result.reasoning_content = current_reasoning_content_;
   return result;
 }

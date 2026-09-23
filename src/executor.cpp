@@ -225,8 +225,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         workspace.GetGraph(), workspace.GetGraph().leaf(), inputs,
         RequestSelection(provider));
 
-    std::vector<ToolCall> collected_calls;
-    std::ostringstream content_stream;
     ChatResult chat_result;
 
     try {
@@ -240,15 +238,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
               } else {
                 std::cout << token << std::flush;  // CLI typewriter
               }
-              content_stream << token;
             }
-          },
-          [&](const ToolCall& call) {
-            tool_was_called = true;
-            collected_calls.push_back(call);
           },
           cancel_token);
 
+      tool_was_called = !chat_result.tool_calls.empty();
       if (!tool_was_called) {
         std::string response = chat_result.content;
         if (response.empty() && !chat_result.reasoning_content.empty()) {
@@ -268,7 +262,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       break;
     }
 
-    for (const auto& call : collected_calls) {
+    for (const auto& call : chat_result.tool_calls) {
       if (call.name == "ask_user") {
         result.final_response = json::ValueOrDefault<std::string>(call.arguments, "question", "");
         result.completed = true;
@@ -277,7 +271,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       }
     }
 
-    for (auto& tc : collected_calls) {
+    for (auto& tc : chat_result.tool_calls) {
       if (tc.id.empty()) {
         tc.id = "call_" + std::to_string(
                    std::chrono::steady_clock::now().time_since_epoch().count()) +
@@ -291,7 +285,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     assistant_msg.reasoning_content = chat_result.reasoning_content;
 
     boost::json::array j_calls;
-    for (const auto& tc : collected_calls) {
+    for (const auto& tc : chat_result.tool_calls) {
       boost::json::value jc = {
         {"id", tc.id},
         {"type", "function"},
@@ -313,7 +307,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
-    for (const auto& call : collected_calls) {
+    for (const auto& call : chat_result.tool_calls) {
       if (call.name.empty()) {
         spdlog::warn("Skipping tool call with empty name");
         continue;

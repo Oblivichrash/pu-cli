@@ -172,13 +172,10 @@ class MockLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  std::function<void(const ToolCall&)> tool_callback,
                   CancelToken /*cancel_token*/) override {
     ChatResult r;
     r.content = content_;
-    for (const auto& c : calls_) {
-      if (tool_callback) tool_callback(c);
-    }
+    r.tool_calls = calls_;
     if (fire_calls_once_) calls_.clear();
     return r;
   }
@@ -199,7 +196,6 @@ class FailingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  std::function<void(const ToolCall&)> /*tool_callback*/,
                   CancelToken /*cancel_token*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
@@ -215,7 +211,6 @@ class CapturingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& history,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  std::function<void(const ToolCall&)> /*tool_callback*/,
                   CancelToken /*cancel_token*/) override {
     history_ = history;
     ChatResult r;

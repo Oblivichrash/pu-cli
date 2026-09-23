@@ -30,6 +30,8 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
+void OllamaProvider::ResetAccumulators() { tool_calls_.clear(); }
+
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
     : config_(std::move(config)), host_(config_.host),
       api_key_(std::move(config_.api_key)), http_(std::move(http)) {}
@@ -74,8 +76,7 @@ std::string OllamaProvider::BuildRequestWithTools(
 }
 
 void OllamaProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb,
-                                     std::function<void(const ToolCall&)>& tool_cb) {
+                                     std::function<void(const std::string&)>& content_cb) {
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
     if (json::HasKey(msg, "content") && msg.at("content").is_string())
@@ -108,7 +109,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
             call.arguments = args;
           }
         }
-        if (tool_cb) tool_cb(call);
+        tool_calls_.push_back(std::move(call));
       }
     }
   }
@@ -118,10 +119,10 @@ ChatResult OllamaProvider::Chat(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback,
-    std::function<void(const ToolCall&)> tool_callback,
     CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
+  ResetAccumulators();
 
   std::string body;
   if (tools.empty()) {
@@ -142,7 +143,7 @@ ChatResult OllamaProvider::Chat(
     [&](std::string_view line) {
       try {
         auto j = boost::json::parse(line);
-        HandleJsonToken(j, content_callback, tool_callback);
+        HandleJsonToken(j, content_callback);
 
         if (json::HasKey(j, "message")) {
           const auto& msg = j.at("message");
@@ -168,6 +169,7 @@ ChatResult OllamaProvider::Chat(
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
   result.content = content_stream.str();
+  result.tool_calls = std::move(tool_calls_);
   return result;
 }
 

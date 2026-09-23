@@ -66,8 +66,7 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   auto result = provider.Chat(history, {},
     [&](const std::string& token) {
       accumulated += token;
-    },
-    [&](const ToolCall&) {}
+    }
   );
 
   REQUIRE(result.content == "Hello world");
@@ -101,14 +100,11 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  bool tool_fired = false;
   auto result = provider.Chat(history, tools,
-    [](const std::string&) {},
-    [&](const ToolCall& call) {
-      tool_fired = true;
-      REQUIRE(call.name == "execute_bash");
-    });
-  REQUIRE(tool_fired);
+    [](const std::string&) {});
+
+  REQUIRE(result.tool_calls.size() == 1);
+  REQUIRE(result.tool_calls[0].name == "execute_bash");
 }
 
 TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tools]") {

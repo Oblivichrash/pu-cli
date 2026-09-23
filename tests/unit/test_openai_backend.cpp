@@ -94,8 +94,7 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   auto result = provider.Chat(history, {},
     [&](const std::string& token) {
       accumulated += token;
-    },
-    [](const ToolCall&) {}
+    }
   );
 
   REQUIRE(result.content == "Hello world");
@@ -150,13 +149,12 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  bool tool_fired = false;
   auto result = provider.Chat(history, tools,
-    [](const std::string&) {},
-    [&](const ToolCall& call) {
-      tool_fired = true;
-    });
-  REQUIRE(tool_fired);
+    [](const std::string&) {});
+
+  REQUIRE(result.tool_calls.size() == 1);
+  REQUIRE(result.tool_calls[0].id == "call_1");
+  REQUIRE(result.tool_calls[0].name == "exec");
 }
 
 TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinking=false", "[openai]") {

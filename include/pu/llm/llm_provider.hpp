@@ -49,23 +49,24 @@ struct ToolCall {
   boost::json::value arguments;
 };
 
+// What one request produced. Tool calls belong here because the caller acts on
+// them after the stream has ended, the same way it acts on the text.
 struct ChatResult {
   std::string content;
-  std::vector<ToolCall> tool_calls;
-  int input_tokens = 0;
-  int output_tokens = 0;
   std::string reasoning_content;
+  std::vector<ToolCall> tool_calls;
 };
 
 class LLMProvider {
 public:
   virtual ~LLMProvider() = default;
 
+  // `content_callback` exists so a token reaches the user while the stream is
+  // still open; everything the caller needs afterwards is in the result.
   virtual ChatResult Chat(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr,
     CancelToken cancel_token = nullptr
   ) = 0;
 

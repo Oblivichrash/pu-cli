@@ -33,7 +33,6 @@ class OpenAIProvider : public LLMProvider {
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools,
     std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr,
     CancelToken cancel_token = nullptr
   ) override;
 
@@ -46,8 +45,7 @@ class OpenAIProvider : public LLMProvider {
   std::string BuildRequestWithTools(const std::vector<ChatMessage>& history,
                                     const std::vector<ToolDefinition>& tools) const;
   void HandleJsonToken(const boost::json::value& j,
-                       std::function<void(const std::string&)>& content_cb,
-                       std::function<void(const ToolCall&)>& tool_cb);
+                       std::function<void(const std::string&)>& content_cb);
   void ResetAccumulators();
 
   Config config_;
@@ -59,6 +57,7 @@ class OpenAIProvider : public LLMProvider {
   std::map<int, ToolCallAccumulator> pending_tools_;
 
   std::string current_reasoning_content_;
+  std::vector<ToolCall> tool_calls_;
 };
 
 }  // namespace pu
