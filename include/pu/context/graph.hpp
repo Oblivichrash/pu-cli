@@ -110,8 +110,9 @@ class MessageGraph {
     }
   }
 
-  // Every insertion goes through here, so a receipt always answers its record
-  // and no caller has to remember to say so.
+  // Every appended turn goes through here, so a receipt always marks its record
+  // completed and no caller has to remember to say so. A load needs no such step:
+  // the status was already settled when the file was written.
   void CompleteAnsweredRecord(const MessagePayload& payload) {
     const auto* receipt = std::get_if<ToolPayload>(&payload);
     if (receipt != nullptr) CompleteFor(receipt->tool_call_id);

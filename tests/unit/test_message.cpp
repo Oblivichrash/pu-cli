@@ -63,20 +63,6 @@ TEST_CASE("FlattenText concatenates parts in order", "[context][message]") {
   REQUIRE(context::FlattenText({}).empty());
 }
 
-TEST_CASE("A system node is not synthetic unless a policy says so",
-          "[context][message]") {
-  context::SystemPayload system;
-  system.content.emplace_back(context::TextPart{"[Compressed: 4 messages omitted]"});
-  const context::MessageNode generated = context::MakeNode(std::move(system));
-  REQUIRE_FALSE(std::get<context::SystemPayload>(generated.payload).is_synthetic);
-
-  context::SystemPayload summary;
-  summary.content.emplace_back(context::TextPart{"[Compressed: 4 messages omitted]"});
-  summary.is_synthetic = true;
-  const context::MessageNode marked = context::MakeNode(std::move(summary));
-  REQUIRE(std::get<context::SystemPayload>(marked.payload).is_synthetic);
-}
-
 TEST_CASE("Each role payload is distinguishable by type", "[context][message]") {
   const context::MessageNode user = context::MakeNode(context::UserPayload{});
   const context::MessageNode assistant = context::MakeNode(context::AssistantPayload{});

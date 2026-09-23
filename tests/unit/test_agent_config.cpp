@@ -87,13 +87,6 @@ void WriteAgentsConfigForTest(const std::string& config_path,
       item.as_object()["mcp_servers"] = mcp_array;
     }
 
-    json::value compaction = {
-      {"enabled", entry.compaction.enabled},
-      {"keep_head", entry.compaction.keep_head},
-      {"keep_tail", entry.compaction.keep_tail},
-    };
-    item.as_object()["history_compaction"] = compaction;
-
     agents_array.push_back(item);
   }
   j.as_object()["agents"] = agents_array;
@@ -343,7 +336,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }
 
-TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[agent_config]") {
+TEST_CASE("LoadAgentsConfig parses enable_thinking", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "default_agent": "deepseek",
@@ -355,11 +348,6 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[ag
           "host": "https://api.deepseek.com/v1",
           "model": "deepseek-reasoner",
           "enable_thinking": true
-        },
-        "history_compaction": {
-          "enabled": false,
-          "keep_head": 15,
-          "keep_tail": 60
         }
       }
     ]
@@ -368,12 +356,10 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking and history_compaction", "[ag
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(cfg.agents.size() == 1);
   REQUIRE(cfg.agents[0].backend.enable_thinking == true);
-  REQUIRE(cfg.agents[0].compaction.enabled == false);
-  REQUIRE(cfg.agents[0].compaction.keep_head == 15);
-  REQUIRE(cfg.agents[0].compaction.keep_tail == 60);
 }
 
-TEST_CASE("LoadAgentsConfig uses defaults when compaction fields absent", "[agent_config]") {
+TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option",
+          "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "default_agent": "chat",
@@ -387,12 +373,9 @@ TEST_CASE("LoadAgentsConfig uses defaults when compaction fields absent", "[agen
   tmp.write(json);
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(cfg.agents[0].backend.enable_thinking == true);
-  REQUIRE(cfg.agents[0].compaction.enabled == true);
-  REQUIRE(cfg.agents[0].compaction.keep_head == 10);
-  REQUIRE(cfg.agents[0].compaction.keep_tail == 50);
 }
 
-TEST_CASE("Agents config writer round-trips enable_thinking and compaction", "[agent_config]") {
+TEST_CASE("Agents config writer round-trips enable_thinking", "[agent_config]") {
   TempConfigFile tmp;
   config::AgentsConfig original;
   original.default_agent = "deepseek";
@@ -402,9 +385,6 @@ TEST_CASE("Agents config writer round-trips enable_thinking and compaction", "[a
   entry.backend.host = "https://api.deepseek.com/v1";
   entry.backend.model = "deepseek-reasoner";
   entry.backend.enable_thinking = true;
-  entry.compaction.enabled = false;
-  entry.compaction.keep_head = 15;
-  entry.compaction.keep_tail = 60;
   original.agents.push_back(entry);
 
   REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
@@ -412,7 +392,4 @@ TEST_CASE("Agents config writer round-trips enable_thinking and compaction", "[a
   config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].backend.enable_thinking == true);
-  REQUIRE(loaded.agents[0].compaction.enabled == false);
-  REQUIRE(loaded.agents[0].compaction.keep_head == 15);
-  REQUIRE(loaded.agents[0].compaction.keep_tail == 60);
 }

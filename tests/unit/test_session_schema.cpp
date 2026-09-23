@@ -87,10 +87,10 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   receipt.content = "file.txt";
   ws.Append(receipt);
 
-  ChatMessage summary;
-  summary.role = "system";
-  summary.content = "[Compressed: 4 messages omitted]";
-  ws.Append(summary);
+  ChatMessage note;
+  note.role = "system";
+  note.content = "a note from the caller";
+  ws.Append(note);
 
   auto restored = Session::Deserialize(
       boost::json::parse(boost::json::serialize(session.Serialize())));

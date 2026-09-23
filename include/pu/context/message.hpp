@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The context model the linear ChatMessage/Transcript pair is being replaced by.
-// Nothing in production uses these types yet: they are introduced first so that
-// the storage and projection changes have a fixed vocabulary to target.
+// The context model. Every stored turn is a node holding one of these payloads,
+// and ChatMessage is the view a provider still requires.
 //
 // Not thread-safe. Caller must serialize access.
 
@@ -80,9 +79,6 @@ struct AssistantPayload {
 
 struct SystemPayload {
   std::vector<ContentPart> content;
-  // Set on nodes a compaction policy generated, which otherwise look like any
-  // other system turn once persisted.
-  bool is_synthetic = false;
 };
 
 // The result of running a tool, answering the record with the same id.

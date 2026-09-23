@@ -99,17 +99,6 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
   return servers;
 }
 
-HistoryCompactionConfig ParseCompactionConfig(const json::value& j) {
-  HistoryCompactionConfig cfg;
-  if (json::HasKey(j, "history_compaction") && j.at("history_compaction").is_object()) {
-    const auto& c = j.at("history_compaction");
-    cfg.enabled = json::ValueOrDefault<bool>(c, "enabled", true);
-    cfg.keep_head = json::ValueOrDefault<std::size_t>(c, "keep_head", 10);
-    cfg.keep_tail = json::ValueOrDefault<std::size_t>(c, "keep_tail", 50);
-  }
-  return cfg;
-}
-
 AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
@@ -130,7 +119,6 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
 
-  entry.compaction = ParseCompactionConfig(j);
   return entry;
 }
 

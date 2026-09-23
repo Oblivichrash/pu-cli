@@ -69,12 +69,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   return cfg;
 }
 
-struct HistoryCompactionConfig {
-  bool enabled = true;
-  size_t keep_head = 10;
-  size_t keep_tail = 50;
-};
-
 struct AgentEntry {
   std::string name;
   std::string description;
@@ -82,7 +76,6 @@ struct AgentEntry {
   std::vector<std::string> tools;
   SecurityPolicy security;
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
-  HistoryCompactionConfig compaction;
 };
 
 struct AgentsConfig {

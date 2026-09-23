@@ -94,7 +94,6 @@ boost::json::value SerializeNode(const MessageNode& node) {
   } else if (const auto* system = std::get_if<SystemPayload>(&node.payload)) {
     out["role"] = kSystemRole;
     out["content"] = SerializeContent(system->content);
-    if (system->is_synthetic) out["is_synthetic"] = true;
   } else {
     const auto& receipt = std::get<ToolPayload>(node.payload);
     out["role"] = kToolRole;
@@ -160,7 +159,6 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   if (role == kSystemRole) {
     SystemPayload system;
     system.content = content;
-    system.is_synthetic = json::ValueOrDefault<bool>(value, "is_synthetic", false);
     out.payload = std::move(system);
     return true;
   }

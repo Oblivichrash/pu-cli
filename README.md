@@ -273,7 +273,7 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 | `url` | Remote streamable-HTTP MCP endpoint. When present, HTTP transport is used instead of stdio |
 | `headers` | Optional HTTP headers sent with every request, e.g. `Authorization` (values support `${ENV_VAR}` expansion) |
 
-### Thinking Mode & History Compaction
+### Thinking Mode
 
 ```json
 {
@@ -288,11 +288,6 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
         "api_key": "${DEEPSEEK_API_KEY}",
         "enable_thinking": true,
         "temperature": 0.1
-      },
-      "history_compaction": {
-        "enabled": false,
-        "keep_head": 15,
-        "keep_tail": 60
       }
     }
   ]

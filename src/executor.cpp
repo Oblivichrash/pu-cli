@@ -133,22 +133,6 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
-std::optional<session::KeepRecent> Executor::RequestSelection(
-    LLMProvider* provider) const {
-  if (!compaction_config_.enabled) return std::nullopt;
-  if (provider->SupportsTools()) return std::nullopt;
-  if (toolbox_ == nullptr || toolbox_->GetToolDefinitions().empty()) {
-    return std::nullopt;
-  }
-  if (provider->IsThinkingMode()) {
-    spdlog::warn("Compaction is disabled because the provider is in thinking mode. "
-                 "Set compaction.enabled=false in agents.json to override.");
-    return std::nullopt;
-  }
-  return session::KeepRecent{compaction_config_.keep_head,
-                             compaction_config_.keep_tail};
-}
-
 ExecutionResult Executor::Execute(const std::string& input,
                                   Workspace& workspace,
                                   LLMProvider* provider,
@@ -222,8 +206,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     inputs.environment = BuildStaticSystemContext();
 
     std::vector<ChatMessage> chat_history = session::BuildRequestPath(
-        workspace.GetGraph(), workspace.GetGraph().leaf(), inputs,
-        RequestSelection(provider));
+        workspace.GetGraph(), workspace.GetGraph().leaf(), inputs);
 
     ChatResult chat_result;
 

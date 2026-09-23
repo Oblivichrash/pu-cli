@@ -49,7 +49,6 @@ class Executor {
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
-  void SetCompactionConfig(const config::HistoryCompactionConfig& cfg) { compaction_config_ = cfg; }
 
   // The agent's configured prompt, supplied by the runtime rather than read back
   // out of session state, so a request depends only on the conversation and the
@@ -80,15 +79,10 @@ class Executor {
                              std::function<void(const std::string&)> content_callback,
                              ToolCallbacks tool_callbacks);
 
-  // How much of the conversation this turn carries. Nothing is removed from
-  // storage, so the same session can send more to a later request.
-  std::optional<session::KeepRecent> RequestSelection(LLMProvider* provider) const;
-
   void ProbeStaticEnvironment();
 
   Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
-  config::HistoryCompactionConfig compaction_config_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
 

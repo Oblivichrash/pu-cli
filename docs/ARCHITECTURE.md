@@ -189,7 +189,6 @@ RebuildToolbox(agent)
  │    StartMCP(cfg) → ListTools() → register mcp.<server>.<tool>
  └─ executor_->SetToolbox(toolbox_);
      executor_->SetSecurityPolicy(agent.security)
-     executor_->SetCompactionConfig(agent.compaction)
 ```
 
 ---
@@ -340,21 +339,6 @@ handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 
 ---
 
-## Transcript Compaction
-
-A request carries a `KeepRecent{head, tail}` selection, which `BuildRequestPath`
-applies while rendering: the first `head` and last `tail` nodes are sent, the
-omitted middle becomes a marker message, and nothing is removed from storage. A
-later request can therefore carry the whole conversation again, and the boundary
-moves back while it would otherwise cut off a tool call whose result has not
-arrived.
-
-`Executor::RequestSelection` supplies the policy when compaction is enabled in the
-agent config and the provider is not in thinking mode (otherwise a warning is
-logged). See Known Limitations for why no request currently trims.
-
----
-
 ## Persistence
 
 ```
@@ -451,11 +435,8 @@ and the `pu` executable adds only `main.cpp`.
 - MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
-- Compaction only supports truncation; `"summarize"` strategy is reserved.
 - Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
-- **Compaction does not take effect.** `Executor::RequestSelection` supplies a policy only for a provider that does not support tools, which is the same condition under which `RunToolLoop` returns early, so no request trims. `history_compaction` in `agents.json` is parsed and plumbed but changes nothing, and a long conversation grows until the provider refuses it.
-- **A request is bounded by message count, not tokens.** `ChatResult::input_tokens` and `output_tokens` are never assigned; the OpenAI path only logs `usage` at trace level and the Ollama path does not parse it. Nothing can warn before a context limit is reached.
-- **The selection boundary does not pull back a receipt whose call was omitted.** Trimming keeps a tool call that has no result yet, but a result whose call falls outside the kept region travels alone, so the model can see a tool output it cannot attribute.
+- **A request is bounded by message count, not tokens.** `ChatResult` carries no usage, so nothing can warn before a provider's context limit is reached. A conversation grows until the provider refuses it, and the refusal reaches the user as an HTTP error.
 - **Tool call status has no writer for `kRunning` or `kInterrupted`.** A record goes from `kPending` to `kCompleted`; an interrupted run is not distinguishable from one that never started, because neither cancellation path records anything.
 - **`ask_user` is answered by the tool loop, not by the tool.** `AskUserTool::Execute` returns a stub, and `RunToolLoop` intercepts the call to end the turn with the question as the response, so no real answer channel exists.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
