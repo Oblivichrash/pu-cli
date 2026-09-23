@@ -154,6 +154,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
 | `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`), keeping the branch on disk |
 
 All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
@@ -168,6 +169,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 | `/backend <type> <model> [host] [api_key]` | Give this session a backend of its own, outranking `agents.json` |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
+| `/rewind <turn>` | Step back to before a turn, keeping the branch on disk |
 | `/exit`, `/quit` | Exit |
 
 These are chat commands. The Web server is a CLI subcommand (`pu serve`),

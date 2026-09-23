@@ -39,6 +39,8 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
   add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
+  add("/rewind", &CommandRouter::HandleRewind,
+      "  /rewind <turn>         Step back to before a turn, keeping it on disk\n");
   return reg;
 }
 
@@ -178,6 +180,31 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
 bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
+  return true;
+}
+
+bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& session,
+                                 std::string& output) {
+  if (RequireMinArgs(args, 1, FormatUsage("/rewind", "<turn>"), output)) return true;
+
+  size_t turn = 0;
+  try {
+    turn = static_cast<size_t>(std::stoul(args[0]));
+  } catch (const std::exception&) {
+    output = "Usage: /rewind <turn> (a positive number)";
+    return true;
+  }
+
+  try {
+    if (!session.GetWorkspace().RewindBefore(turn)) {
+      output = "There is no turn " + args[0] + " in this conversation.";
+      return true;
+    }
+    output = "Stepped back to before turn " + args[0] +
+             ". The next message starts a new branch; the old one stays in the file.";
+  } catch (const std::exception& e) {
+    output = "Error: " + std::string(e.what());
+  }
   return true;
 }
 

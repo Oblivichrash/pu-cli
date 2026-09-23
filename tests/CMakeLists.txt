@@ -23,6 +23,7 @@ add_executable(pu_tests
     unit/test_boost_integration.cpp
     unit/test_http_errors.cpp
     unit/test_backend_source.cpp
+    unit/test_rewind.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

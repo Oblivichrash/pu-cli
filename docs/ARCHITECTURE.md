@@ -436,7 +436,7 @@ and the `pu` executable adds only `main.cpp`.
 - **Tool call status has no writer for `kRunning` or `kInterrupted`.** A record goes from `kPending` to `kCompleted`; an interrupted run is not distinguishable from one that never started, because neither cancellation path records anything.
 - **`ask_user` is answered by the tool loop, not by the tool.** `AskUserTool::Execute` returns a stub, and `RunToolLoop` intercepts the call to end the turn with the question as the response, so no real answer channel exists.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
-- **Unreachable nodes are never reclaimed.** Nothing removes a node any more, so the store grows without bound within a session.
+- **Unreachable nodes are never reclaimed.** `/rewind` moves the leaf back and leaves the branch it left behind in the store, and nothing removes a node, so the store grows without bound within a session.
 
 ---
 

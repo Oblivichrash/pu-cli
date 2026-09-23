@@ -65,6 +65,16 @@ class MessageGraph {
     return stored;
   }
 
+  // Moves the leaf to a node that is already stored, so the next append starts a
+  // new branch instead of extending the current one. Nothing is removed: the
+  // branch that was current stays in the store. An empty id means "before
+  // everything".
+  bool RewindTo(const MessageId& id) {
+    if (!id.empty() && nodes_.find(id) == nodes_.end()) return false;
+    leaf_ = id;
+    return true;
+  }
+
   // True when the last node still has a tool call in flight.
   bool LeafHasUnfinishedToolCalls() const {
     const MessageNode* node = Find(leaf_);

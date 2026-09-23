@@ -285,6 +285,27 @@ void HandleApiWorkspaceSwitch(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, resp);
 }
 
+void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex,
+                     http::request<http::string_body>&& req,
+                     http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    const int turn = json::ValueOrDefault<int>(boost::json::parse(req.body()), "turn", 0);
+    auto session = runtime.GetOrCreateDefaultSession();
+    if (turn < 1 || !session->GetWorkspace().RewindBefore(static_cast<size_t>(turn))) {
+      jv.as_object()["success"] = false;
+      jv.as_object()["error"] = "No such turn";
+    } else {
+      jv.as_object()["success"] = true;
+    }
+  } catch (const std::exception& e) {
+    jv.as_object()["success"] = false;
+    jv.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, jv);
+}
+
 }  // namespace
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
@@ -315,6 +336,10 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   }
   if (target == "/api/clear" && req.method() == http::verb::post) {
     HandleApiClear(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/rewind" && req.method() == http::verb::post) {
+    HandleApiRewind(runtime, io_mutex, std::move(req), res);
     return;
   }
   if (target == "/api/workspaces" && req.method() == http::verb::get) {

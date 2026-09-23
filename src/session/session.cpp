@@ -99,7 +99,17 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
   return history;
 }
 
-size_t Transcript::Size() const { return graph_.Size(); }
+// What the caller renders, which is the chain from the leaf rather than the
+// number of nodes stored: a branch that was rewound stays in the store but out
+// of the view.
+size_t Transcript::Size() const { return graph_.Chain().size(); }
+
+bool Transcript::RewindBefore(size_t turn) {
+  const std::vector<const context::MessageNode*> chain = graph_.Chain();
+  if (turn < 1 || turn > chain.size()) return false;
+  const context::MessageId target = (turn == 1) ? context::MessageId{} : chain[turn - 2]->id;
+  return graph_.RewindTo(target);
+}
 
 bool Transcript::HasPendingToolCalls() const {
   return graph_.LeafHasUnfinishedToolCalls();

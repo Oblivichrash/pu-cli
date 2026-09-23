@@ -30,6 +30,10 @@ public:
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return graph_; }
 
+  // Moves the position back to just before the 1-based turn, keeping every
+  // stored node so the abandoned branch can still be read.
+  bool RewindBefore(size_t turn);
+
   boost::json::value Serialize() const;
   // Returns false for a value that is not DAG storage, so the caller can tell a
   // foreign layout from an empty conversation.
@@ -54,6 +58,8 @@ public:
 
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return transcript_.GetGraph(); }
+
+  bool RewindBefore(size_t turn) { return transcript_.RewindBefore(turn); }
 
   void ClearHistory();
 
