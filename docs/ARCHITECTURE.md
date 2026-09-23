@@ -378,9 +378,11 @@ include/pu/
 ├── runtime.hpp           # Runtime
 ├── executor.hpp          # Executor (session-state-free, with system context injection)
 ├── cli.hpp               # CLI helpers
-├── core/                 # Base layer: no dependencies, no domain knowledge
+├── core/                 # Base layer: nothing here depends on an upper module
+│   ├── beast_http_client.hpp  # Beast implementation of the HTTP client
 │   ├── cancel_token.hpp  # Shared cancellation token (transport-agnostic)
 │   ├── error.hpp         # RuntimeError / Error / HttpError
+│   ├── http_client.hpp   # HttpClient interface
 │   ├── json.hpp          # Boost.JSON convenience helpers
 │   ├── logging.hpp       # spdlog setup + JSON log formatter
 │   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
@@ -388,9 +390,6 @@ include/pu/
 │   ├── text.hpp          # UTF-8 validation and repair
 │   └── uuid.hpp          # RFC 4122 v4 identifier
 ├── context/              # Message model: nodes, payloads, message graph
-├── infra/                # Adapters
-│   ├── http_client.hpp   # HttpClient interface
-│   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
 ├── llm/                  # LLMProvider, providers, projection, streaming parser
 ├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
 ├── session/              # Session, Workspace, Transcript, request view
@@ -407,8 +406,7 @@ src/
 ├── agent_config.cpp, agent_manager.cpp
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
-├── core/                 # Base layer: logging, platform
-├── infra/                # BeastHttpClient (network adapter)
+├── core/                 # Base layer: logging, platform, HTTP client
 ├── llm/                  # Providers, streaming parser
 ├── mcp/                  # MCP transport implementations, JSON-RPC, client
 ├── session/              # Session, Workspace, etc.

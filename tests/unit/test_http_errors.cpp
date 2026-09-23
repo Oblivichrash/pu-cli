@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/core/error.hpp"
-#include "pu/infra/beast_http_client.hpp"
+#include "pu/core/beast_http_client.hpp"
 
 #include <boost/beast.hpp>
 #include <spdlog/spdlog.h>

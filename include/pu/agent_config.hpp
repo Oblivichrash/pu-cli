@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/infra/http_client.hpp"
+#include "pu/core/http_client.hpp"
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/core/json.hpp"
 

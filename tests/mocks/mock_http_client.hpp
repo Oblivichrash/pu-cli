@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "pu/infra/http_client.hpp"
+#include "pu/core/http_client.hpp"
 #include <functional>
 #include <string>
 #include <vector>
