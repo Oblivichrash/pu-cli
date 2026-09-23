@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {

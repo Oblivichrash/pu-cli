@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <string>
 
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"

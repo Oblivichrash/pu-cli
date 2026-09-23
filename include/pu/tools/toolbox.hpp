@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 
 namespace pu {
 

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"

@@ -8,7 +8,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/base.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"

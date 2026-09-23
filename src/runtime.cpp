@@ -11,7 +11,7 @@
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
 
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/session/session.hpp"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/base.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"

@@ -14,7 +14,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/base.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"

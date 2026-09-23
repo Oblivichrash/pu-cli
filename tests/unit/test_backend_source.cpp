@@ -8,7 +8,7 @@
 #include <fstream>
 #include <string>
 
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 
