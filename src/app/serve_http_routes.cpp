@@ -90,7 +90,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value jv = boost::json::object{};
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    auto session = runtime.GetDefaultSession();
+    auto session = runtime.GetOrCreateDefaultSession();
     jv.as_object()["ok"] = session != nullptr;
     if (session) {
       const auto& spec = session->GetRuntimeSpec();
@@ -115,7 +115,7 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value jv = boost::json::array{};
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    auto session = runtime.GetDefaultSession();
+    auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
       auto history = session->GetWorkspace().GetHistory();
       for (const auto& msg : history) {
@@ -213,7 +213,7 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value jv = boost::json::object{};
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    auto session = runtime.GetDefaultSession();
+    auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
       session->GetWorkspace().ClearHistory();
       session->GetWorkspace().ClearArtifacts();

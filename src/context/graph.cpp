@@ -13,13 +13,11 @@ constexpr const char* kSystemRole = "system";
 constexpr const char* kToolRole = "tool";
 
 constexpr const char* kStatusPending = "pending";
-constexpr const char* kStatusRunning = "running";
 constexpr const char* kStatusCompleted = "completed";
 
 std::string StatusName(ToolCallStatus status) {
   switch (status) {
     case ToolCallStatus::kPending: return kStatusPending;
-    case ToolCallStatus::kRunning: return kStatusRunning;
     case ToolCallStatus::kCompleted: return kStatusCompleted;
   }
   return kStatusPending;
@@ -27,7 +25,6 @@ std::string StatusName(ToolCallStatus status) {
 
 ToolCallStatus StatusFrom(const std::string& name) {
   if (name == kStatusCompleted) return ToolCallStatus::kCompleted;
-  if (name == kStatusRunning) return ToolCallStatus::kRunning;
   return ToolCallStatus::kPending;
 }
 

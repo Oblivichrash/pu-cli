@@ -30,8 +30,6 @@ class Runtime {
   void Initialize(const std::string& config_path = "");
   void Shutdown();
 
-  std::shared_ptr<Session> GetDefaultSession();
-
   ExecutionResult ProcessInput(const std::string& input, bool& is_command,
                                CancelToken cancel_token = nullptr,
                                std::function<void(const std::string&)> content_callback = nullptr,
@@ -46,10 +44,9 @@ class Runtime {
   std::string GetWorkspaceName() const { return workspace_root_.filename().string(); }
 
   AgentManager& GetAgentManager() { return *agent_manager_; }
-
- private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+ private:
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void ShutdownMCP();

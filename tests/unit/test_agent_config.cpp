@@ -44,14 +44,10 @@ void WriteAgentsConfigForTest(const std::string& config_path,
       {"name", entry.name},
       {"description", entry.description},
     };
-    item.as_object()["tools"] = boost::json::value_from(entry.tools);
-
     json::value security = {
       {"sandbox_root", entry.security.sandbox_root},
       {"max_command_length", entry.security.max_command_length},
     };
-    security.as_object()["allowed_paths"] =
-        boost::json::value_from(entry.security.allowed_paths);
     security.as_object()["forbidden_patterns"] =
         boost::json::value_from(entry.security.forbidden_patterns);
     item.as_object()["security"] = security;

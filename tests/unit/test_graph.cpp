@@ -49,7 +49,6 @@ std::string TextOf(const context::MessageNode& node) {
 
 TEST_CASE("An appended node links to the previous leaf", "[context][graph]") {
   context::MessageGraph graph;
-  REQUIRE(graph.empty());
   REQUIRE(graph.LeafHasUnfinishedToolCalls() == false);
 
   graph.AppendAfterLeaf(User("first"));

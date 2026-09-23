@@ -52,7 +52,6 @@ struct Reasoning {
 
 enum class ToolCallStatus {
   kPending,
-  kRunning,
   kCompleted,
 };
 
@@ -102,11 +101,6 @@ inline MessageNode MakeNode(MessagePayload payload,
                             std::vector<MessageId> parents = {}) {
   return MessageNode{NewMessageId(), std::string{}, std::move(payload),
                      std::move(parents)};
-}
-
-inline bool HasToolCalls(const MessageNode& node) {
-  const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
-  return assistant != nullptr && !assistant->tool_calls.empty();
 }
 
 // True while a tool call has not finished, which is what blocks switching the

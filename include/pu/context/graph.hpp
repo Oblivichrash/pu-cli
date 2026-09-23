@@ -29,7 +29,6 @@ class MessageGraph {
   const MessageId& leaf() const { return leaf_; }
 
   std::size_t Size() const { return nodes_.size(); }
-  bool empty() const { return nodes_.empty(); }
 
   const MessageNode* Find(const MessageId& id) const {
     const auto it = nodes_.find(id);

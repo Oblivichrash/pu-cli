@@ -101,8 +101,7 @@ void Runtime::Initialize(const std::string& config_path) {
     workspace_root_ = std::filesystem::current_path();
 
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
-  bool trace = std::getenv("PU_TRACE") && std::string(std::getenv("PU_TRACE")) == "1";
-  pu::InitLogging(log_level, trace);
+  pu::InitLogging(log_level);
 
   std::string cfg_path = config_path.empty()
       ? (workspace_root_ / ".pu" / "agents.json").string()
@@ -165,10 +164,6 @@ void Runtime::SaveCurrentSession() {
   }
 }
 
-std::shared_ptr<Session> Runtime::GetDefaultSession() {
-  return GetOrCreateDefaultSession();
-}
-
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   if (current_session_)
     return current_session_;
@@ -201,11 +196,6 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
     }
 
     auto session = GetOrCreateDefaultSession();
-    if (!session) {
-      result.has_error = true;
-      result.error_message = "Session not found.";
-      return result;
-    }
 
     if (!input.empty() && input[0] == '/') {
       is_command = true;

@@ -42,7 +42,6 @@ struct RuntimeSpec {
 class Session {
 public:
   Session();
-  explicit Session(std::shared_ptr<Workspace> workspace);
   Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec);
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;

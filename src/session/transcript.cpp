@@ -97,7 +97,7 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
   return history;
 }
 
-size_t Transcript::Size() const { return graph_.Chain().size(); }
+size_t Transcript::Size() const { return graph_.Size(); }
 
 bool Transcript::HasPendingToolCalls() const {
   return graph_.LeafHasUnfinishedToolCalls();

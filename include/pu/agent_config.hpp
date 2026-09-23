@@ -19,7 +19,6 @@ enum class BackendType { kOllama, kOpenAI };
 
 struct SecurityPolicy {
   std::string sandbox_root;
-  std::vector<std::string> allowed_paths;
   size_t max_command_length = 0;
   std::vector<std::string> forbidden_patterns;
 };
@@ -31,7 +30,6 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-  bool parameters_as_string = false;
   int max_tokens = 2048;
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
@@ -46,7 +44,6 @@ inline void tag_invoke(boost::json::value_from_tag,
     {"api_key", cfg.api_key.value_or("")},
     {"temperature", cfg.temperature},
     {"max_tokens", cfg.max_tokens},
-    {"parameters_as_string", cfg.parameters_as_string},
   };
 }
 
@@ -63,7 +60,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
-  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
   cfg.system_prompt = std::nullopt;
   cfg.enable_thinking = true;
   return cfg;
@@ -73,7 +69,6 @@ struct AgentEntry {
   std::string name;
   std::string description;
   BackendConfig backend;
-  std::vector<std::string> tools;
   SecurityPolicy security;
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
 };

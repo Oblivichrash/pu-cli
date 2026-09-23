@@ -12,10 +12,6 @@ Session::Session()
   : workspace_(std::make_shared<Workspace>()),
     runtime_spec_() {}
 
-Session::Session(std::shared_ptr<Workspace> workspace)
-  : workspace_(std::move(workspace)),
-    runtime_spec_() {}
-
 Session::Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec)
   : workspace_(std::move(workspace)),
     runtime_spec_(spec) {}

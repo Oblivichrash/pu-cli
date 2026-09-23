@@ -85,7 +85,6 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
 
   const context::MessageNode node = context::MakeNode(std::move(assistant));
 
-  REQUIRE(context::HasToolCalls(node));
   REQUIRE(context::HasUnfinishedToolCalls(node));
   REQUIRE(std::get<context::AssistantPayload>(node.payload).reasoning->signature == "sig");
 
@@ -94,7 +93,6 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
       "call_1", "read_file", boost::json::object{}, context::ToolCallStatus::kCompleted});
   const context::MessageNode finished = context::MakeNode(std::move(done));
 
-  REQUIRE(context::HasToolCalls(finished));
   REQUIRE_FALSE(context::HasUnfinishedToolCalls(finished));
 }
 
@@ -121,7 +119,6 @@ TEST_CASE("Only a tool payload responds to a tool call", "[context][message]") {
   const context::ToolPayload& payload = std::get<context::ToolPayload>(node.payload);
   REQUIRE(payload.tool_call_id == "call_1");
   REQUIRE(payload.tool_name == "read_file");
-  REQUIRE_FALSE(context::HasToolCalls(node));
   REQUIRE_FALSE(context::HasUnfinishedToolCalls(node));
 }
 

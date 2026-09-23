@@ -214,7 +214,6 @@ std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
               }},
               {"security", {
                   {"sandbox_root", "."},
-                  {"allowed_paths", boost::json::array{}},
                   {"forbidden_patterns", boost::json::array{}}
               }}
           }

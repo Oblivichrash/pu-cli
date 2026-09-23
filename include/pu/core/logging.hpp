@@ -11,7 +11,7 @@
 
 namespace pu {
 
-void InitLogging(const std::string& log_level = "", bool trace_enabled = false);
+void InitLogging(const std::string& log_level = "");
 void ShutdownLogging();
 
 // Thread-local structured-logging context (used when PU_LOG_JSON=1).

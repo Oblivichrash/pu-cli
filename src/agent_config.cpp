@@ -38,10 +38,6 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   SecurityPolicy policy;
   if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
     policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
-  if (json::HasKey(j, "allowed_paths") && j.at("allowed_paths").is_array()) {
-    for (const auto& p : j.at("allowed_paths").as_array())
-      if (p.is_string()) policy.allowed_paths.push_back(boost::json::value_to<std::string>(p));
-  }
   if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
     policy.max_command_length =
         boost::json::value_to<std::size_t>(j.at("max_command_length"));
@@ -64,7 +60,6 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
-  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
   cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
   return cfg;
@@ -110,10 +105,6 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (entry.backend.host.empty() || entry.backend.model.empty())
     throw pu::Error("Missing host or model in backend");
 
-  if (json::HasKey(j, "tools") && j.at("tools").is_array()) {
-    for (const auto& t : j.at("tools").as_array())
-      if (t.is_string()) entry.tools.push_back(boost::json::value_to<std::string>(t));
-  }
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
@@ -190,7 +181,6 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
       openai_cfg.temperature = cfg.temperature;
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
-      openai_cfg.parameters_as_string = cfg.parameters_as_string;
       openai_cfg.max_tokens = cfg.max_tokens;
       openai_cfg.enable_thinking = cfg.enable_thinking;
       return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
