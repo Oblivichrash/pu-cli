@@ -372,8 +372,7 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/
-├── agent_config.hpp      # AgentConfig types + helpers
-├── agent_manager.hpp     # AgentManager
+├── agent.hpp             # AgentConfig types + AgentManager
 ├── command_router.hpp    # CommandRouter
 ├── runtime.hpp           # Runtime
 ├── executor.hpp          # Executor (session-state-free, with system context injection)
@@ -388,8 +387,8 @@ include/pu/
 │   └── text.hpp          # UTF-8 validation and repair
 ├── context/              # Message model: nodes, payloads, message graph
 ├── llm/                  # LLMProvider, providers, projection, streaming parser
-├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
-├── session/              # Session, Workspace, Transcript, request view
+├── mcp/                  # McpClient with its JSON-RPC layer, transports
+├── session/              # Session with its state (Workspace, Transcript), request view
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/
@@ -405,7 +404,7 @@ src/
 ├── executor.cpp
 ├── core/                 # Base layer: logging, platform, HTTP client
 ├── llm/                  # Providers, streaming parser
-├── mcp/                  # MCP transport implementations, JSON-RPC, client
+├── mcp/                  # MCP transports, client with its JSON-RPC layer
 ├── session/              # Session, Workspace, etc.
 └── tools/                # Toolbox, tools
 ```
