@@ -8,7 +8,6 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
-#include <stdexcept>
 
 namespace pu {
 
@@ -48,34 +47,9 @@ bool Workspace::HasPendingToolCalls() const {
   return transcript_.HasPendingToolCalls();
 }
 
-void Workspace::SetVar(const std::string& key, const boost::json::value& value) {
-  memory_.SetVar(key, value);
-}
-
-std::optional<boost::json::value> Workspace::GetVar(const std::string& key) const {
-  return memory_.GetVar(key);
-}
-
-void Workspace::AddArtifact(const Artifact& artifact) {
-  memory_.AddArtifact(artifact);
-}
-
-std::vector<Artifact> Workspace::GetArtifacts() const {
-  return memory_.GetArtifacts();
-}
-
-void Workspace::ClearArtifacts() {
-  memory_.ClearArtifacts();
-}
-
 boost::json::value Workspace::Serialize() const {
   boost::json::value j = boost::json::object{};
-
   j.as_object()["history"] = transcript_.Serialize();
-  auto mem_j = memory_.Serialize();
-  j.as_object()["variables"] = mem_j.at("variables");
-  j.as_object()["artifacts"] = mem_j.at("artifacts");
-
   return j;
 }
 
@@ -85,13 +59,6 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   if (json::HasKey(j, "history")) {
     if (!Transcript::Deserialize(j.at("history"), ws->transcript_)) return nullptr;
   }
-
-  boost::json::value mem_j = boost::json::object{};
-  mem_j.as_object()["variables"] =
-      json::ValueOrDefault<boost::json::value>(j, "variables", boost::json::object{});
-    mem_j.as_object()["artifacts"] =
-      json::ValueOrDefault<boost::json::value>(j, "artifacts", boost::json::array{});
-  ws->memory_ = Memory::Deserialize(mem_j);
 
   return ws;
 }

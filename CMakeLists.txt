@@ -38,7 +38,6 @@ add_library(pu_core STATIC
     src/session/workspace.cpp
     src/session/transcript.cpp
     src/session/request.cpp
-    src/session/memory.cpp
     src/session/session.cpp
     src/core/logging.cpp
     src/llm/ollama_provider.cpp

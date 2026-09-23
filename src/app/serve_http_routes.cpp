@@ -216,7 +216,6 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
     auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
       session->GetWorkspace().ClearHistory();
-      session->GetWorkspace().ClearArtifacts();
       jv.as_object()["success"] = true;
     } else {
       jv.as_object()["success"] = false;

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <boost/json.hpp>
 
 #include "pu/session/transcript.hpp"
-#include "pu/session/memory.hpp"
 
 namespace pu {
 
@@ -25,19 +25,11 @@ public:
 
   void ClearHistory();
 
-  void SetVar(const std::string& key, const boost::json::value& value);
-  std::optional<boost::json::value> GetVar(const std::string& key) const;
-
-  void AddArtifact(const Artifact& artifact);
-  std::vector<Artifact> GetArtifacts() const;
-  void ClearArtifacts();
-
   boost::json::value Serialize() const;
   static std::shared_ptr<Workspace> Deserialize(const boost::json::value& j);
 
 private:
   Transcript transcript_;
-  Memory memory_;
 };
 
 } // namespace pu

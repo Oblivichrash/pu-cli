@@ -35,7 +35,7 @@ The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
 |-----------|----------------|
 | `Runtime` | Plain object created by `main()`; owns `AgentManager`, `Toolbox`, `Executor`, `CommandRouter`; routes input, holds the single `Session`, rebuilds tool registry on agent switch |
 | `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
-| `Workspace` | State container: `Transcript` (history) + `Memory` (variables/artifacts) |
+| `Workspace` | State container: `Transcript` (history) |
 | `Executor` | Session-state-free tool loop (holds config + probe cache); reads/writes `Workspace`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
@@ -102,9 +102,6 @@ field schema lives in `include/pu/tools/tool_result.hpp` and is documented in
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
-
-Artifacts are persisted in the session (`Workspace`/`Memory`) but are not
-injected into the prompt.
 
 This context is merged with the agent's configured `system_prompt` and prepended
 to the stored turns when the request view is rendered. `Runtime::RebuildToolbox`
@@ -390,7 +387,7 @@ include/pu/
 │   └── beast_http_client.hpp  # Beast implementation header (impl in src/infra)
 ├── llm/                  # LLMProvider, providers, projection, streaming parser
 ├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport
-├── session/              # Session, Workspace, Transcript, request view, Memory
+├── session/              # Session, Workspace, Transcript, request view
 └── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
 
 src/

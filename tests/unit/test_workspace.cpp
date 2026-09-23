@@ -3,7 +3,6 @@
 #include "pu/core/text.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/session/session.hpp"
-#include "pu/session/memory.hpp"
 #include <boost/json.hpp>
 
 using namespace pu;
@@ -18,33 +17,16 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   REQUIRE(history.size() == 2);
   REQUIRE(history[1].role == "assistant");
 
-  ctx.SetVar("foo", boost::json::value("bar"));
-  auto val = ctx.GetVar("foo");
-  REQUIRE(val.has_value());
-  REQUIRE(boost::json::value_to<std::string>(*val) == "bar");
-}
-TEST_CASE("Artifact operations", "[workspace]") {
-  Workspace ctx;
-  Artifact f;
-  f.type = Artifact::Type::kFilePath;
-  f.content = "/tmp/data.csv";
-  f.source = "user_input";
-  ctx.AddArtifact(f);
-  REQUIRE(ctx.GetArtifacts().size() == 1);
 }
 
 TEST_CASE("Workspace serialization round-trips", "[transcript]") {
   Workspace ws;
   ws.Append("user", "hello");
-  ws.SetVar("scratch", boost::json::value("note"));
 
   const boost::json::value saved = ws.Serialize();
   auto restored = Workspace::Deserialize(saved);
 
   REQUIRE(restored->HistorySize() == 1);
-  auto var = restored->GetVar("scratch");
-  REQUIRE(var.has_value());
-  REQUIRE(boost::json::value_to<std::string>(*var) == "note");
 }
 
 TEST_CASE("Session serialization round-trips", "[transcript]") {
