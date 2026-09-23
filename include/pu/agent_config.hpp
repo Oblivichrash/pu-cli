@@ -44,6 +44,7 @@ inline void tag_invoke(boost::json::value_from_tag,
     {"api_key", cfg.api_key.value_or("")},
     {"temperature", cfg.temperature},
     {"max_tokens", cfg.max_tokens},
+    {"enable_thinking", cfg.enable_thinking},
   };
 }
 
@@ -60,8 +61,10 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  // The prompt is configuration, not session state, so a stored override never
+  // carries one.
   cfg.system_prompt = std::nullopt;
-  cfg.enable_thinking = true;
+  cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
   return cfg;
 }
 

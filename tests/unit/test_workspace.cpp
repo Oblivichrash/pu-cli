@@ -36,8 +36,8 @@ TEST_CASE("Session serialization round-trips", "[transcript]") {
   backend.host = "http://127.0.0.1:11434";
   backend.model = "llama3.2:1b";
   backend.temperature = 0.7f;
-  session.SwitchAgent("chat");
-  session.SwitchBackend(backend);
+  session.SetAgent("chat");
+  session.SetBackendOverride(backend);
   session.GetWorkspace().Append("user", "hello");
 
   const boost::json::value saved = session.Serialize();
@@ -48,7 +48,8 @@ TEST_CASE("Session serialization round-trips", "[transcript]") {
   REQUIRE(restored != nullptr);
   REQUIRE(restored->GetWorkspace().HistorySize() == 1);
   REQUIRE(restored->GetWorkspace().GetHistory()[0].content == "hello");
-  REQUIRE(restored->GetRuntimeSpec().backend.model == "llama3.2:1b");
+  REQUIRE(restored->GetRuntimeSpec().backend_override.has_value());
+  REQUIRE(restored->GetRuntimeSpec().backend_override->model == "llama3.2:1b");
 }
 
 TEST_CASE("A message holding invalid UTF-8 survives a save and load",

@@ -16,26 +16,30 @@ Session::Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec)
   : workspace_(std::move(workspace)),
     runtime_spec_(spec) {}
 
-void Session::SwitchAgent(const std::string& agent_name) {
+void Session::SetAgent(const std::string& agent_name) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
       "Cannot switch agent while tool calls are pending. "
       "Please let the current tool finish or /clear.");
   }
+  // Choosing an agent drops the override, so the agent's own configuration
+  // becomes the source of the backend again.
   runtime_spec_.agent_name = agent_name;
+  runtime_spec_.backend_override.reset();
 }
 
-void Session::SwitchBackend(const config::BackendConfig& new_config) {
+void Session::SetBackendOverride(const config::BackendConfig& new_config) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
       "Cannot switch backend while tool calls are pending. "
       "Please let the current tool finish or /clear.");
   }
-  runtime_spec_.backend = new_config;
+  runtime_spec_.backend_override = new_config;
 }
 
-std::unique_ptr<LLMProvider> Session::CreateProvider() const {
-  return config::CreateBackend(runtime_spec_.backend,
+std::unique_ptr<LLMProvider> Session::CreateProvider(
+    const config::BackendConfig& backend) const {
+  return config::CreateBackend(backend,
                                std::make_unique<pu::http::BeastHttpClient>());
 }
 
@@ -63,8 +67,8 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   auto ws = Workspace::Deserialize(j.at("workspace"));
   if (!ws) return nullptr;
 
-  // The runtime section is what selects the agent and the backend, so a file
-  // without it would load as a conversation that cannot reach a model.
+  // The runtime section is what selects the agent, so a file without it would
+  // load as a conversation that cannot reach a model.
   if (!json::HasKey(j, "runtime_spec") || !j.at("runtime_spec").is_object()) {
     return nullptr;
   }

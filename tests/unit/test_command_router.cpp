@@ -45,7 +45,7 @@ struct RouterFixture {
     coder.description = "Coding agent";
     manager.LoadAgentConfigs({chat, coder});
     manager.SetActiveAgent("chat");
-    session.SwitchAgent("chat");
+    session.SetAgent("chat");
   }
 
   bool Route(const std::string& input, std::string& output) {

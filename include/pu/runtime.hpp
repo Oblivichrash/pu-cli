@@ -46,6 +46,10 @@ class Runtime {
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+  // The backend the active session talks to: the session's override when it has
+  // one, otherwise the agent's entry in agents.json.
+  config::BackendConfig CurrentBackend() const;
+
  private:
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();

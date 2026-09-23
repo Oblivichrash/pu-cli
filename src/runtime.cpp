@@ -141,6 +141,20 @@ void Runtime::Initialize(const std::string& config_path) {
     current_session_ = LoadSessionFromFile(session_path);
   }
 
+  // The session names the agent it was talking to, and that name wins over the
+  // configured default: otherwise the toolbox would describe one agent while the
+  // provider talks to another.
+  if (current_session_) {
+    auto& spec = current_session_->GetRuntimeSpec();
+    const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
+    if (stored != nullptr) {
+      RebuildToolbox(*stored);
+    } else {
+      spdlog::warn("Session names an agent that is not configured: {}", spec.agent_name);
+      spec.agent_name = active_agent;
+    }
+  }
+
   is_initialized_ = true;
   is_running_ = true;
 }
@@ -170,14 +184,29 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
 
   auto session = std::make_shared<Session>();
   const auto active_agent = agent_manager_->GetActiveAgent();
-  const auto* agent = agent_manager_->GetAgentConfig(active_agent);
-  if (!agent)
+  if (!agent_manager_->GetAgentConfig(active_agent))
     throw Error("Active agent is not configured: " + active_agent);
-  session->SwitchAgent(active_agent);
-  session->SwitchBackend(agent->backend);
+  session->SetAgent(active_agent);
 
   current_session_ = session;
   return current_session_;
+}
+
+config::BackendConfig Runtime::CurrentBackend() const {
+  if (!agent_manager_) throw Error("Runtime is not initialized");
+
+  if (current_session_) {
+    const auto& spec = current_session_->GetRuntimeSpec();
+    if (spec.backend_override) return *spec.backend_override;
+
+    const auto* agent = agent_manager_->GetAgentConfig(spec.agent_name);
+    if (agent == nullptr) throw Error("Active agent is not configured: " + spec.agent_name);
+    return agent->backend;
+  }
+
+  const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
+  if (agent == nullptr) throw Error("Active agent is not configured");
+  return agent->backend;
 }
 
 ExecutionResult Runtime::ProcessInput(const std::string& input,
@@ -212,7 +241,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
 
     is_command = false;
 
-    auto provider = session->CreateProvider();
+    auto provider = session->CreateProvider(CurrentBackend());
     auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
                                           cancel_token, content_callback, tool_callbacks);
     result = std::move(exec_result);
@@ -330,8 +359,7 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
 
   if (current_session_) {
     try {
-      current_session_->SwitchBackend(new_agent.backend);
-      current_session_->SwitchAgent(new_agent.name);
+      current_session_->SetAgent(new_agent.name);
     } catch (const std::exception& e) {
       spdlog::warn("Failed to sync session config: {}", e.what());
     }

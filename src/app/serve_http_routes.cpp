@@ -93,12 +93,12 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex,
     auto session = runtime.GetOrCreateDefaultSession();
     jv.as_object()["ok"] = session != nullptr;
     if (session) {
-      const auto& spec = session->GetRuntimeSpec();
-      jv.as_object()["agent_name"] = spec.agent_name;
+      const config::BackendConfig backend = runtime.CurrentBackend();
+      jv.as_object()["agent_name"] = session->GetRuntimeSpec().agent_name;
       jv.as_object()["backend_type"] =
-          spec.backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
-      jv.as_object()["backend_model"] = spec.backend.model;
-      jv.as_object()["backend_host"] = spec.backend.host;
+          backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
+      jv.as_object()["backend_model"] = backend.model;
+      jv.as_object()["backend_host"] = backend.host;
     } else {
       jv.as_object()["error"] = "No active session";
     }

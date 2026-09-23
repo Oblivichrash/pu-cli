@@ -14,25 +14,30 @@
 
 namespace pu {
 
-// Serialized with the custom tag_invoke conversions declared in agent_config.hpp.
+// The session names the agent it is talking to, and carries a backend only when
+// the user overrode one for this session. Everything else about the backend is
+// read from agents.json, so editing the configuration takes effect on restart.
 struct RuntimeSpec {
-  config::BackendConfig backend;
   std::string agent_name;
+  std::optional<config::BackendConfig> backend_override;
 
   boost::json::value Serialize() const {
     boost::json::value jv = {{"agent_name", agent_name}};
-    jv.as_object()["backend"] = boost::json::value_from(backend);
+    if (backend_override) {
+      jv.as_object()["backend_override"] = boost::json::value_from(*backend_override);
+    }
     return jv;
   }
 
-  // A section that is not an object cannot name a backend, so it is refused
+  // A section that is not an object cannot name an agent, so it is refused
   // rather than read into a spec that would start the wrong model.
   static std::optional<RuntimeSpec> Deserialize(const boost::json::value& jv) {
     if (!jv.is_object()) return std::nullopt;
 
     RuntimeSpec spec;
-    if (json::HasKey(jv, "backend")) {
-      spec.backend = boost::json::value_to<config::BackendConfig>(jv.at("backend"));
+    if (json::HasKey(jv, "backend_override")) {
+      spec.backend_override =
+          boost::json::value_to<config::BackendConfig>(jv.at("backend_override"));
     }
     spec.agent_name = json::ValueOrDefault<std::string>(jv, "agent_name", "");
     return spec;
@@ -53,12 +58,12 @@ public:
   RuntimeSpec& GetRuntimeSpec() { return runtime_spec_; }
   const RuntimeSpec& GetRuntimeSpec() const { return runtime_spec_; }
 
-  void SwitchBackend(const config::BackendConfig& new_config);
-  void SwitchAgent(const std::string& agent_name);
+  void SetBackendOverride(const config::BackendConfig& new_config);
+  void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return workspace_->HasPendingToolCalls(); }
 
-  std::unique_ptr<LLMProvider> CreateProvider() const;
+  std::unique_ptr<LLMProvider> CreateProvider(const config::BackendConfig& backend) const;
 
   boost::json::value Serialize() const;
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);

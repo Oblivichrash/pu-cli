@@ -97,7 +97,7 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
 
 bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
   if (args.empty()) {
-    const auto& cfg = session.GetRuntimeSpec().backend;
+    const config::BackendConfig cfg = runtime_.CurrentBackend();
     output = "Current backend: " +
              std::string(cfg.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
              " (model: " + cfg.model +
@@ -108,7 +108,6 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
     try {
-      session.SwitchBackend(agent_config->backend);
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
         std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
@@ -146,7 +145,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   }
 
   try {
-    session.SwitchBackend(new_cfg);
+    session.SetBackendOverride(new_cfg);
     output = "Switched backend to: " + args[0] +
       " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {
