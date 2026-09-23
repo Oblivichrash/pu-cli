@@ -271,6 +271,10 @@ boost::json::value AskUserTool::ParametersSchema() const {
 
 std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   (void)ctx;
+  // The tool loop answers this call by ending the turn with the question, so
+  // this result is only read if that interception ever stops happening. It is an
+  // error rather than an answer, so a lost interception shows up as a failure
+  // instead of a silent one.
   boost::json::value result = {
     {"success", false},
     {"error", "clarification_needed"},
