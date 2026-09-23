@@ -110,6 +110,11 @@ restart. Each directory has its own independent session.
 > workspaces, and run the active agent's tools. Keep the default loopback
 > bind unless the port is protected by other means.
 
+Each message you sent carries an **edit** link. It steps the session back to just
+before that turn and puts the text back in the composer, so sending it again
+replaces that turn with a new branch. The branch you left behind is kept in the
+session file.
+
 The Web UI supports:
 
 - **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
