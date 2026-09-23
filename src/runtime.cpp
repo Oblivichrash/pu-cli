@@ -14,7 +14,7 @@
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
-#include "pu/session/workspace.hpp"
+#include "pu/session/session.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
 

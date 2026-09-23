@@ -12,7 +12,7 @@
 #include "pu/core/base.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"
-#include "pu/session/workspace.hpp"
+#include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {

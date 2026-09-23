@@ -14,7 +14,6 @@
 #include "pu/mcp/mcp_client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
-#include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {

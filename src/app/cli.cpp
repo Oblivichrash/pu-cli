@@ -18,7 +18,7 @@
 #include "pu/core/base.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"
-#include "pu/session/workspace.hpp"
+#include "pu/session/session.hpp"
 
 namespace pu::cli {
 
