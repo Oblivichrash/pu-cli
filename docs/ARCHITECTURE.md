@@ -345,6 +345,12 @@ The session file carries `schema_version` (currently 2) beside `workspace` and
 `runtime_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
+`runtime_spec` names the agent and carries a backend only when `/backend` gave
+this session one of its own. Every other backend field is read from
+`agents.json` on each start, so editing the configuration takes effect without
+touching the session. The session also decides which agent a restart resumes:
+the named agent wins over `default_agent`.
+
 Version 2 stores the conversation as a DAG: `workspace.history` holds `nodes`,
 each with its id, timestamp, parents and one role payload, plus the `leaf` that
 marks the current position. A file without the version, with another one, or whose

@@ -165,7 +165,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 |---------|-------------|
 | `/help` | Show available commands |
 | `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
-| `/backend <type> <model> [host] [api_key]` | Manual backend switch |
+| `/backend <type> <model> [host] [api_key]` | Give this session a backend of its own, outranking `agents.json` |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Exit |
