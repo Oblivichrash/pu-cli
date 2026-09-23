@@ -2,6 +2,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <boost/json.hpp>
@@ -24,7 +25,11 @@ struct RuntimeSpec {
     return jv;
   }
 
-  static RuntimeSpec Deserialize(const boost::json::value& jv) {
+  // A section that is not an object cannot name a backend, so it is refused
+  // rather than read into a spec that would start the wrong model.
+  static std::optional<RuntimeSpec> Deserialize(const boost::json::value& jv) {
+    if (!jv.is_object()) return std::nullopt;
+
     RuntimeSpec spec;
     if (json::HasKey(jv, "backend")) {
       spec.backend = boost::json::value_to<config::BackendConfig>(jv.at("backend"));

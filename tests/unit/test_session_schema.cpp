@@ -192,3 +192,52 @@ TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
+
+// A file can carry the right version and the right section names while a field
+// inside holds something else than the stored type. Reading it must reach the
+// same refusal as any other foreign layout, because the alternative is a
+// conversion failure that escapes the loader and stops the program from starting.
+TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "hello");
+
+  boost::json::value saved = session.Serialize();
+  saved.at("workspace").at("history").as_object()["nodes"]
+      .as_array().at(0).as_object()["id"] = 123;
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+  session.GetWorkspace().Append("assistant", "two");
+
+  boost::json::value saved = session.Serialize();
+  saved.at("workspace").at("history").as_object()["nodes"]
+      .as_array().at(1).as_object()["parents"] = boost::json::array{123};
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("A version that is not a number is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "hello");
+
+  boost::json::value saved = session.Serialize();
+  saved.as_object()["schema_version"] = "2";
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("A session without a runtime section is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "hello");
+
+  boost::json::value saved = session.Serialize();
+  saved.as_object().erase("runtime_spec");
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+
+  saved.as_object()["runtime_spec"] = "openai";
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}

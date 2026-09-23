@@ -114,6 +114,9 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   out.timestamp = json::ValueOrDefault<std::string>(value, "timestamp", "");
   if (json::HasKey(value, "parents") && value.at("parents").is_array()) {
     for (const boost::json::value& parent : value.at("parents").as_array()) {
+      // A parent that is not a name cannot point at a node, so the file is
+      // refused rather than loaded with a node that lost its place in the chain.
+      if (!parent.is_string()) return false;
       out.parents.push_back(boost::json::value_to<std::string>(parent));
     }
   }

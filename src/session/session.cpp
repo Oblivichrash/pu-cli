@@ -66,8 +66,16 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
 
   auto ws = Workspace::Deserialize(j.at("workspace"));
   if (!ws) return nullptr;
-  auto spec = RuntimeSpec::Deserialize(j.at("runtime_spec"));
-  return std::make_unique<Session>(ws, spec);
+
+  // The runtime section is what selects the agent and the backend, so a file
+  // without it would load as a conversation that cannot reach a model.
+  if (!json::HasKey(j, "runtime_spec") || !j.at("runtime_spec").is_object()) {
+    return nullptr;
+  }
+  std::optional<RuntimeSpec> spec = RuntimeSpec::Deserialize(j.at("runtime_spec"));
+  if (!spec) return nullptr;
+
+  return std::make_unique<Session>(ws, *spec);
 }
 
 } // namespace pu

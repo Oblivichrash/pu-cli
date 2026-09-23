@@ -9,6 +9,7 @@
 #include <boost/json.hpp>
 
 #include <cstddef>
+#include <exception>
 #include <string>
 
 namespace pu {
@@ -25,14 +26,20 @@ using boost::json::parse;
 using boost::json::serialize;
 
 // Return the member `key` of `j` converted to `T`, or `def` when `j` is not an
-// object, the member is absent, or the member is `null`.
+// object, the member is absent or null, or the member does not hold a `T`. The
+// last case is reachable from a file written outside pu-cli, which can hold a
+// differently typed member, so the conversion is attempted rather than assumed.
 template <class T>
 T ValueOrDefault(const value& j, boost::json::string_view key, const T& def) {
   const object* obj = j.if_object();
   if (!obj) return def;
   auto it = obj->find(key);
   if (it == obj->end()) return def;
-  return boost::json::value_to<T>(it->value());
+  try {
+    return boost::json::value_to<T>(it->value());
+  } catch (const std::exception&) {
+    return def;
+  }
 }
 
 // Convenience overload so ValueOrDefault(j, "key", "literal") yields a
