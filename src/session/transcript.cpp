@@ -32,7 +32,7 @@ context::ToolCallRecord ToRecord(const boost::json::value& call) {
 context::MessagePayload ToPayload(const ChatMessage& msg) {
   std::vector<context::ContentPart> content = ToContent(msg.content);
 
-  if (msg.role == "assistant") {
+  if (msg.role == context::kAssistantRole) {
     context::AssistantPayload assistant;
     assistant.content = std::move(content);
     if (!msg.reasoning_content.empty()) {
@@ -47,7 +47,7 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     return assistant;
   }
 
-  if (msg.role == "tool" || msg.role == "tool_result") {
+  if (msg.role == context::kToolRole || msg.role == "tool_result") {
     context::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
@@ -55,7 +55,7 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     return receipt;
   }
 
-  if (msg.role == "system") {
+  if (msg.role == context::kSystemRole) {
     context::SystemPayload system;
     system.content = std::move(content);
     return system;

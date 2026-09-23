@@ -263,7 +263,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
 
     ChatMessage assistant_msg;
-    assistant_msg.role = "assistant";
+    assistant_msg.role = context::kAssistantRole;
     assistant_msg.content = chat_result.content;
     assistant_msg.reasoning_content = chat_result.reasoning_content;
 

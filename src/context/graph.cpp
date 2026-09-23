@@ -7,11 +7,6 @@ namespace pu::context {
 
 namespace {
 
-constexpr const char* kUserRole = "user";
-constexpr const char* kAssistantRole = "assistant";
-constexpr const char* kSystemRole = "system";
-constexpr const char* kToolRole = "tool";
-
 constexpr const char* kStatusPending = "pending";
 constexpr const char* kStatusCompleted = "completed";
 

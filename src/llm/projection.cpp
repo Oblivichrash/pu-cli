@@ -2,15 +2,16 @@
 #include "pu/llm/projection.hpp"
 
 #include "pu/core/json.hpp"
+#include "pu/context/message.hpp"
 
 namespace pu::llm {
 
 namespace {
 
-constexpr const char* kUserRole = "user";
-constexpr const char* kAssistantRole = "assistant";
-constexpr const char* kSystemRole = "system";
-constexpr const char* kToolRole = "tool";
+using context::kAssistantRole;
+using context::kSystemRole;
+using context::kToolRole;
+using context::kUserRole;
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
   if (naming == RoleNaming::kAliasToolResult) {

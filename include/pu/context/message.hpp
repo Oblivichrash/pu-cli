@@ -25,6 +25,13 @@ using MessageId = std::string;
 
 inline MessageId NewMessageId() { return uuid::Generate(); }
 
+// The role words the payloads carry. The stored session and every provider
+// round trip spell them this way, so they are named once here.
+inline constexpr const char* kUserRole = "user";
+inline constexpr const char* kAssistantRole = "assistant";
+inline constexpr const char* kSystemRole = "system";
+inline constexpr const char* kToolRole = "tool";
+
 // Every role payload carries text as parts, so a non-text part is an added
 // variant alternative rather than a change to every consumer. Providers that
 // accept only text flatten the parts.
