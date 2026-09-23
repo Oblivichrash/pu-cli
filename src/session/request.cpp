@@ -19,11 +19,7 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
       for (const context::ToolCallRecord& record : assistant->tool_calls) {
-        calls.push_back(boost::json::value{
-            {"id", record.id},
-            {"type", "function"},
-            {"function", {{"name", record.name}, {"arguments", record.arguments}}},
-        });
+        calls.push_back(context::ToolCallToJson(record));
       }
       msg.tool_calls = std::move(calls);
     }

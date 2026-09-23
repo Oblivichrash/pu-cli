@@ -15,6 +15,7 @@
 
 #include <boost/json.hpp>
 
+#include "pu/core/json.hpp"
 #include "pu/core/uuid.hpp"
 
 namespace pu::context {
@@ -72,6 +73,32 @@ struct ToolCallRecord {
   boost::json::value arguments;
   ToolCallStatus status = ToolCallStatus::kPending;
 };
+
+// The shape a tool call travels in: the OpenAI function-call object, which the
+// stored session, the providers, and the request path all agree on. Building it
+// and reading it in one place is what keeps a call from changing shape between
+// them.
+inline boost::json::value ToolCallToJson(const ToolCallRecord& record) {
+  return boost::json::value{
+      {"id", record.id},
+      {"type", "function"},
+      {"function", {{"name", record.name}, {"arguments", record.arguments}}},
+  };
+}
+
+// A call without a function object reads back as a record carrying only its id,
+// so a caller can tell a malformed call from a complete one.
+inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
+  ToolCallRecord record;
+  record.id = json::ValueOrDefault<std::string>(call, "id", "");
+  if (!json::HasKey(call, "function")) return record;
+
+  const boost::json::value& function = call.at("function");
+  record.name = json::ValueOrDefault<std::string>(function, "name", "");
+  record.arguments =
+      json::ValueOrDefault<boost::json::value>(function, "arguments", boost::json::object{});
+  return record;
+}
 
 struct UserPayload {
   std::vector<ContentPart> content;

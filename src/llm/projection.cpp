@@ -51,17 +51,14 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
       projected.push_back(call);
       continue;
     }
-    const boost::json::value& function = call.at("function");
+    const context::ToolCallRecord record = context::ToolCallFromJson(call);
 
     boost::json::value entry = boost::json::object{};
     if (json::HasKey(call, "id")) entry.as_object()["id"] = call.at("id");
     if (capabilities.tool_calls_carry_type) entry.as_object()["type"] = "function";
     entry.as_object()["function"] = boost::json::value{
-        {"name", json::ValueOrDefault<std::string>(function, "name", "")},
-        {"arguments", ProjectArguments(
-                          json::ValueOrDefault<boost::json::value>(
-                              function, "arguments", boost::json::object{}),
-                          capabilities.tool_arguments)},
+        {"name", record.name},
+        {"arguments", ProjectArguments(record.arguments, capabilities.tool_arguments)},
     };
     projected.push_back(std::move(entry));
   }

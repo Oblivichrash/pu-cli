@@ -17,18 +17,6 @@ std::vector<context::ContentPart> ToContent(const std::string& text) {
   return content;
 }
 
-context::ToolCallRecord ToRecord(const boost::json::value& call) {
-  context::ToolCallRecord record;
-  record.id = json::ValueOrDefault<std::string>(call, "id", "");
-  if (!json::HasKey(call, "function")) return record;
-
-  const boost::json::value& function = call.at("function");
-  record.name = json::ValueOrDefault<std::string>(function, "name", "");
-  record.arguments = json::ValueOrDefault<boost::json::value>(
-      function, "arguments", boost::json::object{});
-  return record;
-}
-
 context::MessagePayload ToPayload(const ChatMessage& msg) {
   std::vector<context::ContentPart> content = ToContent(msg.content);
 
@@ -41,7 +29,7 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     }
     if (msg.tool_calls.is_array()) {
       for (const boost::json::value& call : msg.tool_calls.as_array()) {
-        assistant.tool_calls.push_back(ToRecord(call));
+        assistant.tool_calls.push_back(context::ToolCallFromJson(call));
       }
     }
     return assistant;

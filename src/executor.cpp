@@ -269,15 +269,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
     boost::json::array j_calls;
     for (const auto& tc : chat_result.tool_calls) {
-      boost::json::value jc = {
-        {"id", tc.id},
-        {"type", "function"},
-        {"function", {
-          {"name", tc.name},
-          {"arguments", tc.arguments},
-        }},
-      };
-      j_calls.push_back(jc);
+      j_calls.push_back(context::ToolCallToJson(
+          context::ToolCallRecord{tc.id, tc.name, tc.arguments}));
     }
     assistant_msg.tool_calls = std::move(j_calls);
     workspace.Append(assistant_msg);

@@ -138,3 +138,24 @@ TEST_CASE("The shared UUID generator meets the v4 contract", "[context][message]
   REQUIRE(std::string("89ab").find(id[19]) != std::string::npos);
   REQUIRE(uuid::Generate() != id);
 }
+
+TEST_CASE("A tool call keeps its id, name, and arguments through the JSON shape",
+          "[context][message]") {
+  context::ToolCallRecord record{
+      "call_1", "read_file", boost::json::parse(R"({"path":"."})")};
+
+  const context::ToolCallRecord as_object =
+      context::ToolCallFromJson(context::ToolCallToJson(record));
+  REQUIRE(as_object.id == "call_1");
+  REQUIRE(as_object.name == "read_file");
+  REQUIRE(as_object.arguments.is_object());
+  REQUIRE(as_object.arguments.at("path") == ".");
+
+  // A provider may send the arguments as an encoded string; the shape carries it
+  // through rather than deciding what it means.
+  record.arguments = boost::json::value(R"({"path":"."})");
+  const context::ToolCallRecord as_string =
+      context::ToolCallFromJson(context::ToolCallToJson(record));
+  REQUIRE(as_string.arguments.is_string());
+  REQUIRE(boost::json::value_to<std::string>(as_string.arguments) == R"({"path":"."})");
+}
