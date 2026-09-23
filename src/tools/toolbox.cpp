@@ -27,7 +27,7 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
     if (IsAllowedToolNameChar(c)) {
       result.push_back(c);
     } else {
-      result.push_back('_');  // replace non鈥慶ompliant chars with '_'
+      result.push_back('_');  // replace non-compliant chars with '_'
     }
   }
   return result;
@@ -40,7 +40,7 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
     throw pu::Error("Tool name cannot be empty");
   }
 
-  // Generate a sanitized (LLM鈥慺riendly) display name.
+  // Generate a sanitized (LLM-friendly) display name.
   std::string display_name = SanitizeToolName(original_name);
 
   // If the sanitized name already exists, append a counter suffix.

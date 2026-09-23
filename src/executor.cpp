@@ -354,7 +354,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
   }
 
   if (result.final_response.empty() && result.tool_call_count > 0) {
-    spdlog::info("Tool execution completed without a final text response – considered successful.");
+    spdlog::info("Tool execution completed without a final text response - considered successful.");
   }
 
   return result;

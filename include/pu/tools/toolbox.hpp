@@ -40,7 +40,7 @@ class Toolbox {
   static std::string SanitizeToolName(const std::string& name);
 
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  // Map from sanitized (LLM‑friendly) name to original Tool::Name()
+  // Map from sanitized (LLM-friendly) name to original Tool::Name()
   std::unordered_map<std::string, std::string> display_to_original_;
 };
 

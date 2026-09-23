@@ -330,7 +330,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
     if (!StartMCP(mcp_cfg)) {
-      spdlog::warn("Skipping MCP server '{}' 鈥?connection failed", mcp_cfg.name);
+      spdlog::warn("Skipping MCP server '{}' - connection failed", mcp_cfg.name);
       continue;
     }
 
