@@ -17,8 +17,8 @@ using namespace pu;
 
 namespace {
 
-// A workspace the runtime can start from, with one agent whose backend the test
-// rewrites between starts.
+// A workspace the runtime can start from. The configuration is rewritten
+// between starts, which is how a restart is simulated.
 class BackendSourceFixture {
 public:
   BackendSourceFixture() {
@@ -39,17 +39,29 @@ public:
     boost::json::value cfg = {
       {"default_agent", "chat"},
       {"agents",
-       boost::json::array{boost::json::value{
-           {"name", "chat"},
-           {"backend",
-            {
-                {"type", "openai"},
-                {"host", "http://127.0.0.1:1"},
-                {"model", "test-model"},
-                {"temperature", temperature},
-                {"enable_thinking", false},
-            }},
-       }}},
+       boost::json::array{
+           boost::json::value{
+               {"name", "chat"},
+               {"backend",
+                {
+                    {"type", "openai"},
+                    {"host", "http://127.0.0.1:1"},
+                    {"model", "test-model"},
+                    {"temperature", temperature},
+                    {"enable_thinking", false},
+                }},
+           },
+           boost::json::value{
+               {"name", "coder"},
+               {"backend",
+                {
+                    {"type", "openai"},
+                    {"host", "http://127.0.0.1:1"},
+                    {"model", "coder-model"},
+                    {"temperature", 0.4},
+                }},
+           },
+       }},
     };
     std::ofstream out(root_ / ".pu" / "agents.json", std::ios::trunc);
     out << boost::json::serialize(cfg);
@@ -128,4 +140,27 @@ TEST_CASE("A session override wins over the configured backend", "[backend]") {
   session->SetBackendOverride(override_cfg);
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
+}
+
+TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {
+  BackendSourceFixture fixture;
+
+  {
+    Runtime runtime;
+    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
+    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    REQUIRE(coder != nullptr);
+    runtime.SwitchAgent(*coder);
+    runtime.Shutdown();
+  }
+
+  // agents.json still defaults to "chat", so only the stored session can bring
+  // the runtime back to "coder".
+  {
+    Runtime runtime;
+    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+    REQUIRE(runtime.CurrentBackend().model == "coder-model");
+  }
 }
