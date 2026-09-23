@@ -32,7 +32,7 @@ TEST_CASE("ExecuteCommand runs compound command with pipe", "[platform][command]
 TEST_CASE("ExecuteCommand runs compound command with semicolons and redirection",
           "[platform][command]") {
   std::string output;
-  // Exact acceptance command from DEEPSEEK.md - must not block and must return output.
+  // A compound command with redirection must not block and must return output.
   int rc = ExecuteCommand("which g++ 2>&1; ls /usr/bin/g++ 2>&1", output);
   REQUIRE(rc == 0);
   REQUIRE(!output.empty());
