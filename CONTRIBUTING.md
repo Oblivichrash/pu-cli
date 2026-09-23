@@ -5,8 +5,11 @@
 - Include `## Description`, `## Why`, `## Related Issue` in body.
 
 ## Commit Messages
-Use a lowercase type and a specific summary under 72 characters. Add a short
-list when the change needs context:
+Use a lowercase type from this list and a specific summary under 72 characters:
+
+`feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `build`, `ci`, `chore`.
+
+Add a short list when the change needs context:
 
 ```text
 <type>: <summary>
@@ -30,6 +33,8 @@ Keep one coherent change per commit.
   committing. Without the config file, `clang-format` would fall back to the
   LLVM defaults and reformat the whole tree, so always run it from the repo
   root.
+- CI runs `clang-format --dry-run --Werror` over every `*.cpp`/`*.hpp` on Linux,
+  so a mis-formatted tree fails the build.
 - JSON code uses Boost.JSON (`boost::json::value`) through the
   `include/pu/core/json.hpp` helpers (`pu::json::parse`, `pu::json::serialize`,
   `pu::json::ValueOrDefault`, `pu::json::HasKey`,
@@ -45,16 +50,23 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+A change that alters behavior under `src/` needs a test in `tests/unit/` that
+fails without it. Documentation-only changes do not.
+
 ## Where Things Live
 
-Maintain each fact in one place: rules here, usage and behavior in
-[README.md](README.md), structure and layering in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Link instead of copying.
+Maintain each fact in one place, and link instead of copying:
 
+- Rules: this file.
 - Build dependencies, configuration, environment variables, and `pu serve`
   usage: [README.md](README.md).
 - Layer boundaries, directory layout, CMake targets, and extension points:
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+A section owns a fact the same way a field owns a consumer: if nothing reads it,
+it does not belong here yet. When a change alters behavior, configuration, or
+the file layout, update the document that owns that fact in the same commit; a
+stale document is a bug.
 
 ## License
 

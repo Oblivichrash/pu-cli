@@ -48,6 +48,14 @@ jobs:
         vcpkg install catch2 spdlog boost-system boost-program-options boost-json boost-asio boost-beast openssl
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
+    - name: Install clang-format (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get install -y clang-format
+
+    - name: Check formatting (Linux)
+      if: runner.os == 'Linux'
+      run: clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.hpp')
+
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 

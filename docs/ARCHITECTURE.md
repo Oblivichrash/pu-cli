@@ -67,7 +67,7 @@ pu::RuntimeError : std::runtime_error
 ## JSON Handling
 
 All JSON parsing and serialization is provided by **Boost.JSON**
-(`boost::json::value`; Boost >= 1.75). `include/pu/core/json.hpp` is a thin
+(`boost::json::value`). `include/pu/core/json.hpp` is a thin
 convenience layer over the Boost API for the operations the codebase uses most:
 
 - `pu::json::parse` / `pu::json::serialize` — parse and serialize
@@ -253,8 +253,7 @@ and compatible gateways.
 | Prompt caching hints | `keep_alive` only | none |
 
 Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
-`ToolDefinition::Parameters()`. `BackendConfig::parameters_as_string` exists but is
-unread: `OpenAIProvider` always encodes `arguments` as a JSON string.
+`ToolDefinition::Parameters()`.
 
 An Anthropic provider would need a `system` request field instead of a system
 message, `tools[].input_schema` instead of `parameters`, `tool_use`/`tool_result`
@@ -436,6 +435,9 @@ and the `pu` executable adds only `main.cpp`.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
+- **`tools` in `agents.json` is parsed but not applied.** `Runtime::RegisterBuiltinTools()` registers every built-in tool without consulting the list, so an agent cannot restrict its tool set.
+- **`allowed_paths` is parsed but not enforced.** `SecurityPolicy::allowed_paths` has no reader; only `sandbox_root`, `forbidden_patterns`, and `max_command_length` are enforced when a command runs.
+- **`PU_TRACE` has no effect.** `Runtime::Initialize` reads it and passes it to `InitLogging`, whose `trace_enabled` parameter is unnamed and unused.
 - **A request is bounded by message count, not tokens.** `ChatResult` carries no usage, so nothing can warn before a provider's context limit is reached. A conversation grows until the provider refuses it, and the refusal reaches the user as an HTTP error.
 - **Tool call status has no writer for `kRunning` or `kInterrupted`.** A record goes from `kPending` to `kCompleted`; an interrupted run is not distinguishable from one that never started, because neither cancellation path records anything.
 - **`ask_user` is answered by the tool loop, not by the tool.** `AskUserTool::Execute` returns a stub, and `RunToolLoop` intercepts the call to end the turn with the question as the response, so no real answer channel exists.
