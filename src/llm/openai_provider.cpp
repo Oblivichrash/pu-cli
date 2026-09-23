@@ -49,24 +49,7 @@ void OpenAIProvider::ResetAccumulators() {
   tool_calls_.clear();
 }
 
-std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
-  boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"temperature", config_.temperature},
-    {"max_tokens", config_.max_tokens},
-  };
-
-  if (!config_.enable_thinking) {
-    boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};
-    req.as_object()["extra_body"] = extra_body;
-  }
-
-  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
-  return boost::json::serialize(req);
-}
-
-std::string OpenAIProvider::BuildRequestWithTools(
+std::string OpenAIProvider::BuildRequest(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools) const {
   boost::json::value req = {
@@ -83,18 +66,20 @@ std::string OpenAIProvider::BuildRequestWithTools(
 
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
-  boost::json::array tools_json;
-  for (const auto& tool : tools) {
-    boost::json::value function_obj = {
-      {"name", tool.name},
-      {"description", tool.description},
-      {"parameters", tool.Parameters()}
-    };
+  if (!tools.empty()) {
+    boost::json::array tools_json;
+    for (const auto& tool : tools) {
+      boost::json::value function_obj = {
+        {"name", tool.name},
+        {"description", tool.description},
+        {"parameters", tool.Parameters()}
+      };
 
-    tools_json.push_back(
-        boost::json::value{{"type", "function"}, {"function", function_obj}});
+      tools_json.push_back(
+          boost::json::value{{"type", "function"}, {"function", function_obj}});
+    }
+    req.as_object()["tools"] = tools_json;
   }
-  req.as_object()["tools"] = tools_json;
   return boost::json::serialize(req);
 }
 
@@ -171,12 +156,7 @@ ChatResult OpenAIProvider::Chat(
   platform::ClearInterruptFlag();
   ResetAccumulators();
 
-  std::string body;
-  if (tools.empty()) {
-    body = BuildRequest(history);
-  } else {
-    body = BuildRequestWithTools(history, tools);
-  }
+  const std::string body = BuildRequest(history, tools);
 
   spdlog::debug("OpenAI request body: {}", body);
 

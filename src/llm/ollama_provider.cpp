@@ -36,19 +36,7 @@ OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClie
     : config_(std::move(config)), host_(config_.host),
       api_key_(std::move(config_.api_key)), http_(std::move(http)) {}
 
-std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
-  boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"options", {{"temperature", config_.temperature}}},
-    {"keep_alive", config_.keep_alive},
-  };
-
-  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
-  return boost::json::serialize(req);
-}
-
-std::string OllamaProvider::BuildRequestWithTools(
+std::string OllamaProvider::BuildRequest(
     const std::vector<ChatMessage>& history,
     const std::vector<ToolDefinition>& tools) const {
   boost::json::value req = {
@@ -60,18 +48,20 @@ std::string OllamaProvider::BuildRequestWithTools(
 
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
-  boost::json::array tools_json;
-  for (const auto& tool : tools) {
-    tools_json.push_back(boost::json::value{
-        {"type", "function"},
-        {"function",
-         {
-             {"name", tool.name},
-             {"description", tool.description},
-             {"parameters", tool.Parameters()},
-         }}});
+  if (!tools.empty()) {
+    boost::json::array tools_json;
+    for (const auto& tool : tools) {
+      tools_json.push_back(boost::json::value{
+          {"type", "function"},
+          {"function",
+           {
+               {"name", tool.name},
+               {"description", tool.description},
+               {"parameters", tool.Parameters()},
+           }}});
+    }
+    req.as_object()["tools"] = tools_json;
   }
-  req.as_object()["tools"] = tools_json;
   return boost::json::serialize(req);
 }
 
@@ -124,12 +114,7 @@ ChatResult OllamaProvider::Chat(
   platform::ClearInterruptFlag();
   ResetAccumulators();
 
-  std::string body;
-  if (tools.empty()) {
-    body = BuildRequest(history);
-  } else {
-    body = BuildRequestWithTools(history, tools);
-  }
+  const std::string body = BuildRequest(history, tools);
 
   spdlog::debug("Ollama request body: {}", body);
 

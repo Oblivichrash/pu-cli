@@ -38,9 +38,9 @@ class OllamaProvider : public LLMProvider {
   bool IsThinkingMode() const override { return false; }
 
  private:
-  std::string BuildRequest(const std::vector<ChatMessage>& history) const;
-  std::string BuildRequestWithTools(const std::vector<ChatMessage>& history,
-                                    const std::vector<ToolDefinition>& tools) const;
+  // A request without tools omits the block rather than carrying an empty one.
+  std::string BuildRequest(const std::vector<ChatMessage>& history,
+                           const std::vector<ToolDefinition>& tools) const;
   void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb);
   void ResetAccumulators();
