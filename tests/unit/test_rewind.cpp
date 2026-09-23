@@ -53,6 +53,20 @@ TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]")
   REQUIRE(ws.HistorySize() == 1);
 }
 
+TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+
+  ChatMessage assistant;
+  assistant.role = context::kAssistantRole;
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
+  session.GetWorkspace().Append(assistant);
+
+  REQUIRE(session.GetWorkspace().HasPendingToolCalls());
+  REQUIRE_THROWS_AS(session.GetWorkspace().RewindBefore(1), std::exception);
+}
+
 TEST_CASE("A rewound branch survives a save and a load", "[session][rewind]") {
   Session session;
   session.GetWorkspace().Append("user", "one");

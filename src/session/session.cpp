@@ -164,6 +164,15 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
   return ws;
 }
 
+bool Workspace::RewindBefore(size_t turn) {
+  if (HasPendingToolCalls()) {
+    throw RuntimeError(
+      "Cannot rewind while tool calls are pending. "
+      "Please let the current tool finish or /clear.");
+  }
+  return transcript_.RewindBefore(turn);
+}
+
 void Workspace::ClearHistory() {
   transcript_ = Transcript{};
 }

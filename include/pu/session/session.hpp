@@ -59,7 +59,7 @@ public:
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return transcript_.GetGraph(); }
 
-  bool RewindBefore(size_t turn) { return transcript_.RewindBefore(turn); }
+  bool RewindBefore(size_t turn);
 
   void ClearHistory();
 
