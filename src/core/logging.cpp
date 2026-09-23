@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/logging.hpp"
-#include "pu/core/path_utils.hpp"
-#include "pu/core/uuid.hpp"
+#include "pu/core/base.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>

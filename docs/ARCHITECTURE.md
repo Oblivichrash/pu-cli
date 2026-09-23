@@ -379,16 +379,13 @@ include/pu/
 ├── executor.hpp          # Executor (session-state-free, with system context injection)
 ├── cli.hpp               # CLI helpers
 ├── core/                 # Base layer: nothing here depends on an upper module
+│   ├── base.hpp          # Cancel token, error hierarchy, uuid, data directory
 │   ├── beast_http_client.hpp  # Beast implementation of the HTTP client
-│   ├── cancel_token.hpp  # Shared cancellation token (transport-agnostic)
-│   ├── error.hpp         # RuntimeError / Error / HttpError
 │   ├── http_client.hpp   # HttpClient interface
 │   ├── json.hpp          # Boost.JSON convenience helpers
 │   ├── logging.hpp       # spdlog setup + JSON log formatter
-│   ├── path_utils.hpp    # Data-directory resolution (PU_HOME / .pu)
 │   ├── platform.hpp      # OS/kernel probing, subprocess output capture
-│   ├── text.hpp          # UTF-8 validation and repair
-│   └── uuid.hpp          # RFC 4122 v4 identifier
+│   └── text.hpp          # UTF-8 validation and repair
 ├── context/              # Message model: nodes, payloads, message graph
 ├── llm/                  # LLMProvider, providers, projection, streaming parser
 ├── mcp/                  # McpClient, JsonRpcClient, Transport interface, StdioTransport

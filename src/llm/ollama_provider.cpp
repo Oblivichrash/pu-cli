@@ -4,7 +4,7 @@
 #include "pu/llm/projection.hpp"
 #include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 
 #include <boost/json.hpp>

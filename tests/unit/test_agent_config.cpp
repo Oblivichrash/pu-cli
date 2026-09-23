@@ -3,7 +3,7 @@
 #include "pu/agent_config.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>

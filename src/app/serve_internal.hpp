@@ -14,7 +14,7 @@
 #include <mutex>
 #include <thread>
 
-#include "pu/core/cancel_token.hpp"
+#include "pu/core/base.hpp"
 #include "pu/runtime.hpp"
 
 namespace pu::cli::detail {

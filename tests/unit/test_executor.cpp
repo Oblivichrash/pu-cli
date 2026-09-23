@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/tool_result.hpp"
 

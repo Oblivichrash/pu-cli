@@ -7,7 +7,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/core/cancel_token.hpp"
+#include "pu/core/base.hpp"
 
 namespace pu {
 

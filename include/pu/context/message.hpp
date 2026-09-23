@@ -16,7 +16,7 @@
 #include <boost/json.hpp>
 
 #include "pu/core/json.hpp"
-#include "pu/core/uuid.hpp"
+#include "pu/core/base.hpp"
 
 namespace pu::context {
 

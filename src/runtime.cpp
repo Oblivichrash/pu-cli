@@ -13,8 +13,7 @@
 
 #include "pu/agent_config.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/core/error.hpp"
-#include "pu/core/path_utils.hpp"
+#include "pu/core/base.hpp"
 #include "pu/session/workspace.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
@@ -331,7 +330,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
     if (!StartMCP(mcp_cfg)) {
-      spdlog::warn("Skipping MCP server '{}' — connection failed", mcp_cfg.name);
+      spdlog::warn("Skipping MCP server '{}' 鈥?connection failed", mcp_cfg.name);
       continue;
     }
 

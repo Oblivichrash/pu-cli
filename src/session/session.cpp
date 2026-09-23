@@ -2,7 +2,7 @@
 #include "pu/session/session.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/beast_http_client.hpp"
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 
 #include <boost/json.hpp>
 

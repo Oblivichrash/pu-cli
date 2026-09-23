@@ -3,7 +3,7 @@
 
 #include "pu/context/message.hpp"
 #include "pu/core/text.hpp"
-#include "pu/core/uuid.hpp"
+#include "pu/core/base.hpp"
 
 #include <set>
 #include <string>
