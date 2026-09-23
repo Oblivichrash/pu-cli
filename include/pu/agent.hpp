@@ -11,7 +11,7 @@
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
-#include "pu/mcp/mcp_client.hpp"
+#include "pu/mcp/client.hpp"
 
 namespace pu::config {
 

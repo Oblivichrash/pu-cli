@@ -10,7 +10,7 @@
 #include "pu/agent.hpp"
 #include "pu/core/base.hpp"
 #include "pu/executor.hpp"
-#include "pu/mcp/mcp_client.hpp"
+#include "pu/mcp/client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/tools/toolbox.hpp"
-#include "pu/mcp/mcp_client.hpp"
+#include "pu/mcp/client.hpp"
 
 #include <memory>
 #include <string>

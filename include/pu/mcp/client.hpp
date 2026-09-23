@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
+#include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
 
@@ -23,6 +27,28 @@ struct McpServerConfig {
   std::map<std::string, std::string> headers;
 };
 
+// JSON-RPC 2.0 over a transport: one promise per request id, answered by the
+// reply that carries the same id.
+class JsonRpcClient {
+public:
+  explicit JsonRpcClient(Transport& transport);
+  ~JsonRpcClient() = default;
+
+  // Send a request, returning a future for the async response.
+  std::future<boost::json::value> SendRequest(const std::string& method,
+                                             const boost::json::value& params = {});
+
+  // Handle incoming messages (called by transport callback).
+  void OnMessage(const std::string& line);
+
+private:
+  Transport& transport_;
+  int next_id_ = 1;
+  std::unordered_map<int, std::promise<boost::json::value>> pending_;
+  std::mutex mutex_;
+};
+
+// The MCP surface the rest of pu-cli uses: handshake, tool listing, tool calls.
 class McpClient {
 public:
   explicit McpClient(const McpServerConfig& config);
@@ -42,8 +68,8 @@ public:
 private:
   bool Handshake();
   boost::json::value SendRequest(const std::string& method,
-                                 const boost::json::value& params = {},
-                                 int timeout_ms = 5000);
+                                const boost::json::value& params = {},
+                                int timeout_ms = 5000);
 
   struct Impl;
   std::unique_ptr<Impl> pimpl_;

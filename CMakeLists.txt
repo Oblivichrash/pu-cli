@@ -44,8 +44,7 @@ add_library(pu_core STATIC
     src/llm/streaming_json_parser.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
-    src/mcp/json_rpc_client.cpp
-    src/mcp/mcp_client.cpp
+    src/mcp/client.cpp
 )
 target_link_libraries(pu_core PUBLIC
     spdlog::spdlog
