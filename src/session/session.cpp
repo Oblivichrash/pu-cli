@@ -92,8 +92,8 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
 }
 
 // What the caller renders, which is the chain from the leaf rather than the
-// number of nodes stored: a branch that was rewound stays in the store but out
-// of the view.
+// number of nodes stored: between a step back and the append that replaces it,
+// the view is shorter than the store.
 size_t Transcript::Size() const { return graph_.Chain().size(); }
 
 bool Transcript::RewindBefore(size_t turn) {
@@ -201,7 +201,8 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   if (!has_version || version != context::kSchemaVersion) return nullptr;
 
   // A version field alone is not enough: an unreachable branch used the same
-  // number for a different layout, so the storage itself has to look like a DAG.
+  // number for a different layout, so the storage itself has to look like node
+  // storage.
   if (!json::HasKey(j, "workspace") || !json::HasKey(j.at("workspace"), "history") ||
       !j.at("workspace").at("history").is_object()) {
     return nullptr;

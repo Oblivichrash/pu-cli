@@ -56,22 +56,6 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   display_to_original_[display_name] = original_name;
 }
 
-void Toolbox::RemoveTool(const std::string& name) {
-  // name here is the display name (sanitized) used as key.
-  auto it = tools_.find(name);
-  if (it != tools_.end()) {
-    display_to_original_.erase(name);
-    tools_.erase(it);
-  }
-}
-
-Tool* Toolbox::GetTool(const std::string& name) const {
-  // name is the display name (sanitized) from LLM.
-  auto it = tools_.find(name);
-  if (it == tools_.end()) return nullptr;
-  return it->second.get();
-}
-
 std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   std::vector<ToolDefinition> defs;
   for (const auto& [display_name, tool] : tools_) {

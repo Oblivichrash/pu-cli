@@ -32,7 +32,6 @@ class OpenAIProvider : public LLMProvider {
                   CancelToken cancel_token = nullptr) override;
 
   bool SupportsTools() const override { return true; }
-  std::string GetModelName() const override { return config_.model; }
   bool IsThinkingMode() const override { return config_.enable_thinking; }
 
  private:

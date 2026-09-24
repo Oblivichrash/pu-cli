@@ -55,10 +55,4 @@ inline ToolResult ParseToolResult(const std::string& raw) {
   return r;
 }
 
-inline std::string ExtractToolResultContent(const std::string& tool_result) {
-  auto r = ParseToolResult(tool_result);
-  if (!r.valid) return tool_result;
-  return r.success ? r.stdout_content : r.error;
-}
-
 }  // namespace pu::tools

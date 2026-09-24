@@ -26,8 +26,6 @@ void BeastHttpClient::SetInterruptChecker(std::function<bool()> checker) {
   interrupt_checker_ = std::move(checker);
 }
 
-std::string BeastHttpClient::GetErrorDetail() const { return error_detail_; }
-
 void BeastHttpClient::CheckCancel(CancelToken token) const {
   if (token && token->load(std::memory_order_acquire)) {
     throw HttpError("Request cancelled");
@@ -157,7 +155,6 @@ std::string SummarizeErrorBody(const std::string& body) {
 void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
                                  const std::vector<std::string>& headers, WriteCallback write_cb,
                                  CancelToken cancel_token) {
-  error_detail_.clear();
   auto start = std::chrono::steady_clock::now();
 
   try {
@@ -226,7 +223,6 @@ void BeastHttpClient::PostStream(const std::string& url, const std::string& body
       std::string detail = "HTTP error " + std::to_string(status);
       const std::string summary = SummarizeErrorBody(error_body);
       if (!summary.empty()) detail += ": " + summary;
-      error_detail_ = detail;
       throw HttpError(detail);
     }
 

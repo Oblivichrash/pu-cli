@@ -57,8 +57,8 @@ TEST_CASE("An appended node links to the previous leaf", "[context][graph]") {
   REQUIRE(chain.size() == 2);
   REQUIRE(TextOf(*chain[0]) == "first");
   REQUIRE(TextOf(*chain[1]) == "second");
-  REQUIRE(chain[0]->parents.empty());
-  REQUIRE(chain[1]->parents == std::vector<context::MessageId>{chain[0]->id});
+  REQUIRE(chain[0]->parent.empty());
+  REQUIRE(chain[1]->parent == chain[0]->id);
   REQUIRE(graph.Size() == 2);
 }
 

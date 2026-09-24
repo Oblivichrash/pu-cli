@@ -29,8 +29,6 @@ class Tool {
 class Toolbox {
  public:
   void RegisterTool(std::unique_ptr<Tool> tool);
-  void RemoveTool(const std::string& name);
-  Tool* GetTool(const std::string& name) const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
   std::string ExecuteTool(const std::string& name, const boost::json::value& args,
                           ToolContext& ctx);

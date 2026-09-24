@@ -7,7 +7,7 @@
 
 using namespace pu;
 
-TEST_CASE("Rewinding keeps the branch it left behind", "[session][rewind]") {
+TEST_CASE("A step back is abandoned only when something replaces it", "[session][rewind]") {
   Workspace ws;
   ws.Append("user", "one");
   ws.Append("assistant", "two");
@@ -18,14 +18,16 @@ TEST_CASE("Rewinding keeps the branch it left behind", "[session][rewind]") {
   REQUIRE(ws.RewindBefore(3));
   REQUIRE(ws.HistorySize() == 2);
 
-  // Nothing was removed: the store still holds every node.
+  // Still stored: stepping back costs nothing until the next message lands.
   REQUIRE(ws.GetGraph().Size() == 3);
 
-  // The next append starts a new branch from turn 2.
+  // The append replaces the turns after the new leaf, so the store ends up
+  // holding exactly the conversation the view shows.
   ws.Append("user", "three again");
   REQUIRE(ws.HistorySize() == 3);
   REQUIRE(ws.GetHistory()[2].content == "three again");
-  REQUIRE(ws.GetGraph().Size() == 4);
+  REQUIRE(ws.GetGraph().Size() == 3);
+  REQUIRE(ws.GetGraph().Size() == ws.HistorySize());
 }
 
 TEST_CASE("Rewinding before the first turn empties the view, not the store", "[session][rewind]") {
@@ -40,7 +42,7 @@ TEST_CASE("Rewinding before the first turn empties the view, not the store", "[s
   ws.Append("user", "restarted");
   REQUIRE(ws.HistorySize() == 1);
   REQUIRE(ws.GetHistory()[0].content == "restarted");
-  REQUIRE(ws.GetGraph().Size() == 3);
+  REQUIRE(ws.GetGraph().Size() == 1);
 }
 
 TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]") {
@@ -66,7 +68,7 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   REQUIRE_THROWS_AS(session.GetWorkspace().RewindBefore(1), std::exception);
 }
 
-TEST_CASE("A rewound branch survives a save and a load", "[session][rewind]") {
+TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[session][rewind]") {
   Session session;
   session.GetWorkspace().Append("user", "one");
   session.GetWorkspace().Append("assistant", "two");
@@ -76,7 +78,27 @@ TEST_CASE("A rewound branch survives a save and a load", "[session][rewind]") {
   auto restored = Session::Deserialize(session.Serialize());
   REQUIRE(restored != nullptr);
   REQUIRE(restored->GetWorkspace().HistorySize() == 2);
-  // The abandoned branch is still stored, so the view is shorter than the store.
-  REQUIRE(restored->GetWorkspace().GetGraph().Size() == 3);
+  // The file carries the replacement and not the turn it replaced.
+  REQUIRE(restored->GetWorkspace().GetGraph().Size() == 2);
   REQUIRE(restored->GetWorkspace().GetHistory()[1].content == "two again");
+}
+
+TEST_CASE("A replaced turn stores what sending the new text from the start would",
+          "[session][rewind]") {
+  Workspace edited;
+  edited.Append("user", "one");
+  edited.Append("assistant", "two");
+  REQUIRE(edited.RewindBefore(2));
+  edited.Append("user", "three");
+
+  Workspace fresh;
+  fresh.Append("user", "one");
+  fresh.Append("user", "three");
+
+  REQUIRE(edited.GetGraph().Size() == fresh.GetGraph().Size());
+  REQUIRE(edited.HistorySize() == fresh.HistorySize());
+  for (size_t i = 0; i < fresh.HistorySize(); ++i) {
+    REQUIRE(edited.GetHistory()[i].role == fresh.GetHistory()[i].role);
+    REQUIRE(edited.GetHistory()[i].content == fresh.GetHistory()[i].content);
+  }
 }

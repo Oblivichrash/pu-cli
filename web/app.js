@@ -359,8 +359,8 @@ async function refreshChainLength() {
 }
 
 // Steps the session back to before `turn` and hands the text back to the
-// composer, so sending it again replaces that turn with a new branch. The branch
-// that was left behind stays in the session file.
+// composer, so sending it again replaces that turn; the turn it replaced is
+// dropped when the replacement is sent.
 async function rewindToTurn(turn, text) {
   if (isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
@@ -382,8 +382,8 @@ async function rewindToTurn(turn, text) {
     inputEl.value = text;
     inputEl.focus();
     inputEl.style.height = "auto";
-    createSystemMessage(
-      "Editing turn " + turn + ". Sending starts a new branch; the one you left stays in the session file.");
+    createSystemMessage("Editing turn " + turn +
+                        ". Sending replaces it; the turn it replaced is not kept.");
   } catch (e) {
     createSystemMessage("Could not step back: " + e.message);
   }

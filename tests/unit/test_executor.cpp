@@ -3,7 +3,6 @@
 #include "pu/core/base.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/tools/builtin_tools.hpp"
-#include "pu/tools/tool_result.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -16,52 +15,6 @@
 #include <vector>
 
 using namespace pu;
-
-TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout", "[executor]") {
-  boost::json::value j = boost::json::object{};
-  j.as_object()["success"] = true;
-  j.as_object()["stdout"] = "hello world";
-  j.as_object()["stderr"] = "";
-  j.as_object()["error"] = "";
-  j.as_object()["exit_code"] = 0;
-
-  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
-  REQUIRE(result == "hello world");
-}
-
-TEST_CASE("ExtractToolResultContent parses failure JSON and returns error field", "[executor]") {
-  boost::json::value j = boost::json::object{};
-  j.as_object()["success"] = false;
-  j.as_object()["stdout"] = "";
-  j.as_object()["stderr"] = "some stderr";
-  j.as_object()["error"] = "Command failed (exit 1)";
-  j.as_object()["exit_code"] = 1;
-
-  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
-  REQUIRE(result == "Command failed (exit 1)");
-}
-
-TEST_CASE("ExtractToolResultContent returns raw string for non-JSON input", "[executor]") {
-  std::string raw = "plain text output";
-  std::string result = tools::ExtractToolResultContent(raw);
-  REQUIRE(result == raw);
-}
-
-TEST_CASE("ExtractToolResultContent returns raw string for JSON without success key",
-          "[executor]") {
-  boost::json::value j = boost::json::object{};
-  j.as_object()["other"] = "data";
-
-  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
-  REQUIRE(result == boost::json::serialize(j));
-}
-
-TEST_CASE("ExtractToolResultContent returns raw string for JSON array", "[executor]") {
-  boost::json::value j = boost::json::value(boost::json::array{"a", "b"});
-
-  std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
-  REQUIRE(result == boost::json::serialize(j));
-}
 
 TEST_CASE("BuildStaticSystemContext includes environment info", "[executor]") {
   Executor executor(nullptr);
@@ -164,7 +117,6 @@ class MockLLM : public LLMProvider {
   }
 
   bool SupportsTools() const override { return true; }
-  std::string GetModelName() const override { return "mock"; }
 
  private:
   std::vector<ToolCall> calls_;
@@ -184,7 +136,6 @@ class FailingLLM : public LLMProvider {
   }
 
   bool SupportsTools() const override { return true; }
-  std::string GetModelName() const override { return "failing"; }
 };
 
 // Records what the executor sends, which is the only way to observe the request
@@ -202,7 +153,6 @@ class CapturingLLM : public LLMProvider {
   }
 
   bool SupportsTools() const override { return true; }
-  std::string GetModelName() const override { return "capturing"; }
 
   const std::vector<ChatMessage>& captured() const { return history_; }
 

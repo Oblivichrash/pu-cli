@@ -36,20 +36,9 @@ TEST_CASE("MakeNode assigns an id and keeps the payload", "[context][message]") 
   const context::MessageNode node = context::MakeNode(std::move(user));
 
   REQUIRE_FALSE(node.id.empty());
-  REQUIRE(node.parents.empty());
+  REQUIRE(node.parent.empty());
   REQUIRE(std::holds_alternative<context::UserPayload>(node.payload));
   REQUIRE(std::get<context::UserPayload>(node.payload).content == "hello");
-}
-
-TEST_CASE("MakeNode records parents in order", "[context][message]") {
-  const context::MessageId root = context::NewMessageId();
-  const context::MessageId branch = context::NewMessageId();
-
-  context::SystemPayload system;
-  system.content = "system";
-  const context::MessageNode node = context::MakeNode(std::move(system), {root, branch});
-
-  REQUIRE(node.parents == std::vector<context::MessageId>{root, branch});
 }
 
 TEST_CASE("Each role payload is distinguishable by type", "[context][message]") {
@@ -116,7 +105,7 @@ TEST_CASE("A node carries a timestamp and parent links", "[context][message]") {
 
   node.timestamp = "2026-09-21T10:00:00Z";
   REQUIRE(node.timestamp == "2026-09-21T10:00:00Z");
-  REQUIRE(node.parents.empty());
+  REQUIRE(node.parent.empty());
 }
 
 TEST_CASE("The shared UUID generator meets the v4 contract", "[context][message]") {

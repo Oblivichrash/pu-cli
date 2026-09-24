@@ -204,14 +204,8 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex, http::request<http::
   boost::json::value jv = boost::json::object{};
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    auto session = runtime.GetOrCreateDefaultSession();
-    if (session) {
-      session->GetWorkspace().ClearHistory();
-      jv.as_object()["success"] = true;
-    } else {
-      jv.as_object()["success"] = false;
-      jv.as_object()["error"] = "No active session";
-    }
+    runtime.ClearConversation();
+    jv.as_object()["success"] = true;
   } catch (const std::exception& e) {
     jv.as_object()["success"] = false;
     jv.as_object()["error"] = e.what();
@@ -278,8 +272,7 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
     const int turn = json::ValueOrDefault<int>(boost::json::parse(req.body()), "turn", 0);
-    auto session = runtime.GetOrCreateDefaultSession();
-    if (turn < 1 || !session->GetWorkspace().RewindBefore(static_cast<size_t>(turn))) {
+    if (turn < 1 || !runtime.RewindBefore(static_cast<size_t>(turn))) {
       jv.as_object()["success"] = false;
       jv.as_object()["error"] = "No such turn";
     } else {

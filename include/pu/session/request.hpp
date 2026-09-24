@@ -27,11 +27,9 @@ struct RequestInputs {
 // the transcript for its history, so both views cannot drift apart.
 ChatMessage RenderMessage(const context::MessageNode& node, int position);
 
-// The messages for the turn ending at `leaf`: the system inputs first, then the
-// stored path in order, so the request is exactly the conversation as it stands
-// at that position.
+// The messages for the current turn: the system inputs first, then the stored
+// chain in order, so the request is exactly the conversation as it stands.
 std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
-                                          const context::MessageId& leaf,
                                           const RequestInputs& inputs);
 
 }  // namespace pu::session

@@ -158,7 +158,7 @@ TEST_CASE("A tool call keeps its completed status across a save", "[session][sch
   REQUIRE(restored->GetWorkspace().HistorySize() == 2);
 }
 
-TEST_CASE("Parents survive a save and load", "[session][schema]") {
+TEST_CASE("The parent survives a save and load", "[session][schema]") {
   Session session;
   Workspace& ws = session.GetWorkspace();
   ws.Append("user", "one");
@@ -184,12 +184,11 @@ TEST_CASE("Parents survive a save and load", "[session][schema]") {
     return boost::json::value_to<std::string>(node.at("id"));
   };
 
-  REQUIRE(node_with_text("one").at("parents").as_array().empty());
-  REQUIRE(node_with_text("two").at("parents").as_array().size() == 1);
-  REQUIRE(boost::json::value_to<std::string>(node_with_text("two").at("parents").as_array().at(
-              0)) == id_of(node_with_text("one")));
-  REQUIRE(boost::json::value_to<std::string>(node_with_text("three").at("parents").as_array().at(
-              0)) == id_of(node_with_text("two")));
+  REQUIRE(boost::json::value_to<std::string>(node_with_text("one").at("parent")).empty());
+  REQUIRE(boost::json::value_to<std::string>(node_with_text("two").at("parent")) ==
+          id_of(node_with_text("one")));
+  REQUIRE(boost::json::value_to<std::string>(node_with_text("three").at("parent")) ==
+          id_of(node_with_text("two")));
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
@@ -230,8 +229,8 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   session.GetWorkspace().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parents"] =
-      boost::json::array{123};
+  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parent"] =
+      123;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
