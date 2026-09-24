@@ -9,7 +9,6 @@
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
-#include <sstream>
 
 namespace pu {
 
@@ -30,7 +29,10 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
-void OllamaProvider::ResetAccumulators() { tool_calls_.clear(); }
+void OllamaProvider::ResetAccumulators() {
+  content_.clear();
+  tool_calls_.clear();
+}
 
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
     : config_(std::move(config)),
@@ -69,8 +71,11 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
-    if (json::HasKey(msg, "content") && msg.at("content").is_string())
-      if (content_cb) content_cb(boost::json::value_to<std::string>(msg.at("content")));
+    if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
+      const std::string content = boost::json::value_to<std::string>(msg.at("content"));
+      content_ += content;
+      if (content_cb) content_cb(content);
+    }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
       for (const auto& tc : msg.at("tool_calls").as_array()) {
@@ -120,20 +125,11 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  std::ostringstream content_stream;
-
   llm::StreamingJsonParser parser(
       [&](std::string_view line) {
         try {
           auto j = boost::json::parse(line);
           HandleJsonToken(j, content_callback);
-
-          if (json::HasKey(j, "message")) {
-            const auto& msg = j.at("message");
-            if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
-              content_stream << boost::json::value_to<std::string>(msg.at("content"));
-            }
-          }
         } catch (const boost::system::system_error& e) {
           // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
           spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
@@ -151,7 +147,7 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
 
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
-  result.content = content_stream.str();
+  result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
   return result;
 }

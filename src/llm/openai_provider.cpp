@@ -11,7 +11,6 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <mutex>
-#include <sstream>
 
 namespace pu {
 
@@ -44,6 +43,7 @@ OpenAIProvider::OpenAIProvider(const Config& config, std::unique_ptr<pu::http::H
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
   current_reasoning_content_.clear();
+  content_.clear();
   tool_calls_.clear();
 }
 
@@ -87,8 +87,11 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
     const boost::json::value delta = json::ValueOrDefault<boost::json::value>(
         j.at("choices").at(0), "delta", boost::json::object{});
     if (delta.is_object()) {
-      auto content = SafeString(delta, "content");
-      if (!content.empty() && content_cb) content_cb(content);
+      const std::string content = SafeString(delta, "content");
+      if (!content.empty()) {
+        content_ += content;
+        if (content_cb) content_cb(content);
+      }
 
       if (json::HasKey(delta, "reasoning_content") && delta.at("reasoning_content").is_string()) {
         current_reasoning_content_ +=
@@ -155,8 +158,6 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  std::ostringstream content_stream;
-
   llm::StreamingJsonParser parser(
       [&](std::string_view line) {
         constexpr std::string_view kDataPrefix = "data: ";
@@ -173,16 +174,6 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
         try {
           auto j = boost::json::parse(data);
           HandleJsonToken(j, content_callback);
-
-          if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
-              !j.at("choices").as_array().empty()) {
-            const boost::json::value delta = json::ValueOrDefault<boost::json::value>(
-                j.at("choices").at(0), "delta", boost::json::object{});
-            if (delta.is_object()) {
-              auto content = SafeString(delta, "content");
-              content_stream << content;
-            }
-          }
         } catch (const boost::system::system_error& e) {
           // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
           spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
@@ -200,7 +191,7 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
 
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
-  result.content = content_stream.str();
+  result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
   result.reasoning_content = current_reasoning_content_;
   return result;

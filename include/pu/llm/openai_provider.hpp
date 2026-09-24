@@ -53,6 +53,7 @@ class OpenAIProvider : public LLMProvider {
   };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
+  std::string content_;
   std::string current_reasoning_content_;
   std::vector<ToolCall> tool_calls_;
 };

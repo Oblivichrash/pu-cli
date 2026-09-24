@@ -46,6 +46,7 @@ class OllamaProvider : public LLMProvider {
   std::string host_;
   std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
+  std::string content_;
   std::vector<ToolCall> tool_calls_;
 };
 
