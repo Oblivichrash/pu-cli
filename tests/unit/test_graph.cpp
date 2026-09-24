@@ -12,14 +12,14 @@ namespace {
 
 context::MessagePayload User(const std::string& text) {
   context::UserPayload user;
-  user.content.emplace_back(context::TextPart{text});
+  user.content = text;
   return user;
 }
 
 context::MessagePayload Assistant(const std::string& text,
                                   std::vector<context::ToolCallRecord> calls = {}) {
   context::AssistantPayload assistant;
-  assistant.content.emplace_back(context::TextPart{text});
+  assistant.content = text;
   assistant.tool_calls = std::move(calls);
   return assistant;
 }
@@ -27,21 +27,21 @@ context::MessagePayload Assistant(const std::string& text,
 context::MessagePayload Receipt(const std::string& call_id, const std::string& text = "ok") {
   context::ToolPayload receipt;
   receipt.tool_call_id = call_id;
-  receipt.content.emplace_back(context::TextPart{text});
+  receipt.content = text;
   return receipt;
 }
 
 std::string TextOf(const context::MessageNode& node) {
   if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
-    return context::FlattenText(user->content);
+    return user->content;
   }
   if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
-    return context::FlattenText(assistant->content);
+    return assistant->content;
   }
   if (const auto* system = std::get_if<context::SystemPayload>(&node.payload)) {
-    return context::FlattenText(system->content);
+    return system->content;
   }
-  return context::FlattenText(std::get<context::ToolPayload>(node.payload).content);
+  return std::get<context::ToolPayload>(node.payload).content;
 }
 
 }  // namespace

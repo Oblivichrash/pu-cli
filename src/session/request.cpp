@@ -10,10 +10,10 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
 
   if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
     msg.role = context::kUserRole;
-    msg.content = context::FlattenText(user->content);
+    msg.content = user->content;
   } else if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
     msg.role = context::kAssistantRole;
-    msg.content = context::FlattenText(assistant->content);
+    msg.content = assistant->content;
     if (assistant->reasoning) msg.reasoning_content = assistant->reasoning->raw_json;
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
@@ -24,11 +24,11 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
     }
   } else if (const auto* system = std::get_if<context::SystemPayload>(&node.payload)) {
     msg.role = context::kSystemRole;
-    msg.content = context::FlattenText(system->content);
+    msg.content = system->content;
   } else {
     const context::ToolPayload& receipt = std::get<context::ToolPayload>(node.payload);
     msg.role = context::kToolRole;
-    msg.content = context::FlattenText(receipt.content);
+    msg.content = receipt.content;
     msg.tool_name = receipt.tool_name;
     msg.tool_call_id = receipt.tool_call_id;
   }

@@ -255,7 +255,8 @@ Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
 An Anthropic provider would need a `system` request field instead of a system
 message, `tools[].input_schema` instead of `parameters`, `tool_use`/`tool_result`
 content blocks instead of role messages, and `thinking` blocks whose `signature`
-must be echoed back verbatim.
+must be echoed back verbatim — which the stored reasoning would have to grow a
+field for.
 
 ## Data Flow
 
@@ -341,7 +342,7 @@ handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 <data-dir>/session.json   # Single session state
 ```
 
-The session file carries `schema_version` (currently 2) beside `workspace` and
+The session file carries `schema_version` (currently 3) beside `workspace` and
 `runtime_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
@@ -351,13 +352,22 @@ this session one of its own. Every other backend field is read from
 touching the session. The session also decides which agent a restart resumes:
 the named agent wins over `default_agent`.
 
-Version 2 stores the conversation as a DAG: `workspace.history` holds `nodes`,
-each with its id, timestamp, parents and one role payload, plus the `leaf` that
-marks the current position. A file without the version, with another one, or whose
-history is not node storage is refused rather than guessed at; `pu` reports the
-reason, names `<data-dir>/session.v1.backup.json` when that backup exists, and
-starts a fresh conversation. The older layout is a flat list of messages, which is
-what the stage 0 backup preserves.
+The conversation is a DAG: `workspace.history` holds `nodes`, each with its id,
+timestamp, parents and one role payload, plus the `leaf` that marks the current
+position. A payload's `content` is a single string, and reasoning is the JSON the
+provider sent (`reasoning.raw_json`).
+
+Content is one string rather than an array of typed parts. Nothing here sends or
+receives parts, so the array only wrapped a string; the OpenAI content-block format
+is itself an array, though, so a second part type means reintroducing the wrapper —
+mechanical, and the point at which it would earn its place.
+
+A file without the version, with another one, or whose history is not node storage
+is refused rather than guessed at; `pu` reports the reason, names
+`<data-dir>/session.v1.backup.json` when that backup exists, and starts a fresh
+conversation. Version 1 stored a flat list of messages, and version 2 an array of
+typed content parts beside a reasoning signature; neither is converted, so what
+they hold survives only in that backup.
 
 The session file contains no system prompt: the prompt is configuration and is
 read from `agents.json` on every start.

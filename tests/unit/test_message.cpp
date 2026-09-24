@@ -31,14 +31,14 @@ TEST_CASE("Message ids do not repeat", "[context][message]") {
 
 TEST_CASE("MakeNode assigns an id and keeps the payload", "[context][message]") {
   context::UserPayload user;
-  user.content.emplace_back(context::TextPart{"hello"});
+  user.content = "hello";
 
   const context::MessageNode node = context::MakeNode(std::move(user));
 
   REQUIRE_FALSE(node.id.empty());
   REQUIRE(node.parents.empty());
   REQUIRE(std::holds_alternative<context::UserPayload>(node.payload));
-  REQUIRE(context::FlattenText(std::get<context::UserPayload>(node.payload).content) == "hello");
+  REQUIRE(std::get<context::UserPayload>(node.payload).content == "hello");
 }
 
 TEST_CASE("MakeNode records parents in order", "[context][message]") {
@@ -46,20 +46,10 @@ TEST_CASE("MakeNode records parents in order", "[context][message]") {
   const context::MessageId branch = context::NewMessageId();
 
   context::SystemPayload system;
-  system.content.emplace_back(context::TextPart{"system"});
+  system.content = "system";
   const context::MessageNode node = context::MakeNode(std::move(system), {root, branch});
 
   REQUIRE(node.parents == std::vector<context::MessageId>{root, branch});
-}
-
-TEST_CASE("FlattenText concatenates parts in order", "[context][message]") {
-  const std::vector<context::ContentPart> parts = {
-      context::TextPart{"first "},
-      context::TextPart{"second"},
-  };
-
-  REQUIRE(context::FlattenText(parts) == "first second");
-  REQUIRE(context::FlattenText({}).empty());
 }
 
 TEST_CASE("Each role payload is distinguishable by type", "[context][message]") {
@@ -76,15 +66,16 @@ TEST_CASE("Each role payload is distinguishable by type", "[context][message]") 
 
 TEST_CASE("A tool call starts pending and a completed one no longer blocks", "[context][message]") {
   context::AssistantPayload assistant;
-  assistant.content.emplace_back(context::TextPart{"let me check"});
-  assistant.reasoning = context::Reasoning{"openai", "sig", R"({"raw":true})"};
+  assistant.content = "let me check";
+  assistant.reasoning = context::Reasoning{R"({"raw":true})"};
   assistant.tool_calls.push_back(
       context::ToolCallRecord{"call_1", "read_file", boost::json::object{}});
 
   const context::MessageNode node = context::MakeNode(std::move(assistant));
 
   REQUIRE(context::HasUnfinishedToolCalls(node));
-  REQUIRE(std::get<context::AssistantPayload>(node.payload).reasoning->signature == "sig");
+  REQUIRE(std::get<context::AssistantPayload>(node.payload).reasoning->raw_json ==
+          R"({"raw":true})");
 
   context::AssistantPayload done;
   done.tool_calls.push_back(context::ToolCallRecord{"call_1", "read_file", boost::json::object{},
@@ -110,7 +101,7 @@ TEST_CASE("Only a tool payload responds to a tool call", "[context][message]") {
   context::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "read_file";
-  receipt.content.emplace_back(context::TextPart{"file contents"});
+  receipt.content = "file contents";
   const context::MessageNode node = context::MakeNode(std::move(receipt));
 
   const context::ToolPayload& payload = std::get<context::ToolPayload>(node.payload);

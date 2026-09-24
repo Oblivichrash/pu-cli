@@ -33,28 +33,9 @@ inline constexpr const char* kAssistantRole = "assistant";
 inline constexpr const char* kSystemRole = "system";
 inline constexpr const char* kToolRole = "tool";
 
-// Every role payload carries text as parts, so a non-text part is an added
-// variant alternative rather than a change to every consumer. Providers that
-// accept only text flatten the parts.
-struct TextPart {
-  std::string text;
-};
-
-using ContentPart = std::variant<TextPart>;
-
-inline std::string FlattenText(const std::vector<ContentPart>& parts) {
-  std::string text;
-  for (const ContentPart& part : parts) {
-    text += std::get<TextPart>(part).text;
-  }
-  return text;
-}
-
-// Reasoning as received, kept whole so a provider that requires an echoed
-// signature or an opaque block can be replayed exactly.
+// Reasoning as received, kept in the provider's own encoding so it can be
+// echoed back unchanged.
 struct Reasoning {
-  std::string provider;
-  std::string signature;
   std::string raw_json;
 };
 
@@ -101,24 +82,24 @@ inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
 }
 
 struct UserPayload {
-  std::vector<ContentPart> content;
+  std::string content;
 };
 
 struct AssistantPayload {
-  std::vector<ContentPart> content;
+  std::string content;
   std::optional<Reasoning> reasoning;
   std::vector<ToolCallRecord> tool_calls;
 };
 
 struct SystemPayload {
-  std::vector<ContentPart> content;
+  std::string content;
 };
 
 // The result of running a tool, answering the record with the same id.
 struct ToolPayload {
   std::string tool_call_id;
   std::string tool_name;
-  std::vector<ContentPart> content;
+  std::string content;
 };
 
 using MessagePayload = std::variant<UserPayload, AssistantPayload, SystemPayload, ToolPayload>;

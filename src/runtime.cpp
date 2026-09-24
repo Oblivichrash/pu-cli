@@ -46,15 +46,20 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
 
   // The format changed incompatibly, so the file is reported rather than
   // guessed at. The backup is the copy that still holds the original.
-  const std::string reason =
-      json::HasKey(j, "schema_version")
-          ? "schema_version " + std::to_string(json::ValueOrDefault<int>(j, "schema_version", 0)) +
-                " without DAG node storage"
-          : "missing schema_version";
+  std::string reason;
+  if (!json::HasKey(j, "schema_version")) {
+    reason = "missing schema_version";
+  } else if (const int version = json::ValueOrDefault<int>(j, "schema_version", 0);
+             version != context::kSchemaVersion) {
+    reason = "schema_version " + std::to_string(version) + ", this build reads " +
+             std::to_string(context::kSchemaVersion);
+  } else {
+    reason = "history is not DAG node storage";
+  }
   const std::filesystem::path backup = path.parent_path() / "session.v1.backup.json";
 
   std::ostringstream message;
-  message << "session.json uses the pre-DAG (v1) layout and cannot be loaded.\n"
+  message << "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
           << "  file:    " << path.string() << "\n"
           << "  reason:  " << reason << "\n";
   if (std::filesystem::exists(backup)) {

@@ -33,7 +33,7 @@ TEST_CASE("A session without a version field is refused", "[session][schema]") {
 
 TEST_CASE("A session with another version is refused", "[session][schema]") {
   boost::json::value j = LegacySession();
-  j.as_object()["schema_version"] = 1;
+  j.as_object()["schema_version"] = context::kSchemaVersion - 1;
   REQUIRE(Session::Deserialize(j) == nullptr);
 
   boost::json::value future = LegacySession();
@@ -61,6 +61,33 @@ TEST_CASE("A session written by this version loads", "[session][schema]") {
   REQUIRE(restored != nullptr);
   REQUIRE(restored->GetWorkspace().HistorySize() == 2);
   REQUIRE(restored->GetWorkspace().GetHistory()[1].content == "hi");
+}
+
+TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "hello");
+
+  ChatMessage assistant;
+  assistant.role = context::kAssistantRole;
+  assistant.content = "checking";
+  assistant.reasoning_content = R"({"raw":true})";
+  session.GetWorkspace().Append(assistant);
+
+  boost::json::value saved = session.Serialize();
+  const boost::json::array& nodes =
+      saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  REQUIRE(nodes.size() == 2);
+
+  // Nodes are ordered by id, so the payload is found by the content it carries.
+  const boost::json::value* assistant_node = nullptr;
+  for (const boost::json::value& node : nodes) {
+    REQUIRE(node.at("content").is_string());
+    if (node.at("content") == "checking") assistant_node = &node;
+  }
+
+  REQUIRE(assistant_node != nullptr);
+  REQUIRE(assistant_node->at("reasoning").as_object().size() == 1);
+  REQUIRE(assistant_node->at("reasoning").at("raw_json") == R"({"raw":true})");
 }
 
 TEST_CASE("Every role survives a save and load", "[session][schema]") {
@@ -147,8 +174,7 @@ TEST_CASE("Parents survive a save and load", "[session][schema]") {
 
   const auto node_with_text = [&](const std::string& text) -> const boost::json::value& {
     for (const boost::json::value& node : nodes) {
-      if (boost::json::value_to<std::string>(node.at("content").as_array().at(0).at("text")) ==
-          text) {
+      if (boost::json::value_to<std::string>(node.at("content")) == text) {
         return node;
       }
     }
@@ -215,7 +241,7 @@ TEST_CASE("A version that is not a number is refused", "[session][schema]") {
   session.GetWorkspace().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.as_object()["schema_version"] = "2";
+  saved.as_object()["schema_version"] = std::to_string(context::kSchemaVersion);
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }

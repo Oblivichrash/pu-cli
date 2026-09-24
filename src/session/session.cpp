@@ -17,21 +17,13 @@ namespace pu {
 
 namespace {
 
-std::vector<context::ContentPart> ToContent(const std::string& text) {
-  std::vector<context::ContentPart> content;
-  content.emplace_back(context::TextPart{text});
-  return content;
-}
-
 context::MessagePayload ToPayload(const ChatMessage& msg) {
-  std::vector<context::ContentPart> content = ToContent(msg.content);
-
   if (msg.role == context::kAssistantRole) {
     context::AssistantPayload assistant;
-    assistant.content = std::move(content);
+    assistant.content = msg.content;
     if (!msg.reasoning_content.empty()) {
       // The legacy field is the reasoning text as the provider sent it.
-      assistant.reasoning = context::Reasoning{"", "", msg.reasoning_content};
+      assistant.reasoning = context::Reasoning{msg.reasoning_content};
     }
     if (msg.tool_calls.is_array()) {
       for (const boost::json::value& call : msg.tool_calls.as_array()) {
@@ -45,18 +37,18 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     context::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
-    receipt.content = std::move(content);
+    receipt.content = msg.content;
     return receipt;
   }
 
   if (msg.role == context::kSystemRole) {
     context::SystemPayload system;
-    system.content = std::move(content);
+    system.content = msg.content;
     return system;
   }
 
   context::UserPayload user;
-  user.content = std::move(content);
+  user.content = msg.content;
   return user;
 }
 

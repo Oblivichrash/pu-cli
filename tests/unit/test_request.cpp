@@ -14,13 +14,13 @@ namespace {
 
 context::MessageId AppendUser(context::MessageGraph& graph, const std::string& text) {
   context::UserPayload user;
-  user.content.emplace_back(context::TextPart{text});
+  user.content = text;
   return graph.AppendAfterLeaf(std::move(user)).id;
 }
 
 context::MessagePayload Assistant(const std::string& text) {
   context::AssistantPayload assistant;
-  assistant.content.emplace_back(context::TextPart{text});
+  assistant.content = text;
   return assistant;
 }
 
@@ -107,7 +107,7 @@ TEST_CASE("A stored system node is passed through", "[request]") {
   AppendUser(graph, "one");
 
   context::SystemPayload note;
-  note.content.emplace_back(context::TextPart{"a note from the caller"});
+  note.content = "a note from the caller";
   graph.AppendAfterLeaf(std::move(note));
 
   session::RequestInputs inputs;
@@ -124,8 +124,8 @@ TEST_CASE("A stored system node is passed through", "[request]") {
 TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   context::MessageGraph graph;
   context::AssistantPayload assistant;
-  assistant.content.emplace_back(context::TextPart{"checking"});
-  assistant.reasoning = context::Reasoning{"openai", "sig", "because"};
+  assistant.content = "checking";
+  assistant.reasoning = context::Reasoning{"because"};
   assistant.tool_calls.push_back(
       context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
@@ -133,7 +133,7 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   context::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "ls";
-  receipt.content.emplace_back(context::TextPart{"file.txt"});
+  receipt.content = "file.txt";
   graph.AppendAfterLeaf(std::move(receipt));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), {});
@@ -176,7 +176,7 @@ TEST_CASE("Every stored node reaches the model, with its tool receipt", "[reques
   context::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "ls";
-  receipt.content.emplace_back(context::TextPart{"file.txt"});
+  receipt.content = "file.txt";
   graph.AppendAfterLeaf(std::move(receipt));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), {});

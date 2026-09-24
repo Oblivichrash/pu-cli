@@ -25,30 +25,6 @@ ToolCallStatus StatusFrom(const std::string& name) {
   return ToolCallStatus::kPending;
 }
 
-boost::json::array SerializeContent(const std::vector<ContentPart>& content) {
-  boost::json::array parts;
-  for (const ContentPart& part : content) {
-    parts.push_back(boost::json::value{
-        {"type", "text"},
-        {"text", std::get<TextPart>(part).text},
-    });
-  }
-  return parts;
-}
-
-std::vector<ContentPart> DeserializeContent(const boost::json::value& value) {
-  std::vector<ContentPart> content;
-  if (!value.is_array()) return content;
-  for (const boost::json::value& part : value.as_array()) {
-    // Only text exists today; an unknown part type is skipped rather than
-    // turned into an empty text part, so the loss is visible in the count.
-    if (json::ValueOrDefault<std::string>(part, "type", "") == "text") {
-      content.emplace_back(TextPart{json::ValueOrDefault<std::string>(part, "text", "")});
-    }
-  }
-  return content;
-}
-
 boost::json::value SerializeNode(const MessageNode& node) {
   boost::json::array parents;
   for (const MessageId& parent : node.parents) {
@@ -62,16 +38,12 @@ boost::json::value SerializeNode(const MessageNode& node) {
 
   if (const auto* user = std::get_if<UserPayload>(&node.payload)) {
     out["role"] = kUserRole;
-    out["content"] = SerializeContent(user->content);
+    out["content"] = user->content;
   } else if (const auto* assistant = std::get_if<AssistantPayload>(&node.payload)) {
     out["role"] = kAssistantRole;
-    out["content"] = SerializeContent(assistant->content);
+    out["content"] = assistant->content;
     if (assistant->reasoning) {
-      out["reasoning"] = boost::json::value{
-          {"provider", assistant->reasoning->provider},
-          {"signature", assistant->reasoning->signature},
-          {"raw_json", assistant->reasoning->raw_json},
-      };
+      out["reasoning"] = boost::json::value{{"raw_json", assistant->reasoning->raw_json}};
     }
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
@@ -87,11 +59,11 @@ boost::json::value SerializeNode(const MessageNode& node) {
     }
   } else if (const auto* system = std::get_if<SystemPayload>(&node.payload)) {
     out["role"] = kSystemRole;
-    out["content"] = SerializeContent(system->content);
+    out["content"] = system->content;
   } else {
     const auto& receipt = std::get<ToolPayload>(node.payload);
     out["role"] = kToolRole;
-    out["content"] = SerializeContent(receipt.content);
+    out["content"] = receipt.content;
     out["tool_call_id"] = receipt.tool_call_id;
     out["tool_name"] = receipt.tool_name;
   }
@@ -115,9 +87,7 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   }
 
   const std::string role = json::ValueOrDefault<std::string>(value, "role", "");
-  const std::vector<ContentPart> content = json::HasKey(value, "content")
-                                               ? DeserializeContent(value.at("content"))
-                                               : std::vector<ContentPart>{};
+  const std::string content = json::ValueOrDefault<std::string>(value, "content", "");
 
   if (role == kUserRole) {
     UserPayload user;
@@ -130,11 +100,7 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
     assistant.content = content;
     if (json::HasKey(value, "reasoning") && value.at("reasoning").is_object()) {
       const boost::json::value& reasoning = value.at("reasoning");
-      assistant.reasoning = Reasoning{
-          json::ValueOrDefault<std::string>(reasoning, "provider", ""),
-          json::ValueOrDefault<std::string>(reasoning, "signature", ""),
-          json::ValueOrDefault<std::string>(reasoning, "raw_json", ""),
-      };
+      assistant.reasoning = Reasoning{json::ValueOrDefault<std::string>(reasoning, "raw_json", "")};
     }
     if (json::HasKey(value, "tool_calls") && value.at("tool_calls").is_array()) {
       for (const boost::json::value& call : value.at("tool_calls").as_array()) {

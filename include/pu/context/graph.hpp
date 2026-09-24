@@ -22,7 +22,7 @@ namespace pu::context {
 
 // The persisted layout of the context model. Bumped when the shape changes in a
 // way an older reader cannot interpret; there is no reader for older values.
-inline constexpr int kSchemaVersion = 2;
+inline constexpr int kSchemaVersion = 3;
 
 class MessageGraph {
  public:
