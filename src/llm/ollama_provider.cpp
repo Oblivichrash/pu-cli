@@ -32,6 +32,7 @@ constexpr llm::ProviderCapabilities kCapabilities{
 void OllamaProvider::ResetAccumulators() {
   content_.clear();
   tool_calls_.clear();
+  usage_.reset();
 }
 
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
@@ -107,6 +108,12 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
       }
     }
   }
+
+  // Ollama reports what the request cost in the final object, beside `done`.
+  if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
+    usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
+                        json::ValueOrDefault<int>(j, "eval_count", 0)};
+  }
 }
 
 ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
@@ -149,6 +156,7 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
 
   result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
+  result.usage = usage_;
   return result;
 }
 

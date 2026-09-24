@@ -45,6 +45,7 @@ void OpenAIProvider::ResetAccumulators() {
   current_reasoning_content_.clear();
   content_.clear();
   tool_calls_.clear();
+  usage_.reset();
 }
 
 std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history,
@@ -52,6 +53,9 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
   boost::json::value req = {
       {"model", config_.model},
       {"stream", true},
+      // Without this the stream carries no usage object, so the token counts the
+      // result reports would never arrive.
+      {"stream_options", {{"include_usage", true}}},
       {"temperature", config_.temperature},
       {"max_tokens", config_.max_tokens},
   };
@@ -118,10 +122,8 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
 
   if (json::HasKey(j, "usage") && j.at("usage").is_object()) {
     const auto& usage = j.at("usage");
-    spdlog::trace("OpenAI usage: prompt_tokens={}, completion_tokens={}, total_tokens={}",
-                  json::ValueOrDefault<int>(usage, "prompt_tokens", 0),
-                  json::ValueOrDefault<int>(usage, "completion_tokens", 0),
-                  json::ValueOrDefault<int>(usage, "total_tokens", 0));
+    usage_ = TokenUsage{json::ValueOrDefault<int>(usage, "prompt_tokens", 0),
+                        json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
   }
 
   if (is_final) {
@@ -194,6 +196,7 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
   result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
   result.reasoning_content = current_reasoning_content_;
+  result.usage = usage_;
   return result;
 }
 

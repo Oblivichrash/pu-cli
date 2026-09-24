@@ -217,6 +217,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(
           },
           cancel_token);
 
+      if (chat_result.usage) {
+        spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
+                      chat_result.usage->completion_tokens);
+      }
+
       tool_was_called = !chat_result.tool_calls.empty();
       if (!tool_was_called) {
         std::string response = chat_result.content;

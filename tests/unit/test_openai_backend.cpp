@@ -86,6 +86,40 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
+  // Nothing counted the tokens, so the counts stay absent rather than zero.
+  REQUIRE_FALSE(result.usage.has_value());
+}
+
+TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+  config.host = "https://api.openai.com/v1";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"(data: {"choices":[{"delta":{"content":"hi"}}]})"
+                        "\n"
+                        R"(data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}})"
+                        "\n"
+                        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  // The stream carries no usage unless the request asks for it.
+  auto body = boost::json::parse(mock_ptr->last_body);
+  REQUIRE(body.at("stream_options").at("include_usage") == true);
+
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 11);
+  REQUIRE(result.usage->completion_tokens == 7);
 }
 
 TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {

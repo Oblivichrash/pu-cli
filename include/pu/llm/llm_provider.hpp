@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <optional>
 
 #include <boost/json.hpp>
 
@@ -51,10 +52,19 @@ struct ToolCall {
 
 // What one request produced. Tool calls belong here because the caller acts on
 // them after the stream has ended, the same way it acts on the text.
+// What one request cost, as the provider counted it. Absent means the provider
+// reported nothing, which is not the same as a measured zero: a caller that
+// budgets tokens has to tell those apart.
+struct TokenUsage {
+  int prompt_tokens = 0;
+  int completion_tokens = 0;
+};
+
 struct ChatResult {
   std::string content;
   std::string reasoning_content;
   std::vector<ToolCall> tool_calls;
+  std::optional<TokenUsage> usage;
 };
 
 class LLMProvider {

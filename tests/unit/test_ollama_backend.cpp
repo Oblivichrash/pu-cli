@@ -57,6 +57,36 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
+  // Nothing counted the tokens, so the counts stay absent rather than zero.
+  REQUIRE_FALSE(result.usage.has_value());
+}
+
+TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"({"message":{"content":"hi"}})"
+        "\n"
+        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9})"
+        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 21);
+  REQUIRE(result.usage->completion_tokens == 9);
 }
 
 TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {

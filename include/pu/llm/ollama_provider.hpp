@@ -19,7 +19,6 @@ class OllamaProvider : public LLMProvider {
     std::string model;
     float temperature = 0.7f;
     std::string api_key;
-    int max_tokens = 2048;
     std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
   };
 
@@ -48,6 +47,7 @@ class OllamaProvider : public LLMProvider {
   std::unique_ptr<pu::http::HttpClient> http_;
   std::string content_;
   std::vector<ToolCall> tool_calls_;
+  std::optional<TokenUsage> usage_;
 };
 
 }  // namespace pu

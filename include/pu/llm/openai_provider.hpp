@@ -56,6 +56,7 @@ class OpenAIProvider : public LLMProvider {
   std::string content_;
   std::string current_reasoning_content_;
   std::vector<ToolCall> tool_calls_;
+  std::optional<TokenUsage> usage_;
 };
 
 }  // namespace pu

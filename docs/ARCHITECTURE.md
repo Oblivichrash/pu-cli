@@ -237,7 +237,7 @@ and compatible gateways.
 | `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
 | Call assembly | one complete call per line | `index`-keyed deltas flushed on `done` |
 | Reasoning on response | not parsed; `IsThinkingMode()` is false | `delta.reasoning_content` accumulated |
-| Usage | not parsed | logged at `trace` from `usage` |
+| Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
 
 | Capability | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|
@@ -442,7 +442,7 @@ and the `pu` executable adds only `main.cpp`.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
-- **A request is bounded by message count, not tokens.** `ChatResult` carries no usage, so nothing can warn before a provider's context limit is reached. A conversation grows until the provider refuses it, and the refusal reaches the user as an HTTP error.
+- **Nothing enforces a token budget.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **Tool call status has no writer for `kRunning` or `kInterrupted`.** A record goes from `kPending` to `kCompleted`; an interrupted run is not distinguishable from one that never started, because neither cancellation path records anything.
 - **`ask_user` is answered by the tool loop, not by the tool.** `AskUserTool::Execute` returns a stub, and `RunToolLoop` intercepts the call to end the turn with the question as the response, so no real answer channel exists.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
