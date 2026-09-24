@@ -30,20 +30,11 @@ class MessageGraph {
 
   std::size_t Size() const { return nodes_.size(); }
 
-  const MessageNode* Find(const MessageId& id) const {
-    const auto it = nodes_.find(id);
-    return it == nodes_.end() ? nullptr : &it->second;
-  }
-
   // Nodes from the root to the leaf, in order. The only ordering the graph
   // defines, because there is no positional index to fall back on.
-  std::vector<const MessageNode*> Chain() const { return ChainFrom(leaf_); }
-
-  // The same walk from any node, which is what lets a caller render a view
-  // other than the current position.
-  std::vector<const MessageNode*> ChainFrom(const MessageId& id) const {
+  std::vector<const MessageNode*> Chain() const {
     std::vector<const MessageNode*> chain;
-    const MessageNode* node = Find(id);
+    const MessageNode* node = Find(leaf_);
     while (node != nullptr) {
       chain.push_back(node);
       node = node->parent.empty() ? nullptr : Find(node->parent);
@@ -94,6 +85,11 @@ class MessageGraph {
   static bool Deserialize(const boost::json::value& value, MessageGraph& out);
 
  private:
+  const MessageNode* Find(const MessageId& id) const {
+    const auto it = nodes_.find(id);
+    return it == nodes_.end() ? nullptr : &it->second;
+  }
+
   const MessageNode& Add(MessageNode node) {
     const MessageId id = node.id;
     const MessageNode& stored = nodes_.emplace(id, std::move(node)).first->second;

@@ -37,7 +37,6 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
 }
 
 std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
-                                          const context::MessageId& leaf,
                                           const RequestInputs& inputs) {
   std::vector<ChatMessage> messages;
 
@@ -54,7 +53,7 @@ std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
   }
 
   int position = static_cast<int>(messages.size()) + 1;
-  for (const context::MessageNode* node : graph.ChainFrom(leaf)) {
+  for (const context::MessageNode* node : graph.Chain()) {
     messages.push_back(RenderMessage(*node, position++));
   }
   return messages;

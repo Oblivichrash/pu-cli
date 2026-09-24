@@ -196,8 +196,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
     inputs.system_prompt = system_prompt_;
     inputs.environment = BuildStaticSystemContext();
 
-    std::vector<ChatMessage> chat_history =
-        session::BuildRequestPath(workspace.GetGraph(), workspace.GetGraph().leaf(), inputs);
+    std::vector<ChatMessage> chat_history = session::BuildRequestPath(workspace.GetGraph(), inputs);
 
     ChatResult chat_result;
 
