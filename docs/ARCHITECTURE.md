@@ -366,6 +366,13 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
+Keeping a replaced turn instead would leave two lines of reasoning in the store
+and push the choice between them to whoever reads the file later, which is the
+moment they can judge it least. A line earns its place by being continued, and
+continuing means sending the next message on it, so the send that replaces a turn
+is where the choice belongs; a branch with no conclusion to build on is noise
+rather than an alternative.
+
 Content is one string rather than an array of typed parts. Nothing here sends or
 receives parts, so the array only wrapped a string; the OpenAI content-block format
 is itself an array, though, so a second part type means reintroducing the wrapper —
