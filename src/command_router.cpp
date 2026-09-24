@@ -41,7 +41,7 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
   add("/clear", &CommandRouter::HandleClear,
       "  /clear                 Clear conversation history\n");
   add("/rewind", &CommandRouter::HandleRewind,
-      "  /rewind <turn>         Step back to before a turn, keeping it on disk\n");
+      "  /rewind <turn>         Step back to before a turn; the next message replaces it\n");
   return reg;
 }
 
