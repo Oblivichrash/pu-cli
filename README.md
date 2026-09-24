@@ -153,7 +153,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | Method | Path | Description |
 | :----- | :--- | :---------- |
 | `GET` | `/api/session` | Current session info (agent, backend type/model) |
-| `GET` | `/api/history` | Full conversation history (including system and tool messages) |
+| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages) |
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
@@ -209,7 +209,7 @@ All tools return structured JSON with the following fields:
 }
 ```
 
-This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript stores the extracted `stdout` or `error` content; the full JSON is not persisted.
+This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript keeps the result verbatim, so the model sees the same JSON the tool produced and nothing is lost in extraction.
 
 ---
 
@@ -341,7 +341,7 @@ directly.
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_HOME` | Overrides the data directory used for logs (default `./.pu/`). Only logging is affected: `session.json` and `agents.json` always come from the workspace's `.pu/` |
+| `PU_HOME` | Overrides the data directory used for logs (default `./.pu/`). Only logging is affected: `session.json` comes from the workspace's `.pu/`, and `agents.json` from there or from `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |
