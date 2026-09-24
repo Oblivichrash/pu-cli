@@ -54,7 +54,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
     reason = "schema_version " + std::to_string(version) + ", this build reads " +
              std::to_string(context::kSchemaVersion);
   } else {
-    reason = "history is not DAG node storage";
+    reason = "history is not node storage";
   }
   const std::filesystem::path backup = path.parent_path() / "session.backup.json";
 
@@ -167,6 +167,17 @@ void Runtime::SaveCurrentSession() {
   } else {
     spdlog::warn("Failed to write session file: {}", path.string());
   }
+}
+
+bool Runtime::RewindBefore(size_t turn) {
+  if (!GetOrCreateDefaultSession()->GetWorkspace().RewindBefore(turn)) return false;
+  SaveCurrentSession();
+  return true;
+}
+
+void Runtime::ClearConversation() {
+  GetOrCreateDefaultSession()->GetWorkspace().ClearHistory();
+  SaveCurrentSession();
 }
 
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
@@ -346,7 +357,11 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
       current_session_->SetAgent(new_agent.name);
     } catch (const std::exception& e) {
       spdlog::warn("Failed to sync session config: {}", e.what());
+      return;
     }
+    // Which agent a session resumes is session state, so it reaches the file the
+    // way every other change to it does.
+    SaveCurrentSession();
   }
 }
 

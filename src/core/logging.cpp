@@ -85,7 +85,6 @@ std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) {
 }  // namespace
 
 void BeginRequest() { g_request_id = uuid::Generate(); }
-void SetLogRequestId(const std::string& request_id) { g_request_id = request_id; }
 void ClearLogRequestId() { g_request_id.clear(); }
 void SetLogToolName(const std::string& tool_name) { g_tool_name = tool_name; }
 void ClearLogToolName() { g_tool_name.clear(); }
@@ -161,7 +160,5 @@ void InitLogging(const std::string& log_level) {
   }
   spdlog::set_default_logger(logger);
 }
-
-void ShutdownLogging() { spdlog::shutdown(); }
 
 }  // namespace pu

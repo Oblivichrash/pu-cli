@@ -44,6 +44,13 @@ class Runtime {
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+  // The two conversation changes the Web API exposes. Both write the session,
+  // because the Runtime is the only place that knows a session is on disk at all:
+  // a caller that changed the workspace itself would be a caller that can forget
+  // to persist it.
+  bool RewindBefore(size_t turn);
+  void ClearConversation();
+
   // The backend the active session talks to: the session's override when it has
   // one, otherwise the agent's entry in agents.json.
   config::BackendConfig CurrentBackend() const;

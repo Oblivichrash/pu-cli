@@ -12,11 +12,9 @@
 namespace pu {
 
 void InitLogging(const std::string& log_level = "");
-void ShutdownLogging();
 
 // Thread-local structured-logging context (used when PU_LOG_JSON=1).
 void BeginRequest();
-void SetLogRequestId(const std::string& request_id);
 void ClearLogRequestId();
 void SetLogToolName(const std::string& tool_name);
 void ClearLogToolName();

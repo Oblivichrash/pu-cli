@@ -15,8 +15,7 @@ pu-cli is built around four principles:
 
 ## Tech Stack
 
-The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
-**spdlog**, and **OpenSSL**:
+What each dependency is for:
 
 - **Boost.Beast** — HTTP/WebSocket server (`pu serve`) and HTTP client
   (`BeastHttpClient`), built on top of **Boost.Asio**.
@@ -88,10 +87,11 @@ API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ### Structured Tool Output
 
-Tools return structured JSON instead of free text. `Executor` extracts `stdout`
-(on success) or `error` (on failure) and stores only that content in the
-transcript, so the full JSON is never persisted and history stays readable. The
-field schema lives in `include/pu/tools/tool_result.hpp` and is documented in
+Tools return structured JSON instead of free text. `Executor` stores that JSON in
+the transcript verbatim, so the model sees the same result the tool produced and
+nothing is lost to a partial extraction; `stdout` (on success) or `error` (on
+failure) is read out of it only for the tool callbacks. The field schema lives in
+`include/pu/tools/tool_result.hpp` and is documented in
 [README](../README.md#tool-output-format).
 
 ### System Context Injection
@@ -162,7 +162,7 @@ Key responsibilities:
    chunks, tool start/end, completion, or error). The frame schema is documented
    in [README](../README.md#websocket-protocol).
 6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
-   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/clear`)
+   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/rewind`, `/api/clear`)
    handle control and status queries. On Ctrl+C the server stops and
    `Runtime::Shutdown()` persists the session.
 
@@ -217,11 +217,12 @@ are documented in [README](../README.md#websocket-protocol) and implemented in
 
 ## Provider Differences
 
-`config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent_config.hpp`)
+`config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)
 to a concrete provider, and `Session::CreateProvider()` is its only caller. The
-`agents.json` backend `type` field selects it, and any value other
-than `"openai"` deserialises to Ollama. "OpenAI compatible" means the
-`/chat/completions` SSE contract and covers OpenAI, DeepSeek thinking mode, vLLM
+`agents.json` backend `type` field selects it: `"ollama"` and `"openai"` are the
+only values it accepts, anything else is refused at load time, and an absent field
+means Ollama. "OpenAI compatible" means the `/chat/completions` SSE contract and
+covers OpenAI, DeepSeek thinking mode, vLLM
 and compatible gateways.
 
 | Dimension | Ollama | OpenAI compatible |
@@ -247,18 +248,12 @@ and compatible gateways.
 | Streaming tool calls | whole call per line | index accumulation |
 | Reasoning | no | yes |
 | Reasoning signature | no | no |
-| Raw provider JSON retained | no | no |
+| Full provider response retained | no | no |
 | Multimodal input or output | no | no |
 | Prompt caching hints | `keep_alive` only | none |
 
 Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
 `ToolDefinition::Parameters()`.
-
-An Anthropic provider would need a `system` request field instead of a system
-message, `tools[].input_schema` instead of `parameters`, `tool_use`/`tool_result`
-content blocks instead of role messages, and `thinking` blocks whose `signature`
-must be echoed back verbatim — which the stored reasoning would have to grow a
-field for.
 
 ## Data Flow
 
@@ -279,7 +274,7 @@ Runtime.ProcessInput(input, ...)
                          ├── Read Workspace.Transcript
                          ├── LLMProvider.Chat()
                          ├── Toolbox.ExecuteTool() → JSON response
-                         ├── Extract std/error → store in Transcript
+                         ├── Store the tool result in Transcript
                          ├── Repeat tool loop if tool calls present
                          └── Return final response
                          │
@@ -344,7 +339,7 @@ handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 <data-dir>/session.json   # Single session state
 ```
 
-The session file carries `schema_version` (currently 3) beside `workspace` and
+The session file carries `schema_version` (currently 4) beside `workspace` and
 `runtime_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
@@ -354,10 +349,22 @@ this session one of its own. Every other backend field is read from
 touching the session. The session also decides which agent a restart resumes:
 the named agent wins over `default_agent`.
 
-The conversation is a DAG: `workspace.history` holds `nodes`, each with its id,
-timestamp, parents and one role payload, plus the `leaf` that marks the current
+The conversation is a chain: `workspace.history` holds `nodes`, each with its id,
+timestamp, its parent and one role payload, plus the `leaf` that marks the current
 position. A payload's `content` is a single string, and reasoning is the JSON the
 provider sent (`reasoning.raw_json`).
+
+`/rewind` moves the `leaf` back and removes nothing, so the turns after it stay
+in the file until something replaces them. The append that follows drops whatever
+the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
+ends up holding exactly the chain the view shows.
+
+Keeping a replaced turn instead would leave two lines of reasoning in the store
+and push the choice between them to whoever reads the file later, which is the
+moment they can judge it least. A line earns its place by being continued, and
+continuing means sending the next message on it, so the send that replaces a turn
+is where the choice belongs; a branch with no conclusion to build on is noise
+rather than an alternative.
 
 Content is one string rather than an array of typed parts. Nothing here sends or
 receives parts, so the array only wrapped a string; the OpenAI content-block format
@@ -367,9 +374,8 @@ mechanical, and the point at which it would earn its place.
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
 `<data-dir>/session.backup.json` when that backup exists, and starts a fresh
-conversation. Version 1 stored a flat list of messages, and version 2 an array of
-typed content parts beside a reasoning signature; neither is converted, so what
-they hold survives only in that backup.
+conversation. Older layouts are not converted, so what they hold survives only in
+that backup.
 
 The session file contains no system prompt: the prompt is configuration and is
 read from `agents.json` on every start.
@@ -415,6 +421,7 @@ src/
 ├── runtime.cpp, command_router.cpp
 ├── executor.cpp
 ├── core/                 # Base layer: logging, platform, HTTP client
+├── context/              # Message graph storage
 ├── llm/                  # Providers, streaming parser
 ├── mcp/                  # MCP transports, client with its JSON-RPC layer
 ├── session/              # Session, Workspace, etc.
@@ -443,14 +450,8 @@ and the `pu` executable adds only `main.cpp`.
 - MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
-- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
-- **Nothing enforces a token budget.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
-- **A cancelled run keeps no partial reply.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
+- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). Windows falls back to `"unknown"` when the kernel API fails; on POSIX an unavailable `uname` simply yields nothing.
+- **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
+- **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
-- **Unreachable nodes are never reclaimed.** `/rewind` moves the leaf back and leaves the branch it left behind in the store, and nothing removes a node, so the store grows without bound within a session.
 
----
-
-## License
-
-GPL-3.0 — see [LICENSE](../LICENSE)

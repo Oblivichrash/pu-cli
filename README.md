@@ -111,9 +111,10 @@ restart. Each directory has its own independent session.
 > bind unless the port is protected by other means.
 
 Each message you sent carries an **edit** link. It steps the session back to just
-before that turn and puts the text back in the composer, so sending it again
-replaces that turn with a new branch. The branch you left behind is kept in the
-session file.
+before that turn and puts the text back in the composer; sending it again
+replaces that turn, and the turn it replaced is dropped when the replacement
+lands, so what the session file ends up holding is what sending the new text from
+the start would have left.
 
 The Web UI supports:
 
@@ -153,13 +154,13 @@ The server streams back chunks as they are generated; the front-end renders them
 | Method | Path | Description |
 | :----- | :--- | :---------- |
 | `GET` | `/api/session` | Current session info (agent, backend type/model) |
-| `GET` | `/api/history` | Full conversation history (including system and tool messages) |
+| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages) |
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
 | `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
-| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`), keeping the branch on disk |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 
 All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
@@ -174,7 +175,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 | `/backend <type> <model> [host] [api_key]` | Give this session a backend of its own, outranking `agents.json` |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
-| `/rewind <turn>` | Step back to before a turn, keeping the branch on disk |
+| `/rewind <turn>` | Step back to before a turn; the next message replaces it |
 | `/exit`, `/quit` | Exit |
 
 These are chat commands. The Web server is a CLI subcommand (`pu serve`),
@@ -209,7 +210,7 @@ All tools return structured JSON with the following fields:
 }
 ```
 
-This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript stores the extracted `stdout` or `error` content; the full JSON is not persisted.
+This allows the executor to distinguish success from failure and provide clear feedback to the model. The transcript keeps the result verbatim, so the model sees the same JSON the tool produced and nothing is lost in extraction.
 
 ---
 
@@ -341,7 +342,7 @@ directly.
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_HOME` | Overrides the data directory used for logs (default `./.pu/`). Only logging is affected: `session.json` and `agents.json` always come from the workspace's `.pu/` |
+| `PU_HOME` | Overrides the data directory used for logs (default `./.pu/`). Only logging is affected: `session.json` comes from the workspace's `.pu/`, and `agents.json` from there or from `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |

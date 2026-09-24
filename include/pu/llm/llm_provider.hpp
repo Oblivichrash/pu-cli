@@ -79,7 +79,6 @@ class LLMProvider {
                           CancelToken cancel_token = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
-  virtual std::string GetModelName() const = 0;
   virtual bool IsThinkingMode() const { return false; }
 };
 
