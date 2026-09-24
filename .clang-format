@@ -1,5 +1,5 @@
 ---
-# Google C++ Style (see CONTRIBUTING.md), with two deliberate deviations:
+# Google C++ Style, with two deliberate deviations:
 #   - the column limit is widened to 100 to match the existing codebase;
 #   - includes keep the order they were written in, because that order decides
 #     which transitive declarations a translation unit sees, and the formatter
@@ -7,5 +7,4 @@
 BasedOnStyle: Google
 ColumnLimit: 100
 SortIncludes: false
-IncludeBlocks: Preserve
 ...
