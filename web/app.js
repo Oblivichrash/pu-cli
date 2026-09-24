@@ -40,7 +40,6 @@ function createSystemMessage(text) {
   el.className = "msg system";
   el.textContent = text;
   messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
 }
 
@@ -78,7 +77,6 @@ function createMessage(role, blocks, turn, text) {
   }
 
   messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
 }
 
