@@ -38,6 +38,9 @@ struct ExecutionResult {
   // the provider stopped at the token limit. Empty when there is nothing to add.
   // Not an error: the content is real, and it is stored.
   std::string notice;
+  // The model that answered the turn, as the response named it, so a caller can
+  // report who replied rather than what was asked for. Empty when it named none.
+  std::string model;
 };
 
 struct StaticEnvInfo {
@@ -74,6 +77,7 @@ class Executor {
     bool was_streamed = false;
     std::string error_message;
     std::string notice;
+    std::string model;
   };
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,

@@ -163,8 +163,10 @@ class CapturingLLM : public LLMProvider {
 // A provider whose answer says how it ended, which is what the remark is read from.
 class StoppingLLM : public LLMProvider {
  public:
-  StoppingLLM(std::string content, std::string finish_reason)
-      : content_(std::move(content)), finish_reason_(std::move(finish_reason)) {}
+  StoppingLLM(std::string content, std::string finish_reason, std::string model = "")
+      : content_(std::move(content)),
+        finish_reason_(std::move(finish_reason)),
+        model_(std::move(model)) {}
 
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
@@ -173,6 +175,7 @@ class StoppingLLM : public LLMProvider {
     ChatResult r;
     r.content = content_;
     r.finish_reason = finish_reason_;
+    r.model = model_;
     return r;
   }
 
@@ -181,6 +184,7 @@ class StoppingLLM : public LLMProvider {
  private:
   std::string content_;
   std::string finish_reason_;
+  std::string model_;
 };
 
 class TrackingTool : public Tool {
@@ -437,4 +441,19 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
   }
   REQUIRE(stored_call);
   REQUIRE(stored_answer);
+}
+
+TEST_CASE("The model that answered is carried out of the turn", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+
+  // What replied, which is not necessarily what was configured.
+  REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }

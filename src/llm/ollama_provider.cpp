@@ -33,6 +33,7 @@ void OllamaProvider::ResetAccumulators() {
   content_.clear();
   current_reasoning_content_.clear();
   finish_reason_.clear();
+  response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
 }
@@ -134,6 +135,12 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
     finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));
   }
+
+  // The model that answered: a tag can resolve to a different build than the one
+  // that was asked for.
+  if (json::HasKey(j, "model") && j.at("model").is_string()) {
+    response_model_ = boost::json::value_to<std::string>(j.at("model"));
+  }
 }
 
 ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
@@ -183,6 +190,7 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
   result.reasoning_content = std::move(current_reasoning_content_);
   result.usage = usage_;
   result.finish_reason = std::move(finish_reason_);
+  result.model = std::move(response_model_);
   return result;
 }
 

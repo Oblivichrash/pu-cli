@@ -59,6 +59,7 @@ class OpenAIProvider : public LLMProvider {
   std::string current_reasoning_content_;
   std::string refusal_;
   std::string finish_reason_;
+  std::string response_model_;
   std::vector<ToolCall> tool_calls_;
   std::optional<TokenUsage> usage_;
 };

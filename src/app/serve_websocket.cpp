@@ -148,10 +148,15 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
           }
 
           boost::json::value final;
-          if (result.has_error)
+          if (result.has_error) {
             final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};
-          else
+          } else if (result.model.empty()) {
             final = {{"type", "done"}};
+          } else {
+            // Who answered, which a gateway may have chosen rather than serve the
+            // model that was configured.
+            final = {{"type", "done"}, {"payload", {{"model", result.model}}}};
+          }
           send_frame(final);
         });
         worker.detach();

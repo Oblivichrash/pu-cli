@@ -234,6 +234,11 @@ stored as it arrived and reported as `ExecutionResult::notice`: an answer that e
 mid-sentence is otherwise indistinguishable from a finished one, and what fixes it
 is a setting rather than a retry.
 
+The response also names the model that answered. That name is kept in
+`ChatResult::model` and reaches the Web client in the `done` frame, because a
+gateway may serve a build other than the one that was configured: the session spec
+holds what was asked for, and this is the only place that says who replied.
+
 ## Provider Differences
 
 `config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)

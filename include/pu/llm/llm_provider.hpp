@@ -70,6 +70,11 @@ struct ChatResult {
   // without being the same. Kept verbatim so a caller can tell a reply the model
   // chose to end from one that ran into the token limit or the content filter.
   std::string finish_reason;
+  // The model that answered, as the response names it. A gateway may serve
+  // something other than what was asked for, and a tag may resolve to a dated
+  // build, so this is the only place the request can learn who replied. Empty
+  // when the response named nothing, which is not the same as the requested name.
+  std::string model;
 };
 
 class LLMProvider {

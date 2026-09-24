@@ -284,3 +284,30 @@ TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][err
     REQUIRE(std::string(e.what()).find("model not found") != std::string::npos);
   }
 }
+
+TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2";  // a tag, which the daemon resolves to a build
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        std::string(R"({"model":"llama3.2:1b","message":{"content":"hi"},"done":false})") + "\n" +
+        std::string(
+            R"({"model":"llama3.2:1b","message":{"content":""},"done":true,"done_reason":"stop"})") +
+        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  // The build that answered, not the tag that was requested.
+  REQUIRE(result.model == "llama3.2:1b");
+}

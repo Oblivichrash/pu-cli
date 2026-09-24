@@ -55,6 +55,7 @@ void OpenAIProvider::ResetAccumulators() {
   current_reasoning_content_.clear();
   refusal_.clear();
   finish_reason_.clear();
+  response_model_.clear();
   content_.clear();
   tool_calls_.clear();
   usage_.reset();
@@ -176,6 +177,13 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                         json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
   }
 
+  // The response names the model that answered, which a gateway is free to choose
+  // rather than serve the one that was asked for. Read from every frame because
+  // nothing says which of them carries it.
+  if (json::HasKey(j, "model") && j.at("model").is_string()) {
+    response_model_ = boost::json::value_to<std::string>(j.at("model"));
+  }
+
   if (is_final) FlushPendingToolCalls();
 }
 
@@ -262,6 +270,7 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
   result.reasoning_content = std::move(current_reasoning_content_);
   result.usage = usage_;
   result.finish_reason = std::move(finish_reason_);
+  result.model = std::move(response_model_);
   return result;
 }
 

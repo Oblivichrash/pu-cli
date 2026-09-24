@@ -176,6 +176,7 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
   exec_result.was_streamed = result.was_streamed;
   exec_result.tool_call_count = result.tool_call_count;
   exec_result.notice = result.notice;
+  exec_result.model = result.model;
   return exec_result;
 }
 
@@ -248,6 +249,10 @@ Executor::ToolLoopResult Executor::RunToolLoop(
         }
         result.final_response = response;
         result.notice = StopNotice(chat_result.finish_reason);
+        if (!chat_result.model.empty()) {
+          result.model = chat_result.model;
+          spdlog::debug("Answered by {}", chat_result.model);
+        }
         break;
       }
     } catch (const std::exception& e) {

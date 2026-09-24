@@ -265,10 +265,28 @@ function handleChunk(payload) {
   updateCurrentAssistantBlocks();
 }
 
-function handleDone() {
+// The header says who replied rather than what was asked for: a gateway may serve
+// a different build than the one that was configured, and the response is the only
+// place that says which.
+function setBackendLabel(backendType, model) {
+  const suffix = model ? " · " + model : "";
+  document.getElementById("session-status")?.remove();
+  const status = document.createElement("span");
+  status.id = "session-status";
+  status.textContent = `Backend: ${backendType || "?"}${suffix}`;
+  document.querySelector("header").appendChild(status);
+}
+
+function handleDone(payload) {
   finishAssistantMessage();
   setSendButtonState(false);
   refreshChainLength();
+
+  if (payload && payload.model) {
+    const current = document.getElementById("session-status");
+    const backend = current ? current.textContent.split(" · ")[0].replace("Backend: ", "") : "";
+    setBackendLabel(backend, payload.model);
+  }
 }
 
 function handleError(payload) {
@@ -317,7 +335,7 @@ function connectWebSocket() {
         handleChunk(data.payload);
         break;
       case "done":
-        handleDone();
+        handleDone(data.payload);
         break;
       case "error":
         handleError(data.payload);
@@ -485,12 +503,7 @@ async function loadSession() {
     const res = await fetch("/api/session");
     const data = await res.json();
     if (data.ok) {
-      const model = data.backend_model ? " · " + data.backend_model : "";
-      document.getElementById("session-status")?.remove();
-      const status = document.createElement("span");
-      status.id = "session-status";
-      status.textContent = `Backend: ${data.backend_type || "?"}${model}`;
-      document.querySelector("header").appendChild(status);
+      setBackendLabel(data.backend_type, data.backend_model);
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
       }

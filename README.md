@@ -144,13 +144,15 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
-{"type":"done"}
+{"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
 
 The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the server only sets the cancel token, and the client closes the WebSocket itself after sending `{"type":"cancel"}`.
 
 `notice` is a remark about a reply that arrived but is known to be incomplete — the provider stopped it at the token limit or its content filter. It is sent before the turn is closed and is not an error: the reply itself was stored and stands as it is.
+
+`done` carries the model the response named, when it named one: a gateway may serve a different build than the one that was configured, and the header then shows who replied.
 
 #### REST API Endpoints
 

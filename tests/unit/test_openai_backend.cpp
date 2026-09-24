@@ -380,3 +380,30 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
   REQUIRE(result.content == "the whole answer");
   REQUIRE(result.finish_reason == "stop");
 }
+
+TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";  // what was asked for
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"model":"gpt-4o-mini-2024-07-18","choices":[{"delta":{"content":"hi"},"finish_reason":null}]})"
+        "\n"
+        R"(data: {"model":"gpt-4o-mini-2024-07-18","choices":[{"delta":{},"finish_reason":"stop"}]})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  // The dated build the provider served, not the tag that was requested.
+  REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
+}
