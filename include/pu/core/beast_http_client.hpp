@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/infra/http_client.hpp"
+#include "pu/core/http_client.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -25,10 +25,8 @@ class BeastHttpClient : public HttpClient {
   BeastHttpClient(const BeastHttpClient&) = delete;
   BeastHttpClient& operator=(const BeastHttpClient&) = delete;
 
-  void PostStream(const std::string& url,
-                  const std::string& body,
-                  const std::vector<std::string>& headers,
-                  WriteCallback write_cb,
+  void PostStream(const std::string& url, const std::string& body,
+                  const std::vector<std::string>& headers, WriteCallback write_cb,
                   CancelToken cancel_token = nullptr) override;
 
   void SetInterruptChecker(std::function<bool()> checker);

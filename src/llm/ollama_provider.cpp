@@ -1,157 +1,87 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/ollama_provider.hpp"
 
+#include "pu/llm/projection.hpp"
 #include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
-#include <sstream>
 
 namespace pu {
 
+namespace {
+
+// What this provider needs, as data rather than branches: roles are a closed
+// set, reasoning is not echoed, content may accompany tool calls, arguments
+// travel as an object, and a tool result names the tool that produced it.
+constexpr llm::ProviderCapabilities kCapabilities{
+    .role_naming = llm::RoleNaming::kKnownRolesOnly,
+    .echo_reasoning_content = false,
+    .allows_content_with_tool_calls = true,
+    .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
+    .tool_calls_carry_type = false,
+    .sends_tool_name = true,
+    .omits_empty_tool_call_id = true,
+};
+
+}  // namespace
+
+void OllamaProvider::ResetAccumulators() {
+  content_.clear();
+  tool_calls_.clear();
+  usage_.reset();
+}
+
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
-    : config_(std::move(config)), host_(config_.host),
-      api_key_(std::move(config_.api_key)), http_(std::move(http)) {}
+    : config_(std::move(config)),
+      host_(config_.host),
+      api_key_(std::move(config_.api_key)),
+      http_(std::move(http)) {}
 
-std::string OllamaProvider::RoleToString(const std::string& role) const {
-  if (role == "user") return "user";
-  if (role == "assistant") return "assistant";
-  if (role == "system") return "system";
-  if (role == "tool") return "tool";
-  return "user";
-}
-
-std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history) const {
+std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history,
+                                         const std::vector<ToolDefinition>& tools) const {
   boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"options", {{"temperature", config_.temperature}}},
-    {"keep_alive", config_.keep_alive},
+      {"model", config_.model},
+      {"stream", true},
+      {"options", {{"temperature", config_.temperature}}},
+      {"keep_alive", config_.keep_alive},
   };
 
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
-  boost::json::array msgs;
-  for (const auto& msg : messages) {
-    boost::json::value m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
-    if (msg.role == "tool") {
-      m.as_object()["tool_name"] = msg.tool_name;
-      if (!msg.tool_call_id.empty()) {
-        m.as_object()["tool_call_id"] = msg.tool_call_id;
-      }
+  if (!tools.empty()) {
+    boost::json::array tools_json;
+    for (const auto& tool : tools) {
+      tools_json.push_back(boost::json::value{{"type", "function"},
+                                              {"function",
+                                               {
+                                                   {"name", tool.name},
+                                                   {"description", tool.description},
+                                                   {"parameters", tool.Parameters()},
+                                               }}});
     }
-    if (msg.HasToolCalls()) {
-      m.as_object()["tool_calls"] = msg.tool_calls;
-    }
-    msgs.push_back(m);
+    req.as_object()["tools"] = tools_json;
   }
-  req.as_object()["messages"] = msgs;
-  return boost::json::serialize(req);
-}
-
-std::string OllamaProvider::BuildRequestWithTools(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools) const {
-  boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"options", {{"temperature", config_.temperature}}},
-    {"keep_alive", config_.keep_alive},
-  };
-
-  auto messages = history;
-  if (config_.system_prompt && std::none_of(history.begin(), history.end(), [](const ChatMessage& m) {
-        return m.role == "system";
-      })) {
-    ChatMessage sys;
-    sys.role = "system";
-    sys.content = *config_.system_prompt;
-    messages.insert(messages.begin(), std::move(sys));
-  }
-
-  boost::json::array msgs;
-  for (const auto& msg : messages) {
-    boost::json::value m = {{"role", RoleToString(msg.role)}, {"content", msg.content}};
-    if (msg.role == "tool") {
-      m.as_object()["tool_name"] = msg.tool_name;
-      if (!msg.tool_call_id.empty()) {
-        m.as_object()["tool_call_id"] = msg.tool_call_id;
-      }
-    }
-    if (msg.HasToolCalls()) {
-      // Ollama wants `arguments` as an object, but messages persisted from the
-      // OpenAI backend carry it as a JSON-encoded string.
-      boost::json::array tcs;
-      for (const auto& tc : msg.tool_calls.as_array()) {
-        boost::json::value func = {
-          {"name", json::ValueOrDefault<std::string>(tc, "name", "")}
-        };
-        if (json::HasKey(tc, "arguments")) {
-          const auto& args = tc.at("arguments");
-          if (args.is_string()) {
-            try {
-              func.as_object()["arguments"] =
-                  boost::json::parse(boost::json::value_to<std::string>(args));
-            } catch (const std::exception& e) {
-              // Some providers send `arguments` as a JSON-encoded string; when
-              // it is not valid JSON, pass the original value through unchanged.
-              spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
-              func.as_object()["arguments"] = args;
-            }
-          } else if (args.is_object() || args.is_array()) {
-            func.as_object()["arguments"] = args;
-          }
-        }
-        boost::json::value tc_entry = boost::json::object{};
-        if (json::HasKey(tc, "id")) tc_entry.as_object()["id"] = tc.at("id");
-        tc_entry.as_object()["function"] = func;
-        tcs.push_back(tc_entry);
-      }
-      m.as_object()["tool_calls"] = std::move(tcs);
-    }
-    msgs.push_back(m);
-  }
-  req.as_object()["messages"] = msgs;
-
-  boost::json::array tools_json;
-  for (const auto& tool : tools) {
-    tools_json.push_back(boost::json::value{
-        {"type", "function"},
-        {"function",
-         {
-             {"name", tool.name},
-             {"description", tool.description},
-             {"parameters", tool.Parameters()},
-         }}});
-  }
-  req.as_object()["tools"] = tools_json;
   return boost::json::serialize(req);
 }
 
 void OllamaProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb,
-                                     std::function<void(const ToolCall&)>& tool_cb) {
+                                     std::function<void(const std::string&)>& content_cb) {
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
-    if (json::HasKey(msg, "content") && msg.at("content").is_string())
-      if (content_cb) content_cb(boost::json::value_to<std::string>(msg.at("content")));
+    if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
+      const std::string content = boost::json::value_to<std::string>(msg.at("content"));
+      content_ += content;
+      if (content_cb) content_cb(content);
+    }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
       for (const auto& tc : msg.at("tool_calls").as_array()) {
         if (!json::HasKey(tc, "function")) continue;
-        std::string tool_name =
-            json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
+        std::string tool_name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
         if (tool_name.empty()) continue;
 
         ToolCall call;
@@ -174,27 +104,27 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
             call.arguments = args;
           }
         }
-        if (tool_cb) tool_cb(call);
+        tool_calls_.push_back(std::move(call));
       }
     }
   }
+
+  // Ollama reports what the request cost in the final object, beside `done`.
+  if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
+    usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
+                        json::ValueOrDefault<int>(j, "eval_count", 0)};
+  }
 }
 
-ChatResult OllamaProvider::Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback,
-    std::function<void(const ToolCall&)> tool_callback,
-    CancelToken cancel_token) {
+ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
+                                const std::vector<ToolDefinition>& tools,
+                                std::function<void(const std::string&)> content_callback,
+                                CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
+  ResetAccumulators();
 
-  std::string body;
-  if (tools.empty()) {
-    body = BuildRequest(history);
-  } else {
-    body = BuildRequestWithTools(history, tools);
-  }
+  const std::string body = BuildRequest(history, tools);
 
   spdlog::debug("Ollama request body: {}", body);
 
@@ -202,27 +132,16 @@ ChatResult OllamaProvider::Chat(
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  std::ostringstream content_stream;
-
-  llm::StreamingJsonParser parser(
-    [&](std::string_view line) {
-      try {
-        auto j = boost::json::parse(line);
-        HandleJsonToken(j, content_callback, tool_callback);
-
-        if (json::HasKey(j, "message")) {
-          const auto& msg = j.at("message");
-          if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
-            content_stream << boost::json::value_to<std::string>(msg.at("content"));
-          }
-        }
-      } catch (const boost::system::system_error& e) {
-        // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-        spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      } catch (const std::exception&) {}
-    },
-    [](const std::string& msg) { throw HttpError("Streaming error: " + msg); }
-  );
+  llm::StreamingJsonParser parser([&](std::string_view line) {
+    try {
+      auto j = boost::json::parse(line);
+      HandleJsonToken(j, content_callback);
+    } catch (const boost::system::system_error& e) {
+      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+    } catch (const std::exception&) {
+    }
+  });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
@@ -233,7 +152,9 @@ ChatResult OllamaProvider::Chat(
 
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
-  result.content = content_stream.str();
+  result.content = std::move(content_);
+  result.tool_calls = std::move(tool_calls_);
+  result.usage = usage_;
   return result;
 }
 

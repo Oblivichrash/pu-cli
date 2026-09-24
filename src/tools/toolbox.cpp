@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/toolbox.hpp"
 
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -27,7 +27,7 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
     if (IsAllowedToolNameChar(c)) {
       result.push_back(c);
     } else {
-      result.push_back('_');  // replace non‑compliant chars with '_'
+      result.push_back('_');  // replace non-compliant chars with '_'
     }
   }
   return result;
@@ -40,7 +40,7 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
     throw pu::Error("Tool name cannot be empty");
   }
 
-  // Generate a sanitized (LLM‑friendly) display name.
+  // Generate a sanitized (LLM-friendly) display name.
   std::string display_name = SanitizeToolName(original_name);
 
   // If the sanitized name already exists, append a counter suffix.
@@ -76,7 +76,7 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   std::vector<ToolDefinition> defs;
   for (const auto& [display_name, tool] : tools_) {
     ToolDefinition def;
-    def.name = display_name;                    // LLM sees sanitized name
+    def.name = display_name;  // LLM sees sanitized name
     def.description = tool->Description();
     def.parameters = tool->ParametersSchema();
     defs.push_back(def);
@@ -84,7 +84,8 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   return defs;
 }
 
-std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args, ToolContext& ctx) {
+std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args,
+                                 ToolContext& ctx) {
   if (name.empty()) {
     spdlog::error("Attempted to execute tool with empty name");
     return "Error: tool name is empty";

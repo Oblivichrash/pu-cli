@@ -4,22 +4,26 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <optional>
 
 #include <boost/json.hpp>
 
-#include "pu/core/cancel_token.hpp"
+#include "pu/core/base.hpp"
 
 namespace pu {
 
+// FROZEN: no new fields. Context features belong to MessageNode
+// (include/pu/context/message.hpp); this struct is the compatibility view the
+// request path renders from it.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
   std::string role;
   std::string content;
-  std::string tool_name;         // tool messages: name of the tool that produced the result
-  boost::json::value tool_calls; // assistant messages: array of OpenAI-style tool calls
-  std::string reasoning_content; // for DeepSeek thinking mode
-  std::string tool_call_id;      // for tool messages: ID of the tool call
+  std::string tool_name;          // tool messages: name of the tool that produced the result
+  boost::json::value tool_calls;  // assistant messages: array of OpenAI-style tool calls
+  std::string reasoning_content;  // for DeepSeek thinking mode
+  std::string tool_call_id;       // for tool messages: ID of the tool call
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();
@@ -46,29 +50,37 @@ struct ToolCall {
   boost::json::value arguments;
 };
 
+// What one request produced. Tool calls belong here because the caller acts on
+// them after the stream has ended, the same way it acts on the text.
+// What one request cost, as the provider counted it. Absent means the provider
+// reported nothing, which is not the same as a measured zero: a caller that
+// budgets tokens has to tell those apart.
+struct TokenUsage {
+  int prompt_tokens = 0;
+  int completion_tokens = 0;
+};
+
 struct ChatResult {
   std::string content;
-  std::vector<ToolCall> tool_calls;
-  int input_tokens = 0;
-  int output_tokens = 0;
   std::string reasoning_content;
+  std::vector<ToolCall> tool_calls;
+  std::optional<TokenUsage> usage;
 };
 
 class LLMProvider {
-public:
+ public:
   virtual ~LLMProvider() = default;
 
-  virtual ChatResult Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback = nullptr,
-    std::function<void(const ToolCall&)> tool_callback = nullptr,
-    CancelToken cancel_token = nullptr
-  ) = 0;
+  // `content_callback` exists so a token reaches the user while the stream is
+  // still open; everything the caller needs afterwards is in the result.
+  virtual ChatResult Chat(const std::vector<ChatMessage>& history,
+                          const std::vector<ToolDefinition>& tools,
+                          std::function<void(const std::string&)> content_callback = nullptr,
+                          CancelToken cancel_token = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
   virtual std::string GetModelName() const = 0;
   virtual bool IsThinkingMode() const { return false; }
 };
 
-} // namespace pu
+}  // namespace pu

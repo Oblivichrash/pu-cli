@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/infra/beast_http_client.hpp"
+#include "pu/core/beast_http_client.hpp"
 
-#include "pu/core/error.hpp"
+#include "pu/core/base.hpp"
+#include "pu/core/json.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/core/platform.hpp"
 
 #include <boost/beast/version.hpp>
+#include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <regex>
@@ -12,23 +15,18 @@
 
 namespace pu::http {
 
-BeastHttpClient::BeastHttpClient()
-    : ssl_ctx_(net::ssl::context::tlsv12_client) {
+BeastHttpClient::BeastHttpClient() : ssl_ctx_(net::ssl::context::tlsv12_client) {
   ssl_ctx_.set_default_verify_paths();
   ssl_ctx_.set_verify_mode(net::ssl::verify_peer);
 }
 
-BeastHttpClient::~BeastHttpClient() {
-  ioc_.stop();
-}
+BeastHttpClient::~BeastHttpClient() { ioc_.stop(); }
 
 void BeastHttpClient::SetInterruptChecker(std::function<bool()> checker) {
   interrupt_checker_ = std::move(checker);
 }
 
-std::string BeastHttpClient::GetErrorDetail() const {
-  return error_detail_;
-}
+std::string BeastHttpClient::GetErrorDetail() const { return error_detail_; }
 
 void BeastHttpClient::CheckCancel(CancelToken token) const {
   if (token && token->load(std::memory_order_acquire)) {
@@ -56,8 +54,7 @@ BeastHttpClient::UrlParts BeastHttpClient::ParseUrl(const std::string& url) cons
 namespace {
 
 template <typename Request>
-void ApplyHeaders(Request& req, const std::string& host,
-                  const std::string& body,
+void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
                   const std::vector<std::string>& headers) {
   req.set(beast::http::field::host, host);
   req.set(beast::http::field::content_type, "application/json");
@@ -77,11 +74,13 @@ void ApplyHeaders(Request& req, const std::string& host,
 }
 
 // Reads the full response into a string body, then streams it to write_cb in
-// chunks. Returns the HTTP status code, or throws HttpError on failure.
+// chunks. Returns the HTTP status code, or throws HttpError on failure. On a
+// failure status the body is placed in `error_body` rather than streamed, since
+// the consumer parses a success stream and would discard a message that says what
+// went wrong.
 template <typename Stream>
-unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer,
-                        WriteCallback& write_cb,
-                        CancelToken /*cancel_token*/) {
+unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
+                        std::string& error_body, CancelToken /*cancel_token*/) {
   beast::http::response_parser<beast::http::string_body> parser;
   parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
 
@@ -91,23 +90,72 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer,
     throw HttpError("HTTP read error: " + ec.message());
   }
 
-  unsigned status = parser.get().result_int();
+  const unsigned status = parser.get().result_int();
   auto& res_body = parser.get().body();
-  if (!res_body.empty()) {
-    size_t consumed = write_cb(res_body.data(), res_body.size());
-    if (consumed == 0) {
-      throw HttpError("Streaming aborted by consumer");
-    }
+  if (res_body.empty()) return status;
+
+  if (status >= 400) {
+    error_body = res_body;
+    return status;
+  }
+
+  const size_t consumed = write_cb(res_body.data(), res_body.size());
+  if (consumed == 0) {
+    throw HttpError("Streaming aborted by consumer");
   }
   return status;
 }
 
 }  // namespace
 
-void BeastHttpClient::PostStream(const std::string& url,
-                                 const std::string& body,
-                                 const std::vector<std::string>& headers,
-                                 WriteCallback write_cb,
+namespace {
+
+// A failure response explains itself, but usually as nested JSON, and it may be
+// in the producer's locale. This pulls out the text a user can act on.
+std::string SummarizeErrorBody(const std::string& body) {
+  if (body.empty()) return "";
+
+  const std::string text = platform::FromPipedOutput(body);
+  std::string message;
+  try {
+    const boost::json::value parsed = boost::json::parse(text);
+    // OpenAI-shaped: {"error": {"message": "..."}} or {"error": "..."}.
+    const boost::json::value& error =
+        json::ValueOrDefault<boost::json::value>(parsed, "error", boost::json::value{});
+    if (error.is_object()) {
+      message = json::ValueOrDefault<std::string>(error, "message", "");
+    } else if (error.is_string()) {
+      message = boost::json::value_to<std::string>(error);
+    }
+    if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "message", "");
+  } catch (const std::exception&) {
+    // Not JSON, so the body is the message.
+  }
+  if (message.empty()) message = text;
+
+  // Collapse to one line so a multi-line body cannot break the log layout.
+  std::string one_line;
+  one_line.reserve(message.size());
+  bool pending_space = false;
+  for (char c : message) {
+    if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+      pending_space = !one_line.empty();
+      continue;
+    }
+    if (pending_space) one_line += ' ';
+    pending_space = false;
+    one_line += c;
+  }
+
+  constexpr std::size_t kMaxDetail = 400;
+  if (one_line.size() <= kMaxDetail) return one_line;
+  return one_line.substr(0, kMaxDetail) + "...";
+}
+
+}  // namespace
+
+void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
+                                 const std::vector<std::string>& headers, WriteCallback write_cb,
                                  CancelToken cancel_token) {
   error_detail_.clear();
   auto start = std::chrono::steady_clock::now();
@@ -128,6 +176,7 @@ void BeastHttpClient::PostStream(const std::string& url,
     CheckCancel(cancel_token);
 
     unsigned status = 0;
+    std::string error_body;
 
     if (use_ssl) {
       beast::ssl_stream<beast::tcp_stream> ssl_stream(std::move(stream), ssl_ctx_);
@@ -142,7 +191,7 @@ void BeastHttpClient::PostStream(const std::string& url,
       CheckCancel(cancel_token);
 
       beast::flat_buffer buffer;
-      status = StreamResponse(ssl_stream, buffer, write_cb, cancel_token);
+      status = StreamResponse(ssl_stream, buffer, write_cb, error_body, cancel_token);
 
       auto end = std::chrono::steady_clock::now();
       auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
@@ -161,7 +210,7 @@ void BeastHttpClient::PostStream(const std::string& url,
       CheckCancel(cancel_token);
 
       beast::flat_buffer buffer;
-      status = StreamResponse(stream, buffer, write_cb, cancel_token);
+      status = StreamResponse(stream, buffer, write_cb, error_body, cancel_token);
 
       auto end = std::chrono::steady_clock::now();
       auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
@@ -175,6 +224,8 @@ void BeastHttpClient::PostStream(const std::string& url,
 
     if (status >= 400) {
       std::string detail = "HTTP error " + std::to_string(status);
+      const std::string summary = SummarizeErrorBody(error_body);
+      if (!summary.empty()) detail += ": " + summary;
       error_detail_ = detail;
       throw HttpError(detail);
     }

@@ -3,8 +3,7 @@
 
 namespace pu::llm {
 
-StreamingJsonParser::StreamingJsonParser(LineCallback on_line, ErrorCallback on_error)
-    : on_line_(std::move(on_line)), on_error_(std::move(on_error)) {}
+StreamingJsonParser::StreamingJsonParser(LineCallback on_line) : on_line_(std::move(on_line)) {}
 
 void StreamingJsonParser::Feed(const char* data, size_t len) {
   buffer_.append(data, len);
@@ -34,9 +33,12 @@ bool StreamingJsonParser::IsPartialUtf8(std::string_view str) {
       return false;
     } else {
       size_t expected = 1;
-      if ((c & 0xE0) == 0xC0) expected = 2;
-      else if ((c & 0xF0) == 0xE0) expected = 3;
-      else if ((c & 0xF8) == 0xF0) expected = 4;
+      if ((c & 0xE0) == 0xC0)
+        expected = 2;
+      else if ((c & 0xF0) == 0xE0)
+        expected = 3;
+      else if ((c & 0xF8) == 0xF0)
+        expected = 4;
       return remaining < (expected - 1);
     }
   }

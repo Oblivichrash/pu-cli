@@ -48,7 +48,7 @@ cmake --build build -j$(nproc)
 
 ### Configure
 
-Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (project-level) or `~/.pu/agents.json` (user-level):
+Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (project-level) or `~/.pu/agents.json` (user-level, resolved from `HOME`):
 
 ```json
 {
@@ -61,7 +61,6 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
         "host": "http://localhost:11434",
         "model": "qwen3.5:2b"
       },
-      "tools": ["execute_bash", "write_file"],
       "security": {
         "sandbox_root": ".",
         "forbidden_patterns": ["cd", "rm -rf", "sudo"]
@@ -71,14 +70,30 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
 }
 ```
 
+The example above is a working minimum; every field is listed under
+[Configuration](#agentsjson).
+
 ### Usage
 
+| Command | Description |
+| :------ | :---------- |
+| `pu ask <prompt>` | Send one prompt, print the reply, and exit |
+| `pu chat` | Start an interactive session |
+| `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
+
+Global options: `-h`/`--help` and `--version`. `ask` and `chat` also accept
+`--agent <name>` to start with a non-default agent; `ask` accepts
+`--prompt <text>` as an alternative to the positional prompt.
+
 ```bash
-./build/pu chat
+./build/pu ask "summarize README.md"
+./build/pu chat --agent local-assistant
 > /backend deepseek-pro    # switch to predefined agent
 ```
 
-Your conversation is automatically saved to `./.pu/session.json` after every interaction, and restored when you restart. Each directory has its own independent session.
+Your conversation is automatically saved to `<data-dir>/session.json` (by
+default `./.pu/session.json`) after every interaction, and restored when you
+restart. Each directory has its own independent session.
 
 ### Web Server (`pu serve`)
 
@@ -89,6 +104,16 @@ Your conversation is automatically saved to `./.pu/session.json` after every int
 ./build/pu serve                       # listen on 127.0.0.1:8080
 ./build/pu serve --host 0.0.0.0 --port 9000
 ```
+
+> **Warning** — the server has no authentication and no origin checks, so
+> anyone who can reach the port can read the session history, switch
+> workspaces, and run the active agent's tools. Keep the default loopback
+> bind unless the port is protected by other means.
+
+Each message you sent carries an **edit** link. It steps the session back to just
+before that turn and puts the text back in the composer, so sending it again
+replaces that turn with a new branch. The branch you left behind is kept in the
+session file.
 
 The Web UI supports:
 
@@ -121,7 +146,7 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 {"type":"error","payload":{"text":"error description"}}
 ```
 
-The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation immediately interrupts the LLM request and closes the WebSocket.
+The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the server only sets the cancel token, and the client closes the WebSocket itself after sending `{"type":"cancel"}`.
 
 #### REST API Endpoints
 
@@ -134,6 +159,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
 | `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`), keeping the branch on disk |
 
 All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
@@ -145,11 +171,14 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 |---------|-------------|
 | `/help` | Show available commands |
 | `/backend <agent>` | Switch to predefined agent (rebuilds tool set) |
-| `/backend <type> <model>` | Manual backend switch |
+| `/backend <type> <model> [host] [api_key]` | Give this session a backend of its own, outranking `agents.json` |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
-| `/serve` | Start the Web chat server (see `pu serve` in Usage) |
+| `/rewind <turn>` | Step back to before a turn, keeping the branch on disk |
 | `/exit`, `/quit` | Exit |
+
+These are chat commands. The Web server is a CLI subcommand (`pu serve`),
+not a chat command.
 
 ---
 
@@ -157,12 +186,18 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 
 Tool set is bound to the active agent – switching agents with `/backend <agent>` automatically rebuilds the registry (stops previous MCP servers, starts new ones).
 
-- `tools` in `agents.json` filters built‑in tools.
+Built-in tools:
+
+| Tool | Description |
+|------|-------------|
+| `execute_bash` | Run a shell command in the sandbox, subject to the security policy |
+| `write_file` | Write a file in the sandbox |
+
 - MCP tools are exposed with a `mcp.<server>.<tool>` prefix.
 
 ### Tool Output Format
 
-All tools now return structured JSON with the following fields:
+All tools return structured JSON with the following fields:
 
 ```json
 {
@@ -182,7 +217,10 @@ This allows the executor to distinguish success from failure and provide clear f
 
 ### `agents.json`
 
-The configuration file must be located in a `.pu/` directory. Search order is `./.pu/agents.json` then `~/.pu/agents.json`.
+The configuration file must be located in a `.pu/` directory. Search order is
+`./.pu/agents.json` (relative to the working directory) then
+`~/.pu/agents.json` (resolved from `HOME`, which is not set by default on
+Windows).
 
 ```json
 {
@@ -197,7 +235,6 @@ The configuration file must be located in a `.pu/` directory. Search order is `.
         "temperature": 0.7,
         "max_tokens": 4096
       },
-      "tools": ["execute_bash", "write_file"],
       "security": {
         "sandbox_root": ".",
         "forbidden_patterns": ["cd", "rm -rf", "sudo"]
@@ -207,10 +244,38 @@ The configuration file must be located in a `.pu/` directory. Search order is `.
 }
 ```
 
+**Agent fields:**
+
+| Field | Description |
+|-------|-------------|
+| `name` | Identifier used by `default_agent`, `/backend <agent>`, and `--agent` |
+| `description` | Optional text shown when the agent connects |
+| `backend` | Required object; see the backend fields below |
+| `security` | Optional security policy; see [Security](#security) |
+| `mcp_servers` | Optional MCP servers; see [MCP Servers](#mcp-servers) |
+
+**Backend fields:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `type` | `ollama` | `ollama` or `openai`; any other value is rejected |
+| `host` | — | Required. Base URL |
+| `model` | — | Required |
+| `api_key` | unset | Sent as `Authorization: Bearer` when set |
+| `temperature` | `0.7` | |
+| `max_tokens` | `2048` | Sent by the OpenAI-compatible path only |
+| `enable_thinking` | `true` | OpenAI-compatible path only |
+| `system_prompt` | unset | Agent-specific system prompt, merged with the injected context |
+
+`host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
+support `${ENV_VAR}` expansion; an unset variable expands to an empty string and
+logs a warning.
+
 ### Security
 
 - `forbidden_patterns` – commands containing these substrings are blocked.
 - `sandbox_root` – all file operations are relative to this directory.
+- `max_command_length` – reject a shell command longer than this many bytes (`0` disables the check).
 - It is strongly recommended to include `"cd"` in `forbidden_patterns` to prevent the model from changing the working directory, which can cause confusion.
 
 ### MCP Servers
@@ -222,48 +287,31 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 **stdio (local subprocess):**
 
 ```json
-{
-  "default_agent": "chat",
-  "agents": [
-    {
-      "name": "chat",
-      "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:4b" },
-      "tools": ["execute_bash", "write_file"],
-      "mcp_servers": [
-        {
-          "name": "filesystem",
-          "command": "npx",
-          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-        }
-      ]
-    }
-  ]
-}
+"mcp_servers": [
+  {
+    "name": "filesystem",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+  }
+]
 ```
 
 **HTTP (remote):**
 
 ```json
-{
-  "default_agent": "chat",
-  "agents": [
-    {
-      "name": "chat",
-      "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:4b" },
-      "tools": ["execute_bash", "write_file"],
-      "mcp_servers": [
-        {
-          "name": "remote-fs",
-          "url": "https://mcp.example.com/mcp",
-          "headers": {
-            "Authorization": "Bearer ${MCP_API_TOKEN}"
-          }
-        }
-      ]
+"mcp_servers": [
+  {
+    "name": "remote-fs",
+    "url": "https://mcp.example.com/mcp",
+    "headers": {
+      "Authorization": "Bearer ${MCP_API_TOKEN}"
     }
-  ]
-}
+  }
+]
 ```
+
+`mcp_servers` sits inside an agent, beside `backend`; see
+[Configuration](#agentsjson) for the surrounding shape.
 
 | Field | Description |
 |-------|-------------|
@@ -273,29 +321,19 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 | `url` | Remote streamable-HTTP MCP endpoint. When present, HTTP transport is used instead of stdio |
 | `headers` | Optional HTTP headers sent with every request, e.g. `Authorization` (values support `${ENV_VAR}` expansion) |
 
-### Thinking Mode & History Compaction
+### Thinking Mode
+
+`enable_thinking` applies to the OpenAI-compatible backend only: `false` sends
+`thinking.type = "disabled"`, so a model that would otherwise reason answers
+directly.
 
 ```json
-{
-  "default_agent": "deepseek",
-  "agents": [
-    {
-      "name": "deepseek",
-      "backend": {
-        "type": "openai",
-        "host": "https://api.deepseek.com/v1",
-        "model": "deepseek-reasoner",
-        "api_key": "${DEEPSEEK_API_KEY}",
-        "enable_thinking": true,
-        "temperature": 0.1
-      },
-      "history_compaction": {
-        "enabled": false,
-        "keep_head": 15,
-        "keep_tail": 60
-      }
-    }
-  ]
+"backend": {
+  "type": "openai",
+  "host": "https://api.deepseek.com/v1",
+  "model": "deepseek-reasoner",
+  "api_key": "${DEEPSEEK_API_KEY}",
+  "enable_thinking": true
 }
 ```
 
@@ -303,10 +341,10 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_HOME` | Overrides the data directory (default `./.pu/`) |
+| `PU_HOME` | Overrides the data directory used for logs (default `./.pu/`). Only logging is affected: `session.json` and `agents.json` always come from the workspace's `.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve` (default: auto-detected `web/` next to the binary or in the working directory) |
+| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |
 | `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
 
@@ -314,8 +352,7 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 
 - The console only shows `error` and `critical` messages; `info`, `warn`, `debug`, and `trace` are never printed to the console.
 - Use `PU_LOG_LEVEL` to control the file log verbosity (default `info`).
-- Log files are stored in `<data-dir>/logs/pu.log` (rotated, max 5MB per file, 3 files kept).
-- The data directory is `PU_HOME` if set, otherwise `./.pu/`.
+- Log files go to `<data-dir>/logs/pu.log`, rotate at 5MB, and keep 3 files.
 
 ---
 

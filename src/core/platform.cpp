@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/platform.hpp"
 
+#include "pu/core/text.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <array>
@@ -24,7 +26,10 @@ std::atomic<bool> interrupted{false};
 
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type) {
-  if (ctrl_type == CTRL_C_EVENT) { interrupted = true; return TRUE; }
+  if (ctrl_type == CTRL_C_EVENT) {
+    interrupted = true;
+    return TRUE;
+  }
   return FALSE;
 }
 void SetupSignalHandler() { SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE); }
@@ -41,6 +46,60 @@ void SetupSignalHandler() {
 
 bool IsInterrupted() { return interrupted; }
 void ClearInterruptFlag() { interrupted = false; }
+
+#ifdef _WIN32
+namespace {
+
+std::wstring ToWide(const std::string& text, UINT code_page) {
+  const int length =
+      MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+  if (length <= 0) return {};
+  std::wstring wide(static_cast<std::size_t>(length), L'\0');
+  MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()), wide.data(),
+                      length);
+  return wide;
+}
+
+std::string ToUtf8(const std::wstring& wide) {
+  const int length = WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+                                         nullptr, 0, nullptr, nullptr);
+  if (length <= 0) return {};
+  std::string utf8(static_cast<std::size_t>(length), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), length,
+                      nullptr, nullptr);
+  return utf8;
+}
+
+std::string DecodeFromCodePage(std::string_view text, UINT code_page) {
+  const std::string source(text);
+  const std::wstring wide = ToWide(source, code_page);
+  if (wide.empty()) return text::SanitizeUtf8(text);
+  const std::string utf8 = ToUtf8(wide);
+  return utf8.empty() ? text::SanitizeUtf8(text) : utf8;
+}
+
+}  // namespace
+#endif
+
+std::string FromConsoleOutput(std::string_view text) {
+  if (text::IsValidUtf8(text)) return std::string(text);
+#ifdef _WIN32
+  const UINT console_code_page = GetConsoleOutputCP();
+  const UINT code_page = console_code_page != 0 ? console_code_page : GetOEMCP();
+  return DecodeFromCodePage(text, code_page);
+#else
+  return text::SanitizeUtf8(text);
+#endif
+}
+
+std::string FromPipedOutput(std::string_view text) {
+  if (text::IsValidUtf8(text)) return std::string(text);
+#ifdef _WIN32
+  return DecodeFromCodePage(text, GetACP());
+#else
+  return text::SanitizeUtf8(text);
+#endif
+}
 
 int ExecuteCommand(const std::string& command, std::string& output,
                    const std::string& working_dir) {
@@ -75,6 +134,7 @@ int ExecuteCommand(const std::string& command, std::string& output,
     output += buffer.data();
 
 #ifdef _WIN32
+  output = FromConsoleOutput(output);
   int status = _pclose(pipe);
   int exit_code = (status == -1) ? -1 : status;
 #else
@@ -90,8 +150,8 @@ int ExecuteCommand(const std::string& command, std::string& output,
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}",
-                command, exit_code, elapsed_ms, output.size());
+  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}", command,
+                exit_code, elapsed_ms, output.size());
   return exit_code;
 }
 

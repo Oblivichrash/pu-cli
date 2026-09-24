@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
-#include "pu/core/platform.hpp"
 
+#include "pu/core/platform.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/session/request.hpp"
 #include "pu/tools/tool_result.hpp"
 
 #include <boost/json.hpp>
@@ -21,7 +22,6 @@
 
 namespace pu {
 
-
 namespace {
 
 #ifdef _WIN32
@@ -33,8 +33,7 @@ std::string WindowsKernelVersion() {
     RTL_OSVERSIONINFOW info{};
     info.dwOSVersionInfoSize = sizeof(info);
     if (rtl_get_version(&info) == 0) {
-      return std::to_string(info.dwMajorVersion) + "." +
-             std::to_string(info.dwMinorVersion) + "." +
+      return std::to_string(info.dwMajorVersion) + "." + std::to_string(info.dwMinorVersion) + "." +
              std::to_string(info.dwBuildNumber);
     }
   }
@@ -46,9 +45,8 @@ std::string WindowsKernelVersion() {
 std::string RunShellCapture(const std::string& cmd) {
   std::string output;
   pu::platform::ExecuteCommand(cmd, output);
-  while (!output.empty() &&
-         (output.back() == '\n' || output.back() == '\r' ||
-          output.back() == ' ' || output.back() == '\t')) {
+  while (!output.empty() && (output.back() == '\n' || output.back() == '\r' ||
+                             output.back() == ' ' || output.back() == '\t')) {
     output.pop_back();
   }
   return output;
@@ -80,8 +78,8 @@ void Executor::ProbeStaticEnvironment() {
   static_env_info_.kernel_version = OsKernelVersion();
   static_env_info_.probed = true;
 
-  spdlog::debug("Probed environment: OS='{}' kernel='{}'",
-                static_env_info_.os_name, static_env_info_.kernel_version);
+  spdlog::debug("Probed environment: OS='{}' kernel='{}'", static_env_info_.os_name,
+                static_env_info_.kernel_version);
 }
 
 std::string Executor::BuildStaticSystemContext() const {
@@ -116,26 +114,23 @@ std::string Executor::BuildStaticSystemContext() const {
   }
 
   oss << "=== Tool Use Guidelines ===\n";
-  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after stating the plan.\n";
-  oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n '10,30p') instead of full cat dumps.\n";
-  oss << "3. If you need more information from the user, call ask_user and stop. Do not guess.\n";
-  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
+  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after "
+         "stating the plan.\n";
+  oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n "
+         "'10,30p') instead of full cat dumps.\n";
+  oss << "3. Use parallel tool calls when possible to minimize round trips.\n";
 
   return oss.str();
 }
 
-Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) {
-  ProbeStaticEnvironment();
-}
+Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) { ProbeStaticEnvironment(); }
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
-ExecutionResult Executor::Execute(const std::string& input,
-                                  Workspace& workspace,
-                                  LLMProvider* provider,
-                                  CancelToken cancel_token,
+ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace,
+                                  LLMProvider* provider, CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
                                   ToolCallbacks tool_callbacks) {
   if (!toolbox_) {
@@ -147,18 +142,7 @@ ExecutionResult Executor::Execute(const std::string& input,
 
   workspace.Append("user", input);
 
-  auto tools = toolbox_->GetToolDefinitions();
-  if (!provider->SupportsTools() && !tools.empty() && compaction_config_.enabled) {
-    if (provider->IsThinkingMode()) {
-      spdlog::warn("Compaction is disabled because the provider is in thinking mode. "
-                   "Set compaction.enabled=false in agents.json to override.");
-    } else {
-      workspace.Compact(compaction_config_.keep_head, compaction_config_.keep_tail);
-    }
-  }
-
-  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback,
-                            tool_callbacks);
+  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks);
   ExecutionResult exec_result;
   if (result.has_error) {
     exec_result.has_error = true;
@@ -176,11 +160,9 @@ ExecutionResult Executor::Execute(const std::string& input,
   return exec_result;
 }
 
-Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
-                                               LLMProvider* provider,
-                                               CancelToken cancel_token,
-                                               std::function<void(const std::string&)> content_callback,
-                                               ToolCallbacks tool_callbacks) {
+Executor::ToolLoopResult Executor::RunToolLoop(
+    Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
+    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks) {
   ToolLoopResult result;
   result.was_streamed = false;
 
@@ -210,34 +192,13 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
     }
     ++iteration;
 
-    std::vector<ChatMessage> chat_history;
-    for (const auto& msg : workspace.GetHistory()) {
-      chat_history.push_back(msg);
-    }
+    session::RequestInputs inputs;
+    inputs.system_prompt = system_prompt_;
+    inputs.environment = BuildStaticSystemContext();
 
-    bool has_system = false;
-    for (const auto& msg : chat_history) {
-      if (msg.role == "system") {
-        has_system = true;
-        break;
-      }
-    }
+    std::vector<ChatMessage> chat_history =
+        session::BuildRequestPath(workspace.GetGraph(), workspace.GetGraph().leaf(), inputs);
 
-    if (!has_system) {
-      std::string static_context = BuildStaticSystemContext();
-      auto system_prompt_var = workspace.GetVar("system_prompt");
-      if (system_prompt_var && system_prompt_var->is_string() &&
-          !boost::json::value_to<std::string>(*system_prompt_var).empty()) {
-        static_context = boost::json::value_to<std::string>(*system_prompt_var) + "\n\n" + static_context;
-      }
-      ChatMessage sys;
-      sys.role = "system";
-      sys.content = static_context;
-      chat_history.insert(chat_history.begin(), std::move(sys));
-    }
-
-    std::vector<ToolCall> collected_calls;
-    std::ostringstream content_stream;
     ChatResult chat_result;
 
     try {
@@ -251,15 +212,16 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
               } else {
                 std::cout << token << std::flush;  // CLI typewriter
               }
-              content_stream << token;
             }
-          },
-          [&](const ToolCall& call) {
-            tool_was_called = true;
-            collected_calls.push_back(call);
           },
           cancel_token);
 
+      if (chat_result.usage) {
+        spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
+                      chat_result.usage->completion_tokens);
+      }
+
+      tool_was_called = !chat_result.tool_calls.empty();
       if (!tool_was_called) {
         std::string response = chat_result.content;
         if (response.empty() && !chat_result.reasoning_content.empty()) {
@@ -270,46 +232,41 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
         break;
       }
     } catch (const std::exception& e) {
+      // A stop the caller asked for is not a failure: the stream ended because the
+      // request was withdrawn, so the turn ends here with nothing to report. What
+      // arrived before the stop is not an answer either, and storing it would make
+      // the next request read half a sentence as the model's finished reply.
+      if ((cancel_token && cancel_token->load(std::memory_order_acquire)) ||
+          platform::IsInterrupted()) {
+        spdlog::debug("Request stopped by the caller: {}", e.what());
+        return result;
+      }
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);
-      workspace.Append("assistant", result.error_message);
+      // The failure is reported to the caller and not stored: a model never said
+      // it, and appending it would grow the conversation every time a request is
+      // refused, which for an over-length request makes the next one worse.
       break;
     }
 
-    for (const auto& call : collected_calls) {
-      if (call.name == "ask_user") {
-        result.final_response = json::ValueOrDefault<std::string>(call.arguments, "question", "");
-        result.completed = true;
-        result.was_streamed = false;
-        return result;
-      }
-    }
-
-    for (auto& tc : collected_calls) {
+    for (auto& tc : chat_result.tool_calls) {
       if (tc.id.empty()) {
-        tc.id = "call_" + std::to_string(
-                   std::chrono::steady_clock::now().time_since_epoch().count()) +
-               "_" + std::to_string(++next_tool_call_id_);
+        tc.id = "call_" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_" +
+                std::to_string(++next_tool_call_id_);
       }
     }
 
     ChatMessage assistant_msg;
-    assistant_msg.role = "assistant";
+    assistant_msg.role = context::kAssistantRole;
     assistant_msg.content = chat_result.content;
     assistant_msg.reasoning_content = chat_result.reasoning_content;
 
     boost::json::array j_calls;
-    for (const auto& tc : collected_calls) {
-      boost::json::value jc = {
-        {"id", tc.id},
-        {"type", "function"},
-        {"function", {
-          {"name", tc.name},
-          {"arguments", tc.arguments},
-        }},
-      };
-      j_calls.push_back(jc);
+    for (const auto& tc : chat_result.tool_calls) {
+      j_calls.push_back(
+          context::ToolCallToJson(context::ToolCallRecord{tc.id, tc.name, tc.arguments}));
     }
     assistant_msg.tool_calls = std::move(j_calls);
     workspace.Append(assistant_msg);
@@ -322,7 +279,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
-    for (const auto& call : collected_calls) {
+    for (const auto& call : chat_result.tool_calls) {
       if (call.name.empty()) {
         spdlog::warn("Skipping tool call with empty name");
         continue;
@@ -344,7 +301,8 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
             false, "", "", std::string("Tool execution error: ") + e.what(), -1);
       }
       auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now() - tool_start).count();
+                         std::chrono::steady_clock::now() - tool_start)
+                         .count();
       SetLogDurationMs(tool_ms);
       spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
       ClearLogToolName();
@@ -373,23 +331,28 @@ Executor::ToolLoopResult Executor::RunToolLoop(Workspace& workspace,
 
   if (hit_max_iterations && result.final_response.empty()) {
     result.final_response =
-        "Tool execution reached the maximum number of iterations without generating a final answer. "
+        "Tool execution reached the maximum number of iterations without generating a final "
+        "answer. "
         "Please rephrase your request or narrow the scope.";
     result.has_error = true;
     spdlog::error("{}", result.final_response);
     return result;
   }
 
-  if (result.final_response.empty() && result.tool_call_count == 0) {
+  // Only diagnose an empty response when nothing else already failed: a request
+  // that was refused returns no content either, and replacing its reason with
+  // this generic one is what hid an over-length or unauthorised request.
+  if (!result.has_error && result.final_response.empty() && result.tool_call_count == 0) {
     result.has_error = true;
-    result.error_message = "Model returned an empty response without any tool calls. "
-                           "Please check the backend service or try again.";
+    result.error_message =
+        "Model returned an empty response without any tool calls. "
+        "Please check the backend service or try again.";
     spdlog::error("{}", result.error_message);
     return result;
   }
 
   if (result.final_response.empty() && result.tool_call_count > 0) {
-    spdlog::info("Tool execution completed without a final text response – considered successful.");
+    spdlog::info("Tool execution completed without a final text response - considered successful.");
   }
 
   return result;

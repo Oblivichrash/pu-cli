@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_config.hpp"
-#include "pu/core/error.hpp"
+#include "pu/agent.hpp"
+#include "pu/core/base.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "pu/core/json.hpp"
@@ -38,16 +38,12 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   SecurityPolicy policy;
   if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
     policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
-  if (json::HasKey(j, "allowed_paths") && j.at("allowed_paths").is_array()) {
-    for (const auto& p : j.at("allowed_paths").as_array())
-      if (p.is_string()) policy.allowed_paths.push_back(boost::json::value_to<std::string>(p));
-  }
   if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
-    policy.max_command_length =
-        boost::json::value_to<std::size_t>(j.at("max_command_length"));
+    policy.max_command_length = boost::json::value_to<std::size_t>(j.at("max_command_length"));
   if (json::HasKey(j, "forbidden_patterns") && j.at("forbidden_patterns").is_array()) {
     for (const auto& pat : j.at("forbidden_patterns").as_array())
-      if (pat.is_string()) policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
+      if (pat.is_string())
+        policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
   }
   return policy;
 }
@@ -64,7 +60,6 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
-  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
   cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
   return cfg;
@@ -99,17 +94,6 @@ std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
   return servers;
 }
 
-HistoryCompactionConfig ParseCompactionConfig(const json::value& j) {
-  HistoryCompactionConfig cfg;
-  if (json::HasKey(j, "history_compaction") && j.at("history_compaction").is_object()) {
-    const auto& c = j.at("history_compaction");
-    cfg.enabled = json::ValueOrDefault<bool>(c, "enabled", true);
-    cfg.keep_head = json::ValueOrDefault<std::size_t>(c, "keep_head", 10);
-    cfg.keep_tail = json::ValueOrDefault<std::size_t>(c, "keep_tail", 50);
-  }
-  return cfg;
-}
-
 AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
@@ -121,20 +105,15 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (entry.backend.host.empty() || entry.backend.model.empty())
     throw pu::Error("Missing host or model in backend");
 
-  if (json::HasKey(j, "tools") && j.at("tools").is_array()) {
-    for (const auto& t : j.at("tools").as_array())
-      if (t.is_string()) entry.tools.push_back(boost::json::value_to<std::string>(t));
-  }
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
 
-  entry.compaction = ParseCompactionConfig(j);
   return entry;
 }
 
-} // unnamed namespace
+}  // unnamed namespace
 
 std::string FindConfigPath() {
   const std::filesystem::path project = "./.pu/agents.json";
@@ -142,20 +121,17 @@ std::string FindConfigPath() {
 
   const char* home = std::getenv("HOME");
   if (home) {
-    const std::filesystem::path user =
-        std::filesystem::path(home) / ".pu" / "agents.json";
+    const std::filesystem::path user = std::filesystem::path(home) / ".pu" / "agents.json";
     if (std::filesystem::exists(user)) return user.string();
   }
 
-  throw pu::Error(
-      "Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  throw pu::Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open())
-    throw pu::Error("Configuration file not found: " + config_path);
+  if (!file.is_open()) throw pu::Error("Configuration file not found: " + config_path);
 
   json::value j;
   try {
@@ -172,39 +148,33 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
   if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
     throw pu::Error("Missing agents array");
-  for (const auto& item : j.at("agents").as_array())
-    result.agents.push_back(ParseAgentEntry(item));
+  for (const auto& item : j.at("agents").as_array()) result.agents.push_back(ParseAgentEntry(item));
 
-  const auto default_agent = std::find_if(
-      result.agents.begin(), result.agents.end(), [&](const AgentEntry& entry) {
-        return entry.name == result.default_agent;
-      });
+  const auto default_agent =
+      std::find_if(result.agents.begin(), result.agents.end(),
+                   [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end())
     throw pu::Error("default_agent does not match any configured agent");
   return result;
 }
 
-std::unique_ptr<pu::LLMProvider> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
+std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
+                                               std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
       OllamaProvider::Config ollama_cfg;
       ollama_cfg.model = cfg.model;
       ollama_cfg.temperature = cfg.temperature;
-      ollama_cfg.system_prompt = cfg.system_prompt;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
-      ollama_cfg.max_tokens = cfg.max_tokens;
       return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI: {
       OpenAIProvider::Config openai_cfg;
       openai_cfg.model = cfg.model;
       openai_cfg.temperature = cfg.temperature;
-      openai_cfg.system_prompt = cfg.system_prompt;
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
-      openai_cfg.parameters_as_string = cfg.parameters_as_string;
       openai_cfg.max_tokens = cfg.max_tokens;
       openai_cfg.enable_thinking = cfg.enable_thinking;
       return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
@@ -214,4 +184,4 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
   }
 }
 
-} // namespace pu::config
+}  // namespace pu::config

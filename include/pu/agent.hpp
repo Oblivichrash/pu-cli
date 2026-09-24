@@ -8,10 +8,10 @@
 
 #include <boost/json.hpp>
 
-#include "pu/llm/llm_provider.hpp"
-#include "pu/infra/http_client.hpp"
-#include "pu/mcp/mcp_client.hpp"
+#include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/mcp/client.hpp"
 
 namespace pu::config {
 
@@ -19,7 +19,6 @@ enum class BackendType { kOllama, kOpenAI };
 
 struct SecurityPolicy {
   std::string sandbox_root;
-  std::vector<std::string> allowed_paths;
   size_t max_command_length = 0;
   std::vector<std::string> forbidden_patterns;
 };
@@ -31,22 +30,20 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-  bool parameters_as_string = false;
   int max_tokens = 2048;
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
 
-inline void tag_invoke(boost::json::value_from_tag,
-                       boost::json::value& j,
+inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-    {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
-    {"host", cfg.host},
-    {"model", cfg.model},
-    {"api_key", cfg.api_key.value_or("")},
-    {"temperature", cfg.temperature},
-    {"max_tokens", cfg.max_tokens},
-    {"parameters_as_string", cfg.parameters_as_string},
+      {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
+      {"host", cfg.host},
+      {"model", cfg.model},
+      {"api_key", cfg.api_key.value_or("")},
+      {"temperature", cfg.temperature},
+      {"max_tokens", cfg.max_tokens},
+      {"enable_thinking", cfg.enable_thinking},
   };
 }
 
@@ -63,26 +60,19 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
-  cfg.parameters_as_string = json::ValueOrDefault<bool>(j, "parameters_as_string", false);
+  // The prompt is configuration, not session state, so a stored override never
+  // carries one.
   cfg.system_prompt = std::nullopt;
-  cfg.enable_thinking = true;
+  cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
   return cfg;
 }
-
-struct HistoryCompactionConfig {
-  bool enabled = true;
-  size_t keep_head = 10;
-  size_t keep_tail = 50;
-};
 
 struct AgentEntry {
   std::string name;
   std::string description;
   BackendConfig backend;
-  std::vector<std::string> tools;
   SecurityPolicy security;
   std::vector<pu::mcp::McpServerConfig> mcp_servers;
-  HistoryCompactionConfig compaction;
 };
 
 struct AgentsConfig {
@@ -92,7 +82,31 @@ struct AgentsConfig {
 
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
-std::unique_ptr<pu::LLMProvider> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
+std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
+                                               std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config
+
+namespace pu {
+
+// The configured agents, and which one of them is active.
+class AgentManager {
+ public:
+  AgentManager();
+
+  void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs);
+
+  const config::AgentEntry* GetAgentConfig(const std::string& name) const;
+
+  std::vector<std::string> GetAgentNames() const;
+
+  void SetActiveAgent(const std::string& name);
+  std::string GetActiveAgent() const;
+
+ private:
+  std::string active_agent_;
+
+  std::vector<config::AgentEntry> agent_configs_;
+};
+
+}  // namespace pu

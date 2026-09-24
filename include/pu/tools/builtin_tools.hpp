@@ -34,12 +34,4 @@ class WriteFileTool : public pu::Tool {
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 };
 
-class AskUserTool : public pu::Tool {
- public:
-  std::string Name() const override;
-  std::string Description() const override;
-  boost::json::value ParametersSchema() const override;
-  std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
-};
-
 }  // namespace pu::tools

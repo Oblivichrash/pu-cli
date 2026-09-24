@@ -2,7 +2,7 @@
 #include "mcp/http_transport.hpp"
 
 #include "pu/core/platform.hpp"
-#include "pu/infra/beast_http_client.hpp"
+#include "pu/core/beast_http_client.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -10,8 +10,7 @@
 
 namespace pu::mcp {
 
-HttpTransport::HttpTransport(std::string url,
-                             std::map<std::string, std::string> headers)
+HttpTransport::HttpTransport(std::string url, std::map<std::string, std::string> headers)
     : url_(std::move(url)), headers_(std::move(headers)) {}
 
 HttpTransport::~HttpTransport() { Stop(); }
@@ -22,8 +21,7 @@ bool HttpTransport::Start(MessageCallback on_message) {
   stopping_ = false;
 
   http_.SetInterruptChecker([this] {
-    return stopping_.load(std::memory_order_acquire) ||
-           pu::platform::IsInterrupted();
+    return stopping_.load(std::memory_order_acquire) || pu::platform::IsInterrupted();
   });
 
   running_ = true;
@@ -104,11 +102,10 @@ void HttpTransport::WorkerLoop() {
 
     try {
       auto headers = BuildHeaders();
-      http_.PostStream(url_, body, headers,
-                       [this](char* data, size_t size) -> size_t {
-                         DispatchChunk(data, size);
-                         return size;
-                       });
+      http_.PostStream(url_, body, headers, [this](char* data, size_t size) -> size_t {
+        DispatchChunk(data, size);
+        return size;
+      });
       if (!leftover_.empty()) {
         EmitLine(leftover_);
         leftover_.clear();

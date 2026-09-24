@@ -53,11 +53,10 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   auto active_ws = std::make_shared<ActiveWebSocket>();
   active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
 
-  std::function<void(beast::error_code, tcp::socket)> do_accept =
-      [&](beast::error_code ec, tcp::socket socket) {
+  std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
+                                                                      tcp::socket socket) {
     if (ec) {
-      if (ec != net::error::operation_aborted)
-        spdlog::warn("Accept error: {}", ec.message());
+      if (ec != net::error::operation_aborted) spdlog::warn("Accept error: {}", ec.message());
       return;
     }
 
@@ -77,8 +76,7 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
         http::response<http::string_body> res;
         DispatchHttpRequest(runtime, io_mutex, std::move(req), res);
         http::write(socket, res, ec);
-        if (ec)
-          spdlog::warn("HTTP write error: {}", ec.message());
+        if (ec) spdlog::warn("HTTP write error: {}", ec.message());
       }
     }).detach();
 
@@ -93,8 +91,7 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   ioc.stop();
-  if (ioc_thread.joinable())
-    ioc_thread.join();
+  if (ioc_thread.joinable()) ioc_thread.join();
 
   if (active_ws->running) {
     active_ws->cancel_token->store(true);

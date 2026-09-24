@@ -109,6 +109,29 @@ header h1 {
   padding-bottom: 2px;
 }
 
+.msg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.edit-btn {
+  background: transparent;
+  border: none;
+  margin-bottom: 4px;
+  color: var(--ink-light);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--border);
+}
+
+.edit-btn:hover {
+  color: var(--accent);
+}
+
 .blocks-container {
   width: 100%;
 }
