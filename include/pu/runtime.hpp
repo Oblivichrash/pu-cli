@@ -28,10 +28,11 @@ class Runtime {
   void Initialize(const std::string& config_path = "");
   void Shutdown();
 
-  ExecutionResult ProcessInput(const std::string& input, bool& is_command,
-                               CancelToken cancel_token = nullptr,
-                               std::function<void(const std::string&)> content_callback = nullptr,
-                               ToolCallbacks tool_callbacks = {});
+  ExecutionResult ProcessInput(
+      const std::string& input, bool& is_command, CancelToken cancel_token = nullptr,
+      std::function<void(const std::string&)> content_callback = nullptr,
+      ToolCallbacks tool_callbacks = {},
+      std::function<void(const std::string&)> reasoning_callback = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);

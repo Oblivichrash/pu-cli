@@ -134,8 +134,10 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       if (!refusal.empty()) refusal_ += refusal;
 
       if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
-        current_reasoning_content_ +=
+        const std::string reasoning =
             boost::json::value_to<std::string>(piece->at("reasoning_content"));
+        current_reasoning_content_ += reasoning;
+        if (reasoning_sink_) reasoning_sink_(reasoning);
       }
 
       if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
@@ -208,10 +210,12 @@ void OpenAIProvider::FlushPendingToolCalls() {
 ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
                                 const std::vector<ToolDefinition>& tools,
                                 std::function<void(const std::string&)> content_callback,
-                                CancelToken cancel_token) {
+                                CancelToken cancel_token,
+                                std::function<void(const std::string&)> reasoning_callback) {
   ChatResult result;
   platform::ClearInterruptFlag();
   ResetAccumulators();
+  reasoning_sink_ = std::move(reasoning_callback);
 
   const std::string body = BuildRequest(history, tools);
 

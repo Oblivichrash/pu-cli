@@ -407,3 +407,38 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
   // The dated build the provider served, not the tag that was requested.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
+
+TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-reasoner";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"reasoning_content":"weighing "}}]})"
+        "\n"
+        R"(data: {"choices":[{"delta":{"reasoning_content":"the options"}}]})"
+        "\n"
+        R"(data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
+  std::string streamed;
+  std::string content;
+  auto result = provider.Chat(
+      history, {}, [&](const std::string& token) { content += token; }, nullptr,
+      [&](const std::string& token) { streamed += token; });
+
+  // The two channels arrive while the stream is open, and stay apart.
+  REQUIRE(streamed == "weighing the options");
+  REQUIRE(content == "answer");
+  REQUIRE(result.reasoning_content == "weighing the options");
+}

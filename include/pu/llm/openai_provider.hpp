@@ -29,7 +29,8 @@ class OpenAIProvider : public LLMProvider {
 
   ChatResult Chat(const std::vector<ChatMessage>& history, const std::vector<ToolDefinition>& tools,
                   std::function<void(const std::string&)> content_callback = nullptr,
-                  CancelToken cancel_token = nullptr) override;
+                  CancelToken cancel_token = nullptr,
+                  std::function<void(const std::string&)> reasoning_callback = nullptr) override;
 
   bool SupportsTools() const override { return true; }
   bool IsThinkingMode() const override { return config_.enable_thinking; }
@@ -55,6 +56,11 @@ class OpenAIProvider : public LLMProvider {
   };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
+  // Where reasoning tokens go while the stream is open. Held as a member rather
+  // than threaded through every helper because only the stream handler reads it,
+  // and a provider is built per request (Session::CreateProvider), so no stale
+  // sink can outlive the caller it belongs to.
+  std::function<void(const std::string&)> reasoning_sink_;
   std::string content_;
   std::string current_reasoning_content_;
   std::string refusal_;

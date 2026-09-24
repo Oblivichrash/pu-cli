@@ -265,6 +265,20 @@ function handleChunk(payload) {
   updateCurrentAssistantBlocks();
 }
 
+// Reasoning arrives on its own channel while the answer is still coming, and reads
+// above the text in the same order the history renderer puts it in.
+function handleThinking(payload) {
+  const text = payload.text || "";
+  if (!text) return;
+  let block = currentAssistantBlocks.find((b) => b.type === BLOCK_TYPES.THINKING);
+  if (!block) {
+    block = { type: BLOCK_TYPES.THINKING, content: "", collapsed: false };
+    currentAssistantBlocks.unshift(block);
+  }
+  block.content += text;
+  updateCurrentAssistantBlocks();
+}
+
 // The header says who replied rather than what was asked for: a gateway may serve
 // a different build than the one that was configured, and the response is the only
 // place that says which.
@@ -333,6 +347,9 @@ function connectWebSocket() {
         break;
       case "chunk":
         handleChunk(data.payload);
+        break;
+      case "thinking":
+        handleThinking(data.payload);
         break;
       case "done":
         handleDone(data.payload);

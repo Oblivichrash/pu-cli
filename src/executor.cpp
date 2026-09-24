@@ -150,7 +150,8 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace,
                                   LLMProvider* provider, CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
-                                  ToolCallbacks tool_callbacks) {
+                                  ToolCallbacks tool_callbacks,
+                                  std::function<void(const std::string&)> reasoning_callback) {
   if (!toolbox_) {
     ExecutionResult err;
     err.has_error = true;
@@ -160,7 +161,8 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
 
   workspace.Append("user", input);
 
-  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks);
+  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks,
+                            reasoning_callback);
   ExecutionResult exec_result;
   if (result.has_error) {
     exec_result.has_error = true;
@@ -182,7 +184,8 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
 
 Executor::ToolLoopResult Executor::RunToolLoop(
     Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
-    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks) {
+    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks,
+    std::function<void(const std::string&)> reasoning_callback) {
   ToolLoopResult result;
   result.was_streamed = false;
 
@@ -233,7 +236,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
               }
             }
           },
-          cancel_token);
+          cancel_token, reasoning_callback);
 
       if (chat_result.usage) {
         spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,

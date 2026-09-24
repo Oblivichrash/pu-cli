@@ -64,7 +64,8 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace, LLMProvider* provider,
                           CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
-                          ToolCallbacks tool_callbacks = {});
+                          ToolCallbacks tool_callbacks = {},
+                          std::function<void(const std::string&)> reasoning_callback = nullptr);
 
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
@@ -82,7 +83,8 @@ class Executor {
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
                              std::function<void(const std::string&)> content_callback,
-                             ToolCallbacks tool_callbacks);
+                             ToolCallbacks tool_callbacks,
+                             std::function<void(const std::string&)> reasoning_callback);
 
   void ProbeStaticEnvironment();
 

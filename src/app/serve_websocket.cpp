@@ -137,7 +137,14 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
                   boost::json::value ev = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
                   send_frame(ev);
                 },
-                tool_cb);
+                tool_cb,
+                // Reasoning arrives on its own channel and is rendered beside the
+                // answer, so it travels as a frame of its own.
+                [&](const std::string& thought) {
+                  if (thought.empty()) return;
+                  boost::json::value ev = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
+                  send_frame(ev);
+                });
           }
 
           // A remark about the reply goes out before the turn is closed, so it lands

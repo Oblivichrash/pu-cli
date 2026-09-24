@@ -141,6 +141,7 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 
 ```json
 {"type":"chunk","payload":{"text":"token part"}}
+{"type":"thinking","payload":{"text":"reasoning part"}}
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
@@ -149,6 +150,8 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 ```
 
 The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the server only sets the cancel token, and the client closes the WebSocket itself after sending `{"type":"cancel"}`.
+
+`thinking` carries the model's reasoning, which is a channel of its own: the front-end renders it beside the answer rather than in it, and a backend that reports no reasoning simply sends none.
 
 `notice` is a remark about a reply that arrived but is known to be incomplete — the provider stopped it at the token limit or its content filter. It is sent before the turn is closed and is not an error: the reply itself was stored and stands as it is.
 

@@ -108,7 +108,8 @@ class MockLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     ChatResult r;
     r.content = content_;
     r.tool_calls = calls_;
@@ -131,7 +132,8 @@ class FailingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
 
@@ -145,7 +147,8 @@ class CapturingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& history,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     history_ = history;
     ChatResult r;
     r.content = "done";
@@ -160,22 +163,28 @@ class CapturingLLM : public LLMProvider {
   std::vector<ChatMessage> history_;
 };
 
-// A provider whose answer says how it ended, which is what the remark is read from.
+// A provider whose answer says how it ended, which is what the remark is read from,
+// and which can put a line on the reasoning channel as well.
 class StoppingLLM : public LLMProvider {
  public:
-  StoppingLLM(std::string content, std::string finish_reason, std::string model = "")
+  StoppingLLM(std::string content, std::string finish_reason, std::string model = "",
+              std::string reasoning = "")
       : content_(std::move(content)),
         finish_reason_(std::move(finish_reason)),
-        model_(std::move(model)) {}
+        model_(std::move(model)),
+        reasoning_(std::move(reasoning)) {}
 
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> reasoning_callback) override {
+    if (reasoning_callback && !reasoning_.empty()) reasoning_callback(reasoning_);
     ChatResult r;
     r.content = content_;
     r.finish_reason = finish_reason_;
     r.model = model_;
+    r.reasoning_content = reasoning_;
     return r;
   }
 
@@ -185,6 +194,7 @@ class StoppingLLM : public LLMProvider {
   std::string content_;
   std::string finish_reason_;
   std::string model_;
+  std::string reasoning_;
 };
 
 class TrackingTool : public Tool {
@@ -456,4 +466,24 @@ TEST_CASE("The model that answered is carried out of the turn", "[executor][tool
 
   // What replied, which is not necessarily what was configured.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
+}
+
+TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("answer", "stop", "", "weighing the options");
+  std::string streamed;
+  Workspace ws;
+  const ExecutionResult result =
+      executor.Execute("think", ws, &provider, nullptr, nullptr, {},
+                       [&](const std::string& token) { streamed += token; });
+
+  // Reasoning has a channel of its own, so it neither waits for the answer nor
+  // becomes part of it.
+  REQUIRE(streamed == "weighing the options");
+  REQUIRE(result.content == "answer");
 }

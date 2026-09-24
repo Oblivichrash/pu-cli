@@ -220,8 +220,9 @@ are documented in [README](../README.md#websocket-protocol) and implemented in
 Three things arrive beside the answer, and each has one place where it is read.
 
 Reasoning — `delta.reasoning_content` or Ollama's `message.thinking` — is
-accumulated as the model's own thinking and is rendered as a collapsed block
-rather than as the reply. A `refusal` becomes the reply when no content arrived:
+accumulated as the model's own thinking and reaches the caller as it arrives, on a
+channel of its own (`thinking` frames), because it belongs beside the answer rather
+than in it. A `refusal` becomes the reply when no content arrived:
 the model's own words are the reason the user is owed, and without them a refusal
 is an empty answer. An `error` object inside the stream is raised as the request's
 failure, so the provider's message reaches the user instead of being replaced by
@@ -237,7 +238,8 @@ is a setting rather than a retry.
 The response also names the model that answered. That name is kept in
 `ChatResult::model` and reaches the Web client in the `done` frame, because a
 gateway may serve a build other than the one that was configured: the session spec
-holds what was asked for, and this is the only place that says who replied.
+holds what was asked for, and this is the only place that says who replied. It is
+held for the turn and not persisted, so a reload shows the configured name again.
 
 ## Provider Differences
 

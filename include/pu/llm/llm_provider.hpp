@@ -82,11 +82,14 @@ class LLMProvider {
   virtual ~LLMProvider() = default;
 
   // `content_callback` exists so a token reaches the user while the stream is
-  // still open; everything the caller needs afterwards is in the result.
+  // still open; everything the caller needs afterwards is in the result. Reasoning
+  // has a sink of its own because it arrives on its own channel and is shown beside
+  // the answer rather than in it.
   virtual ChatResult Chat(const std::vector<ChatMessage>& history,
                           const std::vector<ToolDefinition>& tools,
                           std::function<void(const std::string&)> content_callback = nullptr,
-                          CancelToken cancel_token = nullptr) = 0;
+                          CancelToken cancel_token = nullptr,
+                          std::function<void(const std::string&)> reasoning_callback = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
   virtual bool IsThinkingMode() const { return false; }

@@ -213,7 +213,8 @@ config::BackendConfig Runtime::CurrentBackend() const {
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
-                                      ToolCallbacks tool_callbacks) {
+                                      ToolCallbacks tool_callbacks,
+                                      std::function<void(const std::string&)> reasoning_callback) {
   ExecutionResult result;
   try {
     BeginRequest();
@@ -241,8 +242,9 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     is_command = false;
 
     auto provider = session->CreateProvider(CurrentBackend());
-    auto exec_result = executor_->Execute(input, session->GetWorkspace(), provider.get(),
-                                          cancel_token, content_callback, tool_callbacks);
+    auto exec_result =
+        executor_->Execute(input, session->GetWorkspace(), provider.get(), cancel_token,
+                           content_callback, tool_callbacks, reasoning_callback);
     result = std::move(exec_result);
     SaveCurrentSession();
     return result;
