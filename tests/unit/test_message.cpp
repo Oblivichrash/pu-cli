@@ -38,8 +38,7 @@ TEST_CASE("MakeNode assigns an id and keeps the payload", "[context][message]") 
   REQUIRE_FALSE(node.id.empty());
   REQUIRE(node.parents.empty());
   REQUIRE(std::holds_alternative<context::UserPayload>(node.payload));
-  REQUIRE(context::FlattenText(std::get<context::UserPayload>(node.payload).content) ==
-          "hello");
+  REQUIRE(context::FlattenText(std::get<context::UserPayload>(node.payload).content) == "hello");
 }
 
 TEST_CASE("MakeNode records parents in order", "[context][message]") {
@@ -75,8 +74,7 @@ TEST_CASE("Each role payload is distinguishable by type", "[context][message]") 
   REQUIRE(std::holds_alternative<context::ToolPayload>(tool.payload));
 }
 
-TEST_CASE("A tool call starts pending and a completed one no longer blocks",
-          "[context][message]") {
+TEST_CASE("A tool call starts pending and a completed one no longer blocks", "[context][message]") {
   context::AssistantPayload assistant;
   assistant.content.emplace_back(context::TextPart{"let me check"});
   assistant.reasoning = context::Reasoning{"openai", "sig", R"({"raw":true})"};
@@ -89,8 +87,8 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
   REQUIRE(std::get<context::AssistantPayload>(node.payload).reasoning->signature == "sig");
 
   context::AssistantPayload done;
-  done.tool_calls.push_back(context::ToolCallRecord{
-      "call_1", "read_file", boost::json::object{}, context::ToolCallStatus::kCompleted});
+  done.tool_calls.push_back(context::ToolCallRecord{"call_1", "read_file", boost::json::object{},
+                                                    context::ToolCallStatus::kCompleted});
   const context::MessageNode finished = context::MakeNode(std::move(done));
 
   REQUIRE_FALSE(context::HasUnfinishedToolCalls(finished));
@@ -98,13 +96,12 @@ TEST_CASE("A tool call starts pending and a completed one no longer blocks",
 
 TEST_CASE("Tool call arguments keep their JSON shape", "[context][message]") {
   context::AssistantPayload assistant;
-  assistant.tool_calls.push_back(context::ToolCallRecord{
-      "call_1", "read_file", boost::json::parse(R"({"path":"."})")});
+  assistant.tool_calls.push_back(
+      context::ToolCallRecord{"call_1", "read_file", boost::json::parse(R"({"path":"."})")});
 
   const context::MessageNode node = context::MakeNode(std::move(assistant));
 
-  const auto& record =
-      std::get<context::AssistantPayload>(node.payload).tool_calls.at(0);
+  const auto& record = std::get<context::AssistantPayload>(node.payload).tool_calls.at(0);
   REQUIRE(record.arguments.is_object());
   REQUIRE(record.arguments.at("path") == ".");
 }
@@ -141,8 +138,7 @@ TEST_CASE("The shared UUID generator meets the v4 contract", "[context][message]
 
 TEST_CASE("A tool call keeps its id, name, and arguments through the JSON shape",
           "[context][message]") {
-  context::ToolCallRecord record{
-      "call_1", "read_file", boost::json::parse(R"({"path":"."})")};
+  context::ToolCallRecord record{"call_1", "read_file", boost::json::parse(R"({"path":"."})")};
 
   const context::ToolCallRecord as_object =
       context::ToolCallFromJson(context::ToolCallToJson(record));

@@ -38,7 +38,8 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /backend <agent_name>  Switch to a predefined agent\n"
       "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
-  add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
+  add("/clear", &CommandRouter::HandleClear,
+      "  /clear                 Clear conversation history\n");
   add("/rewind", &CommandRouter::HandleRewind,
       "  /rewind <turn>         Step back to before a turn, keeping it on disk\n");
   return reg;
@@ -92,18 +93,19 @@ std::string CommandRouter::GetHelpText() {
   return oss.str();
 }
 
-bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
+bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/,
+                               std::string& output) {
   output = GetHelpText();
   return true;
 }
 
-bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session,
+                                  std::string& output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
     output = "Current backend: " +
              std::string(cfg.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
-             " (model: " + cfg.model +
-             ", host: " + cfg.host + ")";
+             " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
 
@@ -112,8 +114,9 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     try {
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
-        std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
-        "/" + agent_config->backend.model + ")";
+               std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai"
+                                                                                      : "ollama") +
+               "/" + agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
     }
@@ -148,8 +151,8 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 
   try {
     session.SetBackendOverride(new_cfg);
-    output = "Switched backend to: " + args[0] +
-      " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
+    output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
+             ", host: " + new_cfg.host + ")";
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {
       output += " (API key set)";
     }
@@ -159,7 +162,8 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   return true;
 }
 
-bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
+bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session,
+                                 std::string& output) {
   auto names = manager_.GetAgentNames();
   std::string current = session.GetRuntimeSpec().agent_name;
   std::ostringstream oss;
@@ -177,7 +181,8 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
   return true;
 }
 
-bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
+bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session,
+                                std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
   return true;
@@ -208,4 +213,4 @@ bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& 
   return true;
 }
 
-} // namespace pu
+}  // namespace pu

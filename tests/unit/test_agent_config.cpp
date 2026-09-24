@@ -16,9 +16,7 @@ namespace fs = std::filesystem;
 
 struct TempConfigFile {
   fs::path path;
-  TempConfigFile() {
-    path = fs::temp_directory_path() / "pu_test_agents.json";
-  }
+  TempConfigFile() { path = fs::temp_directory_path() / "pu_test_agents.json"; }
   ~TempConfigFile() {
     std::error_code ec;
     fs::remove(path, ec);
@@ -29,35 +27,33 @@ struct TempConfigFile {
   }
 };
 
-
 namespace {
 
 // Serializes an AgentsConfig in the agents.json shape so the loader's
 // round-trip behavior can be tested without a production writer.
-void WriteAgentsConfigForTest(const std::string& config_path,
-                              const config::AgentsConfig& cfg) {
+void WriteAgentsConfigForTest(const std::string& config_path, const config::AgentsConfig& cfg) {
   json::value j = {{"default_agent", cfg.default_agent}};
 
   json::array agents_array;
   for (const auto& entry : cfg.agents) {
     json::value item = {
-      {"name", entry.name},
-      {"description", entry.description},
+        {"name", entry.name},
+        {"description", entry.description},
     };
     json::value security = {
-      {"sandbox_root", entry.security.sandbox_root},
-      {"max_command_length", entry.security.max_command_length},
+        {"sandbox_root", entry.security.sandbox_root},
+        {"max_command_length", entry.security.max_command_length},
     };
     security.as_object()["forbidden_patterns"] =
         boost::json::value_from(entry.security.forbidden_patterns);
     item.as_object()["security"] = security;
 
     json::value backend = {
-      {"type", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
-      {"host", entry.backend.host},
-      {"model", entry.backend.model},
-      {"temperature", entry.backend.temperature},
-      {"enable_thinking", entry.backend.enable_thinking},
+        {"type", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
+        {"host", entry.backend.host},
+        {"model", entry.backend.model},
+        {"temperature", entry.backend.temperature},
+        {"enable_thinking", entry.backend.enable_thinking},
     };
     if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
     if (entry.backend.system_prompt)
@@ -68,8 +64,8 @@ void WriteAgentsConfigForTest(const std::string& config_path,
       json::array mcp_array;
       for (const auto& srv : entry.mcp_servers) {
         json::value srv_json = {
-          {"name", srv.name},
-          {"command", srv.command},
+            {"name", srv.name},
+            {"command", srv.command},
         };
         srv_json.as_object()["args"] = boost::json::value_from(srv.args);
         if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
@@ -88,8 +84,7 @@ void WriteAgentsConfigForTest(const std::string& config_path,
   j.as_object()["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open())
-    throw pu::Error("Failed to open config file for writing: " + config_path);
+  if (!file.is_open()) throw pu::Error("Failed to open config file for writing: " + config_path);
   file << json::PrettyPrint(j);
 }
 
@@ -354,8 +349,7 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.enable_thinking == true);
 }
 
-TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option",
-          "[agent_config]") {
+TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "default_agent": "chat",

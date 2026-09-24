@@ -11,8 +11,7 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
   if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
     msg.role = context::kUserRole;
     msg.content = context::FlattenText(user->content);
-  } else if (const auto* assistant =
-                 std::get_if<context::AssistantPayload>(&node.payload)) {
+  } else if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
     msg.role = context::kAssistantRole;
     msg.content = context::FlattenText(assistant->content);
     if (assistant->reasoning) msg.reasoning_content = assistant->reasoning->raw_json;
@@ -23,8 +22,7 @@ ChatMessage RenderMessage(const context::MessageNode& node, int position) {
       }
       msg.tool_calls = std::move(calls);
     }
-  } else if (const auto* system =
-                 std::get_if<context::SystemPayload>(&node.payload)) {
+  } else if (const auto* system = std::get_if<context::SystemPayload>(&node.payload)) {
     msg.role = context::kSystemRole;
     msg.content = context::FlattenText(system->content);
   } else {

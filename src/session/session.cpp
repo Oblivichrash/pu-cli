@@ -111,9 +111,7 @@ bool Transcript::RewindBefore(size_t turn) {
   return graph_.RewindTo(target);
 }
 
-bool Transcript::HasPendingToolCalls() const {
-  return graph_.LeafHasUnfinishedToolCalls();
-}
+bool Transcript::HasPendingToolCalls() const { return graph_.LeafHasUnfinishedToolCalls(); }
 
 boost::json::value Transcript::Serialize() const { return graph_.Serialize(); }
 
@@ -124,9 +122,7 @@ bool Transcript::Deserialize(const boost::json::value& j, Transcript& out) {
   return true;
 }
 
-void Workspace::Append(const ChatMessage& msg) {
-  transcript_.Append(msg);
-}
+void Workspace::Append(const ChatMessage& msg) { transcript_.Append(msg); }
 
 void Workspace::Append(const std::string& role, const std::string& content) {
   ChatMessage msg;
@@ -136,17 +132,11 @@ void Workspace::Append(const std::string& role, const std::string& content) {
   Append(msg);
 }
 
-std::vector<ChatMessage> Workspace::GetHistory() const {
-  return transcript_.GetHistory();
-}
+std::vector<ChatMessage> Workspace::GetHistory() const { return transcript_.GetHistory(); }
 
-size_t Workspace::HistorySize() const {
-  return transcript_.Size();
-}
+size_t Workspace::HistorySize() const { return transcript_.Size(); }
 
-bool Workspace::HasPendingToolCalls() const {
-  return transcript_.HasPendingToolCalls();
-}
+bool Workspace::HasPendingToolCalls() const { return transcript_.HasPendingToolCalls(); }
 
 boost::json::value Workspace::Serialize() const {
   boost::json::value j = boost::json::object{};
@@ -167,29 +157,24 @@ std::shared_ptr<Workspace> Workspace::Deserialize(const boost::json::value& j) {
 bool Workspace::RewindBefore(size_t turn) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
-      "Cannot rewind while tool calls are pending. "
-      "Please let the current tool finish or /clear.");
+        "Cannot rewind while tool calls are pending. "
+        "Please let the current tool finish or /clear.");
   }
   return transcript_.RewindBefore(turn);
 }
 
-void Workspace::ClearHistory() {
-  transcript_ = Transcript{};
-}
+void Workspace::ClearHistory() { transcript_ = Transcript{}; }
 
-Session::Session()
-  : workspace_(std::make_shared<Workspace>()),
-    runtime_spec_() {}
+Session::Session() : workspace_(std::make_shared<Workspace>()), runtime_spec_() {}
 
 Session::Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec)
-  : workspace_(std::move(workspace)),
-    runtime_spec_(spec) {}
+    : workspace_(std::move(workspace)), runtime_spec_(spec) {}
 
 void Session::SetAgent(const std::string& agent_name) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
-      "Cannot switch agent while tool calls are pending. "
-      "Please let the current tool finish or /clear.");
+        "Cannot switch agent while tool calls are pending. "
+        "Please let the current tool finish or /clear.");
   }
   // Choosing an agent drops the override, so the agent's own configuration
   // becomes the source of the backend again.
@@ -200,16 +185,14 @@ void Session::SetAgent(const std::string& agent_name) {
 void Session::SetBackendOverride(const config::BackendConfig& new_config) {
   if (HasPendingToolCalls()) {
     throw RuntimeError(
-      "Cannot switch backend while tool calls are pending. "
-      "Please let the current tool finish or /clear.");
+        "Cannot switch backend while tool calls are pending. "
+        "Please let the current tool finish or /clear.");
   }
   runtime_spec_.backend_override = new_config;
 }
 
-std::unique_ptr<LLMProvider> Session::CreateProvider(
-    const config::BackendConfig& backend) const {
-  return config::CreateBackend(backend,
-                               std::make_unique<pu::http::BeastHttpClient>());
+std::unique_ptr<LLMProvider> Session::CreateProvider(const config::BackendConfig& backend) const {
+  return config::CreateBackend(backend, std::make_unique<pu::http::BeastHttpClient>());
 }
 
 boost::json::value Session::Serialize() const {
@@ -227,8 +210,7 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
 
   // A version field alone is not enough: an unreachable branch used the same
   // number for a different layout, so the storage itself has to look like a DAG.
-  if (!json::HasKey(j, "workspace") ||
-      !json::HasKey(j.at("workspace"), "history") ||
+  if (!json::HasKey(j, "workspace") || !json::HasKey(j.at("workspace"), "history") ||
       !j.at("workspace").at("history").is_object()) {
     return nullptr;
   }

@@ -33,17 +33,18 @@ constexpr llm::ProviderCapabilities kCapabilities{
 void OllamaProvider::ResetAccumulators() { tool_calls_.clear(); }
 
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
-    : config_(std::move(config)), host_(config_.host),
-      api_key_(std::move(config_.api_key)), http_(std::move(http)) {}
+    : config_(std::move(config)),
+      host_(config_.host),
+      api_key_(std::move(config_.api_key)),
+      http_(std::move(http)) {}
 
-std::string OllamaProvider::BuildRequest(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools) const {
+std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history,
+                                         const std::vector<ToolDefinition>& tools) const {
   boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"options", {{"temperature", config_.temperature}}},
-    {"keep_alive", config_.keep_alive},
+      {"model", config_.model},
+      {"stream", true},
+      {"options", {{"temperature", config_.temperature}}},
+      {"keep_alive", config_.keep_alive},
   };
 
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
@@ -51,14 +52,13 @@ std::string OllamaProvider::BuildRequest(
   if (!tools.empty()) {
     boost::json::array tools_json;
     for (const auto& tool : tools) {
-      tools_json.push_back(boost::json::value{
-          {"type", "function"},
-          {"function",
-           {
-               {"name", tool.name},
-               {"description", tool.description},
-               {"parameters", tool.Parameters()},
-           }}});
+      tools_json.push_back(boost::json::value{{"type", "function"},
+                                              {"function",
+                                               {
+                                                   {"name", tool.name},
+                                                   {"description", tool.description},
+                                                   {"parameters", tool.Parameters()},
+                                               }}});
     }
     req.as_object()["tools"] = tools_json;
   }
@@ -75,8 +75,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
       for (const auto& tc : msg.at("tool_calls").as_array()) {
         if (!json::HasKey(tc, "function")) continue;
-        std::string tool_name =
-            json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
+        std::string tool_name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
         if (tool_name.empty()) continue;
 
         ToolCall call;
@@ -105,11 +104,10 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
   }
 }
 
-ChatResult OllamaProvider::Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback,
-    CancelToken cancel_token) {
+ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
+                                const std::vector<ToolDefinition>& tools,
+                                std::function<void(const std::string&)> content_callback,
+                                CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
   ResetAccumulators();
@@ -125,24 +123,24 @@ ChatResult OllamaProvider::Chat(
   std::ostringstream content_stream;
 
   llm::StreamingJsonParser parser(
-    [&](std::string_view line) {
-      try {
-        auto j = boost::json::parse(line);
-        HandleJsonToken(j, content_callback);
+      [&](std::string_view line) {
+        try {
+          auto j = boost::json::parse(line);
+          HandleJsonToken(j, content_callback);
 
-        if (json::HasKey(j, "message")) {
-          const auto& msg = j.at("message");
-          if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
-            content_stream << boost::json::value_to<std::string>(msg.at("content"));
+          if (json::HasKey(j, "message")) {
+            const auto& msg = j.at("message");
+            if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
+              content_stream << boost::json::value_to<std::string>(msg.at("content"));
+            }
           }
+        } catch (const boost::system::system_error& e) {
+          // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+          spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+        } catch (const std::exception&) {
         }
-      } catch (const boost::system::system_error& e) {
-        // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-        spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      } catch (const std::exception&) {}
-    },
-    [](const std::string& msg) { throw HttpError("Streaming error: " + msg); }
-  );
+      },
+      [](const std::string& msg) { throw HttpError("Streaming error: " + msg); });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);

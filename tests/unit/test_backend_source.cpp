@@ -20,7 +20,7 @@ namespace {
 // A workspace the runtime can start from. The configuration is rewritten
 // between starts, which is how a restart is simulated.
 class BackendSourceFixture {
-public:
+ public:
   BackendSourceFixture() {
     static int counter = 0;
     root_ = fs::temp_directory_path() / ("pu_backend_source_" + std::to_string(counter++));
@@ -37,37 +37,37 @@ public:
 
   void Write(float temperature) {
     boost::json::value cfg = {
-      {"default_agent", "chat"},
-      {"agents",
-       boost::json::array{
-           boost::json::value{
-               {"name", "chat"},
-               {"backend",
-                {
-                    {"type", "openai"},
-                    {"host", "http://127.0.0.1:1"},
-                    {"model", "test-model"},
-                    {"temperature", temperature},
-                    {"enable_thinking", false},
-                }},
-           },
-           boost::json::value{
-               {"name", "coder"},
-               {"backend",
-                {
-                    {"type", "openai"},
-                    {"host", "http://127.0.0.1:1"},
-                    {"model", "coder-model"},
-                    {"temperature", 0.4},
-                }},
-           },
-       }},
+        {"default_agent", "chat"},
+        {"agents",
+         boost::json::array{
+             boost::json::value{
+                 {"name", "chat"},
+                 {"backend",
+                  {
+                      {"type", "openai"},
+                      {"host", "http://127.0.0.1:1"},
+                      {"model", "test-model"},
+                      {"temperature", temperature},
+                      {"enable_thinking", false},
+                  }},
+             },
+             boost::json::value{
+                 {"name", "coder"},
+                 {"backend",
+                  {
+                      {"type", "openai"},
+                      {"host", "http://127.0.0.1:1"},
+                      {"model", "coder-model"},
+                      {"temperature", 0.4},
+                  }},
+             },
+         }},
     };
     std::ofstream out(root_ / ".pu" / "agents.json", std::ios::trunc);
     out << boost::json::serialize(cfg);
   }
 
-private:
+ private:
   fs::path root_;
 };
 

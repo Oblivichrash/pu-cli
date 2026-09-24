@@ -23,17 +23,15 @@ namespace {
 
 std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
                                            const std::string& configured_path) {
-  const auto path = configured_path.empty() ? std::filesystem::path(".")
-                                            : std::filesystem::path(configured_path);
+  const auto path =
+      configured_path.empty() ? std::filesystem::path(".") : std::filesystem::path(configured_path);
   return path.is_absolute() ? path : root / path;
 }
 
 std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
-  if (!std::filesystem::exists(path))
-    return nullptr;
+  if (!std::filesystem::exists(path)) return nullptr;
   std::ifstream file(path);
-  if (!file.is_open())
-    return nullptr;
+  if (!file.is_open()) return nullptr;
 
   boost::json::value j;
   try {
@@ -50,12 +48,10 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   // guessed at. The backup is the copy that still holds the original.
   const std::string reason =
       json::HasKey(j, "schema_version")
-          ? "schema_version " + std::to_string(
-                json::ValueOrDefault<int>(j, "schema_version", 0)) +
+          ? "schema_version " + std::to_string(json::ValueOrDefault<int>(j, "schema_version", 0)) +
                 " without DAG node storage"
           : "missing schema_version";
-  const std::filesystem::path backup =
-      path.parent_path() / "session.v1.backup.json";
+  const std::filesystem::path backup = path.parent_path() / "session.v1.backup.json";
 
   std::ostringstream message;
   message << "session.json uses the pre-DAG (v1) layout and cannot be loaded.\n"
@@ -76,15 +72,12 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
 // run.
 void BackupLegacySession(const std::filesystem::path& session_path) {
   const auto backup_path = session_path.parent_path() / "session.v1.backup.json";
-  if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path))
-    return;
+  if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path)) return;
 
   std::error_code ec;
-  std::filesystem::copy_file(session_path, backup_path,
-                             std::filesystem::copy_options::none, ec);
+  std::filesystem::copy_file(session_path, backup_path, std::filesystem::copy_options::none, ec);
   if (ec) {
-    spdlog::warn("Failed to back up legacy session to {}: {}", backup_path.string(),
-                 ec.message());
+    spdlog::warn("Failed to back up legacy session to {}: {}", backup_path.string(), ec.message());
     return;
   }
   spdlog::info("Backed up legacy session to {}", backup_path.string());
@@ -93,18 +86,15 @@ void BackupLegacySession(const std::filesystem::path& session_path) {
 }  // namespace
 
 void Runtime::Initialize(const std::string& config_path) {
-  if (is_initialized_)
-    return;
+  if (is_initialized_) return;
 
-  if (workspace_root_.empty())
-    workspace_root_ = std::filesystem::current_path();
+  if (workspace_root_.empty()) workspace_root_ = std::filesystem::current_path();
 
   std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
   pu::InitLogging(log_level);
 
-  std::string cfg_path = config_path.empty()
-      ? (workspace_root_ / ".pu" / "agents.json").string()
-      : config_path;
+  std::string cfg_path =
+      config_path.empty() ? (workspace_root_ / ".pu" / "agents.json").string() : config_path;
 
   if (!std::filesystem::exists(cfg_path)) {
     cfg_path = config::FindConfigPath();
@@ -112,13 +102,11 @@ void Runtime::Initialize(const std::string& config_path) {
 
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
-  const std::string active_agent = default_agent_override_.empty()
-      ? agents_cfg.default_agent
-      : default_agent_override_;
-  const auto default_entry = std::find_if(
-      agents_cfg.agents.begin(), agents_cfg.agents.end(), [&](const config::AgentEntry& entry) {
-        return entry.name == active_agent;
-      });
+  const std::string active_agent =
+      default_agent_override_.empty() ? agents_cfg.default_agent : default_agent_override_;
+  const auto default_entry =
+      std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
+                   [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
   if (default_entry == agents_cfg.agents.end())
     throw Error("Requested agent is not configured: " + active_agent);
 
@@ -164,8 +152,7 @@ void Runtime::Shutdown() {
 }
 
 void Runtime::SaveCurrentSession() {
-  if (!current_session_)
-    return;
+  if (!current_session_) return;
   auto path = workspace_root_ / ".pu" / "session.json";
   std::filesystem::create_directories(path.parent_path());
   std::ofstream file(path);
@@ -178,8 +165,7 @@ void Runtime::SaveCurrentSession() {
 }
 
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
-  if (current_session_)
-    return current_session_;
+  if (current_session_) return current_session_;
 
   auto session = std::make_shared<Session>();
   const auto active_agent = agent_manager_->GetActiveAgent();
@@ -208,8 +194,7 @@ config::BackendConfig Runtime::CurrentBackend() const {
   return agent->backend;
 }
 
-ExecutionResult Runtime::ProcessInput(const std::string& input,
-                                      bool& is_command,
+ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
                                       ToolCallbacks tool_callbacks) {
@@ -232,8 +217,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
       result.content = output;
       result.was_streamed = false;
       result.has_error = !ok;
-      if (!ok)
-        result.error_message = output;
+      if (!ok) result.error_message = output;
       SaveCurrentSession();
       return result;
     }
@@ -254,8 +238,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input,
 }
 
 bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
-  if (new_root == workspace_root_)
-    return true;
+  if (new_root == workspace_root_) return true;
 
   if (!std::filesystem::exists(new_root / ".pu" / "agents.json")) {
     spdlog::error("No agents.json found in {}", new_root.string());
@@ -299,8 +282,7 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
 
 void Runtime::ShutdownMCP() {
   for (auto& client : mcp_clients_) {
-    if (client)
-      client->Disconnect();
+    if (client) client->Disconnect();
   }
   mcp_clients_.clear();
 }
@@ -317,7 +299,7 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
 
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-  ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
+      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
   toolbox_->RegisterTool(std::make_unique<tools::AskUserTool>());
 }
@@ -352,8 +334,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
 }
 
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
-  if (agent_manager_->GetActiveAgent() == new_agent.name)
-    return;
+  if (agent_manager_->GetActiveAgent() == new_agent.name) return;
   RebuildToolbox(new_agent);
 
   if (current_session_) {

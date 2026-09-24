@@ -21,7 +21,7 @@ namespace pu {
 // MessageGraph (include/pu/context/graph.hpp); the compatibility seam is the
 // ChatMessage view this class renders from it.
 class Transcript {
-public:
+ public:
   void Append(const ChatMessage& msg);
   std::vector<ChatMessage> GetHistory() const;
   bool HasPendingToolCalls() const;
@@ -39,7 +39,7 @@ public:
   // foreign layout from an empty conversation.
   static bool Deserialize(const boost::json::value& j, Transcript& out);
 
-private:
+ private:
   context::MessageGraph graph_;
 };
 
@@ -47,7 +47,7 @@ private:
 // else: the agent and the backend are named by the RuntimeSpec a Session
 // carries beside it.
 class Workspace {
-public:
+ public:
   Workspace() = default;
 
   void Append(const ChatMessage& msg);
@@ -66,7 +66,7 @@ public:
   boost::json::value Serialize() const;
   static std::shared_ptr<Workspace> Deserialize(const boost::json::value& j);
 
-private:
+ private:
   Transcript transcript_;
 };
 
@@ -102,7 +102,7 @@ struct RuntimeSpec {
 
 // Aggregate root: the conversation plus the agent and backend it belongs to.
 class Session {
-public:
+ public:
   Session();
   Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec);
   Session(const Session&) = delete;
@@ -127,7 +127,7 @@ public:
   boost::json::value Serialize() const;
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);
 
-private:
+ private:
   std::shared_ptr<Workspace> workspace_;
   RuntimeSpec runtime_spec_;
 };

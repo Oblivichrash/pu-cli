@@ -9,16 +9,16 @@
 #include <algorithm>
 
 #ifdef _WIN32
-#  include <windows.h>
-#  include <processthreadsapi.h>
-#  include <fileapi.h>
-#  include <handleapi.h>
-#  include <synchapi.h>
+#include <windows.h>
+#include <processthreadsapi.h>
+#include <fileapi.h>
+#include <handleapi.h>
+#include <synchapi.h>
 #else
-#  include <unistd.h>
-#  include <sys/wait.h>
-#  include <fcntl.h>
-#  include <csignal>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <csignal>
 #endif
 
 namespace pu::mcp {
@@ -75,16 +75,17 @@ DWORD WINAPI ReaderThreadProc(LPVOID param) {
 
 // CreateProcess takes a single command-line string; arguments with embedded
 // spaces or quotes must be quoted and escaped.
-std::string BuildCommandLine(const std::string& command,
-                             const std::vector<std::string>& args) {
+std::string BuildCommandLine(const std::string& command, const std::vector<std::string>& args) {
   auto quote = [](const std::string& s) -> std::string {
     if (s.find_first_of(" \"\t\n\v") == std::string::npos) return s;
     std::string escaped;
     escaped.reserve(s.size() + 4);
     escaped += '"';
     for (char c : s) {
-      if (c == '"') escaped += "\\\"";
-      else          escaped += c;
+      if (c == '"')
+        escaped += "\\\"";
+      else
+        escaped += c;
     }
     escaped += '"';
     return escaped;
@@ -100,8 +101,7 @@ std::string BuildCommandLine(const std::string& command,
 
 }  // namespace
 
-StdioTransport::StdioTransport(const std::string& command,
-                               const std::vector<std::string>& args)
+StdioTransport::StdioTransport(const std::string& command, const std::vector<std::string>& args)
     : command_(command), args_(args) {}
 
 StdioTransport::~StdioTransport() { Stop(); }
@@ -120,8 +120,7 @@ bool StdioTransport::SpawnProcess() {
   HANDLE child_stderr_write = INVALID_HANDLE_VALUE;
 
   auto close_handles = [&]() {
-    for (HANDLE h : {child_stdin_read, child_stdin_write,
-                     child_stdout_read, child_stdout_write,
+    for (HANDLE h : {child_stdin_read, child_stdin_write, child_stdout_read, child_stdout_write,
                      child_stderr_read, child_stderr_write}) {
       if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
     }
@@ -171,12 +170,8 @@ bool StdioTransport::SpawnProcess() {
   std::vector<char> cmdline_buf(cmdline.begin(), cmdline.end());
   cmdline_buf.push_back('\0');
 
-  BOOL ok = CreateProcessA(
-      nullptr, cmdline_buf.data(),
-      nullptr, nullptr,
-      TRUE, CREATE_NO_WINDOW,
-      nullptr, nullptr,
-      &si, &pi);
+  BOOL ok = CreateProcessA(nullptr, cmdline_buf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                           nullptr, nullptr, &si, &pi);
 
   if (!ok) {
     spdlog::error("CreateProcess failed for '{}': {}", command_, GetLastError());
@@ -207,8 +202,7 @@ bool StdioTransport::Start(MessageCallback on_message) {
   running_ = true;
 
   auto* ctx = new ReaderContext{stdout_read_, &running_, on_message_};
-  reader_thread_handle_ = CreateThread(
-      nullptr, 0, ReaderThreadProc, ctx, 0, &reader_thread_id_);
+  reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, ctx, 0, &reader_thread_id_);
   if (reader_thread_handle_ == INVALID_HANDLE_VALUE || !reader_thread_handle_) {
     spdlog::error("CreateThread for reader failed: {}", GetLastError());
     delete ctx;
@@ -262,8 +256,7 @@ bool StdioTransport::WriteLine(const std::string& line) {
   if (stdin_write_ == INVALID_HANDLE_VALUE) return false;
   std::string out = line + "\n";
   DWORD written = 0;
-  BOOL ok = WriteFile(stdin_write_, out.data(),
-                      static_cast<DWORD>(out.size()), &written, nullptr);
+  BOOL ok = WriteFile(stdin_write_, out.data(), static_cast<DWORD>(out.size()), &written, nullptr);
   if (!ok || written != static_cast<DWORD>(out.size())) {
     spdlog::error("MCP WriteFile failed: {}", GetLastError());
     return false;
@@ -273,8 +266,7 @@ bool StdioTransport::WriteLine(const std::string& line) {
 
 #else  // _WIN32
 
-StdioTransport::StdioTransport(const std::string& command,
-                               const std::vector<std::string>& args)
+StdioTransport::StdioTransport(const std::string& command, const std::vector<std::string>& args)
     : command_(command), args_(args) {}
 
 StdioTransport::~StdioTransport() { Stop(); }

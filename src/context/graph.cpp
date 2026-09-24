@@ -12,8 +12,10 @@ constexpr const char* kStatusCompleted = "completed";
 
 std::string StatusName(ToolCallStatus status) {
   switch (status) {
-    case ToolCallStatus::kPending: return kStatusPending;
-    case ToolCallStatus::kCompleted: return kStatusCompleted;
+    case ToolCallStatus::kPending:
+      return kStatusPending;
+    case ToolCallStatus::kCompleted:
+      return kStatusCompleted;
   }
   return kStatusPending;
 }
@@ -113,9 +115,9 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   }
 
   const std::string role = json::ValueOrDefault<std::string>(value, "role", "");
-  const std::vector<ContentPart> content =
-      json::HasKey(value, "content") ? DeserializeContent(value.at("content"))
-                                     : std::vector<ContentPart>{};
+  const std::vector<ContentPart> content = json::HasKey(value, "content")
+                                               ? DeserializeContent(value.at("content"))
+                                               : std::vector<ContentPart>{};
 
   if (role == kUserRole) {
     UserPayload user;
@@ -139,8 +141,8 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
         ToolCallRecord record;
         record.id = json::ValueOrDefault<std::string>(call, "id", "");
         record.name = json::ValueOrDefault<std::string>(call, "name", "");
-        record.arguments = json::ValueOrDefault<boost::json::value>(
-            call, "arguments", boost::json::object{});
+        record.arguments =
+            json::ValueOrDefault<boost::json::value>(call, "arguments", boost::json::object{});
         record.status = StatusFrom(json::ValueOrDefault<std::string>(call, "status", ""));
         assistant.tool_calls.push_back(std::move(record));
       }

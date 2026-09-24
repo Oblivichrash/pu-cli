@@ -83,8 +83,7 @@ class OneResponseServer {
   std::string consumed_;
 };
 
-std::string Post(pu::http::BeastHttpClient& client, int port,
-                 std::string& received) {
+std::string Post(pu::http::BeastHttpClient& client, int port, std::string& received) {
   const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/v1/chat/completions";
   client.PostStream(url, "{}", {"Content-Type: application/json"},
                     [&received](char* data, size_t size) {
@@ -96,9 +95,9 @@ std::string Post(pu::http::BeastHttpClient& client, int port,
 
 }  // namespace
 
-TEST_CASE("A failure response reports what the server said",
-          "[http][errors]") {
-  const std::string body = R"({"error":{"message":"maximum context length is 4096 tokens","type":"invalid_request_error"}})";
+TEST_CASE("A failure response reports what the server said", "[http][errors]") {
+  const std::string body =
+      R"({"error":{"message":"maximum context length is 4096 tokens","type":"invalid_request_error"}})";
   OneResponseServer server(400, body);
   pu::http::BeastHttpClient client;
 
@@ -159,8 +158,7 @@ TEST_CASE("Failure detail is one line and bounded", "[http][errors]") {
   }
 }
 
-TEST_CASE("A success response still streams to the consumer",
-          "[http][errors]") {
+TEST_CASE("A success response still streams to the consumer", "[http][errors]") {
   OneResponseServer server(200, "streamed content");
   pu::http::BeastHttpClient client;
 

@@ -21,19 +21,15 @@ class OpenAIProvider : public LLMProvider {
     float temperature = 0.7f;
     std::string api_key;
     int max_tokens = 2048;
-    bool enable_thinking = true;   // for DeepSeek/vLLM
+    bool enable_thinking = true;  // for DeepSeek/vLLM
   };
 
-  explicit OpenAIProvider(const Config& config,
-                          std::unique_ptr<pu::http::HttpClient> http);
+  explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
   ~OpenAIProvider() override = default;
 
-  ChatResult Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback = nullptr,
-    CancelToken cancel_token = nullptr
-  ) override;
+  ChatResult Chat(const std::vector<ChatMessage>& history, const std::vector<ToolDefinition>& tools,
+                  std::function<void(const std::string&)> content_callback = nullptr,
+                  CancelToken cancel_token = nullptr) override;
 
   bool SupportsTools() const override { return true; }
   std::string GetModelName() const override { return config_.model; }
@@ -52,7 +48,9 @@ class OpenAIProvider : public LLMProvider {
   std::string host_;
   std::string api_key_;
 
-  struct ToolCallAccumulator { std::string id, name, arguments; };
+  struct ToolCallAccumulator {
+    std::string id, name, arguments;
+  };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
   std::string current_reasoning_content_;

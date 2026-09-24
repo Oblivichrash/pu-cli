@@ -30,13 +30,27 @@ std::string JsonEscape(const std::string& s) {
   out.reserve(s.size() + 8);
   for (unsigned char c : s) {
     switch (c) {
-      case '"': out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\b': out += "\\b"; break;
-      case '\f': out += "\\f"; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
       default:
         if (c < 0x20) {
           char buf[8];
@@ -78,8 +92,7 @@ void ClearLogToolName() { g_tool_name.clear(); }
 void SetLogDurationMs(int64_t duration_ms) { g_duration_ms = duration_ms; }
 void ClearLogDurationMs() { g_duration_ms = -1; }
 
-void JsonLogFormatter::format(const spdlog::details::log_msg& msg,
-                              spdlog::memory_buf_t& dest) {
+void JsonLogFormatter::format(const spdlog::details::log_msg& msg, spdlog::memory_buf_t& dest) {
   std::string out = "{";
   out += "\"timestamp\":\"" + FormatTimestamp(msg.time) + "\",";
   auto level_view = spdlog::level::to_string_view(msg.level);
@@ -87,8 +100,7 @@ void JsonLogFormatter::format(const spdlog::details::log_msg& msg,
   if (!g_request_id.empty()) out += "\"request_id\":\"" + JsonEscape(g_request_id) + "\",";
   if (!g_tool_name.empty()) out += "\"tool_name\":\"" + JsonEscape(g_tool_name) + "\",";
   if (g_duration_ms >= 0) out += "\"duration_ms\":" + std::to_string(g_duration_ms) + ",";
-  out += "\"message\":\"" +
-         JsonEscape(std::string(msg.payload.data(), msg.payload.size())) + "\"";
+  out += "\"message\":\"" + JsonEscape(std::string(msg.payload.data(), msg.payload.size())) + "\"";
   out += "}\n";
   dest.append(out.data(), out.data() + out.size());
 }
@@ -100,12 +112,18 @@ std::unique_ptr<spdlog::formatter> JsonLogFormatter::clone() const {
 void InitLogging(const std::string& log_level) {
   spdlog::level::level_enum level = spdlog::level::info;
   if (!log_level.empty()) {
-    if (log_level == "trace") level = spdlog::level::trace;
-    else if (log_level == "debug") level = spdlog::level::debug;
-    else if (log_level == "info") level = spdlog::level::info;
-    else if (log_level == "warn") level = spdlog::level::warn;
-    else if (log_level == "error") level = spdlog::level::err;
-    else if (log_level == "critical") level = spdlog::level::critical;
+    if (log_level == "trace")
+      level = spdlog::level::trace;
+    else if (log_level == "debug")
+      level = spdlog::level::debug;
+    else if (log_level == "info")
+      level = spdlog::level::info;
+    else if (log_level == "warn")
+      level = spdlog::level::warn;
+    else if (log_level == "error")
+      level = spdlog::level::err;
+    else if (log_level == "critical")
+      level = spdlog::level::critical;
   }
 
   std::vector<spdlog::sink_ptr> sinks;
@@ -132,9 +150,9 @@ void InitLogging(const std::string& log_level) {
     logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
   } else {
     spdlog::init_thread_pool(8192, 1);
-    logger = std::make_shared<spdlog::async_logger>(
-        "pu", sinks.begin(), sinks.end(),
-        spdlog::thread_pool(), spdlog::async_overflow_policy::block);
+    logger = std::make_shared<spdlog::async_logger>("pu", sinks.begin(), sinks.end(),
+                                                    spdlog::thread_pool(),
+                                                    spdlog::async_overflow_policy::block);
   }
   logger->set_level(level);
   logger->flush_on(spdlog::level::err);
@@ -144,8 +162,6 @@ void InitLogging(const std::string& log_level) {
   spdlog::set_default_logger(logger);
 }
 
-void ShutdownLogging() {
-  spdlog::shutdown();
-}
+void ShutdownLogging() { spdlog::shutdown(); }
 
-} // namespace pu
+}  // namespace pu

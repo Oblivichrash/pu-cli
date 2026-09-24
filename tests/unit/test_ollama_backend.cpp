@@ -18,9 +18,7 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   auto* mock_ptr = mock_http.get();
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hello"}
-  };
+  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
 
   provider.Chat(history, {});
 
@@ -38,16 +36,11 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  std::vector<std::string> chunks = {
-    R"({"message":{"content":"Hello"}})",
-    R"({"message":{"content":" world"}})",
-    R"({"done":true})"
-  };
+  std::vector<std::string> chunks = {R"({"message":{"content":"Hello"}})",
+                                     R"({"message":{"content":" world"}})", R"({"done":true})"};
 
-  mock_ptr->simulate_response = [&](const std::string&,
-                                    const std::string&,
-                                    const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb) {
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
     for (const auto& chunk : chunks) {
       std::string data = chunk + "\n";
       cb(data.data(), data.size());
@@ -56,18 +49,12 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
 
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
-  std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hi"}
-  };
+  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
 
   std::string accumulated;
   bool final_received = false;
 
-  auto result = provider.Chat(history, {},
-    [&](const std::string& token) {
-      accumulated += token;
-    }
-  );
+  auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
 }
@@ -80,13 +67,11 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  mock_ptr->simulate_response = [&](const std::string&,
-                                    const std::string&,
-                                    const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb) {
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
     std::string data =
-        R"({"message":{"content":"Running ls","tool_calls":[{"function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})"
-        + std::string("\n");
+        R"({"message":{"content":"Running ls","tool_calls":[{"function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})" +
+        std::string("\n");
     std::string done = R"({"done":true})" + std::string("\n");
     cb(data.data(), data.size());
     cb(done.data(), done.size());
@@ -100,8 +85,7 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(history, tools,
-    [](const std::string&) {});
+  auto result = provider.Chat(history, tools, [](const std::string&) {});
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "execute_bash");
@@ -159,8 +143,7 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
   REQUIRE(sent.at("function").at("arguments").at("path") == ".");
 }
 
-TEST_CASE("OllamaProvider decodes arguments sent as a JSON string",
-          "[ollama][tools]") {
+TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][tools]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";

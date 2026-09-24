@@ -72,8 +72,7 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(output.find("coder") != std::string::npos);
 }
 
-TEST_CASE("CommandRouter handles /exit and /quit outside the registry",
-          "[router]") {
+TEST_CASE("CommandRouter handles /exit and /quit outside the registry", "[router]") {
   RouterFixture f;
   std::string output;
 

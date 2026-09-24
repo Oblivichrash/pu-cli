@@ -30,18 +30,18 @@ struct McpServerConfig {
 // JSON-RPC 2.0 over a transport: one promise per request id, answered by the
 // reply that carries the same id.
 class JsonRpcClient {
-public:
+ public:
   explicit JsonRpcClient(Transport& transport);
   ~JsonRpcClient() = default;
 
   // Send a request, returning a future for the async response.
   std::future<boost::json::value> SendRequest(const std::string& method,
-                                             const boost::json::value& params = {});
+                                              const boost::json::value& params = {});
 
   // Handle incoming messages (called by transport callback).
   void OnMessage(const std::string& line);
 
-private:
+ private:
   Transport& transport_;
   int next_id_ = 1;
   std::unordered_map<int, std::promise<boost::json::value>> pending_;
@@ -50,7 +50,7 @@ private:
 
 // The MCP surface the rest of pu-cli uses: handshake, tool listing, tool calls.
 class McpClient {
-public:
+ public:
   explicit McpClient(const McpServerConfig& config);
   virtual ~McpClient();
 
@@ -61,15 +61,13 @@ public:
   void Disconnect();
 
   virtual std::vector<ToolDefinition> ListTools();
-  virtual std::string CallTool(const std::string& name,
-                               const boost::json::value& arguments);
+  virtual std::string CallTool(const std::string& name, const boost::json::value& arguments);
   virtual bool IsConnected() const;
 
-private:
+ private:
   bool Handshake();
-  boost::json::value SendRequest(const std::string& method,
-                                const boost::json::value& params = {},
-                                int timeout_ms = 5000);
+  boost::json::value SendRequest(const std::string& method, const boost::json::value& params = {},
+                                 int timeout_ms = 5000);
 
   struct Impl;
   std::unique_ptr<Impl> pimpl_;

@@ -44,8 +44,7 @@ T ValueOrDefault(const value& j, boost::json::string_view key, const T& def) {
 
 // Convenience overload so ValueOrDefault(j, "key", "literal") yields a
 // std::string (matching the const char* default argument).
-inline std::string ValueOrDefault(const value& j, boost::json::string_view key,
-                                  const char* def) {
+inline std::string ValueOrDefault(const value& j, boost::json::string_view key, const char* def) {
   return ValueOrDefault<std::string>(j, key, std::string(def));
 }
 
@@ -57,11 +56,9 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
 
 namespace detail {
 
-inline void AppendPretty(const value& jv, std::string& out, int depth,
-                         int indent) {
+inline void AppendPretty(const value& jv, std::string& out, int depth, int indent) {
   std::string pad(static_cast<std::size_t>(depth) * static_cast<std::size_t>(indent), ' ');
-  std::string member_pad(static_cast<std::size_t>(depth + 1) *
-                             static_cast<std::size_t>(indent),
+  std::string member_pad(static_cast<std::size_t>(depth + 1) * static_cast<std::size_t>(indent),
                          ' ');
   if (jv.is_object()) {
     const object& o = jv.as_object();

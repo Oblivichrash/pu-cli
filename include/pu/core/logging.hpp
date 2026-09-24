@@ -27,8 +27,7 @@ void ClearLogDurationMs();
 // thread-local context fields above.
 class JsonLogFormatter : public spdlog::formatter {
  public:
-  void format(const spdlog::details::log_msg& msg,
-              spdlog::memory_buf_t& dest) override;
+  void format(const spdlog::details::log_msg& msg, spdlog::memory_buf_t& dest) override;
   std::unique_ptr<spdlog::formatter> clone() const override;
 };
 

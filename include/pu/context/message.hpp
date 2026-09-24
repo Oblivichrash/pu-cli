@@ -121,8 +121,7 @@ struct ToolPayload {
   std::vector<ContentPart> content;
 };
 
-using MessagePayload =
-    std::variant<UserPayload, AssistantPayload, SystemPayload, ToolPayload>;
+using MessagePayload = std::variant<UserPayload, AssistantPayload, SystemPayload, ToolPayload>;
 
 struct MessageNode {
   MessageId id;
@@ -131,10 +130,8 @@ struct MessageNode {
   std::vector<MessageId> parents;
 };
 
-inline MessageNode MakeNode(MessagePayload payload,
-                            std::vector<MessageId> parents = {}) {
-  return MessageNode{NewMessageId(), std::string{}, std::move(payload),
-                     std::move(parents)};
+inline MessageNode MakeNode(MessagePayload payload, std::vector<MessageId> parents = {}) {
+  return MessageNode{NewMessageId(), std::string{}, std::move(payload), std::move(parents)};
 }
 
 // True while a tool call has not finished, which is what blocks switching the

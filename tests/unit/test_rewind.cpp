@@ -28,8 +28,7 @@ TEST_CASE("Rewinding keeps the branch it left behind", "[session][rewind]") {
   REQUIRE(ws.GetGraph().Size() == 4);
 }
 
-TEST_CASE("Rewinding before the first turn empties the view, not the store",
-          "[session][rewind]") {
+TEST_CASE("Rewinding before the first turn empties the view, not the store", "[session][rewind]") {
   Workspace ws;
   ws.Append("user", "one");
   ws.Append("assistant", "two");

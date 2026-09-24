@@ -35,8 +35,7 @@ TEST_CASE("The system inputs come before the stored turns", "[request]") {
   inputs.system_prompt = "be brief";
   inputs.environment = "=== Environment ===";
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), inputs);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), inputs);
 
   REQUIRE(messages.size() == 3);
   REQUIRE(messages[0].role == "system");
@@ -74,8 +73,7 @@ TEST_CASE("An empty conversation still carries its system inputs", "[request]") 
   session::RequestInputs inputs;
   inputs.system_prompt = "be brief";
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), inputs);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), inputs);
 
   REQUIRE(messages.size() == 1);
   REQUIRE(messages[0].role == "system");
@@ -88,21 +86,18 @@ TEST_CASE("The view is the path to the leaf it is asked for", "[request]") {
   const context::MessageId second = graph.AppendAfterLeaf(Assistant("two")).id;
   AppendUser(graph, "three");
 
-  const std::vector<ChatMessage> whole =
-      session::BuildRequestPath(graph, graph.leaf(), {});
+  const std::vector<ChatMessage> whole = session::BuildRequestPath(graph, graph.leaf(), {});
   REQUIRE(whole.size() == 3);
   REQUIRE(whole[2].content == "three");
 
   // Rendering from an earlier node gives the prefix that ends there, which is
   // what makes a stored node a viable position to resume from.
-  const std::vector<ChatMessage> from_second =
-      session::BuildRequestPath(graph, second, {});
+  const std::vector<ChatMessage> from_second = session::BuildRequestPath(graph, second, {});
   REQUIRE(from_second.size() == 2);
   REQUIRE(from_second[0].content == "one");
   REQUIRE(from_second[1].content == "two");
 
-  const std::vector<ChatMessage> from_first =
-      session::BuildRequestPath(graph, first, {});
+  const std::vector<ChatMessage> from_first = session::BuildRequestPath(graph, first, {});
   REQUIRE(from_first.size() == 1);
   REQUIRE(from_first[0].content == "one");
 }
@@ -118,8 +113,7 @@ TEST_CASE("A stored system node is passed through", "[request]") {
   session::RequestInputs inputs;
   inputs.system_prompt = "be brief";
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), inputs);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), inputs);
 
   REQUIRE(messages.size() == 3);
   REQUIRE(messages[0].content == "be brief");
@@ -132,8 +126,8 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   context::AssistantPayload assistant;
   assistant.content.emplace_back(context::TextPart{"checking"});
   assistant.reasoning = context::Reasoning{"openai", "sig", "because"};
-  assistant.tool_calls.push_back(context::ToolCallRecord{
-      "call_1", "ls", boost::json::parse(R"({"path":"."})")});
+  assistant.tool_calls.push_back(
+      context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
 
   context::ToolPayload receipt;
@@ -142,14 +136,12 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   receipt.content.emplace_back(context::TextPart{"file.txt"});
   graph.AppendAfterLeaf(std::move(receipt));
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), {});
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), {});
 
   REQUIRE(messages.size() == 2);
   REQUIRE(messages[0].HasToolCalls());
   REQUIRE(messages[0].reasoning_content == "because");
-  REQUIRE(messages[0].tool_calls.as_array()[0].at("function").at("arguments")
-              .at("path") == ".");
+  REQUIRE(messages[0].tool_calls.as_array()[0].at("function").at("arguments").at("path") == ".");
   REQUIRE(messages[1].role == "tool");
   REQUIRE(messages[1].tool_name == "ls");
   REQUIRE(messages[1].tool_call_id == "call_1");
@@ -161,8 +153,7 @@ TEST_CASE("Rendered positions follow the view, not the stored ids", "[request]")
   const context::MessageId second = graph.AppendAfterLeaf(Assistant("two")).id;
   AppendUser(graph, "three");
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), {});
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), {});
 
   REQUIRE(messages[0].id == 1);
   REQUIRE(messages[1].id == 2);
@@ -173,14 +164,13 @@ TEST_CASE("Rendered positions follow the view, not the stored ids", "[request]")
   REQUIRE(prefix[1].id == 2);
 }
 
-TEST_CASE("Every stored node reaches the model, with its tool receipt",
-          "[request]") {
+TEST_CASE("Every stored node reaches the model, with its tool receipt", "[request]") {
   context::MessageGraph graph;
   for (int i = 1; i <= 20; ++i) AppendUser(graph, "msg" + std::to_string(i));
 
   context::AssistantPayload assistant;
-  assistant.tool_calls.push_back(context::ToolCallRecord{
-      "call_1", "ls", boost::json::parse(R"({"path":"."})")});
+  assistant.tool_calls.push_back(
+      context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
 
   context::ToolPayload receipt;
@@ -189,8 +179,7 @@ TEST_CASE("Every stored node reaches the model, with its tool receipt",
   receipt.content.emplace_back(context::TextPart{"file.txt"});
   graph.AppendAfterLeaf(std::move(receipt));
 
-  const std::vector<ChatMessage> messages =
-      session::BuildRequestPath(graph, graph.leaf(), {});
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, graph.leaf(), {});
 
   REQUIRE(messages.size() == graph.Size());
   REQUIRE(messages.size() == 22);

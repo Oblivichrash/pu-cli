@@ -63,9 +63,7 @@ AppContext SetupAppContext(const std::string& requested_agent) {
   return ctx;
 }
 
-void PrintChatHelp() {
-  std::cout << CommandRouter::GetHelpText() << "\n";
-}
+void PrintChatHelp() { std::cout << CommandRouter::GetHelpText() << "\n"; }
 
 }  // namespace
 
@@ -79,8 +77,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     bool is_command = false;
     ExecutionResult result = runtime.ProcessInput(prompt, is_command);
     if (result.has_error) {
-      spdlog::error("{}",
-                    result.error_message.empty() ? "Request failed" : result.error_message);
+      spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     } else if (!result.content.empty()) {
       std::cout << result.content << "\n";
     } else if (!is_command) {
@@ -130,7 +127,8 @@ int RunChat(const std::string& agent, Runtime& runtime) {
           std::cout << "Unknown command. ";
           PrintChatHelp();
         } else {
-          spdlog::error("{}", result.error_message.empty() ? "Processing failed" : result.error_message);
+          spdlog::error("{}",
+                        result.error_message.empty() ? "Processing failed" : result.error_message);
         }
       } else if (!result.was_streamed) {
         if (!result.content.empty()) {

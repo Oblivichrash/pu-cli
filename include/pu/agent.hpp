@@ -34,17 +34,16 @@ struct BackendConfig {
   bool enable_thinking = true;  // for DeepSeek/vLLM only
 };
 
-inline void tag_invoke(boost::json::value_from_tag,
-                       boost::json::value& j,
+inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-    {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
-    {"host", cfg.host},
-    {"model", cfg.model},
-    {"api_key", cfg.api_key.value_or("")},
-    {"temperature", cfg.temperature},
-    {"max_tokens", cfg.max_tokens},
-    {"enable_thinking", cfg.enable_thinking},
+      {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
+      {"host", cfg.host},
+      {"model", cfg.model},
+      {"api_key", cfg.api_key.value_or("")},
+      {"temperature", cfg.temperature},
+      {"max_tokens", cfg.max_tokens},
+      {"enable_thinking", cfg.enable_thinking},
   };
 }
 
@@ -83,8 +82,8 @@ struct AgentsConfig {
 
 std::string FindConfigPath();
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
-std::unique_ptr<pu::LLMProvider> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http);
+std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
+                                               std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config
 

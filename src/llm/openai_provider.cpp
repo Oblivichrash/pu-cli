@@ -38,10 +38,8 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
-OpenAIProvider::OpenAIProvider(const Config& config,
-                               std::unique_ptr<pu::http::HttpClient> http)
-    : config_(config), http_(std::move(http)),
-      host_(config_.host), api_key_(config_.api_key) {}
+OpenAIProvider::OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http)
+    : config_(config), http_(std::move(http)), host_(config_.host), api_key_(config_.api_key) {}
 
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
@@ -49,14 +47,13 @@ void OpenAIProvider::ResetAccumulators() {
   tool_calls_.clear();
 }
 
-std::string OpenAIProvider::BuildRequest(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools) const {
+std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history,
+                                         const std::vector<ToolDefinition>& tools) const {
   boost::json::value req = {
-    {"model", config_.model},
-    {"stream", true},
-    {"temperature", config_.temperature},
-    {"max_tokens", config_.max_tokens},
+      {"model", config_.model},
+      {"stream", true},
+      {"temperature", config_.temperature},
+      {"max_tokens", config_.max_tokens},
   };
 
   if (!config_.enable_thinking) {
@@ -69,14 +66,11 @@ std::string OpenAIProvider::BuildRequest(
   if (!tools.empty()) {
     boost::json::array tools_json;
     for (const auto& tool : tools) {
-      boost::json::value function_obj = {
-        {"name", tool.name},
-        {"description", tool.description},
-        {"parameters", tool.Parameters()}
-      };
+      boost::json::value function_obj = {{"name", tool.name},
+                                         {"description", tool.description},
+                                         {"parameters", tool.Parameters()}};
 
-      tools_json.push_back(
-          boost::json::value{{"type", "function"}, {"function", function_obj}});
+      tools_json.push_back(boost::json::value{{"type", "function"}, {"function", function_obj}});
     }
     req.as_object()["tools"] = tools_json;
   }
@@ -90,15 +84,13 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
 
   if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
       !j.at("choices").as_array().empty()) {
-    const boost::json::value delta =
-        json::ValueOrDefault<boost::json::value>(j.at("choices").at(0), "delta",
-                                                 boost::json::object{});
+    const boost::json::value delta = json::ValueOrDefault<boost::json::value>(
+        j.at("choices").at(0), "delta", boost::json::object{});
     if (delta.is_object()) {
       auto content = SafeString(delta, "content");
       if (!content.empty() && content_cb) content_cb(content);
 
-      if (json::HasKey(delta, "reasoning_content") &&
-          delta.at("reasoning_content").is_string()) {
+      if (json::HasKey(delta, "reasoning_content") && delta.at("reasoning_content").is_string()) {
         current_reasoning_content_ +=
             boost::json::value_to<std::string>(delta.at("reasoning_content"));
       }
@@ -147,11 +139,10 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
   }
 }
 
-ChatResult OpenAIProvider::Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback,
-    CancelToken cancel_token) {
+ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
+                                const std::vector<ToolDefinition>& tools,
+                                std::function<void(const std::string&)> content_callback,
+                                CancelToken cancel_token) {
   ChatResult result;
   platform::ClearInterruptFlag();
   ResetAccumulators();
@@ -167,39 +158,38 @@ ChatResult OpenAIProvider::Chat(
   std::ostringstream content_stream;
 
   llm::StreamingJsonParser parser(
-    [&](std::string_view line) {
-      constexpr std::string_view kDataPrefix = "data: ";
-      auto start = line.find_first_not_of(" \t");
-      if (start == std::string_view::npos) return;
-      std::string_view trimmed = line.substr(start);
-      if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
-      std::string_view data = trimmed.substr(kDataPrefix.size());
-      if (data == "[DONE]") {
-        boost::json::value done_obj = {{"done", true}};
-        HandleJsonToken(done_obj, content_callback);
-        return;
-      }
-      try {
-        auto j = boost::json::parse(data);
-        HandleJsonToken(j, content_callback);
-
-        if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
-            !j.at("choices").as_array().empty()) {
-          const boost::json::value delta =
-              json::ValueOrDefault<boost::json::value>(j.at("choices").at(0), "delta",
-                                                       boost::json::object{});
-          if (delta.is_object()) {
-            auto content = SafeString(delta, "content");
-            content_stream << content;
-          }
+      [&](std::string_view line) {
+        constexpr std::string_view kDataPrefix = "data: ";
+        auto start = line.find_first_not_of(" \t");
+        if (start == std::string_view::npos) return;
+        std::string_view trimmed = line.substr(start);
+        if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
+        std::string_view data = trimmed.substr(kDataPrefix.size());
+        if (data == "[DONE]") {
+          boost::json::value done_obj = {{"done", true}};
+          HandleJsonToken(done_obj, content_callback);
+          return;
         }
-      } catch (const boost::system::system_error& e) {
-        // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-        spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      } catch (const std::exception&) {}
-    },
-    [](const std::string& msg) { throw HttpError("OpenAI streaming error: " + msg); }
-  );
+        try {
+          auto j = boost::json::parse(data);
+          HandleJsonToken(j, content_callback);
+
+          if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
+              !j.at("choices").as_array().empty()) {
+            const boost::json::value delta = json::ValueOrDefault<boost::json::value>(
+                j.at("choices").at(0), "delta", boost::json::object{});
+            if (delta.is_object()) {
+              auto content = SafeString(delta, "content");
+              content_stream << content;
+            }
+          }
+        } catch (const boost::system::system_error& e) {
+          // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+          spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+        } catch (const std::exception&) {
+        }
+      },
+      [](const std::string& msg) { throw HttpError("OpenAI streaming error: " + msg); });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);

@@ -41,8 +41,7 @@ TEST_CASE("A session with another version is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(future) == nullptr);
 }
 
-TEST_CASE("A version alone is not enough without node storage",
-          "[session][schema]") {
+TEST_CASE("A version alone is not enough without node storage", "[session][schema]") {
   // The layout an unreachable branch used: the right number, a list of messages.
   boost::json::value j = LegacySession();
   j.as_object()["schema_version"] = context::kSchemaVersion;
@@ -74,8 +73,8 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   assistant.role = "assistant";
   assistant.content = "checking";
   assistant.reasoning_content = "because";
-  assistant.tool_calls = boost::json::parse(
-      R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
+  assistant.tool_calls =
+      boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
   ws.Append(assistant);
 
   ChatMessage receipt;
@@ -90,8 +89,8 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   note.content = "a note from the caller";
   ws.Append(note);
 
-  auto restored = Session::Deserialize(
-      boost::json::parse(boost::json::serialize(session.Serialize())));
+  auto restored =
+      Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
   const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
@@ -100,23 +99,21 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   REQUIRE(history[1].role == "assistant");
   REQUIRE(history[1].reasoning_content == "because");
   REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("name") == "ls");
-  REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("arguments")
-              .at("path") == ".");
+  REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("arguments").at("path") == ".");
   REQUIRE(history[2].role == "tool");
   REQUIRE(history[2].tool_name == "ls");
   REQUIRE(history[2].tool_call_id == "call_1");
   REQUIRE(history[3].role == "system");
 }
 
-TEST_CASE("A tool call keeps its completed status across a save",
-          "[session][schema]") {
+TEST_CASE("A tool call keeps its completed status across a save", "[session][schema]") {
   Session session;
   Workspace& ws = session.GetWorkspace();
 
   ChatMessage assistant;
   assistant.role = "assistant";
-  assistant.tool_calls = boost::json::parse(
-      R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])");
+  assistant.tool_calls =
+      boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])");
   ws.Append(assistant);
 
   ChatMessage receipt;
@@ -125,8 +122,8 @@ TEST_CASE("A tool call keeps its completed status across a save",
   ws.Append(receipt);
   REQUIRE_FALSE(ws.HasPendingToolCalls());
 
-  auto restored = Session::Deserialize(
-      boost::json::parse(boost::json::serialize(session.Serialize())));
+  auto restored =
+      Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
   // Status is stored, so a reload does not resurrect a finished call.
@@ -145,14 +142,13 @@ TEST_CASE("Parents survive a save and load", "[session][schema]") {
   // name its parent in the file. Nodes are ordered by id, not by conversation
   // order, so the check finds them by content.
   const boost::json::value saved = session.Serialize();
-  const boost::json::array& nodes =
-      saved.at("workspace").at("history").at("nodes").as_array();
+  const boost::json::array& nodes = saved.at("workspace").at("history").at("nodes").as_array();
   REQUIRE(nodes.size() == 3);
 
   const auto node_with_text = [&](const std::string& text) -> const boost::json::value& {
     for (const boost::json::value& node : nodes) {
-      if (boost::json::value_to<std::string>(
-              node.at("content").as_array().at(0).at("text")) == text) {
+      if (boost::json::value_to<std::string>(node.at("content").as_array().at(0).at("text")) ==
+          text) {
         return node;
       }
     }
@@ -164,15 +160,12 @@ TEST_CASE("Parents survive a save and load", "[session][schema]") {
 
   REQUIRE(node_with_text("one").at("parents").as_array().empty());
   REQUIRE(node_with_text("two").at("parents").as_array().size() == 1);
-  REQUIRE(boost::json::value_to<std::string>(
-              node_with_text("two").at("parents").as_array().at(0)) ==
-          id_of(node_with_text("one")));
-  REQUIRE(boost::json::value_to<std::string>(
-              node_with_text("three").at("parents").as_array().at(0)) ==
-          id_of(node_with_text("two")));
+  REQUIRE(boost::json::value_to<std::string>(node_with_text("two").at("parents").as_array().at(
+              0)) == id_of(node_with_text("one")));
+  REQUIRE(boost::json::value_to<std::string>(node_with_text("three").at("parents").as_array().at(
+              0)) == id_of(node_with_text("two")));
 
-  auto restored = Session::Deserialize(
-      boost::json::parse(boost::json::serialize(saved)));
+  auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
   const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
   REQUIRE(history.size() == 3);
@@ -200,8 +193,7 @@ TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   session.GetWorkspace().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"]
-      .as_array().at(0).as_object()["id"] = 123;
+  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(0).as_object()["id"] = 123;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
@@ -212,8 +204,8 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   session.GetWorkspace().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"]
-      .as_array().at(1).as_object()["parents"] = boost::json::array{123};
+  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parents"] =
+      boost::json::array{123};
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }

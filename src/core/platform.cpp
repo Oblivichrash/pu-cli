@@ -26,7 +26,10 @@ std::atomic<bool> interrupted{false};
 
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type) {
-  if (ctrl_type == CTRL_C_EVENT) { interrupted = true; return TRUE; }
+  if (ctrl_type == CTRL_C_EVENT) {
+    interrupted = true;
+    return TRUE;
+  }
   return FALSE;
 }
 void SetupSignalHandler() { SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE); }
@@ -48,23 +51,22 @@ void ClearInterruptFlag() { interrupted = false; }
 namespace {
 
 std::wstring ToWide(const std::string& text, UINT code_page) {
-  const int length = MultiByteToWideChar(code_page, 0, text.data(),
-                                         static_cast<int>(text.size()), nullptr, 0);
+  const int length =
+      MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
   if (length <= 0) return {};
   std::wstring wide(static_cast<std::size_t>(length), L'\0');
-  MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()),
-                      wide.data(), length);
+  MultiByteToWideChar(code_page, 0, text.data(), static_cast<int>(text.size()), wide.data(),
+                      length);
   return wide;
 }
 
 std::string ToUtf8(const std::wstring& wide) {
-  const int length = WideCharToMultiByte(CP_UTF8, 0, wide.data(),
-                                         static_cast<int>(wide.size()), nullptr, 0,
-                                         nullptr, nullptr);
+  const int length = WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+                                         nullptr, 0, nullptr, nullptr);
   if (length <= 0) return {};
   std::string utf8(static_cast<std::size_t>(length), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
-                      utf8.data(), length, nullptr, nullptr);
+  WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), length,
+                      nullptr, nullptr);
   return utf8;
 }
 
@@ -148,8 +150,8 @@ int ExecuteCommand(const std::string& command, std::string& output,
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}",
-                command, exit_code, elapsed_ms, output.size());
+  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}", command,
+                exit_code, elapsed_ms, output.size());
   return exit_code;
 }
 

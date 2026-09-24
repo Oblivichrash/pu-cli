@@ -7,10 +7,10 @@
 #include <vector>
 
 #ifdef _WIN32
-#  include <windows.h>
+#include <windows.h>
 #else
-#  include <sys/types.h>
-#  include <unistd.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #include "pu/mcp/transport.hpp"

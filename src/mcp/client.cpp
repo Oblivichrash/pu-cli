@@ -15,9 +15,8 @@ namespace pu::mcp {
 
 JsonRpcClient::JsonRpcClient(Transport& transport) : transport_(transport) {}
 
-std::future<boost::json::value> JsonRpcClient::SendRequest(
-    const std::string& method,
-    const boost::json::value& params) {
+std::future<boost::json::value> JsonRpcClient::SendRequest(const std::string& method,
+                                                           const boost::json::value& params) {
   int id = next_id_++;
   std::promise<boost::json::value> promise;
   auto future = promise.get_future();
@@ -26,11 +25,7 @@ std::future<boost::json::value> JsonRpcClient::SendRequest(
     pending_[id] = std::move(promise);
   }
 
-  boost::json::value req = {
-    {"jsonrpc", "2.0"},
-    {"id", id},
-    {"method", method}
-  };
+  boost::json::value req = {{"jsonrpc", "2.0"}, {"id", id}, {"method", method}};
   if (!params.is_null()) req.as_object()["params"] = params;
 
   if (!transport_.WriteLine(boost::json::serialize(req))) {
@@ -75,8 +70,7 @@ struct McpClient::Impl {
   std::vector<ToolDefinition> cached_tools;
 };
 
-McpClient::McpClient(const McpServerConfig& config)
-    : pimpl_(std::make_unique<Impl>()) {
+McpClient::McpClient(const McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
   pimpl_->config = config;
 }
 
@@ -86,13 +80,11 @@ bool McpClient::Connect() {
   if (pimpl_->connected) return true;
 
   if (!pimpl_->config.url.empty()) {
-    pimpl_->transport = std::make_unique<HttpTransport>(
-        pimpl_->config.url, pimpl_->config.headers);
-    spdlog::debug("MCP connecting via HTTP: {} ({})",
-                  pimpl_->config.name, pimpl_->config.url);
+    pimpl_->transport = std::make_unique<HttpTransport>(pimpl_->config.url, pimpl_->config.headers);
+    spdlog::debug("MCP connecting via HTTP: {} ({})", pimpl_->config.name, pimpl_->config.url);
   } else {
-    pimpl_->transport = std::make_unique<StdioTransport>(
-        pimpl_->config.command, pimpl_->config.args);
+    pimpl_->transport =
+        std::make_unique<StdioTransport>(pimpl_->config.command, pimpl_->config.args);
     spdlog::debug("MCP connecting via stdio: {}", pimpl_->config.name);
   }
 
@@ -126,17 +118,15 @@ void McpClient::Disconnect() {
 }
 
 bool McpClient::Handshake() {
-  boost::json::value init_params = {
-      {"protocolVersion", "2024-11-05"},
-      {"clientInfo", {{"name", "pu-cli"}, {"version", PU_VERSION}}},
-      {"capabilities", {{"tools", true}}}};
+  boost::json::value init_params = {{"protocolVersion", "2024-11-05"},
+                                    {"clientInfo", {{"name", "pu-cli"}, {"version", PU_VERSION}}},
+                                    {"capabilities", {{"tools", true}}}};
   try {
     auto resp = SendRequest("initialize", init_params);
     if (!json::HasKey(resp, "result")) return false;
     // The initialized notification expects no reply.
-    pimpl_->transport->WriteLine(boost::json::serialize(boost::json::value{
-        {"jsonrpc", "2.0"},
-        {"method", "initialized"}}));
+    pimpl_->transport->WriteLine(
+        boost::json::serialize(boost::json::value{{"jsonrpc", "2.0"}, {"method", "initialized"}}));
     return true;
   } catch (const std::exception& e) {
     spdlog::error("Handshake error: {}", e.what());
@@ -145,8 +135,7 @@ bool McpClient::Handshake() {
 }
 
 boost::json::value McpClient::SendRequest(const std::string& method,
-                                          const boost::json::value& params,
-                                          int timeout_ms) {
+                                          const boost::json::value& params, int timeout_ms) {
   // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
     throw RuntimeError("MCP client not connected");
@@ -187,8 +176,7 @@ std::vector<ToolDefinition> McpClient::ListTools() {
   return {};
 }
 
-std::string McpClient::CallTool(const std::string& name,
-                                const boost::json::value& arguments) {
+std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {
   if (!pimpl_->connected) {
     return "Error: MCP client not connected";
   }

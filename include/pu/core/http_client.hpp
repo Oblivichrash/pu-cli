@@ -15,8 +15,7 @@ class HttpClient {
  public:
   virtual ~HttpClient() = default;
   virtual void PostStream(const std::string& url, const std::string& body,
-                          const std::vector<std::string>& headers,
-                          WriteCallback write_cb,
+                          const std::vector<std::string>& headers, WriteCallback write_cb,
                           CancelToken cancel_token = nullptr) = 0;
 };
 

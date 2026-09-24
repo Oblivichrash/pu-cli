@@ -15,8 +15,7 @@
 
 using namespace pu;
 
-TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
-          "[executor]") {
+TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout", "[executor]") {
   boost::json::value j = boost::json::object{};
   j.as_object()["success"] = true;
   j.as_object()["stdout"] = "hello world";
@@ -28,9 +27,7 @@ TEST_CASE("ExtractToolResultContent parses success JSON and returns stdout",
   REQUIRE(result == "hello world");
 }
 
-TEST_CASE(
-    "ExtractToolResultContent parses failure JSON and returns error field",
-    "[executor]") {
+TEST_CASE("ExtractToolResultContent parses failure JSON and returns error field", "[executor]") {
   boost::json::value j = boost::json::object{};
   j.as_object()["success"] = false;
   j.as_object()["stdout"] = "";
@@ -42,17 +39,14 @@ TEST_CASE(
   REQUIRE(result == "Command failed (exit 1)");
 }
 
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for non-JSON input",
-    "[executor]") {
+TEST_CASE("ExtractToolResultContent returns raw string for non-JSON input", "[executor]") {
   std::string raw = "plain text output";
   std::string result = tools::ExtractToolResultContent(raw);
   REQUIRE(result == raw);
 }
 
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for JSON without success key",
-    "[executor]") {
+TEST_CASE("ExtractToolResultContent returns raw string for JSON without success key",
+          "[executor]") {
   boost::json::value j = boost::json::object{};
   j.as_object()["other"] = "data";
 
@@ -60,17 +54,14 @@ TEST_CASE(
   REQUIRE(result == boost::json::serialize(j));
 }
 
-TEST_CASE(
-    "ExtractToolResultContent returns raw string for JSON array",
-    "[executor]") {
+TEST_CASE("ExtractToolResultContent returns raw string for JSON array", "[executor]") {
   boost::json::value j = boost::json::value(boost::json::array{"a", "b"});
 
   std::string result = tools::ExtractToolResultContent(boost::json::serialize(j));
   REQUIRE(result == boost::json::serialize(j));
 }
 
-TEST_CASE("BuildStaticSystemContext includes environment info",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext includes environment info", "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
 
@@ -79,8 +70,7 @@ TEST_CASE("BuildStaticSystemContext includes environment info",
   REQUIRE(msg.find("Kernel: ") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes security policy when set",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext includes security policy when set", "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
   policy.sandbox_root = "/tmp/sandbox";
@@ -96,8 +86,7 @@ TEST_CASE("BuildStaticSystemContext includes security policy when set",
   REQUIRE(msg.find("'sudo'") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly", "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
@@ -108,17 +97,14 @@ TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly",
   REQUIRE(msg.find("Forbidden patterns: (none)") != std::string::npos);
 }
 
-TEST_CASE(
-    "BuildStaticSystemContext shows no-security-policy message when unset",
-    "[executor]") {
+TEST_CASE("BuildStaticSystemContext shows no-security-policy message when unset", "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("(no security policy set)") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes working directory section",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext includes working directory section", "[executor]") {
   Executor executor(nullptr);
   config::SecurityPolicy policy;
   policy.sandbox_root = "/home/user/project";
@@ -130,8 +116,7 @@ TEST_CASE("BuildStaticSystemContext includes working directory section",
   REQUIRE(msg.find("/home/user/project") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext working directory defaults to dot",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext working directory defaults to dot", "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
 
@@ -139,8 +124,7 @@ TEST_CASE("BuildStaticSystemContext working directory defaults to dot",
   REQUIRE(msg.find(".\n") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes tool use guidelines",
-          "[executor]") {
+TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]") {
   Executor executor(nullptr);
   std::string msg = executor.BuildStaticSystemContext();
 
@@ -151,8 +135,7 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines",
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
-TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info",
-          "[executor]") {
+TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info", "[executor]") {
   Executor executor(nullptr);
   const auto& info = executor.GetStaticEnvInfo();
   REQUIRE(info.probed);
@@ -166,8 +149,7 @@ class MockLLM : public LLMProvider {
  public:
   explicit MockLLM(std::vector<ToolCall> calls, std::string content = "",
                    bool fire_calls_once = false)
-      : calls_(std::move(calls)), content_(std::move(content)),
-        fire_calls_once_(fire_calls_once) {}
+      : calls_(std::move(calls)), content_(std::move(content)), fire_calls_once_(fire_calls_once) {}
 
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
@@ -234,8 +216,7 @@ class TrackingTool : public Tool {
   boost::json::value ParametersSchema() const override {
     return boost::json::object{{"type", "object"}};
   }
-  std::string Execute(const boost::json::value& /*args*/,
-                      ToolContext& /*ctx*/) override {
+  std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
     ++executions;
     return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
   }
@@ -308,16 +289,14 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     started_names.push_back(name);
     started_args.push_back(args);
   };
-  cb.on_end = [&](const std::string& id, const std::string& output,
-                  const std::string& error) {
+  cb.on_end = [&](const std::string& id, const std::string& output, const std::string& error) {
     ended_ids.push_back(id);
     ended_outputs.push_back(output);
     ended_errors.push_back(error);
   };
 
   Workspace ws;
-  ExecutionResult result =
-      executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
+  ExecutionResult result = executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -350,8 +329,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(found_paired_tool_msg);
 }
 
-TEST_CASE("The executor sends the system inputs ahead of the stored turns",
-          "[executor][request]") {
+TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[executor][request]") {
   Toolbox toolbox;
   Executor executor(&toolbox);
   config::SecurityPolicy policy;

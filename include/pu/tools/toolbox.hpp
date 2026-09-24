@@ -32,8 +32,7 @@ class Toolbox {
   void RemoveTool(const std::string& name);
   Tool* GetTool(const std::string& name) const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
-  std::string ExecuteTool(const std::string& name,
-                          const boost::json::value& args,
+  std::string ExecuteTool(const std::string& name, const boost::json::value& args,
                           ToolContext& ctx);
 
  private:

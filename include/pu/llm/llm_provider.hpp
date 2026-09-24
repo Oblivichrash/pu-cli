@@ -19,10 +19,10 @@ struct ChatMessage {
   std::string timestamp;
   std::string role;
   std::string content;
-  std::string tool_name;         // tool messages: name of the tool that produced the result
-  boost::json::value tool_calls; // assistant messages: array of OpenAI-style tool calls
-  std::string reasoning_content; // for DeepSeek thinking mode
-  std::string tool_call_id;      // for tool messages: ID of the tool call
+  std::string tool_name;          // tool messages: name of the tool that produced the result
+  boost::json::value tool_calls;  // assistant messages: array of OpenAI-style tool calls
+  std::string reasoning_content;  // for DeepSeek thinking mode
+  std::string tool_call_id;       // for tool messages: ID of the tool call
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();
@@ -58,21 +58,19 @@ struct ChatResult {
 };
 
 class LLMProvider {
-public:
+ public:
   virtual ~LLMProvider() = default;
 
   // `content_callback` exists so a token reaches the user while the stream is
   // still open; everything the caller needs afterwards is in the result.
-  virtual ChatResult Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback = nullptr,
-    CancelToken cancel_token = nullptr
-  ) = 0;
+  virtual ChatResult Chat(const std::vector<ChatMessage>& history,
+                          const std::vector<ToolDefinition>& tools,
+                          std::function<void(const std::string&)> content_callback = nullptr,
+                          CancelToken cancel_token = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
   virtual std::string GetModelName() const = 0;
   virtual bool IsThinkingMode() const { return false; }
 };
 
-} // namespace pu
+}  // namespace pu

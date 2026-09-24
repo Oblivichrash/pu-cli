@@ -17,8 +17,7 @@ std::string ProjectRole(const std::string& role, RoleNaming naming) {
   if (naming == RoleNaming::kAliasToolResult) {
     return role == "tool_result" ? kToolRole : role;
   }
-  if (role == kUserRole || role == kAssistantRole || role == kSystemRole ||
-      role == kToolRole) {
+  if (role == kUserRole || role == kAssistantRole || role == kSystemRole || role == kToolRole) {
     return role;
   }
   return kUserRole;
@@ -95,8 +94,7 @@ boost::json::value ProjectMessage(const ChatMessage& message,
   }
 
   if (has_tool_calls) {
-    projected.as_object()["tool_calls"] =
-        ProjectToolCalls(message.tool_calls, capabilities);
+    projected.as_object()["tool_calls"] = ProjectToolCalls(message.tool_calls, capabilities);
   }
 
   return projected;

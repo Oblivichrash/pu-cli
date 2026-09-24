@@ -15,23 +15,18 @@
 
 namespace pu::http {
 
-BeastHttpClient::BeastHttpClient()
-    : ssl_ctx_(net::ssl::context::tlsv12_client) {
+BeastHttpClient::BeastHttpClient() : ssl_ctx_(net::ssl::context::tlsv12_client) {
   ssl_ctx_.set_default_verify_paths();
   ssl_ctx_.set_verify_mode(net::ssl::verify_peer);
 }
 
-BeastHttpClient::~BeastHttpClient() {
-  ioc_.stop();
-}
+BeastHttpClient::~BeastHttpClient() { ioc_.stop(); }
 
 void BeastHttpClient::SetInterruptChecker(std::function<bool()> checker) {
   interrupt_checker_ = std::move(checker);
 }
 
-std::string BeastHttpClient::GetErrorDetail() const {
-  return error_detail_;
-}
+std::string BeastHttpClient::GetErrorDetail() const { return error_detail_; }
 
 void BeastHttpClient::CheckCancel(CancelToken token) const {
   if (token && token->load(std::memory_order_acquire)) {
@@ -59,8 +54,7 @@ BeastHttpClient::UrlParts BeastHttpClient::ParseUrl(const std::string& url) cons
 namespace {
 
 template <typename Request>
-void ApplyHeaders(Request& req, const std::string& host,
-                  const std::string& body,
+void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
                   const std::vector<std::string>& headers) {
   req.set(beast::http::field::host, host);
   req.set(beast::http::field::content_type, "application/json");
@@ -85,9 +79,8 @@ void ApplyHeaders(Request& req, const std::string& host,
 // the consumer parses a success stream and would discard a message that says what
 // went wrong.
 template <typename Stream>
-unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer,
-                        WriteCallback& write_cb, std::string& error_body,
-                        CancelToken /*cancel_token*/) {
+unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
+                        std::string& error_body, CancelToken /*cancel_token*/) {
   beast::http::response_parser<beast::http::string_body> parser;
   parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
 
@@ -161,10 +154,8 @@ std::string SummarizeErrorBody(const std::string& body) {
 
 }  // namespace
 
-void BeastHttpClient::PostStream(const std::string& url,
-                                 const std::string& body,
-                                 const std::vector<std::string>& headers,
-                                 WriteCallback write_cb,
+void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
+                                 const std::vector<std::string>& headers, WriteCallback write_cb,
                                  CancelToken cancel_token) {
   error_detail_.clear();
   auto start = std::chrono::steady_clock::now();

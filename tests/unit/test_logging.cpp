@@ -10,8 +10,8 @@ namespace {
 
 std::string FormatRecord(const std::string& level) {
   JsonLogFormatter fmt;
-  spdlog::details::log_msg msg{spdlog::source_loc{}, "pu",
-                               spdlog::level::from_str(level), "hello world"};
+  spdlog::details::log_msg msg{spdlog::source_loc{}, "pu", spdlog::level::from_str(level),
+                               "hello world"};
   spdlog::memory_buf_t buf;
   fmt.format(msg, buf);
   return std::string(buf.data(), buf.size());
@@ -72,8 +72,8 @@ TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
   ClearLogDurationMs();
 
   JsonLogFormatter fmt;
-  spdlog::details::log_msg msg{spdlog::source_loc{}, "pu",
-                               spdlog::level::info, "say \"hi\"\nnext line"};
+  spdlog::details::log_msg msg{spdlog::source_loc{}, "pu", spdlog::level::info,
+                               "say \"hi\"\nnext line"};
   spdlog::memory_buf_t buf;
   fmt.format(msg, buf);
   auto j = boost::json::parse(std::string(buf.data(), buf.size()));

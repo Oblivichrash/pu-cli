@@ -39,11 +39,11 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
     policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
   if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
-    policy.max_command_length =
-        boost::json::value_to<std::size_t>(j.at("max_command_length"));
+    policy.max_command_length = boost::json::value_to<std::size_t>(j.at("max_command_length"));
   if (json::HasKey(j, "forbidden_patterns") && j.at("forbidden_patterns").is_array()) {
     for (const auto& pat : j.at("forbidden_patterns").as_array())
-      if (pat.is_string()) policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
+      if (pat.is_string())
+        policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
   }
   return policy;
 }
@@ -113,7 +113,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   return entry;
 }
 
-} // unnamed namespace
+}  // unnamed namespace
 
 std::string FindConfigPath() {
   const std::filesystem::path project = "./.pu/agents.json";
@@ -121,20 +121,17 @@ std::string FindConfigPath() {
 
   const char* home = std::getenv("HOME");
   if (home) {
-    const std::filesystem::path user =
-        std::filesystem::path(home) / ".pu" / "agents.json";
+    const std::filesystem::path user = std::filesystem::path(home) / ".pu" / "agents.json";
     if (std::filesystem::exists(user)) return user.string();
   }
 
-  throw pu::Error(
-      "Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  throw pu::Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open())
-    throw pu::Error("Configuration file not found: " + config_path);
+  if (!file.is_open()) throw pu::Error("Configuration file not found: " + config_path);
 
   json::value j;
   try {
@@ -151,20 +148,18 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
   if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
     throw pu::Error("Missing agents array");
-  for (const auto& item : j.at("agents").as_array())
-    result.agents.push_back(ParseAgentEntry(item));
+  for (const auto& item : j.at("agents").as_array()) result.agents.push_back(ParseAgentEntry(item));
 
-  const auto default_agent = std::find_if(
-      result.agents.begin(), result.agents.end(), [&](const AgentEntry& entry) {
-        return entry.name == result.default_agent;
-      });
+  const auto default_agent =
+      std::find_if(result.agents.begin(), result.agents.end(),
+                   [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end())
     throw pu::Error("default_agent does not match any configured agent");
   return result;
 }
 
-std::unique_ptr<pu::LLMProvider> CreateBackend(
-    const BackendConfig& cfg, std::unique_ptr<pu::http::HttpClient> http) {
+std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
+                                               std::unique_ptr<pu::http::HttpClient> http) {
   switch (cfg.type) {
     case BackendType::kOllama: {
       OllamaProvider::Config ollama_cfg;
@@ -190,4 +185,4 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(
   }
 }
 
-} // namespace pu::config
+}  // namespace pu::config

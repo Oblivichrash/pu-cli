@@ -20,13 +20,12 @@ namespace pu {
 // Tool call lifecycle callbacks for streaming/UI feedback.
 struct ToolCallbacks {
   // Called before a tool is executed.
-  std::function<void(const std::string& id,
-                     const std::string& name,
-                     const boost::json::value& args)> on_start;
+  std::function<void(const std::string& id, const std::string& name,
+                     const boost::json::value& args)>
+      on_start;
   // Called after a tool completes execution.
-  std::function<void(const std::string& id,
-                     const std::string& output,
-                     const std::string& error)> on_end;
+  std::function<void(const std::string& id, const std::string& output, const std::string& error)>
+      on_end;
 };
 
 struct ExecutionResult {
@@ -55,8 +54,7 @@ class Executor {
   // named inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  ExecutionResult Execute(const std::string& input, Workspace& workspace,
-                          LLMProvider* provider,
+  ExecutionResult Execute(const std::string& input, Workspace& workspace, LLMProvider* provider,
                           CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {});
@@ -74,8 +72,7 @@ class Executor {
     std::string error_message;
   };
 
-  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider,
-                             CancelToken cancel_token,
+  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
                              std::function<void(const std::string&)> content_callback,
                              ToolCallbacks tool_callbacks);
 

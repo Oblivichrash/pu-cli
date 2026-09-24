@@ -57,27 +57,21 @@ ChatMessage AssistantWithCall() {
 
 TEST_CASE("Role naming differs by capability", "[projection]") {
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OpenAiLike()).at("role")) ==
-          "tool");
+              llm::ProjectMessage(Text("tool_result", ""), OpenAiLike()).at("role")) == "tool");
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OllamaLike()).at("role")) ==
-          "user");
+              llm::ProjectMessage(Text("tool_result", ""), OllamaLike()).at("role")) == "user");
 
   // A known role passes through both.
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("assistant", ""), OpenAiLike()).at("role")) ==
-          "assistant");
+              llm::ProjectMessage(Text("assistant", ""), OpenAiLike()).at("role")) == "assistant");
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("assistant", ""), OllamaLike()).at("role")) ==
-          "assistant");
+              llm::ProjectMessage(Text("assistant", ""), OllamaLike()).at("role")) == "assistant");
 
   // An unknown role is only corrected where the naming is a closed set.
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("custom", ""), OpenAiLike()).at("role")) ==
-          "custom");
+              llm::ProjectMessage(Text("custom", ""), OpenAiLike()).at("role")) == "custom");
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("custom", ""), OllamaLike()).at("role")) ==
-          "user");
+              llm::ProjectMessage(Text("custom", ""), OllamaLike()).at("role")) == "user");
 }
 
 TEST_CASE("Content beside tool calls follows the capability", "[projection]") {
@@ -103,16 +97,13 @@ TEST_CASE("Reasoning is echoed only where supported", "[projection]") {
   assistant.reasoning_content = "because";
 
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content")) ==
-          "because");
-  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()),
-                             "reasoning_content"));
+              llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content")) == "because");
+  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()), "reasoning_content"));
 
   // Never attached to a non-assistant message.
   ChatMessage user = Text("user", "question");
   user.reasoning_content = "because";
-  REQUIRE_FALSE(
-      json::HasKey(llm::ProjectMessage(user, OpenAiLike()), "reasoning_content"));
+  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(user, OpenAiLike()), "reasoning_content"));
 }
 
 TEST_CASE("Tool call envelope and arguments differ by capability", "[projection]") {
@@ -123,8 +114,9 @@ TEST_CASE("Tool call envelope and arguments differ by capability", "[projection]
   REQUIRE(openai_call.at("type") == "function");
   REQUIRE(openai_call.at("function").at("name") == "ls");
   REQUIRE(openai_call.at("function").at("arguments").is_string());
-  REQUIRE(boost::json::parse(boost::json::value_to<std::string>(
-              openai_call.at("function").at("arguments"))).at("path") == ".");
+  REQUIRE(boost::json::parse(
+              boost::json::value_to<std::string>(openai_call.at("function").at("arguments")))
+              .at("path") == ".");
 
   const boost::json::value ollama = llm::ProjectMessage(assistant, OllamaLike());
   const boost::json::value& ollama_call = ollama.at("tool_calls").as_array().at(0);
@@ -142,23 +134,31 @@ TEST_CASE("Arguments already in the target form are left alone", "[projection]")
 
   // An object-shaped capability parses the string, a string-shaped one keeps it.
   REQUIRE(llm::ProjectMessage(assistant, OllamaLike())
-              .at("tool_calls").as_array().at(0)
-              .at("function").at("arguments").is_object());
+              .at("tool_calls")
+              .as_array()
+              .at(0)
+              .at("function")
+              .at("arguments")
+              .is_object());
   REQUIRE(llm::ProjectMessage(assistant, OpenAiLike())
-              .at("tool_calls").as_array().at(0)
-              .at("function").at("arguments").is_string());
+              .at("tool_calls")
+              .as_array()
+              .at(0)
+              .at("function")
+              .at("arguments")
+              .is_string());
 }
 
 TEST_CASE("Unparseable arguments survive", "[projection]") {
   ChatMessage assistant;
   assistant.role = "assistant";
-  assistant.tool_calls = boost::json::parse(
-      R"([{"id":"call_1","function":{"name":"ls","arguments":"not json"}}])");
+  assistant.tool_calls =
+      boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":"not json"}}])");
 
   const boost::json::value projected = llm::ProjectMessage(assistant, OllamaLike());
   REQUIRE(boost::json::value_to<std::string>(
-              projected.at("tool_calls").as_array().at(0)
-                  .at("function").at("arguments")) == "not json");
+              projected.at("tool_calls").as_array().at(0).at("function").at("arguments")) ==
+          "not json");
 }
 
 TEST_CASE("A tool call without a nested function passes through", "[projection]") {

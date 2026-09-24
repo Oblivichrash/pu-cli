@@ -15,15 +15,13 @@ namespace {
 
 std::string ReadFile(const std::string& path) {
   std::ifstream f(path);
-  std::string content((std::istreambuf_iterator<char>(f)),
-                       std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   return content;
 }
 
 }  // namespace
 
-TEST_CASE("execute_bash returns success JSON on successful command",
-          "[builtin_tools]") {
+TEST_CASE("execute_bash returns success JSON on successful command", "[builtin_tools]") {
   ExecuteBashToolStandard tool(".");
   pu::ToolContext ctx;
 
@@ -39,8 +37,7 @@ TEST_CASE("execute_bash returns success JSON on successful command",
   REQUIRE(j.at("exit_code") == 0);
 }
 
-TEST_CASE("execute_bash returns failure JSON on non-zero exit code",
-          "[builtin_tools]") {
+TEST_CASE("execute_bash returns failure JSON on non-zero exit code", "[builtin_tools]") {
   ExecuteBashToolStandard tool(".");
   pu::ToolContext ctx;
 
@@ -50,12 +47,12 @@ TEST_CASE("execute_bash returns failure JSON on non-zero exit code",
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("Command failed") != std::string::npos);
+  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("Command failed") !=
+          std::string::npos);
   REQUIRE(j.at("exit_code") != 0);
 }
 
-TEST_CASE("Execute_bash returns error JSON for missing command parameter",
-          "[builtin_tools]") {
+TEST_CASE("Execute_bash returns error JSON for missing command parameter", "[builtin_tools]") {
   ExecuteBashToolStandard tool(".");
 
   boost::json::value args = boost::json::object{};
@@ -83,12 +80,11 @@ TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find(
-              "command contains forbidden pattern") != std::string::npos);
+  REQUIRE(boost::json::value_to<std::string>(j.at("error"))
+              .find("command contains forbidden pattern") != std::string::npos);
 }
 
-TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment",
-          "[builtin_tools]") {
+TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment", "[builtin_tools]") {
   ExecuteBashToolStandard tool(".");
 
   pu::ToolContext ctx;
@@ -115,14 +111,13 @@ TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("exceeds maximum allowed length") !=
-          std::string::npos);
+  REQUIRE(
+      boost::json::value_to<std::string>(j.at("error")).find("exceeds maximum allowed length") !=
+      std::string::npos);
 }
 
-TEST_CASE("Write_file returns success JSON on successful write",
-          "[builtin_tools]") {
-  std::filesystem::path tmpdir =
-      std::filesystem::temp_directory_path() / "pu_write_test";
+TEST_CASE("Write_file returns success JSON on successful write", "[builtin_tools]") {
+  std::filesystem::path tmpdir = std::filesystem::temp_directory_path() / "pu_write_test";
   std::filesystem::create_directories(tmpdir);
 
   WriteFileTool tool;
@@ -138,7 +133,8 @@ TEST_CASE("Write_file returns success JSON on successful write",
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == true);
-  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")).find("Successfully wrote") != std::string::npos);
+  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")).find("Successfully wrote") !=
+          std::string::npos);
   REQUIRE(j.at("error") == "");
   REQUIRE(j.at("exit_code") == 0);
 
@@ -165,8 +161,7 @@ TEST_CASE("Write_file returns error JSON for missing path", "[builtin_tools]") {
   REQUIRE(j.at("exit_code") == -1);
 }
 
-TEST_CASE("Write_file returns error JSON for path traversal attempt",
-          "[builtin_tools]") {
+TEST_CASE("Write_file returns error JSON for path traversal attempt", "[builtin_tools]") {
   WriteFileTool tool;
   pu::ToolContext ctx;
   config::SecurityPolicy policy;
@@ -183,8 +178,7 @@ TEST_CASE("Write_file returns error JSON for path traversal attempt",
   REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("traversal") != std::string::npos);
 }
 
-TEST_CASE("Write_file returns error JSON when no security policy set",
-          "[builtin_tools]") {
+TEST_CASE("Write_file returns error JSON when no security policy set", "[builtin_tools]") {
   WriteFileTool tool;
   pu::ToolContext ctx;
 
@@ -212,8 +206,7 @@ TEST_CASE("Ask_user returns clarification JSON with question", "[builtin_tools]"
   REQUIRE(j.at("question") == "Which directory should I target?");
 }
 
-TEST_CASE("Ask_user returns empty question when argument missing",
-          "[builtin_tools]") {
+TEST_CASE("Ask_user returns empty question when argument missing", "[builtin_tools]") {
   AskUserTool tool;
   pu::ToolContext ctx;
 
@@ -226,8 +219,7 @@ TEST_CASE("Ask_user returns empty question when argument missing",
   REQUIRE(j.at("question") == "");
 }
 
-TEST_CASE("Ask_user metadata exposes name, description, and schema",
-          "[builtin_tools]") {
+TEST_CASE("Ask_user metadata exposes name, description, and schema", "[builtin_tools]") {
   AskUserTool tool;
 
   REQUIRE(tool.Name() == "ask_user");

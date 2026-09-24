@@ -25,10 +25,8 @@ class BeastHttpClient : public HttpClient {
   BeastHttpClient(const BeastHttpClient&) = delete;
   BeastHttpClient& operator=(const BeastHttpClient&) = delete;
 
-  void PostStream(const std::string& url,
-                  const std::string& body,
-                  const std::vector<std::string>& headers,
-                  WriteCallback write_cb,
+  void PostStream(const std::string& url, const std::string& body,
+                  const std::vector<std::string>& headers, WriteCallback write_cb,
                   CancelToken cancel_token = nullptr) override;
 
   void SetInterruptChecker(std::function<bool()> checker);

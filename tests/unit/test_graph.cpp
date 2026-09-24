@@ -24,8 +24,7 @@ context::MessagePayload Assistant(const std::string& text,
   return assistant;
 }
 
-context::MessagePayload Receipt(const std::string& call_id,
-                                const std::string& text = "ok") {
+context::MessagePayload Receipt(const std::string& call_id, const std::string& text = "ok") {
   context::ToolPayload receipt;
   receipt.tool_call_id = call_id;
   receipt.content.emplace_back(context::TextPart{text});
@@ -75,8 +74,7 @@ TEST_CASE("A receipt completes the record it answers", "[context][graph]") {
   graph.AppendAfterLeaf(Receipt("call_1"));
 
   const std::vector<const context::MessageNode*> chain = graph.Chain();
-  const auto& stored =
-      std::get<context::AssistantPayload>(chain[0]->payload).tool_calls.at(0);
+  const auto& stored = std::get<context::AssistantPayload>(chain[0]->payload).tool_calls.at(0);
   REQUIRE(stored.status == context::ToolCallStatus::kCompleted);
 }
 
@@ -88,8 +86,7 @@ TEST_CASE("A receipt for another call leaves the record pending", "[context][gra
   graph.AppendAfterLeaf(Receipt("call_2"));
 
   const std::vector<const context::MessageNode*> chain = graph.Chain();
-  const auto& stored =
-      std::get<context::AssistantPayload>(chain[0]->payload).tool_calls.at(0);
+  const auto& stored = std::get<context::AssistantPayload>(chain[0]->payload).tool_calls.at(0);
   REQUIRE(stored.status == context::ToolCallStatus::kPending);
 }
 
@@ -103,8 +100,7 @@ TEST_CASE("A receipt completes a record that sits further back", "[context][grap
   graph.AppendAfterLeaf(Receipt("call_1"));
   graph.AppendAfterLeaf(Receipt("call_2"));
 
-  const auto& calls =
-      std::get<context::AssistantPayload>(graph.Chain()[0]->payload).tool_calls;
+  const auto& calls = std::get<context::AssistantPayload>(graph.Chain()[0]->payload).tool_calls;
   REQUIRE(calls.at(0).status == context::ToolCallStatus::kCompleted);
   REQUIRE(calls.at(1).status == context::ToolCallStatus::kCompleted);
 }

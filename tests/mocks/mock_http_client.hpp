@@ -11,10 +11,8 @@ namespace pu::tests {
 
 class MockHttpClient : public pu::http::HttpClient {
  public:
-  void PostStream(const std::string& url,
-                  const std::string& body,
-                  const std::vector<std::string>& headers,
-                  pu::http::WriteCallback write_cb,
+  void PostStream(const std::string& url, const std::string& body,
+                  const std::vector<std::string>& headers, pu::http::WriteCallback write_cb,
                   pu::CancelToken cancel_token = nullptr) override {
     last_url = url;
     last_body = body;
@@ -29,10 +27,9 @@ class MockHttpClient : public pu::http::HttpClient {
   std::string last_body;
   std::vector<std::string> last_headers;
   pu::CancelToken last_cancel_token;
-  std::function<void(const std::string&,
-                     const std::string&,
-                     const std::vector<std::string>&,
-                     pu::http::WriteCallback)> simulate_response;
+  std::function<void(const std::string&, const std::string&, const std::vector<std::string>&,
+                     pu::http::WriteCallback)>
+      simulate_response;
 };
 
 }  // namespace pu::tests

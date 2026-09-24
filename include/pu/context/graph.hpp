@@ -53,8 +53,7 @@ class MessageGraph {
   }
 
   // Appends after the current leaf, linking it and moving the leaf along.
-  const MessageNode& AppendAfterLeaf(MessagePayload payload,
-                                     std::string timestamp = {}) {
+  const MessageNode& AppendAfterLeaf(MessagePayload payload, std::string timestamp = {}) {
     MessageNode node = MakeNode(std::move(payload));
     node.timestamp = std::move(timestamp);
     if (!leaf_.empty()) node.parents.push_back(leaf_);

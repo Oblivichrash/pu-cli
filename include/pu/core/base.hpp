@@ -22,19 +22,19 @@ using CancelToken = std::shared_ptr<std::atomic<bool>>;
 // can catch this (or std::exception) to produce a friendly error message
 // without crashing.
 class RuntimeError : public std::runtime_error {
-public:
+ public:
   explicit RuntimeError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
 // General-purpose error, e.g. configuration parsing.
 class Error : public RuntimeError {
-public:
+ public:
   using RuntimeError::RuntimeError;
 };
 
 // HTTP and network errors, raised by the HTTP client.
 class HttpError : public Error {
-public:
+ public:
   explicit HttpError(const std::string& msg) : Error(msg) {}
 };
 

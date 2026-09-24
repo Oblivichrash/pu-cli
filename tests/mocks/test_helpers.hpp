@@ -8,7 +8,7 @@ namespace pu::tests {
 
 // RAII helper to set/unset environment variables for testing.
 class ScopedEnvVar {
-public:
+ public:
   ScopedEnvVar(const std::string& name, const std::string& value) : name_(name) {
     const char* prev = std::getenv(name.c_str());
     had_prev_ = (prev != nullptr);
@@ -17,11 +17,13 @@ public:
   }
 
   ~ScopedEnvVar() {
-    if (had_prev_) Set(prev_);
-    else Unset();
+    if (had_prev_)
+      Set(prev_);
+    else
+      Unset();
   }
 
-private:
+ private:
   void Set(const std::string& value) {
 #ifdef _WIN32
     _putenv_s(name_.c_str(), value.c_str());

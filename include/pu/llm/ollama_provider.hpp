@@ -26,12 +26,9 @@ class OllamaProvider : public LLMProvider {
   explicit OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http);
   ~OllamaProvider() override = default;
 
-  ChatResult Chat(
-    const std::vector<ChatMessage>& history,
-    const std::vector<ToolDefinition>& tools,
-    std::function<void(const std::string&)> content_callback = nullptr,
-    CancelToken cancel_token = nullptr
-  ) override;
+  ChatResult Chat(const std::vector<ChatMessage>& history, const std::vector<ToolDefinition>& tools,
+                  std::function<void(const std::string&)> content_callback = nullptr,
+                  CancelToken cancel_token = nullptr) override;
 
   bool SupportsTools() const override { return true; }
   std::string GetModelName() const override { return config_.model; }

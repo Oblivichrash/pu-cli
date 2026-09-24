@@ -21,9 +21,7 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   auto* mock_ptr = mock_http.get();
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hello"}
-  };
+  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
 
   provider.Chat(history, {});
 
@@ -68,16 +66,12 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  std::vector<std::string> chunks = {
-    R"(data: {"choices":[{"delta":{"content":"Hello"}}]})",
-    R"(data: {"choices":[{"delta":{"content":" world"}}]})",
-    R"(data: [DONE])"
-  };
+  std::vector<std::string> chunks = {R"(data: {"choices":[{"delta":{"content":"Hello"}}]})",
+                                     R"(data: {"choices":[{"delta":{"content":" world"}}]})",
+                                     R"(data: [DONE])"};
 
-  mock_ptr->simulate_response = [&](const std::string&,
-                                    const std::string&,
-                                    const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb) {
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
     for (const auto& chunk : chunks) {
       std::string data = chunk + "\n";
       cb(data.data(), data.size());
@@ -86,16 +80,10 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
 
   OpenAIProvider provider(config, std::move(mock_http));
 
-  std::vector<ChatMessage> history = {
-    ChatMessage{1, "now", "user", "Hi"}
-  };
+  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
 
   std::string accumulated;
-  auto result = provider.Chat(history, {},
-    [&](const std::string& token) {
-      accumulated += token;
-    }
-  );
+  auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
 }
@@ -108,10 +96,8 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  mock_ptr->simulate_response = [&](const std::string&,
-                                    const std::string&,
-                                    const std::vector<std::string>&,
-                                    pu::http::WriteCallback) {
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback) {
     throw pu::HttpError("HTTP error 401: Unauthorized");
   };
 
@@ -129,13 +115,11 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
 
-  mock_ptr->simulate_response = [&](const std::string&,
-                                    const std::string&,
-                                    const std::vector<std::string>&,
-                                    pu::http::WriteCallback cb) {
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
     std::string chunk1 =
-        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"exec","arguments":"ls"}}]}}]})"
-        + std::string("\n");
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"exec","arguments":"ls"}}]}}]})" +
+        std::string("\n");
     std::string chunk2 = "data: [DONE]\n";
     cb(chunk1.data(), chunk1.size());
     cb(chunk2.data(), chunk2.size());
@@ -149,15 +133,15 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(history, tools,
-    [](const std::string&) {});
+  auto result = provider.Chat(history, tools, [](const std::string&) {});
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].id == "call_1");
   REQUIRE(result.tool_calls[0].name == "exec");
 }
 
-TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinking=false", "[openai]") {
+TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinking=false",
+          "[openai]") {
   OpenAIProvider::Config config;
   config.model = "deepseek-reasoner";
   config.host = "https://api.deepseek.com/v1";

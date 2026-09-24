@@ -41,10 +41,10 @@ std::string GetWebDir() {
       return;
     }
     std::vector<std::string> candidates = {
-      "./web",
-      "../share/pu/web",
-      "/usr/share/pu/web",
-      "/usr/local/share/pu/web",
+        "./web",
+        "../share/pu/web",
+        "/usr/share/pu/web",
+        "/usr/local/share/pu/web",
     };
     for (const auto& d : candidates) {
       if (std::filesystem::exists(d) && std::filesystem::is_directory(d)) {
@@ -60,8 +60,7 @@ std::string GetWebDir() {
 void ServeFile(const std::string& target, http::response<http::string_body>& res) {
   std::string base = GetWebDir();
   std::string path = base + target;
-  if (target == "/")
-    path = base + "/index.html";
+  if (target == "/") path = base + "/index.html";
 
   std::ifstream file(path, std::ios::binary);
   if (!file.is_open()) {
@@ -69,8 +68,7 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
     res.prepare_payload();
     return;
   }
-  std::string content((std::istreambuf_iterator<char>(file)),
-                      std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   res.result(http::status::ok);
   res.body() = std::move(content);
   if (path.ends_with(".html"))
@@ -84,8 +82,7 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
   res.prepare_payload();
 }
 
-void HandleApiSession(Runtime& runtime, std::mutex& io_mutex,
-                      http::request<http::string_body>&&,
+void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
                       http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::object{};
   try {
@@ -109,8 +106,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, jv);
 }
 
-void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
-                      http::request<http::string_body>&&,
+void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
                       http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::array{};
   try {
@@ -120,17 +116,14 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
       auto history = session->GetWorkspace().GetHistory();
       for (const auto& msg : history) {
         boost::json::value item = {
-          {"id", msg.id},
-          {"role", msg.role},
-          {"content", msg.content},
-          {"timestamp", msg.timestamp},
+            {"id", msg.id},
+            {"role", msg.role},
+            {"content", msg.content},
+            {"timestamp", msg.timestamp},
         };
-        if (msg.HasToolCalls())
-          item.as_object()["tool_calls"] = msg.tool_calls;
-        if (!msg.tool_call_id.empty())
-          item.as_object()["tool_call_id"] = msg.tool_call_id;
-        if (!msg.tool_name.empty())
-          item.as_object()["tool_name"] = msg.tool_name;
+        if (msg.HasToolCalls()) item.as_object()["tool_calls"] = msg.tool_calls;
+        if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;
+        if (!msg.tool_name.empty()) item.as_object()["tool_name"] = msg.tool_name;
         if (!msg.reasoning_content.empty())
           item.as_object()["reasoning_content"] = msg.reasoning_content;
         jv.as_array().push_back(item);
@@ -144,8 +137,7 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, jv);
 }
 
-void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex,
-                     http::request<http::string_body>&&,
+void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
                      http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::object{};
   boost::json::array agents;
@@ -156,8 +148,8 @@ void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex,
     for (const auto& name : names) {
       auto* cfg = mgr.GetAgentConfig(name);
       boost::json::value item = {
-        {"name", name},
-        {"description", cfg ? cfg->description : ""},
+          {"name", name},
+          {"description", cfg ? cfg->description : ""},
       };
       agents.push_back(item);
     }
@@ -207,8 +199,7 @@ void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, resp);
 }
 
-void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
-                    http::request<http::string_body>&&,
+void HandleApiClear(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
                     http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::object{};
   try {
@@ -228,8 +219,7 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, jv);
 }
 
-void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex,
-                         http::request<http::string_body>&&,
+void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
                          http::response<http::string_body>& res) {
   boost::json::value resp = boost::json::object{};
   boost::json::array ws_array;
@@ -237,10 +227,7 @@ void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex,
     std::lock_guard<std::mutex> lock(io_mutex);
     auto workspaces = runtime.ListWorkspaces();
     for (const auto& [name, path] : workspaces) {
-      boost::json::value item = {
-        {"name", name},
-        {"path", path}
-      };
+      boost::json::value item = {{"name", name}, {"path", path}};
       ws_array.push_back(item);
     }
   } catch (const std::exception& e) {
@@ -285,8 +272,7 @@ void HandleApiWorkspaceSwitch(Runtime& runtime, std::mutex& io_mutex,
   SendJson(res, 200, resp);
 }
 
-void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex,
-                     http::request<http::string_body>&& req,
+void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&& req,
                      http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::object{};
   try {

@@ -76,7 +76,7 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   std::vector<ToolDefinition> defs;
   for (const auto& [display_name, tool] : tools_) {
     ToolDefinition def;
-    def.name = display_name;                    // LLM sees sanitized name
+    def.name = display_name;  // LLM sees sanitized name
     def.description = tool->Description();
     def.parameters = tool->ParametersSchema();
     defs.push_back(def);
@@ -84,7 +84,8 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   return defs;
 }
 
-std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args, ToolContext& ctx) {
+std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args,
+                                 ToolContext& ctx) {
   if (name.empty()) {
     spdlog::error("Attempted to execute tool with empty name");
     return "Error: tool name is empty";
