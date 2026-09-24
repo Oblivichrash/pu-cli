@@ -15,8 +15,7 @@ pu-cli is built around four principles:
 
 ## Tech Stack
 
-The runtime dependencies are **Boost** (Beast, Asio, JSON, ProgramOptions),
-**spdlog**, and **OpenSSL**:
+What each dependency is for:
 
 - **Boost.Beast** — HTTP/WebSocket server (`pu serve`) and HTTP client
   (`BeastHttpClient`), built on top of **Boost.Asio**.
@@ -249,18 +248,12 @@ and compatible gateways.
 | Streaming tool calls | whole call per line | index accumulation |
 | Reasoning | no | yes |
 | Reasoning signature | no | no |
-| Raw provider JSON retained | no | no |
+| Full provider response retained | no | no |
 | Multimodal input or output | no | no |
 | Prompt caching hints | `keep_alive` only | none |
 
 Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
 `ToolDefinition::Parameters()`.
-
-An Anthropic provider would need a `system` request field instead of a system
-message, `tools[].input_schema` instead of `parameters`, `tool_use`/`tool_result`
-content blocks instead of role messages, and `thinking` blocks whose `signature`
-must be echoed back verbatim — which the stored reasoning would have to grow a
-field for.
 
 ## Data Flow
 
@@ -381,9 +374,8 @@ mechanical, and the point at which it would earn its place.
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
 `<data-dir>/session.backup.json` when that backup exists, and starts a fresh
-conversation. Version 1 stored a flat list of messages, and version 2 an array of
-typed content parts beside a reasoning signature; neither is converted, so what
-they hold survives only in that backup.
+conversation. Older layouts are not converted, so what they hold survives only in
+that backup.
 
 The session file contains no system prompt: the prompt is configuration and is
 read from `agents.json` on every start.
@@ -463,8 +455,3 @@ and the `pu` executable adds only `main.cpp`.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 
----
-
-## License
-
-GPL-3.0 — see [LICENSE](../LICENSE)
