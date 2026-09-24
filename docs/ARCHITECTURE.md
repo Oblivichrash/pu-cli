@@ -364,7 +364,7 @@ mechanical, and the point at which it would earn its place.
 
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
-`<data-dir>/session.v1.backup.json` when that backup exists, and starts a fresh
+`<data-dir>/session.backup.json` when that backup exists, and starts a fresh
 conversation. Version 1 stored a flat list of messages, and version 2 an array of
 typed content parts beside a reasoning signature; neither is converted, so what
 they hold survives only in that backup.

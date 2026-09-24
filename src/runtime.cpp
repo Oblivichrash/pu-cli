@@ -56,7 +56,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   } else {
     reason = "history is not DAG node storage";
   }
-  const std::filesystem::path backup = path.parent_path() / "session.v1.backup.json";
+  const std::filesystem::path backup = path.parent_path() / "session.backup.json";
 
   std::ostringstream message;
   message << "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
@@ -71,12 +71,12 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   return nullptr;
 }
 
-// The v1 session layout cannot be read by the context DAG format, so keep one
-// copy of it before the schema upgrade ships. Never overwrites an existing
-// backup, otherwise the original pre-upgrade state would be lost on the second
-// run.
+// A file this build cannot read is refused and then overwritten by the next save,
+// so keep one copy of what was there. The name carries no version, because the
+// copy is whatever the file held before an incompatible load. Never overwrites an
+// existing backup, otherwise that state would be lost on the second run.
 void BackupLegacySession(const std::filesystem::path& session_path) {
-  const auto backup_path = session_path.parent_path() / "session.v1.backup.json";
+  const auto backup_path = session_path.parent_path() / "session.backup.json";
   if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path)) return;
 
   std::error_code ec;
