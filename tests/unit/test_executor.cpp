@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/executor.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/tool_result.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -366,4 +368,31 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[0].content == "hello");
+}
+
+TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor][tool_loop]") {
+  // The interrupt flag is global, so the test states its own starting point
+  // rather than depending on whichever test ran before it.
+  platform::ClearInterruptFlag();
+
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  // A withdrawn request reaches the executor looking like any other failure; what
+  // separates them is the token the caller holds, not the message it threw.
+  FailingLLM provider;
+  const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
+
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, withdrawn);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content.empty());
+
+  // The user message stands alone: nothing is stored that claims to answer it.
+  REQUIRE(ws.HistorySize() == 1);
+  REQUIRE(ws.GetHistory()[0].role == "user");
 }

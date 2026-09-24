@@ -232,6 +232,15 @@ Executor::ToolLoopResult Executor::RunToolLoop(
         break;
       }
     } catch (const std::exception& e) {
+      // A stop the caller asked for is not a failure: the stream ended because the
+      // request was withdrawn, so the turn ends here with nothing to report. What
+      // arrived before the stop is not an answer either, and storing it would make
+      // the next request read half a sentence as the model's finished reply.
+      if ((cancel_token && cancel_token->load(std::memory_order_acquire)) ||
+          platform::IsInterrupted()) {
+        spdlog::debug("Request stopped by the caller: {}", e.what());
+        return result;
+      }
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);

@@ -200,7 +200,9 @@ whole request stack — `Runtime::ProcessInput` → `Executor::Execute` →
 chunks and stop early, so a cancellation surfaces quickly instead of waiting for
 the model to finish. In `pu serve` the token is owned by the active WebSocket
 session: a `{"type":"cancel"}` message — or a dropped connection — sets it, and
-`BeastHttpClient` aborts the in-flight HTTP request on the next poll.
+`BeastHttpClient` aborts the in-flight HTTP request on the next poll. The executor
+reports that as a stop rather than a failure: the turn ends with no reply and no
+error.
 
 ### WebSocket streaming
 
@@ -443,7 +445,7 @@ and the `pu` executable adds only `main.cpp`.
 - Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
 - Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). It fails gracefully and falls back to `"unknown"`.
 - **Nothing enforces a token budget.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
-- **A cancelled run keeps no partial reply.** The transport aborts the stream and the turn surfaces as a failed request, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
+- **A cancelled run keeps no partial reply.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 - **Unreachable nodes are never reclaimed.** `/rewind` moves the leaf back and leaves the branch it left behind in the store, and nothing removes a node, so the store grows without bound within a session.
 
