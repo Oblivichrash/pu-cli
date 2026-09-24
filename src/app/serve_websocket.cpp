@@ -140,6 +140,13 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
                 tool_cb);
           }
 
+          // A remark about the reply goes out before the turn is closed, so it lands
+          // under the text the client has already rendered.
+          if (!result.notice.empty()) {
+            boost::json::value frame = {{"type", "notice"}, {"payload", {{"text", result.notice}}}};
+            send_frame(frame);
+          }
+
           boost::json::value final;
           if (result.has_error)
             final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};

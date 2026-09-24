@@ -24,6 +24,24 @@ namespace pu {
 
 namespace {
 
+// Why a reply stopped, when the reason is one the user has to be told about. An
+// answer cut off at the token limit reads as the model's whole answer otherwise,
+// and what fixes it is a setting rather than another try.
+std::string StopNotice(const std::string& finish_reason) {
+  if (finish_reason.empty()) return "";
+  if (finish_reason == "length") {
+    return "The reply stopped at the token limit, so it may be incomplete. Raise "
+           "max_tokens for this backend to get the rest.";
+  }
+  if (finish_reason == "content_filter") {
+    return "The provider stopped the reply because its content filter matched.";
+  }
+  // Anything else is the provider's own word for an ordinary ending. The value is
+  // logged rather than interpreted, because the vocabularies differ between them.
+  spdlog::debug("Provider ended the reply with finish_reason={}", finish_reason);
+  return "";
+}
+
 #ifdef _WIN32
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
@@ -157,6 +175,7 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
   exec_result.content = result.final_response;
   exec_result.was_streamed = result.was_streamed;
   exec_result.tool_call_count = result.tool_call_count;
+  exec_result.notice = result.notice;
   return exec_result;
 }
 
@@ -228,6 +247,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
           spdlog::debug("Using reasoning_content as final response (thinking mode)");
         }
         result.final_response = response;
+        result.notice = StopNotice(chat_result.finish_reason);
         break;
       }
     } catch (const std::exception& e) {
@@ -279,10 +299,9 @@ Executor::ToolLoopResult Executor::RunToolLoop(
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
     for (const auto& call : chat_result.tool_calls) {
-      if (call.name.empty()) {
-        spdlog::warn("Skipping tool call with empty name");
-        continue;
-      }
+      // An unnamed call runs like any other: the toolbox answers it with an error,
+      // which keeps the call and its result together in the store. A call the store
+      // holds without its answer is a conversation the provider refuses to continue.
       ++result.tool_call_count;
 
       // Notify the UI/streaming layer that a tool is about to run.

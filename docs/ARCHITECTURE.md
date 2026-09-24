@@ -215,6 +215,25 @@ full text as a single chunk frame. The frame schema and client-side rendering
 are documented in [README](../README.md#websocket-protocol) and implemented in
 `web/app.js`.
 
+### What a stream carries besides text
+
+Three things arrive beside the answer, and each has one place where it is read.
+
+Reasoning — `delta.reasoning_content` or Ollama's `message.thinking` — is
+accumulated as the model's own thinking and is rendered as a collapsed block
+rather than as the reply. A `refusal` becomes the reply when no content arrived:
+the model's own words are the reason the user is owed, and without them a refusal
+is an empty answer. An `error` object inside the stream is raised as the request's
+failure, so the provider's message reaches the user instead of being replaced by
+the generic empty-answer diagnosis.
+
+The provider's word for why it stopped is kept in `ChatResult::finish_reason`
+(`finish_reason` for OpenAI compatible, `done_reason` for Ollama) and read by the
+executor. A reply the provider stopped at the token limit or its content filter is
+stored as it arrived and reported as `ExecutionResult::notice`: an answer that ends
+mid-sentence is otherwise indistinguishable from a finished one, and what fixes it
+is a setting rather than a retry.
+
 ## Provider Differences
 
 `config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)
@@ -238,15 +257,17 @@ and compatible gateways.
 | Reasoning on request | never sent | sent on assistant messages when non-empty |
 | Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` |
 | `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
-| Call assembly | one complete call per line | `index`-keyed deltas flushed on `done` |
-| Reasoning on response | not parsed; `IsThinkingMode()` is false | `delta.reasoning_content` accumulated |
+| Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` |
+| Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated |
+| End of reply | `done_reason` on the final object | `finish_reason` on each choice |
+| Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
 
 | Capability | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|
 | Tools, streaming content, parallel calls | yes | yes |
 | Streaming tool calls | whole call per line | index accumulation |
-| Reasoning | no | yes |
+| Reasoning | `message.thinking` | `delta.reasoning_content` |
 | Reasoning signature | no | no |
 | Full provider response retained | no | no |
 | Multimodal input or output | no | no |

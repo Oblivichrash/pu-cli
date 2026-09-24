@@ -34,6 +34,10 @@ struct ExecutionResult {
   bool has_error = false;
   std::string error_message;
   int tool_call_count = 0;
+  // A remark about a reply that arrived but is known to be incomplete, such as one
+  // the provider stopped at the token limit. Empty when there is nothing to add.
+  // Not an error: the content is real, and it is stored.
+  std::string notice;
 };
 
 struct StaticEnvInfo {
@@ -69,6 +73,7 @@ class Executor {
     bool has_error = false;
     bool was_streamed = false;
     std::string error_message;
+    std::string notice;
   };
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,

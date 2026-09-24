@@ -40,6 +40,9 @@ class OpenAIProvider : public LLMProvider {
                            const std::vector<ToolDefinition>& tools) const;
   void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb);
+  // Tool calls arrive as fragments and only become calls once the answer is
+  // assembled, so they are held until the stream says it is finished.
+  void FlushPendingToolCalls();
   void ResetAccumulators();
 
   Config config_;
@@ -54,6 +57,8 @@ class OpenAIProvider : public LLMProvider {
 
   std::string content_;
   std::string current_reasoning_content_;
+  std::string refusal_;
+  std::string finish_reason_;
   std::vector<ToolCall> tool_calls_;
   std::optional<TokenUsage> usage_;
 };

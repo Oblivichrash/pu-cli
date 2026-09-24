@@ -208,3 +208,79 @@ TEST_CASE("OllamaProvider IsThinkingMode returns false", "[ollama]") {
   OllamaProvider provider(std::move(config), std::move(mock_http));
   REQUIRE(provider.IsThinkingMode() == false);
 }
+
+TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"({"message":{"content":"half"},"done":true,"done_reason":"length"})" + std::string("\n");
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
+  auto result = provider.Chat(history, {});
+
+  REQUIRE(result.content == "half");
+  // Its own word for the token limit, under a name of its own.
+  REQUIRE(result.finish_reason == "length");
+}
+
+TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "deepseek-r1:7b";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"({"message":{"content":"","thinking":"weighing the options"},"done":true})" +
+        std::string("\n");
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "think about it"}};
+  auto result = provider.Chat(history, {});
+
+  // Reasoning arrives under a name of its own, beside an empty content.
+  REQUIRE(result.reasoning_content == "weighing the options");
+  REQUIRE(result.content.empty());
+}
+
+TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][error]") {
+  OllamaProvider::Config config;
+  config.model = "missing-model";
+  config.host = "http://localhost:11434";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"({"error":"model not found"})" + std::string("\n");
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  try {
+    provider.Chat(history, {});
+    FAIL("an error inside the stream should reach the caller");
+  } catch (const std::exception& e) {
+    REQUIRE(std::string(e.what()).find("model not found") != std::string::npos);
+  }
+}

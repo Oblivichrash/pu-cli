@@ -224,3 +224,159 @@ TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") 
   OpenAIProvider nothinking(config, std::move(mock_http));
   REQUIRE(nothinking.IsThinkingMode() == false);
 }
+
+TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"(data: {"choices":[{"delta":{"content":"half"},"finish_reason":null}]})"
+                        "\n"
+                        R"(data: {"choices":[{"delta":{},"finish_reason":"length"}]})"
+                        "\n"
+                        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
+  auto result = provider.Chat(history, {});
+
+  // Null while the answer is coming, named once the provider is done with it.
+  REQUIRE(result.content == "half");
+  REQUIRE(result.finish_reason == "length");
+}
+
+TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][error]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"error":{"message":"rate limit reached","type":"rate_limit_error"}})"
+        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  try {
+    provider.Chat(history, {});
+    FAIL("an error inside the stream should reach the caller");
+  } catch (const std::exception& e) {
+    // The provider's own words, not a generic empty-answer diagnosis.
+    REQUIRE(std::string(e.what()).find("rate limit reached") != std::string::npos);
+  }
+}
+
+TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"(data: {"choices":[{"delta":{"refusal":"I cannot help with that"}}]})"
+                        "\n"
+                        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  // Without this the refusal is an empty answer with no reason attached.
+  REQUIRE(result.content == "I cannot help with that");
+}
+
+TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its sentinel",
+          "[openai][tools]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"exec","arguments":"{}"}}]}}]})" +
+        std::string("\n");
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
+  auto result = provider.Chat(history, {});
+
+  // The fragments are calls the provider already made, sentinel or not.
+  REQUIRE(result.tool_calls.size() == 1);
+  REQUIRE(result.tool_calls[0].name == "exec");
+}
+
+TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[openai][tools]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"id":"call_7","function":{"name":"exec","arguments":"{}"}}]}}]})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
+  auto result = provider.Chat(history, {});
+
+  REQUIRE(result.tool_calls.size() == 1);
+  REQUIRE(result.tool_calls[0].id == "call_7");
+  REQUIRE(result.tool_calls[0].arguments.is_object());
+}
+
+TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
+          "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"message":{"content":"the whole answer"},"finish_reason":"stop"}]})" +
+        std::string("\n");
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(history, {});
+
+  // A gateway that answers in one frame is read the same way a streaming one is.
+  REQUIRE(result.content == "the whole answer");
+  REQUIRE(result.finish_reason == "stop");
+}

@@ -286,6 +286,13 @@ function handleError(payload) {
   refreshChainLength();
 }
 
+// A reply that arrived but is known to be incomplete. The answer stands as it is,
+// and the remark says why it may be cut short, next to the reply it applies to.
+function handleNotice(payload) {
+  const text = payload && payload.text ? payload.text : "";
+  if (text) createSystemMessage(text);
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws`;
@@ -314,6 +321,9 @@ function connectWebSocket() {
         break;
       case "error":
         handleError(data.payload);
+        break;
+      case "notice":
+        handleNotice(data.payload);
         break;
       default:
         break;

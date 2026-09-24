@@ -160,6 +160,29 @@ class CapturingLLM : public LLMProvider {
   std::vector<ChatMessage> history_;
 };
 
+// A provider whose answer says how it ended, which is what the remark is read from.
+class StoppingLLM : public LLMProvider {
+ public:
+  StoppingLLM(std::string content, std::string finish_reason)
+      : content_(std::move(content)), finish_reason_(std::move(finish_reason)) {}
+
+  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
+                  const std::vector<ToolDefinition>& /*tools*/,
+                  std::function<void(const std::string&)> /*content_callback*/,
+                  CancelToken /*cancel_token*/) override {
+    ChatResult r;
+    r.content = content_;
+    r.finish_reason = finish_reason_;
+    return r;
+  }
+
+  bool SupportsTools() const override { return true; }
+
+ private:
+  std::string content_;
+  std::string finish_reason_;
+};
+
 class TrackingTool : public Tool {
  public:
   std::string Name() const override { return "tracking_tool"; }
@@ -345,4 +368,73 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   // The user message stands alone: nothing is stored that claims to answer it.
   REQUIRE(ws.HistorySize() == 1);
   REQUIRE(ws.GetHistory()[0].role == "user");
+}
+
+TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("half a sentence", "length");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("write a lot", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "half a sentence");
+  // The answer is real and is stored; the remark is what says it may be cut off.
+  REQUIRE_FALSE(result.notice.empty());
+  REQUIRE(ws.HistorySize() == 2);
+}
+
+TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("a whole answer", "stop");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "a whole answer");
+  REQUIRE(result.notice.empty());
+}
+
+TEST_CASE("A tool call without a name still gets an answer in the store", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.id = "call_1";
+  call.name = "";  // the provider named no tool
+  call.arguments = boost::json::object{};
+
+  MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
+
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("go", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+
+  // The call is in the conversation, so it has to be answered: a call the store
+  // holds without its result is a conversation the provider refuses to continue.
+  bool stored_call = false;
+  bool stored_answer = false;
+  for (const auto& msg : ws.GetHistory()) {
+    if (msg.role == "assistant" && msg.HasToolCalls()) {
+      for (const auto& tc : msg.tool_calls.as_array()) {
+        if (tc.at("id") == "call_1") stored_call = true;
+      }
+    }
+    if (msg.role == "tool" && msg.tool_call_id == "call_1") stored_answer = true;
+  }
+  REQUIRE(stored_call);
+  REQUIRE(stored_answer);
 }

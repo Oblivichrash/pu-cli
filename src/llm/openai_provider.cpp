@@ -22,6 +22,16 @@ std::string SafeString(const boost::json::value& j, const char* key) {
              : "";
 }
 
+// An error arrives at the top level of a frame, in one of two shapes: the message
+// on its own, or an object carrying `message` beside a code and a type. Both are
+// read; anything else is kept as it came rather than flattened to nothing.
+std::string StreamErrorDetail(const boost::json::value& error) {
+  if (error.is_string()) return boost::json::value_to<std::string>(error);
+  const std::string message = SafeString(error, "message");
+  if (!message.empty()) return message;
+  return boost::json::serialize(error);
+}
+
 // What this provider needs, as data rather than branches: reasoning is echoed
 // back, content is nulled beside tool calls, and arguments travel as a
 // JSON-encoded string.
@@ -43,6 +53,8 @@ OpenAIProvider::OpenAIProvider(const Config& config, std::unique_ptr<pu::http::H
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
   current_reasoning_content_.clear();
+  refusal_.clear();
+  finish_reason_.clear();
   content_.clear();
   tool_calls_.clear();
   usage_.reset();
@@ -83,32 +95,65 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
 
 void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
+  // An error can arrive in place of a choice: a request the provider accepted can
+  // still be refused while the answer is being generated. The choice path below
+  // never sees it, so without this the caller would be handed an empty answer and
+  // no reason for it.
+  if (json::HasKey(j, "error")) {
+    throw Error("provider error: " + StreamErrorDetail(j.at("error")));
+  }
+
   bool is_final = false;
   if (json::HasKey(j, "done") && boost::json::value_to<bool>(j.at("done"))) is_final = true;
 
   if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
       !j.at("choices").as_array().empty()) {
-    const boost::json::value delta = json::ValueOrDefault<boost::json::value>(
-        j.at("choices").at(0), "delta", boost::json::object{});
-    if (delta.is_object()) {
-      const std::string content = SafeString(delta, "content");
+    const boost::json::value& choice = j.at("choices").at(0);
+
+    // A streaming provider sends `delta`; one that answers in a single frame sends
+    // `message`. Reading both is what keeps such a gateway usable without a second
+    // path through the parser.
+    const boost::json::value* piece = nullptr;
+    if (json::HasKey(choice, "delta")) {
+      piece = &choice.at("delta");
+    } else if (json::HasKey(choice, "message")) {
+      piece = &choice.at("message");
+    }
+
+    if (piece != nullptr && piece->is_object()) {
+      const std::string content = SafeString(*piece, "content");
       if (!content.empty()) {
         content_ += content;
         if (content_cb) content_cb(content);
       }
 
-      if (json::HasKey(delta, "reasoning_content") && delta.at("reasoning_content").is_string()) {
+      // The model's own words when it declines to answer. Dropping them leaves a
+      // refusal looking like a backend that said nothing at all.
+      const std::string refusal = SafeString(*piece, "refusal");
+      if (!refusal.empty()) refusal_ += refusal;
+
+      if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
         current_reasoning_content_ +=
-            boost::json::value_to<std::string>(delta.at("reasoning_content"));
+            boost::json::value_to<std::string>(piece->at("reasoning_content"));
       }
 
-      if (json::HasKey(delta, "tool_calls") && delta.at("tool_calls").is_array()) {
-        for (const auto& tc : delta.at("tool_calls").as_array()) {
+      if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
+        for (const auto& tc : piece->at("tool_calls").as_array()) {
           if (!tc.is_object()) continue;
+          const std::string id = SafeString(tc, "id");
           int idx = json::ValueOrDefault<int>(tc, "index", -1);
-          if (idx < 0) continue;
+          if (idx < 0) {
+            // Not every provider indexes its fragments. An id marks a call of its
+            // own; without one the fragment continues the call already open.
+            if (!id.empty()) {
+              idx = pending_tools_.empty() ? 0 : pending_tools_.rbegin()->first + 1;
+            } else if (!pending_tools_.empty()) {
+              idx = pending_tools_.rbegin()->first;
+            } else {
+              idx = 0;
+            }
+          }
           auto& acc = pending_tools_[idx];
-          auto id = SafeString(tc, "id");
           if (!id.empty()) acc.id = id;
           if (json::HasKey(tc, "function") && tc.at("function").is_object()) {
             auto name = SafeString(tc.at("function"), "name");
@@ -118,6 +163,11 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
         }
       }
     }
+
+    // Null while the answer is still coming, which is not a reason to stop.
+    if (json::HasKey(choice, "finish_reason") && choice.at("finish_reason").is_string()) {
+      finish_reason_ = boost::json::value_to<std::string>(choice.at("finish_reason"));
+    }
   }
 
   if (json::HasKey(j, "usage") && j.at("usage").is_object()) {
@@ -126,22 +176,25 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                         json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
   }
 
-  if (is_final) {
-    for (auto& [idx, acc] : pending_tools_) {
-      ToolCall call;
-      call.id = acc.id;
-      call.name = acc.name;
-      if (!acc.arguments.empty()) {
-        try {
-          call.arguments = boost::json::parse(acc.arguments);
-        } catch (const std::exception&) {
-          call.arguments = acc.arguments;
-        }
+  if (is_final) FlushPendingToolCalls();
+}
+
+void OpenAIProvider::FlushPendingToolCalls() {
+  for (auto& entry : pending_tools_) {
+    ToolCallAccumulator& acc = entry.second;
+    ToolCall call;
+    call.id = acc.id;
+    call.name = acc.name;
+    if (!acc.arguments.empty()) {
+      try {
+        call.arguments = boost::json::parse(acc.arguments);
+      } catch (const std::exception&) {
+        call.arguments = acc.arguments;
       }
-      tool_calls_.push_back(std::move(call));
     }
-    pending_tools_.clear();
+    tool_calls_.push_back(std::move(call));
   }
+  pending_tools_.clear();
 }
 
 ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
@@ -172,14 +225,20 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
       HandleJsonToken(done_obj, content_callback);
       return;
     }
+    // Only the parse is guarded. A frame the provider filled with an error is a
+    // valid parse and has to reach the caller, which is why the dispatch sits
+    // outside the catch that skips malformed lines.
+    boost::json::value j;
     try {
-      auto j = boost::json::parse(data);
-      HandleJsonToken(j, content_callback);
+      j = boost::json::parse(data);
     } catch (const boost::system::system_error& e) {
       // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
       spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+      return;
     } catch (const std::exception&) {
+      return;
     }
+    HandleJsonToken(j, content_callback);
   });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
@@ -191,10 +250,18 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
 
   http_->PostStream(url, body, headers, write_cb, cancel_token);
 
+  // A stream that ends without its sentinel still carried what it carried: the
+  // fragments held for assembly are calls the provider has already made.
+  FlushPendingToolCalls();
+
   result.content = std::move(content_);
+  // A refusal and an answer do not both arrive; when they do, the answer is what
+  // the request was for.
+  if (result.content.empty()) result.content = std::move(refusal_);
   result.tool_calls = std::move(tool_calls_);
-  result.reasoning_content = current_reasoning_content_;
+  result.reasoning_content = std::move(current_reasoning_content_);
   result.usage = usage_;
+  result.finish_reason = std::move(finish_reason_);
   return result;
 }
 

@@ -65,6 +65,11 @@ struct ChatResult {
   std::string reasoning_content;
   std::vector<ToolCall> tool_calls;
   std::optional<TokenUsage> usage;
+  // Why the provider stopped, in the provider's own word: OpenAI calls it
+  // `finish_reason`, Ollama calls it `done_reason`, and the vocabularies overlap
+  // without being the same. Kept verbatim so a caller can tell a reply the model
+  // chose to end from one that ran into the token limit or the content filter.
+  std::string finish_reason;
 };
 
 class LLMProvider {

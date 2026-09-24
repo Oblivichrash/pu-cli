@@ -65,6 +65,15 @@ AppContext SetupAppContext(const std::string& requested_agent) {
 
 void PrintChatHelp() { std::cout << CommandRouter::GetHelpText() << "\n"; }
 
+// A reply that arrived but is known to be incomplete. It belongs with the answer
+// rather than in the log, which the console sink keeps to failures, and it starts
+// its own line because a streamed answer may not have ended one.
+void PrintNotice(const ExecutionResult& result) {
+  if (result.notice.empty()) return;
+  if (result.was_streamed) std::cout << "\n";
+  std::cout << result.notice << "\n";
+}
+
 }  // namespace
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
@@ -83,6 +92,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     } else if (!is_command) {
       std::cout << "\n";
     }
+    PrintNotice(result);
 
     runtime.Shutdown();
   } catch (const std::exception& e) {
@@ -139,6 +149,8 @@ int RunChat(const std::string& agent, Runtime& runtime) {
       } else {
         // streamed output already handles its own line breaks
       }
+
+      PrintNotice(result);
     } catch (const std::exception& e) {
       spdlog::error("{}", e.what());
     }
