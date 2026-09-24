@@ -111,7 +111,7 @@ struct MessageNode {
   // Empty for the first node. One parent rather than a list: a second one could
   // only describe two lines of reasoning converging, which is the choice the store
   // deliberately never keeps.
-  MessageId parent;
+  MessageId parent{};
 };
 
 inline MessageNode MakeNode(MessagePayload payload) {
