@@ -30,7 +30,6 @@ class BeastHttpClient : public HttpClient {
                   CancelToken cancel_token = nullptr) override;
 
   void SetInterruptChecker(std::function<bool()> checker);
-  std::string GetErrorDetail() const;
 
  private:
   struct UrlParts {
@@ -46,7 +45,6 @@ class BeastHttpClient : public HttpClient {
   net::io_context ioc_;
   net::ssl::context ssl_ctx_;
   std::function<bool()> interrupt_checker_;
-  std::string error_detail_;
 };
 
 }  // namespace pu::http
