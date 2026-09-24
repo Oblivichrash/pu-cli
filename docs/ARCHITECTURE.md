@@ -346,7 +346,7 @@ handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
 <data-dir>/session.json   # Single session state
 ```
 
-The session file carries `schema_version` (currently 3) beside `workspace` and
+The session file carries `schema_version` (currently 4) beside `workspace` and
 `runtime_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
@@ -356,8 +356,8 @@ this session one of its own. Every other backend field is read from
 touching the session. The session also decides which agent a restart resumes:
 the named agent wins over `default_agent`.
 
-The conversation is a DAG: `workspace.history` holds `nodes`, each with its id,
-timestamp, parents and one role payload, plus the `leaf` that marks the current
+The conversation is a chain: `workspace.history` holds `nodes`, each with its id,
+timestamp, its parent and one role payload, plus the `leaf` that marks the current
 position. A payload's `content` is a single string, and reasoning is the JSON the
 provider sent (`reasoning.raw_json`).
 

@@ -108,11 +108,14 @@ struct MessageNode {
   MessageId id;
   std::string timestamp;
   MessagePayload payload;
-  std::vector<MessageId> parents;
+  // Empty for the first node. One parent rather than a list: a second one could
+  // only describe two lines of reasoning converging, which is the choice the store
+  // deliberately never keeps.
+  MessageId parent;
 };
 
-inline MessageNode MakeNode(MessagePayload payload, std::vector<MessageId> parents = {}) {
-  return MessageNode{NewMessageId(), std::string{}, std::move(payload), std::move(parents)};
+inline MessageNode MakeNode(MessagePayload payload) {
+  return MessageNode{NewMessageId(), std::string{}, std::move(payload)};
 }
 
 // True while a tool call has not finished, which is what blocks switching the

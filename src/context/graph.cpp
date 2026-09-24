@@ -26,14 +26,10 @@ ToolCallStatus StatusFrom(const std::string& name) {
 }
 
 boost::json::value SerializeNode(const MessageNode& node) {
-  boost::json::array parents;
-  for (const MessageId& parent : node.parents) {
-    parents.push_back(boost::json::value(parent));
-  }
   boost::json::object out = {
       {"id", node.id},
       {"timestamp", node.timestamp},
-      {"parents", std::move(parents)},
+      {"parent", node.parent},
   };
 
   if (const auto* user = std::get_if<UserPayload>(&node.payload)) {
@@ -77,13 +73,11 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   out.id = json::ValueOrDefault<std::string>(value, "id", "");
   if (out.id.empty()) return false;
   out.timestamp = json::ValueOrDefault<std::string>(value, "timestamp", "");
-  if (json::HasKey(value, "parents") && value.at("parents").is_array()) {
-    for (const boost::json::value& parent : value.at("parents").as_array()) {
-      // A parent that is not a name cannot point at a node, so the file is
-      // refused rather than loaded with a node that lost its place in the chain.
-      if (!parent.is_string()) return false;
-      out.parents.push_back(boost::json::value_to<std::string>(parent));
-    }
+  if (json::HasKey(value, "parent")) {
+    // A parent that is not a name cannot point at a node, so the file is refused
+    // rather than loaded with a node that lost its place in the chain.
+    if (!value.at("parent").is_string()) return false;
+    out.parent = boost::json::value_to<std::string>(value.at("parent"));
   }
 
   const std::string role = json::ValueOrDefault<std::string>(value, "role", "");

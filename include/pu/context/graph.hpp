@@ -2,7 +2,7 @@
 #pragma once
 
 // The stored conversation: nodes keyed by id, with a current leaf marking the
-// position. Order is derived from parent links, so identity never depends on
+// position. Order is derived from the parent link, so identity never depends on
 // position.
 //
 // Not thread-safe. Caller must serialize access.
@@ -22,7 +22,7 @@ namespace pu::context {
 
 // The persisted layout of the context model. Bumped when the shape changes in a
 // way an older reader cannot interpret; there is no reader for older values.
-inline constexpr int kSchemaVersion = 3;
+inline constexpr int kSchemaVersion = 4;
 
 class MessageGraph {
  public:
@@ -46,7 +46,7 @@ class MessageGraph {
     const MessageNode* node = Find(id);
     while (node != nullptr) {
       chain.push_back(node);
-      node = node->parents.empty() ? nullptr : Find(node->parents.front());
+      node = node->parent.empty() ? nullptr : Find(node->parent);
     }
     std::reverse(chain.begin(), chain.end());
     return chain;
@@ -59,7 +59,7 @@ class MessageGraph {
   const MessageNode& AppendAfterLeaf(MessagePayload payload, std::string timestamp = {}) {
     MessageNode node = MakeNode(std::move(payload));
     node.timestamp = std::move(timestamp);
-    if (!leaf_.empty()) node.parents.push_back(leaf_);
+    if (!leaf_.empty()) node.parent = leaf_;
 
     const MessageId id = node.id;
     const MessageNode& stored = Add(std::move(node));
@@ -135,7 +135,7 @@ class MessageGraph {
           }
         }
       }
-      id = it->second.parents.empty() ? MessageId{} : it->second.parents.front();
+      id = it->second.parent;
     }
   }
 

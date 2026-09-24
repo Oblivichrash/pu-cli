@@ -35,7 +35,7 @@ class Transcript {
   bool RewindBefore(size_t turn);
 
   boost::json::value Serialize() const;
-  // Returns false for a value that is not DAG storage, so the caller can tell a
+  // Returns false for a value that is not node storage, so the caller can tell a
   // foreign layout from an empty conversation.
   static bool Deserialize(const boost::json::value& j, Transcript& out);
 

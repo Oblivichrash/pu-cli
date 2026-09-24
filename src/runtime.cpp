@@ -54,7 +54,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
     reason = "schema_version " + std::to_string(version) + ", this build reads " +
              std::to_string(context::kSchemaVersion);
   } else {
-    reason = "history is not DAG node storage";
+    reason = "history is not node storage";
   }
   const std::filesystem::path backup = path.parent_path() / "session.backup.json";
 

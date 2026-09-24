@@ -201,7 +201,8 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   if (!has_version || version != context::kSchemaVersion) return nullptr;
 
   // A version field alone is not enough: an unreachable branch used the same
-  // number for a different layout, so the storage itself has to look like a DAG.
+  // number for a different layout, so the storage itself has to look like node
+  // storage.
   if (!json::HasKey(j, "workspace") || !json::HasKey(j.at("workspace"), "history") ||
       !j.at("workspace").at("history").is_object()) {
     return nullptr;
