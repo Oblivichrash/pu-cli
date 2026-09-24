@@ -4,7 +4,46 @@ const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 let agentSelect = document.getElementById("agent-select");
+const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
+
+// The level the server resolved: the session's own when it has one, the agent's
+// configuration otherwise. Only the server can tell those apart, so the control
+// shows what it reports rather than what was picked.
+function renderThinkingControl(level, override) {
+  const sessionLevel = override && override !== "default" ? override : null;
+  thinkingSelect.value = sessionLevel || "auto";
+  thinkingSelect.title =
+    "Thinking: " + level +
+    (sessionLevel ? " (set for this session)" : " (from the agent's configuration)");
+}
+
+async function setThinkingLevel(level) {
+  try {
+    const res = await fetch("/api/thinking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      createSystemMessage("Thinking could not be set: " + (data.error || "unknown error"));
+      return;
+    }
+    renderThinkingControl(data.thinking, data.thinking_override || null);
+    // Said out loud: the level applies to the next message, not to the one on
+    // screen, and a setting that changed nothing visible would look broken.
+    createSystemMessage(
+      data.thinking_override
+        ? "Thinking: " + data.thinking + " for the rest of this session."
+        : "Thinking follows the agent's configuration (" + data.thinking + ").");
+  } catch (e) {
+    createSystemMessage("Thinking could not be set: " + e.message);
+  }
+}
+
+// A change is the whole interaction: the level is a choice, not a step to repeat.
+thinkingSelect.addEventListener("change", () => setThinkingLevel(thinkingSelect.value));
 
 let ws = null;
 let isStreaming = false;
@@ -389,6 +428,9 @@ function setSendButtonState(streaming) {
   isStreaming = streaming;
   sendBtn.textContent = streaming ? "Stop" : "Send";
   sendBtn.disabled = false;
+  // The level applies to the next message, so it is locked while one is in flight
+  // rather than left changeable into something that would not have applied.
+  thinkingSelect.disabled = streaming;
 }
 
 // The store is the authority on how long the chain is, so the next turn number
@@ -521,6 +563,12 @@ async function loadSession() {
     const data = await res.json();
     if (data.ok) {
       setBackendLabel(data.backend_type, data.backend_model);
+      // Offered only where a level lands: a backend that ignores one shows nothing
+      // rather than a control that would do nothing.
+      thinkingSelect.hidden = !data.supports_thinking_level;
+      if (data.supports_thinking_level) {
+        renderThinkingControl(data.thinking || "default", data.thinking_override || null);
+      }
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
       }

@@ -174,13 +174,12 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   REQUIRE(result.tool_calls[0].name == "exec");
 }
 
-TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinking=false",
-          "[openai]") {
+TEST_CASE("OpenAIProvider disables thinking with the marker the none level sends", "[openai]") {
   OpenAIProvider::Config config;
   config.model = "deepseek-reasoner";
   config.host = "https://api.deepseek.com/v1";
   config.api_key = "test-key";
-  config.enable_thinking = false;
+  config.thinking = ThinkingLevel::kNone;
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
@@ -194,12 +193,12 @@ TEST_CASE("OpenAIProvider adds extra_body to disable thinking when enable_thinki
   REQUIRE(body.at("extra_body").at("thinking").at("type") == "disabled");
 }
 
-TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]") {
+TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[openai]") {
   OpenAIProvider::Config config;
   config.model = "deepseek-reasoner";
   config.host = "https://api.deepseek.com/v1";
   config.api_key = "test-key";
-  config.enable_thinking = true;
+  config.thinking = ThinkingLevel::kServerDefault;
 
   auto mock_http = std::make_unique<MockHttpClient>();
   auto* mock_ptr = mock_http.get();
@@ -208,21 +207,40 @@ TEST_CASE("OpenAIProvider omits extra_body when enable_thinking=true", "[openai]
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
+  // "On" used to send nothing at all, and the absent level keeps that meaning.
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE_FALSE(json::HasKey(body, "extra_body"));
+  REQUIRE_FALSE(json::HasKey(body, "reasoning_effort"));
 }
 
-TEST_CASE("OpenAIProvider IsThinkingMode reflects enable_thinking", "[openai]") {
+TEST_CASE("OpenAIProvider carries a thinking level whatever the level is", "[openai]") {
   OpenAIProvider::Config config;
-  config.enable_thinking = true;
   auto mock_http = std::make_unique<MockHttpClient>();
-  OpenAIProvider thinking(config, std::move(mock_http));
-  REQUIRE(thinking.IsThinkingMode() == true);
+  OpenAIProvider provider(config, std::move(mock_http));
+  // The level decides what is sent, not whether a caller may offer the setting.
+  REQUIRE(provider.SupportsThinkingLevel() == true);
+}
 
-  config.enable_thinking = false;
-  mock_http = std::make_unique<MockHttpClient>();
-  OpenAIProvider nothinking(config, std::move(mock_http));
-  REQUIRE(nothinking.IsThinkingMode() == false);
+TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") {
+  for (const ThinkingLevel level :
+       {ThinkingLevel::kLow, ThinkingLevel::kMedium, ThinkingLevel::kHigh}) {
+    OpenAIProvider::Config config;
+    config.model = "o4-mini";
+    config.host = "https://api.openai.com/v1";
+    config.api_key = "test-key";
+    config.thinking = level;
+
+    auto mock_http = std::make_unique<MockHttpClient>();
+    auto* mock_ptr = mock_http.get();
+    OpenAIProvider provider(config, std::move(mock_http));
+
+    std::vector<ChatMessage> history = {{1, "now", "user", "think hard"}};
+    provider.Chat(history, {});
+
+    auto body = boost::json::parse(mock_ptr->last_body);
+    REQUIRE(body.at("reasoning_effort") == ThinkingLevelName(level));
+    REQUIRE_FALSE(json::HasKey(body, "extra_body"));
+  }
 }
 
 TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]") {

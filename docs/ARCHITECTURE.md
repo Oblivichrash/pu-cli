@@ -253,7 +253,8 @@ and compatible gateways.
 | Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
 | Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
 | Token cap | not sent | `max_tokens` |
-| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` when `enable_thinking` is false |
+| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` for the `none` level |
+| Thinking level | not sent; the model decides for itself | `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
 | Reasoning on request | never sent | sent on assistant messages when non-empty |

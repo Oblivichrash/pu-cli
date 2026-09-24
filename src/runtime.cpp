@@ -193,7 +193,7 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   return current_session_;
 }
 
-config::BackendConfig Runtime::CurrentBackend() const {
+config::BackendConfig Runtime::ConfiguredBackend() const {
   if (!agent_manager_) throw Error("Runtime is not initialized");
 
   if (current_session_) {
@@ -208,6 +208,34 @@ config::BackendConfig Runtime::CurrentBackend() const {
   const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
   if (agent == nullptr) throw Error("Active agent is not configured");
   return agent->backend;
+}
+
+config::BackendConfig Runtime::CurrentBackend() const {
+  config::BackendConfig backend = ConfiguredBackend();
+  if (current_session_) {
+    const auto& spec = current_session_->GetRuntimeSpec();
+    if (spec.thinking_override) backend.thinking = *spec.thinking_override;
+  }
+  return backend;
+}
+
+ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
+
+std::optional<ThinkingLevel> Runtime::GetThinkingOverride() const {
+  if (!current_session_) return std::nullopt;
+  return current_session_->GetRuntimeSpec().thinking_override;
+}
+
+bool Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
+  if (!SupportsThinkingLevel()) return false;
+  GetOrCreateDefaultSession()->GetRuntimeSpec().thinking_override = level;
+  SaveCurrentSession();
+  return true;
+}
+
+bool Runtime::SupportsThinkingLevel() const {
+  if (!current_session_) return false;
+  return current_session_->CreateProvider(CurrentBackend())->SupportsThinkingLevel();
 }
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,

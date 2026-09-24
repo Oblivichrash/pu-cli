@@ -73,9 +73,14 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
       {"max_tokens", config_.max_tokens},
   };
 
-  if (!config_.enable_thinking) {
+  // The three ways a level reaches a backend: `none` is the marker this provider
+  // already sent, the named levels are OpenAI's own `reasoning_effort`, and the
+  // absent setting sends neither so the backend decides.
+  if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};
     req.as_object()["extra_body"] = extra_body;
+  } else if (config_.thinking != ThinkingLevel::kServerDefault) {
+    req.as_object()["reasoning_effort"] = ThinkingLevelName(config_.thinking);
   }
 
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);

@@ -61,7 +61,7 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
-  cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
+  cfg.thinking = ReadThinkingLevel(j);
   return cfg;
 }
 
@@ -176,7 +176,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
       openai_cfg.host = cfg.host;
       openai_cfg.api_key = cfg.api_key.value_or("");
       openai_cfg.max_tokens = cfg.max_tokens;
-      openai_cfg.enable_thinking = cfg.enable_thinking;
+      openai_cfg.thinking = cfg.thinking;
       return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
     }
     default:

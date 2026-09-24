@@ -169,6 +169,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
+| `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
 
 All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
@@ -184,6 +185,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
 | `/rewind <turn>` | Step back to before a turn; the next message replaces it |
+| `/thinking [level]` | Show or set this session's thinking level (`auto` follows the agent's configuration) |
 | `/exit`, `/quit` | Exit |
 
 These are chat commands. The Web server is a CLI subcommand (`pu serve`),
@@ -273,7 +275,7 @@ Windows).
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
 | `max_tokens` | `2048` | Sent by the OpenAI-compatible path only |
-| `enable_thinking` | `true` | OpenAI-compatible path only |
+| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default` (send nothing and let the backend decide); OpenAI-compatible path only |
 | `system_prompt` | unset | Agent-specific system prompt, merged with the injected context |
 
 `host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
@@ -332,9 +334,17 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 
 ### Thinking Mode
 
-`enable_thinking` applies to the OpenAI-compatible backend only: `false` sends
-`thinking.type = "disabled"`, so a model that would otherwise reason answers
-directly.
+`thinking` applies to the OpenAI-compatible backend only, and it is a level rather
+than a switch: `none` sends `thinking.type = "disabled"` so a model that would
+otherwise reason answers directly, `low`/`medium`/`high` are sent as
+`reasoning_effort`, and `default` sends neither, which leaves the choice to the
+backend. A file written before the level existed keeps its meaning:
+`enable_thinking: false` reads as `none`, and `enable_thinking: true` as `default`.
+
+The level can also be set for one session without editing this file: `/thinking
+<level>` in the CLI, or the control beside the composer in the Web UI, and either
+is remembered with the session. A backend that does not carry a level — Ollama,
+where the model decides for itself — says so, and no control is offered.
 
 ```json
 "backend": {
@@ -342,7 +352,7 @@ directly.
   "host": "https://api.deepseek.com/v1",
   "model": "deepseek-reasoner",
   "api_key": "${DEEPSEEK_API_KEY}",
-  "enable_thinking": true
+  "thinking": "high"
 }
 ```
 

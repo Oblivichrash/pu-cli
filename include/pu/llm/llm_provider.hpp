@@ -9,8 +9,61 @@
 #include <boost/json.hpp>
 
 #include "pu/core/base.hpp"
+#include "pu/core/json.hpp"
 
 namespace pu {
+
+// How much reasoning a backend should spend on an answer. The words are the ones
+// OpenAI uses; `kServerDefault` is the absent setting, which is what "on" meant
+// before there was a level, and `kNone` is the switch it replaced.
+enum class ThinkingLevel {
+  kServerDefault,
+  kNone,
+  kLow,
+  kMedium,
+  kHigh,
+};
+
+// The word a level travels as, in the configuration file and on the wire.
+inline const char* ThinkingLevelName(ThinkingLevel level) {
+  switch (level) {
+    case ThinkingLevel::kNone:
+      return "none";
+    case ThinkingLevel::kLow:
+      return "low";
+    case ThinkingLevel::kMedium:
+      return "medium";
+    case ThinkingLevel::kHigh:
+      return "high";
+    case ThinkingLevel::kServerDefault:
+      break;
+  }
+  return "default";
+}
+
+// An unrecognised word reads as the absent setting, the way an unrecognised stored
+// value reads as the one the store defaults to.
+inline ThinkingLevel ParseThinkingLevel(const std::string& name) {
+  if (name == "none") return ThinkingLevel::kNone;
+  if (name == "low") return ThinkingLevel::kLow;
+  if (name == "medium") return ThinkingLevel::kMedium;
+  if (name == "high") return ThinkingLevel::kHigh;
+  return ThinkingLevel::kServerDefault;
+}
+
+// Reads the field as a level, accepting the boolean it replaced so that a file
+// written before it keeps meaning what it meant: `false` was the only level that
+// switch could name, and `true` was the absent setting.
+inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
+  if (json::HasKey(j, "thinking") && j.at("thinking").is_string()) {
+    return ParseThinkingLevel(boost::json::value_to<std::string>(j.at("thinking")));
+  }
+  if (json::HasKey(j, "enable_thinking") && j.at("enable_thinking").is_bool()) {
+    return boost::json::value_to<bool>(j.at("enable_thinking")) ? ThinkingLevel::kServerDefault
+                                                                : ThinkingLevel::kNone;
+  }
+  return ThinkingLevel::kServerDefault;
+}
 
 // FROZEN: a compatibility view rendered from MessageNode; see ARCHITECTURE.md, Data Flow.
 struct ChatMessage {
@@ -90,7 +143,9 @@ class LLMProvider {
                           std::function<void(const std::string&)> reasoning_callback = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
-  virtual bool IsThinkingMode() const { return false; }
+  // Whether a thinking level reaches this backend at all, so a caller offers the
+  // setting only where it lands.
+  virtual bool SupportsThinkingLevel() const { return false; }
 };
 
 }  // namespace pu

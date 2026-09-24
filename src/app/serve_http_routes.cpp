@@ -96,6 +96,11 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
           backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
       jv.as_object()["backend_model"] = backend.model;
       jv.as_object()["backend_host"] = backend.host;
+      jv.as_object()["thinking"] = ThinkingLevelName(backend.thinking);
+      jv.as_object()["supports_thinking_level"] = runtime.SupportsThinkingLevel();
+      if (const auto override_level = runtime.GetThinkingOverride()) {
+        jv.as_object()["thinking_override"] = ThinkingLevelName(*override_level);
+      }
     } else {
       jv.as_object()["error"] = "No active session";
     }
@@ -285,6 +290,44 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
   SendJson(res, 200, jv);
 }
 
+void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
+                       http::request<http::string_body>&& req,
+                       http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    const std::string level =
+        json::ValueOrDefault<std::string>(boost::json::parse(req.body()), "level", "");
+
+    // `auto` is the only word that clears the session's own level, so a word the
+    // parser does not know is refused rather than read as some default.
+    if (level != "auto" && level != "default" &&
+        ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
+      SendJson(res, 400,
+               boost::json::object{{"success", false}, {"error", "Unknown thinking level"}});
+      return;
+    }
+
+    const bool accepted = runtime.SetThinkingLevel(
+        level == "auto" ? std::nullopt : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
+    if (!accepted) {
+      SendJson(res, 400,
+               boost::json::object{{"success", false},
+                                   {"error", "This backend does not carry a thinking level"}});
+      return;
+    }
+    jv.as_object()["success"] = true;
+    jv.as_object()["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
+    if (const auto override_level = runtime.GetThinkingOverride()) {
+      jv.as_object()["thinking_override"] = ThinkingLevelName(*override_level);
+    }
+  } catch (const std::exception& e) {
+    jv.as_object()["success"] = false;
+    jv.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, jv);
+}
+
 }  // namespace
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
@@ -319,6 +362,10 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   }
   if (target == "/api/rewind" && req.method() == http::verb::post) {
     HandleApiRewind(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/thinking" && req.method() == http::verb::post) {
+    HandleApiThinking(runtime, io_mutex, std::move(req), res);
     return;
   }
   if (target == "/api/workspaces" && req.method() == http::verb::get) {

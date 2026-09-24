@@ -199,14 +199,15 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   REQUIRE(sent.at("function").at("arguments").at("path") == ".");
 }
 
-TEST_CASE("OllamaProvider IsThinkingMode returns false", "[ollama]") {
+TEST_CASE("OllamaProvider does not claim to carry a thinking level", "[ollama]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
   auto mock_http = std::make_unique<MockHttpClient>();
   OllamaProvider provider(std::move(config), std::move(mock_http));
-  REQUIRE(provider.IsThinkingMode() == false);
+  // A model decides this for itself here, so a caller offers no control.
+  REQUIRE(provider.SupportsThinkingLevel() == false);
 }
 
 TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]") {

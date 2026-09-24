@@ -199,7 +199,8 @@ class FakeBackend {
   std::atomic<bool> stop_requested_{false};
 };
 
-std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
+std::string WriteAgentsFile(const fs::path& dir, int backend_port,
+                            const std::string& backend_type = "ollama") {
   fs::create_directories(dir / ".pu");
   fs::path path = dir / ".pu" / "agents.json";
 
@@ -210,7 +211,7 @@ std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
            {"name", "chat"},
            {"description", "Chat agent"},
            {"backend",
-            {{"type", "ollama"},
+            {{"type", backend_type},
              {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
              {"model", "test-model"}}},
            {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}}}}};
@@ -268,7 +269,9 @@ class TestHttpClient {
 
 class ServeHarness {
  public:
-  ServeHarness() {
+  // The backend type decides what a client may do, so a test that needs a control
+  // the default does not carry asks for a backend that carries it.
+  explicit ServeHarness(const std::string& backend_type = "ollama") {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -279,7 +282,7 @@ class ServeHarness {
     data_env_ = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", home_.string());
 
     backend_ = std::make_unique<FakeBackend>();
-    WriteAgentsFile(home_, backend_->Port());
+    WriteAgentsFile(home_, backend_->Port(), backend_type);
 
     port_ = FindFreePort();
     REQUIRE(port_ > 0);
@@ -376,6 +379,47 @@ TEST_CASE("serve API /api/clear", "[serve][api]") {
   auto history_j = ParseJson(history_body);
   REQUIRE(history_j.is_array());
   REQUIRE(history_j.as_array().empty());
+}
+
+TEST_CASE("serve API /api/thinking", "[serve][api]") {
+  // An OpenAI-compatible backend is where a level lands, so this is where the
+  // control has something to set.
+  ServeHarness harness("openai");
+  auto client = harness.Client();
+
+  auto session_j = ParseJson(client.Get("/api/session"));
+  REQUIRE(session_j.at("thinking") == "default");
+  REQUIRE(session_j.at("supports_thinking_level") == true);
+
+  auto set_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
+  REQUIRE(set_j.at("success") == true);
+  // The session's own level is what the next request carries, and the session
+  // reports it as its own rather than as the configuration's.
+  REQUIRE(set_j.at("thinking") == "high");
+  REQUIRE(set_j.at("thinking_override") == "high");
+
+  auto after_j = ParseJson(client.Get("/api/session"));
+  REQUIRE(after_j.at("thinking") == "high");
+  REQUIRE(after_j.at("thinking_override") == "high");
+
+  // `auto` hands the choice back to the agent's configuration.
+  auto auto_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "auto"}}));
+  REQUIRE(auto_j.at("success") == true);
+  REQUIRE(auto_j.at("thinking") == "default");
+  REQUIRE_FALSE(auto_j.as_object().count("thinking_override") == 1);
+}
+
+TEST_CASE("serve API /api/thinking refuses what the backend cannot carry", "[serve][api]") {
+  ServeHarness harness;  // ollama, where the model decides for itself
+  auto client = harness.Client();
+
+  auto refused_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
+  REQUIRE(refused_j.at("success") == false);
+
+  // A word that names no level is refused rather than read as some default.
+  auto unknown_j =
+      ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "enormous"}}));
+  REQUIRE(unknown_j.at("success") == false);
 }
 
 TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {

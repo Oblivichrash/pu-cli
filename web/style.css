@@ -38,7 +38,10 @@ header h1 {
   letter-spacing: 4px;
   color: var(--ink-light);
 }
-#agent-select {
+/* The controls that describe the session sit together: which agent, and how much
+   reasoning it is asked for. */
+#agent-select,
+#thinking-select {
   background: transparent;
   color: var(--ink);
   border: 1px solid var(--border);

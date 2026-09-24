@@ -21,7 +21,7 @@ class OpenAIProvider : public LLMProvider {
     float temperature = 0.7f;
     std::string api_key;
     int max_tokens = 2048;
-    bool enable_thinking = true;  // for DeepSeek/vLLM
+    ThinkingLevel thinking = ThinkingLevel::kServerDefault;
   };
 
   explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
@@ -33,7 +33,7 @@ class OpenAIProvider : public LLMProvider {
                   std::function<void(const std::string&)> reasoning_callback = nullptr) override;
 
   bool SupportsTools() const override { return true; }
-  bool IsThinkingMode() const override { return config_.enable_thinking; }
+  bool SupportsThinkingLevel() const override { return true; }
 
  private:
   // A request without tools omits the block rather than carrying an empty one.

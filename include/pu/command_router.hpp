@@ -47,6 +47,7 @@ class CommandRouter {
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleRewind(const std::vector<std::string>& args, Session& session, std::string& output);
+  bool HandleThinking(const std::vector<std::string>& args, Session& session, std::string& output);
 
   AgentManager& manager_;
   Runtime& runtime_;

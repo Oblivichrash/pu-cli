@@ -53,10 +53,28 @@ class Runtime {
   void ClearConversation();
 
   // The backend the active session talks to: the session's override when it has
-  // one, otherwise the agent's entry in agents.json.
+  // one, otherwise the agent's entry in agents.json, with the thinking level the
+  // session asked for applied on top.
   config::BackendConfig CurrentBackend() const;
 
+  // What this session asks for, which is what a caller displays: the session's
+  // override when it has one, the agent's configuration otherwise.
+  ThinkingLevel CurrentThinkingLevel() const;
+  // Whether the active backend carries a level at all, so a caller offers the
+  // setting only where it lands.
+  bool SupportsThinkingLevel() const;
+  // Absent means the session follows the agent's configuration rather than a level
+  // of its own.
+  std::optional<ThinkingLevel> GetThinkingOverride() const;
+  // Sets or clears the session's level and persists it, the way the other session
+  // changes are persisted: a caller that changed the session is not one that can
+  // be relied on to remember it. Answers false, changing nothing, when the active
+  // backend does not carry a level, so both front ends refuse the same way.
+  bool SetThinkingLevel(std::optional<ThinkingLevel> level);
+
  private:
+  // The backend as configured, before anything this session asked for is applied.
+  config::BackendConfig ConfiguredBackend() const;
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void ShutdownMCP();

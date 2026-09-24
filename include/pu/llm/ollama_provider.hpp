@@ -31,7 +31,7 @@ class OllamaProvider : public LLMProvider {
                   std::function<void(const std::string&)> reasoning_callback = nullptr) override;
 
   bool SupportsTools() const override { return true; }
-  bool IsThinkingMode() const override { return false; }
+  bool SupportsThinkingLevel() const override { return false; }
 
  private:
   // A request without tools omits the block rather than carrying an empty one.
