@@ -169,6 +169,17 @@ void Runtime::SaveCurrentSession() {
   }
 }
 
+bool Runtime::RewindBefore(size_t turn) {
+  if (!GetOrCreateDefaultSession()->GetWorkspace().RewindBefore(turn)) return false;
+  SaveCurrentSession();
+  return true;
+}
+
+void Runtime::ClearConversation() {
+  GetOrCreateDefaultSession()->GetWorkspace().ClearHistory();
+  SaveCurrentSession();
+}
+
 std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   if (current_session_) return current_session_;
 
@@ -346,7 +357,11 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
       current_session_->SetAgent(new_agent.name);
     } catch (const std::exception& e) {
       spdlog::warn("Failed to sync session config: {}", e.what());
+      return;
     }
+    // Which agent a session resumes is session state, so it reaches the file the
+    // way every other change to it does.
+    SaveCurrentSession();
   }
 }
 
