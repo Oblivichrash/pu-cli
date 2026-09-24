@@ -132,18 +132,16 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  llm::StreamingJsonParser parser(
-      [&](std::string_view line) {
-        try {
-          auto j = boost::json::parse(line);
-          HandleJsonToken(j, content_callback);
-        } catch (const boost::system::system_error& e) {
-          // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-          spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-        } catch (const std::exception&) {
-        }
-      },
-      [](const std::string& msg) { throw HttpError("Streaming error: " + msg); });
+  llm::StreamingJsonParser parser([&](std::string_view line) {
+    try {
+      auto j = boost::json::parse(line);
+      HandleJsonToken(j, content_callback);
+    } catch (const boost::system::system_error& e) {
+      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+    } catch (const std::exception&) {
+    }
+  });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);

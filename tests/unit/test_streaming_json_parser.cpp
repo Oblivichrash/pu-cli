@@ -9,8 +9,7 @@ using namespace pu::llm;
 
 TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
   std::vector<std::string> lines;
-  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); },
-                                    [](const std::string&) {});
+  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
 
   const char* input = "line1\nline2\nline3\n";
   parser.Feed(input, 18);
@@ -22,8 +21,7 @@ TEST_CASE("StreamingJsonParser splits complete lines", "[streaming_parser]") {
 
 TEST_CASE("StreamingJsonParser handles \\r\\n", "[streaming_parser]") {
   std::vector<std::string> lines;
-  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); },
-                                    [](const std::string&) {});
+  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
 
   parser.Feed("hello\r\nworld\r\n", 14);
   REQUIRE(lines.size() == 2);
@@ -33,8 +31,7 @@ TEST_CASE("StreamingJsonParser handles \\r\\n", "[streaming_parser]") {
 
 TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") {
   std::vector<std::string> lines;
-  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); },
-                                    [](const std::string&) {});
+  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
 
   const char* part1 = "{\"val\":\"\xE2\x82";
   const char* part2 = "\xAC\"}\n";
@@ -49,8 +46,7 @@ TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") 
 
 TEST_CASE("StreamingJsonParser skips empty lines", "[streaming_parser]") {
   std::vector<std::string> lines;
-  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); },
-                                    [](const std::string&) {});
+  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
 
   parser.Feed("\n\nhello\n\n", 9);
   REQUIRE(lines.size() == 1);

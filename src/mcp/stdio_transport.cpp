@@ -202,7 +202,7 @@ bool StdioTransport::Start(MessageCallback on_message) {
   running_ = true;
 
   auto* ctx = new ReaderContext{stdout_read_, &running_, on_message_};
-  reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, ctx, 0, &reader_thread_id_);
+  reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, ctx, 0, nullptr);
   if (reader_thread_handle_ == INVALID_HANDLE_VALUE || !reader_thread_handle_) {
     spdlog::error("CreateThread for reader failed: {}", GetLastError());
     delete ctx;

@@ -3,8 +3,7 @@
 
 namespace pu::llm {
 
-StreamingJsonParser::StreamingJsonParser(LineCallback on_line, ErrorCallback on_error)
-    : on_line_(std::move(on_line)), on_error_(std::move(on_error)) {}
+StreamingJsonParser::StreamingJsonParser(LineCallback on_line) : on_line_(std::move(on_line)) {}
 
 void StreamingJsonParser::Feed(const char* data, size_t len) {
   buffer_.append(data, len);

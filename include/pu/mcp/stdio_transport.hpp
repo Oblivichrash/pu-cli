@@ -44,7 +44,6 @@ class StdioTransport : public Transport {
   HANDLE stderr_read_ = INVALID_HANDLE_VALUE;
   HANDLE process_handle_ = INVALID_HANDLE_VALUE;
   HANDLE reader_thread_handle_ = INVALID_HANDLE_VALUE;
-  DWORD reader_thread_id_ = 0;
 #else
   int stdin_fd_ = -1;
   int stdout_fd_ = -1;

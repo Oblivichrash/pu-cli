@@ -160,29 +160,27 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
-  llm::StreamingJsonParser parser(
-      [&](std::string_view line) {
-        constexpr std::string_view kDataPrefix = "data: ";
-        auto start = line.find_first_not_of(" \t");
-        if (start == std::string_view::npos) return;
-        std::string_view trimmed = line.substr(start);
-        if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
-        std::string_view data = trimmed.substr(kDataPrefix.size());
-        if (data == "[DONE]") {
-          boost::json::value done_obj = {{"done", true}};
-          HandleJsonToken(done_obj, content_callback);
-          return;
-        }
-        try {
-          auto j = boost::json::parse(data);
-          HandleJsonToken(j, content_callback);
-        } catch (const boost::system::system_error& e) {
-          // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-          spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-        } catch (const std::exception&) {
-        }
-      },
-      [](const std::string& msg) { throw HttpError("OpenAI streaming error: " + msg); });
+  llm::StreamingJsonParser parser([&](std::string_view line) {
+    constexpr std::string_view kDataPrefix = "data: ";
+    auto start = line.find_first_not_of(" \t");
+    if (start == std::string_view::npos) return;
+    std::string_view trimmed = line.substr(start);
+    if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
+    std::string_view data = trimmed.substr(kDataPrefix.size());
+    if (data == "[DONE]") {
+      boost::json::value done_obj = {{"done", true}};
+      HandleJsonToken(done_obj, content_callback);
+      return;
+    }
+    try {
+      auto j = boost::json::parse(data);
+      HandleJsonToken(j, content_callback);
+    } catch (const boost::system::system_error& e) {
+      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+    } catch (const std::exception&) {
+    }
+  });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
