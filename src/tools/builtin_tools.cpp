@@ -239,43 +239,4 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   return tools::MakeToolResultJson(true, summary, "", "", 0);
 }
 
-std::string AskUserTool::Name() const { return "ask_user"; }
-
-std::string AskUserTool::Description() const { return "Ask user for clarification."; }
-
-boost::json::value AskUserTool::ParametersSchema() const {
-  return boost::json::object{
-      {"type", "object"},
-      {"properties",
-       boost::json::object{
-           {"question",
-            boost::json::object{
-                {"type", "string"},
-                {"description", "The question to ask"},
-            }},
-       }},
-      {"required", boost::json::array{"question"}},
-  };
-}
-
-std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
-  (void)ctx;
-  // The tool loop answers this call by ending the turn with the question, so
-  // this result is only read if that interception ever stops happening. It is an
-  // error rather than an answer, so a lost interception shows up as a failure
-  // instead of a silent one.
-  boost::json::value result = {
-      {"success", false},
-      {"error", "clarification_needed"},
-  };
-
-  std::string question;
-  if (args.is_object() && json::HasKey(args, "question")) {
-    question = boost::json::value_to<std::string>(args.at("question"));
-  }
-  result.as_object()["question"] = question;
-
-  return boost::json::serialize(result);
-}
-
 }  // namespace pu::tools

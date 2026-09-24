@@ -192,7 +192,6 @@ Built-in tools:
 |------|-------------|
 | `execute_bash` | Run a shell command in the sandbox, subject to the security policy |
 | `write_file` | Write a file in the sandbox |
-| `ask_user` | Ask the user a question; the tool loop closes the turn with the question as the reply |
 
 - MCP tools are exposed with a `mcp.<server>.<tool>` prefix.
 

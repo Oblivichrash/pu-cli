@@ -118,8 +118,7 @@ std::string Executor::BuildStaticSystemContext() const {
          "stating the plan.\n";
   oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n "
          "'10,30p') instead of full cat dumps.\n";
-  oss << "3. If you need more information from the user, call ask_user and stop. Do not guess.\n";
-  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
+  oss << "3. Use parallel tool calls when possible to minimize round trips.\n";
 
   return oss.str();
 }
@@ -240,15 +239,6 @@ Executor::ToolLoopResult Executor::RunToolLoop(
       // it, and appending it would grow the conversation every time a request is
       // refused, which for an over-length request makes the next one worse.
       break;
-    }
-
-    for (const auto& call : chat_result.tool_calls) {
-      if (call.name == "ask_user") {
-        result.final_response = json::ValueOrDefault<std::string>(call.arguments, "question", "");
-        result.completed = true;
-        result.was_streamed = false;
-        return result;
-      }
     }
 
     for (auto& tc : chat_result.tool_calls) {

@@ -306,7 +306,6 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
-  toolbox_->RegisterTool(std::make_unique<tools::AskUserTool>());
 }
 
 void Runtime::RebuildToolbox(const config::AgentEntry& agent) {

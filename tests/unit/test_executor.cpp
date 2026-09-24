@@ -131,7 +131,6 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
   REQUIRE(msg.find("step-by-step plan") != std::string::npos);
   REQUIRE(msg.find("head -n 50") != std::string::npos);
-  REQUIRE(msg.find("ask_user") != std::string::npos);
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
@@ -225,34 +224,6 @@ class TrackingTool : public Tool {
 };
 
 }  // namespace
-
-TEST_CASE("Executor returns ask_user question without running other tools",
-          "[executor][tool_loop]") {
-  Toolbox toolbox;
-  toolbox.RegisterTool(std::make_unique<tools::AskUserTool>());
-  auto tracking = std::make_unique<TrackingTool>();
-  auto* tracking_ptr = tracking.get();
-  toolbox.RegisterTool(std::move(tracking));
-
-  Executor executor(&toolbox);
-  config::SecurityPolicy policy;
-  policy.sandbox_root = ".";
-  executor.SetSecurityPolicy(policy);
-
-  ToolCall call;
-  call.id = "call_ask_1";
-  call.name = "ask_user";
-  call.arguments = boost::json::value{{"question", "Should I overwrite the existing file?"}};
-
-  MockLLM mock({call}, "thinking out loud");
-  Workspace ws;
-  ExecutionResult result = executor.Execute("help me", ws, &mock);
-
-  REQUIRE(result.content == "Should I overwrite the existing file?");
-  REQUIRE(result.was_streamed == false);
-  REQUIRE(result.has_error == false);
-  REQUIRE(tracking_ptr->executions == 0);
-}
 
 TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
           "[executor][tool_loop][tool_callbacks]") {
