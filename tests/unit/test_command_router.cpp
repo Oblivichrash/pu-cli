@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <string>
 
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -45,7 +45,7 @@ struct RouterFixture {
     coder.description = "Coding agent";
     manager.LoadAgentConfigs({chat, coder});
     manager.SetActiveAgent("chat");
-    session.SwitchAgent("chat");
+    session.SetAgent("chat");
   }
 
   bool Route(const std::string& input, std::string& output) {
@@ -72,8 +72,7 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(output.find("coder") != std::string::npos);
 }
 
-TEST_CASE("CommandRouter handles /exit and /quit outside the registry",
-          "[router]") {
+TEST_CASE("CommandRouter handles /exit and /quit outside the registry", "[router]") {
   RouterFixture f;
   std::string output;
 

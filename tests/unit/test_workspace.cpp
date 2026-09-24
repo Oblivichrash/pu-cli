@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include "pu/session/workspace.hpp"
-#include "pu/session/memory.hpp"
+#include "pu/core/text.hpp"
+#include "pu/session/session.hpp"
 #include <boost/json.hpp>
 
 using namespace pu;
@@ -15,101 +15,53 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   auto history = ctx.GetHistory();
   REQUIRE(history.size() == 2);
   REQUIRE(history[1].role == "assistant");
-
-  ctx.SetVar("foo", boost::json::value("bar"));
-  auto val = ctx.GetVar("foo");
-  REQUIRE(val.has_value());
-  REQUIRE(boost::json::value_to<std::string>(*val) == "bar");
-}
-TEST_CASE("Artifact operations", "[workspace]") {
-  Workspace ctx;
-  Artifact f;
-  f.type = Artifact::Type::kFilePath;
-  f.content = "/tmp/data.csv";
-  f.source = "user_input";
-  ctx.AddArtifact(f);
-  REQUIRE(ctx.GetArtifacts().size() == 1);
 }
 
-TEST_CASE("Transcript::Compact with defaults trims nothing under threshold", "[workspace]") {
-  Transcript t;
-  for (int i = 1; i <= 20; ++i) {
-    ChatMessage msg;
-    msg.id = i;
-    msg.role = "user";
-    msg.content = "msg" + std::to_string(i);
-    t.Append(msg);
-  }
-  REQUIRE(t.Size() == 20);
-  t.Compact();  // defaults: keep_head=10, keep_tail=50; 20 <= 60 → no-op
-  REQUIRE(t.Size() == 20);
-}
-
-TEST_CASE("Transcript::Compact parameterized keeps head, summary, and tail", "[workspace]") {
-  Transcript t;
-  for (int i = 1; i <= 20; ++i) {
-    ChatMessage msg;
-    msg.id = i;
-    msg.role = "user";
-    msg.content = "msg" + std::to_string(i);
-    t.Append(msg);
-  }
-  t.Compact(2, 3);
-  auto h = t.GetHistory();
-  REQUIRE(h.size() == 6);            // 2 head + 1 summary + 3 tail
-  REQUIRE(h[0].content == "msg1");
-  REQUIRE(h[1].content == "msg2");
-  REQUIRE(h[2].role == "system");    // summary marker
-  REQUIRE(h[3].content == "msg18");
-  REQUIRE(h[4].content == "msg19");
-  REQUIRE(h[5].content == "msg20");
-}
-
-TEST_CASE("Transcript::Compact preserves tool-call pairing", "[workspace]") {
-  Transcript t;
-  for (int i = 1; i <= 10; ++i) {
-    ChatMessage msg;
-    msg.id = i;
-    msg.role = "user";
-    msg.content = "u" + std::to_string(i);
-    t.Append(msg);
-  }
-  ChatMessage asst;
-  asst.id = 11;
-  asst.role = "assistant";
-  asst.tool_calls = boost::json::parse(
-      R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])");
-  t.Append(asst);
-  ChatMessage tool;
-  tool.id = 12;
-  tool.role = "tool";
-  tool.tool_call_id = "call_1";
-  t.Append(tool);
-
-  // keep_head=6 places the assistant tool-call message inside the trimmed region,
-  // so the pairing guard must pull both it and its tool response into the tail.
-  t.Compact(6, 2);
-  auto h = t.GetHistory();
-  bool found_asst = false;
-  bool found_tool = false;
-  for (const auto& m : h) {
-    if (m.role == "assistant" && m.HasToolCalls()) found_asst = true;
-    if (m.role == "tool" && m.tool_call_id == "call_1") found_tool = true;
-  }
-  REQUIRE(found_asst);
-  REQUIRE(found_tool);
-}
-
-TEST_CASE("Workspace::Compact forwards keep_head/keep_tail", "[workspace]") {
+TEST_CASE("Workspace serialization round-trips", "[transcript]") {
   Workspace ws;
-  for (int i = 1; i <= 20; ++i) {
-    ws.Append("user", "msg" + std::to_string(i));
-  }
-  ws.Compact(2, 3);
-  auto h = ws.GetHistory();
-  REQUIRE(h.size() == 6);
-  REQUIRE(h[0].content == "msg1");
-  REQUIRE(h[5].content == "msg20");
+  ws.Append("user", "hello");
+
+  const boost::json::value saved = ws.Serialize();
+  auto restored = Workspace::Deserialize(saved);
+
+  REQUIRE(restored->HistorySize() == 1);
+}
+
+TEST_CASE("Session serialization round-trips", "[transcript]") {
+  Session session;
+  config::BackendConfig backend;
+  backend.type = config::BackendType::kOllama;
+  backend.host = "http://127.0.0.1:11434";
+  backend.model = "llama3.2:1b";
+  backend.temperature = 0.7f;
+  session.SetAgent("chat");
+  session.SetBackendOverride(backend);
+  session.GetWorkspace().Append("user", "hello");
+
+  const boost::json::value saved = session.Serialize();
+  const std::string written = json::PrettyPrint(saved);
+  const boost::json::value reparsed = boost::json::parse(written);
+
+  auto restored = Session::Deserialize(reparsed);
+  REQUIRE(restored != nullptr);
+  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
+  REQUIRE(restored->GetWorkspace().GetHistory()[0].content == "hello");
+  REQUIRE(restored->GetRuntimeSpec().backend_override.has_value());
+  REQUIRE(restored->GetRuntimeSpec().backend_override->model == "llama3.2:1b");
+}
+
+TEST_CASE("A message holding invalid UTF-8 survives a save and load", "[transcript]") {
+  Session session;
+  // Bytes a localized library error carries: cp936 for two CJK characters,
+  // which is what a Boost.Asio failure message contains on a Chinese Windows.
+  session.GetWorkspace().Append("assistant", "Request failed: \xB2\xBB\xCA\xC7");
+
+  const std::string written = json::PrettyPrint(session.Serialize());
+  REQUIRE(text::IsValidUtf8(written));
+
+  auto restored = Session::Deserialize(boost::json::parse(written));
+  REQUIRE(restored != nullptr);
+  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
 }
 
 TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
@@ -117,11 +69,12 @@ TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
   ChatMessage asst;
   asst.id = 1;
   asst.role = "assistant";
-  asst.tool_calls = boost::json::parse(
-      R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
+  asst.tool_calls =
+      boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
   t.Append(asst);
 
-  auto restored = Transcript::Deserialize(t.Serialize());
+  auto restored = Transcript{};
+  REQUIRE(Transcript::Deserialize(t.Serialize(), restored));
   auto h = restored.GetHistory();
   REQUIRE(h.size() == 1);
   REQUIRE(h[0].HasToolCalls());
@@ -129,3 +82,90 @@ TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
   REQUIRE(restored.HasPendingToolCalls());
 }
 
+TEST_CASE("A tool result clears the pending tool call", "[transcript]") {
+  Transcript t;
+  ChatMessage asst;
+  asst.role = "assistant";
+  asst.tool_calls =
+      boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{}}}])");
+  t.Append(asst);
+  REQUIRE(t.HasPendingToolCalls());
+
+  ChatMessage tool;
+  tool.role = "tool";
+  tool.tool_name = "ls";
+  tool.tool_call_id = "call_1";
+  tool.content = "done";
+  t.Append(tool);
+
+  REQUIRE_FALSE(t.HasPendingToolCalls());
+  auto h = t.GetHistory();
+  REQUIRE(h.size() == 2);
+  REQUIRE(h[1].tool_name == "ls");
+  REQUIRE(h[1].tool_call_id == "call_1");
+}
+
+TEST_CASE("Serialization is stable across repeated round trips", "[transcript]") {
+  Transcript t;
+  ChatMessage user;
+  user.role = "user";
+  user.timestamp = "2026-09-21T10:00:00Z";
+  user.content = "hello";
+  t.Append(user);
+
+  ChatMessage asst;
+  asst.role = "assistant";
+  asst.content = "checking";
+  asst.reasoning_content = "because";
+  asst.tool_calls =
+      boost::json::parse(R"([{"id":"call_9","function":{"name":"ls","arguments":{"path":"."}}}])");
+  t.Append(asst);
+
+  ChatMessage tool;
+  tool.role = "tool";
+  tool.tool_name = "ls";
+  tool.tool_call_id = "call_9";
+  tool.content = R"({"success":true})";
+  t.Append(tool);
+
+  const std::string first = boost::json::serialize(t.Serialize());
+
+  Transcript once;
+  REQUIRE(Transcript::Deserialize(t.Serialize(), once));
+  const std::string second = boost::json::serialize(once.Serialize());
+
+  Transcript twice;
+  REQUIRE(Transcript::Deserialize(boost::json::parse(second), twice));
+  const std::string third = boost::json::serialize(twice.Serialize());
+
+  REQUIRE(second == first);
+  REQUIRE(third == first);
+
+  // Storage is an object with nodes and a leaf, not the list the old layout used.
+  const boost::json::value stored = boost::json::parse(first);
+  REQUIRE(stored.is_object());
+  REQUIRE(stored.at("nodes").as_array().size() == 3);
+  REQUIRE(stored.at("leaf").is_string());
+}
+
+TEST_CASE("Appending continues from the leaf without dropping anything", "[transcript]") {
+  Transcript t;
+  for (int i = 1; i <= 20; ++i) {
+    ChatMessage msg;
+    msg.role = "user";
+    msg.content = "msg" + std::to_string(i);
+    t.Append(msg);
+  }
+
+  ChatMessage after;
+  after.role = "user";
+  after.content = "after";
+  t.Append(after);
+
+  auto h = t.GetHistory();
+  REQUIRE(t.Size() == 21);
+  REQUIRE(h.size() == 21);
+  REQUIRE(h[0].content == "msg1");
+  REQUIRE(h[19].content == "msg20");
+  REQUIRE(h[20].content == "after");
+}

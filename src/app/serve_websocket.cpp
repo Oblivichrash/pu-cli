@@ -22,9 +22,8 @@ namespace pu::cli::detail {
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
 
-void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req,
-                         Runtime& runtime, std::mutex& io_mutex,
-                         std::shared_ptr<ActiveWebSocket> active_ws) {
+void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
+                         std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws) {
   beast::error_code ec;
 
   // Replace any previously active client: abort its in-flight request first so
@@ -63,8 +62,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       beast::error_code ec;
       active_ws->ws->read(buffer, ec);
       if (ec) {
-        if (ec != websocket::error::closed)
-          spdlog::warn("WebSocket read error: {}", ec.message());
+        if (ec != websocket::error::closed) spdlog::warn("WebSocket read error: {}", ec.message());
         active_ws->cancel_token->store(true);
         active_ws->running = false;
         break;
@@ -76,8 +74,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         jv = boost::json::parse(text);
       } catch (const std::exception& e) {
         boost::json::value error = {
-            {"type", "error"},
-            {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}};
+            {"type", "error"}, {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}};
         auto message = boost::json::serialize(error);
         beast::error_code write_ec;
         std::lock_guard<std::mutex> lock(active_ws->mtx);
@@ -85,8 +82,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
           active_ws->ws->write(net::buffer(message), write_ec);
         continue;
       }
-      if (!jv.is_object())
-        continue;
+      if (!jv.is_object()) continue;
 
       std::string type = json::ValueOrDefault<std::string>(jv, "type", "");
       if (type == "cancel") {
@@ -98,10 +94,9 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         auto token = active_ws->cancel_token;
 
         std::string payload_text = json::ValueOrDefault<std::string>(
-            json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}),
-            "text", "");
-        if (payload_text.empty())
-          continue;
+            json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}), "text",
+            "");
+        if (payload_text.empty()) continue;
 
         std::thread worker([&runtime, &io_mutex, active_ws, token, payload_text]() {
           bool is_command = false;
@@ -119,16 +114,13 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
           // Tool call lifecycle callbacks: forward start/end events so the
           // front-end can display tool invocations in real time.
           ToolCallbacks tool_cb;
-          tool_cb.on_start = [&](const std::string& id,
-                                 const std::string& name,
+          tool_cb.on_start = [&](const std::string& id, const std::string& name,
                                  const boost::json::value& args) {
-            boost::json::value frame = {
-                {"type", "tool_start"},
-                {"payload", {{"id", id}, {"name", name}, {"args", args}}}};
+            boost::json::value frame = {{"type", "tool_start"},
+                                        {"payload", {{"id", id}, {"name", name}, {"args", args}}}};
             send_frame(frame);
           };
-          tool_cb.on_end = [&](const std::string& id,
-                               const std::string& output,
+          tool_cb.on_end = [&](const std::string& id, const std::string& output,
                                const std::string& error) {
             boost::json::value frame = {
                 {"type", "tool_end"},
@@ -141,8 +133,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
             result = runtime.ProcessInput(
                 payload_text, is_command, token,
                 [&](const std::string& chunk) {
-                  if (chunk.empty())
-                    return;
+                  if (chunk.empty()) return;
                   boost::json::value ev = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
                   send_frame(ev);
                 },

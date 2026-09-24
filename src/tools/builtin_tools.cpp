@@ -26,7 +26,8 @@ bool MatchAnyPattern(const std::string& command, const std::vector<std::string>&
         if (matched) *matched = pattern;
         return true;
       }
-    } catch (const std::regex_error&) {}
+    } catch (const std::regex_error&) {
+    }
   }
   return false;
 }
@@ -46,8 +47,7 @@ struct CommandResult {
 
 class CommandExecutor {
  public:
-  explicit CommandExecutor(std::string sandbox_path)
-      : sandbox_path_(std::move(sandbox_path)) {}
+  explicit CommandExecutor(std::string sandbox_path) : sandbox_path_(std::move(sandbox_path)) {}
 
   RiskAssessment AssessRisk(const std::string& command) const {
     RiskAssessment result;
@@ -57,8 +57,8 @@ class CommandExecutor {
       result.reason = "Matches dangerous pattern: " + pattern;
       return result;
     }
-    result.level = MatchAnyPattern(command, safe_commands_) ? RiskLevel::kSafe
-                                                           : RiskLevel::kNeutral;
+    result.level =
+        MatchAnyPattern(command, safe_commands_) ? RiskLevel::kSafe : RiskLevel::kNeutral;
     return result;
   }
 
@@ -88,28 +88,22 @@ class CommandExecutor {
 };
 
 const std::vector<std::string> CommandExecutor::dangerous_patterns_ = {
-    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)",
-    R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)" };
+    R"(rm\s+-rf\s+/)", R"(sudo\b)", R"(mkfs)", R"(dd\s+if=.*of=/dev/sd)", R"(:\(\)\{ :\|:&\};:)"};
 
 const std::vector<std::string> CommandExecutor::safe_commands_ = {
-    "ls", "pwd", "cat", "head", "tail", "less", "more",
-    "echo", "date", "whoami", "hostname", "uptime",
-    "which", "type", "wc", "sort", "uniq", "cut", "tr",
-    "find .", "grep", "awk", "sed", "diff", "file",
-    "stat", "du", "df", "free", "ps", "top -n", "pgrep" };
+    "ls",   "pwd",    "cat",      "head",   "tail",  "less", "more",   "echo",
+    "date", "whoami", "hostname", "uptime", "which", "type", "wc",     "sort",
+    "uniq", "cut",    "tr",       "find .", "grep",  "awk",  "sed",    "diff",
+    "file", "stat",   "du",       "df",     "free",  "ps",   "top -n", "pgrep"};
 
 }  // namespace
 
 ExecuteBashToolStandard::ExecuteBashToolStandard(std::string sandbox_root)
     : sandbox_root_(std::move(sandbox_root)) {}
 
-std::string ExecuteBashToolStandard::Name() const {
-  return "execute_bash";
-}
+std::string ExecuteBashToolStandard::Name() const { return "execute_bash"; }
 
-std::string ExecuteBashToolStandard::Description() const {
-  return "Execute a shell command.";
-}
+std::string ExecuteBashToolStandard::Description() const { return "Execute a shell command."; }
 
 boost::json::value ExecuteBashToolStandard::ParametersSchema() const {
   return boost::json::object{
@@ -135,19 +129,20 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
     return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
   }
 
-  if (ctx.security && ctx.security->max_command_length > 0 && command.size() > ctx.security->max_command_length) {
+  if (ctx.security && ctx.security->max_command_length > 0 &&
+      command.size() > ctx.security->max_command_length) {
     return tools::MakeToolResultJson(false, "", "",
-                        "command exceeds maximum allowed length (" +
-                            std::to_string(ctx.security->max_command_length) + ")",
-                        -1);
+                                     "command exceeds maximum allowed length (" +
+                                         std::to_string(ctx.security->max_command_length) + ")",
+                                     -1);
   }
 
   if (ctx.security) {
     for (const auto& pattern : ctx.security->forbidden_patterns) {
       std::regex re("\\b" + pattern + "\\b");
       if (std::regex_search(command, re)) {
-        return tools::MakeToolResultJson(false, "", "",
-                            "command contains forbidden pattern '" + pattern + "'", -1);
+        return tools::MakeToolResultJson(
+            false, "", "", "command contains forbidden pattern '" + pattern + "'", -1);
       }
     }
   }
@@ -166,19 +161,15 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
   if (result.exit_code == 0) {
     return tools::MakeToolResultJson(true, result.stdout_content, result.stderr_content, "", 0);
   } else {
-    return tools::MakeToolResultJson(false, result.stdout_content, result.stderr_content,
-                        "Command failed (exit " + std::to_string(result.exit_code) + ")",
-                        result.exit_code);
+    return tools::MakeToolResultJson(
+        false, result.stdout_content, result.stderr_content,
+        "Command failed (exit " + std::to_string(result.exit_code) + ")", result.exit_code);
   }
 }
 
-std::string WriteFileTool::Name() const {
-  return "write_file";
-}
+std::string WriteFileTool::Name() const { return "write_file"; }
 
-std::string WriteFileTool::Description() const {
-  return "Write text to a file.";
-}
+std::string WriteFileTool::Description() const { return "Write text to a file."; }
 
 boost::json::value WriteFileTool::ParametersSchema() const {
   return boost::json::object{
@@ -215,8 +206,8 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   std::filesystem::path sandbox_root(ctx.security->sandbox_root);
   auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
   if (ec) {
-    return tools::MakeToolResultJson(false, "", "",
-                        "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
+    return tools::MakeToolResultJson(
+        false, "", "", "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
   }
 
   std::filesystem::path full_path = sandbox_canonical / path;
@@ -228,7 +219,8 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
-    return tools::MakeToolResultJson(false, "", "", "path outside sandbox root (traversal not allowed)", -1);
+    return tools::MakeToolResultJson(false, "", "",
+                                     "path outside sandbox root (traversal not allowed)", -1);
   }
 
   std::filesystem::create_directories(full_path.parent_path(), ec);
@@ -242,47 +234,9 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   }
   file << content;
 
-  std::string summary = "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
+  std::string summary =
+      "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
   return tools::MakeToolResultJson(true, summary, "", "", 0);
-}
-
-std::string AskUserTool::Name() const {
-  return "ask_user";
-}
-
-std::string AskUserTool::Description() const {
-  return "Ask user for clarification.";
-}
-
-boost::json::value AskUserTool::ParametersSchema() const {
-  return boost::json::object{
-      {"type", "object"},
-      {"properties",
-       boost::json::object{
-           {"question",
-            boost::json::object{
-                {"type", "string"},
-                {"description", "The question to ask"},
-            }},
-       }},
-      {"required", boost::json::array{"question"}},
-  };
-}
-
-std::string AskUserTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
-  (void)ctx;
-  boost::json::value result = {
-    {"success", false},
-    {"error", "clarification_needed"},
-  };
-
-  std::string question;
-  if (args.is_object() && json::HasKey(args, "question")) {
-    question = boost::json::value_to<std::string>(args.at("question"));
-  }
-  result.as_object()["question"] = question;
-
-  return boost::json::serialize(result);
 }
 
 }  // namespace pu::tools

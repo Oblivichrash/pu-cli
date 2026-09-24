@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/cli.hpp"
 
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
 #include "pu/runtime.hpp"
@@ -15,32 +15,22 @@
 namespace po = boost::program_options;
 
 int main(int argc, char* argv[]) {
-
   pu::platform::SetupSignalHandler();
 
   po::options_description global("Global options");
-  global.add_options()
-    ("help,h", "show help message")
-    ("version", "show version and exit")
-    ("command", po::value<std::string>(), "command to execute (ask/chat/serve)")
-  ;
+  global.add_options()("help,h", "show help message")("version", "show version and exit")(
+      "command", po::value<std::string>(), "command to execute (ask/chat/serve)");
 
   po::options_description ask_opts("ask options");
-  ask_opts.add_options()
-    ("agent", po::value<std::string>(), "agent to use")
-    ("prompt", po::value<std::string>(), "prompt to send")
-  ;
+  ask_opts.add_options()("agent", po::value<std::string>(), "agent to use")(
+      "prompt", po::value<std::string>(), "prompt to send");
 
   po::options_description chat_opts("chat options");
-  chat_opts.add_options()
-    ("agent", po::value<std::string>(), "agent to use")
-  ;
+  chat_opts.add_options()("agent", po::value<std::string>(), "agent to use");
 
   po::options_description serve_opts("serve options");
-  serve_opts.add_options()
-    ("host", po::value<std::string>(), "bind address (default 127.0.0.1)")
-    ("port", po::value<int>(), "port to listen on (default 8080)")
-  ;
+  serve_opts.add_options()("host", po::value<std::string>(), "bind address (default 127.0.0.1)")(
+      "port", po::value<int>(), "port to listen on (default 8080)");
 
   po::positional_options_description pos;
   pos.add("command", 1);
@@ -51,10 +41,7 @@ int main(int argc, char* argv[]) {
 
   po::variables_map vm;
   try {
-    po::store(po::command_line_parser(argc, argv)
-              .options(all)
-              .positional(pos)
-              .run(), vm);
+    po::store(po::command_line_parser(argc, argv).options(all).positional(pos).run(), vm);
     po::notify(vm);
   } catch (const po::error& e) {
     std::cerr << "Error: " << e.what() << "\n\n" << all << "\n";

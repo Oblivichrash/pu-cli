@@ -35,8 +35,7 @@ class StubMcpClient : public pu::mcp::McpClient {
 
 }  // namespace
 
-TEST_CASE("McpTool wraps successful raw output into JSON schema",
-          "[mcp_tool]") {
+TEST_CASE("McpTool wraps successful raw output into JSON schema", "[mcp_tool]") {
   StubMcpClient client;
   client.SetResponse("Hello from MCP server");
 
@@ -59,8 +58,7 @@ TEST_CASE("McpTool wraps successful raw output into JSON schema",
   REQUIRE(j.at("exit_code") == 0);
 }
 
-TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON",
-          "[mcp_tool]") {
+TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON", "[mcp_tool]") {
   StubMcpClient client;
   client.SetResponse("Error: something went wrong");
 
@@ -142,8 +140,7 @@ TEST_CASE("McpTool returns error JSON when client is null", "[mcp_tool]") {
   REQUIRE(j.at("exit_code") == -1);
 }
 
-TEST_CASE("McpTool returns error JSON when client is not connected",
-          "[mcp_tool]") {
+TEST_CASE("McpTool returns error JSON when client is not connected", "[mcp_tool]") {
   StubMcpClient client;
   client.SetConnected(false);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 
 #include <iostream>
 
@@ -26,12 +26,8 @@ std::vector<std::string> AgentManager::GetAgentNames() const {
   return names;
 }
 
-void AgentManager::SetActiveAgent(const std::string& name) {
-  active_agent_ = name;
-}
+void AgentManager::SetActiveAgent(const std::string& name) { active_agent_ = name; }
 
-std::string AgentManager::GetActiveAgent() const {
-  return active_agent_;
-}
+std::string AgentManager::GetActiveAgent() const { return active_agent_; }
 
 }  // namespace pu

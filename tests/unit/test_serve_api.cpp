@@ -51,7 +51,10 @@ int FindFreePort() {
   WSADATA wsa;
   if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
   SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s == INVALID_SOCKET) { WSACleanup(); return 0; }
+  if (s == INVALID_SOCKET) {
+    WSACleanup();
+    return 0;
+  }
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -100,7 +103,10 @@ bool WaitForPort(const std::string& host, int port, int timeout_ms) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s == INVALID_SOCKET) { WSACleanup(); return false; }
+    if (s == INVALID_SOCKET) {
+      WSACleanup();
+      return false;
+    }
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<u_short>(port));
@@ -126,13 +132,11 @@ bool WaitForPort(const std::string& host, int port, int timeout_ms) {
 }
 
 class FakeBackend {
-public:
+ public:
   FakeBackend() {
     ioc_ = std::make_shared<net::io_context>();
     acceptor_ = std::make_shared<tcp::acceptor>(
-        *ioc_,
-        tcp::endpoint(net::ip::make_address("127.0.0.1"), 0)
-    );
+        *ioc_, tcp::endpoint(net::ip::make_address("127.0.0.1"), 0));
     port_ = acceptor_->local_endpoint().port();
     REQUIRE(port_ > 0);
 
@@ -152,16 +156,14 @@ public:
     }
   }
 
-private:
+ private:
   void DoAccept() {
-    acceptor_->async_accept(
-        [this](boost::system::error_code ec, tcp::socket socket) {
-          if (!ec) {
-            std::thread([s = std::move(socket)]() mutable { HandleRequest(std::move(s)); }).detach();
-          }
-          if (!stop_requested_) DoAccept();
-        }
-    );
+    acceptor_->async_accept([this](boost::system::error_code ec, tcp::socket socket) {
+      if (!ec) {
+        std::thread([s = std::move(socket)]() mutable { HandleRequest(std::move(s)); }).detach();
+      }
+      if (!stop_requested_) DoAccept();
+    });
   }
 
   static void HandleRequest(tcp::socket socket) {
@@ -203,23 +205,15 @@ std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
 
   boost::json::value root = {
       {"default_agent", "chat"},
-      {"agents", boost::json::array{
-          boost::json::value{
-              {"name", "chat"},
-              {"description", "Chat agent"},
-              {"backend", {
-                  {"type", "ollama"},
-                  {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
-                  {"model", "test-model"}
-              }},
-              {"security", {
-                  {"sandbox_root", "."},
-                  {"allowed_paths", boost::json::array{}},
-                  {"forbidden_patterns", boost::json::array{}}
-              }}
-          }
-      }}
-  };
+      {"agents",
+       boost::json::array{boost::json::value{
+           {"name", "chat"},
+           {"description", "Chat agent"},
+           {"backend",
+            {{"type", "ollama"},
+             {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
+             {"model", "test-model"}}},
+           {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}}}}};
 
   std::ofstream file(path);
   file << boost::json::serialize(root);
@@ -227,21 +221,17 @@ std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
 }
 
 class TestHttpClient {
-public:
-  explicit TestHttpClient(const std::string& host, int port)
-      : host_(host), port_(port) {}
+ public:
+  explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  std::string Get(const std::string& path) {
-    return Request(http::verb::get, path, "");
-  }
+  std::string Get(const std::string& path) { return Request(http::verb::get, path, ""); }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
     return Request(http::verb::post, path, boost::json::serialize(body));
   }
 
-private:
-  std::string Request(http::verb method, const std::string& path,
-                      const std::string& body) {
+ private:
+  std::string Request(http::verb method, const std::string& path, const std::string& body) {
     try {
       net::io_context ioc;
       tcp::resolver resolver(ioc);
@@ -277,7 +267,7 @@ private:
 };
 
 class ServeHarness {
-public:
+ public:
   ServeHarness() {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
@@ -295,9 +285,7 @@ public:
     REQUIRE(port_ > 0);
 
     runtime_ = std::make_unique<pu::Runtime>();
-    server_thread_ = std::thread([this] {
-      pu::cli::RunServe(kHost, port_, *runtime_);
-    });
+    server_thread_ = std::thread([this] { pu::cli::RunServe(kHost, port_, *runtime_); });
 
     REQUIRE(WaitForPort(kHost, port_, 15000));
   }
@@ -324,7 +312,7 @@ public:
 
   int Port() const { return port_; }
 
-private:
+ private:
   fs::path home_;
   std::unique_ptr<pu::tests::ScopedEnvVar> home_env_;
   std::unique_ptr<pu::tests::ScopedEnvVar> data_env_;
@@ -335,9 +323,7 @@ private:
   bool stopped_ = false;
 };
 
-boost::json::value ParseJson(const std::string& s) {
-  return boost::json::parse(s);
-}
+boost::json::value ParseJson(const std::string& s) { return boost::json::parse(s); }
 
 }  // namespace
 

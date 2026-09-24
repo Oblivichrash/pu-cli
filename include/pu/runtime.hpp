@@ -7,14 +7,12 @@
 #include <vector>
 #include <filesystem>
 
-#include "pu/agent_manager.hpp"
-#include "pu/agent_config.hpp"
-#include "pu/core/cancel_token.hpp"
+#include "pu/agent.hpp"
+#include "pu/core/base.hpp"
 #include "pu/executor.hpp"
-#include "pu/mcp/mcp_client.hpp"
+#include "pu/mcp/client.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
-#include "pu/session/workspace.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {
@@ -30,8 +28,6 @@ class Runtime {
   void Initialize(const std::string& config_path = "");
   void Shutdown();
 
-  std::shared_ptr<Session> GetDefaultSession();
-
   ExecutionResult ProcessInput(const std::string& input, bool& is_command,
                                CancelToken cancel_token = nullptr,
                                std::function<void(const std::string&)> content_callback = nullptr,
@@ -46,10 +42,13 @@ class Runtime {
   std::string GetWorkspaceName() const { return workspace_root_.filename().string(); }
 
   AgentManager& GetAgentManager() { return *agent_manager_; }
-
- private:
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+  // The backend the active session talks to: the session's override when it has
+  // one, otherwise the agent's entry in agents.json.
+  config::BackendConfig CurrentBackend() const;
+
+ private:
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void ShutdownMCP();

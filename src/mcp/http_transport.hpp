@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-#include "pu/infra/beast_http_client.hpp"
+#include "pu/core/beast_http_client.hpp"
 #include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {

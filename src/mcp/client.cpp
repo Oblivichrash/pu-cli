@@ -1,16 +1,66 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/mcp/mcp_client.hpp"
-#include "pu/mcp/stdio_transport.hpp"
+#include "pu/mcp/client.hpp"
+
 #include "mcp/http_transport.hpp"
-#include "pu/mcp/json_rpc_client.hpp"
-#include "pu/core/error.hpp"
-#include "pu/core/json.hpp"
 #include "pu/build_config.hpp"
+#include "pu/core/base.hpp"
+#include "pu/core/json.hpp"
+#include "pu/mcp/stdio_transport.hpp"
+
 #include <spdlog/spdlog.h>
-#include <future>
+
 #include <chrono>
 
 namespace pu::mcp {
+
+JsonRpcClient::JsonRpcClient(Transport& transport) : transport_(transport) {}
+
+std::future<boost::json::value> JsonRpcClient::SendRequest(const std::string& method,
+                                                           const boost::json::value& params) {
+  int id = next_id_++;
+  std::promise<boost::json::value> promise;
+  auto future = promise.get_future();
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_[id] = std::move(promise);
+  }
+
+  boost::json::value req = {{"jsonrpc", "2.0"}, {"id", id}, {"method", method}};
+  if (!params.is_null()) req.as_object()["params"] = params;
+
+  if (!transport_.WriteLine(boost::json::serialize(req))) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = pending_.find(id);
+    if (it != pending_.end()) {
+      it->second.set_exception(std::make_exception_ptr(std::runtime_error("Write failed")));
+      pending_.erase(it);
+    }
+  }
+  return future;
+}
+
+void JsonRpcClient::OnMessage(const std::string& line) {
+  try {
+    auto j = boost::json::parse(line);
+    if (json::HasKey(j, "id") && j.at("id").is_int64()) {
+      int id = boost::json::value_to<int>(j.at("id"));
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = pending_.find(id);
+      if (it != pending_.end()) {
+        if (json::HasKey(j, "error")) {
+          it->second.set_exception(
+              std::make_exception_ptr(std::runtime_error(boost::json::serialize(j.at("error")))));
+        } else {
+          it->second.set_value(j);
+        }
+        pending_.erase(it);
+      }
+    }
+    // Notifications carry no id, so there is nothing to answer.
+  } catch (const std::exception& e) {
+    spdlog::warn("JSON-RPC parse error: {}", e.what());
+  }
+}
 
 struct McpClient::Impl {
   McpServerConfig config;
@@ -20,8 +70,7 @@ struct McpClient::Impl {
   std::vector<ToolDefinition> cached_tools;
 };
 
-McpClient::McpClient(const McpServerConfig& config)
-    : pimpl_(std::make_unique<Impl>()) {
+McpClient::McpClient(const McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
   pimpl_->config = config;
 }
 
@@ -31,13 +80,11 @@ bool McpClient::Connect() {
   if (pimpl_->connected) return true;
 
   if (!pimpl_->config.url.empty()) {
-    pimpl_->transport = std::make_unique<HttpTransport>(
-        pimpl_->config.url, pimpl_->config.headers);
-    spdlog::debug("MCP connecting via HTTP: {} ({})",
-                  pimpl_->config.name, pimpl_->config.url);
+    pimpl_->transport = std::make_unique<HttpTransport>(pimpl_->config.url, pimpl_->config.headers);
+    spdlog::debug("MCP connecting via HTTP: {} ({})", pimpl_->config.name, pimpl_->config.url);
   } else {
-    pimpl_->transport = std::make_unique<StdioTransport>(
-        pimpl_->config.command, pimpl_->config.args);
+    pimpl_->transport =
+        std::make_unique<StdioTransport>(pimpl_->config.command, pimpl_->config.args);
     spdlog::debug("MCP connecting via stdio: {}", pimpl_->config.name);
   }
 
@@ -71,17 +118,15 @@ void McpClient::Disconnect() {
 }
 
 bool McpClient::Handshake() {
-  boost::json::value init_params = {
-      {"protocolVersion", "2024-11-05"},
-      {"clientInfo", {{"name", "pu-cli"}, {"version", PU_VERSION}}},
-      {"capabilities", {{"tools", true}}}};
+  boost::json::value init_params = {{"protocolVersion", "2024-11-05"},
+                                    {"clientInfo", {{"name", "pu-cli"}, {"version", PU_VERSION}}},
+                                    {"capabilities", {{"tools", true}}}};
   try {
     auto resp = SendRequest("initialize", init_params);
     if (!json::HasKey(resp, "result")) return false;
-    // Send initialized notification (no response needed)
-    pimpl_->transport->WriteLine(boost::json::serialize(boost::json::value{
-        {"jsonrpc", "2.0"},
-        {"method", "initialized"}}));
+    // The initialized notification expects no reply.
+    pimpl_->transport->WriteLine(
+        boost::json::serialize(boost::json::value{{"jsonrpc", "2.0"}, {"method", "initialized"}}));
     return true;
   } catch (const std::exception& e) {
     spdlog::error("Handshake error: {}", e.what());
@@ -90,9 +135,8 @@ bool McpClient::Handshake() {
 }
 
 boost::json::value McpClient::SendRequest(const std::string& method,
-                                          const boost::json::value& params,
-                                          int timeout_ms) {
-  // Only check that rpc exists; connected may be false during handshake.
+                                          const boost::json::value& params, int timeout_ms) {
+  // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
     throw RuntimeError("MCP client not connected");
   }
@@ -132,8 +176,7 @@ std::vector<ToolDefinition> McpClient::ListTools() {
   return {};
 }
 
-std::string McpClient::CallTool(const std::string& name,
-                                const boost::json::value& arguments) {
+std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {
   if (!pimpl_->connected) {
     return "Error: MCP client not connected";
   }

@@ -10,6 +10,10 @@ let ws = null;
 let isStreaming = false;
 let isAtBottom = true;
 
+// How many nodes the store holds for the current chain. The next message sent
+// becomes turn chainLength + 1, which is the number /api/rewind expects.
+let chainLength = 0;
+
 const BLOCK_TYPES = {
   THINKING: "thinking",
   TOOL_CALL: "tool_call",
@@ -40,14 +44,30 @@ function createSystemMessage(text) {
   return el;
 }
 
-function createMessage(role, blocks) {
+function createMessage(role, blocks, turn, text) {
   const el = document.createElement("div");
   el.className = "msg " + role;
 
   const label = document.createElement("span");
   label.className = "role";
   label.textContent = role === "user" ? "You" : "Assistant";
-  el.appendChild(label);
+
+  if (role === "user" && typeof turn === "number" && turn > 0) {
+    const head = document.createElement("div");
+    head.className = "msg-head";
+    head.appendChild(label);
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "edit-btn";
+    editBtn.textContent = "edit";
+    editBtn.onclick = () => rewindToTurn(turn, text || "");
+    head.appendChild(editBtn);
+
+    el.appendChild(head);
+  } else {
+    el.appendChild(label);
+  }
 
   const container = document.createElement("div");
   container.className = "blocks-container";
@@ -250,6 +270,7 @@ function handleChunk(payload) {
 function handleDone() {
   finishAssistantMessage();
   setSendButtonState(false);
+  refreshChainLength();
 }
 
 function handleError(payload) {
@@ -264,6 +285,7 @@ function handleError(payload) {
     createSystemMessage("Error: " + errMsg);
   }
   setSendButtonState(false);
+  refreshChainLength();
 }
 
 function connectWebSocket() {
@@ -306,6 +328,9 @@ function connectWebSocket() {
       removeCurrentAssistantMessage();
       setSendButtonState(false);
     }
+    // A cancelled run still appended the message it was given, so the length has
+    // to be read back even though no reply arrived.
+    refreshChainLength();
   };
 
   ws.onerror = () => {
@@ -323,6 +348,47 @@ function setSendButtonState(streaming) {
   sendBtn.disabled = false;
 }
 
+// The store is the authority on how long the chain is, so the next turn number
+// is read back from it after every run rather than counted here.
+async function refreshChainLength() {
+  try {
+    const res = await fetch("/api/history");
+    const history = await res.json();
+    if (Array.isArray(history)) chainLength = history.length;
+  } catch (_) {}
+}
+
+// Steps the session back to before `turn` and hands the text back to the
+// composer, so sending it again replaces that turn with a new branch. The branch
+// that was left behind stays in the session file.
+async function rewindToTurn(turn, text) {
+  if (isStreaming) {
+    createSystemMessage("Cannot edit while a reply is streaming.");
+    return;
+  }
+  try {
+    const res = await fetch("/api/rewind", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turn }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      createSystemMessage("Could not step back: " + (data.error || "unknown error"));
+      return;
+    }
+    messagesEl.innerHTML = "";
+    await loadHistory();
+    inputEl.value = text;
+    inputEl.focus();
+    inputEl.style.height = "auto";
+    createSystemMessage(
+      "Editing turn " + turn + ". Sending starts a new branch; the one you left stays in the session file.");
+  } catch (e) {
+    createSystemMessage("Could not step back: " + e.message);
+  }
+}
+
 function sendMessage() {
   if (isStreaming) {
     ws.send(JSON.stringify({ type: "cancel" }));
@@ -337,7 +403,9 @@ function sendMessage() {
   inputEl.value = "";
   inputEl.style.height = "auto";
 
-  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }]);
+  // The store appends this message to the chain, so its turn is the next one;
+  // the reply and any tool results follow it.
+  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], chainLength + 1, text);
   startAssistantMessage();
   setSendButtonState(true);
 
@@ -398,8 +466,9 @@ async function loadHistory() {
         continue;
       }
 
-      createMessage("user", [{ type: BLOCK_TYPES.TEXT, content }]);
+      createMessage("user", [{ type: BLOCK_TYPES.TEXT, content }], msg.id, content);
     }
+    chainLength = history.length;
   } catch (_) {}
 }
 

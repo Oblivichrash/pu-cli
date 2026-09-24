@@ -1,0 +1,3 @@
+# Checkout text files with LF on every platform, so that a Windows contributor
+# cannot introduce CRLF into the repository through an editor default.
+* text=auto eol=lf

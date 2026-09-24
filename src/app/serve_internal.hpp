@@ -14,7 +14,7 @@
 #include <mutex>
 #include <thread>
 
-#include "pu/core/cancel_token.hpp"
+#include "pu/core/base.hpp"
 #include "pu/runtime.hpp"
 
 namespace pu::cli::detail {
@@ -42,8 +42,7 @@ struct ActiveWebSocket {
 
 // Take over `socket`, which already carries a WebSocket upgrade request, and
 // serve the chat protocol until the client disconnects or is replaced.
-void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req,
-                         Runtime& runtime, std::mutex& io_mutex,
-                         std::shared_ptr<ActiveWebSocket> active_ws);
+void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
+                         std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws);
 
 }  // namespace pu::cli::detail

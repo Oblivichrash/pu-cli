@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/command_router.hpp"
-#include "pu/session/workspace.hpp"
-#include "pu/core/path_utils.hpp"
+#include "pu/session/session.hpp"
+#include "pu/core/base.hpp"
 #include "pu/runtime.hpp"
 
 #include <algorithm>
@@ -38,7 +38,10 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /backend <agent_name>  Switch to a predefined agent\n"
       "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
-  add("/clear", &CommandRouter::HandleClear, "  /clear                 Clear conversation history\n");
+  add("/clear", &CommandRouter::HandleClear,
+      "  /clear                 Clear conversation history\n");
+  add("/rewind", &CommandRouter::HandleRewind,
+      "  /rewind <turn>         Step back to before a turn, keeping it on disk\n");
   return reg;
 }
 
@@ -90,29 +93,30 @@ std::string CommandRouter::GetHelpText() {
   return oss.str();
 }
 
-bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/, std::string& output) {
+bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/,
+                               std::string& output) {
   output = GetHelpText();
   return true;
 }
 
-bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output) {
+bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session,
+                                  std::string& output) {
   if (args.empty()) {
-    const auto& cfg = session.GetRuntimeSpec().backend;
+    const config::BackendConfig cfg = runtime_.CurrentBackend();
     output = "Current backend: " +
              std::string(cfg.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
-             " (model: " + cfg.model +
-             ", host: " + cfg.host + ")";
+             " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
 
   const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
   if (agent_config) {
     try {
-      session.SwitchBackend(agent_config->backend);
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
-        std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
-        "/" + agent_config->backend.model + ")";
+               std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai"
+                                                                                      : "ollama") +
+               "/" + agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
     }
@@ -146,9 +150,9 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   }
 
   try {
-    session.SwitchBackend(new_cfg);
-    output = "Switched backend to: " + args[0] +
-      " (model: " + new_cfg.model + ", host: " + new_cfg.host + ")";
+    session.SetBackendOverride(new_cfg);
+    output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
+             ", host: " + new_cfg.host + ")";
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {
       output += " (API key set)";
     }
@@ -158,7 +162,8 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   return true;
 }
 
-bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
+bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session,
+                                 std::string& output) {
   auto names = manager_.GetAgentNames();
   std::string current = session.GetRuntimeSpec().agent_name;
   std::ostringstream oss;
@@ -176,10 +181,36 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
   return true;
 }
 
-bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session, std::string& output) {
+bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session,
+                                std::string& output) {
   session.GetWorkspace().ClearHistory();
   output = "Conversation history cleared.";
   return true;
 }
 
-} // namespace pu
+bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& session,
+                                 std::string& output) {
+  if (RequireMinArgs(args, 1, FormatUsage("/rewind", "<turn>"), output)) return true;
+
+  size_t turn = 0;
+  try {
+    turn = static_cast<size_t>(std::stoul(args[0]));
+  } catch (const std::exception&) {
+    output = "Usage: /rewind <turn> (a positive number)";
+    return true;
+  }
+
+  try {
+    if (!session.GetWorkspace().RewindBefore(turn)) {
+      output = "There is no turn " + args[0] + " in this conversation.";
+      return true;
+    }
+    output = "Stepped back to before turn " + args[0] +
+             ". The next message starts a new branch; the old one stays in the file.";
+  } catch (const std::exception& e) {
+    output = "Error: " + std::string(e.what());
+  }
+  return true;
+}
+
+}  // namespace pu

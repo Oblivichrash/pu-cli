@@ -32,20 +32,19 @@ function(pu_configure_target target)
 endfunction()
 
 add_library(pu_core STATIC
-    src/infra/beast_http_client.cpp
+    src/context/graph.cpp
+    src/core/beast_http_client.cpp
     src/core/platform.cpp
-    src/session/workspace.cpp
-    src/session/transcript.cpp
-    src/session/memory.cpp
+    src/session/request.cpp
     src/session/session.cpp
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
+    src/llm/projection.cpp
     src/llm/streaming_json_parser.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
-    src/mcp/json_rpc_client.cpp
-    src/mcp/mcp_client.cpp
+    src/mcp/client.cpp
 )
 target_link_libraries(pu_core PUBLIC
     spdlog::spdlog

@@ -33,8 +33,10 @@ class ScopedEnvVar {
   }
 
   ~ScopedEnvVar() {
-    if (had_prev_) Set(prev_);
-    else Unset();
+    if (had_prev_)
+      Set(prev_);
+    else
+      Unset();
   }
 
  private:
@@ -66,21 +68,15 @@ TEST_CASE("Boost.Program_options parses ask command", "[boost][program_options]"
   int argc = 5;
 
   po::options_description desc;
-  desc.add_options()
-    ("help,h", "help")
-    ("command", po::value<std::string>(), "command")
-    ("agent", po::value<std::string>(), "agent")
-    ("prompt", po::value<std::string>(), "prompt");
+  desc.add_options()("help,h", "help")("command", po::value<std::string>(), "command")(
+      "agent", po::value<std::string>(), "agent")("prompt", po::value<std::string>(), "prompt");
 
   po::positional_options_description pos;
   pos.add("command", 1);
   pos.add("prompt", 1);
 
   po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv)
-            .options(desc)
-            .positional(pos)
-            .run(), vm);
+  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
   po::notify(vm);
 
   REQUIRE(vm.count("command"));
@@ -96,18 +92,14 @@ TEST_CASE("Boost.Program_options parses chat command", "[boost][program_options]
   int argc = 4;
 
   po::options_description desc;
-  desc.add_options()
-    ("command", po::value<std::string>(), "command")
-    ("agent", po::value<std::string>(), "agent");
+  desc.add_options()("command", po::value<std::string>(), "command")(
+      "agent", po::value<std::string>(), "agent");
 
   po::positional_options_description pos;
   pos.add("command", 1);
 
   po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv)
-            .options(desc)
-            .positional(pos)
-            .run(), vm);
+  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
   po::notify(vm);
 
   REQUIRE(vm.count("command"));
@@ -121,19 +113,14 @@ TEST_CASE("Boost.Program_options parses serve command", "[boost][program_options
   int argc = 6;
 
   po::options_description desc;
-  desc.add_options()
-    ("command", po::value<std::string>(), "command")
-    ("host", po::value<std::string>(), "host")
-    ("port", po::value<int>(), "port");
+  desc.add_options()("command", po::value<std::string>(), "command")(
+      "host", po::value<std::string>(), "host")("port", po::value<int>(), "port");
 
   po::positional_options_description pos;
   pos.add("command", 1);
 
   po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv)
-            .options(desc)
-            .positional(pos)
-            .run(), vm);
+  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
   po::notify(vm);
 
   REQUIRE(vm.count("command"));
@@ -149,14 +136,10 @@ TEST_CASE("Boost.Program_options shows help with -h", "[boost][program_options]"
   int argc = 3;
 
   po::options_description desc("Usage");
-  desc.add_options()
-    ("help,h", "help")
-    ("command", po::value<std::string>(), "command");
+  desc.add_options()("help,h", "help")("command", po::value<std::string>(), "command");
 
   po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv)
-            .options(desc)
-            .run(), vm);
+  po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
   po::notify(vm);
 
   REQUIRE(vm.count("help") == 1);
@@ -167,17 +150,14 @@ TEST_CASE("Boost.Program_options rejects unknown command", "[boost][program_opti
   int argc = 2;
 
   po::options_description desc;
-  desc.add_options()
-    ("command", po::value<std::string>(), "command");
+  desc.add_options()("command", po::value<std::string>(), "command");
 
   po::positional_options_description pos;
   pos.add("command", 1);
 
   po::variables_map vm;
-  REQUIRE_NOTHROW(po::store(po::command_line_parser(argc, argv)
-                            .options(desc)
-                            .positional(pos)
-                            .run(), vm));
+  REQUIRE_NOTHROW(
+      po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm));
   po::notify(vm);
 
   REQUIRE(vm.count("command"));

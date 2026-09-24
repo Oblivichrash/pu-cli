@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "pu/agent_manager.hpp"
+#include "pu/agent.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
@@ -13,9 +13,9 @@ namespace pu {
 class Runtime;
 
 class CommandRouter {
-public:
-  using CommandHandler =
-      bool (CommandRouter::*)(const std::vector<std::string>&, Session&, std::string&);
+ public:
+  using CommandHandler = bool (CommandRouter::*)(const std::vector<std::string>&, Session&,
+                                                 std::string&);
 
   CommandRouter(AgentManager& manager, Runtime& runtime);
 
@@ -23,7 +23,7 @@ public:
 
   static std::string GetHelpText();
 
-private:
+ private:
   struct CommandEntry {
     CommandHandler handler;
     std::string help;
@@ -37,8 +37,8 @@ private:
   static Registry BuildRegistry();
   static const Registry kRegistry;
 
-  bool RequireMinArgs(const std::vector<std::string>& args, size_t min,
-                      const std::string& usage, std::string& output) const;
+  bool RequireMinArgs(const std::vector<std::string>& args, size_t min, const std::string& usage,
+                      std::string& output) const;
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
@@ -46,9 +46,10 @@ private:
   bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
   bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
+  bool HandleRewind(const std::vector<std::string>& args, Session& session, std::string& output);
 
   AgentManager& manager_;
   Runtime& runtime_;
 };
 
-} // namespace pu
+}  // namespace pu

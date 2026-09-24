@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/agent_config.hpp"
+#include "pu/agent.hpp"
 
 namespace pu {
 
@@ -32,15 +32,14 @@ class Toolbox {
   void RemoveTool(const std::string& name);
   Tool* GetTool(const std::string& name) const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
-  std::string ExecuteTool(const std::string& name,
-                          const boost::json::value& args,
+  std::string ExecuteTool(const std::string& name, const boost::json::value& args,
                           ToolContext& ctx);
 
  private:
   static std::string SanitizeToolName(const std::string& name);
 
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  // Map from sanitized (LLM‑friendly) name to original Tool::Name()
+  // Map from sanitized (LLM-friendly) name to original Tool::Name()
   std::unordered_map<std::string, std::string> display_to_original_;
 };
 

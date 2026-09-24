@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "pu/core/cancel_token.hpp"
+#include "pu/core/base.hpp"
 
 namespace pu::http {
 
@@ -15,8 +15,7 @@ class HttpClient {
  public:
   virtual ~HttpClient() = default;
   virtual void PostStream(const std::string& url, const std::string& body,
-                          const std::vector<std::string>& headers,
-                          WriteCallback write_cb,
+                          const std::vector<std::string>& headers, WriteCallback write_cb,
                           CancelToken cancel_token = nullptr) = 0;
 };
 
