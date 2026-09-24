@@ -10,7 +10,7 @@ Use a lowercase type from this list and a specific summary under 72 characters:
 `feat`, `fix`, `refactor`, `perf`, `style`, `docs`, `test`, `build`, `ci`,
 `chore`.
 
-Add a short list when the change needs context:
+Add a short list as one paragraph when the change needs context:
 
 ```text
 <type>: <summary>
