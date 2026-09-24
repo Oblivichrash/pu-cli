@@ -12,9 +12,7 @@
 
 namespace pu {
 
-// FROZEN: no new fields. Context features belong to MessageNode
-// (include/pu/context/message.hpp); this struct is the compatibility view the
-// request path renders from it.
+// FROZEN: a compatibility view rendered from MessageNode; see ARCHITECTURE.md, Data Flow.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;

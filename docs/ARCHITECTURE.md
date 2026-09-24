@@ -66,15 +66,10 @@ pu::RuntimeError : std::runtime_error
 ## JSON Handling
 
 All JSON parsing and serialization is provided by **Boost.JSON**
-(`boost::json::value`). `include/pu/core/json.hpp` is a thin
-convenience layer over the Boost API for the operations the codebase uses most:
-
-- `pu::json::parse` / `pu::json::serialize` — parse and serialize
-  (`boost::json::parse` throws `boost::system::system_error` on malformed input).
-- `pu::json::ValueOrDefault(value, key, def)` — optional member read with default.
-- `pu::json::HasKey(value, key)` — safe key-existence check.
-- `pu::json::PrettyPrint(value)` — indented output for `agents.json` and
-  `session.json`.
+(`boost::json::value`). `include/pu/core/json.hpp` is a thin convenience layer over
+it: `parse`, `serialize`, `ValueOrDefault`, `HasKey` and `PrettyPrint`. Each one
+carries its own contract where it is declared, and the helper is what to reach for
+rather than the raw Boost call, so the fallbacks stay in one place.
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
@@ -309,6 +304,12 @@ Runtime.ProcessInput(input, ...)
                          ▼
                        Session::Serialize() → session.json
 ```
+
+Each stored node is rendered into one `ChatMessage` on the way out
+(`src/session/request.cpp`), which is the view a provider requires. That makes
+`ChatMessage` a compatibility view rather than a place to grow: a new context
+feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
+a turn is.
 
 ### Web request (streaming)
 
