@@ -206,7 +206,7 @@ bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& 
       return true;
     }
     output = "Stepped back to before turn " + args[0] +
-             ". The next message starts a new branch; the old one stays in the file.";
+             ". The next message replaces it; the turns after it stay in the file until one does.";
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }

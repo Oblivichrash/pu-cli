@@ -111,9 +111,10 @@ restart. Each directory has its own independent session.
 > bind unless the port is protected by other means.
 
 Each message you sent carries an **edit** link. It steps the session back to just
-before that turn and puts the text back in the composer, so sending it again
-replaces that turn with a new branch. The branch you left behind is kept in the
-session file.
+before that turn and puts the text back in the composer; sending it again
+replaces that turn, and the turn it replaced is dropped when the replacement
+lands, so what the session file ends up holding is what sending the new text from
+the start would have left.
 
 The Web UI supports:
 
@@ -159,7 +160,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
 | `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
-| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`), keeping the branch on disk |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 
 All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
@@ -174,7 +175,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 | `/backend <type> <model> [host] [api_key]` | Give this session a backend of its own, outranking `agents.json` |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
-| `/rewind <turn>` | Step back to before a turn, keeping the branch on disk |
+| `/rewind <turn>` | Step back to before a turn; the next message replaces it |
 | `/exit`, `/quit` | Exit |
 
 These are chat commands. The Web server is a CLI subcommand (`pu serve`),

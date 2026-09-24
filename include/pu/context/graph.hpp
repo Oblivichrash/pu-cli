@@ -3,7 +3,7 @@
 
 // The stored conversation: nodes keyed by id, with a current leaf marking the
 // position. Order is derived from parent links, so identity never depends on
-// position and a node can be referenced from more than one place.
+// position.
 //
 // Not thread-safe. Caller must serialize access.
 
@@ -52,7 +52,10 @@ class MessageGraph {
     return chain;
   }
 
-  // Appends after the current leaf, linking it and moving the leaf along.
+  // Appends after the current leaf, linking it and moving the leaf along. The
+  // append is also where a replaced turn disappears: whatever the new leaf
+  // cannot reach is dropped, so editing a message ends up storing what sending
+  // the new text from the start would have stored.
   const MessageNode& AppendAfterLeaf(MessagePayload payload, std::string timestamp = {}) {
     MessageNode node = MakeNode(std::move(payload));
     node.timestamp = std::move(timestamp);
@@ -61,13 +64,14 @@ class MessageGraph {
     const MessageId id = node.id;
     const MessageNode& stored = Add(std::move(node));
     leaf_ = id;
+    DropUnreachable();
     return stored;
   }
 
-  // Moves the leaf to a node that is already stored, so the next append starts a
-  // new branch instead of extending the current one. Nothing is removed: the
-  // branch that was current stays in the store. An empty id means "before
-  // everything".
+  // Moves the leaf back to a node that is already stored, so the next append
+  // replaces the turns after it rather than extending them. Nothing is removed
+  // here: the turns after the new position stay until an append replaces them,
+  // and that append is what drops them. An empty id means "before everything".
   bool RewindTo(const MessageId& id) {
     if (!id.empty() && nodes_.find(id) == nodes_.end()) return false;
     leaf_ = id;
@@ -95,6 +99,23 @@ class MessageGraph {
     const MessageNode& stored = nodes_.emplace(id, std::move(node)).first->second;
     CompleteAnsweredRecord(stored.payload);
     return stored;
+  }
+
+  // Keeps the nodes the leaf still reaches and erases the rest. Only a step back
+  // followed by an append leaves anything unreachable, and the erase happens on
+  // that append rather than on the step back, so the abandoned turns survive
+  // until something replaces them.
+  void DropUnreachable() {
+    std::vector<MessageId> reachable;
+    for (const MessageNode* node : Chain()) reachable.push_back(node->id);
+
+    for (auto it = nodes_.begin(); it != nodes_.end();) {
+      if (std::find(reachable.begin(), reachable.end(), it->first) == reachable.end()) {
+        it = nodes_.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
 
   // Marks the record that a receipt answers as completed, searching back from

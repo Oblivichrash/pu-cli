@@ -92,8 +92,8 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
 }
 
 // What the caller renders, which is the chain from the leaf rather than the
-// number of nodes stored: a branch that was rewound stays in the store but out
-// of the view.
+// number of nodes stored: between a step back and the append that replaces it,
+// the view is shorter than the store.
 size_t Transcript::Size() const { return graph_.Chain().size(); }
 
 bool Transcript::RewindBefore(size_t turn) {

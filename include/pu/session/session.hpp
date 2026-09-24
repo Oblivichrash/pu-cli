@@ -30,8 +30,8 @@ class Transcript {
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return graph_; }
 
-  // Moves the position back to just before the 1-based turn, keeping every
-  // stored node so the abandoned branch can still be read.
+  // Moves the position back to just before the 1-based turn. Every stored node
+  // stays until the next append replaces the turns after the new position.
   bool RewindBefore(size_t turn);
 
   boost::json::value Serialize() const;
