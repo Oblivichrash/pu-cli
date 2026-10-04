@@ -48,6 +48,10 @@ thinkingSelect.addEventListener("change", () => setThinkingLevel(thinkingSelect.
 let ws = null;
 let isStreaming = false;
 let isAtBottom = true;
+let stopRequested = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let connState = "connecting";
 
 // How many nodes the store holds for the current chain. The next message sent
 // becomes turn chainLength + 1, which is the number /api/rewind expects.
@@ -163,6 +167,20 @@ function renderThinkingBlock(block) {
   return wrapper;
 }
 
+// Tool output is the raw product of a command, so it is set as text:
+// markup in a command's output is data rather than markup.
+function labelledPre(wrapperClass, label, text, preClass) {
+  const wrapper = document.createElement("div");
+  wrapper.className = wrapperClass;
+  const strong = document.createElement("strong");
+  strong.textContent = label;
+  const pre = document.createElement("pre");
+  if (preClass) pre.className = preClass;
+  pre.textContent = text;
+  wrapper.append(strong, pre);
+  return wrapper;
+}
+
 function renderToolBlock(block) {
   const wrapper = document.createElement("div");
   wrapper.className = "block-tool";
@@ -192,23 +210,15 @@ function renderToolBlock(block) {
   const body = document.createElement("div");
   body.className = "block-body" + (block.collapsed ? " collapsed" : "");
 
-  const argsDiv = document.createElement("div");
-  argsDiv.className = "tool-args";
-  argsDiv.innerHTML = "<strong>Arguments</strong><pre>" +
-    JSON.stringify(block.args, null, 2) + "</pre>";
-  body.appendChild(argsDiv);
+  body.appendChild(
+      labelledPre("tool-args", "Arguments", JSON.stringify(block.args ?? null, null, 2), ""));
 
   if (block.status === "done") {
-    const resultDiv = document.createElement("div");
-    resultDiv.className = "tool-result";
-    if (block.error) {
-      resultDiv.innerHTML = "<strong>Error</strong><pre class=\"tool-error\">" +
-        block.error + "</pre>";
-    } else {
-      const output = block.output || "(no output)";
-      resultDiv.innerHTML = "<strong>Output</strong><pre>" + output + "</pre>";
-    }
-    body.appendChild(resultDiv);
+    body.appendChild(labelledPre(
+        "tool-result",
+        block.error ? "Error" : "Output",
+        block.error || block.output || "(no output)",
+        block.error ? "tool-error" : ""));
   }
 
   wrapper.appendChild(header);
@@ -257,13 +267,42 @@ function removeCurrentAssistantMessage() {
   }
 }
 
+let assistantRenderQueued = false;
+
+// Coalesce a burst of tokens into one render per frame, and rebuild only
+// the blocks that changed: re-parsing the whole answer per token re-renders
+// text and re-highlights code that is already on screen.
 function updateCurrentAssistantBlocks() {
+  if (assistantRenderQueued) return;
+  assistantRenderQueued = true;
+  requestAnimationFrame(() => {
+    assistantRenderQueued = false;
+    renderAssistantBlocks();
+  });
+}
+
+function renderAssistantBlocks() {
   if (!currentAssistantEl) return;
   const container = currentAssistantEl.querySelector(".blocks-container");
-  if (container) {
-    renderBlocks(currentAssistantBlocks, container);
-    if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!container) return;
+
+  currentAssistantBlocks.forEach((block, i) => {
+    if (!block.node) block.node = renderBlock(block);
+    if (container.childNodes[i] !== block.node) {
+      container.insertBefore(block.node, container.childNodes[i] || null);
+    }
+    if (block.type === BLOCK_TYPES.TEXT) {
+      block.node.innerHTML = renderMarkdown(block.content);
+    } else if (block.type === BLOCK_TYPES.THINKING) {
+      const body = block.node.querySelector(".block-body");
+      if (body) body.textContent = block.content;
+    }
+  });
+
+  while (container.childNodes.length > currentAssistantBlocks.length) {
+    container.removeChild(container.lastChild);
   }
+  if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function handleToolStart(payload) {
@@ -285,12 +324,17 @@ function handleToolEnd(payload) {
   const block = currentAssistantBlocks.find(b =>
     b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id
   );
-  if (block) {
-    block.output = payload.output || "";
-    block.error = payload.error || "";
-    block.status = "done";
-    updateCurrentAssistantBlocks();
+  if (!block) return;
+  block.output = payload.output || "";
+  block.error = payload.error || "";
+  block.status = "done";
+  // The status and body changed, so this one block is rebuilt in place.
+  if (block.node) {
+    const rebuilt = renderBlock(block);
+    block.node.replaceWith(rebuilt);
+    block.node = rebuilt;
   }
+  updateCurrentAssistantBlocks();
 }
 
 function handleChunk(payload) {
@@ -334,6 +378,10 @@ function handleDone(payload) {
   finishAssistantMessage();
   setSendButtonState(false);
   refreshChainLength();
+  if (stopRequested) {
+    createSystemMessage("Stopped.");
+    stopRequested = false;
+  }
 
   if (payload && payload.model) {
     const current = document.getElementById("session-status");
@@ -353,6 +401,7 @@ function handleError(payload) {
   } else {
     createSystemMessage("Error: " + errMsg);
   }
+  stopRequested = false;
   setSendButtonState(false);
   refreshChainLength();
 }
@@ -370,7 +419,8 @@ function connectWebSocket() {
   ws = new WebSocket(url);
 
   ws.onopen = () => {
-    createSystemMessage("Connected to server.");
+    reconnectAttempts = 0;
+    setConnectionState("online");
   };
 
   ws.onmessage = (event) => {
@@ -404,24 +454,44 @@ function connectWebSocket() {
     }
   };
 
+  // A run interrupted by a drop keeps the message it was given, so the length
+  // is read back even though no reply arrived; the socket then reconnects.
   ws.onclose = () => {
-    createSystemMessage("Disconnected from server.");
     if (isStreaming) {
       removeCurrentAssistantMessage();
       setSendButtonState(false);
     }
-    // A cancelled run still appended the message it was given, so the length has
-    // to be read back even though no reply arrived.
     refreshChainLength();
+    setConnectionState("offline");
+    scheduleReconnect();
   };
 
   ws.onerror = () => {
-    createSystemMessage("WebSocket error.");
-    if (isStreaming) {
-      removeCurrentAssistantMessage();
-      setSendButtonState(false);
-    }
+    // onclose follows and schedules the reconnect; nothing to report here.
   };
+}
+
+// A dropped socket reconnects on its own, backing off so a server that is
+// down is not hammered. The state is spoken only when it changes, so a retry
+// loop stays silent.
+function setConnectionState(state) {
+  if (state === connState) return;
+  if (state === "offline" && connState === "online") {
+    createSystemMessage("Disconnected from server; reconnecting…");
+  } else if (state === "online" && connState === "offline") {
+    createSystemMessage("Reconnected to server.");
+  }
+  connState = state;
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  const delay = Math.min(500 * 2 ** reconnectAttempts, 8000);
+  reconnectAttempts += 1;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectWebSocket();
+  }, delay);
 }
 
 function setSendButtonState(streaming) {
@@ -476,15 +546,28 @@ async function rewindToTurn(turn, text) {
 
 function sendMessage() {
   if (isStreaming) {
-    ws.send(JSON.stringify({ type: "cancel" }));
-    ws.close();
-    removeCurrentAssistantMessage();
-    setSendButtonState(false);
+    // Cancelling only asks the server to stop: the socket stays open so the
+    // turn still ends with its done frame, and the partial reply is dropped
+    // because the store keeps none.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      stopRequested = true;
+      ws.send(JSON.stringify({ type: "cancel" }));
+      removeCurrentAssistantMessage();
+      sendBtn.textContent = "Stopping…";
+      sendBtn.disabled = true;
+    } else {
+      setSendButtonState(false);
+    }
     return;
   }
 
   const text = inputEl.value.trim();
   if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    createSystemMessage("Not connected to the server.");
+    return;
+  }
+  stopRequested = false;
   inputEl.value = "";
   inputEl.style.height = "auto";
 

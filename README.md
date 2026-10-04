@@ -173,7 +173,7 @@ the start would have left.
 The Web UI supports:
 
 - **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
-- **Request cancellation** — the Send button turns into Cancel while a request is in flight; click it to abort the current generation.
+- **Request cancellation** — the Send button turns into Stop while a request is in flight; click it to stop the current generation.
 - **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
 - **History loading** — previous messages are restored from the persisted session (`GET /api/history`).
 - **Workspace switching** — switch between different project directories (each with its own `.pu/` configuration and session).
@@ -203,7 +203,7 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 {"type":"error","payload":{"text":"error description"}}
 ```
 
-The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the server only sets the cancel token, and the client closes the WebSocket itself after sending `{"type":"cancel"}`.
+The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the client sends `{"type":"cancel"}` to set the cancel token and keeps the connection open, and the turn then ends with the usual `done`.
 
 `thinking` carries the model's reasoning, which is a channel of its own: the front-end renders it beside the answer rather than in it, and a backend that reports no reasoning simply sends none.
 
