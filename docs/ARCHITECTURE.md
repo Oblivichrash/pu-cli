@@ -392,17 +392,13 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
-Keeping a replaced turn instead would leave two lines of reasoning in the store
-and push the choice between them to whoever reads the file later, which is the
-moment they can judge it least. A line earns its place by being continued, and
-continuing means sending the next message on it, so the send that replaces a turn
-is where the choice belongs; a branch with no conclusion to build on is noise
-rather than an alternative.
+Keeping a replaced turn would leave two lines of reasoning in the store and push
+the choice between them to a later reader; the send that replaces a turn is where
+that choice belongs.
 
-Content is one string rather than an array of typed parts. Nothing here sends or
-receives parts, so the array only wrapped a string; the OpenAI content-block format
-is itself an array, though, so a second part type means reintroducing the wrapper —
-mechanical, and the point at which it would earn its place.
+Content is one string rather than an array of typed parts: nothing sends or
+receives parts, so the array only wrapped a string. Reintroducing the wrapper for a
+second part type is mechanical, and not yet needed.
 
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
@@ -480,7 +476,7 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Known Limitations
 
-- MCP request timeout fixed at 5 seconds.
+- MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
