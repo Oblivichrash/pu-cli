@@ -156,9 +156,8 @@ Key responsibilities:
 5. Frames are written back over the socket as the run progresses (streamed
    chunks, tool start/end, completion, or error). The frame schema is documented
    in [README](../README.md#websocket-protocol).
-6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
-   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/rewind`, `/api/clear`)
-   handle control and status queries. On Ctrl+C the server stops and
+6. REST endpoints handle control and status queries; the list is in
+   [README](../README.md#rest-api-endpoints). On Ctrl+C the server stops and
    `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
@@ -355,11 +354,15 @@ Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
 └──────────────────────────────────────┘   └──────────────────────────────────────┘
 ```
 
-MCP servers are configured per-agent via `mcp_servers`. The transport is selected
-automatically in `McpClient::Connect()`: a non-empty `url` selects the remote
-`HttpTransport`, otherwise the stdio subprocess transport is spawned. When an
-agent becomes active, `Runtime::RebuildToolbox` starts its servers, performs the
-handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
+MCP servers are configured per-agent via `mcp_servers`, and a list may hold any
+number of them: each is started as its own client, and its tools are registered
+under the `mcp.<server>.` prefix. The transport is selected automatically in
+`McpClient::Connect()`: a non-empty `url` selects the remote `HttpTransport`,
+otherwise the stdio subprocess transport is spawned. Stdio runs a child process
+on both POSIX (`fork`/`execvp`) and Windows (`CreateProcess`), and HTTP goes
+through `BeastHttpClient`, so both work on every platform. When an agent becomes
+active, `Runtime::RebuildToolbox` starts its servers, performs the handshake, and
+lists tools.
 
 ---
 
@@ -477,10 +480,8 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Known Limitations
 
-- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
 - MCP request timeout fixed at 5 seconds.
-- Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
-- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). Windows falls back to `"unknown"` when the kernel API fails; on POSIX an unavailable `uname` simply yields nothing.
+- Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.

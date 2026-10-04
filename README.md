@@ -4,6 +4,8 @@
 
 A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence** and **dynamic backend switching**.
 
+Internals and layering live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ---
 
 ## Quick Start
@@ -44,6 +46,7 @@ toolchain on Windows (`-DCMAKE_TOOLCHAIN_FILE=...`).
 ```bash
 cmake -B build -DBUILD_TESTS=ON
 cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
 ```
 
 ### Configure
@@ -233,27 +236,7 @@ The configuration file must be located in a `.pu/` directory. Search order is
 `~/.pu/agents.json` (resolved from `HOME`, which is not set by default on
 Windows).
 
-```json
-{
-  "default_agent": "chat",
-  "agents": [
-    {
-      "name": "chat",
-      "backend": {
-        "type": "ollama",
-        "host": "http://localhost:11434",
-        "model": "qwen3.5:4b",
-        "temperature": 0.7,
-        "max_tokens": 4096
-      },
-      "security": {
-        "sandbox_root": ".",
-        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
-      }
-    }
-  ]
-}
-```
+The [Quick Start example](#configure) shows the shape of a file; the fields are below.
 
 **Agent fields:**
 
