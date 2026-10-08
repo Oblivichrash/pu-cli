@@ -1,5 +1,7 @@
 "use strict";
 
+import { BLOCK_TYPES, groupHistory } from "./history.js";
+
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
@@ -56,12 +58,6 @@ let connState = "connecting";
 // How many nodes the store holds for the current chain. The next message sent
 // becomes turn chainLength + 1, which is the number /api/rewind expects.
 let chainLength = 0;
-
-const BLOCK_TYPES = {
-  THINKING: "thinking",
-  TOOL_CALL: "tool_call",
-  TEXT: "text",
-};
 
 let currentAssistantBlocks = [];
 let currentAssistantEl = null;
@@ -195,6 +191,10 @@ function renderToolBlock(block) {
   statusSpan.className = "tool-status";
   if (block.status === "running") {
     statusSpan.textContent = " ⏳ Running...";
+  } else if (block.status === "pending") {
+    // Stored with no result: the turn ended before one was written, so what the
+    // call did is unknown rather than successful.
+    statusSpan.textContent = " ⚠ No result";
   } else if (block.error) {
     statusSpan.textContent = " ❌ Failed";
   } else {
@@ -586,55 +586,18 @@ async function loadHistory() {
     const history = await res.json();
     if (!Array.isArray(history)) return;
 
-    for (const msg of history) {
-      const role = msg.role;
-      const content = msg.content || "";
-
-      if (role === "system") {
-        createSystemMessage(content);
-        continue;
+    // Grouped rather than walked one message at a time: a turn that used a tool is
+    // several stored messages, and drawing each of them on its own would show the
+    // reader a different conversation from the one the stream built.
+    for (const turn of groupHistory(history)) {
+      if (turn.role === "system") {
+        createSystemMessage(turn.text);
+      } else if (turn.role === "user") {
+        createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: turn.text }], turn.turn,
+                      turn.text);
+      } else {
+        createMessage("assistant", turn.blocks);
       }
-
-      if (role === "tool") {
-        continue;
-      }
-
-      if (role === "assistant") {
-        const blocks = [];
-        const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
-
-        if (msg.reasoning_content) {
-          blocks.push({
-            type: BLOCK_TYPES.THINKING,
-            content: msg.reasoning_content,
-            collapsed: true,
-          });
-        }
-
-        for (const tc of toolCalls) {
-          const fn = tc.function || {};
-          const args = fn.arguments || {};
-          blocks.push({
-            type: BLOCK_TYPES.TOOL_CALL,
-            id: tc.id || "unknown",
-            name: fn.name || "unknown",
-            args: typeof args === "string" ? JSON.parse(args) : args,
-            output: "",
-            error: "",
-            status: "done",
-            collapsed: true,
-          });
-        }
-
-        if (content) {
-          blocks.push({ type: BLOCK_TYPES.TEXT, content });
-        }
-
-        createMessage("assistant", blocks);
-        continue;
-      }
-
-      createMessage("user", [{ type: BLOCK_TYPES.TEXT, content }], msg.id, content);
     }
     chainLength = history.length;
   } catch (_) {}

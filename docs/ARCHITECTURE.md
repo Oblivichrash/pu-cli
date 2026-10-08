@@ -232,7 +232,27 @@ is a setting rather than a retry.
 The response also names the model that answered. That name is kept in
 `ChatResult::model` and reaches the Web client in the `done` frame, because a
 gateway may serve a build other than the one that was configured: the session spec
-holds what was asked for, and this is the only place that says who replied. It is
+holds what was asked for, and this is the only place that says who replied.
+
+### What a reload rebuilds
+
+A reload draws the conversation from `GET /api/history` rather than from the
+stream, so the two have to agree. The store holds one node per provider message
+while the transcript shows one bubble per turn: a turn that used a tool is three
+nodes — the assistant message carrying the call, the result answering it, and the
+assistant message that replied with the result — and one bubble. `web/history.js`
+does that grouping, and it is a pure function so it can be exercised without a
+browser. Everything between two user turns becomes one reply, and each result is
+folded back into the call it answers by `tool_call_id`.
+
+Two things the stream showed are not in the projected message, so the endpoint
+reads them from the store beside it. A tool result is stored as the tool's own JSON
+envelope, so `tools::ParseToolResult` — the same function the running turn applied
+— is applied again and its `output`/`error` are sent next to the raw `content`.
+Whether a call was ever answered is a `ToolCallStatus` on the record, which never
+travels to a provider, so it is read from the chain and sent as `tool_call_status`
+aligned with `tool_calls`; a call with no result is drawn as such rather than as a
+finished one. It is
 held for the turn and not persisted, so a reload shows the configured name again.
 
 ## Provider Differences

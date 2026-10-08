@@ -175,7 +175,7 @@ The Web UI supports:
 - **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
 - **Request cancellation** — the Send button turns into Stop while a request is in flight; click it to stop the current generation.
 - **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
-- **History loading** — previous messages are restored from the persisted session (`GET /api/history`).
+- **History loading** — previous messages are restored from the persisted session (`GET /api/history`), grouped into one bubble per turn the way a live turn is drawn, with each tool result keeping the output the stream showed.
 - **Workspace switching** — switch between different project directories (each with its own `.pu/` configuration and session).
 
 The front-end lives in `web/` and talks to the runtime through a small JSON API over WebSocket for chat, plus REST endpoints for state queries and actions.
@@ -216,7 +216,7 @@ The server streams back chunks as they are generated; the front-end renders them
 | Method | Path | Description |
 | :----- | :--- | :---------- |
 | `GET` | `/api/session` | Current session info (agent, backend type/model) |
-| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages) |
+| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages); every tool call carries `tool_call_status` and every result the parsed `output`/`error` the stream showed |
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
