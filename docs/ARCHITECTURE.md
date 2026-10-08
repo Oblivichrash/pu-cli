@@ -66,15 +66,10 @@ pu::RuntimeError : std::runtime_error
 ## JSON Handling
 
 All JSON parsing and serialization is provided by **Boost.JSON**
-(`boost::json::value`). `include/pu/core/json.hpp` is a thin
-convenience layer over the Boost API for the operations the codebase uses most:
-
-- `pu::json::parse` / `pu::json::serialize` — parse and serialize
-  (`boost::json::parse` throws `boost::system::system_error` on malformed input).
-- `pu::json::ValueOrDefault(value, key, def)` — optional member read with default.
-- `pu::json::HasKey(value, key)` — safe key-existence check.
-- `pu::json::PrettyPrint(value)` — indented output for `agents.json` and
-  `session.json`.
+(`boost::json::value`). `include/pu/core/json.hpp` is a thin convenience layer over
+it: `parse`, `serialize`, `ValueOrDefault`, `HasKey` and `PrettyPrint`. Each one
+carries its own contract where it is declared, and the helper is what to reach for
+rather than the raw Boost call, so the fallbacks stay in one place.
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
@@ -161,9 +156,8 @@ Key responsibilities:
 5. Frames are written back over the socket as the run progresses (streamed
    chunks, tool start/end, completion, or error). The frame schema is documented
    in [README](../README.md#websocket-protocol).
-6. REST endpoints (`/api/session`, `/api/history`, `/api/agents`,
-   `/api/agent/switch`, `/api/workspaces`, `/api/workspace/switch`, `/api/rewind`, `/api/clear`)
-   handle control and status queries. On Ctrl+C the server stops and
+6. REST endpoints handle control and status queries; the list is in
+   [README](../README.md#rest-api-endpoints). On Ctrl+C the server stops and
    `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
@@ -215,6 +209,52 @@ full text as a single chunk frame. The frame schema and client-side rendering
 are documented in [README](../README.md#websocket-protocol) and implemented in
 `web/app.js`.
 
+### What a stream carries besides text
+
+Three things arrive beside the answer, and each has one place where it is read.
+
+Reasoning — `delta.reasoning_content` or Ollama's `message.thinking` — is
+accumulated as the model's own thinking and reaches the caller as it arrives, on a
+channel of its own (`thinking` frames), because it belongs beside the answer rather
+than in it. A `refusal` becomes the reply when no content arrived:
+the model's own words are the reason the user is owed, and without them a refusal
+is an empty answer. An `error` object inside the stream is raised as the request's
+failure, so the provider's message reaches the user instead of being replaced by
+the generic empty-answer diagnosis.
+
+The provider's word for why it stopped is kept in `ChatResult::finish_reason`
+(`finish_reason` for OpenAI compatible, `done_reason` for Ollama) and read by the
+executor. A reply the provider stopped at the token limit or its content filter is
+stored as it arrived and reported as `ExecutionResult::notice`: an answer that ends
+mid-sentence is otherwise indistinguishable from a finished one, and what fixes it
+is a setting rather than a retry.
+
+The response also names the model that answered. That name is kept in
+`ChatResult::model` and reaches the Web client in the `done` frame, because a
+gateway may serve a build other than the one that was configured: the session spec
+holds what was asked for, and this is the only place that says who replied.
+
+### What a reload rebuilds
+
+A reload draws the conversation from `GET /api/history` rather than from the
+stream, so the two have to agree. The store holds one node per provider message
+while the transcript shows one bubble per turn: a turn that used a tool is three
+nodes — the assistant message carrying the call, the result answering it, and the
+assistant message that replied with the result — and one bubble. `web/history.js`
+does that grouping, and it is a pure function so it can be exercised without a
+browser. Everything between two user turns becomes one reply, and each result is
+folded back into the call it answers by `tool_call_id`.
+
+Two things the stream showed are not in the projected message, so the endpoint
+reads them from the store beside it. A tool result is stored as the tool's own JSON
+envelope, so `tools::ParseToolResult` — the same function the running turn applied
+— is applied again and its `output`/`error` are sent next to the raw `content`.
+Whether a call was ever answered is a `ToolCallStatus` on the record, which never
+travels to a provider, so it is read from the chain and sent as `tool_call_status`
+aligned with `tool_calls`; a call with no result is drawn as such rather than as a
+finished one. It is
+held for the turn and not persisted, so a reload shows the configured name again.
+
 ## Provider Differences
 
 `config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)
@@ -232,21 +272,24 @@ and compatible gateways.
 | Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
 | Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
 | Token cap | not sent | `max_tokens` |
-| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` when `enable_thinking` is false |
+| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` for the `none` level |
+| Thinking level | not sent; the model decides for itself | `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
 | Reasoning on request | never sent | sent on assistant messages when non-empty |
 | Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` |
 | `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
-| Call assembly | one complete call per line | `index`-keyed deltas flushed on `done` |
-| Reasoning on response | not parsed; `IsThinkingMode()` is false | `delta.reasoning_content` accumulated |
+| Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` |
+| Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated |
+| End of reply | `done_reason` on the final object | `finish_reason` on each choice |
+| Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
 
 | Capability | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|
 | Tools, streaming content, parallel calls | yes | yes |
 | Streaming tool calls | whole call per line | index accumulation |
-| Reasoning | no | yes |
+| Reasoning | `message.thinking` | `delta.reasoning_content` |
 | Reasoning signature | no | no |
 | Full provider response retained | no | no |
 | Multimodal input or output | no | no |
@@ -281,6 +324,12 @@ Runtime.ProcessInput(input, ...)
                          ▼
                        Session::Serialize() → session.json
 ```
+
+Each stored node is rendered into one `ChatMessage` on the way out
+(`src/session/request.cpp`), which is the view a provider requires. That makes
+`ChatMessage` a compatibility view rather than a place to grow: a new context
+feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
+a turn is.
 
 ### Web request (streaming)
 
@@ -325,11 +374,15 @@ Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
 └──────────────────────────────────────┘   └──────────────────────────────────────┘
 ```
 
-MCP servers are configured per-agent via `mcp_servers`. The transport is selected
-automatically in `McpClient::Connect()`: a non-empty `url` selects the remote
-`HttpTransport`, otherwise the stdio subprocess transport is spawned. When an
-agent becomes active, `Runtime::RebuildToolbox` starts its servers, performs the
-handshake, lists tools, and registers them with a `mcp.<server>.` prefix.
+MCP servers are configured per-agent via `mcp_servers`, and a list may hold any
+number of them: each is started as its own client, and its tools are registered
+under the `mcp.<server>.` prefix. The transport is selected automatically in
+`McpClient::Connect()`: a non-empty `url` selects the remote `HttpTransport`,
+otherwise the stdio subprocess transport is spawned. Stdio runs a child process
+on both POSIX (`fork`/`execvp`) and Windows (`CreateProcess`), and HTTP goes
+through `BeastHttpClient`, so both work on every platform. When an agent becomes
+active, `Runtime::RebuildToolbox` starts its servers, performs the handshake, and
+lists tools.
 
 ---
 
@@ -359,17 +412,13 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
-Keeping a replaced turn instead would leave two lines of reasoning in the store
-and push the choice between them to whoever reads the file later, which is the
-moment they can judge it least. A line earns its place by being continued, and
-continuing means sending the next message on it, so the send that replaces a turn
-is where the choice belongs; a branch with no conclusion to build on is noise
-rather than an alternative.
+Keeping a replaced turn would leave two lines of reasoning in the store and push
+the choice between them to a later reader; the send that replaces a turn is where
+that choice belongs.
 
-Content is one string rather than an array of typed parts. Nothing here sends or
-receives parts, so the array only wrapped a string; the OpenAI content-block format
-is itself an array, though, so a second part type means reintroducing the wrapper —
-mechanical, and the point at which it would earn its place.
+Content is one string rather than an array of typed parts: nothing sends or
+receives parts, so the array only wrapped a string. Reintroducing the wrapper for a
+second part type is mechanical, and not yet needed.
 
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
@@ -447,10 +496,8 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Known Limitations
 
-- MCP stdio transport supports both POSIX (`fork`/`execvp`) and Windows (`CreateProcess` + pipes); the HTTP transport uses BeastHttpClient (Boost.Beast) and works on both platforms.
-- MCP request timeout fixed at 5 seconds.
-- Multiple `mcp_servers` entries per agent are fully supported; each server is started as a separate client and its tools are registered with the `mcp.<server_name>.` prefix.
-- Environment probing uses `uname` on POSIX (kernel API on Windows), which may not be available on all systems (e.g. minimal containers). Windows falls back to `"unknown"` when the kernel API fails; on POSIX an unavailable `uname` simply yields nothing.
+- MCP requests time out after a fixed 5 seconds.
+- Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.

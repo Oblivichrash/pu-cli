@@ -4,6 +4,8 @@
 
 A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence** and **dynamic backend switching**.
 
+Internals and layering live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ---
 
 ## Quick Start
@@ -44,6 +46,7 @@ toolchain on Windows (`-DCMAKE_TOOLCHAIN_FILE=...`).
 ```bash
 cmake -B build -DBUILD_TESTS=ON
 cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
 ```
 
 ### Configure
@@ -95,75 +98,6 @@ Your conversation is automatically saved to `<data-dir>/session.json` (by
 default `./.pu/session.json`) after every interaction, and restored when you
 restart. Each directory has its own independent session.
 
-### Web Server (`pu serve`)
-
-`pu serve` starts a local web UI on top of the same single-session runtime. Open
-`http://127.0.0.1:8080` in a browser and chat with the active agent:
-
-```bash
-./build/pu serve                       # listen on 127.0.0.1:8080
-./build/pu serve --host 0.0.0.0 --port 9000
-```
-
-> **Warning** — the server has no authentication and no origin checks, so
-> anyone who can reach the port can read the session history, switch
-> workspaces, and run the active agent's tools. Keep the default loopback
-> bind unless the port is protected by other means.
-
-Each message you sent carries an **edit** link. It steps the session back to just
-before that turn and puts the text back in the composer; sending it again
-replaces that turn, and the turn it replaced is dropped when the replacement
-lands, so what the session file ends up holding is what sending the new text from
-the start would have left.
-
-The Web UI supports:
-
-- **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
-- **Request cancellation** — the Send button turns into Cancel while a request is in flight; click it to abort the current generation.
-- **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
-- **History loading** — previous messages are restored from the persisted session (`GET /api/history`).
-- **Workspace switching** — switch between different project directories (each with its own `.pu/` configuration and session).
-
-The front-end lives in `web/` and talks to the runtime through a small JSON API over WebSocket for chat, plus REST endpoints for state queries and actions.
-
-#### WebSocket Protocol
-
-**Endpoint**: `ws://<host>:<port>/ws`
-
-**Client → Server**:
-
-```json
-{"type":"run","payload":{"text":"user message"}}
-{"type":"cancel"}
-```
-
-**Server → Client**:
-
-```json
-{"type":"chunk","payload":{"text":"token part"}}
-{"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
-{"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
-{"type":"done"}
-{"type":"error","payload":{"text":"error description"}}
-```
-
-The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the server only sets the cancel token, and the client closes the WebSocket itself after sending `{"type":"cancel"}`.
-
-#### REST API Endpoints
-
-| Method | Path | Description |
-| :----- | :--- | :---------- |
-| `GET` | `/api/session` | Current session info (agent, backend type/model) |
-| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages) |
-| `GET` | `/api/agents` | List all available agents with descriptions |
-| `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
-| `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
-| `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
-| `POST` | `/api/clear` | Clear the conversation history |
-| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
-
-All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
-
 ---
 
 ## Core Commands
@@ -176,6 +110,7 @@ All endpoints return JSON. The chat functionality is exclusively provided by the
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
 | `/rewind <turn>` | Step back to before a turn; the next message replaces it |
+| `/thinking [level]` | Show or set this session's thinking level (`auto` follows the agent's configuration) |
 | `/exit`, `/quit` | Exit |
 
 These are chat commands. The Web server is a CLI subcommand (`pu serve`),
@@ -214,6 +149,86 @@ This allows the executor to distinguish success from failure and provide clear f
 
 ---
 
+## Web Server (`pu serve`)
+
+`pu serve` starts a local web UI on top of the same single-session runtime. Open
+`http://127.0.0.1:8080` in a browser and chat with the active agent:
+
+```bash
+./build/pu serve                       # listen on 127.0.0.1:8080
+./build/pu serve --host 0.0.0.0 --port 9000
+```
+
+> **Warning** — the server has no authentication and no origin checks, so
+> anyone who can reach the port can read the session history, switch
+> workspaces, and run the active agent's tools. Keep the default loopback
+> bind unless the port is protected by other means.
+
+Each message you sent carries an **edit** link. It steps the session back to just
+before that turn and puts the text back in the composer; sending it again
+replaces that turn, and the turn it replaced is dropped when the replacement
+lands, so what the session file ends up holding is what sending the new text from
+the start would have left.
+
+The Web UI supports:
+
+- **Real-time streaming chat** — replies appear token by token (typewriter effect) via **WebSocket** (`ws://` endpoint `/ws`).
+- **Request cancellation** — the Send button turns into Stop while a request is in flight; click it to stop the current generation.
+- **Agent switching** — pick an agent from the dropdown (`POST /api/agent/switch`).
+- **History loading** — previous messages are restored from the persisted session (`GET /api/history`), grouped into one bubble per turn the way a live turn is drawn, with each tool result keeping the output the stream showed.
+- **Workspace switching** — switch between different project directories (each with its own `.pu/` configuration and session).
+
+The front-end lives in `web/` and talks to the runtime through a small JSON API over WebSocket for chat, plus REST endpoints for state queries and actions.
+
+### WebSocket Protocol
+
+**Endpoint**: `ws://<host>:<port>/ws`
+
+**Client → Server**:
+
+```json
+{"type":"run","payload":{"text":"user message"}}
+{"type":"cancel"}
+```
+
+**Server → Client**:
+
+```json
+{"type":"chunk","payload":{"text":"token part"}}
+{"type":"thinking","payload":{"text":"reasoning part"}}
+{"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
+{"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
+{"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
+{"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
+{"type":"error","payload":{"text":"error description"}}
+```
+
+The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the client sends `{"type":"cancel"}` to set the cancel token and keeps the connection open, and the turn then ends with the usual `done`.
+
+`thinking` carries the model's reasoning, which is a channel of its own: the front-end renders it beside the answer rather than in it, and a backend that reports no reasoning simply sends none.
+
+`notice` is a remark about a reply that arrived but is known to be incomplete — the provider stopped it at the token limit or its content filter. It is sent before the turn is closed and is not an error: the reply itself was stored and stands as it is.
+
+`done` carries the model the response named, when it named one: a gateway may serve a different build than the one that was configured, and the header then shows who replied.
+
+### REST API Endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `GET` | `/api/session` | Current session info (agent, backend type/model) |
+| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages); every tool call carries `tool_call_status` and every result the parsed `output`/`error` the stream showed |
+| `GET` | `/api/agents` | List all available agents with descriptions |
+| `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
+| `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
+| `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
+| `POST` | `/api/clear` | Clear the conversation history |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
+| `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
+
+All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
+
+---
+
 ## Configuration
 
 ### `agents.json`
@@ -223,27 +238,7 @@ The configuration file must be located in a `.pu/` directory. Search order is
 `~/.pu/agents.json` (resolved from `HOME`, which is not set by default on
 Windows).
 
-```json
-{
-  "default_agent": "chat",
-  "agents": [
-    {
-      "name": "chat",
-      "backend": {
-        "type": "ollama",
-        "host": "http://localhost:11434",
-        "model": "qwen3.5:4b",
-        "temperature": 0.7,
-        "max_tokens": 4096
-      },
-      "security": {
-        "sandbox_root": ".",
-        "forbidden_patterns": ["cd", "rm -rf", "sudo"]
-      }
-    }
-  ]
-}
-```
+The [Quick Start example](#configure) shows the shape of a file; the fields are below.
 
 **Agent fields:**
 
@@ -265,7 +260,7 @@ Windows).
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
 | `max_tokens` | `2048` | Sent by the OpenAI-compatible path only |
-| `enable_thinking` | `true` | OpenAI-compatible path only |
+| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default` (send nothing and let the backend decide); OpenAI-compatible path only |
 | `system_prompt` | unset | Agent-specific system prompt, merged with the injected context |
 
 `host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
@@ -324,9 +319,18 @@ if `url` is present the client uses HTTP, otherwise it spawns the `command`.
 
 ### Thinking Mode
 
-`enable_thinking` applies to the OpenAI-compatible backend only: `false` sends
-`thinking.type = "disabled"`, so a model that would otherwise reason answers
-directly.
+`thinking` applies to the OpenAI-compatible backend only, and it is a level rather
+than a switch: `none` sends `thinking.type = "disabled"` so a model that would
+otherwise reason answers directly, `low`/`medium`/`high` are sent as
+`reasoning_effort`, and `default` sends neither, which leaves the choice to the
+backend. A file written before the level existed keeps its meaning:
+`enable_thinking: false` reads as `none`, and `enable_thinking: true` as `default`.
+
+The level can also be set for one session without editing this file: `/thinking
+<level>` in the CLI, or the control in the header in the Web UI, where the other
+session-wide choices are, and either is remembered with the session. A backend
+that does not carry a level — Ollama, where the model decides for itself — says so,
+and no control is offered.
 
 ```json
 "backend": {
@@ -334,7 +338,7 @@ directly.
   "host": "https://api.deepseek.com/v1",
   "model": "deepseek-reasoner",
   "api_key": "${DEEPSEEK_API_KEY}",
-  "enable_thinking": true
+  "thinking": "high"
 }
 ```
 

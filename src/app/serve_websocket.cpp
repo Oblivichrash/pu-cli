@@ -137,14 +137,33 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
                   boost::json::value ev = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
                   send_frame(ev);
                 },
-                tool_cb);
+                tool_cb,
+                // Reasoning arrives on its own channel and is rendered beside the
+                // answer, so it travels as a frame of its own.
+                [&](const std::string& thought) {
+                  if (thought.empty()) return;
+                  boost::json::value ev = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
+                  send_frame(ev);
+                });
+          }
+
+          // A remark about the reply goes out before the turn is closed, so it lands
+          // under the text the client has already rendered.
+          if (!result.notice.empty()) {
+            boost::json::value frame = {{"type", "notice"}, {"payload", {{"text", result.notice}}}};
+            send_frame(frame);
           }
 
           boost::json::value final;
-          if (result.has_error)
+          if (result.has_error) {
             final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};
-          else
+          } else if (result.model.empty()) {
             final = {{"type", "done"}};
+          } else {
+            // Who answered, which a gateway may have chosen rather than serve the
+            // model that was configured.
+            final = {{"type", "done"}, {"payload", {{"model", result.model}}}};
+          }
           send_frame(final);
         });
         worker.detach();

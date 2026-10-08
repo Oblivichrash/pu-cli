@@ -108,7 +108,8 @@ class MockLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     ChatResult r;
     r.content = content_;
     r.tool_calls = calls_;
@@ -131,7 +132,8 @@ class FailingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
 
@@ -145,7 +147,8 @@ class CapturingLLM : public LLMProvider {
   ChatResult Chat(const std::vector<ChatMessage>& history,
                   const std::vector<ToolDefinition>& /*tools*/,
                   std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/) override {
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
     history_ = history;
     ChatResult r;
     r.content = "done";
@@ -158,6 +161,40 @@ class CapturingLLM : public LLMProvider {
 
  private:
   std::vector<ChatMessage> history_;
+};
+
+// A provider whose answer says how it ended, which is what the remark is read from,
+// and which can put a line on the reasoning channel as well.
+class StoppingLLM : public LLMProvider {
+ public:
+  StoppingLLM(std::string content, std::string finish_reason, std::string model = "",
+              std::string reasoning = "")
+      : content_(std::move(content)),
+        finish_reason_(std::move(finish_reason)),
+        model_(std::move(model)),
+        reasoning_(std::move(reasoning)) {}
+
+  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
+                  const std::vector<ToolDefinition>& /*tools*/,
+                  std::function<void(const std::string&)> /*content_callback*/,
+                  CancelToken /*cancel_token*/,
+                  std::function<void(const std::string&)> reasoning_callback) override {
+    if (reasoning_callback && !reasoning_.empty()) reasoning_callback(reasoning_);
+    ChatResult r;
+    r.content = content_;
+    r.finish_reason = finish_reason_;
+    r.model = model_;
+    r.reasoning_content = reasoning_;
+    return r;
+  }
+
+  bool SupportsTools() const override { return true; }
+
+ private:
+  std::string content_;
+  std::string finish_reason_;
+  std::string model_;
+  std::string reasoning_;
 };
 
 class TrackingTool : public Tool {
@@ -345,4 +382,108 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   // The user message stands alone: nothing is stored that claims to answer it.
   REQUIRE(ws.HistorySize() == 1);
   REQUIRE(ws.GetHistory()[0].role == "user");
+}
+
+TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("half a sentence", "length");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("write a lot", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "half a sentence");
+  // The answer is real and is stored; the remark is what says it may be cut off.
+  REQUIRE_FALSE(result.notice.empty());
+  REQUIRE(ws.HistorySize() == 2);
+}
+
+TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("a whole answer", "stop");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "a whole answer");
+  REQUIRE(result.notice.empty());
+}
+
+TEST_CASE("A tool call without a name still gets an answer in the store", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.id = "call_1";
+  call.name = "";  // the provider named no tool
+  call.arguments = boost::json::object{};
+
+  MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
+
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("go", ws, &provider);
+
+  REQUIRE(result.has_error == false);
+
+  // The call is in the conversation, so it has to be answered: a call the store
+  // holds without its result is a conversation the provider refuses to continue.
+  bool stored_call = false;
+  bool stored_answer = false;
+  for (const auto& msg : ws.GetHistory()) {
+    if (msg.role == "assistant" && msg.HasToolCalls()) {
+      for (const auto& tc : msg.tool_calls.as_array()) {
+        if (tc.at("id") == "call_1") stored_call = true;
+      }
+    }
+    if (msg.role == "tool" && msg.tool_call_id == "call_1") stored_answer = true;
+  }
+  REQUIRE(stored_call);
+  REQUIRE(stored_answer);
+}
+
+TEST_CASE("The model that answered is carried out of the turn", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
+  Workspace ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+
+  // What replied, which is not necessarily what was configured.
+  REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
+}
+
+TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  Executor executor(&toolbox);
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  StoppingLLM provider("answer", "stop", "", "weighing the options");
+  std::string streamed;
+  Workspace ws;
+  const ExecutionResult result =
+      executor.Execute("think", ws, &provider, nullptr, nullptr, {},
+                       [&](const std::string& token) { streamed += token; });
+
+  // Reasoning has a channel of its own, so it neither waits for the answer nor
+  // becomes part of it.
+  REQUIRE(streamed == "weighing the options");
+  REQUIRE(result.content == "answer");
 }

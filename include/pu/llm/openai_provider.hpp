@@ -21,7 +21,7 @@ class OpenAIProvider : public LLMProvider {
     float temperature = 0.7f;
     std::string api_key;
     int max_tokens = 2048;
-    bool enable_thinking = true;  // for DeepSeek/vLLM
+    ThinkingLevel thinking = ThinkingLevel::kServerDefault;
   };
 
   explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
@@ -29,10 +29,11 @@ class OpenAIProvider : public LLMProvider {
 
   ChatResult Chat(const std::vector<ChatMessage>& history, const std::vector<ToolDefinition>& tools,
                   std::function<void(const std::string&)> content_callback = nullptr,
-                  CancelToken cancel_token = nullptr) override;
+                  CancelToken cancel_token = nullptr,
+                  std::function<void(const std::string&)> reasoning_callback = nullptr) override;
 
   bool SupportsTools() const override { return true; }
-  bool IsThinkingMode() const override { return config_.enable_thinking; }
+  bool SupportsThinkingLevel() const override { return true; }
 
  private:
   // A request without tools omits the block rather than carrying an empty one.
@@ -40,6 +41,9 @@ class OpenAIProvider : public LLMProvider {
                            const std::vector<ToolDefinition>& tools) const;
   void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb);
+  // Tool calls arrive as fragments and only become calls once the answer is
+  // assembled, so they are held until the stream says it is finished.
+  void FlushPendingToolCalls();
   void ResetAccumulators();
 
   Config config_;
@@ -52,8 +56,16 @@ class OpenAIProvider : public LLMProvider {
   };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
+  // Where reasoning tokens go while the stream is open. Held as a member rather
+  // than threaded through every helper because only the stream handler reads it,
+  // and a provider is built per request (Session::CreateProvider), so no stale
+  // sink can outlive the caller it belongs to.
+  std::function<void(const std::string&)> reasoning_sink_;
   std::string content_;
   std::string current_reasoning_content_;
+  std::string refusal_;
+  std::string finish_reason_;
+  std::string response_model_;
   std::vector<ToolCall> tool_calls_;
   std::optional<TokenUsage> usage_;
 };

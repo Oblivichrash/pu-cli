@@ -48,7 +48,7 @@ class BackendSourceFixture {
                       {"host", "http://127.0.0.1:1"},
                       {"model", "test-model"},
                       {"temperature", temperature},
-                      {"enable_thinking", false},
+                      {"thinking", "none"},
                   }},
              },
              boost::json::value{
@@ -73,17 +73,17 @@ class BackendSourceFixture {
 
 }  // namespace
 
-TEST_CASE("A backend keeps enable_thinking through a round trip", "[backend]") {
+TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
   config::BackendConfig cfg;
   cfg.type = config::BackendType::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
-  cfg.enable_thinking = false;
+  cfg.thinking = ThinkingLevel::kHigh;
 
   const config::BackendConfig read =
       boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
 
-  REQUIRE(read.enable_thinking == false);
+  REQUIRE(read.thinking == ThinkingLevel::kHigh);
   REQUIRE(read.model == "test-model");
 }
 
@@ -97,7 +97,7 @@ TEST_CASE("A session spec carries a backend only when one was overridden", "[bac
 
   config::BackendConfig override_cfg;
   override_cfg.model = "overridden";
-  override_cfg.enable_thinking = false;
+  override_cfg.thinking = ThinkingLevel::kLow;
   chosen.backend_override = override_cfg;
 
   const auto restored = RuntimeSpec::Deserialize(chosen.Serialize());
@@ -105,7 +105,7 @@ TEST_CASE("A session spec carries a backend only when one was overridden", "[bac
   REQUIRE(restored->agent_name == "chat");
   REQUIRE(restored->backend_override.has_value());
   REQUIRE(restored->backend_override->model == "overridden");
-  REQUIRE(restored->backend_override->enable_thinking == false);
+  REQUIRE(restored->backend_override->thinking == ThinkingLevel::kLow);
 }
 
 TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {

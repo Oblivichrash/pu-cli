@@ -13,6 +13,13 @@
 <header>
   <h1>· 朴 ·</h1>
   <select id="agent-select"></select>
+  <select id="thinking-select" title="How much reasoning to ask for" hidden>
+    <option value="auto" title="Follow the agent's configuration">Thinking: Auto</option>
+    <option value="none" title="Ask the backend not to think">Thinking: Off</option>
+    <option value="low" title="A little reasoning">Thinking: Low</option>
+    <option value="medium" title="Balanced reasoning">Thinking: Medium</option>
+    <option value="high" title="As much reasoning as the backend allows">Thinking: High</option>
+  </select>
 </header>
 <div id="messages"></div>
 <div id="composer">

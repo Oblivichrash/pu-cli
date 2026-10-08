@@ -42,6 +42,10 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
       "  /clear                 Clear conversation history\n");
   add("/rewind", &CommandRouter::HandleRewind,
       "  /rewind <turn>         Step back to before a turn; the next message replaces it\n");
+  add("/thinking", &CommandRouter::HandleThinking,
+      "  /thinking              Show the thinking level this session asks for\n"
+      "  /thinking <level>      none, low, medium, high, or default (the backend decides)\n"
+      "  /thinking auto         Follow the agent's configuration again\n");
   return reg;
 }
 
@@ -210,6 +214,46 @@ bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& 
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }
+  return true;
+}
+
+bool CommandRouter::HandleThinking(const std::vector<std::string>& args, Session& /*session*/,
+                                   std::string& output) {
+  if (!runtime_.SupportsThinkingLevel()) {
+    output = "This backend does not carry a thinking level.";
+    return true;
+  }
+
+  if (args.empty()) {
+    output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
+    output += runtime_.GetThinkingOverride() ? " (set for this session)"
+                                             : " (from the agent's configuration)";
+    return true;
+  }
+
+  if (args.size() > 1) {
+    output = FormatUsage("/thinking", "[level|auto]");
+    return true;
+  }
+
+  if (args[0] == "auto") {
+    runtime_.SetThinkingLevel(std::nullopt);
+    output = "Thinking follows the agent's configuration again (" +
+             std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) + ").";
+    return true;
+  }
+
+  // An unrecognised word reads as the absent level, so the word itself is checked
+  // rather than trusting that fallback to mean what was typed.
+  if (args[0] != "default" && ParseThinkingLevel(args[0]) == ThinkingLevel::kServerDefault) {
+    output =
+        "Unknown thinking level: " + args[0] + ". Use none, low, medium, high, default or auto.";
+    return true;
+  }
+
+  runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]));
+  output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) +
+           " for this session.";
   return true;
 }
 

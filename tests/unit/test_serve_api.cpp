@@ -4,6 +4,7 @@
 #include "pu/cli.hpp"
 #include "pu/runtime.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 #include <boost/asio.hpp>
@@ -199,7 +200,8 @@ class FakeBackend {
   std::atomic<bool> stop_requested_{false};
 };
 
-std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
+std::string WriteAgentsFile(const fs::path& dir, int backend_port,
+                            const std::string& backend_type = "ollama") {
   fs::create_directories(dir / ".pu");
   fs::path path = dir / ".pu" / "agents.json";
 
@@ -210,7 +212,7 @@ std::string WriteAgentsFile(const fs::path& dir, int backend_port) {
            {"name", "chat"},
            {"description", "Chat agent"},
            {"backend",
-            {{"type", "ollama"},
+            {{"type", backend_type},
              {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
              {"model", "test-model"}}},
            {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}}}}};
@@ -266,9 +268,32 @@ class TestHttpClient {
   int port_;
 };
 
+// Runs the block inside `dir`. The runtime takes its workspace, and with it the
+// session file, from the working directory, so a test that never enters its own
+// directory shares the repository's conversation with every other test.
+class ScopedWorkingDir {
+ public:
+  explicit ScopedWorkingDir(const fs::path& dir) : original_(fs::current_path()) {
+    fs::current_path(dir);
+  }
+
+  ~ScopedWorkingDir() {
+    std::error_code ec;
+    fs::current_path(original_, ec);
+  }
+
+  ScopedWorkingDir(const ScopedWorkingDir&) = delete;
+  ScopedWorkingDir& operator=(const ScopedWorkingDir&) = delete;
+
+ private:
+  fs::path original_;
+};
+
 class ServeHarness {
  public:
-  ServeHarness() {
+  // The backend type decides what a client may do, so a test that needs a control
+  // the default does not carry asks for a backend that carries it.
+  explicit ServeHarness(const std::string& backend_type = "ollama") {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -279,12 +304,20 @@ class ServeHarness {
     data_env_ = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", home_.string());
 
     backend_ = std::make_unique<FakeBackend>();
-    WriteAgentsFile(home_, backend_->Port());
+    WriteAgentsFile(home_, backend_->Port(), backend_type);
+
+    // Initialised here rather than by the server, so the workspace it reads from the
+    // working directory is this harness's own and the directory is left again before
+    // anything else runs. RunServe initialises a second time, which is a no-op.
+    {
+      ScopedWorkingDir in_home(home_);
+      runtime_ = std::make_unique<pu::Runtime>();
+      runtime_->Initialize();
+    }
 
     port_ = FindFreePort();
     REQUIRE(port_ > 0);
 
-    runtime_ = std::make_unique<pu::Runtime>();
     server_thread_ = std::thread([this] { pu::cli::RunServe(kHost, port_, *runtime_); });
 
     REQUIRE(WaitForPort(kHost, port_, 15000));
@@ -311,6 +344,10 @@ class ServeHarness {
   TestHttpClient Client() const { return TestHttpClient(kHost, port_); }
 
   int Port() const { return port_; }
+
+  // The runtime the server is reading, so a test can seed a conversation in the
+  // same store a turn would have written to.
+  pu::Runtime& Runtime() { return *runtime_; }
 
  private:
   fs::path home_;
@@ -351,6 +388,92 @@ TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   REQUIRE(j.as_array().empty());
 }
 
+// The reload draws the conversation from this endpoint alone, so everything the
+// streamed turn showed has to be in it: a tool result is stored as structured JSON
+// and reaches the browser as the same output the stream carried, and a call with no
+// result is reported as such rather than as a finished one.
+TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Workspace& workspace = session->GetWorkspace();
+  workspace.Append("user", "run it");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{
+      boost::json::object{
+          {"id", "call_1"},
+          {"type", "function"},
+          {"function",
+           boost::json::object{{"name", "execute_bash"},
+                               {"arguments", boost::json::object{{"command", "echo hi"}}}}}},
+      boost::json::object{
+          {"id", "call_2"},
+          {"type", "function"},
+          {"function",
+           boost::json::object{{"name", "execute_bash"},
+                               {"arguments", boost::json::object{{"command", "echo there"}}}}}},
+  };
+  workspace.Append(assistant);
+
+  // One call is answered, the other is left as the store keeps it when a turn ends
+  // between a call and its result.
+  pu::ChatMessage receipt;
+  receipt.role = "tool";
+  receipt.tool_call_id = "call_1";
+  receipt.tool_name = "execute_bash";
+  receipt.content = boost::json::serialize(boost::json::object{
+      {"success", true}, {"stdout", "hi\n"}, {"stderr", ""}, {"error", ""}, {"exit_code", 0}});
+  workspace.Append(receipt);
+
+  auto j = ParseJson(client.Get("/api/history"));
+  REQUIRE(j.as_array().size() == 3);
+
+  const boost::json::value& call_turn = j.as_array()[1];
+  REQUIRE(call_turn.at("tool_calls").as_array().size() == 2);
+  REQUIRE(call_turn.at("tool_call_status") == boost::json::array{"done", "pending"});
+
+  // What the tool printed, not the envelope it was wrapped in.
+  const boost::json::value& result_turn = j.as_array()[2];
+  REQUIRE(result_turn.at("output") == "hi\n");
+  REQUIRE(result_turn.at("error") == "");
+}
+
+TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Workspace& workspace = session->GetWorkspace();
+  workspace.Append("user", "run it");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{boost::json::object{
+      {"id", "call_1"},
+      {"type", "function"},
+      {"function", boost::json::object{{"name", "execute_bash"},
+                                       {"arguments", boost::json::object{{"command", "ls"}}}}}}};
+  workspace.Append(assistant);
+
+  // A built-in or MCP tool answers in its own words, which is output too.
+  pu::ChatMessage receipt;
+  receipt.role = "tool";
+  receipt.tool_call_id = "call_1";
+  receipt.tool_name = "execute_bash";
+  receipt.content = "plain text from a tool";
+  workspace.Append(receipt);
+
+  auto j = ParseJson(client.Get("/api/history"));
+  REQUIRE(j.as_array().size() == 3);
+  REQUIRE(j.as_array()[2].at("output") == "plain text from a tool");
+  REQUIRE(j.as_array()[2].at("error") == "");
+}
+
 TEST_CASE("serve API /api/agents", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
@@ -376,6 +499,47 @@ TEST_CASE("serve API /api/clear", "[serve][api]") {
   auto history_j = ParseJson(history_body);
   REQUIRE(history_j.is_array());
   REQUIRE(history_j.as_array().empty());
+}
+
+TEST_CASE("serve API /api/thinking", "[serve][api]") {
+  // An OpenAI-compatible backend is where a level lands, so this is where the
+  // control has something to set.
+  ServeHarness harness("openai");
+  auto client = harness.Client();
+
+  auto session_j = ParseJson(client.Get("/api/session"));
+  REQUIRE(session_j.at("thinking") == "default");
+  REQUIRE(session_j.at("supports_thinking_level") == true);
+
+  auto set_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
+  REQUIRE(set_j.at("success") == true);
+  // The session's own level is what the next request carries, and the session
+  // reports it as its own rather than as the configuration's.
+  REQUIRE(set_j.at("thinking") == "high");
+  REQUIRE(set_j.at("thinking_override") == "high");
+
+  auto after_j = ParseJson(client.Get("/api/session"));
+  REQUIRE(after_j.at("thinking") == "high");
+  REQUIRE(after_j.at("thinking_override") == "high");
+
+  // `auto` hands the choice back to the agent's configuration.
+  auto auto_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "auto"}}));
+  REQUIRE(auto_j.at("success") == true);
+  REQUIRE(auto_j.at("thinking") == "default");
+  REQUIRE_FALSE(auto_j.as_object().count("thinking_override") == 1);
+}
+
+TEST_CASE("serve API /api/thinking refuses what the backend cannot carry", "[serve][api]") {
+  ServeHarness harness;  // ollama, where the model decides for itself
+  auto client = harness.Client();
+
+  auto refused_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
+  REQUIRE(refused_j.at("success") == false);
+
+  // A word that names no level is refused rather than read as some default.
+  auto unknown_j =
+      ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "enormous"}}));
+  REQUIRE(unknown_j.at("success") == false);
 }
 
 TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {

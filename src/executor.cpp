@@ -24,6 +24,24 @@ namespace pu {
 
 namespace {
 
+// Why a reply stopped, when the reason is one the user has to be told about. An
+// answer cut off at the token limit reads as the model's whole answer otherwise,
+// and what fixes it is a setting rather than another try.
+std::string StopNotice(const std::string& finish_reason) {
+  if (finish_reason.empty()) return "";
+  if (finish_reason == "length") {
+    return "The reply stopped at the token limit, so it may be incomplete. Raise "
+           "max_tokens for this backend to get the rest.";
+  }
+  if (finish_reason == "content_filter") {
+    return "The provider stopped the reply because its content filter matched.";
+  }
+  // Anything else is the provider's own word for an ordinary ending. The value is
+  // logged rather than interpreted, because the vocabularies differ between them.
+  spdlog::debug("Provider ended the reply with finish_reason={}", finish_reason);
+  return "";
+}
+
 #ifdef _WIN32
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
@@ -132,7 +150,8 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace,
                                   LLMProvider* provider, CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
-                                  ToolCallbacks tool_callbacks) {
+                                  ToolCallbacks tool_callbacks,
+                                  std::function<void(const std::string&)> reasoning_callback) {
   if (!toolbox_) {
     ExecutionResult err;
     err.has_error = true;
@@ -142,7 +161,8 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
 
   workspace.Append("user", input);
 
-  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks);
+  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks,
+                            reasoning_callback);
   ExecutionResult exec_result;
   if (result.has_error) {
     exec_result.has_error = true;
@@ -157,12 +177,15 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
   exec_result.content = result.final_response;
   exec_result.was_streamed = result.was_streamed;
   exec_result.tool_call_count = result.tool_call_count;
+  exec_result.notice = result.notice;
+  exec_result.model = result.model;
   return exec_result;
 }
 
 Executor::ToolLoopResult Executor::RunToolLoop(
     Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
-    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks) {
+    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks,
+    std::function<void(const std::string&)> reasoning_callback) {
   ToolLoopResult result;
   result.was_streamed = false;
 
@@ -213,7 +236,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
               }
             }
           },
-          cancel_token);
+          cancel_token, reasoning_callback);
 
       if (chat_result.usage) {
         spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
@@ -228,6 +251,11 @@ Executor::ToolLoopResult Executor::RunToolLoop(
           spdlog::debug("Using reasoning_content as final response (thinking mode)");
         }
         result.final_response = response;
+        result.notice = StopNotice(chat_result.finish_reason);
+        if (!chat_result.model.empty()) {
+          result.model = chat_result.model;
+          spdlog::debug("Answered by {}", chat_result.model);
+        }
         break;
       }
     } catch (const std::exception& e) {
@@ -279,10 +307,9 @@ Executor::ToolLoopResult Executor::RunToolLoop(
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
     for (const auto& call : chat_result.tool_calls) {
-      if (call.name.empty()) {
-        spdlog::warn("Skipping tool call with empty name");
-        continue;
-      }
+      // An unnamed call runs like any other: the toolbox answers it with an error,
+      // which keeps the call and its result together in the store. A call the store
+      // holds without its answer is a conversation the provider refuses to continue.
       ++result.tool_call_count;
 
       // Notify the UI/streaming layer that a tool is about to run.
