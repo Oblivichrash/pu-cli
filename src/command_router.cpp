@@ -107,8 +107,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
                                   std::string& output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
-    output = "Current backend: " +
-             std::string(cfg.type == config::BackendType::kOpenAI ? "openai" : "ollama") +
+    output = "Current backend: " + std::string(config::BackendTypeName(cfg.type)) +
              " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
@@ -118,9 +117,8 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     try {
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
-               std::string(agent_config->backend.type == config::BackendType::kOpenAI ? "openai"
-                                                                                      : "ollama") +
-               "/" + agent_config->backend.model + ")";
+               std::string(config::BackendTypeName(agent_config->backend.type)) + "/" +
+               agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
     }
@@ -131,23 +129,17 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     return true;
 
   config::BackendConfig new_cfg;
-  if (args[0] == "ollama") {
-    new_cfg.type = config::BackendType::kOllama;
-  } else if (args[0] == "openai") {
-    new_cfg.type = config::BackendType::kOpenAI;
-  } else {
-    output = "Unknown type: " + args[0] + ". Use 'ollama' or 'openai'.";
+  const auto type = config::ParseBackendType(args[0]);
+  if (!type) {
+    output = "Unknown type: " + args[0] + ". Use 'ollama', 'openai' or 'codebuddy'.";
     return true;
   }
+  new_cfg.type = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) {
     new_cfg.host = args[2];
   } else {
-    if (new_cfg.type == config::BackendType::kOllama) {
-      new_cfg.host = "http://localhost:11434";
-    } else {
-      new_cfg.host = "https://api.openai.com/v1";
-    }
+    new_cfg.host = config::DefaultBackendHost(new_cfg.type);
   }
   if (args.size() > 3) {
     new_cfg.api_key = args[3];

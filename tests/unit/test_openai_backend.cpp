@@ -57,6 +57,29 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   REQUIRE_FALSE(has_auth);
 }
 
+// A gateway that has to be told who is calling. The set is asked for once per
+// request rather than held, so a caller that generates correlation ids gets fresh
+// ones each time.
+TEST_CASE("OpenAIProvider sends the extra headers a gateway asks for", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "local-model";
+  config.host = "http://localhost:8080/v1";
+  config.extra_headers = [] { return std::vector<std::string>{"X-Domain: example.invalid"}; };
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  auto* mock_ptr = mock_http.get();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  provider.Chat(history, {});
+
+  bool has_domain = false;
+  for (const auto& h : mock_ptr->last_headers) {
+    if (h == "X-Domain: example.invalid") has_domain = true;
+  }
+  REQUIRE(has_domain);
+}
+
 TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";

@@ -259,11 +259,25 @@ held for the turn and not persisted, so a reload shows the configured name again
 
 `config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)
 to a concrete provider, and `Session::CreateProvider()` is its only caller. The
-`agents.json` backend `type` field selects it: `"ollama"` and `"openai"` are the
-only values it accepts, anything else is refused at load time, and an absent field
-means Ollama. "OpenAI compatible" means the `/chat/completions` SSE contract and
-covers OpenAI, DeepSeek thinking mode, vLLM
-and compatible gateways.
+`agents.json` backend `type` field selects it: `"ollama"`, `"openai"` and
+`"codebuddy"` are the values it accepts, anything else is refused at load time, and
+an absent field means Ollama. "OpenAI compatible" means the `/chat/completions` SSE
+contract and covers OpenAI, DeepSeek thinking mode, vLLM, the CodeBuddy cloud
+gateway and compatible gateways.
+
+A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
+`agent.hpp` — because a stored session, an `agents.json` entry and an `/api/session`
+answer all name it. Answering "is it OpenAI?" separately at each of those sites is
+what turns a third type into a lie rather than a failure: the type was written out,
+read back and reported as Ollama, while every layer involved believed it had agreed.
+
+The CodeBuddy gateway is one of these, not a third protocol: the same stream at a
+different base, plus a header set the gateway is called by. Those facts live in
+`llm/codebuddy.hpp` and reach the request as
+`OpenAIProvider::Config::extra_headers`, which is asked for once per request rather
+than held, so a set carrying correlation ids is fresh for each one. Its errors arrive
+in an envelope of its own, whose `msg` names the cause; `SummarizeErrorBody` reads
+that shape beside the OpenAI one.
 
 | Dimension | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|

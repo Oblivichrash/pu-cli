@@ -38,6 +38,7 @@ add_library(pu_core STATIC
     src/session/request.cpp
     src/session/session.cpp
     src/core/logging.cpp
+    src/llm/codebuddy.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/projection.cpp
@@ -54,6 +55,10 @@ target_link_libraries(pu_core PUBLIC
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+if(WIN32)
+    # The Windows root store, read to give OpenSSL the anchors this platform has.
+    target_link_libraries(pu_core PRIVATE crypt32)
+endif()
 pu_configure_target(pu_core)
 add_library(pu::core ALIAS pu_core)
 

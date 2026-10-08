@@ -87,6 +87,37 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
   REQUIRE(read.model == "test-model");
 }
 
+// Every type, because the stored form used to be written by asking "is it OpenAI?":
+// a third type was spelled "ollama" and read back as one, so a saved conversation
+// changed backend across a restart while nothing reported a problem.
+TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
+  for (const config::BackendType type : {config::BackendType::kOllama, config::BackendType::kOpenAI,
+                                         config::BackendType::kCodeBuddy}) {
+    config::BackendConfig cfg;
+    cfg.type = type;
+    cfg.host = "https://example.invalid/v1";
+    cfg.model = "test-model";
+
+    const config::BackendConfig read =
+        boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
+
+    REQUIRE(read.type == type);
+    REQUIRE(std::string(config::BackendTypeName(type)) == config::BackendTypeName(read.type));
+  }
+}
+
+TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
+  REQUIRE(config::ParseBackendType("codebuddy") == config::BackendType::kCodeBuddy);
+  REQUIRE(config::ParseBackendType("openai") == config::BackendType::kOpenAI);
+  REQUIRE(config::ParseBackendType("ollama") == config::BackendType::kOllama);
+  REQUIRE_FALSE(config::ParseBackendType("gpt").has_value());
+
+  // The name a session is stored under is the name a client is told.
+  REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(config::DefaultBackendHost(config::BackendType::kCodeBuddy)) ==
+          llm::kCodeBuddyHost);
+}
+
 TEST_CASE("A session spec carries a backend only when one was overridden", "[backend]") {
   RuntimeSpec chosen;
   chosen.agent_name = "chat";

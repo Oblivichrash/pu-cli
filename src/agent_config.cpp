@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/agent.hpp"
 #include "pu/core/base.hpp"
+#include "pu/llm/codebuddy.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "pu/core/json.hpp"
@@ -26,12 +27,6 @@ std::string ExpandEnvVars(const std::string& input) {
     result.replace(match.position(0), match.length(0), replacement);
   }
   return result;
-}
-
-std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
-  if (s == "openai") return BackendType::kOpenAI;
-  if (s == "ollama") return BackendType::kOllama;
-  return std::nullopt;
 }
 
 SecurityPolicy ParseSecurityPolicy(const json::value& j) {
@@ -160,24 +155,36 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::unique_ptr<pu::http::HttpClient> http) {
+  // The two HTTP backends speak the same protocol, so what they have in common is
+  // filled once and the differences are the name the gateway is called by.
+  const auto http_config = [&cfg]() {
+    OpenAIProvider::Config http_cfg;
+    http_cfg.model = cfg.model;
+    http_cfg.temperature = cfg.temperature;
+    http_cfg.host = cfg.host.empty() ? DefaultBackendHost(cfg.type) : cfg.host;
+    http_cfg.api_key = cfg.api_key.value_or("");
+    http_cfg.max_tokens = cfg.max_tokens;
+    http_cfg.thinking = cfg.thinking;
+    return http_cfg;
+  };
+
   switch (cfg.type) {
     case BackendType::kOllama: {
       OllamaProvider::Config ollama_cfg;
       ollama_cfg.model = cfg.model;
       ollama_cfg.temperature = cfg.temperature;
-      ollama_cfg.host = cfg.host;
+      ollama_cfg.host = cfg.host.empty() ? DefaultBackendHost(cfg.type) : cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
     }
-    case BackendType::kOpenAI: {
-      OpenAIProvider::Config openai_cfg;
-      openai_cfg.model = cfg.model;
-      openai_cfg.temperature = cfg.temperature;
-      openai_cfg.host = cfg.host;
-      openai_cfg.api_key = cfg.api_key.value_or("");
-      openai_cfg.max_tokens = cfg.max_tokens;
-      openai_cfg.thinking = cfg.thinking;
-      return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
+    case BackendType::kOpenAI:
+      return std::make_unique<OpenAIProvider>(http_config(), std::move(http));
+    case BackendType::kCodeBuddy: {
+      // The same protocol as OpenAI, at a gateway that has to be told who is
+      // calling and expects to be reached as the CodeBuddy client is.
+      OpenAIProvider::Config codebuddy_cfg = http_config();
+      codebuddy_cfg.extra_headers = [] { return llm::CodeBuddyHeaders(); };
+      return std::make_unique<OpenAIProvider>(codebuddy_cfg, std::move(http));
     }
     default:
       throw pu::Error("Unknown backend type");

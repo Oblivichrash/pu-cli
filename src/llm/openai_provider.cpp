@@ -229,6 +229,10 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
   std::string url = host_ + "/chat/completions";
   std::vector<std::string> headers = {"Content-Type: application/json"};
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
+  if (config_.extra_headers) {
+    const std::vector<std::string> extra = config_.extra_headers();
+    headers.insert(headers.end(), extra.begin(), extra.end());
+  }
 
   llm::StreamingJsonParser parser([&](std::string_view line) {
     constexpr std::string_view kDataPrefix = "data: ";

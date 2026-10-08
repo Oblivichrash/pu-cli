@@ -377,6 +377,22 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
+// With a third type, answering this question with "is it OpenAI?" turns every
+// answer into "ollama" rather than into a failure, and the Web header showed the
+// wrong backend for a backend it was talking to.
+TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
+  ServeHarness harness("codebuddy");
+  auto client = harness.Client();
+
+  auto j = ParseJson(client.Get("/api/session"));
+
+  REQUIRE(j.at("ok") == true);
+  REQUIRE(j.at("backend_type") == "codebuddy");
+  REQUIRE(j.at("backend_model") == "test-model");
+  // A gateway that honours reasoning_effort carries the level control.
+  REQUIRE(j.at("supports_thinking_level") == true);
+}
+
 TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();

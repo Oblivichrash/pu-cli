@@ -94,8 +94,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
     if (session) {
       const config::BackendConfig backend = runtime.CurrentBackend();
       jv.as_object()["agent_name"] = session->GetRuntimeSpec().agent_name;
-      jv.as_object()["backend_type"] =
-          backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
+      jv.as_object()["backend_type"] = config::BackendTypeName(backend.type);
       jv.as_object()["backend_model"] = backend.model;
       jv.as_object()["backend_host"] = backend.host;
       jv.as_object()["thinking"] = ThinkingLevelName(backend.thinking);

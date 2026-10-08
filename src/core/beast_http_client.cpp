@@ -13,10 +13,73 @@
 #include <regex>
 #include <thread>
 
+#ifdef _WIN32
+// Windows keeps its trust anchors in the registry rather than in the Unix layout
+// OpenSSL looks for, so the store is read through its own API. The target version
+// is stated because the SDK headers warn without one, and the trust-store call is
+// older than anything this would be built for.
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <windows.h>
+#include <wincrypt.h>
+#endif
+
 namespace pu::http {
+
+#ifdef _WIN32
+namespace {
+
+// OpenSSL's default verify paths describe a Unix filesystem and do not exist on
+// Windows, so `set_default_verify_paths()` leaves the context trusting nothing and
+// every public HTTPS request fails its handshake with "certificate verify failed".
+// The roots Windows trusts are the anchors this platform has, so they are added to
+// the same store. A certificate that is already present reports an error and is
+// ignored: the store is a set, and a duplicate is not a failure.
+void AddWindowsRootStore(net::ssl::context& ctx) {
+  HCERTSTORE store = CertOpenSystemStoreA(0, "ROOT");
+  if (store == nullptr) {
+    spdlog::warn("Could not open the Windows root store; HTTPS verification may fail");
+    return;
+  }
+
+  X509_STORE* x509_store = SSL_CTX_get_cert_store(ctx.native_handle());
+  std::size_t added = 0;
+  for (PCCERT_CONTEXT cert = nullptr;
+       (cert = CertEnumCertificatesInStore(store, cert)) != nullptr;) {
+    const unsigned char* der = cert->pbCertEncoded;
+    X509* parsed = d2i_X509(nullptr, &der, static_cast<long>(cert->cbCertEncoded));
+    if (parsed == nullptr) {
+      ERR_clear_error();
+      continue;
+    }
+    if (X509_STORE_add_cert(x509_store, parsed) == 1) {
+      ++added;
+    } else {
+      // A certificate already in the store, which is why the error is cleared
+      // rather than left for whatever asks next.
+      ERR_clear_error();
+    }
+    X509_free(parsed);
+  }
+  CertCloseStore(store, 0);
+
+  // Trusting nothing fails in a way no request explains, so it is said here rather
+  // than left to the handshake.
+  if (added == 0) spdlog::warn("No certificates loaded from the Windows root store");
+}
+
+}  // namespace
+#endif
 
 BeastHttpClient::BeastHttpClient() : ssl_ctx_(net::ssl::context::tlsv12_client) {
   ssl_ctx_.set_default_verify_paths();
+#ifdef _WIN32
+  AddWindowsRootStore(ssl_ctx_);
+#endif
   ssl_ctx_.set_verify_mode(net::ssl::verify_peer);
 }
 
@@ -126,6 +189,10 @@ std::string SummarizeErrorBody(const std::string& body) {
       message = boost::json::value_to<std::string>(error);
     }
     if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "message", "");
+    // CodeBuddy-shaped: {"code": 11102, "msg": "...", "displayMsg": {...}}. `msg`
+    // names the cause while `displayMsg` says the same thing in a user's language,
+    // so the specific one is the one kept.
+    if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "msg", "");
   } catch (const std::exception&) {
     // Not JSON, so the body is the message.
   }

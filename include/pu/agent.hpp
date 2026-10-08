@@ -4,18 +4,20 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <boost/json.hpp>
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/codebuddy.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/mcp/client.hpp"
 
 namespace pu::config {
 
-enum class BackendType { kOllama, kOpenAI };
+enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
 
 struct SecurityPolicy {
   std::string sandbox_root;
@@ -36,10 +38,47 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
+// How a type is spelled in configuration and on the wire. One home, because the
+// stored session, an agents.json entry and an API response all name it, and a
+// third type is what turns every `is it OpenAI?` question into a lie: each of
+// those places used to answer itself and write "ollama" for anything else.
+inline const char* BackendTypeName(BackendType type) {
+  switch (type) {
+    case BackendType::kOllama:
+      return "ollama";
+    case BackendType::kOpenAI:
+      return "openai";
+    case BackendType::kCodeBuddy:
+      return "codebuddy";
+  }
+  return "ollama";
+}
+
+inline std::optional<BackendType> ParseBackendType(std::string_view name) {
+  if (name == "ollama") return BackendType::kOllama;
+  if (name == "openai") return BackendType::kOpenAI;
+  if (name == "codebuddy") return BackendType::kCodeBuddy;
+  return std::nullopt;
+}
+
+// Where a type points when the caller names none. The /backend command asks for a
+// type and a model only, so the host it leaves out is answered here.
+inline const char* DefaultBackendHost(BackendType type) {
+  switch (type) {
+    case BackendType::kOllama:
+      return "http://localhost:11434";
+    case BackendType::kOpenAI:
+      return "https://api.openai.com/v1";
+    case BackendType::kCodeBuddy:
+      return llm::kCodeBuddyHost;
+  }
+  return "";
+}
+
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-      {"type", cfg.type == BackendType::kOpenAI ? "openai" : "ollama"},
+      {"type", BackendTypeName(cfg.type)},
       {"host", cfg.host},
       {"model", cfg.model},
       {"api_key", cfg.api_key.value_or("")},
@@ -52,8 +91,10 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
-  auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
-  cfg.type = (type_str == "openai") ? BackendType::kOpenAI : BackendType::kOllama;
+  const auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
+  // A file naming something this build does not know reads as the default rather
+  // than failing the load: the session it holds is still the user's conversation.
+  cfg.type = ParseBackendType(type_str).value_or(BackendType::kOllama);
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
   if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {

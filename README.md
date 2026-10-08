@@ -254,7 +254,7 @@ The [Quick Start example](#configure) shows the shape of a file; the fields are 
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `type` | `ollama` | `ollama` or `openai`; any other value is rejected |
+| `type` | `ollama` | `ollama`, `openai`, or `codebuddy`; any other value is rejected |
 | `host` | — | Required. Base URL |
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
@@ -266,6 +266,26 @@ The [Quick Start example](#configure) shows the shape of a file; the fields are 
 `host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
 support `${ENV_VAR}` expansion; an unset variable expands to an empty string and
 logs a warning.
+
+### CodeBuddy
+
+`codebuddy` speaks the same protocol as `openai`, pointed at the CodeBuddy cloud
+gateway, which wants to be told who is calling: the base URL and the header set live
+in `include/pu/llm/codebuddy.hpp`, and the gateway, everything it was observed to
+accept, and how the request and the stream are shaped are recorded in
+[docs/design/codebuddy-cloud-api.md](docs/design/codebuddy-cloud-api.md). The
+supported models are the account's, not the client's: a request naming one the
+account may not use is answered with the gateway's own explanation.
+
+```json
+"backend": {
+  "type": "codebuddy",
+  "host": "https://copilot.tencent.com/v2",
+  "model": "deepseek-v4-flash",
+  "api_key": "${CODEBUDDY_API_KEY}",
+  "thinking": "high"
+}
+```
 
 ### Security
 

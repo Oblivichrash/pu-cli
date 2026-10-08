@@ -4,10 +4,12 @@
 #include "pu/llm/llm_provider.hpp"
 #include "pu/core/http_client.hpp"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <boost/json.hpp>
 
@@ -22,6 +24,11 @@ class OpenAIProvider : public LLMProvider {
     std::string api_key;
     int max_tokens = 2048;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
+    // Headers for a gateway that has to be told who is calling, beyond the
+    // Content-Type and Authorization this provider sends itself. Asked for once
+    // per request rather than held, so a set carrying correlation ids is fresh
+    // for each one.
+    std::function<std::vector<std::string>()> extra_headers;
   };
 
   explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
