@@ -61,20 +61,6 @@ inline std::optional<BackendType> ParseBackendType(std::string_view name) {
   return std::nullopt;
 }
 
-// Where a type points when the caller names none. The /backend command asks for a
-// type and a model only, so the host it leaves out is answered here.
-inline const char* DefaultBackendHost(BackendType type) {
-  switch (type) {
-    case BackendType::kOllama:
-      return "http://localhost:11434";
-    case BackendType::kOpenAI:
-      return "https://api.openai.com/v1";
-    case BackendType::kCodeBuddy:
-      return llm::kCodeBuddyHost;
-  }
-  return "";
-}
-
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {

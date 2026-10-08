@@ -161,7 +161,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
     OpenAIProvider::Config http_cfg;
     http_cfg.model = cfg.model;
     http_cfg.temperature = cfg.temperature;
-    http_cfg.host = cfg.host.empty() ? DefaultBackendHost(cfg.type) : cfg.host;
+    http_cfg.host = cfg.host;
     http_cfg.api_key = cfg.api_key.value_or("");
     http_cfg.max_tokens = cfg.max_tokens;
     http_cfg.thinking = cfg.thinking;
@@ -173,7 +173,7 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
       OllamaProvider::Config ollama_cfg;
       ollama_cfg.model = cfg.model;
       ollama_cfg.temperature = cfg.temperature;
-      ollama_cfg.host = cfg.host.empty() ? DefaultBackendHost(cfg.type) : cfg.host;
+      ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
       return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
     }

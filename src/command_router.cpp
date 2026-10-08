@@ -14,6 +14,24 @@
 
 namespace pu {
 
+namespace {
+
+// The /backend command names a type and a model only, so the host it leaves out is
+// answered here, where that command is.
+const char* DefaultHostFor(config::BackendType type) {
+  switch (type) {
+    case config::BackendType::kOllama:
+      return "http://localhost:11434";
+    case config::BackendType::kOpenAI:
+      return "https://api.openai.com/v1";
+    case config::BackendType::kCodeBuddy:
+      return llm::kCodeBuddyHost;
+  }
+  return "";
+}
+
+}  // namespace
+
 bool CommandRouter::RequireMinArgs(const std::vector<std::string>& args, size_t min,
                                    const std::string& usage, std::string& output) const {
   if (args.size() < min) {
@@ -139,7 +157,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   if (args.size() > 2) {
     new_cfg.host = args[2];
   } else {
-    new_cfg.host = config::DefaultBackendHost(new_cfg.type);
+    new_cfg.host = DefaultHostFor(new_cfg.type);
   }
   if (args.size() > 3) {
     new_cfg.api_key = args[3];
