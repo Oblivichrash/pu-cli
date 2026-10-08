@@ -1,32 +1,19 @@
 # Provider differences
 
-What each backend puts on the wire, and what it does with what comes back. This is
-reference material: the architecture that decides which provider serves a request is in
+What each backend puts on the wire, and what it does with what comes back. This
+is reference material: which layer decides the provider is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Which provider a request reaches
 
-`config::CreateBackend` (`agent_config.cpp`) maps `BackendType` (`agent.hpp`)
-to a concrete provider, and `Session::CreateProvider()` is its only caller. The
-`agents.json` backend `type` field selects it: `"ollama"`, `"openai"` and
-`"codebuddy"` are the values it accepts, anything else is refused at load time, and
-an absent field means Ollama. "OpenAI compatible" means the `/chat/completions` SSE
-contract and covers OpenAI, DeepSeek thinking mode, vLLM, the CodeBuddy cloud
-gateway and compatible gateways.
-
-A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
-`agent.hpp` — because a stored session, an `agents.json` entry and an `/api/session`
-answer all name it. Answering "is it OpenAI?" separately at each of those sites is
-what turns a third type into a lie rather than a failure: the type was written out,
-read back and reported as Ollama, while every layer involved believed it had agreed.
-
-The CodeBuddy gateway is one of these, not a third protocol: the same stream at a
-different base, plus a header set the gateway is called by. Those facts live in
-`llm/codebuddy.hpp` and reach the request as
-`OpenAIProvider::Config::extra_headers`, which is asked for once per request rather
-than held, so a set carrying correlation ids is fresh for each one. Its errors arrive
-in an envelope of its own, whose `msg` names the cause; `SummarizeErrorBody` reads
-that shape beside the OpenAI one.
+`config::CreateBackend` maps the `agents.json` backend `type` to a concrete
+provider and is the only path `Session` uses to obtain one. Accepted values are
+`ollama`, `openai`, and `codebuddy`; anything else is refused at load time, and
+an absent field means Ollama. "OpenAI compatible" means the `/chat/completions`
+SSE contract and covers OpenAI, DeepSeek thinking mode, vLLM, and compatible
+gateways. `codebuddy` is the same contract at a different base URL plus a header
+set; its gateway behavior is recorded in
+[design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md).
 
 ## Field by field
 
@@ -37,7 +24,7 @@ that shape beside the OpenAI one.
 | Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
 | Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
 | Token cap | not sent | `max_tokens` |
-| Extra options | `keep_alive` (default `30m`, keeps the KV cache warm) | `extra_body.thinking.type = "disabled"` for the `none` level |
+| Extra options | `keep_alive` is a fixed `30m` (not configurable) | `extra_body.thinking.type = "disabled"` for the `none` level |
 | Thinking level | not sent; the model decides for itself | `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
@@ -52,15 +39,12 @@ that shape beside the OpenAI one.
 
 ## Capabilities
 
+Neither backend keeps a full provider response, carries a reasoning signature, or
+accepts multimodal input or output.
+
 | Capability | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|
 | Tools, streaming content, parallel calls | yes | yes |
 | Streaming tool calls | whole call per line | index accumulation |
 | Reasoning | `message.thinking` | `delta.reasoning_content` |
-| Reasoning signature | no | no |
-| Full provider response retained | no | no |
-| Multimodal input or output | no | no |
 | Prompt caching hints | `keep_alive` only | none |
-
-Both report `SupportsTools() == true`, and tool schemas fall back to `{}` via
-`ToolDefinition::Parameters()`.

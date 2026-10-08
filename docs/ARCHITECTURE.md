@@ -4,12 +4,10 @@
 
 ## Overview
 
-pu-cli is built around four principles:
-
-1. **Single-session auto-persistence** — One session owns the workspace and history, transparently persisted.
-2. **Dynamic backend switching** — Switch LLM providers without losing state.
-3. **Stateless execution** — `Executor` keeps no per-session state; all session state lives in `Workspace`/`Session` (`Executor` holds only configuration and an environment-probe cache).
-4. **Explicit composition** — `Runtime` is a plain object instantiated by `main()` and injected with its collaborators; there is no global singleton.
+`Runtime` is the only object `main()` creates; everything else is injected into it
+and holds no global state. A single session owns the conversation and is persisted
+automatically, and the backend behind it can change without losing that state. The
+components below carry the rest.
 
 ---
 
@@ -39,7 +37,7 @@ What each dependency is for:
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
-| `Web Server` | `pu serve` (`RunServe` in `src/app/serve.cpp`, with REST handlers in `serve_http_routes.cpp` and the WebSocket protocol in `serve_websocket.cpp`): Boost.Beast HTTP/WebSocket server exposing the session via WebSocket (`/ws`) for chat and REST endpoints for control/status |
+| `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
@@ -80,42 +78,35 @@ API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ## Executor
 
-### Structured Tool Output
+The tool loop holds no session state (`main()` injects its collaborators) and
+runs once per turn: read `Workspace.Transcript`, inject system context, call the
+provider, execute any tool calls through `Toolbox`, store each structured result
+verbatim, and repeat until the reply carries no call.
 
-Tools return structured JSON instead of free text. `Executor` stores that JSON in
-the transcript verbatim, so the model sees the same result the tool produced and
-nothing is lost to a partial extraction; `stdout` (on success) or `error` (on
-failure) is read out of it only for the tool callbacks. The field schema lives in
-`include/pu/tools/tool_result.hpp` and is documented in
-[README](../README.md#tool-output-format).
+**System context.** `Executor` prepends a system message built from:
 
-### System Context Injection
-
-`Executor` automatically builds a system message containing:
-
-- OS name and kernel version (probed once at startup)
+- OS name and kernel version (probed once, see below)
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
 
-This context is merged with the agent's configured `system_prompt` and prepended
-to the stored turns when the request view is rendered. `Runtime::RebuildToolbox`
-passes the prompt to `Executor::SetSystemPrompt`, so the prompt comes from the
-agent configuration that declares it; it is not session state, and switching the
-backend no longer clears it.
+It is merged with the agent's configured `system_prompt`, which comes from
+`agents.json` via `Runtime::RebuildToolbox` and is not session state, so
+switching the backend does not clear it.
 
-### Environment Probing
+**Structured tool output.** Tools return JSON through the schema in
+`include/pu/tools/tool_result.hpp` (documented in
+[README](../README.md#tool-output-format)). The executor stores it verbatim so
+the model sees what the tool produced, and reads `stdout`/`error` out of it only
+for the tool callbacks.
 
-`Executor::ProbeStaticEnvironment()` runs once during construction and uses
-`uname -s` / `uname -r` on POSIX (or the Windows kernel API) to detect the OS
-name and kernel version. The result is cached and included in the system
-context. No tool-binary detection (`which`) is performed.
+**Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
+construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
+result. No tool-binary detection is performed.
 
-### Forbidden Patterns
-
-`forbidden_patterns` is enforced at the tool execution layer: a command matching
-any pattern is rejected with a JSON error response. See
-[README](../README.md#security) for the recommended patterns.
+**Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
+layer: a matching command is rejected with a JSON error. The policy fields live in
+[README](../README.md#agentsjson).
 
 ---
 
@@ -133,9 +124,9 @@ main()
 
 Key responsibilities:
 
-- `Initialize(config_path)` — loads `agents.json` (from `./.pu/` or `~/.pu/`), creates `AgentManager`, `Executor`, `CommandRouter`, builds the default toolbox, then restores the single session from `<data-dir>/session.json` if present.
+- `Initialize(config_path)` — loads `agents.json` (from `./.pu/` or `~/.pu/`), creates `AgentManager`, `Executor`, `CommandRouter`, builds the default toolbox, then restores the single session from `<workspace>/.pu/session.json` if present.
 - `ProcessInput(input, ...)` — routes either to `CommandRouter` (commands) or to `Executor` (messages), then saves the session.
-- `Shutdown()` — saves the single session to `<data-dir>/session.json`.
+- `Shutdown()` — saves the single session to `<workspace>/.pu/session.json`.
 - `SwitchAgent(agent)` — updates the active agent and rebuilds the toolbox.
 
 ### Web server lifecycle
@@ -155,15 +146,15 @@ Key responsibilities:
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
 5. Frames are written back over the socket as the run progresses (streamed
    chunks, tool start/end, completion, or error). The frame schema is documented
-   in [README](../README.md#websocket-protocol).
+   in [README](../README.md#web-api).
 6. REST endpoints handle control and status queries; the list is in
-   [README](../README.md#rest-api-endpoints). On Ctrl+C the server stops and
+   [README](../README.md#web-api). On Ctrl+C the server stops and
    `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
 
 `Runtime` maintains a single `std::shared_ptr<Session> current_session_`. On
-`Initialize()` it loads `<data-dir>/session.json` (if the file exists) via
+`Initialize()` it loads `<workspace>/.pu/session.json` (if the file exists) via
 `Session::Deserialize`. After every `ProcessInput()` call and on `Shutdown()`, the
 session is serialized back to the same file via `Session::Serialize`. There is no
 manual save/load/list/export; persistence is fully automatic and scoped to the
@@ -188,15 +179,11 @@ RebuildToolbox(agent)
 
 ### Cancel token
 
-A `CancelToken` (`std::shared_ptr<std::atomic<bool>>`) is threaded through the
-whole request stack — `Runtime::ProcessInput` → `Executor::Execute` →
-`LLMProvider::Chat` → `HttpClient::PostStream`. Providers poll the flag between
-chunks and stop early, so a cancellation surfaces quickly instead of waiting for
-the model to finish. In `pu serve` the token is owned by the active WebSocket
-session: a `{"type":"cancel"}` message — or a dropped connection — sets it, and
-`BeastHttpClient` aborts the in-flight HTTP request on the next poll. The executor
-reports that as a stop rather than a failure: the turn ends with no reply and no
-error.
+A `CancelToken` threads through the request stack from `Runtime::ProcessInput`
+down to the HTTP stream; the provider polls it between chunks, so a cancellation
+surfaces quickly. In `pu serve` the active WebSocket session owns it — a `cancel`
+message or a dropped connection sets it. The turn then ends with neither a reply
+nor an error.
 
 ### WebSocket streaming
 
@@ -206,61 +193,13 @@ streamed chunk to the socket as it arrives, which produces the typewriter effect
 in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
 keyed by the tool call `id`. Commands and non-streaming backends deliver their
 full text as a single chunk frame. The frame schema and client-side rendering
-are documented in [README](../README.md#websocket-protocol) and implemented in
+are documented in [README](../README.md#web-api) and implemented in
 `web/app.js`.
-
-### What a stream carries besides text
-
-Three things arrive beside the answer, and each has one place where it is read.
-
-Reasoning — `delta.reasoning_content` or Ollama's `message.thinking` — is
-accumulated as the model's own thinking and reaches the caller as it arrives, on a
-channel of its own (`thinking` frames), because it belongs beside the answer rather
-than in it. A `refusal` becomes the reply when no content arrived:
-the model's own words are the reason the user is owed, and without them a refusal
-is an empty answer. An `error` object inside the stream is raised as the request's
-failure, so the provider's message reaches the user instead of being replaced by
-the generic empty-answer diagnosis.
-
-The provider's word for why it stopped is kept in `ChatResult::finish_reason`
-(`finish_reason` for OpenAI compatible, `done_reason` for Ollama) and read by the
-executor. A reply the provider stopped at the token limit or its content filter is
-stored as it arrived and reported as `ExecutionResult::notice`: an answer that ends
-mid-sentence is otherwise indistinguishable from a finished one, and what fixes it
-is a setting rather than a retry.
-
-The response also names the model that answered. That name is kept in
-`ChatResult::model` and reaches the Web client in the `done` frame, because a
-gateway may serve a build other than the one that was configured: the session spec
-holds what was asked for, and this is the only place that says who replied.
-
-### What a reload rebuilds
-
-A reload draws the conversation from `GET /api/history` rather than from the
-stream, so the two have to agree. The store holds one node per provider message
-while the transcript shows one bubble per turn: a turn that used a tool is three
-nodes — the assistant message carrying the call, the result answering it, and the
-assistant message that replied with the result — and one bubble. `web/history.js`
-does that grouping, and it is a pure function so it can be exercised without a
-browser. Everything between two user turns becomes one reply, and each result is
-folded back into the call it answers by `tool_call_id`.
-
-Two things the stream showed are not in the projected message, so the endpoint
-reads them from the store beside it. A tool result is stored as the tool's own JSON
-envelope, so `tools::ParseToolResult` — the same function the running turn applied
-— is applied again and its `output`/`error` are sent next to the raw `content`.
-Whether a call was ever answered is a `ToolCallStatus` on the record, which never
-travels to a provider, so it is read from the chain and sent as `tool_call_status`
-aligned with `tool_calls`; a call with no result is drawn as such rather than as a
-finished one. It is
-held for the turn and not persisted, so a reload shows the configured name again.
 
 ## Provider Differences
 
-What each backend puts on the wire — its endpoint, how a request is shaped, what the
-stream carries and what it leaves out — is reference material rather than architecture,
-and it lives in [providers.md](providers.md) together with the one place a backend type
-is named and the factory that turns a type into a provider.
+What each backend puts on the wire is reference material, not architecture, and
+lives in [providers.md](providers.md).
 
 ## Data Flow
 
@@ -353,7 +292,7 @@ lists tools.
 ## Persistence
 
 ```
-<data-dir>/session.json   # Single session state
+<workspace>/.pu/session.json   # Single session state
 ```
 
 The session file carries `schema_version` (currently 4) beside `workspace` and
@@ -376,17 +315,9 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
-Keeping a replaced turn would leave two lines of reasoning in the store and push
-the choice between them to a later reader; the send that replaces a turn is where
-that choice belongs.
-
-Content is one string rather than an array of typed parts: nothing sends or
-receives parts, so the array only wrapped a string. Reintroducing the wrapper for a
-second part type is mechanical, and not yet needed.
-
 A file without the version, with another one, or whose history is not node storage
 is refused rather than guessed at; `pu` reports the reason, names
-`<data-dir>/session.backup.json` when that backup exists, and starts a fresh
+`<workspace>/.pu/session.backup.json` when that backup exists, and starts a fresh
 conversation. Older layouts are not converted, so what they hold survives only in
 that backup.
 
@@ -402,43 +333,18 @@ the domain modules sit beside it, and the orchestration headers/modules live at
 the root of `include/pu/` and `src/`.
 
 ```
-include/pu/
-├── agent.hpp             # AgentConfig types + AgentManager
-├── command_router.hpp    # CommandRouter
-├── runtime.hpp           # Runtime
-├── executor.hpp          # Executor (session-state-free, with system context injection)
-├── cli.hpp               # CLI helpers
-├── core/                 # Base layer: nothing here depends on an upper module
-│   ├── base.hpp          # Cancel token, error hierarchy, uuid, data directory
-│   ├── beast_http_client.hpp  # Beast implementation of the HTTP client
-│   ├── http_client.hpp   # HttpClient interface
-│   ├── json.hpp          # Boost.JSON convenience helpers
-│   ├── logging.hpp       # spdlog setup + JSON log formatter
-│   ├── platform.hpp      # OS/kernel probing, subprocess output capture
-│   └── text.hpp          # UTF-8 validation and repair
-├── context/              # Message model: nodes, payloads, message graph
-├── llm/                  # LLMProvider, providers, projection, streaming parser
-├── mcp/                  # McpClient with its JSON-RPC layer, transports
-├── session/              # Session with its state (Workspace, Transcript), request view
-└── tools/                # Toolbox, built-in tools, MCP adapter, tool_result
-
-src/
-├── app/                  # Entry points: main, CLI parsing, serve (web server)
-│   ├── main.cpp
-│   ├── cli.cpp
-│   ├── serve.cpp              # RunServe: acceptor, dispatch, lifecycle
-│   ├── serve_http_routes.cpp  # Static files + REST handlers
-│   ├── serve_websocket.cpp    # /ws upgrade + chat frame protocol
-│   └── serve_internal.hpp     # Declarations shared by the serve modules
-├── agent_config.cpp, agent_manager.cpp
-├── runtime.cpp, command_router.cpp
-├── executor.cpp
-├── core/                 # Base layer: logging, platform, HTTP client
-├── context/              # Message graph storage
-├── llm/                  # Providers, streaming parser
-├── mcp/                  # MCP transports, client with its JSON-RPC layer
-├── session/              # Session, Workspace, etc.
-└── tools/                # Toolbox, tools
+include/pu/                  src/
+├── agent.hpp                ├── app/                  # main, CLI parsing, serve
+├── command_router.hpp       ├── agent_config.cpp, agent_manager.cpp
+├── runtime.hpp              ├── runtime.cpp, command_router.cpp
+├── executor.hpp             ├── executor.cpp
+├── cli.hpp                  ├── core/                 # logging, platform, HTTP client
+├── core/                    ├── context/              # message graph storage
+├── context/                 ├── llm/                  # providers, streaming parser
+├── llm/                     ├── mcp/                  # transports, JSON-RPC client
+├── mcp/                     ├── session/              # Session, Workspace
+├── session/                 └── tools/                # Toolbox, tools
+└── tools/
 ```
 
 A header lives in `include/pu/` when code outside its own directory uses it
