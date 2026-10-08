@@ -76,11 +76,18 @@ class Workspace {
 struct RuntimeSpec {
   std::string agent_name;
   std::optional<config::BackendConfig> backend_override;
+  // The thinking level this session asks for. Absent means it follows whatever the
+  // agent's configuration says, which is a different thing from the absent level:
+  // that one asks the backend to decide.
+  std::optional<ThinkingLevel> thinking_override;
 
   boost::json::value Serialize() const {
     boost::json::value jv = {{"agent_name", agent_name}};
     if (backend_override) {
       jv.as_object()["backend_override"] = boost::json::value_from(*backend_override);
+    }
+    if (thinking_override) {
+      jv.as_object()["thinking_override"] = ThinkingLevelName(*thinking_override);
     }
     return jv;
   }
@@ -94,6 +101,10 @@ struct RuntimeSpec {
     if (json::HasKey(jv, "backend_override")) {
       spec.backend_override =
           boost::json::value_to<config::BackendConfig>(jv.at("backend_override"));
+    }
+    if (json::HasKey(jv, "thinking_override") && jv.at("thinking_override").is_string()) {
+      spec.thinking_override =
+          ParseThinkingLevel(boost::json::value_to<std::string>(jv.at("thinking_override")));
     }
     spec.agent_name = json::ValueOrDefault<std::string>(jv, "agent_name", "");
     return spec;

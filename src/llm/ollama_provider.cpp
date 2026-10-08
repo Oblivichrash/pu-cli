@@ -31,6 +31,9 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 void OllamaProvider::ResetAccumulators() {
   content_.clear();
+  current_reasoning_content_.clear();
+  finish_reason_.clear();
+  response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
 }
@@ -70,12 +73,26 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
 
 void OllamaProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
+  // A failure arrives in place of a message: a stream that started is not a stream
+  // that will finish, and the reason is in this frame.
+  if (json::HasKey(j, "error") && j.at("error").is_string()) {
+    throw Error("provider error: " + boost::json::value_to<std::string>(j.at("error")));
+  }
+
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
     if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
       const std::string content = boost::json::value_to<std::string>(msg.at("content"));
       content_ += content;
       if (content_cb) content_cb(content);
+    }
+
+    // A thinking model reports its reasoning here rather than in `content`, under
+    // a name of its own. Unread, it is generated and then thrown away.
+    if (json::HasKey(msg, "thinking") && msg.at("thinking").is_string()) {
+      const std::string reasoning = boost::json::value_to<std::string>(msg.at("thinking"));
+      current_reasoning_content_ += reasoning;
+      if (reasoning_sink_) reasoning_sink_(reasoning);
     }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
@@ -114,15 +131,29 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
     usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
                         json::ValueOrDefault<int>(j, "eval_count", 0)};
   }
+
+  // Why it stopped, in the same final object. The word it uses for the token limit
+  // is the one OpenAI uses, which is what lets a caller read both.
+  if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
+    finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));
+  }
+
+  // The model that answered: a tag can resolve to a different build than the one
+  // that was asked for.
+  if (json::HasKey(j, "model") && j.at("model").is_string()) {
+    response_model_ = boost::json::value_to<std::string>(j.at("model"));
+  }
 }
 
 ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
                                 const std::vector<ToolDefinition>& tools,
                                 std::function<void(const std::string&)> content_callback,
-                                CancelToken cancel_token) {
+                                CancelToken cancel_token,
+                                std::function<void(const std::string&)> reasoning_callback) {
   ChatResult result;
   platform::ClearInterruptFlag();
   ResetAccumulators();
+  reasoning_sink_ = std::move(reasoning_callback);
 
   const std::string body = BuildRequest(history, tools);
 
@@ -133,14 +164,20 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   llm::StreamingJsonParser parser([&](std::string_view line) {
+    // Only the parse is guarded. A frame the provider filled with an error is a
+    // valid parse and has to reach the caller, which is why the dispatch sits
+    // outside the catch that skips malformed lines.
+    boost::json::value j;
     try {
-      auto j = boost::json::parse(line);
-      HandleJsonToken(j, content_callback);
+      j = boost::json::parse(line);
     } catch (const boost::system::system_error& e) {
       // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
       spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+      return;
     } catch (const std::exception&) {
+      return;
     }
+    HandleJsonToken(j, content_callback);
   });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
@@ -154,7 +191,10 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
 
   result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
+  result.reasoning_content = std::move(current_reasoning_content_);
   result.usage = usage_;
+  result.finish_reason = std::move(finish_reason_);
+  result.model = std::move(response_model_);
   return result;
 }
 

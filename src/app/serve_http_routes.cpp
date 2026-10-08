@@ -13,9 +13,11 @@
 #include <vector>
 
 #include "pu/agent.hpp"
+#include "pu/context/message.hpp"
 #include "pu/core/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
+#include "pu/tools/tool_result.hpp"
 
 namespace pu::cli::detail {
 namespace {
@@ -96,6 +98,11 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
           backend.type == config::BackendType::kOpenAI ? "openai" : "ollama";
       jv.as_object()["backend_model"] = backend.model;
       jv.as_object()["backend_host"] = backend.host;
+      jv.as_object()["thinking"] = ThinkingLevelName(backend.thinking);
+      jv.as_object()["supports_thinking_level"] = runtime.SupportsThinkingLevel();
+      if (const auto override_level = runtime.GetThinkingOverride()) {
+        jv.as_object()["thinking_override"] = ThinkingLevelName(*override_level);
+      }
     } else {
       jv.as_object()["error"] = "No active session";
     }
@@ -113,19 +120,52 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
     std::lock_guard<std::mutex> lock(io_mutex);
     auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
-      auto history = session->GetWorkspace().GetHistory();
-      for (const auto& msg : history) {
+      Workspace& workspace = session->GetWorkspace();
+      const std::vector<ChatMessage> history = workspace.GetHistory();
+      // The chain beside the projection: a call's fate is stored, and it travels in
+      // fields the provider must not see, so it is read from the nodes. Positional,
+      // because both are the same chain in the same order.
+      const std::vector<const context::MessageNode*> chain = workspace.GetGraph().Chain();
+      for (size_t i = 0; i < history.size(); ++i) {
+        const ChatMessage& msg = history[i];
         boost::json::value item = {
             {"id", msg.id},
             {"role", msg.role},
             {"content", msg.content},
             {"timestamp", msg.timestamp},
         };
-        if (msg.HasToolCalls()) item.as_object()["tool_calls"] = msg.tool_calls;
+        if (msg.HasToolCalls()) {
+          item.as_object()["tool_calls"] = msg.tool_calls;
+
+          // How each call ended, aligned with the calls above: a call the store
+          // never got a result for is the difference between a turn that finished
+          // and one that was interrupted, and only the store knows which it was.
+          if (i < chain.size()) {
+            if (const auto* assistant =
+                    std::get_if<context::AssistantPayload>(&chain[i]->payload)) {
+              boost::json::array statuses;
+              for (const context::ToolCallRecord& record : assistant->tool_calls) {
+                statuses.push_back(
+                    record.status == context::ToolCallStatus::kCompleted ? "done" : "pending");
+              }
+              item.as_object()["tool_call_status"] = std::move(statuses);
+            }
+          }
+        }
         if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;
         if (!msg.tool_name.empty()) item.as_object()["tool_name"] = msg.tool_name;
         if (!msg.reasoning_content.empty())
           item.as_object()["reasoning_content"] = msg.reasoning_content;
+
+        // A result as the store holds it, and beside it the same parse the running
+        // turn applied before it reached the browser, so a reloaded tool block
+        // reads like the one that streamed in rather than as raw tool JSON.
+        if (msg.role == context::kToolRole) {
+          const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
+          item.as_object()["output"] = parsed.valid ? parsed.stdout_content : msg.content;
+          item.as_object()["error"] = parsed.error;
+        }
+
         jv.as_array().push_back(item);
       }
     }
@@ -285,6 +325,44 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
   SendJson(res, 200, jv);
 }
 
+void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
+                       http::request<http::string_body>&& req,
+                       http::response<http::string_body>& res) {
+  boost::json::value jv = boost::json::object{};
+  try {
+    std::lock_guard<std::mutex> lock(io_mutex);
+    const std::string level =
+        json::ValueOrDefault<std::string>(boost::json::parse(req.body()), "level", "");
+
+    // `auto` is the only word that clears the session's own level, so a word the
+    // parser does not know is refused rather than read as some default.
+    if (level != "auto" && level != "default" &&
+        ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
+      SendJson(res, 400,
+               boost::json::object{{"success", false}, {"error", "Unknown thinking level"}});
+      return;
+    }
+
+    const bool accepted = runtime.SetThinkingLevel(
+        level == "auto" ? std::nullopt : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
+    if (!accepted) {
+      SendJson(res, 400,
+               boost::json::object{{"success", false},
+                                   {"error", "This backend does not carry a thinking level"}});
+      return;
+    }
+    jv.as_object()["success"] = true;
+    jv.as_object()["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
+    if (const auto override_level = runtime.GetThinkingOverride()) {
+      jv.as_object()["thinking_override"] = ThinkingLevelName(*override_level);
+    }
+  } catch (const std::exception& e) {
+    jv.as_object()["success"] = false;
+    jv.as_object()["error"] = e.what();
+  }
+  SendJson(res, 200, jv);
+}
+
 }  // namespace
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
@@ -292,7 +370,8 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::response<http::string_body>& res) {
   auto target = req.target();
 
-  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js") {
+  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js" ||
+      target == "/history.js") {
     ServeFile(target, res);
     return;
   }
@@ -319,6 +398,10 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   }
   if (target == "/api/rewind" && req.method() == http::verb::post) {
     HandleApiRewind(runtime, io_mutex, std::move(req), res);
+    return;
+  }
+  if (target == "/api/thinking" && req.method() == http::verb::post) {
+    HandleApiThinking(runtime, io_mutex, std::move(req), res);
     return;
   }
   if (target == "/api/workspaces" && req.method() == http::verb::get) {

@@ -5,8 +5,10 @@
 
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace pu;
 
@@ -233,6 +235,87 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
       123;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+// The three below are about links rather than names. Every one of them loads
+// today, and each loads into a conversation the next append changes: a chain that
+// stops early loses what it no longer reaches, and a chain that returns to itself
+// never stops walking.
+TEST_CASE("A parent that names no node is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+  session.GetWorkspace().Append("assistant", "two");
+
+  boost::json::value saved = session.Serialize();
+  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parent"] =
+      "not-a-node-id";
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+
+  boost::json::value saved = session.Serialize();
+  auto& node = saved.at("workspace").at("history").as_object()["nodes"].as_array().at(0);
+  const std::string id = boost::json::value_to<std::string>(node.at("id"));
+  node.as_object()["parent"] = id;
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("Two nodes pointing at each other are refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+  session.GetWorkspace().Append("assistant", "two");
+
+  boost::json::value saved = session.Serialize();
+  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  const std::string first = boost::json::value_to<std::string>(nodes.at(0).at("id"));
+  const std::string second = boost::json::value_to<std::string>(nodes.at(1).at("id"));
+  nodes.at(0).as_object()["parent"] = second;
+  nodes.at(1).as_object()["parent"] = first;
+  saved.at("workspace").at("history").as_object()["leaf"] = second;
+
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("A repeated id is refused", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+  session.GetWorkspace().Append("assistant", "two");
+
+  boost::json::value saved = session.Serialize();
+  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  const std::string duplicate = boost::json::value_to<std::string>(nodes.at(0).at("id"));
+  nodes.at(1).as_object()["id"] = duplicate;
+  saved.at("workspace").at("history").as_object()["leaf"] = duplicate;
+
+  // Keeping one of them would be picking which turn the conversation holds by the
+  // order the file happens to list them in.
+  REQUIRE(Session::Deserialize(saved) == nullptr);
+}
+
+TEST_CASE("The view follows the parent links, not the order of the file", "[session][schema]") {
+  Session session;
+  session.GetWorkspace().Append("user", "one");
+  session.GetWorkspace().Append("assistant", "two");
+  session.GetWorkspace().Append("user", "three");
+
+  boost::json::value saved = session.Serialize();
+  // The store writes its nodes sorted by id, so the file order is not the
+  // conversation order; a reader that trusted it would show the turns shuffled.
+  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  std::reverse(nodes.begin(), nodes.end());
+
+  auto restored = Session::Deserialize(saved);
+  REQUIRE(restored != nullptr);
+  const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
+  REQUIRE(history.size() == 3);
+  REQUIRE(history[0].content == "one");
+  REQUIRE(history[1].content == "two");
+  REQUIRE(history[2].content == "three");
 }
 
 TEST_CASE("A version that is not a number is refused", "[session][schema]") {

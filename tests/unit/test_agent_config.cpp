@@ -53,7 +53,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
         {"host", entry.backend.host},
         {"model", entry.backend.model},
         {"temperature", entry.backend.temperature},
-        {"enable_thinking", entry.backend.enable_thinking},
+        {"thinking", ThinkingLevelName(entry.backend.thinking)},
     };
     if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
     if (entry.backend.system_prompt)
@@ -327,7 +327,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }
 
-TEST_CASE("LoadAgentsConfig parses enable_thinking", "[agent_config]") {
+TEST_CASE("LoadAgentsConfig reads the thinking switch it replaced", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
     "default_agent": "deepseek",
@@ -346,7 +346,30 @@ TEST_CASE("LoadAgentsConfig parses enable_thinking", "[agent_config]") {
   tmp.write(json);
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(cfg.agents.size() == 1);
-  REQUIRE(cfg.agents[0].backend.enable_thinking == true);
+  // `true` was the only setting that sent nothing, which is what the absent level
+  // means now.
+  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kServerDefault);
+}
+
+TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
+  TempConfigFile tmp;
+  std::string json = R"({
+    "default_agent": "deepseek",
+    "agents": [
+      {
+        "name": "deepseek",
+        "backend": {
+          "type": "openai",
+          "host": "https://api.deepseek.com/v1",
+          "model": "deepseek-reasoner",
+          "thinking": "high"
+        }
+      }
+    ]
+  })";
+  tmp.write(json);
+  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kHigh);
 }
 
 TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent_config]") {
@@ -362,10 +385,10 @@ TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent
   })";
   tmp.write(json);
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents[0].backend.enable_thinking == true);
+  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kServerDefault);
 }
 
-TEST_CASE("Agents config writer round-trips enable_thinking", "[agent_config]") {
+TEST_CASE("Agents config writer round-trips a thinking level", "[agent_config]") {
   TempConfigFile tmp;
   config::AgentsConfig original;
   original.default_agent = "deepseek";
@@ -374,12 +397,12 @@ TEST_CASE("Agents config writer round-trips enable_thinking", "[agent_config]") 
   entry.backend.type = config::BackendType::kOpenAI;
   entry.backend.host = "https://api.deepseek.com/v1";
   entry.backend.model = "deepseek-reasoner";
-  entry.backend.enable_thinking = true;
+  entry.backend.thinking = ThinkingLevel::kMedium;
   original.agents.push_back(entry);
 
   REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
 
   config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(loaded.agents.size() == 1);
-  REQUIRE(loaded.agents[0].backend.enable_thinking == true);
+  REQUIRE(loaded.agents[0].backend.thinking == ThinkingLevel::kMedium);
 }

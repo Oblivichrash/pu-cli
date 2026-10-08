@@ -34,6 +34,13 @@ struct ExecutionResult {
   bool has_error = false;
   std::string error_message;
   int tool_call_count = 0;
+  // A remark about a reply that arrived but is known to be incomplete, such as one
+  // the provider stopped at the token limit. Empty when there is nothing to add.
+  // Not an error: the content is real, and it is stored.
+  std::string notice;
+  // The model that answered the turn, as the response named it, so a caller can
+  // report who replied rather than what was asked for. Empty when it named none.
+  std::string model;
 };
 
 struct StaticEnvInfo {
@@ -57,7 +64,8 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Workspace& workspace, LLMProvider* provider,
                           CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
-                          ToolCallbacks tool_callbacks = {});
+                          ToolCallbacks tool_callbacks = {},
+                          std::function<void(const std::string&)> reasoning_callback = nullptr);
 
   const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
@@ -69,11 +77,14 @@ class Executor {
     bool has_error = false;
     bool was_streamed = false;
     std::string error_message;
+    std::string notice;
+    std::string model;
   };
 
   ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
                              std::function<void(const std::string&)> content_callback,
-                             ToolCallbacks tool_callbacks);
+                             ToolCallbacks tool_callbacks,
+                             std::function<void(const std::string&)> reasoning_callback);
 
   void ProbeStaticEnvironment();
 

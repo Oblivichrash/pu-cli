@@ -31,7 +31,9 @@ struct BackendConfig {
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
   int max_tokens = 2048;
-  bool enable_thinking = true;  // for DeepSeek/vLLM only
+  // How much reasoning to ask for. The default asks for nothing, which is what
+  // "on" meant before there was a level.
+  ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
@@ -43,7 +45,7 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
       {"api_key", cfg.api_key.value_or("")},
       {"temperature", cfg.temperature},
       {"max_tokens", cfg.max_tokens},
-      {"enable_thinking", cfg.enable_thinking},
+      {"thinking", ThinkingLevelName(cfg.thinking)},
   };
 }
 
@@ -63,7 +65,7 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   // The prompt is configuration, not session state, so a stored override never
   // carries one.
   cfg.system_prompt = std::nullopt;
-  cfg.enable_thinking = json::ValueOrDefault<bool>(j, "enable_thinking", true);
+  cfg.thinking = ReadThinkingLevel(j);
   return cfg;
 }
 
