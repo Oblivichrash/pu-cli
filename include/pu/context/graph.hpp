@@ -3,7 +3,9 @@
 
 // The stored conversation: nodes keyed by id, with a current leaf marking the
 // position. Order is derived from the parent link, so identity never depends on
-// position.
+// position. Every parent names a stored node and no chain returns to a node it
+// already passed; an append cannot break either, and the loader refuses a file
+// that does rather than walking it forever.
 //
 // Not thread-safe. Caller must serialize access.
 
@@ -88,6 +90,36 @@ class MessageGraph {
   const MessageNode* Find(const MessageId& id) const {
     const auto it = nodes_.find(id);
     return it == nodes_.end() ? nullptr : &it->second;
+  }
+
+  // True when every parent names a stored node and no chain returns to one it
+  // already passed. Each node has one parent, so a chain that repeats has entered a
+  // cycle; a node proved to reach a root is not walked twice, which keeps the whole
+  // check linear in the number of nodes.
+  bool LinksResolve() const {
+    enum class Mark { kUnvisited, kOnPath, kSound };
+    std::map<MessageId, Mark> marks;
+
+    for (const auto& entry : nodes_) {
+      MessageId current = entry.first;
+      std::vector<MessageId> path;
+      while (!current.empty()) {
+        const auto it = nodes_.find(current);
+        // A parent that names nothing would stop a walk in the middle and leave
+        // the turns before it out of the chain.
+        if (it == nodes_.end()) return false;
+
+        Mark& mark = marks[current];
+        if (mark == Mark::kSound) break;
+        if (mark == Mark::kOnPath) return false;
+
+        mark = Mark::kOnPath;
+        path.push_back(current);
+        current = it->second.parent;
+      }
+      for (const MessageId& id : path) marks[id] = Mark::kSound;
+    }
+    return true;
   }
 
   const MessageNode& Add(MessageNode node) {

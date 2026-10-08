@@ -149,13 +149,21 @@ bool MessageGraph::Deserialize(const boost::json::value& value, MessageGraph& ou
   for (const boost::json::value& entry : value.at("nodes").as_array()) {
     MessageNode node;
     if (!DeserializeNode(entry, node)) return false;
-    graph.nodes_.emplace(node.id, std::move(node));
+    // A repeated id would keep whichever node the file lists first and drop the
+    // other, which is choosing a turn by the order of the file.
+    if (!graph.nodes_.emplace(node.id, std::move(node)).second) return false;
   }
 
   const MessageId leaf = boost::json::value_to<std::string>(value.at("leaf"));
   // A leaf that names nothing would leave the graph unreadable, so a file in
   // that state is refused rather than loaded as empty.
   if (!leaf.empty() && graph.nodes_.find(leaf) == graph.nodes_.end()) return false;
+
+  // The links are checked because everything downstream trusts them: a parent that
+  // names nothing stops the chain early and the next append drops what the chain no
+  // longer reaches, while a chain that returns to itself gives the walk no root to
+  // stop at.
+  if (!graph.LinksResolve()) return false;
 
   graph.leaf_ = leaf;
   out = std::move(graph);
