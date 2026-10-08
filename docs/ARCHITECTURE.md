@@ -295,6 +295,9 @@ lists tools.
 <workspace>/.pu/session.json   # Single session state
 ```
 
+`<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`),
+which a workspace switch can move.
+
 The session file carries `schema_version` (currently 4) beside `workspace` and
 `runtime_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
@@ -357,7 +360,7 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Extension Points
 
-- **New backend**: Implement `LLMProvider` and register it in `config::CreateBackend()`.
+- **New backend**: Implement `LLMProvider` and register it in `CreateBackend()` (`include/pu/agent.hpp`).
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

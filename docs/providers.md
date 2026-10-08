@@ -6,13 +6,19 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-`config::CreateBackend` maps the `agents.json` backend `type` to a concrete
+`CreateBackend` (`agent.hpp`) maps the `agents.json` backend `type` to a concrete
 provider and is the only path `Session` uses to obtain one. Accepted values are
 `ollama`, `openai`, and `codebuddy`; anything else is refused at load time, and
-an absent field means Ollama. "OpenAI compatible" means the `/chat/completions`
-SSE contract and covers OpenAI, DeepSeek thinking mode, vLLM, and compatible
-gateways. `codebuddy` is the same contract at a different base URL plus a header
-set; its gateway behavior is recorded in
+an absent field means Ollama. "OpenAI compatible" covers OpenAI, DeepSeek
+thinking mode, vLLM, and compatible gateways.
+
+A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
+`agent.hpp` — because a stored session, an `agents.json` entry and an
+`/api/session` answer all name it; answering "is it OpenAI?" separately at each
+site is what turns a third type into a lie rather than a failure.
+
+`codebuddy` is one of these, not a third protocol: the same stream at a different
+base URL plus a header set. Its gateway behavior is recorded in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md).
 
 ## Field by field

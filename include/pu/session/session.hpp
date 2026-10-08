@@ -15,11 +15,9 @@
 
 namespace pu {
 
-// The stored conversation.
-//
-// FROZEN: the public surface does not change. Storage behind it is the
-// MessageGraph (include/pu/context/graph.hpp); the compatibility seam is the
-// ChatMessage view this class renders from it.
+// The stored conversation. Storage behind it is the MessageGraph
+// (include/pu/context/graph.hpp); the compatibility seam is the ChatMessage view
+// this class renders from it.
 class Transcript {
  public:
   void Append(const ChatMessage& msg);

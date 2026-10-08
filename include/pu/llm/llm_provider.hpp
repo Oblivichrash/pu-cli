@@ -65,7 +65,7 @@ inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   return ThinkingLevel::kServerDefault;
 }
 
-// FROZEN: a compatibility view rendered from MessageNode; see ARCHITECTURE.md, Data Flow.
+// A compatibility view rendered from MessageNode; see ARCHITECTURE.md, Data Flow.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
