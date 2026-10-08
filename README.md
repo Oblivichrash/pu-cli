@@ -327,9 +327,10 @@ backend. A file written before the level existed keeps its meaning:
 `enable_thinking: false` reads as `none`, and `enable_thinking: true` as `default`.
 
 The level can also be set for one session without editing this file: `/thinking
-<level>` in the CLI, or the control beside the composer in the Web UI, and either
-is remembered with the session. A backend that does not carry a level — Ollama,
-where the model decides for itself — says so, and no control is offered.
+<level>` in the CLI, or the control in the header in the Web UI, where the other
+session-wide choices are, and either is remembered with the session. A backend
+that does not carry a level — Ollama, where the model decides for itself — says so,
+and no control is offered.
 
 ```json
 "backend": {
