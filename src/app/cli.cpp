@@ -87,6 +87,12 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     ExecutionResult result = runtime.ProcessInput(prompt, is_command);
     if (result.has_error) {
       spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
+    } else if (result.was_streamed) {
+      // The reply is already on screen: with no callback the executor types it out
+      // token by token. Printing the finished content as well shows the answer
+      // twice, which is what this did; the line break is all that is left to add.
+      // The chat loop guards on the same flag.
+      std::cout << "\n";
     } else if (!result.content.empty()) {
       std::cout << result.content << "\n";
     } else if (!is_command) {
