@@ -180,18 +180,19 @@ The Web UI supports:
 
 The front-end lives in `web/` and talks to the runtime through a small JSON API over WebSocket for chat, plus REST endpoints for state queries and actions.
 
-### WebSocket Protocol
+### Web API
 
-**Endpoint**: `ws://<host>:<port>/ws`
+Chat is a WebSocket at `ws://<host>:<port>/ws`. Everything else is REST, for control
+and status.
 
-**Client → Server**:
+**Client → server**
 
 ```json
 {"type":"run","payload":{"text":"user message"}}
 {"type":"cancel"}
 ```
 
-**Server → Client**:
+**Server → client**
 
 ```json
 {"type":"chunk","payload":{"text":"token part"}}
@@ -203,15 +204,25 @@ The front-end lives in `web/` and talks to the runtime through a small JSON API 
 {"type":"error","payload":{"text":"error description"}}
 ```
 
-The server streams back chunks as they are generated; the front-end renders them incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it returns; both carry the tool call `id` so the UI can pair a result with the call it belongs to. Cancellation interrupts the in-flight LLM request: the client sends `{"type":"cancel"}` to set the cancel token and keeps the connection open, and the turn then ends with the usual `done`.
+The server streams chunks as they are generated and the front-end renders them
+incrementally. `tool_start` is emitted just before a tool runs and `tool_end` when it
+returns; both carry the tool call `id` so the UI can pair a result with the call it
+belongs to. Cancellation interrupts the in-flight LLM request: the client sends
+`{"type":"cancel"}` to set the cancel token and keeps the connection open, and the turn
+then ends with the usual `done`.
 
-`thinking` carries the model's reasoning, which is a channel of its own: the front-end renders it beside the answer rather than in it, and a backend that reports no reasoning simply sends none.
+`thinking` carries the model's reasoning, which is a channel of its own: the front-end
+renders it beside the answer rather than in it, and a backend that reports no reasoning
+simply sends none.
 
-`notice` is a remark about a reply that arrived but is known to be incomplete — the provider stopped it at the token limit or its content filter. It is sent before the turn is closed and is not an error: the reply itself was stored and stands as it is.
+`notice` is a remark about a reply that arrived but is known to be incomplete — the
+provider stopped it at the token limit or its content filter. It is sent before the turn
+is closed and is not an error: the reply itself was stored and stands as it is.
 
-`done` carries the model the response named, when it named one: a gateway may serve a different build than the one that was configured, and the header then shows who replied.
+`done` carries the model the response named, when it named one: a gateway may serve a
+different build than the one that was configured, and the header then shows who replied.
 
-### REST API Endpoints
+**REST endpoints**
 
 | Method | Path | Description |
 | :----- | :--- | :---------- |
@@ -224,8 +235,6 @@ The server streams back chunks as they are generated; the front-end renders them
 | `POST` | `/api/clear` | Clear the conversation history |
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
-
-All endpoints return JSON. The chat functionality is exclusively provided by the WebSocket; the REST API is for control and status.
 
 ---
 

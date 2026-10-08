@@ -5,9 +5,10 @@ inferred: the shapes come from the request the installed CodeBuddy client makes,
 the responses were captured by calling the endpoint directly with a real account key.
 The probe scripts and raw transcripts live in `build/` and are not tracked.
 
-This replaces the ACP route. `docs/design/codebuddy-acp.md` records why: ACP is served
-by a local `codebuddy --acp` child process, so it needs that CLI installed, while this
-endpoint is reachable on its own and is already the surface the client itself uses.
+This replaces the ACP route: ACP is served by a local `codebuddy --acp` child process, so
+a client would need that CLI installed, while this endpoint is reachable on its own and
+is already the surface the installed client uses. The code side of this — the type's
+name, where the base and the header set live — is in [providers.md](../providers.md).
 
 ---
 
@@ -171,20 +172,7 @@ The ids the installed client names, for reference: `deepseek-v3`, `deepseek-v3-0
 `gemini-2.5-flash`, `gemini-3.1-flash`. Being named there does not mean the account may
 use it: entitlement is the server's answer, and only a request settles it.
 
-## 9. How it maps onto the code
-
-| Fact | Home |
-| --- | --- |
-| The base URL | `llm::kCodeBuddyHost`, `include/pu/llm/codebuddy.hpp` |
-| The header set | `llm::CodeBuddyHeaders()`, `src/llm/codebuddy.cpp`; asked for once per request and passed as `OpenAIProvider::Config::extra_headers` |
-| The type's name | `BackendType::kCodeBuddy`, spelled by `BackendTypeName()` / `ParseBackendType()` in `include/pu/agent.hpp` — the same names the stored session, `/backend` and `/api/session` use |
-| The request and the stream | `OpenAIProvider`, unchanged: this is the protocol it already speaks |
-| The error envelope | `SummarizeErrorBody`, `src/core/beast_http_client.cpp`, which reads `msg` |
-
-`"codebuddy"` is the `type` in `agents.json`, and a session using one is stored and
-reported under that name.
-
-## 10. Still open
+## 9. Still open
 
 - Which headers are actually required, and which are the client's own telemetry.
 - Whether `extra_body.thinking` suppresses reasoning or is merely tolerated: the

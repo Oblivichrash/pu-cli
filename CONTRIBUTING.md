@@ -30,6 +30,11 @@ Each fact has one home — link to it instead of copying it:
   [README.md](README.md).
 - Layer boundaries, directory layout, CMake targets, and extension points:
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- What each backend puts on the wire:
+  [docs/providers.md](docs/providers.md).
+- External contracts, and routes considered and not taken:
+  [docs/design/](docs/design/). A document there records what an outside system
+  answers; the code that follows from it belongs to the files above.
 
 When a change alters behavior, configuration, or the file layout, update the
 document that owns it in the same commit. A stale document is a bug.
