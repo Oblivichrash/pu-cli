@@ -71,7 +71,7 @@ rather than the raw Boost call, so the fallbacks stay in one place.
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
-(`pu::tools::tool_result.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
+(`pu::tools::toolbox.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
 API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ---
@@ -95,7 +95,7 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool_result.hpp` (documented in
+`include/pu/tools/toolbox.hpp` (documented in
 [README](../README.md#tool-output-format)). The executor stores it verbatim so
 the model sees what the tool produced, and reads `stdout`/`error` out of it only
 for the tool callbacks.
@@ -250,7 +250,7 @@ Runtime.ProcessInput(input, ...)
 ```
 
 Each stored node is rendered into one `ChatMessage` on the way out
-(`src/session/request.cpp`), which is the view a provider requires. That makes
+(`include/pu/session/request.hpp`), which is the view a provider requires. That makes
 `ChatMessage` a compatibility view rather than a place to grow: a new context
 feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
 a turn is.
@@ -364,9 +364,9 @@ the root of `include/pu/` and `src/`.
 include/pu/                  src/
 ├── agent_manager.hpp        ├── app/                  # main, CLI parsing, serve
 ├── command_router.hpp       ├── config/               # agents.json, the backend model
-├── runtime.hpp              ├── agent_manager.cpp
-├── executor.hpp             ├── runtime.cpp, command_router.cpp
-├── cli.hpp                  ├── executor.cpp
+├── runtime.hpp              ├── runtime.cpp, command_router.cpp
+├── executor.hpp             ├── executor.cpp
+├── cli.hpp                  ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── core/                 # logging, platform, HTTP client
 ├── core/                    ├── context/              # message graph storage
 ├── context/                 ├── llm/                  # providers, streaming parser
