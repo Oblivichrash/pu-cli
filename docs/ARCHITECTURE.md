@@ -347,8 +347,7 @@ ends up holding exactly the chain the view shows.
 
 A file without the version, with another one, or whose history is not node storage is
 refused rather than guessed at: `pu` reports the reason and starts a fresh
-conversation, and the next save replaces the file. This is a prototype, so nothing is
-kept for an older layout — no conversion, and no copy taken aside.
+conversation, and the next save replaces the file.
 
 The session file contains no system prompt: the prompt is configuration and is
 read from `agents.json` on every start.
