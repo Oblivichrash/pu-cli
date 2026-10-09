@@ -1,8 +1,12 @@
 # Serving more than one session
 
-Status: plan for work not yet started. The server drives exactly one session today;
-this is what it would take to drive several, one per workspace directory, without
-them interfering with each other.
+Status: **not the route this branch takes.** A session is a directory, and several
+directories are served side by side as several `pu serve` processes, one per port: the
+process boundary already gives the isolation this would have had to build, down to the
+toolbox, the MCP child processes and the store. What that costs is a process and a port
+per workspace and no single page listing them, which the workspace's own `serve` block
+makes workable — a directory can say which port it answers on. What follows is kept
+because the shape, and the reason it was set aside, are worth having on record.
 
 ## What a session is
 
@@ -28,10 +32,10 @@ every REST call. A long turn in one directory therefore blocks another directory
 turn and its status requests, which is most of what the change is for.
 
 The REST surfaces are global too. `/api/session`, `/api/history`, `/api/clear`,
-`/api/rewind`, `/api/agents`, `/api/agent/switch`, `/api/thinking` and
-`/api/workspace/switch` all act on whichever session happens to be current, so a
-workspace switch in one page moves the session out from under another. The WebSocket
-has no notion of which session it is talking to at all: it talks to the only one.
+`/api/rewind`, `/api/agents`, `/api/agent/switch` and `/api/thinking` all act on
+whichever session happens to be current. The WebSocket has no notion of which session
+it is talking to at all: it talks to the only one. (The one request that could move a
+session, `/api/workspace/switch`, has since been removed — see the status above.)
 
 ## Shape
 
@@ -61,18 +65,19 @@ written to, and a takeover or a disconnection ends the turn that was running. Th
 what keeps a chat from being driven by nobody, and it applies per session rather than
 per server.
 
-## Alternatives
+## What was decided instead
 
-Running one `pu serve` per directory needs no code at all: the process boundary
-already gives full isolation, MCP processes included. What it does not give is one
-port and one page listing the directories, and it costs a process and a port per
-workspace. If the need is "two directories at once, today", that is the cheapest
-thing that works.
+- One process per directory, not several sessions per process.
+- A session cannot be moved: `/api/workspace/switch` is gone, so a server serves the
+  directory it was started in. `/api/workspaces` stays, as a list of what exists.
+- One page per session: a second connection is answered with `busy` rather than taking
+  over, because taking over would mean ending the reply the page already there is
+  reading.
+- No cap on live sessions and no eviction: a process per session already bounds what
+  one server holds, and the operating system bounds the rest.
 
-## Open questions
-
-- Does the UI switch directories by navigating — a page load, with the directory in
-  the URL so a session can be linked to — or in place?
-- How many hosts may be live at once, and after how long idle may one be evicted?
-- Two pages on the same directory: still one client at a time, with the second taking
-  over and ending the first's turn, or is the second connection refused?
+The process boundary gives full isolation for free — the session, the toolbox, the MCP
+child processes and the store are all that process's own. What it does not give is one
+port for everything and one page listing the directories, and it costs a process and a
+port per workspace, which the workspace's `serve` block covers by letting a directory
+name its own.

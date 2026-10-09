@@ -108,7 +108,22 @@ struct AgentsConfig {
   std::vector<AgentEntry> agents;
 };
 
+// Where a workspace says its own server should listen. A directory is a session, and
+// several directories are meant to be served side by side, so the port belongs beside
+// the directory's other facts rather than in whichever shell happens to start a
+// server for it.
+struct ServeOptions {
+  std::optional<std::string> host;
+  std::optional<int> port;
+};
+
 std::string FindConfigPath();
+
+// The `serve` block of the workspace's configuration, when it has one. A file that is
+// absent, unreadable or malformed answers as if it had none: `LoadAgentsConfig`
+// reports on that a moment later, in words about the file rather than about a port.
+std::optional<ServeOptions> FindServeOptions();
+
 AgentsConfig LoadAgentsConfig(const std::string& config_path);
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::unique_ptr<pu::http::HttpClient> http);

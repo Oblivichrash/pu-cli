@@ -413,6 +413,22 @@ function handleNotice(payload) {
   if (text) createSystemMessage(text);
 }
 
+// One page per session: the server refuses a second one rather than ending the reply
+// the first page is watching. A refusal is a state to report, not a connection to keep
+// retrying, so this page knocks a couple more times — a reload can arrive before the
+// server has noticed the page it replaced — and then leaves the reader to reload once
+// the page holding the session is done.
+const MAX_BUSY_RETRIES = 2;
+let busyRefusals = 0;
+
+function handleBusy(payload) {
+  busyRefusals += 1;
+  const reason = payload && payload.text ? payload.text : "This session is already open in another page.";
+  createSystemMessage(busyRefusals > MAX_BUSY_RETRIES
+      ? reason + " Reload this page once it is free."
+      : reason + " Trying again…");
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws`;
@@ -426,6 +442,10 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
+
+    // Anything but a refusal means this page is the client of the session, which is
+    // what stops the knocking in onclose from being counted.
+    if (data.type !== "busy") busyRefusals = 0;
 
     switch (data.type) {
       case "tool_start":
@@ -449,6 +469,9 @@ function connectWebSocket() {
       case "notice":
         handleNotice(data.payload);
         break;
+      case "busy":
+        handleBusy(data.payload);
+        break;
       default:
         break;
     }
@@ -460,12 +483,18 @@ function connectWebSocket() {
   // though no answer arrived, and the reconnect comes back to a conversation holding
   // no reply to it.
   ws.onclose = () => {
+    const refused = busyRefusals > 0;
     if (isStreaming) {
       removeCurrentAssistantMessage();
       setSendButtonState(false);
       replyLostToDisconnect = true;
     }
     refreshChainLength();
+    if (refused) {
+      connState = "offline";
+      if (busyRefusals <= MAX_BUSY_RETRIES) scheduleReconnect();
+      return;
+    }
     setConnectionState("offline");
     scheduleReconnect();
   };

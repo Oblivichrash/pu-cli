@@ -123,6 +123,51 @@ std::string FindConfigPath() {
   throw pu::Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
 }
 
+std::optional<ServeOptions> FindServeOptions() {
+  std::string path;
+  try {
+    path = FindConfigPath();
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+
+  std::ifstream file(path);
+  if (!file.is_open()) return std::nullopt;
+
+  json::value j;
+  try {
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    j = json::parse(buffer.str());
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+
+  if (!json::HasKey(j, "serve") || !j.at("serve").is_object()) return std::nullopt;
+  const json::value& serve = j.at("serve");
+
+  ServeOptions options;
+  if (json::HasKey(serve, "host") && serve.at("host").is_string()) {
+    options.host = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("host")));
+    if (options.host->empty()) options.host = std::nullopt;
+  }
+  if (json::HasKey(serve, "port")) {
+    if (serve.at("port").is_int64()) {
+      const auto port = serve.at("port").as_int64();
+      if (port >= 1 && port <= 65535) {
+        options.port = static_cast<int>(port);
+      } else {
+        spdlog::warn("Ignoring serve.port {}: not a port number", port);
+      }
+    } else {
+      spdlog::warn("Ignoring serve.port: not a whole number");
+    }
+  }
+
+  if (!options.host && !options.port) return std::nullopt;
+  return options;
+}
+
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);

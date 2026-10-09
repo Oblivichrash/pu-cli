@@ -132,15 +132,17 @@ Key responsibilities:
 ### Web server lifecycle
 
 `pu serve` runs the same `Runtime` instance behind a Boost.Beast front-end
-(`RunServe` in `src/app/serve.cpp`):
+(`RunServe` in `src/app/serve.cpp`), on the host and port that the command line, the
+environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
 2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
    accepted connection is handled on a detached thread.
-3. A plain HTTP request is dispatched to the static/REST routes; a request with a
-   WebSocket upgrade on `/ws` is accepted and takes over as the client being written
-   to, replacing any earlier one and ending the turn that one was watching.
+3. A plain HTTP request is dispatched to the static/REST routes; a WebSocket upgrade
+   on `/ws` is accepted as the client being written to. A second one while that client
+   is attached is answered with a `busy` frame and closed instead: one session, one
+   page.
 4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
    spawns a worker thread that runs `Runtime::ProcessInput` under the shared
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.

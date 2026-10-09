@@ -77,18 +77,24 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "serve") {
-      // Determine final host and port with fallback to environment and defaults
+      // Where to listen: the command line, then the environment, then the workspace's
+      // own configuration, then the defaults.
       std::string host = "127.0.0.1";
       int port = 8080;
+      bool host_given = false;
+      bool port_given = false;
 
       if (vm.count("host")) {
         host = vm["host"].as<std::string>();
+        host_given = true;
       } else if (const char* env = std::getenv("PU_SERVE_HOST"); env && *env != '\0') {
         host = env;
+        host_given = true;
       }
 
       if (vm.count("port")) {
         port = vm["port"].as<int>();
+        port_given = true;
       } else if (const char* env = std::getenv("PU_SERVE_PORT"); env && *env != '\0') {
         char* end = nullptr;
         long parsed = std::strtol(env, &end, 10);
@@ -96,6 +102,18 @@ int main(int argc, char* argv[]) {
           port = static_cast<int>(parsed);
         } else {
           std::cerr << "Warning: invalid PU_SERVE_PORT '" << env << "', using default 8080\n";
+        }
+        // Asked for and refused, rather than asked for and overruled by the file.
+        port_given = true;
+      }
+
+      // A directory is a session, and several are meant to be served side by side, so
+      // the port a workspace answers on belongs in the workspace: otherwise every
+      // shell that starts a server has to be told which one it is starting.
+      if (!host_given || !port_given) {
+        if (auto from_file = pu::config::FindServeOptions()) {
+          if (!host_given && from_file->host) host = *from_file->host;
+          if (!port_given && from_file->port) port = *from_file->port;
         }
       }
 

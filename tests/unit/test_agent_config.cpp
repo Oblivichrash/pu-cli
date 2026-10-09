@@ -164,6 +164,68 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
   fs::remove_all(home, ec);
 }
 
+// Where a workspace says its server should listen. Several directories are meant to be
+// served side by side, so this is how each one says which port it answers on without
+// every shell having to be told.
+TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
+  auto dir = fs::temp_directory_path() / "pu_serve_options";
+  auto home = fs::temp_directory_path() / "pu_serve_options_home";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+  fs::create_directories(dir / ".pu");
+  fs::create_directories(home);
+
+  auto old = fs::current_path();
+  fs::current_path(dir);
+
+  {
+    ScopedEnvVar env("HOME", home.string());
+
+    // Each write is closed before the read that follows it: an ofstream still in scope
+    // has not necessarily reached the disk, and a reader that got an empty file would
+    // agree with every one of the assertions below for the wrong reason.
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << R"({"default_agent":"a","agents":[]})";
+    }
+    REQUIRE_FALSE(config::FindServeOptions().has_value());
+
+    {
+      ScopedEnvVar bind("PU_TEST_SERVE_HOST", "127.0.0.2");
+      {
+        std::ofstream f(dir / ".pu" / "agents.json");
+        f << R"({"serve":{"host":"${PU_TEST_SERVE_HOST}","port":8087}})";
+      }
+      const auto options = config::FindServeOptions();
+      REQUIRE(options.has_value());
+      REQUIRE(options->port == 8087);
+      REQUIRE(options->host == "127.0.0.2");
+    }
+
+    // A number that is not a port is refused rather than listened on.
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << R"({"serve":{"port":70000}})";
+      f.close();
+      REQUIRE_FALSE(config::FindServeOptions().has_value());
+    }
+
+    // A file that is not JSON answers as if it had no serve block: the loader reports
+    // on the file a moment later, in words about the file.
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << "{ not json";
+      f.close();
+      REQUIRE_FALSE(config::FindServeOptions().has_value());
+    }
+  }
+
+  fs::current_path(old);
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+}
+
 TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({

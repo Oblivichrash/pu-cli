@@ -36,26 +36,24 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     return;
   }
 
-  // Take the place of the client that was listening, if any, and end the turn it was
-  // watching. The reply belongs to the reader it is being written for: a page that
-  // reloads is asking to see the conversation it left, not the tail of an answer
-  // whose beginning it never saw, and the frames it missed are gone in any case.
-  std::shared_ptr<websocket::stream<tcp::socket>> replaced;
+  // One client per session. A second page is not another reader of the same chat: it
+  // could only take its place by ending the reply the first one is watching, so it is
+  // told the session is busy and closed instead. Whoever wants in can come back when
+  // the page that holds it is done.
   {
     std::lock_guard<std::mutex> lock(active_ws->mtx);
-    replaced = std::exchange(active_ws->client, ws);
-    // A fresh token, already cancelled. It ends the turn that was running and stops
-    // that turn from writing anything more — its ending included — into a client that
-    // never saw how the answer began.
-    active_ws->cancel_token->store(true);
-    active_ws->cancel_token = std::make_shared<std::atomic<bool>>(true);
-  }
-  if (replaced) {
-    // Closing the socket under its reader is how a blocking read is woken. The stream
-    // object itself stays alive in that session's own pointer, so nothing is freed
-    // under a thread still using it.
-    beast::error_code close_ec;
-    beast::get_lowest_layer(*replaced).close(close_ec);
+    if (active_ws->client) {
+      boost::json::value busy = {
+          {"type", "busy"},
+          {"payload", {{"text", "This session is already open in another page."}}}};
+      const std::string message = boost::json::serialize(busy);
+      beast::error_code write_ec;
+      ws->write(net::buffer(message), write_ec);
+      beast::error_code close_ec;
+      ws->close(websocket::close_code::policy_error, close_ec);
+      return;
+    }
+    active_ws->client = ws;
   }
 
   for (;;) {

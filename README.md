@@ -140,10 +140,21 @@ The executor reads `success` and `stdout`/`error` from it; the transcript keeps 
 ./build/pu serve --host 0.0.0.0 --port 9000
 ```
 
+A server serves the directory it was started in and stays there: nothing moves it to
+another one. Each directory is a session with its own configuration, conversation and
+tools, so serving several of them at once means one server per directory — which is
+also what keeps them from sharing a conversation or a turn. Since that needs a port per
+directory, the workspace can name its own (`--host`/`--port` first, then
+`PU_SERVE_HOST`/`PU_SERVE_PORT`, then the file):
+
+```json
+"serve": { "host": "127.0.0.1", "port": 8087 }
+```
+
 > **Warning** — the server has no authentication and no origin checks, so
-> anyone who can reach the port can read the session history, switch
-> workspaces, and run the active agent's tools. Keep the default loopback
-> bind unless the port is protected by other means.
+> anyone who can reach the port can read the session history and run the active
+> agent's tools. Keep the default loopback bind unless the port is protected by
+> other means.
 
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` below.
@@ -171,6 +182,7 @@ and status.
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
+{"type":"busy","payload":{"text":"This session is already open in another page."}}
 {"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
@@ -182,10 +194,14 @@ answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
 `done` names the model that answered, which a gateway may have chosen.
 
-A turn belongs to the client watching it: `cancel`, closing the page, a dropped
-connection, or a second client taking over all end it, and what it had written is not
-kept, so the session is left holding the question and no answer. Reconnecting
-therefore shows the conversation without the reply that was in progress.
+A turn belongs to the client watching it: `cancel`, closing the page, or losing the
+connection all end it, and what it had written is not kept, so the session is left
+holding the question and no answer. Reconnecting therefore shows the conversation
+without the reply that was in progress.
+
+A session has one page. While a page is attached, a second connection is answered with
+`busy` and closed rather than taking over, since taking over would mean ending the
+reply the page already there is reading.
 
 **REST endpoints**
 
@@ -196,7 +212,6 @@ therefore shows the conversation without the reply that was in progress.
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
-| `POST` | `/api/workspace/switch` | Switch workspace (`{"path":"..."}`) |
 | `POST` | `/api/clear` | Clear the conversation history |
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
@@ -210,6 +225,14 @@ therefore shows the conversation without the reply that was in progress.
 The file lives in a `.pu/` directory: `./.pu/agents.json` (project) or
 `~/.pu/agents.json` (user, resolved from `HOME`, which Windows does not set by
 default). See [Quick Start](#configure) for a full example.
+
+**Top-level fields**
+
+| Field | Description |
+|-------|-------------|
+| `default_agent` | Required; must name one of the entries in `agents` |
+| `agents` | Required; the entries below |
+| `serve` | Optional; `{"host": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names |
 
 **Agent fields**
 

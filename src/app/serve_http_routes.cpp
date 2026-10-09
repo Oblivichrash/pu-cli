@@ -275,40 +275,6 @@ void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex, http::request<h
   SendJson(res, 200, resp);
 }
 
-void HandleApiWorkspaceSwitch(Runtime& runtime, std::mutex& io_mutex,
-                              http::request<http::string_body>&& req,
-                              http::response<http::string_body>& res) {
-  boost::json::value body;
-  try {
-    body = boost::json::parse(req.body());
-  } catch (const std::exception&) {
-    boost::json::value err = {{"success", false}, {"error", "Invalid JSON"}};
-    SendJson(res, 400, err);
-    return;
-  }
-  if (!json::HasKey(body, "path") || !body.at("path").is_string()) {
-    boost::json::value err = {{"success", false}, {"error", "Missing or invalid 'path'"}};
-    SendJson(res, 400, err);
-    return;
-  }
-  std::string path_str = boost::json::value_to<std::string>(body.at("path"));
-  boost::json::value resp = boost::json::object{};
-  try {
-    std::lock_guard<std::mutex> lock(io_mutex);
-    if (runtime.SwitchWorkspace(path_str)) {
-      resp.as_object()["success"] = true;
-      resp.as_object()["current"] = runtime.GetWorkspaceName();
-    } else {
-      resp.as_object()["success"] = false;
-      resp.as_object()["error"] = "Switch failed";
-    }
-  } catch (const std::exception& e) {
-    resp.as_object()["success"] = false;
-    resp.as_object()["error"] = e.what();
-  }
-  SendJson(res, 200, resp);
-}
-
 void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&& req,
                      http::response<http::string_body>& res) {
   boost::json::value jv = boost::json::object{};
@@ -409,10 +375,6 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   }
   if (target == "/api/workspaces" && req.method() == http::verb::get) {
     HandleApiWorkspaces(runtime, io_mutex, std::move(req), res);
-    return;
-  }
-  if (target == "/api/workspace/switch" && req.method() == http::verb::post) {
-    HandleApiWorkspaceSwitch(runtime, io_mutex, std::move(req), res);
     return;
   }
 
