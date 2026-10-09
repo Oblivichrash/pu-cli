@@ -192,8 +192,6 @@ std::string McpClient::CallTool(const std::string& name, const boost::json::valu
       }
       if (!output.empty()) return output;
       return boost::json::serialize(resp.at("result"));
-    } else if (json::HasKey(resp, "error")) {
-      return "MCP error: " + boost::json::serialize(resp.at("error"));
     }
     return boost::json::serialize(resp);
   } catch (const std::exception& e) {
