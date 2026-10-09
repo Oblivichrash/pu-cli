@@ -24,6 +24,12 @@ item comes out as separate paragraphs, so pass the whole message at once.
   platform quirk, or a choice a reader would otherwise question. Do not restate
   what the next line does, and do not keep commented-out code or change history
   in the tree.
+- A block is at most two lines, the SPDX header aside. A file header says at most
+  what the file is for; anything longer is a document, and it belongs to the
+  document that [Where Things Live](#where-things-live) names for it.
+- A comment describes what holds now, and does not point at a document. What an
+  earlier build did belongs to the commit that changed it, not to the line that
+  replaced it.
 - Format with `clang-format`; the settings live in `.clang-format`. Run
   `clang-format -i <files>` from the repo root before committing — CI checks the
   formatting, so an unformatted tree fails the build.
