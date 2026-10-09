@@ -281,18 +281,34 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   return path.string();
 }
 
+// What a request answered. The status is read where the refusal is one rather than a field
+// in the body.
+struct HttpResponse {
+  unsigned status = 0;
+  std::string body;
+};
+
 class TestHttpClient {
  public:
   explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  std::string Get(const std::string& path) { return Request(http::verb::get, path, ""); }
+  std::string Get(const std::string& path) { return Request(http::verb::get, path, "").body; }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
+    return PostFull(path, body).body;
+  }
+
+  HttpResponse PostFull(const std::string& path, const boost::json::value& body) {
     return Request(http::verb::post, path, boost::json::serialize(body));
   }
 
+  // A body that is not JSON at all, which is a refusal the handler judges itself.
+  HttpResponse PostRaw(const std::string& path, const std::string& body) {
+    return Request(http::verb::post, path, body);
+  }
+
  private:
-  std::string Request(http::verb method, const std::string& path, const std::string& body) {
+  HttpResponse Request(http::verb method, const std::string& path, const std::string& body) {
     try {
       net::io_context ioc;
       tcp::resolver resolver(ioc);
@@ -317,7 +333,7 @@ class TestHttpClient {
       beast::error_code ec;
       stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
-      return res.body();
+      return HttpResponse{res.result_int(), res.body()};
     } catch (const std::exception& e) {
       throw std::runtime_error(std::string("HTTP request failed: ") + e.what());
     }
@@ -377,6 +393,9 @@ class ServeHarness {
     platform::interrupted = false;
     if (runtime_) runtime_->Shutdown();
   }
+
+  // The workspace this harness serves: the directory the server's discovery scans beside.
+  const fs::path& Home() const { return home_; }
 
   TestHttpClient Client() const { return TestHttpClient(kServeHost, port_); }
 

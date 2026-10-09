@@ -8,39 +8,13 @@
 #include "tests/mocks/serve_harness.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
-#include <boost/asio.hpp>
-#include <boost/beast.hpp>
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include <atomic>
-#include <chrono>
-#include <cstdlib>
-#include <fstream>
 #include <filesystem>
-#include <thread>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
+#include <string>
 
 namespace fs = std::filesystem;
-using namespace std::chrono_literals;
-
-// Boost.Beast aliases used throughout this test file.
-namespace beast = boost::beast;
-namespace http = beast::http;
-namespace net = boost::asio;
-using tcp = net::ip::tcp;
-
-static constexpr const char* kHost = "127.0.0.1";
 
 using pu::tests::ServeHarness;
 using pu::tests::TestHttpClient;
@@ -233,47 +207,135 @@ TEST_CASE("serve API /api/thinking refuses what the backend cannot carry", "[ser
   ServeHarness harness;  // ollama, where the model decides for itself
   auto client = harness.Client();
 
-  auto refused_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
-  REQUIRE(refused_j.at("success") == false);
+  auto refused = client.PostFull("/api/thinking", boost::json::object{{"level", "high"}});
+  REQUIRE(refused.status == 400);
+  REQUIRE(ParseJson(refused.body).at("success") == false);
 
   // A word that names no level is refused rather than read as some default.
-  auto unknown_j =
-      ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "enormous"}}));
-  REQUIRE(unknown_j.at("success") == false);
+  auto unknown = client.PostFull("/api/thinking", boost::json::object{{"level", "enormous"}});
+  REQUIRE(unknown.status == 400);
+  REQUIRE(ParseJson(unknown.body).at("success") == false);
+
+  // A request that names no level is refused as that, rather than as a word meaning nothing.
+  auto missing = client.PostFull("/api/thinking", boost::json::object{});
+  REQUIRE(missing.status == 400);
+  REQUIRE(ParseJson(missing.body).at("error") == "Missing or invalid 'level'");
+
+  // So is a body the handler cannot read at all.
+  auto malformed = client.PostRaw("/api/thinking", "not json");
+  REQUIRE(malformed.status == 400);
+  REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
 }
 
 TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  try {
-    net::io_context ioc;
-    tcp::resolver resolver(ioc);
-    beast::tcp_stream stream(ioc);
+  auto res = client.PostRaw("/api/agent/switch", "not json");
 
-    auto endpoints = resolver.resolve(kHost, std::to_string(harness.Port()));
-    stream.connect(endpoints);
+  REQUIRE(res.status == 400);
+  auto j = ParseJson(res.body);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "Invalid JSON");
+}
 
-    http::request<http::string_body> req(http::verb::post, "/api/agent/switch", 11);
-    req.set(http::field::host, kHost);
-    req.set(http::field::content_type, "application/json");
-    req.body() = "not json";
-    req.prepare_payload();
+TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
 
-    http::write(stream, req);
+  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->GetConversation();
+  conversation.Append("user", "one");
+  conversation.Append("assistant", "two");
+  conversation.Append("user", "three");
 
-    beast::flat_buffer buffer;
-    http::response<http::string_body> res;
-    http::read(stream, buffer, res);
+  // The turn is the 1-based position the page sends: stepping to it drops that turn and what
+  // follows, so the view ends after the second one.
+  auto stepped = client.PostFull("/api/rewind", boost::json::object{{"turn", 3}});
+  REQUIRE(stepped.status == 200);
+  REQUIRE(ParseJson(stepped.body).at("success") == true);
 
-    REQUIRE(res.result_int() == 400);
-    auto j = ParseJson(res.body());
-    REQUIRE(j.at("success") == false);
-    REQUIRE(j.at("error") == "Invalid JSON");
+  auto history = ParseJson(client.Get("/api/history"));
+  REQUIRE(history.as_array().size() == 2);
+  REQUIRE(history.as_array()[1].at("content") == "two");
+}
 
-    beast::error_code close_ec;
-    stream.socket().shutdown(tcp::socket::shutdown_both, close_ec);
-  } catch (const std::exception& e) {
-    FAIL("HTTP request failed: " << e.what());
+TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  REQUIRE(session != nullptr);
+  session->GetConversation().Append("user", "one");
+
+  // No turn named, a turn past the end, and a body that is not JSON: three refusals the
+  // caller can fix, so three 400s rather than a successful answer with a reason in it.
+  auto missing = client.PostFull("/api/rewind", boost::json::object{});
+  REQUIRE(missing.status == 400);
+  REQUIRE(ParseJson(missing.body).at("error") == "Missing or invalid 'turn'");
+
+  auto past_end = client.PostFull("/api/rewind", boost::json::object{{"turn", 9}});
+  REQUIRE(past_end.status == 400);
+  REQUIRE(ParseJson(past_end.body).at("error") == "No such turn");
+
+  auto malformed = client.PostRaw("/api/rewind", "not json");
+  REQUIRE(malformed.status == 400);
+  REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
+
+  // None of them changed the conversation.
+  REQUIRE(ParseJson(client.Get("/api/history")).as_array().size() == 1);
+}
+
+// The store refuses a step back while a tool call has not been answered. That refusal is the
+// caller's to act on — a request the state cannot serve, not a failure — so it is a 400.
+TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->GetConversation();
+  conversation.Append("user", "one");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
+  conversation.Append(assistant);
+  REQUIRE(conversation.HasPendingToolCalls());
+
+  auto refused = client.PostFull("/api/rewind", boost::json::object{{"turn", 1}});
+
+  REQUIRE(refused.status == 400);
+  REQUIRE(ParseJson(refused.body).at("success") == false);
+}
+
+// What the workspace picker offers: the directories beside this one that carry an
+// agents.json, which is what makes a directory one the server can be started in.
+TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  // The discovery scans the directory this server's workspace sits in, so it is full of
+  // directories a test does not own. One of them is made here: a directory without the
+  // configuration file, which has to stay out of the list.
+  const fs::path stranger = fs::temp_directory_path() /
+                            (harness.Home().filename().string() + "_stranger");
+  fs::create_directories(stranger);
+
+  auto workspaces = ParseJson(client.Get("/api/workspaces")).at("workspaces").as_array();
+  bool listed_own = false;
+  bool listed_stranger = false;
+  for (const auto& workspace : workspaces) {
+    const fs::path path{std::string(workspace.at("path").as_string())};
+    if (path == harness.Home()) listed_own = true;
+    if (path == fs::absolute(stranger)) listed_stranger = true;
   }
+
+  fs::remove_all(stranger);
+
+  // The workspace this server was started in is offered, and one it cannot serve is not.
+  REQUIRE(listed_own);
+  REQUIRE_FALSE(listed_stranger);
 }

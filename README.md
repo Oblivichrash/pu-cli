@@ -216,6 +216,12 @@ reply the page already there is reading.
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
 
+A request that fails is answered with the status that names whose it is: `400` for one the
+caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
+cannot serve it, such as a step back while a tool call is pending — `404` where a name does
+not exist, and `500` where the operation failed. A refusal carries `success: false` and the
+reason in `error`.
+
 ---
 
 ## Configuration

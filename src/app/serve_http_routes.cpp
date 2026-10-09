@@ -16,6 +16,7 @@
 #include "pu/agent_manager.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/context/message.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -42,8 +43,18 @@ void SendOk(http::response<http::string_body>& res, boost::json::object fields =
   SendJson(res, 200, fields);
 }
 
+// Refusals are 400 (a body that is not JSON, a value missing or unknown, a state that cannot
+// serve the request), 404 where a name does not exist, and 500 where an operation failed.
 void SendError(http::response<http::string_body>& res, unsigned status, std::string_view message) {
   SendJson(res, status, boost::json::object{{"success", false}, {"error", std::string(message)}});
+}
+
+// What the layers below threw, as a status: a base RuntimeError is the store refusing a
+// request its state cannot serve, while Error and below are failures.
+unsigned ErrorStatus(const std::exception& e) {
+  if (dynamic_cast<const Error*>(&e) != nullptr) return 500;
+  if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;
+  return 500;
 }
 
 std::string GetWebDir() {
@@ -107,7 +118,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
     std::lock_guard<std::mutex> lock(io_mutex);
     auto session = runtime.GetOrCreateDefaultSession();
     if (!session) {
-      SendError(res, 200, "No active session");
+      SendError(res, 500, "No active session");
       return;
     }
     const config::BackendConfig backend = runtime.CurrentBackend();
@@ -121,7 +132,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
       body["thinking_override"] = ThinkingLevelName(*override_level);
     }
   } catch (const std::exception& e) {
-    SendError(res, 200, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendOk(res, std::move(body));
@@ -179,7 +190,7 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
       }
     }
   } catch (const std::exception& e) {
-    SendError(res, 500, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendJson(res, 200, turns);
@@ -196,7 +207,7 @@ void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex, http::request<http:
                                           {"description", cfg ? cfg->description : std::string{}}});
     }
   } catch (const std::exception& e) {
-    SendError(res, 500, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendJson(res, 200, boost::json::object{{"agents", std::move(agents)}});
@@ -226,7 +237,7 @@ void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
     }
     runtime.SwitchAgent(*cfg);
   } catch (const std::exception& e) {
-    SendError(res, 200, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendOk(res, boost::json::object{{"agent", agent_name}});
@@ -238,7 +249,7 @@ void HandleApiClear(Runtime& runtime, std::mutex& io_mutex, http::request<http::
     std::lock_guard<std::mutex> lock(io_mutex);
     runtime.ClearConversation();
   } catch (const std::exception& e) {
-    SendError(res, 200, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendOk(res);
@@ -253,7 +264,7 @@ void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex, http::request<h
       workspaces.push_back(boost::json::value{{"name", name}, {"path", path}});
     }
   } catch (const std::exception& e) {
-    SendError(res, 500, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendJson(res, 200, boost::json::object{{"workspaces", std::move(workspaces)}});
@@ -261,15 +272,28 @@ void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex, http::request<h
 
 void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&& req,
                      http::response<http::string_body>& res) {
+  boost::json::value body;
+  try {
+    body = boost::json::parse(req.body());
+  } catch (const std::exception&) {
+    SendError(res, 400, "Invalid JSON");
+    return;
+  }
+  const int turn = json::ValueOrDefault<int>(body, "turn", 0);
+  if (turn < 1) {
+    SendError(res, 400, "Missing or invalid 'turn'");
+    return;
+  }
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    const int turn = json::ValueOrDefault<int>(boost::json::parse(req.body()), "turn", 0);
-    if (turn < 1 || !runtime.RewindBefore(static_cast<size_t>(turn))) {
-      SendError(res, 200, "No such turn");
+    // A turn that is not there and a step back the store refuses while a call is pending are
+    // the same refusal: the request cannot be served as it stands.
+    if (!runtime.RewindBefore(static_cast<size_t>(turn))) {
+      SendError(res, 400, "No such turn");
       return;
     }
   } catch (const std::exception& e) {
-    SendError(res, 200, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendOk(res);
@@ -278,14 +302,24 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
 void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
                        http::request<http::string_body>&& req,
                        http::response<http::string_body>& res) {
+  boost::json::value requested;
+  try {
+    requested = boost::json::parse(req.body());
+  } catch (const std::exception&) {
+    SendError(res, 400, "Invalid JSON");
+    return;
+  }
   boost::json::object body;
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    const std::string level =
-        json::ValueOrDefault<std::string>(boost::json::parse(req.body()), "level", "");
+    if (!json::HasKey(requested, "level") || !requested.at("level").is_string()) {
+      SendError(res, 400, "Missing or invalid 'level'");
+      return;
+    }
+    const std::string level = boost::json::value_to<std::string>(requested.at("level"));
 
-    // `auto` is the only word that clears the session's own level, so an unknown word is
-    // refused rather than read as some default.
+    // `auto` is the only word that clears the session's own level, so a word that names no
+    // level is refused rather than read as some default.
     if (level != "auto" && level != "default" &&
         ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
       SendError(res, 400, "Unknown thinking level");
@@ -302,7 +336,7 @@ void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
       body["thinking_override"] = ThinkingLevelName(*override_level);
     }
   } catch (const std::exception& e) {
-    SendError(res, 200, e.what());
+    SendError(res, ErrorStatus(e), e.what());
     return;
   }
   SendOk(res, std::move(body));
