@@ -114,8 +114,6 @@ TEST_CASE("A type is named the same way in configuration and in an answer", "[ba
 
   // The name a session is stored under is the name a client is told.
   REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
-  REQUIRE(std::string(config::DefaultBackendHost(config::BackendType::kCodeBuddy)) ==
-          llm::kCodeBuddyHost);
 }
 
 TEST_CASE("A session spec carries a backend only when one was overridden", "[backend]") {

@@ -62,6 +62,7 @@ TEST_CASE("The CodeBuddy correlation ids are generated per call", "[codebuddy]")
 TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[codebuddy]") {
   config::BackendConfig cfg;
   cfg.type = config::BackendType::kCodeBuddy;
+  cfg.host = llm::kCodeBuddyHost;
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
@@ -73,8 +74,7 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
   provider->Chat(history, {});
 
-  // The host is the type's own when the caller named none, and the provider
-  // appends the path.
+  // The provider appends the path to the host the configuration named.
   REQUIRE(mock_ptr->last_url == std::string(llm::kCodeBuddyHost) + "/chat/completions");
   REQUIRE(mock_ptr->last_body.find("\"stream\":true") != std::string::npos);
   REQUIRE(HeaderValue(mock_ptr->last_headers, "Authorization") == "Bearer key");
@@ -104,4 +104,15 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
   REQUIRE(mock_ptr->last_url == "http://127.0.0.1:9999/v1/chat/completions");
   // The gateway still has to be told who is calling.
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Domain"));
+}
+
+// A backend is reached at a host, and a configuration without one is malformed
+// rather than defaulted: the request would otherwise go to "/chat/completions".
+TEST_CASE("CreateBackend refuses a backend that names no host", "[codebuddy]") {
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kCodeBuddy;
+  cfg.model = "deepseek-v4-flash";
+
+  auto mock_http = std::make_unique<MockHttpClient>();
+  REQUIRE_THROWS_AS(config::CreateBackend(cfg, std::move(mock_http)), pu::Error);
 }

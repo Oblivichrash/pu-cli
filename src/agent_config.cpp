@@ -155,6 +155,14 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::unique_ptr<pu::http::HttpClient> http) {
+  // A backend is reached at a host, and the default for a type chosen without one is
+  // answered where that choice is made (/backend). Reaching this without a host is a
+  // malformed configuration, and a request to "/chat/completions" is a worse way to
+  // find that out than an error that says which type it was.
+  if (cfg.host.empty()) {
+    throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
+  }
+
   // The two HTTP backends speak the same protocol, so what they have in common is
   // filled once and the differences are the name the gateway is called by.
   const auto http_config = [&cfg]() {

@@ -100,3 +100,20 @@ TEST_CASE("CommandRouter rejects removed /note command", "[router]") {
   REQUIRE_FALSE(f.Route("/note add remember this", output));
   REQUIRE_FALSE(f.Route("/note show", output));
 }
+
+// The command names a type and a model; the host it leaves out is the type's own, so
+// that default is answered where the command is rather than in the factory that turns
+// a type into a provider.
+TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  REQUIRE(output.find(llm::kCodeBuddyHost) != std::string::npos);
+
+  REQUIRE(f.Route("/backend ollama llama3", output));
+  REQUIRE(output.find("http://localhost:11434") != std::string::npos);
+
+  REQUIRE(f.Route("/backend gpt whatever", output));
+  REQUIRE(output.find("Unknown type") != std::string::npos);
+}
