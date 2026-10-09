@@ -235,6 +235,15 @@ gateway's contract is in
 supported models are the account's, so a request naming one the account may not
 use is answered by the gateway itself.
 
+```json
+"backend": {
+  "type": "codebuddy",
+  "host": "https://copilot.tencent.com/v2",
+  "model": "deepseek-v4-flash",
+  "api_key": "${CODEBUDDY_API_KEY}"
+}
+```
+
 `host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
 support `${ENV_VAR}` expansion; an unset variable expands to an empty string and
 logs a warning.
