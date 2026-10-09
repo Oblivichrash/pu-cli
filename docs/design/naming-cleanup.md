@@ -1,7 +1,7 @@
 # Naming and structure cleanup
 
-Status: plan, agreed in outline. Every decision below is settled. Batch 0 is done — it
-needed no renames and changed no contract; Batches 1 to 3 remain.
+Status: plan, agreed in outline. Every decision below is settled. Batches 0 and 1 are
+done — neither changed a contract — and Batches 2 and 3 remain.
 
 The project has changed shape several times — a third backend type, a turn that now
 ends with its reader, a workspace-switch endpoint removed, the ACP route abandoned —
@@ -120,9 +120,13 @@ rather than moved to it, and a count is asked of the view it renders. The REST e
 was left alone — unifying `ok` and `success` is a change to what an API answers, so it
 moved to Batch 3 with the rest of the vocabulary.
 
-**Batch 1 — split the configuration header.** `agent.hpp` into `config/agents.hpp`,
-`config/backend.hpp` and `agent_manager.hpp`; update includes, and the extension points
-in `ARCHITECTURE.md`. Pure movement.
+**Batch 1 — split the configuration header.** Done. `agent.hpp` became
+`config/agents.hpp` (the agents.json model and its loaders), `config/backend.hpp` (the
+backend model and the factory that turns one into a provider) and `agent_manager.hpp`;
+the implementation followed, so `src/agent_config.cpp` — named after a header that no
+longer exists — is now `src/config/agents.cpp` and `src/config/backend.cpp`. Every
+includer asks for the header it actually uses, and the tree and the extension points in
+`ARCHITECTURE.md` were updated with it. Nothing else moved.
 
 **Batch 2 — one word per concept.** `Workspace` → `Conversation` with `Transcript`
 merged into it, `RuntimeSpec` → `SessionSpec`, and the store's keys with them — an older

@@ -8,7 +8,7 @@
 #include <fstream>
 #include <string>
 
-#include "pu/agent.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -26,6 +26,10 @@ class BackendSourceFixture {
   BackendSourceFixture() {
     static int counter = 0;
     root_ = fs::temp_directory_path() / ("pu_backend_source_" + std::to_string(counter++));
+    // The name is reused between runs, and a session left in it names the agent it was
+    // talking to, which outvotes the configuration this fixture is about to write.
+    std::error_code ec;
+    fs::remove_all(root_, ec);
     fs::create_directories(root_ / ".pu");
     Write(0.3f);
   }

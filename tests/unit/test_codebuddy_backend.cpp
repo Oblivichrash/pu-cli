@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/agent.hpp"
+#include "pu/config/backend.hpp"
 #include "pu/llm/codebuddy.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"

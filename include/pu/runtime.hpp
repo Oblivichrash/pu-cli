@@ -7,7 +7,8 @@
 #include <vector>
 #include <filesystem>
 
-#include "pu/agent.hpp"
+#include "pu/agent_manager.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
 #include "pu/executor.hpp"
 #include "pu/mcp/client.hpp"

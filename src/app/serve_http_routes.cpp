@@ -12,7 +12,8 @@
 #include <string>
 #include <vector>
 
-#include "pu/agent.hpp"
+#include "pu/agent_manager.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/context/message.hpp"
 #include "pu/core/json.hpp"
 #include "pu/runtime.hpp"

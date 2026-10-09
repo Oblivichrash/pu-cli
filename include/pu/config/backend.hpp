@@ -1,28 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+// What a backend is: the type, where it is reached, and the model to ask for. The
+// factory that turns one of these into a provider is declared beside the model, so the
+// type and the thing it builds are read together.
+
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include <boost/json.hpp>
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
-#include "pu/mcp/client.hpp"
 
 namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
-
-struct SecurityPolicy {
-  std::string sandbox_root;
-  size_t max_command_length = 0;
-  std::vector<std::string> forbidden_patterns;
-};
 
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
@@ -95,61 +91,7 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   return cfg;
 }
 
-struct AgentEntry {
-  std::string name;
-  std::string description;
-  BackendConfig backend;
-  SecurityPolicy security;
-  std::vector<pu::mcp::McpServerConfig> mcp_servers;
-};
-
-struct AgentsConfig {
-  std::string default_agent;
-  std::vector<AgentEntry> agents;
-};
-
-// Where a workspace says its own server should listen. A directory is a session, and
-// several directories are meant to be served side by side, so the port belongs beside
-// the directory's other facts rather than in whichever shell happens to start a
-// server for it.
-struct ServeOptions {
-  std::optional<std::string> host;
-  std::optional<int> port;
-};
-
-std::string FindConfigPath();
-
-// The `serve` block of the workspace's configuration, when it has one. A file that is
-// absent, unreadable or malformed answers as if it had none: `LoadAgentsConfig`
-// reports on that a moment later, in words about the file rather than about a port.
-std::optional<ServeOptions> FindServeOptions();
-
-AgentsConfig LoadAgentsConfig(const std::string& config_path);
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::unique_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config
-
-namespace pu {
-
-// The configured agents, and which one of them is active.
-class AgentManager {
- public:
-  AgentManager();
-
-  void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs);
-
-  const config::AgentEntry* GetAgentConfig(const std::string& name) const;
-
-  std::vector<std::string> GetAgentNames() const;
-
-  void SetActiveAgent(const std::string& name);
-  std::string GetActiveAgent() const;
-
- private:
-  std::string active_agent_;
-
-  std::vector<config::AgentEntry> agent_configs_;
-};
-
-}  // namespace pu

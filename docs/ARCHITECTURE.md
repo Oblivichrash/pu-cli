@@ -361,11 +361,12 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/                  src/
-├── agent.hpp                ├── app/                  # main, CLI parsing, serve
-├── command_router.hpp       ├── agent_config.cpp, agent_manager.cpp
-├── runtime.hpp              ├── runtime.cpp, command_router.cpp
-├── executor.hpp             ├── executor.cpp
-├── cli.hpp                  ├── core/                 # logging, platform, HTTP client
+├── agent_manager.hpp        ├── app/                  # main, CLI parsing, serve
+├── command_router.hpp       ├── config/               # agents.json, the backend model
+├── runtime.hpp              ├── agent_manager.cpp
+├── executor.hpp             ├── runtime.cpp, command_router.cpp
+├── cli.hpp                  ├── executor.cpp
+├── config/                  ├── core/                 # logging, platform, HTTP client
 ├── core/                    ├── context/              # message graph storage
 ├── context/                 ├── llm/                  # providers, streaming parser
 ├── llm/                     ├── mcp/                  # transports, JSON-RPC client
@@ -384,7 +385,7 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Extension Points
 
-- **New backend**: Implement `LLMProvider` and register it in `CreateBackend()` (`include/pu/agent.hpp`).
+- **New backend**: Implement `LLMProvider` and register it in `CreateBackend()` (`include/pu/config/backend.hpp`).
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

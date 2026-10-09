@@ -63,7 +63,8 @@ pu_configure_target(pu_core)
 add_library(pu::core ALIAS pu_core)
 
 add_library(pu_agent STATIC
-    src/agent_config.cpp
+    src/config/agents.cpp
+    src/config/backend.cpp
     src/agent_manager.cpp
     src/executor.cpp
     src/tools/toolbox.cpp

@@ -8,7 +8,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/agent.hpp"
+#include "pu/config/backend.hpp"
 #include "pu/context/graph.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
