@@ -1,7 +1,7 @@
 # Naming and structure cleanup
 
-Status: plan, agreed in outline, nothing renamed yet. Batches 0 and 1 stand on their
-own; Batch 2 carries the one item that can touch stored data.
+Status: plan, agreed in outline, nothing renamed yet. Every decision below is settled;
+Batch 0 is ready to start and depends on none of the renames.
 
 The project has changed shape several times — a third backend type, a turn that now
 ends with its reader, a workspace-switch endpoint removed, the ACP route abandoned —
@@ -12,10 +12,13 @@ files that follow them would be churn rather than clarity.
 
 ## What was decided
 
-- **Names may change inside and out.** `agents.json` fields and REST paths may be
-  renamed, with the docs and the front-end changed with them, and no back-compatibility
-  is built: a name that lies costs more than a file that needs editing. The store's own
-  keys are the exception and are dealt with separately below.
+- **Names may change inside and out.** `agents.json` fields, REST paths and the keys
+  inside `session.json` may be renamed, with the docs and the front-end changed with
+  them: a name that lies costs more than a file that needs editing.
+- **Nothing is kept for the sake of an older file.** This is a prototype, so there is no
+  migration, no backup copy, and no reading of a field a previous build wrote. A store
+  this build cannot read is refused, the reason is reported, and the next save replaces
+  it.
 - **One concept, one word.** `workspace` stays the word for the directory, which is what
   it already means to a user, and the stored conversation stops borrowing it. This is
   the opposite of the first instinct — renaming the directory side — and the reason is
@@ -72,6 +75,7 @@ files that follow them would be churn rather than clarity.
 | --- | --- | --- |
 | `include/pu/agent.hpp` | `pu/config/agents.hpp` (model, loaders), `pu/config/backend.hpp` (`BackendType`, `BackendConfig`, `CreateBackend`), `pu/agent_manager.hpp` (`AgentManager`) | three things are currently named after one file |
 | `RuntimeSpec` | `SessionSpec` | it describes a session |
+| `session.json` keys `workspace.history`, `runtime_spec` | `conversation.history`, `session_spec` | renamed with the types; an older file is refused rather than converted |
 | `Workspace` (the class) | `Conversation` | the directory keeps the word |
 | `Transcript` | merged into `Conversation` | a thin wrapper over `MessageGraph` with nothing else between them |
 | `workspace_root_`, `GetWorkspaceRoot()` | unchanged | the directory is what that word means |
@@ -88,26 +92,17 @@ the API saying one thing and the code another. Renaming the stored conversation 
 costs nothing on the outside and gives each layer one word:
 
 ```
-workspace (a directory)  →  Conversation (workspace + SessionSpec)  →  MessageGraph
+workspace (a directory)  →  Session (a Conversation + its SessionSpec)  →  MessageGraph
 ```
 
-## What the store costs
+## The store is not kept
 
-Renaming the C++ types costs nothing. Renaming the keys inside `session.json`
-(`workspace.history`, `runtime_spec`) is the only change in this plan that can touch what
-a user already has, and there are two ways to take it:
-
-1. **Types only.** The keys stay as they are; `Conversation` is serialized under
-   `workspace` and the schema version notes it. Nothing is lost, one word stays doubled
-   in the file.
-2. **Keys too.** Bump `kSchemaVersion` (`context/graph.hpp`) and let an older file be
-   refused — which is what the loader already does: it reports the reason, copies the
-   file to `.pu/session.backup.json` and starts a clean conversation
-   (`ARCHITECTURE.md:346`). A conversation that already exists then survives only in
-   that backup.
-
-Recommendation: take route 1 in Batch 2, and decide route 2 on its own later, because it
-is the only item whose cost lands on data rather than on code.
+The keys inside `session.json` (`workspace.history`, `runtime_spec`) are renamed with the
+types, and a file this build cannot read is refused rather than converted or copied
+aside: the reason is reported and the next save replaces it. That also removes the copy
+taken before every load today (`BackupLegacySession`, `src/runtime.cpp:78`, whose report
+sits at `:59-69`) — with nothing kept for an older layout, keeping a copy of one is a
+promise the prototype does not make.
 
 ## Batches
 
@@ -118,7 +113,9 @@ worth a commit of its own.
 `GetWorkspaceName`, `IsRunning` and the Windows `ReaderLoop` stub; fold `ToolLoopResult`
 into `ExecutionResult`; move trim to `text::`, the error summary to one home, the UTF-8
 test to `text::`, the REST envelope to two helpers, and `SafeString` to
-`json::ValueOrDefault`; drop the three compatibility paths. Rewrite the tests that used
+`json::ValueOrDefault`; drop the three compatibility paths and the backup copy taken
+before every load (`BackupLegacySession`, its report, and the paragraphs in `README.md`
+and `ARCHITECTURE.md` that document `session.backup.json`). Rewrite the tests that used
 the deleted methods to say what they meant (`Runtime` built at the target directory,
 `GetHistory().size()`).
 
@@ -127,8 +124,9 @@ the deleted methods to say what they meant (`Runtime` built at the target direct
 in `ARCHITECTURE.md`. Pure movement.
 
 **Batch 2 — one word per concept.** `Workspace` → `Conversation` with `Transcript`
-merged into it, `RuntimeSpec` → `SessionSpec`, and the store decision above. Docs and
-the `/api/*` copy that says "session" where it means a conversation move with it.
+merged into it, `RuntimeSpec` → `SessionSpec`, and the store's keys with them — an older
+file is refused, not converted. Docs and the `/api/*` copy that says "session" where it
+means a conversation move with it.
 
 **Batch 3 — targets, and names on the wire.** `pu_core` → `pu_lib`; then re-read
 `/api/*` and the `agents.json` fields against the vocabulary Batch 2 settled on. Most
