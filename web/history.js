@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Rebuilding the transcript from the stored conversation.
-//
-// The store holds one node per provider message, and a turn that ran a tool is
-// several of them: the assistant message carrying the call, the result answering
-// it, and the assistant message that replied with the result. The transcript shows
-// one bubble per turn, so a reload has to group them the way the streaming path
-// builds them: a result is folded back into the call it answers, and everything
-// between two user turns is one reply.
-//
-// Kept out of the rendering, and pure, so the grouping can be exercised without a
-// browser -- which is where a reload differs from the stream in the first place.
+// Rebuilding the transcript from the stored conversation: the store holds one node per
+// provider message while the transcript shows one bubble per turn, so a reload groups
+// them the way the streaming path builds them — a result folded back into the call it
+// answers, everything between two user turns one reply. Pure, so the grouping can be
+// exercised without a browser.
 
 export const BLOCK_TYPES = {
   THINKING: "thinking",
