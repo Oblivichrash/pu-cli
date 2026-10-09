@@ -21,6 +21,7 @@ add_executable(pu_tests
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
     unit/test_serve_api.cpp
+    unit/test_serve_ws.cpp
     unit/test_options.cpp
     unit/test_http_errors.cpp
     unit/test_backend_resolution.cpp
