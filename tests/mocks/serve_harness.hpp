@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// What a test needs to run a server for real: a backend that answers like a provider over
-// a socket, a workspace with an agents.json, a REST client, and the server itself.
+// What a test needs to run a server for real: a server that answers with what the test
+// says, a backend that answers like a provider, a workspace with an agents.json, a REST
+// client, and `pu serve` itself.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -136,32 +138,54 @@ inline bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   return false;
 }
 
-// A backend that answers like a provider, over a real socket. `response_delay_ms` holds
-// the answer back, which is what keeps a turn in flight long enough to interrupt it.
-class FakeBackend {
+// A server that answers every request with what its responder returns. `response_delay_ms`
+// holds the answer back, which is what keeps a turn in flight long enough to interrupt it,
+// and `Requests()` counts what reached it.
+class FakeHttpServer {
  public:
-  explicit FakeBackend(int response_delay_ms = 0)
-      : response_delay_ms_(response_delay_ms), requests_(std::make_shared<std::atomic<int>>(0)) {
+  using Responder =
+      std::function<http::response<http::string_body>(const http::request<http::string_body>&)>;
+
+  // One status and body for every request.
+  FakeHttpServer(unsigned status, std::string body, int response_delay_ms = 0)
+      : FakeHttpServer(
+            [status, body = std::move(body)](const http::request<http::string_body>&) {
+              http::response<http::string_body> res;
+              res.result(static_cast<http::status>(status));
+              res.set(http::field::content_type, "application/json");
+              res.body() = body;
+              res.prepare_payload();
+              return res;
+            },
+            response_delay_ms) {}
+
+  explicit FakeHttpServer(Responder responder, int response_delay_ms = 0)
+      : responder_(std::make_shared<Responder>(std::move(responder))),
+        response_delay_ms_(response_delay_ms),
+        requests_(std::make_shared<std::atomic<int>>(0)) {
     ioc_ = std::make_shared<net::io_context>();
     acceptor_ = std::make_shared<tcp::acceptor>(
         *ioc_, tcp::endpoint(net::ip::make_address("127.0.0.1"), 0));
     port_ = acceptor_->local_endpoint().port();
     REQUIRE(port_ > 0);
 
-    DoAccept();
+    Accept();
     server_thread_ = std::thread([this] { ioc_->run(); });
     REQUIRE(WaitForPort("127.0.0.1", port_, 10000));
   }
 
-  ~FakeBackend() { Stop(); }
+  ~FakeHttpServer() { Stop(); }
+
+  FakeHttpServer(const FakeHttpServer&) = delete;
+  FakeHttpServer& operator=(const FakeHttpServer&) = delete;
 
   int Port() const { return port_; }
 
-  // How many times a turn has reached this backend: a turn that got as far as the
-  // request. A test that acts mid-turn waits for this rather than for a clock.
+  // How many requests have been read, which is a turn that got as far as the backend.
   int Requests() const { return requests_->load(); }
 
   void Stop() {
+    if (stop_requested_.exchange(true)) return;
     if (server_thread_.joinable()) {
       ioc_->stop();
       server_thread_.join();
@@ -169,50 +193,41 @@ class FakeBackend {
   }
 
  private:
-  void DoAccept() {
+  void Accept() {
     acceptor_->async_accept([this](boost::system::error_code ec, tcp::socket socket) {
       if (!ec) {
-        const int delay = response_delay_ms_;
-        const auto requests = requests_;
-        std::thread([s = std::move(socket), delay, requests]() mutable {
-          HandleRequest(std::move(s), delay, requests);
+        std::thread([s = std::move(socket), responder = responder_, delay = response_delay_ms_,
+                     requests = requests_]() mutable {
+          Serve(std::move(s), responder, delay, requests);
         }).detach();
       }
-      if (!stop_requested_) DoAccept();
+      if (!stop_requested_) Accept();
     });
   }
 
-  static void HandleRequest(tcp::socket socket, int response_delay_ms,
-                            const std::shared_ptr<std::atomic<int>>& requests) {
+  static void Serve(tcp::socket socket, const std::shared_ptr<Responder>& responder,
+                    int response_delay_ms, const std::shared_ptr<std::atomic<int>>& requests) {
     try {
       beast::flat_buffer buffer;
       http::request<http::string_body> req;
       http::read(socket, buffer, req);
 
-      http::response<http::string_body> res;
-      if (req.target() == "/api/chat" && req.method() == http::verb::post) {
-        requests->fetch_add(1);
-        if (response_delay_ms > 0) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(response_delay_ms));
-        }
-        res.result(http::status::ok);
-        res.set(http::field::content_type, "application/json");
-        res.body() = R"({"message":{"content":"OK"}}
-{"done":true}
-)";
-        res.prepare_payload();
-      } else {
-        res.result(http::status::not_found);
-        res.prepare_payload();
+      requests->fetch_add(1);
+      if (response_delay_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(response_delay_ms));
       }
 
+      http::response<http::string_body> res = (*responder)(req);
       http::write(socket, res);
-      socket.shutdown(tcp::socket::shutdown_send);
+
+      beast::error_code ec;
+      socket.shutdown(tcp::socket::shutdown_send, ec);
     } catch (const std::exception& e) {
-      spdlog::warn("FakeBackend request error: {}", e.what());
+      spdlog::debug("FakeHttpServer: {}", e.what());
     }
   }
 
+  std::shared_ptr<Responder> responder_;
   std::shared_ptr<net::io_context> ioc_;
   std::shared_ptr<tcp::acceptor> acceptor_;
   int port_ = 0;
@@ -220,6 +235,28 @@ class FakeBackend {
   std::shared_ptr<std::atomic<int>> requests_;
   std::thread server_thread_;
   std::atomic<bool> stop_requested_{false};
+};
+
+// A backend that answers like a provider, in the shape the Ollama path reads back.
+class FakeBackend : public FakeHttpServer {
+ public:
+  explicit FakeBackend(int response_delay_ms = 0) : FakeHttpServer(Answer, response_delay_ms) {}
+
+ private:
+  static http::response<http::string_body> Answer(const http::request<http::string_body>& req) {
+    http::response<http::string_body> res;
+    if (req.target() == "/api/chat" && req.method() == http::verb::post) {
+      res.result(http::status::ok);
+      res.set(http::field::content_type, "application/json");
+      res.body() = R"({"message":{"content":"OK"}}
+{"done":true}
+)";
+    } else {
+      res.result(http::status::not_found);
+    }
+    res.prepare_payload();
+    return res;
+  }
 };
 
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
