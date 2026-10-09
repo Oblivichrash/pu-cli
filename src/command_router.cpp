@@ -183,7 +183,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
 bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session,
                                  std::string& output) {
   auto names = manager_.GetAgentNames();
-  std::string current = session.GetRuntimeSpec().agent_name;
+  std::string current = session.GetSpec().agent_name;
   std::ostringstream oss;
   oss << "Available agents:\n";
   for (const auto& name : names) {
@@ -201,7 +201,7 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
 
 bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session,
                                 std::string& output) {
-  session.GetWorkspace().ClearHistory();
+  session.GetConversation().ClearHistory();
   output = "Conversation history cleared.";
   return true;
 }
@@ -219,7 +219,7 @@ bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& 
   }
 
   try {
-    if (!session.GetWorkspace().RewindBefore(turn)) {
+    if (!session.GetConversation().RewindBefore(turn)) {
       output = "There is no turn " + args[0] + " in this conversation.";
       return true;
     }

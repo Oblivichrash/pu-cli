@@ -123,7 +123,7 @@ TEST_CASE("A type is named the same way in configuration and in an answer", "[ba
 }
 
 TEST_CASE("A session spec carries a backend only when one was overridden", "[backend]") {
-  RuntimeSpec chosen;
+  SessionSpec chosen;
   chosen.agent_name = "chat";
 
   const boost::json::value written = chosen.Serialize();
@@ -135,7 +135,7 @@ TEST_CASE("A session spec carries a backend only when one was overridden", "[bac
   override_cfg.thinking = ThinkingLevel::kLow;
   chosen.backend_override = override_cfg;
 
-  const auto restored = RuntimeSpec::Deserialize(chosen.Serialize());
+  const auto restored = SessionSpec::Deserialize(chosen.Serialize());
   REQUIRE(restored.has_value());
   REQUIRE(restored->agent_name == "chat");
   REQUIRE(restored->backend_override.has_value());

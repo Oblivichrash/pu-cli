@@ -1,7 +1,7 @@
 # Naming and structure cleanup
 
-Status: plan, agreed in outline. Every decision below is settled. Batches 0 and 1 are
-done — neither changed a contract — and Batches 2 and 3 remain.
+Status: plan, agreed in outline. Every decision below is settled. Batches 0 to 2 are
+done; Batch 3 remains.
 
 The project has changed shape several times — a third backend type, a turn that now
 ends with its reader, a workspace-switch endpoint removed, the ACP route abandoned —
@@ -128,10 +128,15 @@ longer exists — is now `src/config/agents.cpp` and `src/config/backend.cpp`. E
 includer asks for the header it actually uses, and the tree and the extension points in
 `ARCHITECTURE.md` were updated with it. Nothing else moved.
 
-**Batch 2 — one word per concept.** `Workspace` → `Conversation` with `Transcript`
-merged into it, `RuntimeSpec` → `SessionSpec`, and the store's keys with them — an older
-file is refused, not converted. Docs and the `/api/*` copy that says "session" where it
-means a conversation move with it.
+**Batch 2 — one word per concept.** Done. `Workspace` became `Conversation` with
+`Transcript` merged into it, `RuntimeSpec` became `SessionSpec`, and the store's keys
+followed: a file now carries `conversation` and `session_spec` under version 5, and an
+older one is refused rather than converted. `kSchemaVersion` moved out of
+`context/graph.hpp` to `kSessionSchemaVersion` in the session, because the version
+belongs to the file, which is a session. `test_workspace.cpp` became
+`test_conversation.cpp`, since the type it is named after is gone. Everything that still
+says `workspace` means the directory: `Runtime::GetWorkspaceRoot`, `/api/workspaces`,
+`workspace_root_`.
 
 **Batch 3 — targets, and names on the wire.** `pu_core` → `pu_lib`; unify the REST result
 envelope, which answers `ok` from the queries and `success` from the actions (the page

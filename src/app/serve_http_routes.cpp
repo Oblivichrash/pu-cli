@@ -98,7 +98,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
     jv.as_object()["ok"] = session != nullptr;
     if (session) {
       const config::BackendConfig backend = runtime.CurrentBackend();
-      jv.as_object()["agent_name"] = session->GetRuntimeSpec().agent_name;
+      jv.as_object()["agent_name"] = session->GetSpec().agent_name;
       jv.as_object()["backend_type"] = config::BackendTypeName(backend.type);
       jv.as_object()["backend_model"] = backend.model;
       jv.as_object()["backend_host"] = backend.host;
@@ -124,12 +124,12 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
     std::lock_guard<std::mutex> lock(io_mutex);
     auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
-      Workspace& workspace = session->GetWorkspace();
-      const std::vector<ChatMessage> history = workspace.GetHistory();
+      Conversation& conversation = session->GetConversation();
+      const std::vector<ChatMessage> history = conversation.GetHistory();
       // The chain beside the projection: a call's fate is stored, and it travels in
       // fields the provider must not see, so it is read from the nodes. Positional,
       // because both are the same chain in the same order.
-      const std::vector<const context::MessageNode*> chain = workspace.GetGraph().Chain();
+      const std::vector<const context::MessageNode*> chain = conversation.GetGraph().Chain();
       for (size_t i = 0; i < history.size(); ++i) {
         const ChatMessage& msg = history[i];
         boost::json::value item = {

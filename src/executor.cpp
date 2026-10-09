@@ -147,7 +147,7 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
-ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace,
+ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
                                   LLMProvider* provider, CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
                                   ToolCallbacks tool_callbacks,
@@ -159,19 +159,19 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
     return err;
   }
 
-  workspace.Append("user", input);
+  conversation.Append("user", input);
 
   // The loop fills the result the caller is given: one turn, one result, rather than a
   // private shape that has to be copied out of it field by field.
-  ExecutionResult result = RunToolLoop(workspace, provider, cancel_token, content_callback,
+  ExecutionResult result = RunToolLoop(conversation, provider, cancel_token, content_callback,
                                        tool_callbacks, reasoning_callback);
   if (result.has_error) return result;
 
-  if (!result.content.empty()) workspace.Append("assistant", result.content);
+  if (!result.content.empty()) conversation.Append("assistant", result.content);
   return result;
 }
 
-ExecutionResult Executor::RunToolLoop(Workspace& workspace, LLMProvider* provider,
+ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* provider,
                                       CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
                                       ToolCallbacks tool_callbacks,
@@ -208,7 +208,8 @@ ExecutionResult Executor::RunToolLoop(Workspace& workspace, LLMProvider* provide
     inputs.system_prompt = system_prompt_;
     inputs.environment = BuildStaticSystemContext();
 
-    std::vector<ChatMessage> chat_history = session::BuildRequestPath(workspace.GetGraph(), inputs);
+    std::vector<ChatMessage> chat_history =
+        session::BuildRequestPath(conversation.GetGraph(), inputs);
 
     ChatResult chat_result;
 
@@ -285,7 +286,7 @@ ExecutionResult Executor::RunToolLoop(Workspace& workspace, LLMProvider* provide
           context::ToolCallToJson(context::ToolCallRecord{tc.id, tc.name, tc.arguments}));
     }
     assistant_msg.tool_calls = std::move(j_calls);
-    workspace.Append(assistant_msg);
+    conversation.Append(assistant_msg);
 
     ToolContext tool_ctx;
     if (security_policy_.has_value()) {
@@ -339,7 +340,7 @@ ExecutionResult Executor::RunToolLoop(Workspace& workspace, LLMProvider* provide
       tool_msg.content = tool_result;
       tool_msg.tool_name = call.name;
       tool_msg.tool_call_id = call.id;
-      workspace.Append(tool_msg);
+      conversation.Append(tool_msg);
     }
 
   } while (tool_was_called);

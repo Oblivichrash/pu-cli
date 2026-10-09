@@ -15,12 +15,13 @@
 
 namespace pu {
 
-// The stored conversation. Storage behind it is the MessageGraph
-// (include/pu/context/graph.hpp); the compatibility seam is the ChatMessage view
-// this class renders from it.
-class Transcript {
+// The stored conversation: what was said, in order. Storage behind it is the
+// MessageGraph (include/pu/context/graph.hpp), and the compatibility seam is the
+// ChatMessage view this class renders from it.
+class Conversation {
  public:
   void Append(const ChatMessage& msg);
+  void Append(const std::string& role, const std::string& content);
   std::vector<ChatMessage> GetHistory() const;
   bool HasPendingToolCalls() const;
 
@@ -31,45 +32,21 @@ class Transcript {
   // stays until the next append replaces the turns after the new position.
   bool RewindBefore(size_t turn);
 
+  void ClearHistory();
+
   boost::json::value Serialize() const;
-  // Returns false for a value that is not node storage, so the caller can tell a
-  // foreign layout from an empty conversation.
-  static bool Deserialize(const boost::json::value& j, Transcript& out);
+  // Null for a value that is not node storage, so the caller can tell a foreign
+  // layout from an empty conversation.
+  static std::shared_ptr<Conversation> Deserialize(const boost::json::value& j);
 
  private:
   context::MessageGraph graph_;
 };
 
-// The state that outlives one request. It holds the conversation and nothing
-// else: the agent and the backend are named by the RuntimeSpec a Session
-// carries beside it.
-class Workspace {
- public:
-  Workspace() = default;
-
-  void Append(const ChatMessage& msg);
-  void Append(const std::string& role, const std::string& content);
-  std::vector<ChatMessage> GetHistory() const;
-  bool HasPendingToolCalls() const;
-
-  // The stored conversation, for a caller that renders its own view of it.
-  const context::MessageGraph& GetGraph() const { return transcript_.GetGraph(); }
-
-  bool RewindBefore(size_t turn);
-
-  void ClearHistory();
-
-  boost::json::value Serialize() const;
-  static std::shared_ptr<Workspace> Deserialize(const boost::json::value& j);
-
- private:
-  Transcript transcript_;
-};
-
-// The session names the agent it is talking to, and carries a backend only when
-// the user overrode one for this session. Everything else about the backend is
-// read from agents.json, so editing the configuration takes effect on restart.
-struct RuntimeSpec {
+// What a session names and carries: the agent it is talking to, and a backend only
+// when one was chosen for it. Everything else about the backend is read from
+// agents.json, so editing the configuration takes effect on restart.
+struct SessionSpec {
   std::string agent_name;
   std::optional<config::BackendConfig> backend_override;
   // The thinking level this session asks for. Absent means it follows whatever the
@@ -90,10 +67,10 @@ struct RuntimeSpec {
 
   // A section that is not an object cannot name an agent, so it is refused
   // rather than read into a spec that would start the wrong model.
-  static std::optional<RuntimeSpec> Deserialize(const boost::json::value& jv) {
+  static std::optional<SessionSpec> Deserialize(const boost::json::value& jv) {
     if (!jv.is_object()) return std::nullopt;
 
-    RuntimeSpec spec;
+    SessionSpec spec;
     if (json::HasKey(jv, "backend_override")) {
       spec.backend_override =
           boost::json::value_to<config::BackendConfig>(jv.at("backend_override"));
@@ -107,27 +84,32 @@ struct RuntimeSpec {
   }
 };
 
-// Aggregate root: the conversation plus the agent and backend it belongs to.
+// The version this build writes into a session file, and the only one it reads back. A
+// file carrying another one is refused rather than guessed at. It lives here because the
+// file is a session: the conversation inside it is storage without a version of its own.
+inline constexpr int kSessionSchemaVersion = 5;
+
+// Aggregate root: the conversation, plus the agent and backend it belongs to.
 class Session {
  public:
   Session();
-  Session(std::shared_ptr<Workspace> workspace, const RuntimeSpec& spec);
+  Session(std::shared_ptr<Conversation> conversation, const SessionSpec& spec);
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
 
-  Workspace& GetWorkspace() { return *workspace_; }
-  const Workspace& GetWorkspace() const { return *workspace_; }
-  RuntimeSpec& GetRuntimeSpec() { return runtime_spec_; }
-  const RuntimeSpec& GetRuntimeSpec() const { return runtime_spec_; }
+  Conversation& GetConversation() { return *conversation_; }
+  const Conversation& GetConversation() const { return *conversation_; }
+  SessionSpec& GetSpec() { return spec_; }
+  const SessionSpec& GetSpec() const { return spec_; }
 
   void SetBackendOverride(const config::BackendConfig& new_config);
   // Choosing an agent drops the override, so the agent's own configuration
   // becomes the source of the backend again.
   void SetAgent(const std::string& agent_name);
 
-  bool HasPendingToolCalls() const { return workspace_->HasPendingToolCalls(); }
+  bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }
 
   std::unique_ptr<LLMProvider> CreateProvider(const config::BackendConfig& backend) const;
 
@@ -135,8 +117,8 @@ class Session {
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);
 
  private:
-  std::shared_ptr<Workspace> workspace_;
-  RuntimeSpec runtime_spec_;
+  std::shared_ptr<Conversation> conversation_;
+  SessionSpec spec_;
 };
 
 }  // namespace pu

@@ -61,8 +61,8 @@ class Executor {
   // named inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  ExecutionResult Execute(const std::string& input, Workspace& workspace, LLMProvider* provider,
-                          CancelToken cancel_token = nullptr,
+  ExecutionResult Execute(const std::string& input, Conversation& conversation,
+                          LLMProvider* provider, CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {},
                           std::function<void(const std::string&)> reasoning_callback = nullptr);
@@ -70,7 +70,8 @@ class Executor {
   std::string BuildStaticSystemContext() const;
 
  private:
-  ExecutionResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
+  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider,
+                              CancelToken cancel_token,
                               std::function<void(const std::string&)> content_callback,
                               ToolCallbacks tool_callbacks,
                               std::function<void(const std::string&)> reasoning_callback);

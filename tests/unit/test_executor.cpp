@@ -258,7 +258,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     ended_errors.push_back(error);
   };
 
-  Workspace ws;
+  Conversation ws;
   ExecutionResult result = executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
 
   REQUIRE(result.has_error == false);
@@ -300,7 +300,7 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[ex
   executor.SetSecurityPolicy(policy);
   executor.SetSystemPrompt("be brief");
 
-  Workspace ws;
+  Conversation ws;
 
   CapturingLLM provider;
   ExecutionResult result = executor.Execute("hello", ws, &provider);
@@ -325,7 +325,7 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  Workspace ws;
+  Conversation ws;
 
   CapturingLLM provider;
   executor.Execute("hello", ws, &provider);
@@ -344,7 +344,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  Workspace ws;
+  Conversation ws;
   FailingLLM provider;
   const ExecutionResult result = executor.Execute("hello", ws, &provider);
 
@@ -376,7 +376,7 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   FailingLLM provider;
   const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
 
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result = executor.Execute("ask", ws, &provider, withdrawn);
 
   REQUIRE(result.has_error == false);
@@ -395,7 +395,7 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("half a sentence", "length");
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result = executor.Execute("write a lot", ws, &provider);
 
   REQUIRE(result.has_error == false);
@@ -413,7 +413,7 @@ TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_l
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("a whole answer", "stop");
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result = executor.Execute("ask", ws, &provider);
 
   REQUIRE(result.has_error == false);
@@ -435,7 +435,7 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
 
   MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result = executor.Execute("go", ws, &provider);
 
   REQUIRE(result.has_error == false);
@@ -464,7 +464,7 @@ TEST_CASE("The model that answered is carried out of the turn", "[executor][tool
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result = executor.Execute("ask", ws, &provider);
 
   // What replied, which is not necessarily what was configured.
@@ -480,7 +480,7 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
 
   StoppingLLM provider("answer", "stop", "", "weighing the options");
   std::string streamed;
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result =
       executor.Execute("think", ws, &provider, nullptr, nullptr, {},
                        [&](const std::string& token) { streamed += token; });

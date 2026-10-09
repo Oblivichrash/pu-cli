@@ -31,9 +31,9 @@ What each dependency is for:
 | Component | Responsibility |
 |-----------|----------------|
 | `Runtime` | Plain object created by `main()`; owns `AgentManager`, `Toolbox`, `Executor`, `CommandRouter`; routes input, holds the single `Session`, rebuilds tool registry on agent switch |
-| `Session` | Aggregate root: `Workspace` + `RuntimeSpec` |
-| `Workspace` | State container: `Transcript` (history) |
-| `Executor` | Session-state-free tool loop (holds config + probe cache); reads/writes `Workspace`; injects system context and processes structured tool output |
+| `Session` | Aggregate root: a `Conversation` + its `SessionSpec` |
+| `Conversation` | The stored conversation: the `MessageGraph`, plus the `ChatMessage` view rendered from it |
+| `Executor` | Session-state-free tool loop (holds config + probe cache); reads and writes the `Conversation`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
@@ -79,7 +79,7 @@ API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 ## Executor
 
 The tool loop holds no session state (`main()` injects its collaborators) and
-runs once per turn: read `Workspace.Transcript`, inject system context, call the
+runs once per turn: read the `Conversation`, inject system context, call the
 provider, execute any tool calls through `Toolbox`, store each structured result
 verbatim, and repeat until the reply carries no call.
 
@@ -238,10 +238,10 @@ Runtime.ProcessInput(input, ...)
                        Executor.Execute()          (session-state-free)
                          │
                          ├── Inject system context into chat history
-                         ├── Read Workspace.Transcript
+                         ├── Read the Conversation
                          ├── LLMProvider.Chat()
                          ├── Toolbox.ExecuteTool() → JSON response
-                         ├── Store the tool result in Transcript
+                         ├── Store the tool result in the Conversation
                          ├── Repeat tool loop if tool calls present
                          └── Return final response
                          │
@@ -320,20 +320,19 @@ lists tools.
 <workspace>/.pu/session.json   # Single session state
 ```
 
-`<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`),
-which a workspace switch can move.
+`<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`).
 
-The session file carries `schema_version` (currently 4) beside `workspace` and
-`runtime_spec`. It is written automatically after every interaction and on
+The session file carries `schema_version` (currently 5) beside `conversation` and
+`session_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
-`runtime_spec` names the agent and carries a backend only when `/backend` gave
+`session_spec` names the agent and carries a backend only when `/backend` gave
 this session one of its own. Every other backend field is read from
 `agents.json` on each start, so editing the configuration takes effect without
 touching the session. The session also decides which agent a restart resumes:
 the named agent wins over `default_agent`.
 
-The conversation is a chain: `workspace.history` holds `nodes`, each with its id,
+The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
 timestamp, its parent and one role payload, plus the `leaf` that marks the current
 position. A payload's `content` is a single string, and reasoning is the JSON the
 provider sent (`reasoning.raw_json`).
@@ -370,7 +369,7 @@ include/pu/                  src/
 ├── core/                    ├── context/              # message graph storage
 ├── context/                 ├── llm/                  # providers, streaming parser
 ├── llm/                     ├── mcp/                  # transports, JSON-RPC client
-├── mcp/                     ├── session/              # Session, Workspace
+├── mcp/                     ├── session/              # Session, Conversation
 ├── session/                 └── tools/                # Toolbox, tools
 └── tools/
 ```

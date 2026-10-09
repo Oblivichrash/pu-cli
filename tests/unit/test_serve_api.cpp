@@ -393,8 +393,8 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
 
   auto session = harness.Runtime().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
-  pu::Workspace& workspace = session->GetWorkspace();
-  workspace.Append("user", "run it");
+  pu::Conversation& conversation = session->GetConversation();
+  conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
   assistant.role = "assistant";
@@ -412,7 +412,7 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
            boost::json::object{{"name", "execute_bash"},
                                {"arguments", boost::json::object{{"command", "echo there"}}}}}},
   };
-  workspace.Append(assistant);
+  conversation.Append(assistant);
 
   // One call is answered, the other is left as the store keeps it when a turn ends
   // between a call and its result.
@@ -422,7 +422,7 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   receipt.tool_name = "execute_bash";
   receipt.content = boost::json::serialize(boost::json::object{
       {"success", true}, {"stdout", "hi\n"}, {"stderr", ""}, {"error", ""}, {"exit_code", 0}});
-  workspace.Append(receipt);
+  conversation.Append(receipt);
 
   auto j = ParseJson(client.Get("/api/history"));
   REQUIRE(j.as_array().size() == 3);
@@ -443,8 +443,8 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
 
   auto session = harness.Runtime().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
-  pu::Workspace& workspace = session->GetWorkspace();
-  workspace.Append("user", "run it");
+  pu::Conversation& conversation = session->GetConversation();
+  conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
   assistant.role = "assistant";
@@ -453,7 +453,7 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
       {"type", "function"},
       {"function", boost::json::object{{"name", "execute_bash"},
                                        {"arguments", boost::json::object{{"command", "ls"}}}}}}};
-  workspace.Append(assistant);
+  conversation.Append(assistant);
 
   // A built-in or MCP tool answers in its own words, which is output too.
   pu::ChatMessage receipt;
@@ -461,7 +461,7 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "execute_bash";
   receipt.content = "plain text from a tool";
-  workspace.Append(receipt);
+  conversation.Append(receipt);
 
   auto j = ParseJson(client.Get("/api/history"));
   REQUIRE(j.as_array().size() == 3);

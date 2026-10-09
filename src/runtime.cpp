@@ -49,9 +49,9 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   if (!json::HasKey(j, "schema_version")) {
     reason = "missing schema_version";
   } else if (const int version = json::ValueOrDefault<int>(j, "schema_version", 0);
-             version != context::kSchemaVersion) {
+             version != kSessionSchemaVersion) {
     reason = "schema_version " + std::to_string(version) + ", this build reads " +
-             std::to_string(context::kSchemaVersion);
+             std::to_string(kSessionSchemaVersion);
   } else {
     reason = "history is not node storage";
   }
@@ -112,7 +112,7 @@ void Runtime::Initialize(const std::string& config_path) {
   // configured default: otherwise the toolbox would describe one agent while the
   // provider talks to another.
   if (current_session_) {
-    auto& spec = current_session_->GetRuntimeSpec();
+    auto& spec = current_session_->GetSpec();
     const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
     if (stored != nullptr) {
       RebuildToolbox(*stored);
@@ -145,13 +145,13 @@ void Runtime::SaveCurrentSession() {
 }
 
 bool Runtime::RewindBefore(size_t turn) {
-  if (!GetOrCreateDefaultSession()->GetWorkspace().RewindBefore(turn)) return false;
+  if (!GetOrCreateDefaultSession()->GetConversation().RewindBefore(turn)) return false;
   SaveCurrentSession();
   return true;
 }
 
 void Runtime::ClearConversation() {
-  GetOrCreateDefaultSession()->GetWorkspace().ClearHistory();
+  GetOrCreateDefaultSession()->GetConversation().ClearHistory();
   SaveCurrentSession();
 }
 
@@ -172,7 +172,7 @@ config::BackendConfig Runtime::ConfiguredBackend() const {
   if (!agent_manager_) throw Error("Runtime is not initialized");
 
   if (current_session_) {
-    const auto& spec = current_session_->GetRuntimeSpec();
+    const auto& spec = current_session_->GetSpec();
     if (spec.backend_override) return *spec.backend_override;
 
     const auto* agent = agent_manager_->GetAgentConfig(spec.agent_name);
@@ -188,7 +188,7 @@ config::BackendConfig Runtime::ConfiguredBackend() const {
 config::BackendConfig Runtime::CurrentBackend() const {
   config::BackendConfig backend = ConfiguredBackend();
   if (current_session_) {
-    const auto& spec = current_session_->GetRuntimeSpec();
+    const auto& spec = current_session_->GetSpec();
     if (spec.thinking_override) backend.thinking = *spec.thinking_override;
   }
   return backend;
@@ -198,12 +198,12 @@ ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().th
 
 std::optional<ThinkingLevel> Runtime::GetThinkingOverride() const {
   if (!current_session_) return std::nullopt;
-  return current_session_->GetRuntimeSpec().thinking_override;
+  return current_session_->GetSpec().thinking_override;
 }
 
 bool Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
   if (!SupportsThinkingLevel()) return false;
-  GetOrCreateDefaultSession()->GetRuntimeSpec().thinking_override = level;
+  GetOrCreateDefaultSession()->GetSpec().thinking_override = level;
   SaveCurrentSession();
   return true;
 }
@@ -246,7 +246,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     auto provider = session->CreateProvider(CurrentBackend());
     auto exec_result =
-        executor_->Execute(input, session->GetWorkspace(), provider.get(), cancel_token,
+        executor_->Execute(input, session->GetConversation(), provider.get(), cancel_token,
                            content_callback, tool_callbacks, reasoning_callback);
     result = std::move(exec_result);
     SaveCurrentSession();

@@ -8,7 +8,7 @@
 using namespace pu;
 
 TEST_CASE("A step back is abandoned only when something replaces it", "[session][rewind]") {
-  Workspace ws;
+  Conversation ws;
   ws.Append("user", "one");
   ws.Append("assistant", "two");
   ws.Append("user", "three");
@@ -31,7 +31,7 @@ TEST_CASE("A step back is abandoned only when something replaces it", "[session]
 }
 
 TEST_CASE("Rewinding before the first turn empties the view, not the store", "[session][rewind]") {
-  Workspace ws;
+  Conversation ws;
   ws.Append("user", "one");
   ws.Append("assistant", "two");
 
@@ -46,7 +46,7 @@ TEST_CASE("Rewinding before the first turn empties the view, not the store", "[s
 }
 
 TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]") {
-  Workspace ws;
+  Conversation ws;
   ws.Append("user", "one");
 
   REQUIRE_FALSE(ws.RewindBefore(0));
@@ -56,42 +56,42 @@ TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]")
 
 TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
+  session.GetConversation().Append("user", "one");
 
   ChatMessage assistant;
   assistant.role = context::kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
-  session.GetWorkspace().Append(assistant);
+  session.GetConversation().Append(assistant);
 
-  REQUIRE(session.GetWorkspace().HasPendingToolCalls());
-  REQUIRE_THROWS_AS(session.GetWorkspace().RewindBefore(1), std::exception);
+  REQUIRE(session.GetConversation().HasPendingToolCalls());
+  REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), std::exception);
 }
 
 TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[session][rewind]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
-  REQUIRE(session.GetWorkspace().RewindBefore(2));
-  session.GetWorkspace().Append("user", "two again");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
+  REQUIRE(session.GetConversation().RewindBefore(2));
+  session.GetConversation().Append("user", "two again");
 
   auto restored = Session::Deserialize(session.Serialize());
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetWorkspace().GetHistory().size() == 2);
+  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
   // The file carries the replacement and not the turn it replaced.
-  REQUIRE(restored->GetWorkspace().GetGraph().Size() == 2);
-  REQUIRE(restored->GetWorkspace().GetHistory()[1].content == "two again");
+  REQUIRE(restored->GetConversation().GetGraph().Size() == 2);
+  REQUIRE(restored->GetConversation().GetHistory()[1].content == "two again");
 }
 
 TEST_CASE("A replaced turn stores what sending the new text from the start would",
           "[session][rewind]") {
-  Workspace edited;
+  Conversation edited;
   edited.Append("user", "one");
   edited.Append("assistant", "two");
   REQUIRE(edited.RewindBefore(2));
   edited.Append("user", "three");
 
-  Workspace fresh;
+  Conversation fresh;
   fresh.Append("user", "one");
   fresh.Append("user", "three");
 

@@ -22,7 +22,7 @@ directories are two conversations, and neither should be able to disturb the oth
 
 | Held by `Runtime` | Why it is per session |
 | --- | --- |
-| `current_session_`, a `Session` of `Workspace` + `RuntimeSpec` | the conversation, the store file, and the agent and thinking level a restart resumes with |
+| `current_session_`, a `Session` of a `Conversation` + its `SessionSpec` | the conversation, the store file, and the agent and thinking level a restart resumes with |
 | `AgentManager`, `Toolbox`, and their MCP child processes | `agents.json` is per directory, and its MCP servers are processes |
 | `Executor` | holds the toolbox and the security policy it was built for |
 | `CommandRouter` | takes the session it acts on as an argument, so one instance would do |
