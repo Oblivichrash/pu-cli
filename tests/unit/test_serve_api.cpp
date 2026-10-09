@@ -350,7 +350,7 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
   std::string body = client.Get("/api/session");
   auto j = ParseJson(body);
 
-  REQUIRE(j.at("ok") == true);
+  REQUIRE(j.at("success") == true);
   REQUIRE(j.at("agent_name") == "chat");
   REQUIRE(j.at("backend_type") == "ollama");
   REQUIRE(j.at("backend_model") == "test-model");
@@ -365,7 +365,7 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
 
   auto j = ParseJson(client.Get("/api/session"));
 
-  REQUIRE(j.at("ok") == true);
+  REQUIRE(j.at("success") == true);
   REQUIRE(j.at("backend_type") == "codebuddy");
   REQUIRE(j.at("backend_model") == "test-model");
   // A gateway that honours reasoning_effort carries the level control.

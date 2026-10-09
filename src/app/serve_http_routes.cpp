@@ -95,7 +95,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
     auto session = runtime.GetOrCreateDefaultSession();
-    jv.as_object()["ok"] = session != nullptr;
+    jv.as_object()["success"] = session != nullptr;
     if (session) {
       const config::BackendConfig backend = runtime.CurrentBackend();
       jv.as_object()["agent_name"] = session->GetSpec().agent_name;
@@ -111,7 +111,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
       jv.as_object()["error"] = "No active session";
     }
   } catch (const std::exception& e) {
-    jv.as_object()["ok"] = false;
+    jv.as_object()["success"] = false;
     jv.as_object()["error"] = e.what();
   }
   SendJson(res, 200, jv);
@@ -174,7 +174,7 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
       }
     }
   } catch (const std::exception& e) {
-    jv = boost::json::object{{"ok", false}, {"error", e.what()}};
+    jv = boost::json::object{{"success", false}, {"error", e.what()}};
     SendJson(res, 500, jv);
     return;
   }

@@ -13,7 +13,7 @@ add_executable(pu_tests
     unit/test_message.cpp
     unit/test_graph.cpp
     unit/test_request.cpp
-    unit/test_text.cpp
+    unit/test_encoding.cpp
     unit/test_command_execution.cpp
     unit/test_logging.cpp
     unit/test_mcp_tool.cpp
@@ -21,9 +21,9 @@ add_executable(pu_tests
     unit/test_builtin_tools.cpp
     unit/test_executor.cpp
     unit/test_serve_api.cpp
-    unit/test_boost_integration.cpp
+    unit/test_options.cpp
     unit/test_http_errors.cpp
-    unit/test_backend_source.cpp
+    unit/test_backend_resolution.cpp
     unit/test_rewind.cpp
 )
 
@@ -35,7 +35,7 @@ target_include_directories(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_app pu_agent pu_core
+    pu_app pu_agent pu_lib
     Catch2::Catch2WithMain
 )
 

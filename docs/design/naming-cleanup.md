@@ -1,7 +1,7 @@
 # Naming and structure cleanup
 
-Status: plan, agreed in outline. Every decision below is settled. Batches 0 to 2 are
-done; Batch 3 remains.
+Status: done. Every batch has landed; nothing here is outstanding. The tables below are
+the finding they were written from, and the names they name are gone.
 
 The project has changed shape several times — a third backend type, a turn that now
 ends with its reader, a workspace-switch endpoint removed, the ACP route abandoned —
@@ -138,14 +138,17 @@ belongs to the file, which is a session. `test_workspace.cpp` became
 says `workspace` means the directory: `Runtime::GetWorkspaceRoot`, `/api/workspaces`,
 `workspace_root_`.
 
-**Batch 3 — targets, and names on the wire.** `pu_core` → `pu_lib`; unify the REST result
-envelope, which answers `ok` from the queries and `success` from the actions (the page
-reads both), updating `web/app.js` with it; re-read `/api/*` and the `agents.json` fields
-against the vocabulary Batch 2 settled on — most already read well (`default_agent`,
-`agents`, `backend`, `security`, `serve`), and the candidate is `/api/workspaces`, which
-lists directories rather than workspaces; and rename the test files that no longer
-describe their coverage (`test_backend_source`, `test_boost_integration`, `test_message`,
-`test_text`).
+**Batch 3 — targets, and names on the wire.** Done. `pu_core` became `pu_lib`, since it
+holds the domain modules as well as the base ones. The REST result envelope answers with
+one word now: `success` everywhere, where the queries used to answer `ok` and the actions
+`success` (the page read both, and reads one now). Nothing else on the wire needed
+renaming — `default_agent`, `agents`, `backend`, `security` and `serve` already say what
+they hold, and `/api/workspaces` stayed: a workspace is the directory, which is what that
+endpoint lists. Three test files were renamed after their coverage:
+`test_backend_source.cpp` → `test_backend_resolution.cpp`, `test_boost_integration.cpp` →
+`test_options.cpp` (it exercises program_options and nothing else of Boost), and
+`test_text.cpp` → `test_encoding.cpp` (it is about encodings, including the code-page
+decoding of shell and MCP output).
 
 ## What is not proposed
 

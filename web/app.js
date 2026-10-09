@@ -648,7 +648,7 @@ async function loadSession() {
   try {
     const res = await fetch("/api/session");
     const data = await res.json();
-    if (data.ok) {
+    if (data.success) {
       setBackendLabel(data.backend_type, data.backend_model);
       // Offered only where a level lands: a backend that ignores one shows nothing
       // rather than a control that would do nothing.

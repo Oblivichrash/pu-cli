@@ -376,7 +376,7 @@ include/pu/                  src/
 
 A header lives in `include/pu/` when code outside its own directory uses it
 (including tests); otherwise it stays next to its `.cpp`. The CMake targets
-follow the layering: `pu_core` is the *base* static library (core + domain
+follow the layering: `pu_lib` is the *base* static library (core + domain
 modules), `pu_agent` holds the orchestration layer, `pu_app` holds `src/app/`,
 and the `pu` executable adds only `main.cpp`.
 

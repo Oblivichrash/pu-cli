@@ -31,7 +31,7 @@ function(pu_configure_target target)
     endif()
 endfunction()
 
-add_library(pu_core STATIC
+add_library(pu_lib STATIC
     src/context/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
@@ -47,7 +47,7 @@ add_library(pu_core STATIC
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
 )
-target_link_libraries(pu_core PUBLIC
+target_link_libraries(pu_lib PUBLIC
     spdlog::spdlog
     Boost::json
     Boost::system
@@ -57,10 +57,10 @@ target_link_libraries(pu_core PUBLIC
 )
 if(WIN32)
     # The Windows root store, read to give OpenSSL the anchors this platform has.
-    target_link_libraries(pu_core PRIVATE crypt32)
+    target_link_libraries(pu_lib PRIVATE crypt32)
 endif()
-pu_configure_target(pu_core)
-add_library(pu::core ALIAS pu_core)
+pu_configure_target(pu_lib)
+add_library(pu::lib ALIAS pu_lib)
 
 add_library(pu_agent STATIC
     src/config/agents.cpp
@@ -73,7 +73,7 @@ add_library(pu_agent STATIC
     src/runtime.cpp
     src/command_router.cpp
 )
-target_link_libraries(pu_agent PUBLIC pu_core spdlog::spdlog)
+target_link_libraries(pu_agent PUBLIC pu_lib spdlog::spdlog)
 pu_configure_target(pu_agent)
 add_library(pu::agent ALIAS pu_agent)
 
@@ -84,14 +84,14 @@ add_library(pu_app STATIC
     src/app/serve_websocket.cpp
 )
 target_include_directories(pu_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu_app PUBLIC pu_agent pu_core spdlog::spdlog)
+target_link_libraries(pu_app PUBLIC pu_agent pu_lib spdlog::spdlog)
 pu_configure_target(pu_app)
 add_library(pu::app ALIAS pu_app)
 
 add_executable(pu
     src/app/main.cpp
 )
-target_link_libraries(pu PRIVATE pu_app pu_agent pu_core spdlog::spdlog)
+target_link_libraries(pu PRIVATE pu_app pu_agent pu_lib spdlog::spdlog)
 pu_configure_target(pu)
 
 option(BUILD_TESTS "Build unit tests" ON)
