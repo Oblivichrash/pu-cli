@@ -3,7 +3,7 @@
 What a native `codebuddy` backend has to speak. Every fact here was observed, not
 inferred: the shapes come from the request the installed CodeBuddy client makes, and
 the responses were captured by calling the endpoint directly with a real account key.
-The probe scripts and raw transcripts live in `build/` and are not tracked.
+The probes that did so were scratch files, kept only for as long as they were being read.
 
 This replaces the ACP route: ACP is served by a local `codebuddy --acp` child process, so
 a client would need that CLI installed, while this endpoint is reachable on its own and
