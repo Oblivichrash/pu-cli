@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Thin convenience layer over Boost.JSON used throughout pu-cli. It keeps the
-// handful of frequently used lookups (value-with-default, has-key, shallow
-// merge, pretty printing) readable while all JSON storage/parsing is handled
-// by boost::json.
+// Convenience layer over Boost.JSON: value-with-default, has-key, shallow merge, pretty
+// printing. Storage and parsing stay with boost::json.
 
 #include <boost/json.hpp>
 
@@ -25,10 +23,8 @@ using string = boost::json::string;
 using boost::json::parse;
 using boost::json::serialize;
 
-// Return the member `key` of `j` converted to `T`, or `def` when `j` is not an
-// object, the member is absent or null, or the member does not hold a `T`. The
-// last case is reachable from a file written outside pu-cli, which can hold a
-// differently typed member, so the conversion is attempted rather than assumed.
+// `j`'s member `key` as `T`, or `def` when `j` is not an object, the member is absent or
+// null, or it holds another type — a file written elsewhere can hold a differing type.
 template <class T>
 T ValueOrDefault(const value& j, boost::json::string_view key, const T& def) {
   const object* obj = j.if_object();
@@ -54,12 +50,8 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
   return obj != nullptr && obj->contains(key);
 }
 
-// The message inside an error envelope, in the shapes the gateways use: the text under
-// `error`, the `message` inside an `error` object, or a top-level `message`, or `msg`,
-// which is what CodeBuddy names the cause. Empty when none of them is there, so a
-// caller falls back to something of its own rather than to a blank. Both the HTTP
-// client (on a response body) and the providers (on a stream frame) read errors this
-// way, and they were each keeping their own copy of which key holds the message.
+// The message inside an error envelope: `error` as text or object, or a top-level
+// `message` or `msg` (CodeBuddy's name for the cause). Empty when none of them is there.
 inline std::string ErrorMessage(const value& j) {
   const object* obj = j.if_object();
   if (obj == nullptr) return {};

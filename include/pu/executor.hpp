@@ -17,13 +17,10 @@
 
 namespace pu {
 
-// Tool call lifecycle callbacks for streaming/UI feedback.
 struct ToolCallbacks {
-  // Called before a tool is executed.
   std::function<void(const std::string& id, const std::string& name,
                      const boost::json::value& args)>
       on_start;
-  // Called after a tool completes execution.
   std::function<void(const std::string& id, const std::string& output, const std::string& error)>
       on_end;
 };
@@ -34,9 +31,8 @@ struct ExecutionResult {
   bool has_error = false;
   std::string error_message;
   int tool_call_count = 0;
-  // A remark about a reply that arrived but is known to be incomplete, such as one
-  // the provider stopped at the token limit. Empty when there is nothing to add.
-  // Not an error: the content is real, and it is stored.
+  // A reply that arrived but is known to be incomplete, such as one the provider stopped
+  // at the token limit. Not an error: the content is real, and it is stored.
   std::string notice;
   // The model that answered the turn, as the response named it, so a caller can
   // report who replied rather than what was asked for. Empty when it named none.
@@ -56,9 +52,8 @@ class Executor {
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
   void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
 
-  // The agent's configured prompt, supplied by the runtime rather than read back
-  // out of session state, so a request depends only on the conversation and the
-  // named inputs the caller provides.
+  // The agent's configured prompt, supplied rather than read back out of session state, so
+  // a request depends only on the conversation and the inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
   ExecutionResult Execute(const std::string& input, Conversation& conversation,

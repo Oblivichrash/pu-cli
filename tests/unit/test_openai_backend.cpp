@@ -57,9 +57,8 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   REQUIRE_FALSE(has_auth);
 }
 
-// A gateway that has to be told who is calling. The set is asked for once per
-// request rather than held, so a caller that generates correlation ids gets fresh
-// ones each time.
+// A gateway that has to be told who is calling: the set is asked for once per request, so a
+// caller that generates correlation ids gets fresh ones each time.
 TEST_CASE("OpenAIProvider sends the extra headers a gateway asks for", "[openai]") {
   OpenAIProvider::Config config;
   config.model = "local-model";

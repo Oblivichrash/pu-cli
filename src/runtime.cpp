@@ -108,9 +108,8 @@ void Runtime::Initialize(const std::string& config_path) {
     current_session_ = LoadSessionFromFile(session_path);
   }
 
-  // The session names the agent it was talking to, and that name wins over the
-  // configured default: otherwise the toolbox would describe one agent while the
-  // provider talks to another.
+  // The session's agent name wins over the configured default: otherwise the toolbox would
+  // describe one agent while the provider talks to another.
   if (current_session_) {
     auto& spec = current_session_->GetSpec();
     const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);

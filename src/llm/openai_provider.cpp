@@ -15,8 +15,7 @@ namespace pu {
 
 namespace {
 
-// An error arrives at the top level of a frame, in one of two shapes: the message on
-// its own, or an object carrying `message` beside a code and a type. What cannot be
+// An error arrives at the top level of a frame in one of two shapes; one that cannot be
 // named is kept as it came rather than flattened to nothing.
 std::string StreamErrorDetail(const boost::json::value& error) {
   if (error.is_string()) return boost::json::value_to<std::string>(error);
@@ -24,9 +23,8 @@ std::string StreamErrorDetail(const boost::json::value& error) {
   return message.empty() ? boost::json::serialize(error) : message;
 }
 
-// What this provider needs, as data rather than branches: roles reach the wire as
-// they are stored, reasoning is echoed back, content is nulled beside tool calls, and
-// arguments travel as a JSON-encoded string.
+// What this provider needs, as data: roles as stored, reasoning echoed, content nulled
+// beside tool calls, arguments as an encoded string.
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kAsStored,
     .echo_reasoning_content = true,
@@ -65,9 +63,8 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
       {"max_tokens", config_.max_tokens},
   };
 
-  // The three ways a level reaches a backend: `none` is the marker this provider
-  // already sent, the named levels are OpenAI's own `reasoning_effort`, and the
-  // absent setting sends neither so the backend decides.
+  // How a level reaches this backend: `none` is the marker already sent, the named levels
+  // are OpenAI's own `reasoning_effort`, and absent sends neither.
   if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};
     req.as_object()["extra_body"] = extra_body;
@@ -93,10 +90,8 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
 
 void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
-  // An error can arrive in place of a choice: a request the provider accepted can
-  // still be refused while the answer is being generated. The choice path below
-  // never sees it, so without this the caller would be handed an empty answer and
-  // no reason for it.
+  // An error can arrive in place of a choice: a request the provider accepted can still be
+  // refused mid-answer, and the choice path below never sees it.
   if (json::HasKey(j, "error")) {
     throw Error("provider error: " + StreamErrorDetail(j.at("error")));
   }
@@ -108,9 +103,8 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       !j.at("choices").as_array().empty()) {
     const boost::json::value& choice = j.at("choices").at(0);
 
-    // A streaming provider sends `delta`; one that answers in a single frame sends
-    // `message`. Reading both is what keeps such a gateway usable without a second
-    // path through the parser.
+    // A streaming provider sends `delta`, one answering in a single frame sends `message`;
+    // reading both keeps such a gateway usable without a second parser path.
     const boost::json::value* piece = nullptr;
     if (json::HasKey(choice, "delta")) {
       piece = &choice.at("delta");
@@ -176,9 +170,8 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                         json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
   }
 
-  // The response names the model that answered, which a gateway is free to choose
-  // rather than serve the one that was asked for. Read from every frame because
-  // nothing says which of them carries it.
+  // Read from every frame because nothing says which one carries it: a gateway is free to
+  // answer with a model other than the one asked for.
   if (json::HasKey(j, "model") && j.at("model").is_string()) {
     response_model_ = boost::json::value_to<std::string>(j.at("model"));
   }
@@ -237,9 +230,8 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
       HandleJsonToken(done_obj, content_callback);
       return;
     }
-    // Only the parse is guarded. A frame the provider filled with an error is a
-    // valid parse and has to reach the caller, which is why the dispatch sits
-    // outside the catch that skips malformed lines.
+    // Only the parse is guarded: a frame filled with an error is a valid parse and has to
+    // reach the caller.
     boost::json::value j;
     try {
       j = boost::json::parse(data);

@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The stored conversation: nodes keyed by id, with a current leaf marking the
-// position. Order is derived from the parent link, so identity never depends on
-// position. Every parent names a stored node and no chain returns to a node it
-// already passed; an append cannot break either, and the loader refuses a file
-// that does rather than walking it forever.
-//
-// Not thread-safe. Caller must serialize access.
+// Nodes keyed by id with a current leaf marking the position; order is derived from the
+// parent links, so identity never depends on position. Not thread-safe.
 
 #include <algorithm>
 #include <cstddef>
@@ -28,8 +23,7 @@ class MessageGraph {
 
   std::size_t Size() const { return nodes_.size(); }
 
-  // Nodes from the root to the leaf, in order. The only ordering the graph
-  // defines, because there is no positional index to fall back on.
+  // Root to leaf, in order: the only ordering the graph defines.
   std::vector<const MessageNode*> Chain() const {
     std::vector<const MessageNode*> chain;
     const MessageNode* node = Find(leaf_);
@@ -41,10 +35,8 @@ class MessageGraph {
     return chain;
   }
 
-  // Appends after the current leaf, linking it and moving the leaf along. The
-  // append is also where a replaced turn disappears: whatever the new leaf
-  // cannot reach is dropped, so editing a message ends up storing what sending
-  // the new text from the start would have stored.
+  // Appends after the current leaf and moves it along, dropping whatever the new leaf
+  // cannot reach: editing a message stores what resending from the start would have.
   const MessageNode& AppendAfterLeaf(MessagePayload payload, std::string timestamp = {}) {
     MessageNode node = MakeNode(std::move(payload));
     node.timestamp = std::move(timestamp);
@@ -57,10 +49,8 @@ class MessageGraph {
     return stored;
   }
 
-  // Moves the leaf back to a node that is already stored, so the next append
-  // replaces the turns after it rather than extending them. Nothing is removed
-  // here: the turns after the new position stay until an append replaces them,
-  // and that append is what drops them. An empty id means "before everything".
+  // Moves the leaf back so the next append replaces the turns after it; those stay
+  // until that append. An empty id means "before everything".
   bool RewindTo(const MessageId& id) {
     if (!id.empty() && nodes_.find(id) == nodes_.end()) return false;
     leaf_ = id;
@@ -73,13 +63,10 @@ class MessageGraph {
     return node != nullptr && HasUnfinishedToolCalls(*node);
   }
 
-  // Nodes plus the leaf, which is everything needed to resume. Written as an
-  // object rather than a list because a position is not derivable from order.
+  // Nodes plus the leaf, as an object: a position is not derivable from order.
   boost::json::value Serialize() const;
 
-  // Reads what Serialize wrote. Returns false for anything else, including a
-  // list of messages, so a file from another layout is refused rather than
-  // half-read.
+  // Reads what Serialize wrote; anything else, a message list included, returns false.
   static bool Deserialize(const boost::json::value& value, MessageGraph& out);
 
  private:
@@ -88,10 +75,8 @@ class MessageGraph {
     return it == nodes_.end() ? nullptr : &it->second;
   }
 
-  // True when every parent names a stored node and no chain returns to one it
-  // already passed. Each node has one parent, so a chain that repeats has entered a
-  // cycle; a node proved to reach a root is not walked twice, which keeps the whole
-  // check linear in the number of nodes.
+  // True when every parent names a stored node and no chain returns to one it already
+  // passed: each node has one parent, so a chain that repeats has entered a cycle.
   bool LinksResolve() const {
     enum class Mark { kUnvisited, kOnPath, kSound };
     std::map<MessageId, Mark> marks;
@@ -101,8 +86,7 @@ class MessageGraph {
       std::vector<MessageId> path;
       while (!current.empty()) {
         const auto it = nodes_.find(current);
-        // A parent that names nothing would stop a walk in the middle and leave
-        // the turns before it out of the chain.
+        // A parent naming nothing would leave the turns before it out of the chain.
         if (it == nodes_.end()) return false;
 
         Mark& mark = marks[current];
@@ -125,10 +109,7 @@ class MessageGraph {
     return stored;
   }
 
-  // Keeps the nodes the leaf still reaches and erases the rest. Only a step back
-  // followed by an append leaves anything unreachable, and the erase happens on
-  // that append rather than on the step back, so the abandoned turns survive
-  // until something replaces them.
+  // Erases what the leaf cannot reach; only a rewind followed by an append leaves any.
   void DropUnreachable() {
     std::vector<MessageId> reachable;
     for (const MessageNode* node : Chain()) reachable.push_back(node->id);
@@ -142,8 +123,7 @@ class MessageGraph {
     }
   }
 
-  // Marks the record that a receipt answers as completed, searching back from
-  // the leaf because a receipt need not sit next to its request.
+  // Searches back from the leaf: a receipt need not sit next to its request.
   void CompleteFor(const std::string& tool_call_id) {
     if (tool_call_id.empty()) return;
     MessageId id = leaf_;
@@ -164,8 +144,7 @@ class MessageGraph {
   }
 
   // Every appended turn goes through here, so a receipt always marks its record
-  // completed and no caller has to remember to say so. A load needs no such step:
-  // the status was already settled when the file was written.
+  // completed; a load needs no such step, the status was settled when it was written.
   void CompleteAnsweredRecord(const MessagePayload& payload) {
     const auto* receipt = std::get_if<ToolPayload>(&payload);
     if (receipt != nullptr) CompleteFor(receipt->tool_call_id);

@@ -14,9 +14,8 @@ namespace pu {
 
 namespace {
 
-// What this provider needs, as data rather than branches: roles are a closed
-// set, reasoning is not echoed, content may accompany tool calls, arguments
-// travel as an object, and a tool result names the tool that produced it.
+// What this provider needs, as data: a closed set of roles, reasoning not echoed, content
+// beside tool calls, arguments as an object.
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kKnownRolesOnly,
     .echo_reasoning_content = false,
@@ -165,9 +164,8 @@ ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
   if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
 
   llm::StreamingJsonParser parser([&](std::string_view line) {
-    // Only the parse is guarded. A frame the provider filled with an error is a
-    // valid parse and has to reach the caller, which is why the dispatch sits
-    // outside the catch that skips malformed lines.
+    // Only the parse is guarded: a frame filled with an error is a valid parse and has to
+    // reach the caller.
     boost::json::value j;
     try {
       j = boost::json::parse(line);

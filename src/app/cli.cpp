@@ -65,9 +65,8 @@ AppContext SetupAppContext(const std::string& requested_agent) {
 
 void PrintChatHelp() { std::cout << CommandRouter::GetHelpText() << "\n"; }
 
-// A reply that arrived but is known to be incomplete. It belongs with the answer
-// rather than in the log, which the console sink keeps to failures, and it starts
-// its own line because a streamed answer may not have ended one.
+// A reply that arrived but is known to be incomplete: it belongs with the answer rather
+// than in the log, and it starts its own line because a stream may not have ended one.
 void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
   if (result.was_streamed) std::cout << "\n";
@@ -88,10 +87,8 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     if (result.has_error) {
       spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     } else if (result.was_streamed) {
-      // The reply is already on screen: with no callback the executor types it out
-      // token by token. Printing the finished content as well shows the answer
-      // twice, which is what this did; the line break is all that is left to add.
-      // The chat loop guards on the same flag.
+      // The reply is already on screen — the executor typed it out token by token — so
+      // printing the finished content here would show it twice.
       std::cout << "\n";
     } else if (!result.content.empty()) {
       std::cout << result.content << "\n";
@@ -166,7 +163,5 @@ int RunChat(const std::string& agent, Runtime& runtime) {
   std::cout << "\nGoodbye!\n";
   return 0;
 }
-
-// RunServe is implemented in serve.cpp
 
 }  // namespace pu::cli

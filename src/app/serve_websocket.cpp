@@ -24,9 +24,8 @@ namespace websocket = beast::websocket;
 
 void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
                          std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws) {
-  // This session's own pointer to its own socket. It is deliberately not read back
-  // out of `active_ws`: a session that has been replaced is still winding down, and
-  // it must go on reading its own stream rather than the one that replaced it.
+  // This session's own socket, deliberately not read back out of `active_ws`: a replaced
+  // session is still winding down and must read its own stream.
   auto ws = std::make_shared<websocket::stream<tcp::socket>>(std::move(socket));
 
   beast::error_code ec;
@@ -36,10 +35,8 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     return;
   }
 
-  // One client per session. A second page is not another reader of the same chat: it
-  // could only take its place by ending the reply the first one is watching, so it is
-  // told the session is busy and closed instead. Whoever wants in can come back when
-  // the page that holds it is done.
+  // One client per session: a second page could only take its place by ending the reply the
+  // first is watching, so it is told the session is busy and closed.
   {
     std::lock_guard<std::mutex> lock(active_ws->mtx);
     if (active_ws->client) {
@@ -113,9 +110,8 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       bool is_command = false;
       ExecutionResult result;
 
-      // Says something on this turn's behalf, and says it only while this turn is the
-      // one the chat is on. A turn that has been withdrawn or superseded goes quiet
-      // rather than writing into a display that now belongs to another request.
+      // Says something on this turn's behalf, and only while this turn is the one the chat
+      // is on: a superseded turn goes quiet instead of writing into another's display.
       const auto say = [&](const boost::json::value& frame) {
         std::lock_guard<std::mutex> lock(active_ws->mtx);
         if (active_ws->cancel_token != token) return;
@@ -125,8 +121,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         active_ws->client->write(net::buffer(message), write_ec);
       };
 
-      // Tool call lifecycle callbacks: forward start/end events so the
-      // front-end can display tool invocations in real time.
       ToolCallbacks tool_cb;
       tool_cb.on_start = [&](const std::string& id, const std::string& name,
                              const boost::json::value& args) {
@@ -181,11 +175,8 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     }).detach();
   }
 
-  // The reader of this chat is gone, so the turn it was watching ends here. Nothing
-  // of it is kept: what had been written is half an answer, and storing that would
-  // make the next request read it as the model's finished reply. A session that was
-  // replaced does none of this — the client that took over owns the chat now, and it
-  // has already ended the turn its predecessor was watching.
+  // The reader is gone, so its turn ends here and keeps nothing: what had been written is
+  // half an answer. A replaced session does none of this; its successor owns the chat.
   std::lock_guard<std::mutex> lock(active_ws->mtx);
   if (active_ws->client == ws) {
     active_ws->client = nullptr;

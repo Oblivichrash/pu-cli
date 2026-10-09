@@ -24,10 +24,8 @@ class OpenAIProvider : public LLMProvider {
     std::string api_key;
     int max_tokens = 2048;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
-    // Headers for a gateway that has to be told who is calling, beyond the
-    // Content-Type and Authorization this provider sends itself. Asked for once
-    // per request rather than held, so a set carrying correlation ids is fresh
-    // for each one.
+    // Headers beyond Content-Type and Authorization, asked for once per request so a
+    // set carrying correlation ids is fresh for each one.
     std::function<std::vector<std::string>()> extra_headers;
   };
 
@@ -63,10 +61,8 @@ class OpenAIProvider : public LLMProvider {
   };
   std::map<int, ToolCallAccumulator> pending_tools_;
 
-  // Where reasoning tokens go while the stream is open. Held as a member rather
-  // than threaded through every helper because only the stream handler reads it,
-  // and a provider is built per request (Session::CreateProvider), so no stale
-  // sink can outlive the caller it belongs to.
+  // Where reasoning tokens go while the stream is open; a provider is built per request,
+  // so no stale sink can outlive its caller.
   std::function<void(const std::string&)> reasoning_sink_;
   std::string content_;
   std::string current_reasoning_content_;

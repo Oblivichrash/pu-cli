@@ -16,10 +16,8 @@
 #include <thread>
 
 #ifdef _WIN32
-// Windows keeps its trust anchors in the registry rather than in the Unix layout
-// OpenSSL looks for, so the store is read through its own API. The target version
-// is stated because the SDK headers warn without one, and the trust-store call is
-// older than anything this would be built for.
+// Windows keeps its trust anchors in the registry rather than in the Unix layout OpenSSL
+// looks for, so the store is read through its own API.
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
 #endif
@@ -35,12 +33,8 @@ namespace pu::http {
 #ifdef _WIN32
 namespace {
 
-// OpenSSL's default verify paths describe a Unix filesystem and do not exist on
-// Windows, so `set_default_verify_paths()` leaves the context trusting nothing and
-// every public HTTPS request fails its handshake with "certificate verify failed".
-// The roots Windows trusts are the anchors this platform has, so they are added to
-// the same store. A certificate that is already present reports an error and is
-// ignored: the store is a set, and a duplicate is not a failure.
+// OpenSSL's default verify paths describe a Unix filesystem, so on Windows every public
+// HTTPS request would fail its handshake until the roots this platform trusts are added.
 void AddWindowsRootStore(net::ssl::context& ctx) {
   HCERTSTORE store = CertOpenSystemStoreA(0, "ROOT");
   if (store == nullptr) {
@@ -134,18 +128,8 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   req.body() = body;
 }
 
-// Reads the response and hands each piece of the body to write_cb as it arrives.
-// Returns the HTTP status code, or throws HttpError on failure. On a failure status
-// the body is collected into `error_body` rather than streamed, since the consumer
-// parses a success stream and would discard a message that says what went wrong.
-//
-// The body is read in bounded pieces rather than whole, because the producer writes
-// an SSE answer over the life of the request: reading it to the end before passing
-// any of it on collapses the stream into a single delivery, and every layer
-// downstream then sees the reply arrive at once — so a page cannot show it growing,
-// a stop has nothing left to interrupt, and the only thing streaming about it is
-// the name. `read_some` fills the piece it is given and reports `need_buffer` when
-// it is full, which is the normal way for the body to continue rather than an error.
+// Hands each piece of the body to write_cb as it arrives; on a failure status the body is
+// collected into `error_body` instead. `need_buffer` is how the body continues, not an error.
 template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
                         std::string& error_body, CancelToken cancel_token) {
@@ -191,9 +175,8 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
     if (consumed == 0) {
       throw HttpError("Streaming aborted by consumer");
     }
-    // A stop asked for while the body is still arriving ends the request here. The
-    // consumer's callback is only reached once per read, so a stream that has gone
-    // quiet would otherwise hold a stop until the producer says something.
+    // A stop asked for while the body is arriving ends the request here: the callback is
+    // reached once per read, so a quiet stream would hold a stop until the producer speaks.
     if (cancel_token && cancel_token->load(std::memory_order_acquire)) {
       throw HttpError("Request cancelled");
     }

@@ -337,6 +337,9 @@ timestamp, its parent and one role payload, plus the `leaf` that marks the curre
 position. A payload's `content` is a single string, and reasoning is the JSON the
 provider sent (`reasoning.raw_json`).
 
+A node's id is its own, not a position: the earlier `id = size() + 1` scheme made a
+rewind representable only by rewriting the file, and a branch not at all.
+
 `/rewind` moves the `leaf` back and removes nothing, so the turns after it stay
 in the file until something replaces them. The append that follows drops whatever
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store

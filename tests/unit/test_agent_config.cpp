@@ -165,9 +165,8 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
   fs::remove_all(home, ec);
 }
 
-// Where a workspace says its server should listen. Several directories are meant to be
-// served side by side, so this is how each one says which port it answers on without
-// every shell having to be told.
+// Where a workspace says its server should listen: several directories are served side by
+// side, so each one says which port it answers on.
 TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
   auto dir = fs::temp_directory_path() / "pu_serve_options";
   auto home = fs::temp_directory_path() / "pu_serve_options_home";
@@ -183,9 +182,8 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
   {
     ScopedEnvVar env("HOME", home.string());
 
-    // Each write is closed before the read that follows it: an ofstream still in scope
-    // has not necessarily reached the disk, and a reader that got an empty file would
-    // agree with every one of the assertions below for the wrong reason.
+    // Each write is closed before the read that follows: an ofstream still in scope has not
+    // necessarily reached the disk, and an empty file would pass the assertions anyway.
     {
       std::ofstream f(dir / ".pu" / "agents.json");
       f << R"({"default_agent":"a","agents":[]})";

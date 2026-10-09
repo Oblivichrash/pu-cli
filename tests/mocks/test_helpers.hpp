@@ -47,10 +47,8 @@ class ScopedEnvVar {
   bool had_prev_ = false;
 };
 
-// Runs a block inside `dir`. A Runtime takes its workspace — and with it the session
-// file, the agents it loads and the tools they bring — from the working directory, so
-// a test that never enters one of its own shares the repository's conversation with
-// every other test.
+// Runs a block inside `dir`. A Runtime takes its workspace — session file, agents, tools —
+// from the working directory, so a test that never enters one shares the repository's.
 class ScopedWorkingDir {
  public:
   explicit ScopedWorkingDir(const std::filesystem::path& dir)

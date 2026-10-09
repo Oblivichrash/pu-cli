@@ -11,9 +11,8 @@ namespace pu::platform {
 int ExecuteCommand(const std::string& command, std::string& output,
                    const std::string& working_dir = {});
 
-// Text captured from a child process is in whatever encoding that process chose,
-// so these normalise it to UTF-8. Text that is already valid UTF-8 is returned
-// unchanged, which covers runtimes that always emit UTF-8 (Node.js).
+// Text from a child process is in whatever encoding that process chose, so these normalise
+// it to UTF-8; text that already is UTF-8 is returned unchanged.
 
 // A child attached to a console follows the console output code page (cmd.exe).
 std::string FromConsoleOutput(std::string_view text);

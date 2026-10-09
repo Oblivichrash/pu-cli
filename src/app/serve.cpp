@@ -93,10 +93,8 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   ioc.stop();
   if (ioc_thread.joinable()) ioc_thread.join();
 
-  // Leaving: the turn, if one is running, and the client, if one is listening, both
-  // belong to this process and go down with it. The socket is closed rather than
-  // shut down politely, because a reader may be blocked on it and this thread is not
-  // going to wait for a closing handshake that nobody is left to answer.
+  // The turn and the client belong to this process and go down with it. The socket is closed
+  // rather than shut down politely: a reader may be blocked on it and nobody would answer.
   std::shared_ptr<websocket::stream<tcp::socket>> client;
   {
     std::lock_guard<std::mutex> lock(active_ws->mtx);

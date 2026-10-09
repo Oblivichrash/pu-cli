@@ -167,9 +167,8 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
   ws.Append("assistant", "two");
   ws.Append("user", "three");
 
-  // The chain is reconstructed from links, so each node but the first has to
-  // name its parent in the file. Nodes are ordered by id, not by conversation
-  // order, so the check finds them by content.
+  // The chain is reconstructed from links, so each node but the first names its parent;
+  // nodes are ordered by id, so the check finds them by content.
   const boost::json::value saved = session.Serialize();
   const boost::json::array& nodes = saved.at("conversation").at("history").at("nodes").as_array();
   REQUIRE(nodes.size() == 3);
@@ -211,10 +210,8 @@ TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// A file can carry the right version and the right section names while a field
-// inside holds something else than the stored type. Reading it must reach the
-// same refusal as any other foreign layout, because the alternative is a
-// conversion failure that escapes the loader and stops the program from starting.
+// Right version and section names, a field of another type: reading it has to reach the same
+// refusal as any foreign layout, or a conversion failure stops the program from starting.
 TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   Session session;
   session.GetConversation().Append("user", "hello");
@@ -242,10 +239,8 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// The three below are about links rather than names. Every one of them loads
-// today, and each loads into a conversation the next append changes: a chain that
-// stops early loses what it no longer reaches, and a chain that returns to itself
-// never stops walking.
+// The three below are about links rather than names: each loads today into a conversation
+// the next append changes — a chain that stops early loses what it cannot reach.
 TEST_CASE("A parent that names no node is refused", "[session][schema]") {
   Session session;
   session.GetConversation().Append("user", "one");

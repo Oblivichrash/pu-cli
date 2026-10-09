@@ -285,9 +285,8 @@ class ServeHarness {
     backend_ = std::make_unique<FakeBackend>();
     WriteAgentsFile(home_, backend_->Port(), backend_type);
 
-    // Initialised here rather than by the server, so the workspace it reads from the
-    // working directory is this harness's own and the directory is left again before
-    // anything else runs. RunServe initialises a second time, which is a no-op.
+    // Initialised here rather than by the server, so the workspace it reads is this
+    // harness's own. RunServe initialises a second time, which is a no-op.
     {
       pu::tests::ScopedWorkingDir in_home(home_);
       runtime_ = std::make_unique<pu::Runtime>();
@@ -356,9 +355,8 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
-// With a third type, answering this question with "is it OpenAI?" turns every
-// answer into "ollama" rather than into a failure, and the Web header showed the
-// wrong backend for a backend it was talking to.
+// With a third type, answering "is it OpenAI?" turns every answer into "ollama" rather than
+// into a failure, and the Web header showed the wrong backend for the one it talked to.
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
   ServeHarness harness("codebuddy");
   auto client = harness.Client();
@@ -383,10 +381,8 @@ TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   REQUIRE(j.as_array().empty());
 }
 
-// The reload draws the conversation from this endpoint alone, so everything the
-// streamed turn showed has to be in it: a tool result is stored as structured JSON
-// and reaches the browser as the same output the stream carried, and a call with no
-// result is reported as such rather than as a finished one.
+// The reload draws the conversation from this endpoint alone, so everything the streamed
+// turn showed has to be in it: a tool result as the same output, a call with no result as such.
 TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();

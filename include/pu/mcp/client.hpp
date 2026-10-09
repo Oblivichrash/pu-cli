@@ -23,7 +23,6 @@ struct McpServerConfig {
   // Remote HTTP (streamable) MCP endpoint. When non-empty, the client uses
   // HttpTransport instead of the stdio subprocess transport.
   std::string url;
-  // Optional HTTP headers sent with every request (e.g. Authorization).
   std::map<std::string, std::string> headers;
 };
 
@@ -34,7 +33,6 @@ class JsonRpcClient {
   explicit JsonRpcClient(Transport& transport);
   ~JsonRpcClient() = default;
 
-  // Send a request, returning a future for the async response.
   std::future<boost::json::value> SendRequest(const std::string& method,
                                               const boost::json::value& params = {});
 

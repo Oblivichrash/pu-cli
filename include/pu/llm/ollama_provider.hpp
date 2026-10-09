@@ -45,10 +45,8 @@ class OllamaProvider : public LLMProvider {
   std::string host_;
   std::string api_key_;
   std::unique_ptr<pu::http::HttpClient> http_;
-  // Where reasoning tokens go while the stream is open. Held as a member rather
-  // than threaded through every helper because only the stream handler reads it,
-  // and a provider is built per request (Session::CreateProvider), so no stale
-  // sink can outlive the caller it belongs to.
+  // Where reasoning tokens go while the stream is open; a provider is built per request,
+  // so no stale sink can outlive its caller.
   std::function<void(const std::string&)> reasoning_sink_;
   std::string content_;
   std::string current_reasoning_content_;

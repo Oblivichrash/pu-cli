@@ -13,9 +13,8 @@
 
 namespace pu {
 
-// How much reasoning a backend should spend on an answer. The words are the ones
-// OpenAI uses; `kServerDefault` is the absent setting, which is what "on" meant
-// before there was a level, and `kNone` is the switch it replaced.
+// How much reasoning a backend should spend. The words are OpenAI's; `kServerDefault` is the
+// absent setting and `kNone` the switch it replaced.
 enum class ThinkingLevel {
   kServerDefault,
   kNone,
@@ -51,9 +50,8 @@ inline ThinkingLevel ParseThinkingLevel(const std::string& name) {
   return ThinkingLevel::kServerDefault;
 }
 
-// Reads the field as a level. Anything that is not one of the level names -- an absent
-// field, a word from another vocabulary, a value of the wrong type -- reads as the
-// absent setting.
+// Anything that is not one of the level names — an absent field, a foreign word, a value of
+// the wrong type — reads as the absent setting.
 inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   if (json::HasKey(j, "thinking") && j.at("thinking").is_string()) {
     return ParseThinkingLevel(boost::json::value_to<std::string>(j.at("thinking")));
@@ -61,7 +59,7 @@ inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   return ThinkingLevel::kServerDefault;
 }
 
-// A compatibility view rendered from MessageNode; see ARCHITECTURE.md, Data Flow.
+// A compatibility view rendered from MessageNode.
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
@@ -97,30 +95,24 @@ struct ToolCall {
   boost::json::value arguments;
 };
 
-// What one request produced. Tool calls belong here because the caller acts on
-// them after the stream has ended, the same way it acts on the text.
-// What one request cost, as the provider counted it. Absent means the provider
-// reported nothing, which is not the same as a measured zero: a caller that
-// budgets tokens has to tell those apart.
+// What one request cost, as the provider counted it. Absent means it reported nothing,
+// which is not a measured zero: a caller that budgets tokens has to tell those apart.
 struct TokenUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
 };
 
+// Tool calls belong here because the caller acts on them after the stream has ended.
 struct ChatResult {
   std::string content;
   std::string reasoning_content;
   std::vector<ToolCall> tool_calls;
   std::optional<TokenUsage> usage;
-  // Why the provider stopped, in the provider's own word: OpenAI calls it
-  // `finish_reason`, Ollama calls it `done_reason`, and the vocabularies overlap
-  // without being the same. Kept verbatim so a caller can tell a reply the model
-  // chose to end from one that ran into the token limit or the content filter.
+  // The provider's own word (OpenAI's `finish_reason`, Ollama's `done_reason`), kept
+  // verbatim so the caller can tell a chosen end from a limit or a filter.
   std::string finish_reason;
-  // The model that answered, as the response names it. A gateway may serve
-  // something other than what was asked for, and a tag may resolve to a dated
-  // build, so this is the only place the request can learn who replied. Empty
-  // when the response named nothing, which is not the same as the requested name.
+  // The model that answered, as the response names it: the only place the request can
+  // learn who replied. Empty when the response named nothing.
   std::string model;
 };
 
@@ -128,10 +120,8 @@ class LLMProvider {
  public:
   virtual ~LLMProvider() = default;
 
-  // `content_callback` exists so a token reaches the user while the stream is
-  // still open; everything the caller needs afterwards is in the result. Reasoning
-  // has a sink of its own because it arrives on its own channel and is shown beside
-  // the answer rather than in it.
+  // `content_callback` lets a token reach the user while the stream is open; reasoning
+  // has a sink of its own because it is shown beside the answer, not in it.
   virtual ChatResult Chat(const std::vector<ChatMessage>& history,
                           const std::vector<ToolDefinition>& tools,
                           std::function<void(const std::string&)> content_callback = nullptr,

@@ -9,9 +9,8 @@ let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
 
-// The level the server resolved: the session's own when it has one, the agent's
-// configuration otherwise. Only the server can tell those apart, so the control
-// shows what it reports rather than what was picked.
+// The level the server resolved: the session's own when it has one, the agent's otherwise.
+// Only the server can tell those apart, so the control shows what it reports.
 function renderThinkingControl(level, override) {
   const sessionLevel = override && override !== "default" ? override : null;
   thinkingSelect.value = sessionLevel || "auto";
@@ -269,9 +268,8 @@ function removeCurrentAssistantMessage() {
 
 let assistantRenderQueued = false;
 
-// Coalesce a burst of tokens into one render per frame, and rebuild only
-// the blocks that changed: re-parsing the whole answer per token re-renders
-// text and re-highlights code that is already on screen.
+// Coalesce a burst of tokens into one render per frame, and rebuild only the blocks that
+// changed: re-parsing the whole answer per token re-renders text and code already shown.
 function updateCurrentAssistantBlocks() {
   if (assistantRenderQueued) return;
   assistantRenderQueued = true;
@@ -362,9 +360,8 @@ function handleThinking(payload) {
   updateCurrentAssistantBlocks();
 }
 
-// The header says who replied rather than what was asked for: a gateway may serve
-// a different build than the one that was configured, and the response is the only
-// place that says which.
+// The header says who replied rather than what was asked for: a gateway may serve a
+// different build, and the response is the only place that says which.
 function setBackendLabel(backendType, model) {
   const suffix = model ? " · " + model : "";
   document.getElementById("session-status")?.remove();
@@ -413,11 +410,8 @@ function handleNotice(payload) {
   if (text) createSystemMessage(text);
 }
 
-// One page per session: the server refuses a second one rather than ending the reply
-// the first page is watching. A refusal is a state to report, not a connection to keep
-// retrying, so this page knocks a couple more times — a reload can arrive before the
-// server has noticed the page it replaced — and then leaves the reader to reload once
-// the page holding the session is done.
+// One page per session: the server refuses a second one rather than ending the reply the
+// first is watching — a state to report, not a connection to keep retrying.
 const MAX_BUSY_RETRIES = 2;
 let busyRefusals = 0;
 
@@ -477,11 +471,8 @@ function connectWebSocket() {
     }
   };
 
-  // A dropped socket takes the reply with it: a turn is cancelled when the client
-  // watching it goes away and keeps nothing, so what was drawn here is all there was.
-  // The message the run was given stays, which is why the length is read back even
-  // though no answer arrived, and the reconnect comes back to a conversation holding
-  // no reply to it.
+  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing, so
+  // what was drawn here was all there was. The message stays, so the length is read back.
   ws.onclose = () => {
     const refused = busyRefusals > 0;
     if (isStreaming) {
@@ -504,14 +495,12 @@ function connectWebSocket() {
   };
 }
 
-// Set when a reply was being written as the socket went: the turn died with the
-// connection, so the reader is told the answer is gone rather than left to wonder
-// where it went.
+// Set when a reply was being written as the socket went, so the reader is told the answer
+// was stopped rather than left to wonder where it went.
 let replyLostToDisconnect = false;
 
-// A dropped socket reconnects on its own, backing off so a server that is
-// down is not hammered. The state is spoken only when it changes, so a retry
-// loop stays silent.
+// A dropped socket reconnects on its own, backing off so a server that is down is not
+// hammered; the state is spoken only when it changes.
 function setConnectionState(state) {
   if (state === connState) return;
   if (state === "offline" && connState === "online") {
@@ -554,9 +543,8 @@ async function refreshChainLength() {
   } catch (_) {}
 }
 
-// Steps the session back to before `turn` and hands the text back to the
-// composer, so sending it again replaces that turn; the turn it replaced is
-// dropped when the replacement is sent.
+// Steps the session back to before `turn` and hands the text back to the composer, so
+// sending it again replaces that turn.
 async function rewindToTurn(turn, text) {
   if (isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
@@ -587,9 +575,8 @@ async function rewindToTurn(turn, text) {
 
 function sendMessage() {
   if (isStreaming) {
-    // Cancelling only asks the server to stop: the socket stays open so the
-    // turn still ends with its done frame, and the partial reply is dropped
-    // because the store keeps none.
+    // Cancelling only asks the server to stop, and the partial reply is dropped because
+    // the store keeps none.
     if (ws && ws.readyState === WebSocket.OPEN) {
       stopRequested = true;
       ws.send(JSON.stringify({ type: "cancel" }));
@@ -627,9 +614,8 @@ async function loadHistory() {
     const history = await res.json();
     if (!Array.isArray(history)) return;
 
-    // Grouped rather than walked one message at a time: a turn that used a tool is
-    // several stored messages, and drawing each of them on its own would show the
-    // reader a different conversation from the one the stream built.
+    // Grouped rather than walked one message at a time: a tool-using turn is several
+    // stored messages, and drawing each alone would show another conversation.
     for (const turn of groupHistory(history)) {
       if (turn.role === "system") {
         createSystemMessage(turn.text);

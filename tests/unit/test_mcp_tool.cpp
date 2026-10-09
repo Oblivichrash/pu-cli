@@ -11,9 +11,7 @@ using namespace pu::tools;
 
 namespace {
 
-// A lightweight stub that mimics McpClient without requiring a real MCP
-// server or transport.  We override only the two virtual methods that
-// McpTool calls: CallTool and IsConnected.
+// A stub for McpClient: only CallTool and IsConnected are overridden.
 class StubMcpClient : public pu::mcp::McpClient {
  public:
   StubMcpClient() : McpClient(pu::mcp::McpServerConfig{}) {}

@@ -107,9 +107,8 @@ int main(int argc, char* argv[]) {
         port_given = true;
       }
 
-      // A directory is a session, and several are meant to be served side by side, so
-      // the port a workspace answers on belongs in the workspace: otherwise every
-      // shell that starts a server has to be told which one it is starting.
+      // A directory is a session, and several are served side by side, so the port belongs
+      // in the workspace rather than in whichever shell starts a server.
       if (!host_given || !port_given) {
         if (auto from_file = pu::config::FindServeOptions()) {
           if (!host_given && from_file->host) host = *from_file->host;

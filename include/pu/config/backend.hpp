@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// What a backend is: the type, where it is reached, and the model to ask for. The
-// factory that turns one of these into a provider is declared beside the model, so the
-// type and the thing it builds are read together.
+// What a backend is: the type, where it is reached, and the model to ask for; the factory
+// that turns one into a provider is declared beside the model.
 
 #include <memory>
 #include <optional>
@@ -33,10 +32,8 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
-// How a type is spelled in configuration and on the wire. One home, because the
-// stored session, an agents.json entry and an API response all name it, and a
-// third type is what turns every `is it OpenAI?` question into a lie: each of
-// those places used to answer itself and write "ollama" for anything else.
+// How a type is spelled in configuration, in a stored session and on the wire: one home,
+// because a third type turns every `is it OpenAI?` question into a lie.
 inline const char* BackendTypeName(BackendType type) {
   switch (type) {
     case BackendType::kOllama:

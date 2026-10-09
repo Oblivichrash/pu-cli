@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Text produced outside pu-cli (subprocess output, file contents) arrives in
-// whatever encoding its producer used, while everything pu-cli stores, serialises
-// or sends to a provider must be valid UTF-8.
+// Text produced outside pu-cli arrives in whatever encoding its producer used, while
+// everything pu-cli stores or sends to a provider must be valid UTF-8.
 
 #include <cstddef>
 #include <optional>
@@ -136,10 +135,8 @@ inline std::string CollapseWhitespace(std::string_view text) {
   return out;
 }
 
-// True when the text ends with the beginning of a multi-byte sequence: the bytes after
-// the last lead are fewer than that sequence needs. A reader that frames a byte stream
-// itself holds such a tail back until the rest of it arrives, because a line cut
-// through the middle of a character is not a line yet.
+// True when the text ends with the start of a multi-byte sequence: a reader that frames a
+// stream itself holds such a tail back, because a line cut mid-character is not a line yet.
 inline bool EndsWithPartialSequence(std::string_view text) {
   if (text.empty()) return false;
 

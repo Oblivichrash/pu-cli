@@ -93,9 +93,8 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
   REQUIRE(read.model == "test-model");
 }
 
-// Every type, because the stored form used to be written by asking "is it OpenAI?":
-// a third type was spelled "ollama" and read back as one, so a saved conversation
-// changed backend across a restart while nothing reported a problem.
+// Every type, because the stored form used to be written by asking "is it OpenAI?": a third
+// type was spelled "ollama" and read back as one, changing backend across a restart.
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
   for (const config::BackendType type : {config::BackendType::kOllama, config::BackendType::kOpenAI,
                                          config::BackendType::kCodeBuddy}) {

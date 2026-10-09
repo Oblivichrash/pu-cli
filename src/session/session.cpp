@@ -52,10 +52,8 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
   return user;
 }
 
-// Storage holds text that arrived from outside pu-cli, which may be in the
-// producer's encoding: a localized library message, for instance, is written in
-// the system locale. It is normalised here, the one way into storage, so that
-// neither the request view nor the session file can inherit invalid bytes.
+// Storage holds text from outside pu-cli, which may be in the producer's encoding; it is
+// normalised here, the one way into storage.
 ChatMessage Normalized(const ChatMessage& msg) {
   if (text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
       text::IsValidUtf8(msg.reasoning_content) && text::IsValidUtf8(msg.tool_call_id)) {

@@ -13,7 +13,6 @@ namespace pu {
 
 namespace {
 
-// Check if a character is allowed in LLM tool names (alnum, '_', '-').
 bool IsAllowedToolNameChar(char c) {
   return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
 }
@@ -40,10 +39,8 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
     throw pu::Error("Tool name cannot be empty");
   }
 
-  // Generate a sanitized (LLM-friendly) display name.
   std::string display_name = SanitizeToolName(original_name);
 
-  // If the sanitized name already exists, append a counter suffix.
   if (tools_.find(display_name) != tools_.end()) {
     int suffix = 1;
     std::string base = display_name;
@@ -75,14 +72,12 @@ std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::val
     return "Error: tool name is empty";
   }
 
-  // Look up the original name via the mapping.
   auto orig_it = display_to_original_.find(name);
   if (orig_it == display_to_original_.end()) {
     spdlog::error("Tool not found: {}", name);
     return "Tool not found: " + name;
   }
 
-  // Retrieve the tool by the same display name (it's the key in tools_).
   auto tool_it = tools_.find(name);
   if (tool_it == tools_.end()) {
     spdlog::error("Tool not found in tools_ map: {}", name);

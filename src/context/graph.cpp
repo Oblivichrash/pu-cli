@@ -159,10 +159,8 @@ bool MessageGraph::Deserialize(const boost::json::value& value, MessageGraph& ou
   // that state is refused rather than loaded as empty.
   if (!leaf.empty() && graph.nodes_.find(leaf) == graph.nodes_.end()) return false;
 
-  // The links are checked because everything downstream trusts them: a parent that
-  // names nothing stops the chain early and the next append drops what the chain no
-  // longer reaches, while a chain that returns to itself gives the walk no root to
-  // stop at.
+  // The links are checked because everything downstream trusts them: a parent naming
+  // nothing stops the chain early, and a chain that returns to itself has no root.
   if (!graph.LinksResolve()) return false;
 
   graph.leaf_ = leaf;

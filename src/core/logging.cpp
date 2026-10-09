@@ -127,9 +127,8 @@ void InitLogging(const std::string& log_level) {
 
   std::vector<spdlog::sink_ptr> sinks;
 
-  // The console sink is always present but only emits error/critical records.
-  // Info/warn/trace/debug are intentionally never written to the console so
-  // that normal use stays quiet while failures remain visible.
+  // The console sink only emits error/critical records, so normal use stays quiet while
+  // failures remain visible.
   auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
   console_sink->set_level(spdlog::level::err);
   sinks.push_back(console_sink);

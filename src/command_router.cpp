@@ -20,9 +20,8 @@ namespace pu {
 
 namespace {
 
-// The /backend command names a type and a model only, so the host it leaves out is
-// answered here, from the default the provider itself states: asking the provider is
-// what keeps that value in one place, so changing it there reaches this command too.
+// The /backend command names a type and a model only, so the missing host is answered here
+// from the default the provider itself states — asking it keeps that value in one place.
 std::string DefaultHostFor(config::BackendType type) {
   switch (type) {
     case config::BackendType::kOllama:

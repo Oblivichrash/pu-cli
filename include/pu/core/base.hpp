@@ -18,21 +18,17 @@ namespace pu {
 // client), so it lives in the base layer rather than next to the HTTP adapter.
 using CancelToken = std::shared_ptr<std::atomic<bool>>;
 
-// Base class for all non-recoverable runtime errors. Catchers at the top level
-// can catch this (or std::exception) to produce a friendly error message
-// without crashing.
+// Base class for all non-recoverable runtime errors, caught at the top level.
 class RuntimeError : public std::runtime_error {
  public:
   explicit RuntimeError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
-// General-purpose error, e.g. configuration parsing.
 class Error : public RuntimeError {
  public:
   using RuntimeError::RuntimeError;
 };
 
-// HTTP and network errors, raised by the HTTP client.
 class HttpError : public Error {
  public:
   explicit HttpError(const std::string& msg) : Error(msg) {}

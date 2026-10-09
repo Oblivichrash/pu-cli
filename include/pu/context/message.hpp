@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The context model. Every stored turn is a node holding one of these payloads,
-// and ChatMessage is the view a provider still requires.
-//
-// Not thread-safe. Caller must serialize access.
+// The context model: every stored turn is a node holding one of these payloads, and
+// ChatMessage is the view a provider still requires. Not thread-safe.
 
 #include <cstdint>
 #include <optional>
@@ -20,21 +18,18 @@
 
 namespace pu::context {
 
-// Stable node identity. Independent of position, because the previous
-// `id = size() + 1` scheme made rewind and branching unrepresentable.
+// Stable node identity: independent of position.
 using MessageId = std::string;
 
 inline MessageId NewMessageId() { return uuid::Generate(); }
 
-// The role words the payloads carry. The stored session and every provider
-// round trip spell them this way, so they are named once here.
+// The role words the stored session and every provider round trip spell.
 inline constexpr const char* kUserRole = "user";
 inline constexpr const char* kAssistantRole = "assistant";
 inline constexpr const char* kSystemRole = "system";
 inline constexpr const char* kToolRole = "tool";
 
-// Reasoning as received, kept in the provider's own encoding so it can be
-// echoed back unchanged.
+// Kept in the provider's own encoding so it can be echoed back unchanged.
 struct Reasoning {
   std::string raw_json;
 };
@@ -44,21 +39,18 @@ enum class ToolCallStatus {
   kCompleted,
 };
 
-// The model's request to run a tool. Deliberately separate from the result it
-// produced, which travels in its own ToolPayload node.
+// Deliberately separate from the result, which travels in its own ToolPayload node.
 struct ToolCallRecord {
   std::string id;
   std::string name;
-  // Kept as JSON rather than a string: providers disagree on whether arguments
-  // travel as an object or an encoded string, and the projection decides that.
+  // JSON, not a string: providers disagree on whether arguments travel as an object or
+  // an encoded string, and the projection decides that.
   boost::json::value arguments;
   ToolCallStatus status = ToolCallStatus::kPending;
 };
 
-// The shape a tool call travels in: the OpenAI function-call object, which the
-// stored session, the providers, and the request path all agree on. Building it
-// and reading it in one place is what keeps a call from changing shape between
-// them.
+// The one place a call's wire shape is built and read, so it cannot drift between the
+// store, the providers and the request path.
 inline boost::json::value ToolCallToJson(const ToolCallRecord& record) {
   return boost::json::value{
       {"id", record.id},
@@ -67,8 +59,8 @@ inline boost::json::value ToolCallToJson(const ToolCallRecord& record) {
   };
 }
 
-// A call without a function object reads back as a record carrying only its id,
-// so a caller can tell a malformed call from a complete one.
+// A call without a function object reads back with only its id, which tells a malformed
+// call from a complete one.
 inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
   ToolCallRecord record;
   record.id = json::ValueOrDefault<std::string>(call, "id", "");
@@ -108,9 +100,8 @@ struct MessageNode {
   MessageId id;
   std::string timestamp;
   MessagePayload payload;
-  // Empty for the first node. One parent rather than a list: a second one could
-  // only describe two lines of reasoning converging, which is the choice the store
-  // deliberately never keeps.
+  // Empty for the first node. One parent, not a list: two would describe a merge the
+  // store deliberately never keeps.
   MessageId parent{};
 };
 
@@ -118,8 +109,7 @@ inline MessageNode MakeNode(MessagePayload payload) {
   return MessageNode{NewMessageId(), std::string{}, std::move(payload)};
 }
 
-// True while a tool call has not finished, which is what blocks switching the
-// agent or backend mid-run.
+// What blocks switching the agent or backend mid-run.
 inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
   if (assistant == nullptr) return false;

@@ -15,9 +15,8 @@
 
 namespace pu {
 
-// The stored conversation: what was said, in order. Storage behind it is the
-// MessageGraph (include/pu/context/graph.hpp), and the compatibility seam is the
-// ChatMessage view this class renders from it.
+// The stored conversation. Storage is the MessageGraph; the compatibility seam is the
+// ChatMessage view this renders from it.
 class Conversation {
  public:
   void Append(const ChatMessage& msg);
@@ -28,30 +27,28 @@ class Conversation {
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return graph_; }
 
-  // Moves the position back to just before the 1-based turn. Every stored node
-  // stays until the next append replaces the turns after the new position.
+  // Moves the position back to just before the 1-based turn; stored nodes stay until
+  // the next append replaces the turns after it.
   bool RewindBefore(size_t turn);
 
   void ClearHistory();
 
   boost::json::value Serialize() const;
-  // Null for a value that is not node storage, so the caller can tell a foreign
-  // layout from an empty conversation.
+  // Null for a value that is not node storage, which tells a foreign layout from an
+  // empty conversation.
   static std::shared_ptr<Conversation> Deserialize(const boost::json::value& j);
 
  private:
   context::MessageGraph graph_;
 };
 
-// What a session names and carries: the agent it is talking to, and a backend only
-// when one was chosen for it. Everything else about the backend is read from
-// agents.json, so editing the configuration takes effect on restart.
+// The agent this session talks to, and a backend only when one was chosen for it;
+// everything else comes from agents.json, so an edit takes effect on restart.
 struct SessionSpec {
   std::string agent_name;
   std::optional<config::BackendConfig> backend_override;
-  // The thinking level this session asks for. Absent means it follows whatever the
-  // agent's configuration says, which is a different thing from the absent level:
-  // that one asks the backend to decide.
+  // Absent means follow the agent's configuration — a different thing from the level
+  // being absent in the backend, which asks the backend to decide.
   std::optional<ThinkingLevel> thinking_override;
 
   boost::json::value Serialize() const {
@@ -65,8 +62,7 @@ struct SessionSpec {
     return jv;
   }
 
-  // A section that is not an object cannot name an agent, so it is refused
-  // rather than read into a spec that would start the wrong model.
+  // A section that is not an object cannot name an agent, so it is refused.
   static std::optional<SessionSpec> Deserialize(const boost::json::value& jv) {
     if (!jv.is_object()) return std::nullopt;
 
@@ -84,9 +80,8 @@ struct SessionSpec {
   }
 };
 
-// The version this build writes into a session file, and the only one it reads back. A
-// file carrying another one is refused rather than guessed at. It lives here because the
-// file is a session: the conversation inside it is storage without a version of its own.
+// The version this build writes and the only one it reads back; a file carrying another
+// is refused rather than guessed at.
 inline constexpr int kSessionSchemaVersion = 5;
 
 // Aggregate root: the conversation, plus the agent and backend it belongs to.
@@ -105,8 +100,7 @@ class Session {
   const SessionSpec& GetSpec() const { return spec_; }
 
   void SetBackendOverride(const config::BackendConfig& new_config);
-  // Choosing an agent drops the override, so the agent's own configuration
-  // becomes the source of the backend again.
+  // Drops the override, so the agent's own configuration is the source again.
   void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }

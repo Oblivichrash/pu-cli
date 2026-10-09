@@ -276,7 +276,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(started_args[0].is_object());
   REQUIRE(started_args[0].as_object().at("flag") == true);
 
-  // Success result: stdout is pushed as output, error stays empty.
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
 
@@ -349,7 +348,6 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   const ExecutionResult result = executor.Execute("hello", ws, &provider);
 
   REQUIRE(result.has_error);
-  // What the server said reaches the caller.
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
 
   // The failure is not a turn: a model never said it, and storing it would grow

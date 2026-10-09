@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//
-// Rebuilding the transcript from the stored conversation: the store holds one node per
-// provider message while the transcript shows one bubble per turn, so a reload groups
-// them the way the streaming path builds them — a result folded back into the call it
-// answers, everything between two user turns one reply. Pure, so the grouping can be
-// exercised without a browser.
+// Rebuilding the transcript from the stored conversation: a node per provider message is
+// grouped into a bubble per turn, the way the streaming path builds them.
 
 export const BLOCK_TYPES = {
   THINKING: "thinking",
@@ -12,10 +8,8 @@ export const BLOCK_TYPES = {
   TEXT: "text",
 };
 
-// Provider arguments travel as an object or as an encoded string. A string that is
-// not JSON is kept as it came: a call whose arguments cannot be read is still a
-// call the reader has to see, and one unreadable call must not hide the rest of
-// the turn, which is what a throw in the middle of the loop would do.
+// Arguments travel as an object or an encoded string; a string that is not JSON is kept as
+// it came, because one unreadable call must not hide the rest of the turn.
 function parseToolArguments(raw) {
   if (typeof raw === "string") {
     try {
@@ -81,9 +75,8 @@ export function groupHistory(history) {
     const bubble = currentReply();
 
     if (msg.reasoning_content) {
-      // One thinking block per reply, above the rest: that is where the streaming
-      // path puts it, and where it appends the reasoning of every iteration a
-      // tool-using turn went through.
+      // One thinking block per reply, above the rest, where the streaming path puts it and
+      // appends every iteration's reasoning.
       let thinking = bubble.blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
       if (!thinking) {
         thinking = { type: BLOCK_TYPES.THINKING, content: "", collapsed: true };

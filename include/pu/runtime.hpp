@@ -44,16 +44,13 @@ class Runtime {
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
-  // The two conversation changes the Web API exposes. Both write the session,
-  // because the Runtime is the only place that knows a session is on disk at all:
-  // a caller that changed the workspace itself would be a caller that can forget
-  // to persist it.
+  // The two conversation changes the Web API exposes. Both write the session, because the
+  // Runtime is the only place that knows a session is on disk at all.
   bool RewindBefore(size_t turn);
   void ClearConversation();
 
-  // The backend the active session talks to: the session's override when it has
-  // one, otherwise the agent's entry in agents.json, with the thinking level the
-  // session asked for applied on top.
+  // The backend the active session talks to: the session's override when it has one,
+  // otherwise the agent's entry in agents.json, with the session's thinking level on top.
   config::BackendConfig CurrentBackend() const;
 
   // What this session asks for, which is what a caller displays: the session's
@@ -65,10 +62,8 @@ class Runtime {
   // Absent means the session follows the agent's configuration rather than a level
   // of its own.
   std::optional<ThinkingLevel> GetThinkingOverride() const;
-  // Sets or clears the session's level and persists it, the way the other session
-  // changes are persisted: a caller that changed the session is not one that can
-  // be relied on to remember it. Answers false, changing nothing, when the active
-  // backend does not carry a level, so both front ends refuse the same way.
+  // Sets or clears the session's level and persists it. Answers false, changing nothing,
+  // when the active backend does not carry a level, so both front ends refuse alike.
   bool SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// How a conversation becomes the message objects a provider receives. The
-// differences between providers are data here rather than branches in each
-// provider's request builder.
+// How a conversation becomes the message objects a provider receives: the differences
+// between providers are data here rather than branches in each request builder.
 
 #include <vector>
 

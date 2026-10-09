@@ -103,9 +103,8 @@ TEST_CASE("CommandRouter rejects a command it does not have", "[router]") {
   REQUIRE_FALSE(f.Route("/unknown show", output));
 }
 
-// The command names a type and a model; the host it leaves out is the type's own, so
-// that default is answered where the command is rather than in the factory that turns
-// a type into a provider.
+// The command names a type and a model; the host it leaves out is the type's own, answered
+// where the command is rather than in the factory.
 TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") {
   RouterFixture f;
   std::string output;

@@ -43,6 +43,10 @@ base URL plus a header set. Its gateway behavior is recorded in
 | Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
 
+The level names are newer than the setting they name: until `low`/`medium`/`high`
+existed it was a boolean, and `default` is what that switch's on-state meant while
+`none` is the off-state it replaced.
+
 ## Capabilities
 
 Neither backend keeps a full provider response, carries a reasoning signature, or
