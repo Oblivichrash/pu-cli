@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "pu/agent_manager.hpp"
@@ -9,13 +9,7 @@
 #include "pu/llm/codebuddy.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
-
-#ifdef _WIN32
-// Windows does not have setenv; use _putenv_s instead.
-static inline void setenv(const char* name, const char* value, int /*overwrite*/) {
-  _putenv_s(name, value);
-}
-#endif
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 
@@ -30,13 +24,17 @@ std::string MakeTempHome() {
 }
 
 struct RouterFixture {
+  // Declared first, so the data directory it points at is restored after everything built
+  // on it is gone. Set and left in the process, it would send every later test's data there.
+  std::unique_ptr<pu::tests::ScopedEnvVar> home;
+
   AgentManager manager;
   Runtime runtime;
   Session session;
   CommandRouter router;
 
   RouterFixture() : router(manager, runtime) {
-    setenv("PU_HOME", MakeTempHome().c_str(), 1);
+    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", MakeTempHome());
 
     config::AgentEntry chat;
     chat.name = "chat";
