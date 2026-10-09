@@ -51,16 +51,12 @@ inline ThinkingLevel ParseThinkingLevel(const std::string& name) {
   return ThinkingLevel::kServerDefault;
 }
 
-// Reads the field as a level, accepting the boolean it replaced so that a file
-// written before it keeps meaning what it meant: `false` was the only level that
-// switch could name, and `true` was the absent setting.
+// Reads the field as a level. Anything that is not one of the level names -- an absent
+// field, a word from another vocabulary, a value of the wrong type -- reads as the
+// absent setting.
 inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   if (json::HasKey(j, "thinking") && j.at("thinking").is_string()) {
     return ParseThinkingLevel(boost::json::value_to<std::string>(j.at("thinking")));
-  }
-  if (json::HasKey(j, "enable_thinking") && j.at("enable_thinking").is_bool()) {
-    return boost::json::value_to<bool>(j.at("enable_thinking")) ? ThinkingLevel::kServerDefault
-                                                                : ThinkingLevel::kNone;
   }
   return ThinkingLevel::kServerDefault;
 }

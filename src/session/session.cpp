@@ -33,7 +33,7 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     return assistant;
   }
 
-  if (msg.role == context::kToolRole || msg.role == "tool_result") {
+  if (msg.role == context::kToolRole) {
     context::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
@@ -91,11 +91,6 @@ std::vector<ChatMessage> Transcript::GetHistory() const {
   return history;
 }
 
-// What the caller renders, which is the chain from the leaf rather than the
-// number of nodes stored: between a step back and the append that replaces it,
-// the view is shorter than the store.
-size_t Transcript::Size() const { return graph_.Chain().size(); }
-
 bool Transcript::RewindBefore(size_t turn) {
   const std::vector<const context::MessageNode*> chain = graph_.Chain();
   if (turn < 1 || turn > chain.size()) return false;
@@ -125,8 +120,6 @@ void Workspace::Append(const std::string& role, const std::string& content) {
 }
 
 std::vector<ChatMessage> Workspace::GetHistory() const { return transcript_.GetHistory(); }
-
-size_t Workspace::HistorySize() const { return transcript_.Size(); }
 
 bool Workspace::HasPendingToolCalls() const { return transcript_.HasPendingToolCalls(); }
 

@@ -89,12 +89,15 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
-TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info", "[executor]") {
+TEST_CASE("What the environment probe found reaches the request", "[executor]") {
   Executor executor(nullptr);
-  const auto& info = executor.GetStaticEnvInfo();
-  REQUIRE(info.probed);
-  REQUIRE(!info.os_name.empty());
-  REQUIRE(!info.kernel_version.empty());
+  const std::string context = executor.BuildStaticSystemContext();
+
+  // The probe runs at construction and is read once, so what can be asserted from
+  // outside is the context the model is given rather than the field it was cached in.
+  REQUIRE(context.find("=== Environment ===") != std::string::npos);
+  REQUIRE(context.find("OS: \n") == std::string::npos);
+  REQUIRE(context.find("Kernel: \n") == std::string::npos);
 }
 
 namespace {
@@ -380,7 +383,7 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   REQUIRE(result.content.empty());
 
   // The user message stands alone: nothing is stored that claims to answer it.
-  REQUIRE(ws.HistorySize() == 1);
+  REQUIRE(ws.GetHistory().size() == 1);
   REQUIRE(ws.GetHistory()[0].role == "user");
 }
 
@@ -399,7 +402,7 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
   REQUIRE(result.content == "half a sentence");
   // The answer is real and is stored; the remark is what says it may be cut off.
   REQUIRE_FALSE(result.notice.empty());
-  REQUIRE(ws.HistorySize() == 2);
+  REQUIRE(ws.GetHistory().size() == 2);
 }
 
 TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_loop]") {

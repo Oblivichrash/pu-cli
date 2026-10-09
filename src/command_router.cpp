@@ -2,6 +2,7 @@
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/text.hpp"
 #include "pu/llm/codebuddy.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
@@ -77,9 +78,8 @@ CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
     : manager_(manager), runtime_(runtime) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
-  std::string trimmed = input;
-  size_t start = trimmed.find_first_not_of(" \t");
-  if (start != std::string::npos) trimmed = trimmed.substr(start);
+  // Whatever space was pasted in front of the command is not part of it.
+  const std::string trimmed(text::Trim(input));
 
   if (trimmed.empty() || trimmed[0] != '/') return false;
 

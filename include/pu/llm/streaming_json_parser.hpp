@@ -18,7 +18,6 @@ class StreamingJsonParser {
   void Feed(const char* data, size_t len);
 
  private:
-  static bool IsPartialUtf8(std::string_view str);
   std::string buffer_;
   LineCallback on_line_;
 };

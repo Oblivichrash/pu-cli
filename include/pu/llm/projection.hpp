@@ -15,8 +15,8 @@ namespace pu::llm {
 
 // How role names reach the wire.
 enum class RoleNaming {
-  // `tool_result` is sent as `tool`; every other role passes through unchanged.
-  kAliasToolResult,
+  // The role is sent as the conversation holds it.
+  kAsStored,
   // Only the four known roles are sent; anything else becomes `user`.
   kKnownRolesOnly,
 };

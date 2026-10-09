@@ -37,10 +37,8 @@ class Runtime {
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
 
-  bool SwitchWorkspace(const std::filesystem::path& new_root);
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
-  std::string GetWorkspaceName() const { return workspace_root_.filename().string(); }
 
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();

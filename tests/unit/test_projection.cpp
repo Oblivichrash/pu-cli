@@ -16,7 +16,7 @@ namespace {
 
 llm::ProviderCapabilities OpenAiLike() {
   return {
-      .role_naming = llm::RoleNaming::kAliasToolResult,
+      .role_naming = llm::RoleNaming::kAsStored,
       .echo_reasoning_content = true,
       .allows_content_with_tool_calls = false,
       .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
@@ -56,11 +56,6 @@ ChatMessage AssistantWithCall() {
 }  // namespace
 
 TEST_CASE("Role naming differs by capability", "[projection]") {
-  REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OpenAiLike()).at("role")) == "tool");
-  REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OllamaLike()).at("role")) == "user");
-
   // A known role passes through both.
   REQUIRE(boost::json::value_to<std::string>(
               llm::ProjectMessage(Text("assistant", ""), OpenAiLike()).at("role")) == "assistant");

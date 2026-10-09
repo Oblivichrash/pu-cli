@@ -11,9 +11,11 @@
 #include "pu/agent.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 namespace fs = std::filesystem;
 using namespace pu;
+using namespace pu::tests;
 
 namespace {
 
@@ -141,24 +143,27 @@ TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {
   BackendSourceFixture fixture;
 
   {
+    ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
-    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    runtime.Initialize();
     REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
   }
 
   fixture.Write(0.9f);
 
   {
+    ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
-    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    runtime.Initialize();
     REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.9f));
   }
 }
 
 TEST_CASE("A session override wins over the configured backend", "[backend]") {
   BackendSourceFixture fixture;
+  ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
-  REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+  runtime.Initialize();
 
   auto session = runtime.GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
@@ -175,8 +180,9 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
   BackendSourceFixture fixture;
 
   {
+    ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
-    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    runtime.Initialize();
     REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
     const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
     REQUIRE(coder != nullptr);
@@ -187,8 +193,9 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
   // agents.json still defaults to "chat", so only the stored session can bring
   // the runtime back to "coder".
   {
+    ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
-    REQUIRE(runtime.SwitchWorkspace(fixture.root()));
+    runtime.Initialize();
     REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
     REQUIRE(runtime.CurrentBackend().model == "coder-model");
   }

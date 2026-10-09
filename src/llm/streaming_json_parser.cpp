@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/streaming_json_parser.hpp"
 
+#include "pu/core/text.hpp"
+
 namespace pu::llm {
 
 StreamingJsonParser::StreamingJsonParser(LineCallback on_line) : on_line_(std::move(on_line)) {}
@@ -16,33 +18,13 @@ void StreamingJsonParser::Feed(const char* data, size_t len) {
       buffer_.erase(0, pos + 1);
       continue;
     }
-    if (IsPartialUtf8(line)) break;
+    // A newline can arrive in the middle of a character when the bytes were split
+    // across two reads, so a line whose tail is only the start of a sequence waits for
+    // the rest of it rather than being parsed as it stands.
+    if (text::EndsWithPartialSequence(line)) break;
     buffer_.erase(0, pos + 1);
     on_line_(line);
   }
-}
-
-bool StreamingJsonParser::IsPartialUtf8(std::string_view str) {
-  if (str.empty()) return false;
-  size_t i = str.size(), remaining = 0;
-  while (i > 0) {
-    unsigned char c = static_cast<unsigned char>(str[--i]);
-    if ((c & 0xC0) == 0x80) {
-      ++remaining;
-    } else if ((c & 0x80) == 0x00) {
-      return false;
-    } else {
-      size_t expected = 1;
-      if ((c & 0xE0) == 0xC0)
-        expected = 2;
-      else if ((c & 0xF0) == 0xE0)
-        expected = 3;
-      else if ((c & 0xF8) == 0xF0)
-        expected = 4;
-      return remaining < (expected - 1);
-    }
-  }
-  return remaining > 0;
 }
 
 }  // namespace pu::llm

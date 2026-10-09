@@ -67,24 +67,13 @@ class Executor {
                           ToolCallbacks tool_callbacks = {},
                           std::function<void(const std::string&)> reasoning_callback = nullptr);
 
-  const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
   std::string BuildStaticSystemContext() const;
 
  private:
-  struct ToolLoopResult {
-    std::string final_response;
-    int tool_call_count = 0;
-    bool has_error = false;
-    bool was_streamed = false;
-    std::string error_message;
-    std::string notice;
-    std::string model;
-  };
-
-  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
-                             std::function<void(const std::string&)> content_callback,
-                             ToolCallbacks tool_callbacks,
-                             std::function<void(const std::string&)> reasoning_callback);
+  ExecutionResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
+                              std::function<void(const std::string&)> content_callback,
+                              ToolCallbacks tool_callbacks,
+                              std::function<void(const std::string&)> reasoning_callback);
 
   void ProbeStaticEnvironment();
 

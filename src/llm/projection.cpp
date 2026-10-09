@@ -14,9 +14,9 @@ using context::kToolRole;
 using context::kUserRole;
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
-  if (naming == RoleNaming::kAliasToolResult) {
-    return role == "tool_result" ? kToolRole : role;
-  }
+  // A provider that accepts any role name is given the conversation's own; one that
+  // knows four roles has anything else sent as the user speaking.
+  if (naming == RoleNaming::kAsStored) return role;
   if (role == kUserRole || role == kAssistantRole || role == kSystemRole || role == kToolRole) {
     return role;
   }

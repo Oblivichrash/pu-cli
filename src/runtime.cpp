@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <system_error>
 
 #include <boost/json.hpp>
@@ -44,8 +43,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   auto session = Session::Deserialize(j);
   if (session) return session;
 
-  // The format changed incompatibly, so the file is reported rather than
-  // guessed at. The backup is the copy that still holds the original.
+  // The format changed incompatibly, so the file is reported rather than guessed at.
   std::string reason;
   if (!json::HasKey(j, "schema_version")) {
     reason = "missing schema_version";
@@ -56,36 +54,13 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   } else {
     reason = "history is not node storage";
   }
-  const std::filesystem::path backup = path.parent_path() / "session.backup.json";
-
-  std::ostringstream message;
-  message << "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
-          << "  file:    " << path.string() << "\n"
-          << "  reason:  " << reason << "\n";
-  if (std::filesystem::exists(backup)) {
-    message << "  backup:  " << backup.string() << "\n";
-  }
-  message << "\nThe original conversation is preserved in the backup file only. "
-          << "The main file is overwritten on the next save.";
-  spdlog::error("{}", message.str());
+  spdlog::error(
+      "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
+      "  file:    {}\n"
+      "  reason:  {}\n"
+      "The file is replaced by the next save.",
+      path.string(), reason);
   return nullptr;
-}
-
-// A file this build cannot read is refused and then overwritten by the next save,
-// so keep one copy of what was there. The name carries no version, because the
-// copy is whatever the file held before an incompatible load. Never overwrites an
-// existing backup, otherwise that state would be lost on the second run.
-void BackupLegacySession(const std::filesystem::path& session_path) {
-  const auto backup_path = session_path.parent_path() / "session.backup.json";
-  if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path)) return;
-
-  std::error_code ec;
-  std::filesystem::copy_file(session_path, backup_path, std::filesystem::copy_options::none, ec);
-  if (ec) {
-    spdlog::warn("Failed to back up legacy session to {}: {}", backup_path.string(), ec.message());
-    return;
-  }
-  spdlog::info("Backed up legacy session to {}", backup_path.string());
 }
 
 }  // namespace
@@ -125,11 +100,10 @@ void Runtime::Initialize(const std::string& config_path) {
 
   RebuildToolbox(*default_entry);
 
-  auto session_path = workspace_root_ / ".pu" / "session.json";
-  BackupLegacySession(session_path);
+  const auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
-    // A refused file has already been reported with its reason and backup, so a
-    // second, vaguer line here would only add noise.
+    // A refused file has already been reported with its reason, so a second, vaguer
+    // line here would only add noise.
     current_session_ = LoadSessionFromFile(session_path);
   }
 
@@ -281,30 +255,6 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     result.error_message = e.what();
     return result;
   }
-}
-
-bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
-  if (new_root == workspace_root_) return true;
-
-  if (!std::filesystem::exists(new_root / ".pu" / "agents.json")) {
-    spdlog::error("No agents.json found in {}", new_root.string());
-    return false;
-  }
-
-  SaveCurrentSession();
-
-  current_session_.reset();
-  ShutdownMCP();
-  toolbox_.reset();
-  executor_.reset();
-  agent_manager_.reset();
-  command_router_.reset();
-
-  workspace_root_ = std::filesystem::absolute(new_root);
-
-  is_initialized_ = false;
-  Initialize("");
-  return true;
 }
 
 std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {

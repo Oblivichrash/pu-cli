@@ -93,13 +93,14 @@ TEST_CASE("CommandRouter rejects unknown and non-command input", "[router]") {
   REQUIRE_FALSE(f.Route("   ", output));
 }
 
-TEST_CASE("CommandRouter rejects removed /note command", "[router]") {
+TEST_CASE("CommandRouter rejects a command it does not have", "[router]") {
   RouterFixture f;
   std::string output;
 
-  REQUIRE_FALSE(f.Route("/note", output));
-  REQUIRE_FALSE(f.Route("/note add remember this", output));
-  REQUIRE_FALSE(f.Route("/note show", output));
+  // Bare, and with arguments of its own: neither is a command this build has.
+  REQUIRE_FALSE(f.Route("/unknown", output));
+  REQUIRE_FALSE(f.Route("/unknown add remember this", output));
+  REQUIRE_FALSE(f.Route("/unknown show", output));
 }
 
 // The command names a type and a model; the host it leaves out is the type's own, so

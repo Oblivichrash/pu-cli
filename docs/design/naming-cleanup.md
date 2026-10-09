@@ -1,7 +1,7 @@
 # Naming and structure cleanup
 
-Status: plan, agreed in outline, nothing renamed yet. Every decision below is settled;
-Batch 0 is ready to start and depends on none of the renames.
+Status: plan, agreed in outline. Every decision below is settled. Batch 0 is done — it
+needed no renames and changed no contract; Batches 1 to 3 remain.
 
 The project has changed shape several times — a third backend type, a turn that now
 ends with its reader, a workspace-switch endpoint removed, the ACP route abandoned —
@@ -67,7 +67,6 @@ files that follow them would be churn rather than clarity.
 | reading a string field defensively | `SafeString` (`openai_provider.cpp:19`) beside `json::ValueOrDefault<std::string>` |
 | the REST result envelope | nine hand-built `{"ok"/"success", ...}` objects in `serve_http_routes.cpp` |
 | a test helper | `ScopedEnvVar` in `tests/mocks/test_helpers.hpp` and again in `tests/unit/test_boost_integration.cpp` |
-| provider capability tables | `openai_provider.cpp:38`, `ollama_provider.cpp:20` |
 
 ## Target names
 
@@ -109,15 +108,17 @@ promise the prototype does not make.
 Each batch ends green — clang-format gate, build, tests under both code pages — and is
 worth a commit of its own.
 
-**Batch 0 — delete what nothing calls, collapse the duplicates.** No renames. Delete
-`GetWorkspaceName`, `IsRunning` and the Windows `ReaderLoop` stub; fold `ToolLoopResult`
-into `ExecutionResult`; move trim to `text::`, the error summary to one home, the UTF-8
-test to `text::`, the REST envelope to two helpers, and `SafeString` to
-`json::ValueOrDefault`; drop the three compatibility paths and the backup copy taken
-before every load (`BackupLegacySession`, its report, and the paragraphs in `README.md`
-and `ARCHITECTURE.md` that document `session.backup.json`). Rewrite the tests that used
-the deleted methods to say what they meant (`Runtime` built at the target directory,
-`GetHistory().size()`).
+**Batch 0 — delete what nothing calls, collapse the duplicates.** Done. Deleted
+`GetWorkspaceName`, `IsRunning`, the Windows `ReaderLoop` stub, `SwitchWorkspace`,
+`HistorySize`, `Transcript::Size` and `GetStaticEnvInfo`; folded `ToolLoopResult` into
+`ExecutionResult`; moved trimming, one-line collapsing and the partial-UTF-8 test into
+`core/text.hpp`, the error-envelope reading into `json::ErrorMessage`, `SafeString` to
+`json::ValueOrDefault`, and the duplicated test helper into one home; dropped the three
+compatibility paths and the copy taken before every load. Tests that used a deleted
+method now say what they meant: a `Runtime` is started inside the fixture's directory
+rather than moved to it, and a count is asked of the view it renders. The REST envelope
+was left alone — unifying `ok` and `success` is a change to what an API answers, so it
+moved to Batch 3 with the rest of the vocabulary.
 
 **Batch 1 — split the configuration header.** `agent.hpp` into `config/agents.hpp`,
 `config/backend.hpp` and `agent_manager.hpp`; update includes, and the extension points
@@ -128,10 +129,14 @@ merged into it, `RuntimeSpec` → `SessionSpec`, and the store's keys with them 
 file is refused, not converted. Docs and the `/api/*` copy that says "session" where it
 means a conversation move with it.
 
-**Batch 3 — targets, and names on the wire.** `pu_core` → `pu_lib`; then re-read
-`/api/*` and the `agents.json` fields against the vocabulary Batch 2 settled on. Most
-already read well (`default_agent`, `agents`, `backend`, `security`, `serve`); the
-candidate is `/api/workspaces`, which lists directories, not workspaces.
+**Batch 3 — targets, and names on the wire.** `pu_core` → `pu_lib`; unify the REST result
+envelope, which answers `ok` from the queries and `success` from the actions (the page
+reads both), updating `web/app.js` with it; re-read `/api/*` and the `agents.json` fields
+against the vocabulary Batch 2 settled on — most already read well (`default_agent`,
+`agents`, `backend`, `security`, `serve`), and the candidate is `/api/workspaces`, which
+lists directories rather than workspaces; and rename the test files that no longer
+describe their coverage (`test_backend_source`, `test_boost_integration`, `test_message`,
+`test_text`).
 
 ## What is not proposed
 

@@ -23,7 +23,6 @@ class Transcript {
   void Append(const ChatMessage& msg);
   std::vector<ChatMessage> GetHistory() const;
   bool HasPendingToolCalls() const;
-  size_t Size() const;
 
   // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return graph_; }
@@ -51,7 +50,6 @@ class Workspace {
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
   std::vector<ChatMessage> GetHistory() const;
-  size_t HistorySize() const;
   bool HasPendingToolCalls() const;
 
   // The stored conversation, for a caller that renders its own view of it.

@@ -14,9 +14,9 @@ using namespace pu;
 
 namespace {
 
-// What a release before the DAG refactor wrote: a flat list of messages and no
-// version field.
-boost::json::value LegacySession() {
+// A store written before the conversation became a graph: a flat list of messages, and
+// no version field for this build to recognise.
+boost::json::value FlatMessageList() {
   return boost::json::parse(R"({
     "workspace": {
       "history": [
@@ -30,22 +30,22 @@ boost::json::value LegacySession() {
 }  // namespace
 
 TEST_CASE("A session without a version field is refused", "[session][schema]") {
-  REQUIRE(Session::Deserialize(LegacySession()) == nullptr);
+  REQUIRE(Session::Deserialize(FlatMessageList()) == nullptr);
 }
 
 TEST_CASE("A session with another version is refused", "[session][schema]") {
-  boost::json::value j = LegacySession();
+  boost::json::value j = FlatMessageList();
   j.as_object()["schema_version"] = context::kSchemaVersion - 1;
   REQUIRE(Session::Deserialize(j) == nullptr);
 
-  boost::json::value future = LegacySession();
+  boost::json::value future = FlatMessageList();
   future.as_object()["schema_version"] = context::kSchemaVersion + 1;
   REQUIRE(Session::Deserialize(future) == nullptr);
 }
 
 TEST_CASE("A version alone is not enough without node storage", "[session][schema]") {
-  // The layout an unreachable branch used: the right number, a list of messages.
-  boost::json::value j = LegacySession();
+  // The right number over the wrong layout: a list of messages rather than the graph.
+  boost::json::value j = FlatMessageList();
   j.as_object()["schema_version"] = context::kSchemaVersion;
   REQUIRE(Session::Deserialize(j) == nullptr);
 }
@@ -61,7 +61,7 @@ TEST_CASE("A session written by this version loads", "[session][schema]") {
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetWorkspace().HistorySize() == 2);
+  REQUIRE(restored->GetWorkspace().GetHistory().size() == 2);
   REQUIRE(restored->GetWorkspace().GetHistory()[1].content == "hi");
 }
 
@@ -157,7 +157,7 @@ TEST_CASE("A tool call keeps its completed status across a save", "[session][sch
 
   // Status is stored, so a reload does not resurrect a finished call.
   REQUIRE_FALSE(restored->GetWorkspace().HasPendingToolCalls());
-  REQUIRE(restored->GetWorkspace().HistorySize() == 2);
+  REQUIRE(restored->GetWorkspace().GetHistory().size() == 2);
 }
 
 TEST_CASE("The parent survives a save and load", "[session][schema]") {

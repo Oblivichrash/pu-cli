@@ -389,30 +389,6 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }
 
-TEST_CASE("LoadAgentsConfig reads the thinking switch it replaced", "[agent_config]") {
-  TempConfigFile tmp;
-  std::string json = R"({
-    "default_agent": "deepseek",
-    "agents": [
-      {
-        "name": "deepseek",
-        "backend": {
-          "type": "openai",
-          "host": "https://api.deepseek.com/v1",
-          "model": "deepseek-reasoner",
-          "enable_thinking": true
-        }
-      }
-    ]
-  })";
-  tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents.size() == 1);
-  // `true` was the only setting that sent nothing, which is what the absent level
-  // means now.
-  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kServerDefault);
-}
-
 TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({

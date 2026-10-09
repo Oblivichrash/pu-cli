@@ -250,8 +250,6 @@ void StdioTransport::Stop() {
   }
 }
 
-void StdioTransport::ReaderLoop() {}
-
 bool StdioTransport::WriteLine(const std::string& line) {
   if (stdin_write_ == INVALID_HANDLE_VALUE) return false;
   std::string out = line + "\n";

@@ -108,4 +108,51 @@ inline std::string SanitizeUtf8(std::string_view text) {
   return result;
 }
 
+// Whitespace removed from both ends. Returned as a slice rather than a copy, because
+// every caller so far only reads it.
+inline std::string_view Trim(std::string_view text) {
+  constexpr std::string_view kWhitespace = " \t\r\n";
+  const std::size_t first = text.find_first_not_of(kWhitespace);
+  if (first == std::string_view::npos) return {};
+  const std::size_t last = text.find_last_not_of(kWhitespace);
+  return text.substr(first, last - first + 1);
+}
+
+// Runs of whitespace collapsed to one space, with none at either end: what a message
+// written elsewhere becomes before it is put on a single line of a log.
+inline std::string CollapseWhitespace(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  bool pending_space = false;
+  for (const char c : text) {
+    if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+      pending_space = !out.empty();
+      continue;
+    }
+    if (pending_space) out += ' ';
+    pending_space = false;
+    out += c;
+  }
+  return out;
+}
+
+// True when the text ends with the beginning of a multi-byte sequence: the bytes after
+// the last lead are fewer than that sequence needs. A reader that frames a byte stream
+// itself holds such a tail back until the rest of it arrives, because a line cut
+// through the middle of a character is not a line yet.
+inline bool EndsWithPartialSequence(std::string_view text) {
+  if (text.empty()) return false;
+
+  std::size_t index = text.size();
+  while (index > 0 && detail::IsContinuationByte(static_cast<unsigned char>(text[index - 1]))) {
+    --index;
+  }
+  // Nothing but continuation bytes: whatever this is, it is not a whole sequence.
+  if (index == 0) return true;
+
+  const std::size_t length = detail::SequenceLength(static_cast<unsigned char>(text[index - 1]));
+  if (length <= 1) return false;  // ASCII, or a lead byte that begins no sequence at all
+  return text.size() - (index - 1) < length;
+}
+
 }  // namespace pu::text

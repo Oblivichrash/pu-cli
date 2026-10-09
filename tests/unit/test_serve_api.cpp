@@ -268,27 +268,6 @@ class TestHttpClient {
   int port_;
 };
 
-// Runs the block inside `dir`. The runtime takes its workspace, and with it the
-// session file, from the working directory, so a test that never enters its own
-// directory shares the repository's conversation with every other test.
-class ScopedWorkingDir {
- public:
-  explicit ScopedWorkingDir(const fs::path& dir) : original_(fs::current_path()) {
-    fs::current_path(dir);
-  }
-
-  ~ScopedWorkingDir() {
-    std::error_code ec;
-    fs::current_path(original_, ec);
-  }
-
-  ScopedWorkingDir(const ScopedWorkingDir&) = delete;
-  ScopedWorkingDir& operator=(const ScopedWorkingDir&) = delete;
-
- private:
-  fs::path original_;
-};
-
 class ServeHarness {
  public:
   // The backend type decides what a client may do, so a test that needs a control
@@ -310,7 +289,7 @@ class ServeHarness {
     // working directory is this harness's own and the directory is left again before
     // anything else runs. RunServe initialises a second time, which is a no-op.
     {
-      ScopedWorkingDir in_home(home_);
+      pu::tests::ScopedWorkingDir in_home(home_);
       runtime_ = std::make_unique<pu::Runtime>();
       runtime_->Initialize();
     }

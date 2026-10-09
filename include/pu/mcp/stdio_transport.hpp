@@ -29,11 +29,13 @@ class StdioTransport : public Transport {
   void Stop() override;
   bool WriteLine(const std::string& line) override;
 
-  bool IsRunning() const { return running_; }
-
  private:
   bool SpawnProcess();
+  // The reader is a thread procedure on Windows, declared where it is defined, and a
+  // member on POSIX, where it is joined.
+#ifndef _WIN32
   void ReaderLoop();
+#endif
 
   std::string command_;
   std::vector<std::string> args_;

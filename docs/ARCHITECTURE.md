@@ -343,11 +343,10 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
-A file without the version, with another one, or whose history is not node storage
-is refused rather than guessed at; `pu` reports the reason, names
-`<workspace>/.pu/session.backup.json` when that backup exists, and starts a fresh
-conversation. Older layouts are not converted, so what they hold survives only in
-that backup.
+A file without the version, with another one, or whose history is not node storage is
+refused rather than guessed at: `pu` reports the reason and starts a fresh
+conversation, and the next save replaces the file. This is a prototype, so nothing is
+kept for an older layout — no conversion, and no copy taken aside.
 
 The session file contains no system prompt: the prompt is configuration and is
 read from `agents.json` on every start.

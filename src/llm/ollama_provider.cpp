@@ -75,8 +75,9 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
   // A failure arrives in place of a message: a stream that started is not a stream
   // that will finish, and the reason is in this frame.
-  if (json::HasKey(j, "error") && j.at("error").is_string()) {
-    throw Error("provider error: " + boost::json::value_to<std::string>(j.at("error")));
+  if (json::HasKey(j, "error")) {
+    const std::string detail = json::ErrorMessage(j);
+    if (!detail.empty()) throw Error("provider error: " + detail);
   }
 
   if (json::HasKey(j, "message")) {

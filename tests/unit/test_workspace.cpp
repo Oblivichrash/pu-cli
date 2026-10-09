@@ -11,7 +11,7 @@ TEST_CASE("Workspace basic operations", "[workspace]") {
   ctx.Append("user", "Hello");
   ctx.Append("assistant", "Hi there!");
 
-  REQUIRE(ctx.HistorySize() == 2);
+  REQUIRE(ctx.GetHistory().size() == 2);
   auto history = ctx.GetHistory();
   REQUIRE(history.size() == 2);
   REQUIRE(history[1].role == "assistant");
@@ -24,7 +24,7 @@ TEST_CASE("Workspace serialization round-trips", "[transcript]") {
   const boost::json::value saved = ws.Serialize();
   auto restored = Workspace::Deserialize(saved);
 
-  REQUIRE(restored->HistorySize() == 1);
+  REQUIRE(restored->GetHistory().size() == 1);
 }
 
 TEST_CASE("Session serialization round-trips", "[transcript]") {
@@ -44,7 +44,7 @@ TEST_CASE("Session serialization round-trips", "[transcript]") {
 
   auto restored = Session::Deserialize(reparsed);
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
+  REQUIRE(restored->GetWorkspace().GetHistory().size() == 1);
   REQUIRE(restored->GetWorkspace().GetHistory()[0].content == "hello");
   REQUIRE(restored->GetRuntimeSpec().backend_override.has_value());
   REQUIRE(restored->GetRuntimeSpec().backend_override->model == "llama3.2:1b");
@@ -61,7 +61,7 @@ TEST_CASE("A message holding invalid UTF-8 survives a save and load", "[transcri
 
   auto restored = Session::Deserialize(boost::json::parse(written));
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetWorkspace().HistorySize() == 1);
+  REQUIRE(restored->GetWorkspace().GetHistory().size() == 1);
 }
 
 TEST_CASE("Transcript round-trips tool calls as a JSON array", "[transcript]") {
@@ -163,7 +163,6 @@ TEST_CASE("Appending continues from the leaf without dropping anything", "[trans
   t.Append(after);
 
   auto h = t.GetHistory();
-  REQUIRE(t.Size() == 21);
   REQUIRE(h.size() == 21);
   REQUIRE(h[0].content == "msg1");
   REQUIRE(h[19].content == "msg20");

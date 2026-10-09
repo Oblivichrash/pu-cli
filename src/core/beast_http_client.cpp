@@ -5,6 +5,7 @@
 #include "pu/core/json.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/core/text.hpp"
 
 #include <boost/beast/version.hpp>
 #include <boost/json.hpp>
@@ -124,12 +125,10 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   for (const auto& h : headers) {
     size_t pos = h.find(':');
     if (pos != std::string::npos) {
-      std::string name = h.substr(0, pos);
-      std::string value = h.substr(pos + 1);
-      // Trim leading whitespace from value.
-      size_t first = value.find_first_not_of(" \t");
-      if (first != std::string::npos) value.erase(0, first);
-      req.set(name, value);
+      // `Name: value` is how a header is written, so the space after the colon is
+      // framing rather than part of either half.
+      req.set(text::Trim(std::string_view(h).substr(0, pos)),
+              text::Trim(std::string_view(h).substr(pos + 1)));
     }
   }
   req.body() = body;
@@ -213,41 +212,19 @@ namespace {
 std::string SummarizeErrorBody(const std::string& body) {
   if (body.empty()) return "";
 
+  // The body may arrive in the producer's locale, and its shape differs by gateway:
+  // the envelopes `json::ErrorMessage` reads are the ones that turn up here.
   const std::string text = platform::FromPipedOutput(body);
   std::string message;
   try {
-    const boost::json::value parsed = boost::json::parse(text);
-    // OpenAI-shaped: {"error": {"message": "..."}} or {"error": "..."}.
-    const boost::json::value& error =
-        json::ValueOrDefault<boost::json::value>(parsed, "error", boost::json::value{});
-    if (error.is_object()) {
-      message = json::ValueOrDefault<std::string>(error, "message", "");
-    } else if (error.is_string()) {
-      message = boost::json::value_to<std::string>(error);
-    }
-    if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "message", "");
-    // CodeBuddy-shaped: {"code": 11102, "msg": "...", "displayMsg": {...}}. `msg`
-    // names the cause while `displayMsg` says the same thing in a user's language,
-    // so the specific one is the one kept.
-    if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "msg", "");
+    message = json::ErrorMessage(boost::json::parse(text));
   } catch (const std::exception&) {
     // Not JSON, so the body is the message.
   }
   if (message.empty()) message = text;
 
-  // Collapse to one line so a multi-line body cannot break the log layout.
-  std::string one_line;
-  one_line.reserve(message.size());
-  bool pending_space = false;
-  for (char c : message) {
-    if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
-      pending_space = !one_line.empty();
-      continue;
-    }
-    if (pending_space) one_line += ' ';
-    pending_space = false;
-    one_line += c;
-  }
+  // Collapsed to one line so a multi-line body cannot break the log layout.
+  const std::string one_line = text::CollapseWhitespace(message);
 
   constexpr std::size_t kMaxDetail = 400;
   if (one_line.size() <= kMaxDetail) return one_line;

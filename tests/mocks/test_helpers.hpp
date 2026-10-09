@@ -2,7 +2,9 @@
 #pragma once
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <system_error>
 
 namespace pu::tests {
 
@@ -43,6 +45,29 @@ class ScopedEnvVar {
   std::string name_;
   std::string prev_;
   bool had_prev_ = false;
+};
+
+// Runs a block inside `dir`. A Runtime takes its workspace — and with it the session
+// file, the agents it loads and the tools they bring — from the working directory, so
+// a test that never enters one of its own shares the repository's conversation with
+// every other test.
+class ScopedWorkingDir {
+ public:
+  explicit ScopedWorkingDir(const std::filesystem::path& dir)
+      : original_(std::filesystem::current_path()) {
+    std::filesystem::current_path(dir);
+  }
+
+  ~ScopedWorkingDir() {
+    std::error_code ec;
+    std::filesystem::current_path(original_, ec);
+  }
+
+  ScopedWorkingDir(const ScopedWorkingDir&) = delete;
+  ScopedWorkingDir& operator=(const ScopedWorkingDir&) = delete;
+
+ private:
+  std::filesystem::path original_;
 };
 
 }  // namespace pu::tests

@@ -6,37 +6,29 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
-#include <chrono>
-#include <mutex>
 
 namespace pu {
 
 namespace {
 
-std::string SafeString(const boost::json::value& j, const char* key) {
-  return (json::HasKey(j, key) && j.at(key).is_string())
-             ? boost::json::value_to<std::string>(j.at(key))
-             : "";
-}
-
-// An error arrives at the top level of a frame, in one of two shapes: the message
-// on its own, or an object carrying `message` beside a code and a type. Both are
-// read; anything else is kept as it came rather than flattened to nothing.
+// An error arrives at the top level of a frame, in one of two shapes: the message on
+// its own, or an object carrying `message` beside a code and a type. What cannot be
+// named is kept as it came rather than flattened to nothing.
 std::string StreamErrorDetail(const boost::json::value& error) {
   if (error.is_string()) return boost::json::value_to<std::string>(error);
-  const std::string message = SafeString(error, "message");
-  if (!message.empty()) return message;
-  return boost::json::serialize(error);
+  const std::string message = json::ErrorMessage(error);
+  return message.empty() ? boost::json::serialize(error) : message;
 }
 
-// What this provider needs, as data rather than branches: reasoning is echoed
-// back, content is nulled beside tool calls, and arguments travel as a
-// JSON-encoded string.
+// What this provider needs, as data rather than branches: roles reach the wire as
+// they are stored, reasoning is echoed back, content is nulled beside tool calls, and
+// arguments travel as a JSON-encoded string.
 constexpr llm::ProviderCapabilities kCapabilities{
-    .role_naming = llm::RoleNaming::kAliasToolResult,
+    .role_naming = llm::RoleNaming::kAsStored,
     .echo_reasoning_content = true,
     .allows_content_with_tool_calls = false,
     .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
@@ -127,7 +119,7 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
     }
 
     if (piece != nullptr && piece->is_object()) {
-      const std::string content = SafeString(*piece, "content");
+      const std::string content = json::ValueOrDefault<std::string>(*piece, "content", "");
       if (!content.empty()) {
         content_ += content;
         if (content_cb) content_cb(content);
@@ -135,7 +127,7 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
 
       // The model's own words when it declines to answer. Dropping them leaves a
       // refusal looking like a backend that said nothing at all.
-      const std::string refusal = SafeString(*piece, "refusal");
+      const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
       if (!refusal.empty()) refusal_ += refusal;
 
       if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
@@ -148,7 +140,7 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
         for (const auto& tc : piece->at("tool_calls").as_array()) {
           if (!tc.is_object()) continue;
-          const std::string id = SafeString(tc, "id");
+          const std::string id = json::ValueOrDefault<std::string>(tc, "id", "");
           int idx = json::ValueOrDefault<int>(tc, "index", -1);
           if (idx < 0) {
             // Not every provider indexes its fragments. An id marks a call of its
@@ -164,9 +156,9 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
           auto& acc = pending_tools_[idx];
           if (!id.empty()) acc.id = id;
           if (json::HasKey(tc, "function") && tc.at("function").is_object()) {
-            auto name = SafeString(tc.at("function"), "name");
+            auto name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
             if (!name.empty()) acc.name = name;
-            acc.arguments += SafeString(tc.at("function"), "arguments");
+            acc.arguments += json::ValueOrDefault<std::string>(tc.at("function"), "arguments", "");
           }
         }
       }
@@ -236,9 +228,8 @@ ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
 
   llm::StreamingJsonParser parser([&](std::string_view line) {
     constexpr std::string_view kDataPrefix = "data: ";
-    auto start = line.find_first_not_of(" \t");
-    if (start == std::string_view::npos) return;
-    std::string_view trimmed = line.substr(start);
+    const std::string_view trimmed = text::Trim(line);
+    if (trimmed.empty()) return;
     if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
     std::string_view data = trimmed.substr(kDataPrefix.size());
     if (data == "[DONE]") {

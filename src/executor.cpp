@@ -161,33 +161,22 @@ ExecutionResult Executor::Execute(const std::string& input, Workspace& workspace
 
   workspace.Append("user", input);
 
-  auto result = RunToolLoop(workspace, provider, cancel_token, content_callback, tool_callbacks,
-                            reasoning_callback);
-  ExecutionResult exec_result;
-  if (result.has_error) {
-    exec_result.has_error = true;
-    exec_result.error_message = result.error_message;
-    return exec_result;
-  }
+  // The loop fills the result the caller is given: one turn, one result, rather than a
+  // private shape that has to be copied out of it field by field.
+  ExecutionResult result = RunToolLoop(workspace, provider, cancel_token, content_callback,
+                                       tool_callbacks, reasoning_callback);
+  if (result.has_error) return result;
 
-  if (!result.final_response.empty()) {
-    workspace.Append("assistant", result.final_response);
-  }
-
-  exec_result.content = result.final_response;
-  exec_result.was_streamed = result.was_streamed;
-  exec_result.tool_call_count = result.tool_call_count;
-  exec_result.notice = result.notice;
-  exec_result.model = result.model;
-  return exec_result;
+  if (!result.content.empty()) workspace.Append("assistant", result.content);
+  return result;
 }
 
-Executor::ToolLoopResult Executor::RunToolLoop(
-    Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
-    std::function<void(const std::string&)> content_callback, ToolCallbacks tool_callbacks,
-    std::function<void(const std::string&)> reasoning_callback) {
-  ToolLoopResult result;
-  result.was_streamed = false;
+ExecutionResult Executor::RunToolLoop(Workspace& workspace, LLMProvider* provider,
+                                      CancelToken cancel_token,
+                                      std::function<void(const std::string&)> content_callback,
+                                      ToolCallbacks tool_callbacks,
+                                      std::function<void(const std::string&)> reasoning_callback) {
+  ExecutionResult result;
 
   if (!toolbox_) {
     result.has_error = true;
@@ -196,7 +185,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
   }
 
   if (!provider->SupportsTools()) {
-    result.final_response = "This provider does not support tool calling. Cannot execute tools.";
+    result.content = "This provider does not support tool calling. Cannot execute tools.";
     return result;
   }
 
@@ -250,7 +239,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
           response = chat_result.reasoning_content;
           spdlog::debug("Using reasoning_content as final response (thinking mode)");
         }
-        result.final_response = response;
+        result.content = response;
         result.notice = StopNotice(chat_result.finish_reason);
         if (!chat_result.model.empty()) {
           result.model = chat_result.model;
@@ -355,20 +344,20 @@ Executor::ToolLoopResult Executor::RunToolLoop(
 
   } while (tool_was_called);
 
-  if (hit_max_iterations && result.final_response.empty()) {
-    result.final_response =
+  if (hit_max_iterations && result.content.empty()) {
+    result.content =
         "Tool execution reached the maximum number of iterations without generating a final "
         "answer. "
         "Please rephrase your request or narrow the scope.";
     result.has_error = true;
-    spdlog::error("{}", result.final_response);
+    spdlog::error("{}", result.content);
     return result;
   }
 
   // Only diagnose an empty response when nothing else already failed: a request
   // that was refused returns no content either, and replacing its reason with
   // this generic one is what hid an over-length or unauthorised request.
-  if (!result.has_error && result.final_response.empty() && result.tool_call_count == 0) {
+  if (!result.has_error && result.content.empty() && result.tool_call_count == 0) {
     result.has_error = true;
     result.error_message =
         "Model returned an empty response without any tool calls. "
@@ -377,7 +366,7 @@ Executor::ToolLoopResult Executor::RunToolLoop(
     return result;
   }
 
-  if (result.final_response.empty() && result.tool_call_count > 0) {
+  if (result.content.empty() && result.tool_call_count > 0) {
     spdlog::info("Tool execution completed without a final text response - considered successful.");
   }
 

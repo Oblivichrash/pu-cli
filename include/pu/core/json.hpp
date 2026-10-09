@@ -54,6 +54,26 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
   return obj != nullptr && obj->contains(key);
 }
 
+// The message inside an error envelope, in the shapes the gateways use: the text under
+// `error`, the `message` inside an `error` object, or a top-level `message`, or `msg`,
+// which is what CodeBuddy names the cause. Empty when none of them is there, so a
+// caller falls back to something of its own rather than to a blank. Both the HTTP
+// client (on a response body) and the providers (on a stream frame) read errors this
+// way, and they were each keeping their own copy of which key holds the message.
+inline std::string ErrorMessage(const value& j) {
+  const object* obj = j.if_object();
+  if (obj == nullptr) return {};
+
+  if (auto it = obj->find("error"); it != obj->end()) {
+    if (it->value().is_string()) return boost::json::value_to<std::string>(it->value());
+    const std::string inner = ValueOrDefault<std::string>(it->value(), "message", "");
+    if (!inner.empty()) return inner;
+  }
+  const std::string message = ValueOrDefault<std::string>(j, "message", "");
+  if (!message.empty()) return message;
+  return ValueOrDefault<std::string>(j, "msg", "");
+}
+
 namespace detail {
 
 inline void AppendPretty(const value& jv, std::string& out, int depth, int indent) {
