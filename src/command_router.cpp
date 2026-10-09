@@ -2,6 +2,9 @@
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
+#include "pu/llm/codebuddy.hpp"
+#include "pu/llm/ollama_provider.hpp"
+#include "pu/llm/openai_provider.hpp"
 #include "pu/runtime.hpp"
 
 #include <algorithm>
@@ -17,13 +20,14 @@ namespace pu {
 namespace {
 
 // The /backend command names a type and a model only, so the host it leaves out is
-// answered here, where that command is.
-const char* DefaultHostFor(config::BackendType type) {
+// answered here, from the default the provider itself states: asking the provider is
+// what keeps that value in one place, so changing it there reaches this command too.
+std::string DefaultHostFor(config::BackendType type) {
   switch (type) {
     case config::BackendType::kOllama:
-      return "http://localhost:11434";
+      return OllamaProvider::Config{}.host;
     case config::BackendType::kOpenAI:
-      return "https://api.openai.com/v1";
+      return OpenAIProvider::Config{}.host;
     case config::BackendType::kCodeBuddy:
       return llm::kCodeBuddyHost;
   }

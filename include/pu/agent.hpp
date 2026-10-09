@@ -11,7 +11,6 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
-#include "pu/llm/codebuddy.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/mcp/client.hpp"
 
