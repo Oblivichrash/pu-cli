@@ -87,7 +87,7 @@ baseline request plus one difference:
 | `stream: true` | required in practice |
 | `temperature`, `max_tokens` | accepted |
 | `reasoning_effort: "high"` | **accepted and honoured**. The same prompt answered `ok` with no reasoning at all on the baseline; with this field the stream carried `reasoning_content` fragments (`"We"`, `" need"`, …) |
-| `extra_body: {"thinking":{"type":"disabled"}}` | accepted (200); its effect is not proven, since the prompt behind it emits no reasoning either way |
+| `extra_body: {"thinking":{"type":"disabled"}}` | accepted (200), and inert on this gateway: the default request already emits no reasoning for a prompt that benefits from one, so there is nothing for the field to suppress |
 | `stream_options: {"include_usage": true}` | accepted (200), and the `usage` object arrives per chunk with or without it |
 
 ## 5. Response stream
@@ -175,8 +175,8 @@ use it: entitlement is the server's answer, and only a request settles it.
 ## 9. Still open
 
 - Which headers are actually required, and which are the client's own telemetry.
-- Whether `extra_body.thinking` suppresses reasoning or is merely tolerated: the
-  trial answered the same way with and without it.
+- Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
+  default: it does not, so the field is inert here rather than wrong.
 - Whether a model list can be discovered for an account at all.
 - What `usage.credit` means for a session, and whether it is worth surfacing.
 - Whether `/v2/auth/token/refresh` is needed for keys that expire; a request with a
