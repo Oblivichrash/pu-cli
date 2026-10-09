@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -66,6 +68,32 @@ class ScopedWorkingDir {
 
  private:
   std::filesystem::path original_;
+};
+
+// A directory under the system temp, removed with the object: a test's data directory is not
+// the tree it is run from, so it is not one a run may leave behind.
+class ScopedTempDir {
+ public:
+  explicit ScopedTempDir(const std::string& prefix) {
+    static std::atomic<int> seq{0};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    path_ = std::filesystem::temp_directory_path() /
+            (prefix + std::to_string(stamp) + "_" + std::to_string(seq.fetch_add(1)));
+    std::filesystem::create_directories(path_);
+  }
+
+  ~ScopedTempDir() {
+    std::error_code ec;
+    std::filesystem::remove_all(path_, ec);
+  }
+
+  ScopedTempDir(const ScopedTempDir&) = delete;
+  ScopedTempDir& operator=(const ScopedTempDir&) = delete;
+
+  const std::filesystem::path& Path() const { return path_; }
+
+ private:
+  std::filesystem::path path_;
 };
 
 }  // namespace pu::tests

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -15,17 +14,10 @@ using namespace pu;
 
 namespace {
 
-std::string MakeTempHome() {
-  static int counter = 0;
-  auto dir = std::filesystem::temp_directory_path() /
-             ("pu_command_router_test_" + std::to_string(++counter));
-  std::filesystem::create_directories(dir);
-  return dir.string();
-}
-
 struct RouterFixture {
-  // Declared first, so the data directory it points at is restored after everything built
-  // on it is gone. Set and left in the process, it would send every later test's data there.
+  // The directory outlives the variable pointing at it, and the variable outlives everything
+  // built on it: set and left in the process, it would send every later test's data there.
+  pu::tests::ScopedTempDir data_dir{"pu_command_router_test_"};
   std::unique_ptr<pu::tests::ScopedEnvVar> home;
 
   AgentManager manager;
@@ -34,7 +26,7 @@ struct RouterFixture {
   CommandRouter router;
 
   RouterFixture() : router(manager, runtime) {
-    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", MakeTempHome());
+    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", data_dir.Path().string());
 
     config::AgentEntry chat;
     chat.name = "chat";

@@ -355,7 +355,11 @@ class ServeHarness {
     fs::create_directories(home_ / ".pu");
 
     home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", home_.string());
+    // The log file stays open for the whole process and cannot be deleted while it is, so it
+    // lives in one directory of its own rather than in the workspace a test removes.
+    const fs::path data_dir = fs::temp_directory_path() / "pu_test_data";
+    fs::create_directories(data_dir);
+    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
     WriteAgentsFile(home_, backend_->Port(), backend_type);
