@@ -36,35 +36,26 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     return;
   }
 
-  // Take the place of the client that was listening, if any. What that client was
-  // watching is left alone: a reload is a reader coming back to the reply, so the
-  // turn keeps its head down and the frames it has produced are handed over below.
+  // Take the place of the client that was listening, if any, and end the turn it was
+  // watching. The reply belongs to the reader it is being written for: a page that
+  // reloads is asking to see the conversation it left, not the tail of an answer
+  // whose beginning it never saw, and the frames it missed are gone in any case.
   std::shared_ptr<websocket::stream<tcp::socket>> replaced;
-  std::string handover;
   {
     std::lock_guard<std::mutex> lock(active_ws->mtx);
     replaced = std::exchange(active_ws->client, ws);
-    if (active_ws->turn_in_flight) {
-      boost::json::value resume = {{"type", "resume"},
-                                   {"payload", {{"frames", active_ws->transcript}}}};
-      handover = boost::json::serialize(resume);
-    }
+    // A fresh token, already cancelled. It ends the turn that was running and stops
+    // that turn from writing anything more — its ending included — into a client that
+    // never saw how the answer began.
+    active_ws->cancel_token->store(true);
+    active_ws->cancel_token = std::make_shared<std::atomic<bool>>(true);
   }
   if (replaced) {
-    // Closing the socket under its reader is how a blocking read is woken. The
-    // stream object itself stays alive in that session's own pointer, so nothing is
-    // freed under a thread still using it.
+    // Closing the socket under its reader is how a blocking read is woken. The stream
+    // object itself stays alive in that session's own pointer, so nothing is freed
+    // under a thread still using it.
     beast::error_code close_ec;
     beast::get_lowest_layer(*replaced).close(close_ec);
-  }
-  // The handover goes out before anything else can be written, so the client is
-  // never shown a fragment that arrived ahead of its own beginning.
-  if (!handover.empty()) {
-    std::lock_guard<std::mutex> lock(active_ws->mtx);
-    if (active_ws->client == ws && ws->is_open()) {
-      beast::error_code write_ec;
-      ws->write(net::buffer(handover), write_ec);
-    }
   }
 
   for (;;) {
@@ -118,27 +109,22 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       active_ws->cancel_token->store(true);
       active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
       token = active_ws->cancel_token;
-      active_ws->transcript.clear();
-      active_ws->turn_in_flight = true;
     }
 
     std::thread([&runtime, &io_mutex, active_ws, token, payload_text]() {
       bool is_command = false;
       ExecutionResult result;
 
-      // Says something on this turn's behalf: sent to the client that is listening
-      // and recorded for the one that is not there yet. A turn that has been
-      // replaced says nothing at all — its remarks belong to a request that was
-      // withdrawn, and the transcript it would write into is the next turn's.
+      // Says something on this turn's behalf, and says it only while this turn is the
+      // one the chat is on. A turn that has been withdrawn or superseded goes quiet
+      // rather than writing into a display that now belongs to another request.
       const auto say = [&](const boost::json::value& frame) {
-        const std::string message = boost::json::serialize(frame);
         std::lock_guard<std::mutex> lock(active_ws->mtx);
         if (active_ws->cancel_token != token) return;
-        active_ws->transcript.push_back(frame);
-        if (active_ws->client && active_ws->client->is_open()) {
-          beast::error_code write_ec;
-          active_ws->client->write(net::buffer(message), write_ec);
-        }
+        if (!active_ws->client || !active_ws->client->is_open()) return;
+        const std::string message = boost::json::serialize(frame);
+        beast::error_code write_ec;
+        active_ws->client->write(net::buffer(message), write_ec);
       };
 
       // Tool call lifecycle callbacks: forward start/end events so the
@@ -194,22 +180,19 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         final = {{"type", "done"}, {"payload", {{"model", result.model}}}};
       }
       say(final);
-
-      // The turn is over, and the store holds it now, so a client that arrives from
-      // here on reads it from there: keeping the transcript would show the same
-      // reply twice. Only the turn that owns the chat may say so, since a newer one
-      // may already have taken it over.
-      std::lock_guard<std::mutex> lock(active_ws->mtx);
-      if (active_ws->cancel_token != token) return;
-      active_ws->turn_in_flight = false;
-      active_ws->transcript.clear();
     }).detach();
   }
 
-  // The socket is gone. The turn it was watching is not: it is left to finish, and
-  // the client that attaches next is handed what it has said so far.
+  // The reader of this chat is gone, so the turn it was watching ends here. Nothing
+  // of it is kept: what had been written is half an answer, and storing that would
+  // make the next request read it as the model's finished reply. A session that was
+  // replaced does none of this — the client that took over owns the chat now, and it
+  // has already ended the turn its predecessor was watching.
   std::lock_guard<std::mutex> lock(active_ws->mtx);
-  if (active_ws->client == ws) active_ws->client = nullptr;
+  if (active_ws->client == ws) {
+    active_ws->client = nullptr;
+    active_ws->cancel_token->store(true);
+  }
 }
 
 }  // namespace pu::cli::detail

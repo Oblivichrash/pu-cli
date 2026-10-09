@@ -140,8 +140,7 @@ Key responsibilities:
    accepted connection is handled on a detached thread.
 3. A plain HTTP request is dispatched to the static/REST routes; a request with a
    WebSocket upgrade on `/ws` is accepted and takes over as the client being written
-   to, replacing any earlier one. What that earlier client was watching is not
-   affected: see [WebSocket streaming](#websocket-streaming).
+   to, replacing any earlier one and ending the turn that one was watching.
 4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
    spawns a worker thread that runs `Runtime::ProcessInput` under the shared
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
@@ -183,10 +182,9 @@ RebuildToolbox(agent)
 A `CancelToken` threads through the request stack from `Runtime::ProcessInput`
 down to the HTTP stream; the provider polls it between chunks and the transport
 between reads of the body, so a cancellation surfaces quickly even from a stream
-that has gone quiet. In `pu serve` it is set only by a `cancel` message: the token
-belongs to the chat, not to the connection, so a client that goes away — or is
-replaced by another — leaves the turn it was watching running. The turn then ends
-with neither a reply nor an error.
+that has gone quiet. In `pu serve` it is set by a `cancel` message or by the client
+watching the turn going away, so closing the page stops the reply as surely as the
+Stop button does. The turn then ends with neither a reply nor an error.
 
 ### HTTP streaming
 
@@ -210,14 +208,12 @@ full text as a single chunk frame. The frame schema and client-side rendering
 are documented in [README](../README.md#web-api) and implemented in
 `web/app.js`.
 
-The turn belongs to the chat rather than to the socket, and every frame it produces
-is recorded while it is in flight. A client that attaches to a running turn — a
-reloaded page, a reconnected one — is therefore sent `{"type":"resume"}` carrying
-those frames before anything new, so the reply is drawn from its beginning under the
-history it continues and then goes on streaming live. That recording is what makes a
-reload a way to come back to a reply rather than a way to end it, and it is why a
-second client takes over the first instead of joining it: both of them are watching
-the same single turn.
+A turn belongs to the client watching it. Closing the page, losing the socket, or a
+second client taking over all end it, and nothing of it is kept: what it had written
+is half an answer, and storing that would make the next request read it as the model's
+finished reply. The chat is therefore never driven by nobody, and a page that reloads
+mid-answer comes back to the conversation as the store has it — the question, and no
+reply to it.
 
 ## Provider Differences
 
@@ -274,14 +270,9 @@ Browser: WebSocket onmessage → parse JSON → append token to Markdown rendere
 Cancellation:
 Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
 
-A client that arrives while a turn is running (a reload):
-Browser ──WebSocket (/ws)──► handler takes over as the client
-     │  the turn in flight is left alone
-     ▼
-Server → {"type":"resume","payload":{"frames":[...]}}   what the turn has said so far
-     │
-     ▼
-Browser: replays those frames, then continues on the live stream
+A client that leaves — closing the page, reloading, losing the connection — does the
+same thing, and a second client taking over does it for the first: a turn is only
+ever written for the reader who asked for it.
 ```
 
 ---

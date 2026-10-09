@@ -8,12 +8,10 @@
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <boost/beast/websocket.hpp>
-#include <boost/json.hpp>
 
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <thread>
 
 #include "pu/core/base.hpp"
@@ -32,20 +30,16 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res);
 
-// The chat being served, and the client watching it. One chat at a time: a new
-// client connection replaces the previous one as the one being written to, which is
-// what keeps the conversation single. The turn, though, belongs to the chat and not
-// to the socket — a page that reloads, or a connection that drops, leaves the
-// request running, because a reload is how a reader comes back to a reply rather
-// than a way to ask for it to be thrown away. `transcript` is what makes that
-// possible: the frames of the turn in flight, kept so a client that attaches
-// halfway through can be shown the answer from its beginning.
+// The chat being served, and the client watching it. One client at a time: a new
+// connection replaces the previous one as the one being written to, which is what
+// keeps the conversation single. A turn belongs to the client watching it — whoever
+// leaves, or is replaced, ends it — so the server never drives a chat that nobody is
+// looking at, and closing the page is as good a way to stop a reply as the Stop
+// button. What such a turn wrote is half an answer and is not kept.
 struct ActiveWebSocket {
   std::shared_ptr<websocket::stream<tcp::socket>> client;  // null while nobody listens
   CancelToken cancel_token;
-  boost::json::array transcript;
-  bool turn_in_flight{false};
-  std::mutex mtx;  // guards client, cancel_token, transcript, turn_in_flight
+  std::mutex mtx;  // guards client and cancel_token
 };
 
 // Take over `socket`, which already carries a WebSocket upgrade request, and

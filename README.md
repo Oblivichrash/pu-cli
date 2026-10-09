@@ -171,7 +171,6 @@ and status.
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
-{"type":"resume","payload":{"frames":[{"type":"chunk","payload":{"text":"..."}}]}}
 {"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
@@ -183,12 +182,10 @@ answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
 `done` names the model that answered, which a gateway may have chosen.
 
-A turn belongs to the conversation, not to the socket: closing the page or losing
-the connection does not stop the reply being written, and reopening it does not start
-it over. A client that attaches while a turn is running is sent `resume` first,
-carrying the frames of that turn so far — the same frames it would have received
-live — which the page replays before continuing on the live stream. A second client
-takes over from the first as the one being written to.
+A turn belongs to the client watching it: `cancel`, closing the page, a dropped
+connection, or a second client taking over all end it, and what it had written is not
+kept, so the session is left holding the question and no answer. Reconnecting
+therefore shows the conversation without the reply that was in progress.
 
 **REST endpoints**
 
