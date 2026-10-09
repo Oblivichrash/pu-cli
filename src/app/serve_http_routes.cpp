@@ -81,6 +81,10 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
     res.set(http::field::content_type, "application/javascript");
   else
     res.set(http::field::content_type, "application/octet-stream");
+  // The UI is served from a working tree, so a page that reloads has to be able to
+  // pick up a change in it. Without freshness or a validator a browser may reuse what
+  // it already holds, which would show the behaviour of the build before this one.
+  res.set(http::field::cache_control, "no-cache");
   res.prepare_payload();
 }
 
