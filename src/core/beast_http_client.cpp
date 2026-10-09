@@ -10,6 +10,7 @@
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <regex>
 #include <thread>
 
@@ -134,36 +135,72 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   req.body() = body;
 }
 
-// Reads the full response into a string body, then streams it to write_cb in
-// chunks. Returns the HTTP status code, or throws HttpError on failure. On a
-// failure status the body is placed in `error_body` rather than streamed, since
-// the consumer parses a success stream and would discard a message that says what
-// went wrong.
+// Reads the response and hands each piece of the body to write_cb as it arrives.
+// Returns the HTTP status code, or throws HttpError on failure. On a failure status
+// the body is collected into `error_body` rather than streamed, since the consumer
+// parses a success stream and would discard a message that says what went wrong.
+//
+// The body is read in bounded pieces rather than whole, because the producer writes
+// an SSE answer over the life of the request: reading it to the end before passing
+// any of it on collapses the stream into a single delivery, and every layer
+// downstream then sees the reply arrive at once — so a page cannot show it growing,
+// a stop has nothing left to interrupt, and the only thing streaming about it is
+// the name. `read_some` fills the piece it is given and reports `need_buffer` when
+// it is full, which is the normal way for the body to continue rather than an error.
 template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
-                        std::string& error_body, CancelToken /*cancel_token*/) {
-  beast::http::response_parser<beast::http::string_body> parser;
+                        std::string& error_body, CancelToken cancel_token) {
+  beast::http::response_parser<beast::http::buffer_body> parser;
   parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
 
   beast::error_code ec;
-  beast::http::read(stream, buffer, parser, ec);
+  beast::http::read_header(stream, buffer, parser, ec);
   if (ec) {
     throw HttpError("HTTP read error: " + ec.message());
   }
 
   const unsigned status = parser.get().result_int();
-  auto& res_body = parser.get().body();
-  if (res_body.empty()) return status;
+  const bool failure = status >= 400;
 
-  if (status >= 400) {
-    error_body = res_body;
-    return status;
+  char piece[16 * 1024];
+  std::string collected;
+  while (!parser.is_done()) {
+    parser.get().body().data = piece;
+    parser.get().body().size = sizeof(piece);
+
+    beast::http::read_some(stream, buffer, parser, ec);
+    if (ec == beast::http::error::need_buffer) {
+      ec = {};
+    } else if (ec) {
+      throw HttpError("HTTP read error: " + ec.message());
+    }
+
+    const std::size_t produced = sizeof(piece) - parser.get().body().size;
+    if (produced == 0) continue;
+
+    if (failure) {
+      // Enough of a failure body to explain it; the rest is drained rather than
+      // kept, since the summary keeps a line of it and not a transcript.
+      constexpr std::size_t kMaxErrorBody = 64 * 1024;
+      if (collected.size() < kMaxErrorBody) {
+        collected.append(piece, std::min(produced, kMaxErrorBody - collected.size()));
+      }
+      continue;
+    }
+
+    const size_t consumed = write_cb(piece, produced);
+    if (consumed == 0) {
+      throw HttpError("Streaming aborted by consumer");
+    }
+    // A stop asked for while the body is still arriving ends the request here. The
+    // consumer's callback is only reached once per read, so a stream that has gone
+    // quiet would otherwise hold a stop until the producer says something.
+    if (cancel_token && cancel_token->load(std::memory_order_acquire)) {
+      throw HttpError("Request cancelled");
+    }
   }
 
-  const size_t consumed = write_cb(res_body.data(), res_body.size());
-  if (consumed == 0) {
-    throw HttpError("Streaming aborted by consumer");
-  }
+  if (failure) error_body = std::move(collected);
   return status;
 }
 

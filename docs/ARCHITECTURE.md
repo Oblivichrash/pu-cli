@@ -139,8 +139,9 @@ Key responsibilities:
 2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
    accepted connection is handled on a detached thread.
 3. A plain HTTP request is dispatched to the static/REST routes; a request with a
-   WebSocket upgrade on `/ws` is accepted and replaces any previously active
-   WebSocket session.
+   WebSocket upgrade on `/ws` is accepted and takes over as the client being written
+   to, replacing any earlier one. What that earlier client was watching is not
+   affected: see [WebSocket streaming](#websocket-streaming).
 4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
    spawns a worker thread that runs `Runtime::ProcessInput` under the shared
    `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
@@ -180,10 +181,23 @@ RebuildToolbox(agent)
 ### Cancel token
 
 A `CancelToken` threads through the request stack from `Runtime::ProcessInput`
-down to the HTTP stream; the provider polls it between chunks, so a cancellation
-surfaces quickly. In `pu serve` the active WebSocket session owns it — a `cancel`
-message or a dropped connection sets it. The turn then ends with neither a reply
-nor an error.
+down to the HTTP stream; the provider polls it between chunks and the transport
+between reads of the body, so a cancellation surfaces quickly even from a stream
+that has gone quiet. In `pu serve` it is set only by a `cancel` message: the token
+belongs to the chat, not to the connection, so a client that goes away — or is
+replaced by another — leaves the turn it was watching running. The turn then ends
+with neither a reply nor an error.
+
+### HTTP streaming
+
+A provider's answer arrives as an SSE body the producer writes over the life of the
+request, and `BeastHttpClient::StreamResponse` reads it the way it is written: the
+header first, then the body in bounded pieces, each handed to the line parser as it
+lands. Reading the body to its end before parsing any of it collapses the stream into
+one delivery at the end, and every layer above is then streaming in name only — a
+page cannot show a reply growing, and a stop has nothing left to interrupt. The
+failure path is the exception: an error body is collected whole, because the message
+that says what went wrong is in it.
 
 ### WebSocket streaming
 
@@ -195,6 +209,15 @@ keyed by the tool call `id`. Commands and non-streaming backends deliver their
 full text as a single chunk frame. The frame schema and client-side rendering
 are documented in [README](../README.md#web-api) and implemented in
 `web/app.js`.
+
+The turn belongs to the chat rather than to the socket, and every frame it produces
+is recorded while it is in flight. A client that attaches to a running turn — a
+reloaded page, a reconnected one — is therefore sent `{"type":"resume"}` carrying
+those frames before anything new, so the reply is drawn from its beginning under the
+history it continues and then goes on streaming live. That recording is what makes a
+reload a way to come back to a reply rather than a way to end it, and it is why a
+second client takes over the first instead of joining it: both of them are watching
+the same single turn.
 
 ## Provider Differences
 
@@ -250,6 +273,15 @@ Browser: WebSocket onmessage → parse JSON → append token to Markdown rendere
 
 Cancellation:
 Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
+
+A client that arrives while a turn is running (a reload):
+Browser ──WebSocket (/ws)──► handler takes over as the client
+     │  the turn in flight is left alone
+     ▼
+Server → {"type":"resume","payload":{"frames":[...]}}   what the turn has said so far
+     │
+     ▼
+Browser: replays those frames, then continues on the live stream
 ```
 
 ---

@@ -413,6 +413,67 @@ function handleNotice(payload) {
   if (text) createSystemMessage(text);
 }
 
+// One frame from the server, from wherever it came: the live stream, or the replay
+// that arrives when this page attached to a turn that was already running. Both
+// travel this path so that a resumed reply is built exactly as a streamed one is,
+// rather than by a second renderer that would drift from it.
+function dispatchFrame(frame) {
+  switch (frame.type) {
+    case "tool_start":
+      handleToolStart(frame.payload);
+      break;
+    case "tool_end":
+      handleToolEnd(frame.payload);
+      break;
+    case "chunk":
+      handleChunk(frame.payload);
+      break;
+    case "thinking":
+      handleThinking(frame.payload);
+      break;
+    case "done":
+      handleDone(frame.payload);
+      break;
+    case "error":
+      handleError(frame.payload);
+      break;
+    case "notice":
+      handleNotice(frame.payload);
+      break;
+    case "resume":
+      handleResume(frame.payload);
+      break;
+    default:
+      break;
+  }
+}
+
+// A turn was already running when this page attached: a reload, a reconnect, or a
+// first look at work in progress. The server hands over what that turn has said so
+// far, which is replayed below and then continues live — the reply is picked up
+// rather than started over, and nothing that was written while this page was away is
+// missing from it.
+//
+// On the page's first load the frames wait for the history: the reply belongs under
+// the conversation it continues, and the history is what draws the part above it.
+let resumeFrames = null;
+let initialHistoryLoaded = false;
+
+function handleResume(payload) {
+  const frames = payload && Array.isArray(payload.frames) ? payload.frames : [];
+  if (!initialHistoryLoaded) {
+    resumeFrames = frames;
+    return;
+  }
+  applyResume(frames);
+}
+
+function applyResume(frames) {
+  startAssistantMessage();
+  setSendButtonState(true);
+  for (const frame of frames) dispatchFrame(frame);
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws`;
@@ -426,36 +487,13 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
-
-    switch (data.type) {
-      case "tool_start":
-        handleToolStart(data.payload);
-        break;
-      case "tool_end":
-        handleToolEnd(data.payload);
-        break;
-      case "chunk":
-        handleChunk(data.payload);
-        break;
-      case "thinking":
-        handleThinking(data.payload);
-        break;
-      case "done":
-        handleDone(data.payload);
-        break;
-      case "error":
-        handleError(data.payload);
-        break;
-      case "notice":
-        handleNotice(data.payload);
-        break;
-      default:
-        break;
-    }
+    dispatchFrame(data);
   };
 
-  // A run interrupted by a drop keeps the message it was given, so the length
-  // is read back even though no reply arrived; the socket then reconnects.
+  // The socket is gone, so the reply drawn here is taken down with it. The turn is
+  // not: it is still running on the server, and reconnecting hands back what it has
+  // said, which draws that reply again from its beginning. The message it was given
+  // stays as it is, so the length is read back even though no answer is on screen.
   ws.onclose = () => {
     if (isStreaming) {
       removeCurrentAssistantMessage();
@@ -699,4 +737,12 @@ connectWebSocket();
   await loadAgents();
   await loadSession();
   await loadHistory();
+  // Only now is a reply that was already being written drawn: it belongs under the
+  // conversation it continues, and the history above it has to be there first.
+  initialHistoryLoaded = true;
+  if (resumeFrames) {
+    const frames = resumeFrames;
+    resumeFrames = null;
+    applyResume(frames);
+  }
 })();

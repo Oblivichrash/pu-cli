@@ -93,16 +93,19 @@ int RunServe(const std::string& host, int port, Runtime& runtime) {
   ioc.stop();
   if (ioc_thread.joinable()) ioc_thread.join();
 
-  if (active_ws->running) {
+  // Leaving: the turn, if one is running, and the client, if one is listening, both
+  // belong to this process and go down with it. The socket is closed rather than
+  // shut down politely, because a reader may be blocked on it and this thread is not
+  // going to wait for a closing handshake that nobody is left to answer.
+  std::shared_ptr<websocket::stream<tcp::socket>> client;
+  {
+    std::lock_guard<std::mutex> lock(active_ws->mtx);
     active_ws->cancel_token->store(true);
-    if (active_ws->worker_thread.joinable()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
-      active_ws->worker_thread.detach();
-    }
-    if (active_ws->ws && active_ws->ws->is_open()) {
-      beast::error_code ec;
-      active_ws->ws->close(websocket::close_code::normal, ec);
-    }
+    client = std::move(active_ws->client);
+  }
+  if (client) {
+    beast::error_code client_ec;
+    beast::get_lowest_layer(*client).close(client_ec);
   }
 
   runtime.Shutdown();
