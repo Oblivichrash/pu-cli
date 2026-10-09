@@ -4,21 +4,49 @@
 #include <string>
 #include <vector>
 
-// The facts about the CodeBuddy cloud gateway that the rest of the code would
-// otherwise have to repeat. Everything here was observed against a real account;
-// `docs/design/codebuddy-cloud-api.md` records the observations.
+#include "pu/core/base.hpp"
 
 namespace pu::llm {
 
-// Where the gateway lives. The provider appends "/chat/completions", so this is
-// the path up to and including the version segment.
+// The gateway's path up to and including the version segment: the provider appends
+// "/chat/completions".
 inline constexpr const char* kCodeBuddyHost = "https://copilot.tencent.com/v2";
 
-// The headers a request is sent with: the values the installed client sends, quoted,
-// and the only combination known to be accepted — which of them the server actually
-// requires has not been isolated. The correlation ids are generated per call, because
-// the gateway groups a conversation by them while the conversation itself travels in
-// `messages`.
-std::vector<std::string> CodeBuddyHeaders();
+// The headers the installed client sends, quoted; which the server requires has not been
+// isolated, and the correlation ids are generated per call.
+inline std::vector<std::string> CodeBuddyHeaders() {
+  constexpr const char* kClientVersion = "1.0.7";
+  const std::string version = kClientVersion;
+  // uuid::Generate is hyphenated; the client sends a bare 32-character hex id where the
+  // value is not a uuid.
+  const auto hex_id = [] {
+    std::string hex;
+    hex.reserve(32);
+    for (const char c : uuid::Generate()) {
+      if (c != '-') hex += c;
+    }
+    return hex;
+  };
+  return {
+      "X-Requested-With: XMLHttpRequest",
+      "X-Domain: www.codebuddy.ai",
+      "X-Product: SaaS",
+      "X-Agent-Intent: craft",
+      "X-IDE-Type: CLI",
+      "X-IDE-Name: CLI",
+      "X-IDE-Version: " + version,
+      "User-Agent: CLI/" + version + " CodeBuddy/" + version,
+      "X-Conversation-ID: " + uuid::Generate(),
+      "X-Conversation-Request-ID: " + hex_id(),
+      "X-Conversation-Message-ID: " + hex_id(),
+      "X-Request-ID: " + hex_id(),
+      // The client sends its account's user id here; pu-cli has no identity of its own to
+      // offer, and the gateway accepted a generated one.
+      "X-User-Id: " + uuid::Generate(),
+      "x-stainless-lang: js",
+      "x-stainless-package-version: 5.10.1",
+      "x-stainless-runtime: node",
+  };
+}
 
 }  // namespace pu::llm

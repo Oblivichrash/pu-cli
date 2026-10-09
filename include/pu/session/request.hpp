@@ -1,35 +1,81 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The request view: the message list a provider receives for one turn.
-//
-// It lives in the session layer rather than in context/ because it renders the
-// legacy ChatMessage that LLMProvider still requires, and that conversion is the
-// compatibility seam. A pure view over the graph needs no provider, so it is
-// testable on its own.
-
 #include <string>
 #include <vector>
+
+#include <boost/json.hpp>
 
 #include "pu/context/graph.hpp"
 #include "pu/llm/llm_provider.hpp"
 
+// The message list a provider receives for one turn; it lives in the session layer because
+// rendering the legacy ChatMessage is the compatibility seam.
 namespace pu::session {
 
-// Supplied by the caller rather than stored, so that what reaches the model
-// depends only on the conversation plus these named inputs.
+// Supplied by the caller rather than stored, so what reaches the model depends only on the
+// conversation plus these.
 struct RequestInputs {
   std::string system_prompt;  // the agent's configured prompt
   std::string environment;    // generated context: OS, policy, guidelines
 };
 
-// Renders one stored node as the message a provider understands. Also used by
-// the transcript for its history, so both views cannot drift apart.
-ChatMessage RenderMessage(const context::MessageNode& node, int position);
+// Used by the transcript too, so the two views of a stored node cannot drift apart.
+inline ChatMessage RenderMessage(const context::MessageNode& node, int position) {
+  ChatMessage msg;
+  msg.id = position;
+  msg.timestamp = node.timestamp;
 
-// The messages for the current turn: the system inputs first, then the stored
-// chain in order, so the request is exactly the conversation as it stands.
-std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
-                                          const RequestInputs& inputs);
+  if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
+    msg.role = context::kUserRole;
+    msg.content = user->content;
+  } else if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
+    msg.role = context::kAssistantRole;
+    msg.content = assistant->content;
+    if (assistant->reasoning) msg.reasoning_content = assistant->reasoning->raw_json;
+    if (!assistant->tool_calls.empty()) {
+      boost::json::array calls;
+      for (const context::ToolCallRecord& record : assistant->tool_calls) {
+        calls.push_back(context::ToolCallToJson(record));
+      }
+      msg.tool_calls = std::move(calls);
+    }
+  } else if (const auto* system = std::get_if<context::SystemPayload>(&node.payload)) {
+    msg.role = context::kSystemRole;
+    msg.content = system->content;
+  } else {
+    const context::ToolPayload& receipt = std::get<context::ToolPayload>(node.payload);
+    msg.role = context::kToolRole;
+    msg.content = receipt.content;
+    msg.tool_name = receipt.tool_name;
+    msg.tool_call_id = receipt.tool_call_id;
+  }
+
+  return msg;
+}
+
+// The system inputs first, then the stored chain in order.
+inline std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
+                                                 const RequestInputs& inputs) {
+  std::vector<ChatMessage> messages;
+
+  std::string system_text = inputs.system_prompt;
+  if (!inputs.environment.empty()) {
+    if (!system_text.empty()) system_text += "\n\n";
+    system_text += inputs.environment;
+  }
+  if (!system_text.empty()) {
+    ChatMessage system;
+    system.role = context::kSystemRole;
+    system.content = std::move(system_text);
+    messages.push_back(std::move(system));
+  }
+
+  int position = static_cast<int>(messages.size()) + 1;
+  for (const context::MessageNode* node : graph.Chain()) {
+    messages.push_back(RenderMessage(*node, position++));
+  }
+  return messages;
+}
 
 }  // namespace pu::session

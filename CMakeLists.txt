@@ -35,14 +35,11 @@ add_library(pu_lib STATIC
     src/context/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
-    src/session/request.cpp
     src/session/session.cpp
     src/core/logging.cpp
-    src/llm/codebuddy.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/projection.cpp
-    src/llm/streaming_json_parser.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
@@ -65,11 +62,9 @@ add_library(pu::lib ALIAS pu_lib)
 add_library(pu_agent STATIC
     src/config/agents.cpp
     src/config/backend.cpp
-    src/agent_manager.cpp
     src/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp
-    src/tools/mcp_tool.cpp
     src/runtime.cpp
     src/command_router.cpp
 )

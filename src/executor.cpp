@@ -4,7 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/session/request.hpp"
-#include "pu/tools/tool_result.hpp"
+#include "pu/tools/toolbox.hpp"
 
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
@@ -24,9 +24,9 @@ namespace pu {
 
 namespace {
 
-// Why a reply stopped, when the reason is one the user has to be told about. An
-// answer cut off at the token limit reads as the model's whole answer otherwise,
-// and what fixes it is a setting rather than another try.
+// Why a reply stopped, when the user has to be told: an answer cut off at the token limit
+// reads as the model's whole answer otherwise.
+
 std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason.empty()) return "";
   if (finish_reason == "length") {
@@ -249,10 +249,8 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         break;
       }
     } catch (const std::exception& e) {
-      // A stop the caller asked for is not a failure: the stream ended because the
-      // request was withdrawn, so the turn ends here with nothing to report. What
-      // arrived before the stop is not an answer either, and storing it would make
-      // the next request read half a sentence as the model's finished reply.
+      // A stop the caller asked for is not a failure: the turn ends with nothing to
+      // report, and what arrived before it is not an answer either, so it is not stored.
       if ((cancel_token && cancel_token->load(std::memory_order_acquire)) ||
           platform::IsInterrupted()) {
         spdlog::debug("Request stopped by the caller: {}", e.what());
@@ -261,9 +259,8 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);
-      // The failure is reported to the caller and not stored: a model never said
-      // it, and appending it would grow the conversation every time a request is
-      // refused, which for an over-length request makes the next one worse.
+      // Reported and not stored: a model never said it, and appending it would grow the
+      // conversation every time a request is refused.
       break;
     }
 
@@ -297,12 +294,10 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
     for (const auto& call : chat_result.tool_calls) {
-      // An unnamed call runs like any other: the toolbox answers it with an error,
-      // which keeps the call and its result together in the store. A call the store
-      // holds without its answer is a conversation the provider refuses to continue.
+      // An unnamed call runs like any other: the toolbox answers it with an error, which
+      // keeps the call and its result together in the store.
       ++result.tool_call_count;
 
-      // Notify the UI/streaming layer that a tool is about to run.
       if (tool_callbacks.on_start) {
         tool_callbacks.on_start(call.id, call.name, call.arguments);
       }
@@ -324,7 +319,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       ClearLogToolName();
       ClearLogDurationMs();
 
-      // Notify the UI/streaming layer that the tool finished (success or error).
       if (tool_callbacks.on_end) {
         auto parsed = tools::ParseToolResult(tool_result);
         if (parsed.valid) {
@@ -355,9 +349,8 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     return result;
   }
 
-  // Only diagnose an empty response when nothing else already failed: a request
-  // that was refused returns no content either, and replacing its reason with
-  // this generic one is what hid an over-length or unauthorised request.
+  // Only diagnose an empty response when nothing else already failed: a refused request
+  // returns no content either, and this generic reason is what hid its real one.
   if (!result.has_error && result.content.empty() && result.tool_call_count == 0) {
     result.has_error = true;
     result.error_message =
