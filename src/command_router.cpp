@@ -3,39 +3,22 @@
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
-#include "pu/llm/codebuddy.hpp"
-#include "pu/llm/ollama_provider.hpp"
-#include "pu/llm/openai_provider.hpp"
 #include "pu/runtime.hpp"
 
-#include <algorithm>
-#include <chrono>
 #include <sstream>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <regex>
 
 namespace pu {
 
 namespace {
 
-std::string DefaultHostFor(config::BackendType type) {
-  switch (type) {
-    case config::BackendType::kOllama:
-      return OllamaProvider::Config{}.host;
-    case config::BackendType::kOpenAI:
-      return OpenAIProvider::Config{}.host;
-    case config::BackendType::kCodeBuddy:
-      return llm::kCodeBuddyHost;
-  }
-  return "";
-}
+constexpr const char* kBackendHelp =
+    "  /backend <agent_name>  Switch to a predefined agent\n"
+    "  /backend <type> <model> [host] [api_key]  Adopt a backend as an agent of its type\n";
 
 }  // namespace
 
-bool CommandRouter::RequireMinArgs(const std::vector<std::string>& args, size_t min,
-                                   const std::string& usage, std::string& output) const {
+bool CommandRouter::RequireMinArgs(Args args, size_t min, const std::string& usage,
+                                   Output output) const {
   if (args.size() < min) {
     output = usage;
     return true;
@@ -47,32 +30,50 @@ std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string
   return "Usage: " + cmd + " " + usage;
 }
 
-CommandRouter::Registry CommandRouter::BuildRegistry() {
-  Registry reg;
-  auto add = [&reg](const std::string& cmd, CommandHandler handler, const std::string& help) {
-    reg.commands[cmd] = CommandEntry{handler, help};
-    reg.order.push_back(cmd);
-  };
-  add("/help", &CommandRouter::HandleHelp, "  /help                  Show this help message\n");
-  add("/backend", &CommandRouter::HandleBackend,
-      "  /backend <agent_name>  Switch to a predefined agent\n"
-      "  /backend <type> <model> [host] [api_key]  Adopt a backend as an agent of its type\n");
-  add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
-  add("/clear", &CommandRouter::HandleClear,
-      "  /clear                 Clear conversation history\n");
-  add("/rewind", &CommandRouter::HandleRewind,
-      "  /rewind <turn>         Step back to before a turn; the next message replaces it\n");
-  add("/thinking", &CommandRouter::HandleThinking,
-      "  /thinking              Show the thinking level this session asks for\n"
-      "  /thinking <level>      none, low, medium, high, or default (the backend decides)\n"
-      "  /thinking auto         Follow the agent's configuration again\n");
-  return reg;
+const std::vector<std::string>& CommandRouter::CommandOrder() {
+  static const std::vector<std::string> order = {"/help",     "/backend", "/agents",
+                                                 "/clear",    "/rewind",  "/thinking"};
+  return order;
 }
 
-const CommandRouter::Registry CommandRouter::kRegistry = CommandRouter::BuildRegistry();
+const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() {
+  static const std::unordered_map<std::string, Command> commands = {
+      {"/help",
+       {"  /help                  Show this help message\n",
+        [this](Args, Session&, Output output) {
+          output = GetHelpText();
+          return true;
+        }}},
+      {"/backend",
+       {kBackendHelp,
+        [this](Args args, Session&, Output output) { return HandleBackend(args, output); }}},
+      {"/agents",
+       {"  /agents                List available agents\n",
+        [this](Args args, Session& session, Output output) {
+          return HandleAgents(args, session, output);
+        }}},
+      {"/clear",
+       {"  /clear                 Clear conversation history\n",
+        [](Args, Session& session, Output output) {
+          session.GetConversation().ClearHistory();
+          output = "Conversation history cleared.";
+          return true;
+        }}},
+      {"/rewind",
+       {"  /rewind <turn>         Step back to before a turn; the next message replaces it\n",
+        [this](Args args, Session& session, Output output) {
+          return HandleRewind(args, session, output);
+        }}},
+      {"/thinking",
+       {"  /thinking              Show the thinking level this session asks for\n"
+        "  /thinking <level>      none, low, medium, high, or default (the backend decides)\n"
+        "  /thinking auto         Follow the agent's configuration again\n",
+        [this](Args args, Session&, Output output) { return HandleThinking(args, output); }}},
+  };
+  return commands;
+}
 
-CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
-    : manager_(manager), runtime_(runtime) {}
+CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   const std::string trimmed(text::Trim(input));
@@ -92,9 +93,8 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
     }
   }
 
-  auto it = kRegistry.commands.find(cmd);
-  if (it != kRegistry.commands.end()) {
-    return (this->*(it->second.handler))(args, session, output);
+  if (const auto it = Commands().find(cmd); it != Commands().end()) {
+    return it->second.run(args, session, output);
   }
 
   if (cmd == "/exit" || cmd == "/quit") {
@@ -108,21 +108,14 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
 std::string CommandRouter::GetHelpText() {
   std::ostringstream oss;
   oss << "Available commands:\n";
-  for (const auto& cmd : kRegistry.order) {
-    oss << kRegistry.commands.at(cmd).help;
+  for (const auto& cmd : CommandOrder()) {
+    oss << Commands().at(cmd).help;
   }
   oss << "  /exit, /quit           Exit the chat\n";
   return oss.str();
 }
 
-bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session& /*session*/,
-                               std::string& output) {
-  output = GetHelpText();
-  return true;
-}
-
-bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& /*session*/,
-                                  std::string& output) {
+bool CommandRouter::HandleBackend(Args args, Output output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
     output = "Current backend: " + std::string(config::BackendTypeName(cfg.type)) +
@@ -130,7 +123,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
     return true;
   }
 
-  const config::AgentEntry* agent_config = manager_.GetAgentConfig(args[0]);
+  const config::AgentEntry* agent_config = runtime_.GetAgentManager().GetAgentConfig(args[0]);
   if (agent_config) {
     try {
       runtime_.SwitchAgent(*agent_config);
@@ -146,22 +139,18 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
-  config::BackendConfig new_cfg;
   const auto type = config::ParseBackendType(args[0]);
   if (!type) {
-    output = "Unknown type: " + args[0] + ". Use 'ollama', 'openai' or 'codebuddy'.";
+    output = "Unknown type: " + args[0] + ". Use " + config::BackendTypeNames() + ".";
     return true;
   }
+
+  config::BackendConfig new_cfg;
   new_cfg.type = *type;
   new_cfg.model = args[1];
-  if (args.size() > 2) {
-    new_cfg.host = args[2];
-  } else {
-    new_cfg.host = DefaultHostFor(new_cfg.type);
-  }
-  if (args.size() > 3) {
-    new_cfg.api_key = args[3];
-  }
+  if (args.size() > 2) new_cfg.host = args[2];
+  if (args.size() > 3) new_cfg.api_key = args[3];
+  if (new_cfg.host.empty()) new_cfg.host = config::DefaultHostFor(*type);
 
   try {
     runtime_.SwitchBackend(new_cfg);
@@ -176,16 +165,14 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   return true;
 }
 
-bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Session& session,
-                                 std::string& output) {
-  auto names = manager_.GetAgentNames();
-  std::string current = session.GetSpec().agent_name;
+bool CommandRouter::HandleAgents(Args, Session& session, Output output) {
+  const std::string current = session.GetSpec().agent_name;
   std::ostringstream oss;
   oss << "Available agents:\n";
-  for (const auto& name : names) {
+  for (const auto& name : runtime_.GetAgentManager().GetAgentNames()) {
     oss << "  " << name;
     if (name == current) oss << " (active)";
-    const auto* cfg = manager_.GetAgentConfig(name);
+    const auto* cfg = runtime_.GetAgentManager().GetAgentConfig(name);
     if (cfg && !cfg->description.empty()) {
       oss << " - " << cfg->description;
     }
@@ -195,15 +182,7 @@ bool CommandRouter::HandleAgents(const std::vector<std::string>& /*args*/, Sessi
   return true;
 }
 
-bool CommandRouter::HandleClear(const std::vector<std::string>& /*args*/, Session& session,
-                                std::string& output) {
-  session.GetConversation().ClearHistory();
-  output = "Conversation history cleared.";
-  return true;
-}
-
-bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& session,
-                                 std::string& output) {
+bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
   if (RequireMinArgs(args, 1, FormatUsage("/rewind", "<turn>"), output)) return true;
 
   size_t turn = 0;
@@ -227,8 +206,7 @@ bool CommandRouter::HandleRewind(const std::vector<std::string>& args, Session& 
   return true;
 }
 
-bool CommandRouter::HandleThinking(const std::vector<std::string>& args, Session& /*session*/,
-                                   std::string& output) {
+bool CommandRouter::HandleThinking(Args args, Output output) {
   if (!runtime_.SupportsThinkingLevel()) {
     output = "This backend does not carry a thinking level.";
     return true;

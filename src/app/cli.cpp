@@ -15,7 +15,7 @@ namespace pu::cli {
 
 namespace {
 
-void PrintChatHelp() { std::cout << CommandRouter::GetHelpText() << "\n"; }
+void PrintChatHelp(Runtime& runtime) { std::cout << runtime.HelpText() << "\n"; }
 
 void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
@@ -78,7 +78,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
       if (result.has_error) {
         if (is_command && result.error_message.empty()) {
           std::cout << "Unknown command. ";
-          PrintChatHelp();
+          PrintChatHelp(runtime);
         } else {
           spdlog::error("{}",
                         result.error_message.empty() ? "Processing failed" : result.error_message);

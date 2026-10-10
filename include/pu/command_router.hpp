@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "pu/agent_manager.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
@@ -14,42 +14,33 @@ class Runtime;
 
 class CommandRouter {
  public:
-  using CommandHandler = bool (CommandRouter::*)(const std::vector<std::string>&, Session&,
-                                                 std::string&);
-
-  CommandRouter(AgentManager& manager, Runtime& runtime);
+  explicit CommandRouter(Runtime& runtime);
 
   bool Route(const std::string& input, Session& session, std::string& output);
 
-  static std::string GetHelpText();
+  std::string GetHelpText();
 
  private:
-  struct CommandEntry {
-    CommandHandler handler;
+  using Args = const std::vector<std::string>&;
+  using Output = std::string&;
+
+  struct Command {
     std::string help;
+    std::function<bool(Args, Session&, Output)> run;
   };
 
-  struct Registry {
-    std::unordered_map<std::string, CommandEntry> commands;
-    std::vector<std::string> order;
-  };
+  static const std::vector<std::string>& CommandOrder();
+  const std::unordered_map<std::string, Command>& Commands();
 
-  static Registry BuildRegistry();
-  static const Registry kRegistry;
-
-  bool RequireMinArgs(const std::vector<std::string>& args, size_t min, const std::string& usage,
-                      std::string& output) const;
+  bool RequireMinArgs(Args args, size_t min, const std::string& usage, Output output) const;
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
-  bool HandleHelp(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleBackend(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleAgents(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleClear(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleRewind(const std::vector<std::string>& args, Session& session, std::string& output);
-  bool HandleThinking(const std::vector<std::string>& args, Session& session, std::string& output);
+  bool HandleBackend(Args args, Output output);
+  bool HandleAgents(Args args, Session& session, Output output);
+  bool HandleRewind(Args args, Session& session, Output output);
+  bool HandleThinking(Args args, Output output);
 
-  AgentManager& manager_;
   Runtime& runtime_;
 };
 

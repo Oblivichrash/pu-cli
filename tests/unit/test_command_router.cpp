@@ -35,7 +35,7 @@ struct RouterFixture {
     cwd = std::make_unique<pu::tests::ScopedWorkingDir>(root.Path());
 
     runtime.Initialize();
-    router = std::make_unique<CommandRouter>(runtime.GetAgentManager(), runtime);
+    router = std::make_unique<CommandRouter>(runtime);
   }
 
   bool Route(const std::string& input, std::string& output) {

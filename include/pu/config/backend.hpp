@@ -16,7 +16,22 @@ namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
 
+inline constexpr BackendType kBackendTypes[] = {BackendType::kOllama, BackendType::kOpenAI,
+                                                BackendType::kCodeBuddy};
+
 inline bool CarriesThinkingLevel(BackendType type) { return type != BackendType::kOllama; }
+
+inline std::string DefaultHostFor(BackendType type) {
+  switch (type) {
+    case BackendType::kOllama:
+      return "http://localhost:11434";
+    case BackendType::kOpenAI:
+      return "https://api.openai.com/v1";
+    case BackendType::kCodeBuddy:
+      return "https://copilot.tencent.com/v2";
+  }
+  return "";
+}
 
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
@@ -39,6 +54,15 @@ inline const char* BackendTypeName(BackendType type) {
       return "codebuddy";
   }
   return "ollama";
+}
+
+inline std::string BackendTypeNames() {
+  std::string names;
+  for (const BackendType type : kBackendTypes) {
+    if (!names.empty()) names += ", ";
+    names += BackendTypeName(type);
+  }
+  return names;
 }
 
 inline std::optional<BackendType> ParseBackendType(std::string_view name) {

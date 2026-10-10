@@ -55,6 +55,8 @@ class Runtime {
   }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+  std::string HelpText();
+
   const config::AgentEntry& ActiveAgent() const;
 
   bool RewindBefore(size_t turn);
@@ -69,6 +71,7 @@ class Runtime {
 
  private:
   config::BackendConfig ConfiguredBackend() const;
+  void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void RegisterBuiltinTools(const config::AgentEntry& agent);

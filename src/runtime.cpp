@@ -102,7 +102,7 @@ void Runtime::Initialize(const std::string& config_path) {
   agent_manager_->SetActiveAgent(active_agent);
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
-  command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
+  command_router_ = std::make_unique<CommandRouter>(*this);
 
   executor_ = std::make_unique<Executor>();
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
@@ -169,6 +169,11 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
 
 const config::AgentEntry& Runtime::ActiveAgent() const {
   return *agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
+}
+
+std::string Runtime::HelpText() {
+  assert(command_router_ && "Initialize() must run before any help query");
+  return command_router_->GetHelpText();
 }
 
 config::BackendConfig Runtime::ConfiguredBackend() const {
@@ -313,19 +318,21 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   agent_manager_->SetActiveAgent(agent.name);
 }
 
+void Runtime::Activate(const config::AgentEntry& agent) {
+  RebuildToolbox(agent);
+  if (!current_session_) return;
+  try {
+    current_session_->SetAgent(agent.name);
+  } catch (const std::exception& e) {
+    spdlog::warn("Failed to sync session config: {}", e.what());
+    return;
+  }
+  SaveCurrentSession();
+}
+
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   if (agent_manager_->GetActiveAgent() == new_agent.name) return;
-  RebuildToolbox(new_agent);
-
-  if (current_session_) {
-    try {
-      current_session_->SetAgent(new_agent.name);
-    } catch (const std::exception& e) {
-      spdlog::warn("Failed to sync session config: {}", e.what());
-      return;
-    }
-    SaveCurrentSession();
-  }
+  Activate(new_agent);
 }
 
 void Runtime::SwitchBackend(const config::BackendConfig& backend) {
@@ -335,18 +342,7 @@ void Runtime::SwitchBackend(const config::BackendConfig& backend) {
   transient.description.clear();
 
   agent_manager_->Adopt(transient);
-  if (agent_manager_->GetActiveAgent() == transient.name) return;
-  RebuildToolbox(transient);
-
-  if (current_session_) {
-    try {
-      current_session_->SetAgent(transient.name);
-    } catch (const std::exception& e) {
-      spdlog::warn("Failed to sync session config: {}", e.what());
-      return;
-    }
-    SaveCurrentSession();
-  }
+  Activate(transient);
 }
 
 }  // namespace pu
