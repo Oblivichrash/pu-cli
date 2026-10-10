@@ -801,15 +801,16 @@ function groupHistory(history) {
 
     const bubble = currentReply();
 
-    if (msg.reasoning_content) {
+    if (Array.isArray(msg.reasoning) && msg.reasoning.length > 0) {
       // One thinking block per reply, above the rest, where the streaming path puts it and
-      // appends every iteration's reasoning.
+      // appends every iteration's reasoning. Blocks are concatenated back into one blob.
+      const text = msg.reasoning.map((block) => block.text || "").join("");
       let thinking = bubble.blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
       if (!thinking) {
         thinking = { type: BLOCK_TYPES.THINKING, content: "", collapsed: true };
         bubble.blocks.unshift(thinking);
       }
-      thinking.content += msg.reasoning_content;
+      thinking.content += text;
     }
 
     const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];

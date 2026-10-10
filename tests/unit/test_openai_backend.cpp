@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/llm/openai_provider.hpp"
+#include "pu/llm/projection.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/core/base.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -22,7 +23,7 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
 
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
 
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("model") == "gpt-4o-mini");
@@ -46,7 +47,7 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -65,7 +66,7 @@ TEST_CASE("OpenAIProvider sends the extra headers a gateway asks for", "[openai]
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   bool has_domain = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -99,7 +100,7 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
 
   std::string accumulated;
-  auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
+  auto result = provider.Chat(ChatRequest(history, {}, [&](std::string_view token) { accumulated += token; }));
 
   REQUIRE(result.content == "Hello world");
   REQUIRE_FALSE(result.usage.has_value());
@@ -125,7 +126,7 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("stream_options").at("include_usage") == true);
@@ -150,7 +151,7 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  REQUIRE_THROWS_AS(provider.Chat(history, {}), pu::HttpError);
+  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::HttpError);
 }
 
 TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
@@ -178,7 +179,7 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(history, tools, [](const std::string&) {});
+  auto result = provider.Chat(ChatRequest(history, tools, [](std::string_view) {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].id == "call_1");
@@ -196,7 +197,7 @@ TEST_CASE("OpenAIProvider disables thinking with the marker the none level sends
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(json::HasKey(body, "extra_body"));
@@ -214,7 +215,7 @@ TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE_FALSE(json::HasKey(body, "extra_body"));
@@ -234,7 +235,7 @@ TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") 
     OpenAIProvider provider(config, std::move(mock_http));
 
     std::vector<ChatMessage> history = {{1, "now", "user", "think hard"}};
-    provider.Chat(history, {});
+    provider.Chat(ChatRequest(history, {}));
 
     auto body = boost::json::parse(mock_ptr->last_body);
     REQUIRE(body.at("reasoning_effort") == ThinkingLevelName(level));
@@ -261,7 +262,7 @@ TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]")
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "half");
   REQUIRE(result.finish_reason == "length");
@@ -285,7 +286,7 @@ TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][err
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   try {
-    provider.Chat(history, {});
+    provider.Chat(ChatRequest(history, {}));
     FAIL("an error inside the stream should reach the caller");
   } catch (const std::exception& e) {
     REQUIRE(std::string(e.what()).find("rate limit reached") != std::string::npos);
@@ -309,7 +310,7 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "I cannot help with that");
 }
@@ -332,7 +333,7 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "exec");
@@ -356,7 +357,7 @@ TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[op
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].id == "call_7");
@@ -381,7 +382,7 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "the whole answer");
   REQUIRE(result.finish_reason == "stop");
@@ -407,7 +408,7 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
@@ -436,11 +437,12 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
   std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
   std::string streamed;
   std::string content;
-  auto result = provider.Chat(
-      history, {}, [&](const std::string& token) { content += token; }, nullptr,
-      [&](const std::string& token) { streamed += token; });
+  ChatRequest request(history, {});
+  request.on_content = [&](std::string_view token) { content += token; };
+  request.on_reasoning = [&](std::string_view token) { streamed += token; };
+  auto result = provider.Chat(request);
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
-  REQUIRE(result.reasoning_content == "weighing the options");
+  REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
 }

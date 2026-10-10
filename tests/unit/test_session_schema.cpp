@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "pu/llm/projection.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/session/session.hpp"
@@ -62,14 +63,16 @@ TEST_CASE("A session written by this version loads", "[session][schema]") {
   REQUIRE(restored->GetConversation().GetHistory()[1].content == "hi");
 }
 
-TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[session][schema]") {
+TEST_CASE("A payload stores content as one string and reasoning as ordered blocks",
+          "[session][schema]") {
   Session session;
   session.GetConversation().Append("user", "hello");
 
   ChatMessage assistant;
   assistant.role = context::kAssistantRole;
   assistant.content = "checking";
-  assistant.reasoning_content = R"({"raw":true})";
+  assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"raw":true})")});
+  assistant.reasoning.push_back(ReasoningBlock{"plain", "sig", nullptr});
   session.GetConversation().Append(assistant);
 
   boost::json::value saved = session.Serialize();
@@ -84,8 +87,11 @@ TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[
   }
 
   REQUIRE(assistant_node != nullptr);
-  REQUIRE(assistant_node->at("reasoning").as_object().size() == 1);
-  REQUIRE(assistant_node->at("reasoning").at("raw_json") == R"({"raw":true})");
+  const boost::json::array& blocks = assistant_node->at("reasoning").as_array();
+  REQUIRE(blocks.size() == 2);
+  REQUIRE(blocks[0].at("raw").at("raw") == true);
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("text")) == "plain");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("signature")) == "sig");
 }
 
 TEST_CASE("Every role survives a save and load", "[session][schema]") {
@@ -97,7 +103,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   ChatMessage assistant;
   assistant.role = "assistant";
   assistant.content = "checking";
-  assistant.reasoning_content = "because";
+  assistant.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   assistant.tool_calls =
       boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
   ws.Append(assistant);
@@ -122,7 +128,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   REQUIRE(history.size() == 4);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[1].role == "assistant");
-  REQUIRE(history[1].reasoning_content == "because");
+  REQUIRE(llm::ProjectReasoningText(history[1].reasoning) == "because");
   REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("name") == "ls");
   REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("arguments").at("path") == ".");
   REQUIRE(history[2].role == "tool");

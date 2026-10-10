@@ -18,6 +18,7 @@
 #include "pu/context/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/projection.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/tool.hpp"
@@ -162,8 +163,9 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
         }
         if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;
         if (!msg.tool_name.empty()) item.as_object()["tool_name"] = msg.tool_name;
-        if (!msg.reasoning_content.empty())
-          item.as_object()["reasoning_content"] = msg.reasoning_content;
+        if (!msg.reasoning.empty()) {
+          item.as_object()["reasoning"] = llm::ProjectReasoning(msg.reasoning);
+        }
 
         if (msg.role == context::kToolRole) {
           const tools::ToolResult parsed = tools::ParseToolResult(msg.content);

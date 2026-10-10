@@ -27,7 +27,9 @@ inline ChatMessage RenderMessage(const context::MessageNode& node, int position)
   } else if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
     msg.role = context::kAssistantRole;
     msg.content = assistant->content;
-    if (assistant->reasoning) msg.reasoning_content = assistant->reasoning->raw_json;
+    for (const context::Reasoning& block : assistant->reasoning) {
+      msg.reasoning.push_back(ReasoningBlock{block.text, block.signature, block.raw});
+    }
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
       for (const context::ToolCallRecord& record : assistant->tool_calls) {

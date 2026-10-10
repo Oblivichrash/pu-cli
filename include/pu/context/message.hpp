@@ -25,8 +25,26 @@ inline constexpr const char* kSystemRole = "system";
 inline constexpr const char* kToolRole = "tool";
 
 struct Reasoning {
-  std::string raw_json;
+  std::string text;
+  std::string signature;
+  boost::json::value raw;
 };
+
+inline boost::json::value ReasoningToJson(const Reasoning& reasoning) {
+  boost::json::object out = {{"text", reasoning.text}};
+  if (!reasoning.signature.empty()) out["signature"] = reasoning.signature;
+  if (!reasoning.raw.is_null()) out["raw"] = reasoning.raw;
+  return out;
+}
+
+inline Reasoning ReasoningFromJson(const boost::json::value& value) {
+  if (value.is_string()) return Reasoning{.text = boost::json::value_to<std::string>(value)};
+  Reasoning reasoning;
+  reasoning.text = json::ValueOrDefault<std::string>(value, "text", "");
+  reasoning.signature = json::ValueOrDefault<std::string>(value, "signature", "");
+  if (json::HasKey(value, "raw")) reasoning.raw = value.at("raw");
+  return reasoning;
+}
 
 enum class ToolCallStatus {
   kPending,
@@ -66,7 +84,7 @@ struct UserPayload {
 
 struct AssistantPayload {
   std::string content;
-  std::optional<Reasoning> reasoning;
+  std::vector<Reasoning> reasoning;
   std::vector<ToolCallRecord> tool_calls;
 };
 

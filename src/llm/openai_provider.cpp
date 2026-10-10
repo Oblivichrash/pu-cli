@@ -23,7 +23,8 @@ std::string StreamErrorDetail(const boost::json::value& error) {
 
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kAsStored,
-    .echo_reasoning_content = true,
+    .echoes_reasoning = true,
+    .reasoning_field = "reasoning_content",
     .allows_content_with_tool_calls = false,
     .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
     .tool_calls_carry_type = true,
@@ -48,7 +49,7 @@ std::vector<std::string> OpenAIProvider::Headers() const {
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
   content_.clear();
-  current_reasoning_content_.clear();
+  reasoning_.clear();
   refusal_.clear();
   finish_reason_.clear();
   response_model_.clear();
@@ -57,8 +58,7 @@ void OpenAIProvider::ResetAccumulators() {
 }
 
 std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history,
-                                         const std::vector<ToolDefinition>& tools) const {
-  boost::json::value req = {
+                                         const std::vector<ToolDefinition>& tools) const {  boost::json::value req = {
       {"model", config_.model},
       {"stream", true},
       {"stream_options", {{"include_usage", true}}},
@@ -89,8 +89,7 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
   return boost::json::serialize(req);
 }
 
-void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb) {
+void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
   if (json::HasKey(j, "error")) {
     throw Error("provider error: " + StreamErrorDetail(j.at("error")));
   }
@@ -110,17 +109,13 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
     }
 
     if (piece != nullptr && piece->is_object()) {
-      const std::string content = json::ValueOrDefault<std::string>(*piece, "content", "");
-      if (!content.empty()) {
-        content_ += content;
-        if (content_cb) content_cb(content);
-      }
+      AppendContent(json::ValueOrDefault<std::string>(*piece, "content", ""), request);
 
       const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
       if (!refusal.empty()) refusal_ += refusal;
 
       if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
-        EmitReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")));
+        AppendReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")), request);
       }
 
       if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
@@ -154,10 +149,10 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
     response_model_ = boost::json::value_to<std::string>(j.at("model"));
   }
 
-  if (is_final) FlushPendingToolCalls();
+  if (is_final) FlushPendingToolCalls(request);
 }
 
-void OpenAIProvider::FlushPendingToolCalls() {
+void OpenAIProvider::FlushPendingToolCalls(const ChatRequest& request) {
   for (ToolCallAccumulator& acc : pending_tools_) {
     ToolCall call;
     call.id = acc.id;
@@ -169,13 +164,12 @@ void OpenAIProvider::FlushPendingToolCalls() {
         call.arguments = acc.arguments;
       }
     }
-    tool_calls_.push_back(std::move(call));
+    AppendToolCall(std::move(call), request);
   }
   pending_tools_.clear();
 }
 
-void OpenAIProvider::ParseLine(std::string_view line,
-                               std::function<void(const std::string&)>& content_cb) {
+void OpenAIProvider::ParseLine(std::string_view line, const ChatRequest& request) {
   constexpr std::string_view kDataPrefix = "data: ";
   const std::string_view trimmed = text::Trim(line);
   if (trimmed.empty()) return;
@@ -183,7 +177,7 @@ void OpenAIProvider::ParseLine(std::string_view line,
   const std::string_view data = trimmed.substr(kDataPrefix.size());
   if (data == "[DONE]") {
     boost::json::value done_obj = {{"done", true}};
-    HandleJsonToken(done_obj, content_cb);
+    HandleJsonToken(done_obj, request);
     return;
   }
   boost::json::value j;
@@ -193,11 +187,11 @@ void OpenAIProvider::ParseLine(std::string_view line,
     spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;
   }
-  HandleJsonToken(j, content_cb);
+  HandleJsonToken(j, request);
 }
 
-void OpenAIProvider::FinishStream() {
-  FlushPendingToolCalls();
+void OpenAIProvider::FinishStream(const ChatRequest& request) {
+  FlushPendingToolCalls(request);
   if (content_.empty()) content_ = std::move(refusal_);
 }
 

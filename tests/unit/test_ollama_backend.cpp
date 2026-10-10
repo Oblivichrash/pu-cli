@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/llm/ollama_provider.hpp"
+#include "pu/llm/projection.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -19,7 +20,7 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
 
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
 
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("model") == "llama3.2:1b");
@@ -52,7 +53,7 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   std::string accumulated;
   bool final_received = false;
 
-  auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
+  auto result = provider.Chat(ChatRequest(history, {}, [&](std::string_view token) { accumulated += token; }));
 
   REQUIRE(result.content == "Hello world");
   REQUIRE_FALSE(result.usage.has_value());
@@ -78,7 +79,7 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 21);
@@ -110,7 +111,7 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(history, tools, [](const std::string&) {});
+  auto result = provider.Chat(ChatRequest(history, tools, [](std::string_view) {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "execute_bash");
@@ -132,7 +133,7 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
   tool_msg.tool_call_id = "call_42";
   std::vector<ChatMessage> history = {tool_msg};
 
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("messages").at(0).at("role") == "tool");
@@ -157,7 +158,7 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
   ToolDefinition tool;
   tool.name = "ls";
   tool.parameters = boost::json::object{};
-  provider.Chat(history, {tool});
+  provider.Chat(ChatRequest(history, {tool}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
@@ -183,7 +184,7 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   ToolDefinition tool;
   tool.name = "ls";
   tool.parameters = boost::json::object{};
-  provider.Chat(history, {tool});
+  provider.Chat(ChatRequest(history, {tool}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
@@ -218,7 +219,7 @@ TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]")
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "half");
   REQUIRE(result.finish_reason == "length");
@@ -242,10 +243,38 @@ TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollam
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "think about it"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  REQUIRE(result.reasoning_content == "weighing the options");
+  REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
   REQUIRE(result.content.empty());
+}
+
+TEST_CASE("Reasoning fragments coalesce into one block, a signed one starts a new block",
+          "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "deepseek-r1:7b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    for (const char* fragment : {R"({"message":{"thinking":"weigh"}})", 
+                                 R"({"message":{"thinking":"ing"}})"}) {
+      std::string chunk = std::string(fragment) + "\n";
+      cb(chunk.data(), chunk.size());
+    }
+    std::string last = R"({"message":{"thinking":"done"},"done":true})" + std::string("\n");
+    cb(last.data(), last.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.reasoning.size() == 1);
+  REQUIRE(result.reasoning[0].text == "weighingdone");
 }
 
 TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][error]") {
@@ -265,7 +294,7 @@ TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][err
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   try {
-    provider.Chat(history, {});
+    provider.Chat(ChatRequest(history, {}));
     FAIL("an error inside the stream should reach the caller");
   } catch (const std::exception& e) {
     REQUIRE(std::string(e.what()).find("model not found") != std::string::npos);
@@ -292,7 +321,7 @@ TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.model == "llama3.2:1b");
 }
@@ -320,11 +349,12 @@ TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama
   std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
   std::string streamed;
   std::string content;
-  auto result = provider.Chat(
-      history, {}, [&](const std::string& token) { content += token; }, nullptr,
-      [&](const std::string& token) { streamed += token; });
+  ChatRequest request(history, {});
+  request.on_content = [&](std::string_view token) { content += token; };
+  request.on_reasoning = [&](std::string_view token) { streamed += token; };
+  auto result = provider.Chat(request);
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
-  REQUIRE(result.reasoning_content == "weighing the options");
+  REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
 }

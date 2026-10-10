@@ -18,37 +18,62 @@ std::vector<std::string> StreamingProvider::Headers() const {
   return headers;
 }
 
-ChatResult StreamingProvider::Chat(const std::vector<ChatMessage>& history,
-                                   const std::vector<ToolDefinition>& tools,
-                                   std::function<void(const std::string&)> content_callback,
-                                   CancelToken cancel_token,
-                                   std::function<void(const std::string&)> reasoning_callback) {
+void StreamingProvider::AppendContent(std::string_view text, const ChatRequest& request) {
+  if (text.empty()) return;
+  content_ += text;
+  if (request.on_content) request.on_content(text);
+}
+
+void StreamingProvider::AppendReasoning(std::string_view text, const ChatRequest& request,
+                                        std::string signature, boost::json::value raw) {
+  if (text.empty()) return;
+
+  const bool starts_block = !signature.empty() || !raw.is_null();
+  if (reasoning_.empty() || starts_block) {
+    ReasoningBlock block;
+    block.signature = std::move(signature);
+    if (!raw.is_null()) block.raw = std::move(raw);
+    reasoning_.push_back(std::move(block));
+  }
+
+  ReasoningBlock& block = reasoning_.back();
+  block.text.append(text);
+
+  if (request.on_reasoning) request.on_reasoning(text);
+  if (request.on_reasoning_block) request.on_reasoning_block(block);
+}
+
+void StreamingProvider::AppendToolCall(ToolCall call, const ChatRequest& request) {
+  tool_calls_.push_back(std::move(call));
+  if (request.on_tool_call) request.on_tool_call(tool_calls_.back());
+}
+
+ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ChatResult result;
   platform::ClearInterruptFlag();
   ResetAccumulators();
-  SetReasoningSink(std::move(reasoning_callback));
 
-  const std::string body = BuildRequest(history, tools);
+  const std::string body = BuildRequest(*request.history, *request.tools);
   spdlog::debug("{} request body: {}", LogTag(), body);
 
   std::vector<std::string> headers = Headers();
 
-  llm::StreamingJsonParser parser([&](std::string_view line) { ParseLine(line, content_callback); });
+  llm::StreamingJsonParser parser([&](std::string_view line) { ParseLine(line, request); });
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
     if (platform::IsInterrupted()) return 0;
-    if (cancel_token && cancel_token->load(std::memory_order_acquire)) return 0;
+    if (request.cancel_token && request.cancel_token->load(std::memory_order_acquire)) return 0;
     return total;
   };
 
-  http_->PostStream(host_ + EndpointPath(), body, headers, write_cb, cancel_token);
+  http_->PostStream(host_ + EndpointPath(), body, headers, write_cb, request.cancel_token);
 
-  FinishStream();
+  FinishStream(request);
 
   result.content = std::move(content_);
   result.tool_calls = std::move(tool_calls_);
-  result.reasoning_content = std::move(current_reasoning_content_);
+  result.reasoning = std::move(reasoning_);
   result.usage = usage_;
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);

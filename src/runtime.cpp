@@ -216,9 +216,9 @@ bool Runtime::SupportsThinkingLevel() const {
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
-                                      std::function<void(const std::string&)> content_callback,
+                                      TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      std::function<void(const std::string&)> reasoning_callback) {
+                                      TokenCallback reasoning_callback) {
   ExecutionResult result;
   try {
     BeginRequest();

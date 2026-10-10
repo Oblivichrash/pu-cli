@@ -129,13 +129,13 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         std::lock_guard<std::mutex> lock(io_mutex);
         result = runtime.ProcessInput(
             payload_text, is_command, token,
-            [&](const std::string& chunk) {
+            [&](std::string_view chunk) {
               if (chunk.empty()) return;
               boost::json::value frame = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
               say(frame);
             },
             tool_cb,
-            [&](const std::string& thought) {
+            [&](std::string_view thought) {
               if (thought.empty()) return;
               boost::json::value frame = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
               say(frame);

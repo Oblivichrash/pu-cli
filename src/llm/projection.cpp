@@ -60,10 +60,34 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
 
 }  // namespace
 
+std::string ProjectReasoningText(const std::vector<ReasoningBlock>& blocks) {
+  std::string text;
+  for (const ReasoningBlock& block : blocks) {
+    if (!text.empty() && !block.text.empty()) text += "\n";
+    text += block.text;
+  }
+  return text;
+}
+
+boost::json::value ProjectReasoning(const std::vector<ReasoningBlock>& blocks) {
+  boost::json::array projected;
+  for (const ReasoningBlock& block : blocks) {
+    if (!block.raw.is_null()) {
+      projected.push_back(block.raw);
+      continue;
+    }
+    boost::json::object out = {{"text", block.text}};
+    if (!block.signature.empty()) out["signature"] = block.signature;
+    projected.push_back(std::move(out));
+  }
+  return projected;
+}
+
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities) {
   const std::string role = ProjectRole(message.role, capabilities.role_naming);
   const bool has_tool_calls = message.HasToolCalls();
+  const bool has_reasoning = !message.reasoning.empty();
 
   boost::json::value projected = {{"role", role}};
 
@@ -73,9 +97,8 @@ boost::json::value ProjectMessage(const ChatMessage& message,
     projected.as_object()["content"] = message.content;
   }
 
-  if (capabilities.echo_reasoning_content && role == kAssistantRole &&
-      !message.reasoning_content.empty()) {
-    projected.as_object()["reasoning_content"] = message.reasoning_content;
+  if (has_reasoning && role == kAssistantRole && capabilities.echoes_reasoning) {
+    projected.as_object()[capabilities.reasoning_field] = ProjectReasoning(message.reasoning);
   }
 
   if (role == kToolRole) {

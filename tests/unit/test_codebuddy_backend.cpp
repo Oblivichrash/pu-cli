@@ -3,6 +3,7 @@
 #include "pu/config/backend.hpp"
 #include "pu/llm/codebuddy.hpp"
 #include "pu/llm/openai_provider.hpp"
+#include "pu/llm/projection.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -68,7 +69,7 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
-  provider->Chat(history, {});
+  provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url == std::string(llm::kCodeBuddyHost) + "/chat/completions");
   REQUIRE(mock_ptr->last_body.find("\"stream\":true") != std::string::npos);
@@ -94,7 +95,7 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
-  provider->Chat(history, {});
+  provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url == "http://127.0.0.1:9999/v1/chat/completions");
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Domain"));

@@ -52,18 +52,18 @@ class Executor {
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
                           LLMProvider* provider, Toolbox& toolbox,
                           CancelToken cancel_token = nullptr,
-                          std::function<void(const std::string&)> content_callback = nullptr,
+                          TokenCallback content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {},
-                          std::function<void(const std::string&)> reasoning_callback = nullptr);
+                          TokenCallback reasoning_callback = nullptr);
 
   std::string BuildStaticSystemContext() const;
 
  private:
   ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox& toolbox,
                               CancelToken cancel_token,
-                              std::function<void(const std::string&)> content_callback,
+                              TokenCallback content_callback,
                               ToolCallbacks tool_callbacks,
-                              std::function<void(const std::string&)> reasoning_callback);
+                              TokenCallback reasoning_callback);
 
   void ProbeStaticEnvironment();
 

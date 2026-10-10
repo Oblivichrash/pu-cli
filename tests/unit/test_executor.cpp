@@ -106,11 +106,7 @@ class MockLLM : public LLMProvider {
                    bool fire_calls_once = false)
       : calls_(std::move(calls)), content_(std::move(content)), fire_calls_once_(fire_calls_once) {}
 
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
+  ChatResult Chat(const ChatRequest& /*request*/) override {
     ChatResult r;
     r.content = content_;
     r.tool_calls = calls_;
@@ -131,17 +127,13 @@ class OfferingLLM : public LLMProvider {
   OfferingLLM(std::string wanted, std::string content = "")
       : wanted_(std::move(wanted)), content_(std::move(content)) {}
 
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& tools,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
+  ChatResult Chat(const ChatRequest& request) override {
     ChatResult r;
     r.content = content_;
 
     offered.clear();
     bool wanted_is_offered = false;
-    for (const ToolDefinition& def : tools) {
+    for (const ToolDefinition& def : *request.tools) {
       offered.push_back(def.name);
       if (def.name == wanted_) wanted_is_offered = true;
     }
@@ -168,11 +160,7 @@ class OfferingLLM : public LLMProvider {
 
 class FailingLLM : public LLMProvider {
  public:
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
+  ChatResult Chat(const ChatRequest& /*request*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
 
@@ -181,12 +169,8 @@ class FailingLLM : public LLMProvider {
 
 class CapturingLLM : public LLMProvider {
  public:
-  ChatResult Chat(const std::vector<ChatMessage>& history,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
-    history_ = history;
+  ChatResult Chat(const ChatRequest& request) override {
+    history_ = *request.history;
     ChatResult r;
     r.content = "done";
     return r;
@@ -209,17 +193,13 @@ class StoppingLLM : public LLMProvider {
         model_(std::move(model)),
         reasoning_(std::move(reasoning)) {}
 
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> reasoning_callback) override {
-    if (reasoning_callback && !reasoning_.empty()) reasoning_callback(reasoning_);
+  ChatResult Chat(const ChatRequest& request) override {
+    if (request.on_reasoning && !reasoning_.empty()) request.on_reasoning(reasoning_);
     ChatResult r;
     r.content = content_;
     r.finish_reason = finish_reason_;
     r.model = model_;
-    r.reasoning_content = reasoning_;
+    if (!reasoning_.empty()) r.reasoning.push_back(ReasoningBlock{reasoning_, {}, nullptr});
     return r;
   }
 
@@ -564,7 +544,7 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
   Conversation ws;
   const ExecutionResult result =
       executor.Execute("think", ws, &provider, toolbox, nullptr, nullptr, {},
-                       [&](const std::string& token) { streamed += token; });
+                       [&](std::string_view token) { streamed += token; });
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(result.content == "answer");

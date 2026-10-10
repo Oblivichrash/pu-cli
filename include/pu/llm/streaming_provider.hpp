@@ -18,11 +18,7 @@ class StreamingProvider : public LLMProvider {
  public:
   ~StreamingProvider() override = default;
 
-  ChatResult Chat(const std::vector<ChatMessage>& history,
-                  const std::vector<ToolDefinition>& tools,
-                  std::function<void(const std::string&)> content_callback = nullptr,
-                  CancelToken cancel_token = nullptr,
-                  std::function<void(const std::string&)> reasoning_callback = nullptr) final;
+  ChatResult Chat(const ChatRequest& request) final;
 
   bool SupportsTools() const override { return true; }
 
@@ -32,34 +28,30 @@ class StreamingProvider : public LLMProvider {
 
   virtual std::string EndpointPath() const = 0;
   virtual std::string LogTag() const = 0;
-  virtual void ParseLine(std::string_view line,
-                         std::function<void(const std::string&)>& content_cb) = 0;
+  virtual void ParseLine(std::string_view line, const ChatRequest& request) = 0;
   virtual std::string BuildRequest(const std::vector<ChatMessage>& history,
                                    const std::vector<ToolDefinition>& tools) const = 0;
   virtual void ResetAccumulators() {}
-  virtual void FinishStream() {}
+  virtual void FinishStream(const ChatRequest& request) { (void)request; }
 
   virtual std::vector<std::string> Headers() const;
-  void SetReasoningSink(std::function<void(const std::string&)> sink) {
-    reasoning_sink_ = std::move(sink);
-  }
-  void EmitReasoning(const std::string& text) {
-    current_reasoning_content_ += text;
-    if (reasoning_sink_) reasoning_sink_(text);
-  }
+
+  void AppendContent(std::string_view text, const ChatRequest& request);
+  void AppendReasoning(std::string_view text, const ChatRequest& request, std::string signature = {},
+                       boost::json::value raw = nullptr);
+  void AppendToolCall(ToolCall call, const ChatRequest& request);
 
   std::string content_;
-  std::string current_reasoning_content_;
+  std::vector<ReasoningBlock> reasoning_;
+  std::vector<ToolCall> tool_calls_;
   std::string finish_reason_;
   std::string response_model_;
-  std::vector<ToolCall> tool_calls_;
   std::optional<TokenUsage> usage_;
 
  private:
   std::string host_;
   std::string api_key_;
   std::shared_ptr<pu::http::HttpClient> http_;
-  std::function<void(const std::string&)> reasoning_sink_;
 };
 
 }  // namespace pu

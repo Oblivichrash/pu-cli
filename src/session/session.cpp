@@ -24,8 +24,9 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
   if (msg.role == context::kAssistantRole) {
     context::AssistantPayload assistant;
     assistant.content = msg.content;
-    if (!msg.reasoning_content.empty()) {
-      assistant.reasoning = context::Reasoning{msg.reasoning_content};
+    for (const ReasoningBlock& block : msg.reasoning) {
+      assistant.reasoning.push_back(
+          context::Reasoning{block.text, block.signature, block.raw});
     }
     if (msg.tool_calls.is_array()) {
       for (const boost::json::value& call : msg.tool_calls.as_array()) {
@@ -55,15 +56,18 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
 }
 
 ChatMessage Normalized(const ChatMessage& msg) {
-  if (text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
-      text::IsValidUtf8(msg.reasoning_content) && text::IsValidUtf8(msg.tool_call_id)) {
-    return msg;
+  bool valid = text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
+               text::IsValidUtf8(msg.tool_call_id);
+  for (const ReasoningBlock& block : msg.reasoning) {
+    if (!text::IsValidUtf8(block.text)) valid = false;
   }
+  if (valid) return msg;
+
   ChatMessage clean = msg;
   clean.content = text::SanitizeUtf8(msg.content);
   clean.tool_name = text::SanitizeUtf8(msg.tool_name);
-  clean.reasoning_content = text::SanitizeUtf8(msg.reasoning_content);
   clean.tool_call_id = text::SanitizeUtf8(msg.tool_call_id);
+  for (ReasoningBlock& block : clean.reasoning) block.text = text::SanitizeUtf8(block.text);
   return clean;
 }
 

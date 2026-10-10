@@ -16,7 +16,8 @@ namespace {
 
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kKnownRolesOnly,
-    .echo_reasoning_content = false,
+    .echoes_reasoning = true,
+    .reasoning_field = "thinking",
     .allows_content_with_tool_calls = true,
     .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
     .tool_calls_carry_type = false,
@@ -28,7 +29,7 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 void OllamaProvider::ResetAccumulators() {
   content_.clear();
-  current_reasoning_content_.clear();
+  reasoning_.clear();
   finish_reason_.clear();
   response_model_.clear();
   tool_calls_.clear();
@@ -66,8 +67,7 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
   return boost::json::serialize(req);
 }
 
-void OllamaProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb) {
+void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
   if (json::HasKey(j, "error")) {
     const std::string detail = json::ErrorMessage(j);
     if (!detail.empty()) throw Error("provider error: " + detail);
@@ -76,13 +76,11 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
     if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
-      const std::string content = boost::json::value_to<std::string>(msg.at("content"));
-      content_ += content;
-      if (content_cb) content_cb(content);
+      AppendContent(boost::json::value_to<std::string>(msg.at("content")), request);
     }
 
     if (json::HasKey(msg, "thinking") && msg.at("thinking").is_string()) {
-      EmitReasoning(boost::json::value_to<std::string>(msg.at("thinking")));
+      AppendReasoning(boost::json::value_to<std::string>(msg.at("thinking")), request);
     }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
@@ -109,7 +107,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
             call.arguments = args;
           }
         }
-        tool_calls_.push_back(std::move(call));
+        AppendToolCall(std::move(call), request);
       }
     }
   }
@@ -128,8 +126,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
   }
 }
 
-void OllamaProvider::ParseLine(std::string_view line,
-                               std::function<void(const std::string&)>& content_cb) {
+void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
   boost::json::value j;
   try {
     j = boost::json::parse(line);
@@ -137,7 +134,7 @@ void OllamaProvider::ParseLine(std::string_view line,
     spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;
   }
-  HandleJsonToken(j, content_cb);
+  HandleJsonToken(j, request);
 }
 
 }  // namespace pu

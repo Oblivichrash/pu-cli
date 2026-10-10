@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "pu/llm/projection.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/session/request.hpp"
@@ -103,7 +104,7 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   context::MessageGraph graph;
   context::AssistantPayload assistant;
   assistant.content = "checking";
-  assistant.reasoning = context::Reasoning{"because"};
+  assistant.reasoning.push_back(context::Reasoning{"because", {}, nullptr});
   assistant.tool_calls.push_back(
       context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
@@ -118,7 +119,7 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
 
   REQUIRE(messages.size() == 2);
   REQUIRE(messages[0].HasToolCalls());
-  REQUIRE(messages[0].reasoning_content == "because");
+  REQUIRE(llm::ProjectReasoningText(messages[0].reasoning) == "because");
   REQUIRE(messages[0].tool_calls.as_array()[0].at("function").at("arguments").at("path") == ".");
   REQUIRE(messages[1].role == "tool");
   REQUIRE(messages[1].tool_name == "ls");

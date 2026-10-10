@@ -37,15 +37,13 @@ class OpenAIProvider : public StreamingProvider {
 
   std::string BuildRequest(const std::vector<ChatMessage>& history,
                            const std::vector<ToolDefinition>& tools) const override;
-  void ParseLine(std::string_view line,
-                 std::function<void(const std::string&)>& content_cb) override;
+  void ParseLine(std::string_view line, const ChatRequest& request) override;
   void ResetAccumulators() override;
-  void FinishStream() override;
+  void FinishStream(const ChatRequest& request) override;
 
  private:
-  void HandleJsonToken(const boost::json::value& j,
-                       std::function<void(const std::string&)>& content_cb);
-  void FlushPendingToolCalls();
+  void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);
+  void FlushPendingToolCalls(const ChatRequest& request);
 
   Config config_;
 

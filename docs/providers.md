@@ -36,11 +36,12 @@ base URL plus a header set. Its gateway behavior is recorded in
 | Thinking level | not sent; the model decides for itself | `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
-| Reasoning on request | never sent | sent on assistant messages when non-empty |
+| Reasoning on request | sent on assistant messages as `thinking` when non-empty | sent on assistant messages as `reasoning_content` when non-empty |
 | Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` |
 | `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
 | Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` |
 | Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated |
+| Reasoning on the wire | an array of `{text, signature?}` blocks under `thinking` | the same under `reasoning_content`; a block that carries the provider's own JSON is replayed verbatim |
 | End of reply | `done_reason` on the final object | `finish_reason` on each choice |
 | Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
@@ -61,3 +62,8 @@ accepts multimodal input or output.
 | Streaming tool calls | whole call per line | index accumulation |
 | Reasoning | `message.thinking` | `delta.reasoning_content` |
 | Prompt caching hints | `keep_alive` only | none |
+
+Reasoning is stored as an ordered list of blocks, not one string, so a turn that
+thinks, calls a tool, then thinks again keeps that order. A block carries the
+`text`, an optional `signature` the provider wants replayed, and the provider's own
+`raw` JSON when it round-trips.

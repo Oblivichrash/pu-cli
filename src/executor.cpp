@@ -3,6 +3,7 @@
 
 #include "pu/core/platform.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
 #include "pu/tools/toolbox.hpp"
 
@@ -145,9 +146,9 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
                                   LLMProvider* provider, Toolbox& toolbox,
                                   CancelToken cancel_token,
-                                  std::function<void(const std::string&)> content_callback,
+                                  TokenCallback content_callback,
                                   ToolCallbacks tool_callbacks,
-                                  std::function<void(const std::string&)> reasoning_callback) {
+                                  TokenCallback reasoning_callback) {
   conversation.Append("user", input);
 
   ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
@@ -160,9 +161,9 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* provider,
                                       Toolbox& toolbox, CancelToken cancel_token,
-                                      std::function<void(const std::string&)> content_callback,
+                                      TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      std::function<void(const std::string&)> reasoning_callback) {
+                                      TokenCallback reasoning_callback) {
   ExecutionResult result;
 
   if (!provider->SupportsTools()) {
@@ -195,19 +196,22 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     ChatResult chat_result;
 
     try {
-      chat_result = provider->Chat(
-          chat_history, tools,
-          [&](const std::string& token) {
-            if (!token.empty()) {
-              result.was_streamed = true;
-              if (content_callback) {
-                content_callback(token);  // web mode: push SSE, stay silent
-              } else {
-                std::cout << token << std::flush;  // CLI typewriter
-              }
-            }
-          },
-          cancel_token, reasoning_callback);
+      ChatRequest request;
+      request.history = &chat_history;
+      request.tools = &tools;
+      request.cancel_token = cancel_token;
+      if (reasoning_callback) request.on_reasoning = reasoning_callback;
+      request.on_content = [&](std::string_view token) {
+        if (token.empty()) return;
+        result.was_streamed = true;
+        if (content_callback) {
+          content_callback(token);
+        } else {
+          std::cout << token << std::flush;
+        }
+      };
+
+      chat_result = provider->Chat(request);
 
       if (chat_result.usage) {
         spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
@@ -217,9 +221,10 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       tool_was_called = !chat_result.tool_calls.empty();
       if (!tool_was_called) {
         std::string response = chat_result.content;
-        if (response.empty() && !chat_result.reasoning_content.empty()) {
-          response = chat_result.reasoning_content;
-          spdlog::debug("Using reasoning_content as final response (thinking mode)");
+        const std::string reasoning = llm::ProjectReasoningText(chat_result.reasoning);
+        if (response.empty() && !reasoning.empty()) {
+          response = reasoning;
+          spdlog::debug("Using reasoning as final response (thinking mode)");
         }
         result.content = response;
         result.notice = StopNotice(chat_result.finish_reason);
@@ -252,7 +257,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     ChatMessage assistant_msg;
     assistant_msg.role = context::kAssistantRole;
     assistant_msg.content = chat_result.content;
-    assistant_msg.reasoning_content = chat_result.reasoning_content;
+    assistant_msg.reasoning = chat_result.reasoning;
 
     boost::json::array j_calls;
     for (const auto& tc : chat_result.tool_calls) {

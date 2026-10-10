@@ -17,7 +17,8 @@ namespace {
 llm::ProviderCapabilities OpenAiLike() {
   return {
       .role_naming = llm::RoleNaming::kAsStored,
-      .echo_reasoning_content = true,
+      .echoes_reasoning = true,
+      .reasoning_field = "reasoning_content",
       .allows_content_with_tool_calls = false,
       .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
       .tool_calls_carry_type = true,
@@ -29,7 +30,8 @@ llm::ProviderCapabilities OpenAiLike() {
 llm::ProviderCapabilities OllamaLike() {
   return {
       .role_naming = llm::RoleNaming::kKnownRolesOnly,
-      .echo_reasoning_content = false,
+      .echoes_reasoning = false,
+      .reasoning_field = "thinking",
       .allows_content_with_tool_calls = true,
       .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
       .tool_calls_carry_type = false,
@@ -84,17 +86,32 @@ TEST_CASE("Content beside tool calls follows the capability", "[projection]") {
               llm::ProjectMessage(plain, OllamaLike()).at("content")) == "hello");
 }
 
-TEST_CASE("Reasoning is echoed only where supported", "[projection]") {
+TEST_CASE("Reasoning is echoed as ordered blocks where supported", "[projection]") {
   ChatMessage assistant = Text("assistant", "answer");
-  assistant.reasoning_content = "because";
+  assistant.reasoning.push_back(ReasoningBlock{"first", {}, nullptr});
+  assistant.reasoning.push_back(ReasoningBlock{"second", "sig", nullptr});
 
-  REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content")) == "because");
-  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()), "reasoning_content"));
+  const boost::json::value projected = llm::ProjectMessage(assistant, OpenAiLike());
+  const boost::json::array& blocks = projected.at("reasoning_content").as_array();
+  REQUIRE(blocks.size() == 2);
+  REQUIRE(boost::json::value_to<std::string>(blocks[0].at("text")) == "first");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("text")) == "second");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("signature")) == "sig");
+  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()), "thinking"));
 
   ChatMessage user = Text("user", "question");
-  user.reasoning_content = "because";
+  user.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(user, OpenAiLike()), "reasoning_content"));
+}
+
+TEST_CASE("A block carrying the provider's raw encoding is replayed verbatim", "[projection]") {
+  ChatMessage assistant = Text("assistant", "answer");
+  assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"b":1})")});
+
+  const boost::json::array& blocks =
+      llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content").as_array();
+  REQUIRE(blocks.size() == 1);
+  REQUIRE(blocks[0].at("b") == 1);
 }
 
 TEST_CASE("Tool call envelope and arguments differ by capability", "[projection]") {

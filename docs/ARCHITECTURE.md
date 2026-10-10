@@ -372,7 +372,7 @@ lists tools.
 
 `<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`).
 
-The session file carries `schema_version` (currently 6) beside `conversation` and
+The session file carries `schema_version` (currently 7) beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
@@ -386,8 +386,9 @@ also decides which agent a restart resumes: the named agent wins over
 
 The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
 timestamp, its parent and one role payload, plus the `leaf` that marks the current
-position. A payload's `content` is a single string, and reasoning is the JSON the
-provider sent (`reasoning.raw_json`).
+position. A payload's `content` is a single string, and reasoning is a list of blocks,
+each with the provider's `text`, an optional `signature` and the provider's own `raw`
+encoding when it round-trips (see [providers.md](./providers.md)).
 
 A node's id is its own, not a position: the earlier `id = size() + 1` scheme made a
 rewind representable only by rewriting the file, and a branch not at all.

@@ -65,7 +65,7 @@ struct SessionSpec {
   }
 };
 
-inline constexpr int kSessionSchemaVersion = 6;
+inline constexpr int kSessionSchemaVersion = 7;
 
 class Session {
  public:

@@ -38,8 +38,12 @@ boost::json::value SerializeNode(const MessageNode& node) {
   } else if (const auto* assistant = std::get_if<AssistantPayload>(&node.payload)) {
     out["role"] = kAssistantRole;
     out["content"] = assistant->content;
-    if (assistant->reasoning) {
-      out["reasoning"] = boost::json::value{{"raw_json", assistant->reasoning->raw_json}};
+    if (!assistant->reasoning.empty()) {
+      boost::json::array blocks;
+      for (const Reasoning& block : assistant->reasoning) {
+        blocks.push_back(ReasoningToJson(block));
+      }
+      out["reasoning"] = std::move(blocks);
     }
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
@@ -90,9 +94,10 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   if (role == kAssistantRole) {
     AssistantPayload assistant;
     assistant.content = content;
-    if (json::HasKey(value, "reasoning") && value.at("reasoning").is_object()) {
-      const boost::json::value& reasoning = value.at("reasoning");
-      assistant.reasoning = Reasoning{json::ValueOrDefault<std::string>(reasoning, "raw_json", "")};
+    if (json::HasKey(value, "reasoning") && value.at("reasoning").is_array()) {
+      for (const boost::json::value& block : value.at("reasoning").as_array()) {
+        assistant.reasoning.push_back(ReasoningFromJson(block));
+      }
     }
     if (json::HasKey(value, "tool_calls") && value.at("tool_calls").is_array()) {
       for (const boost::json::value& call : value.at("tool_calls").as_array()) {

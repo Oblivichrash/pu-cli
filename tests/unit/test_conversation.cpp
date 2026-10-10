@@ -108,7 +108,7 @@ TEST_CASE("Serialization is stable across repeated round trips", "[conversation]
   ChatMessage asst;
   asst.role = "assistant";
   asst.content = "checking";
-  asst.reasoning_content = "because";
+  asst.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   asst.tool_calls =
       boost::json::parse(R"([{"id":"call_9","function":{"name":"ls","arguments":{"path":"."}}}])");
   t.Append(asst);

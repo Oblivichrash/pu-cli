@@ -52,6 +52,12 @@ inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   return ThinkingLevel::kServerDefault;
 }
 
+struct ReasoningBlock {
+  std::string text;
+  std::string signature;   // Anthropic thinking blocks: must be returned verbatim
+  boost::json::value raw;  // the provider's own encoding, replayed when it round-trips
+};
+
 struct ChatMessage {
   int id = 0;
   std::string timestamp;
@@ -59,7 +65,7 @@ struct ChatMessage {
   std::string content;
   std::string tool_name;          // tool messages: name of the tool that produced the result
   boost::json::value tool_calls;  // assistant messages: array of OpenAI-style tool calls
-  std::string reasoning_content;  // for DeepSeek thinking mode
+  std::vector<ReasoningBlock> reasoning;
   std::string tool_call_id;       // for tool messages: ID of the tool call
 
   bool HasToolCalls() const {
@@ -90,24 +96,42 @@ struct TokenUsage {
   int completion_tokens = 0;
 };
 
+using TokenCallback = std::function<void(std::string_view)>;
+
 struct ChatResult {
   std::string content;
-  std::string reasoning_content;
+  std::vector<ReasoningBlock> reasoning;
   std::vector<ToolCall> tool_calls;
   std::optional<TokenUsage> usage;
   std::string finish_reason;
   std::string model;
 };
 
+struct ChatRequest {
+  const std::vector<ChatMessage>* history = nullptr;
+  const std::vector<ToolDefinition>* tools = nullptr;
+  TokenCallback on_content;
+  TokenCallback on_reasoning;
+  std::function<void(const ReasoningBlock&)> on_reasoning_block;
+  std::function<void(const ToolCall&)> on_tool_call;
+  CancelToken cancel_token;
+
+  ChatRequest() = default;
+
+  ChatRequest(const std::vector<ChatMessage>& history_messages,
+              const std::vector<ToolDefinition>& tool_definitions)
+      : history(&history_messages), tools(&tool_definitions) {}
+
+  ChatRequest(const std::vector<ChatMessage>& history_messages,
+              const std::vector<ToolDefinition>& tool_definitions, TokenCallback content)
+      : history(&history_messages), tools(&tool_definitions), on_content(std::move(content)) {}
+};
+
 class LLMProvider {
  public:
   virtual ~LLMProvider() = default;
 
-  virtual ChatResult Chat(const std::vector<ChatMessage>& history,
-                          const std::vector<ToolDefinition>& tools,
-                          std::function<void(const std::string&)> content_callback = nullptr,
-                          CancelToken cancel_token = nullptr,
-                          std::function<void(const std::string&)> reasoning_callback = nullptr) = 0;
+  virtual ChatResult Chat(const ChatRequest& request) = 0;
 
   virtual bool SupportsTools() const = 0;
 };

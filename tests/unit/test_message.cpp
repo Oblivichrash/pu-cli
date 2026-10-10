@@ -56,15 +56,17 @@ TEST_CASE("Each role payload is distinguishable by type", "[context][message]") 
 TEST_CASE("A tool call starts pending and a completed one no longer blocks", "[context][message]") {
   context::AssistantPayload assistant;
   assistant.content = "let me check";
-  assistant.reasoning = context::Reasoning{R"({"raw":true})"};
+  assistant.reasoning.push_back(context::Reasoning{"weighing", R"(sig-1)", nullptr});
   assistant.tool_calls.push_back(
       context::ToolCallRecord{"call_1", "read_file", boost::json::object{}});
 
   const context::MessageNode node = context::MakeNode(std::move(assistant));
 
   REQUIRE(context::HasUnfinishedToolCalls(node));
-  REQUIRE(std::get<context::AssistantPayload>(node.payload).reasoning->raw_json ==
-          R"({"raw":true})");
+  const auto& payload = std::get<context::AssistantPayload>(node.payload);
+  REQUIRE(payload.reasoning.size() == 1);
+  REQUIRE(payload.reasoning[0].text == "weighing");
+  REQUIRE(payload.reasoning[0].signature == "sig-1");
 
   context::AssistantPayload done;
   done.tool_calls.push_back(context::ToolCallRecord{"call_1", "read_file", boost::json::object{},
