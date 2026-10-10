@@ -11,7 +11,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
 #include "pu/executor.hpp"
-#include "pu/mcp/client.hpp"
+#include "pu/mcp/mcp_session.hpp"
 #include "pu/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -60,9 +60,8 @@ class Runtime {
   config::BackendConfig ConfiguredBackend() const;
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
-  void ShutdownMCP();
-  bool StartMCP(const config::McpServerConfig& config);
   void RegisterBuiltinTools(const config::AgentEntry& agent);
+  void RegisterMcpTools();
 
   bool is_initialized_ = false;
   bool is_running_ = false;

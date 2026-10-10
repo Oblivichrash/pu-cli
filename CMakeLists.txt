@@ -45,6 +45,7 @@ add_library(pu_lib STATIC
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
+    src/mcp/mcp_session.cpp
 )
 target_link_libraries(pu_lib PUBLIC
     spdlog::spdlog

@@ -39,6 +39,7 @@ What each dependency is for:
 | `CommandRouter` | Routes `/` commands to handlers |
 | `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
+| `mcp_session` | Free functions that connect a server set and disconnect it again — the whole connect/disconnect sequence, so `Runtime` holds the result rather than driving the loop |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
 | `StdioTransport` | stdio subprocess transport |
@@ -212,15 +213,23 @@ data directory.
 
 ### Toolbox & MCP lifecycle
 
-```
-RebuildToolbox(agent)
- ├─ ShutdownMCP()                      // stop all MCP child processes
- ├─ toolbox_.Clear()
- ├─ RegisterBuiltinTools()
- ├─ for each mcp_servers:
- │    StartMCP(cfg) → ListTools() → register mcp.<server>.<tool>
- └─ executor_->SetSecurityPolicy(agent.security)
  ```
+ RebuildToolbox(agent)
+   ├─ DisconnectMcpServers(mcp_clients_)
+   ├─ ConnectMcpServers(agent.mcp_servers) // one client per server that answered
+   ├─ toolbox_.Clear()
+   ├─ RegisterBuiltinTools()
+   ├─ RegisterMcpTools()                   // ListTools() → register mcp.<server>.<tool>
+   └─ executor_->SetSecurityPolicy(agent.security)
+  ```
+
+ `Runtime` still owns the connected `mcp_clients_`, but the connect/disconnect
+ sequencing itself lives in `pu::mcp` as three free functions
+ (`ConnectMcpServer`, `ConnectMcpServers`, `DisconnectMcpServers`); `Runtime`
+ holds the result rather than driving the loop. Because a client remembers the
+ server it was built from (`McpClient::ServerName()`), registration pairs tools
+ with their server without reaching back into the vector for the last element
+ pushed.
 
  `Toolbox` is a value member of `Runtime` and `RebuildToolbox` empties it in place rather
  than replacing it, so the registry keeps one address for the process lifetime. The

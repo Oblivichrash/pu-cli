@@ -197,4 +197,6 @@ std::string McpClient::CallTool(const std::string& name, const boost::json::valu
 
 bool McpClient::IsConnected() const { return pimpl_->connected; }
 
+const std::string& McpClient::ServerName() const { return pimpl_->config.name; }
+
 }  // namespace pu::mcp

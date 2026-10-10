@@ -273,59 +273,44 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
 
-void Runtime::ShutdownMCP() {
-  for (auto& client : mcp_clients_) {
-    if (client) client->Disconnect();
-  }
-  mcp_clients_.clear();
-}
-
-bool Runtime::StartMCP(const config::McpServerConfig& config) {
-  auto client = std::make_shared<mcp::McpClient>(config);
-  if (client->Connect()) {
-    mcp_clients_.push_back(std::move(client));
-    return true;
-  }
-  spdlog::warn("MCP server '{}' connection failed", config.name);
-  return false;
-}
-
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
 }
 
-void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
-  ShutdownMCP();
+void Runtime::RegisterMcpTools() {
+  for (std::size_t i = 0; i < mcp_clients_.size(); ++i) {
+    auto client = mcp_clients_[i];
+    const std::string& server_name = client->ServerName();
 
-  toolbox_.Clear();
-  RegisterBuiltinTools(agent);
-
-  for (const auto& mcp_cfg : agent.mcp_servers) {
-    if (!StartMCP(mcp_cfg)) {
-      spdlog::warn("Skipping MCP server '{}' - connection failed", mcp_cfg.name);
-      continue;
-    }
-
-    auto client = mcp_clients_.back();
     std::vector<ToolDefinition> tools;
     try {
       tools = client->ListTools();
     } catch (const std::exception& e) {
-      spdlog::warn("Skipping MCP server '{}' - {}", mcp_cfg.name, e.what());
+      spdlog::warn("Skipping MCP server '{}' - {}", server_name, e.what());
       continue;
     }
+
     for (const auto& t : tools) {
-      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
+      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, server_name);
       if (!toolbox_.RegisterTool(std::move(mcp_tool))) {
         spdlog::warn("Skipping MCP tool '{}' from '{}' - the server reported no name", t.name,
-                     mcp_cfg.name);
+                     server_name);
         continue;
       }
-      spdlog::debug("Registered MCP tool: mcp.{}.{}", mcp_cfg.name, t.name);
+      spdlog::debug("Registered MCP tool: mcp.{}.{}", server_name, t.name);
     }
   }
+}
+
+void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
+  mcp::DisconnectMcpServers(mcp_clients_);
+  mcp_clients_ = mcp::ConnectMcpServers(agent.mcp_servers);
+
+  toolbox_.Clear();
+  RegisterBuiltinTools(agent);
+  RegisterMcpTools();
 
   auto security = agent.security;
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();

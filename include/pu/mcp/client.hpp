@@ -48,6 +48,8 @@ class McpClient {
   virtual std::string CallTool(const std::string& name, const boost::json::value& arguments);
   virtual bool IsConnected() const;
 
+  const std::string& ServerName() const;
+
  private:
   bool Handshake();
   boost::json::value SendRequest(const std::string& method, const boost::json::value& params = {},
