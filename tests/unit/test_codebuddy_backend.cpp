@@ -75,8 +75,12 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   REQUIRE(HeaderValue(mock_ptr->last_headers, "Authorization") == "Bearer key");
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Agent-Intent"));
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Conversation-ID"));
+}
 
-  REQUIRE(provider->SupportsThinkingLevel());
+TEST_CASE("Thinking level capability follows the backend type", "[codebuddy][openai][ollama]") {
+  REQUIRE(config::CarriesThinkingLevel(config::BackendType::kCodeBuddy));
+  REQUIRE(config::CarriesThinkingLevel(config::BackendType::kOpenAI));
+  REQUIRE_FALSE(config::CarriesThinkingLevel(config::BackendType::kOllama));
 }
 
 TEST_CASE("A configured host is not overridden", "[codebuddy]") {

@@ -347,8 +347,7 @@ class ServeHarness {
   };
 
   explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
-                        std::optional<McpServer> mcp = std::nullopt,
-                        FakeHttpServer::Responder backend_responder = nullptr) {
+                        std::optional<McpServer> mcp = std::nullopt) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -360,14 +359,10 @@ class ServeHarness {
     fs::create_directories(data_dir);
     data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
 
-    if (backend_responder) {
-      backend_http_ = std::make_unique<FakeHttpServer>(std::move(backend_responder));
-    } else {
-      backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
-    }
-    const int backend_port = backend_ ? backend_->Port() : backend_http_->Port();
+    backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
-    WriteAgentsFile(home_, backend_port, backend_type, mcp ? mcp->name : "", mcp ? mcp->url : "");
+    WriteAgentsFile(home_, backend_->Port(), backend_type, mcp ? mcp->name : "",
+                    mcp ? mcp->url : "");
 
     {
       ScopedWorkingDir in_home(home_);
@@ -408,9 +403,7 @@ class ServeHarness {
 
   int Port() const { return port_; }
 
-  int BackendRequests() const {
-    return backend_ ? backend_->Requests() : backend_http_->Requests();
-  }
+  int BackendRequests() const { return backend_->Requests(); }
 
   Runtime& Runtime() { return *runtime_; }  // NOLINT: the name is the class it returns
 
@@ -419,7 +412,6 @@ class ServeHarness {
   std::unique_ptr<ScopedEnvVar> home_env_;
   std::unique_ptr<ScopedEnvVar> data_env_;
   std::unique_ptr<FakeBackend> backend_;
-  std::unique_ptr<FakeHttpServer> backend_http_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
   std::thread server_thread_;

@@ -42,6 +42,11 @@ class Runtime {
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
 
+  Toolbox& GetToolbox() {
+    assert(is_initialized_ && "Initialize() must run before any toolbox query");
+    return toolbox_;
+  }
+
   AgentManager& GetAgentManager() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;

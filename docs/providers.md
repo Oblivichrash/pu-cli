@@ -55,6 +55,7 @@ accepts multimodal input or output.
 | Capability | Ollama | OpenAI compatible |
 |-----------|--------|-------------------|
 | Tools, streaming content, parallel calls | yes | yes |
+| Thinking level | no | yes |
 | Streaming tool calls | whole call per line | index accumulation |
 | Reasoning | `message.thinking` | `delta.reasoning_content` |
 | Prompt caching hints | `keep_alive` only | none |

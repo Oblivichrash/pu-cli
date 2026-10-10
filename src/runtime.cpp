@@ -203,8 +203,7 @@ bool Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
 }
 
 bool Runtime::SupportsThinkingLevel() const {
-  if (!current_session_) return false;
-  return current_session_->CreateProvider(CurrentBackend())->SupportsThinkingLevel();
+  return current_session_ && config::CarriesThinkingLevel(CurrentBackend().type);
 }
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,

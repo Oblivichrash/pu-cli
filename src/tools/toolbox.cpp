@@ -54,6 +54,13 @@ bool Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   return true;
 }
 
+std::vector<std::string> Toolbox::Names() const {
+  std::vector<std::string> names;
+  names.reserve(tools_.size());
+  for (const auto& [display_name, tool] : tools_) names.push_back(display_name);
+  return names;
+}
+
 std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   std::vector<ToolDefinition> defs;
   defs.reserve(tools_.size());

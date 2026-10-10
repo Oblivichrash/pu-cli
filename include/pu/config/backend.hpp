@@ -16,6 +16,8 @@ namespace pu::config {
 
 enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
 
+inline bool CarriesThinkingLevel(BackendType type) { return type != BackendType::kOllama; }
+
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
   std::string host;

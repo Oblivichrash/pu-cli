@@ -4,11 +4,11 @@
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
 
-#include <mutex>
-#include <set>
+#include <algorithm>
 #include <string>
 
 #include "pu/core/json.hpp"
+#include "pu/tools/toolbox.hpp"
 #include "tests/mocks/serve_harness.hpp"
 
 namespace beast = boost::beast;
@@ -63,79 +63,37 @@ class McpToolServer {
   std::string tool_name_;
 };
 
-class ToolCapture {
- public:
-  http::response<http::string_body> operator()(const http::request<http::string_body>& req) {
-    const auto body = boost::json::parse(req.body());
-    if (pu::json::HasKey(body, "tools") && body.at("tools").is_array()) {
-      std::set<std::string> names;
-      for (const auto& tool : body.at("tools").as_array()) {
-        const boost::json::value& named =
-            pu::json::HasKey(tool, "function") ? tool.at("function") : tool;
-        if (pu::json::HasKey(named, "name")) {
-          names.insert(boost::json::value_to<std::string>(named.at("name")));
-        }
-      }
-      std::lock_guard<std::mutex> lock(mutex_);
-      offered_ = std::move(names);
-    }
-    return Answer(R"({"message":{"content":"OK"}}
-{"done":true}
-)");
-  }
-
-  std::set<std::string> Offered() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return offered_;
-  }
-
- private:
-  mutable std::mutex mutex_;
-  std::set<std::string> offered_;
-};
+bool Offers(const pu::Toolbox& toolbox, const std::string& name) {
+  const auto names = toolbox.Names();
+  return std::find(names.begin(), names.end(), name) != names.end();
+}
 
 std::string McpUrl(int port) { return "http://127.0.0.1:" + std::to_string(port) + "/mcp"; }
 
 }  // namespace
 
-TEST_CASE("A tool from a configured MCP server reaches the provider", "[mcp][runtime]") {
+TEST_CASE("A tool from a configured MCP server reaches the toolbox", "[mcp][runtime]") {
   McpToolServer mcp("search");
   FakeHttpServer mcp_http(mcp.ToResponder());
 
-  ToolCapture capture;
-  ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_http.Port())},
-                       [&](const http::request<http::string_body>& req) { return capture(req); });
+  ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_http.Port())});
 
-  bool is_command = false;
-  harness.Runtime().ProcessInput("hello", is_command);
-
-  const std::set<std::string> offered = capture.Offered();
-  REQUIRE(offered.count("mcp_files_search") == 1);
-  REQUIRE(offered.count("execute_bash") == 1);
+  // The dotted name the server reports is sanitized into a provider-safe identifier.
+  REQUIRE(Offers(harness.Runtime().GetToolbox(), "mcp_files_search"));
+  REQUIRE(Offers(harness.Runtime().GetToolbox(), "execute_bash"));
 }
 
 TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "[mcp][runtime]") {
-  ToolCapture capture;
   int mcp_port = 0;
-
   {
     McpToolServer mcp("temporary");
     FakeHttpServer mcp_http(mcp.ToResponder());
     mcp_port = mcp_http.Port();
 
-    ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)},
-                         [&](const http::request<http::string_body>& req) { return capture(req); });
-
-    bool is_command = false;
-    harness.Runtime().ProcessInput("hello", is_command);
-    REQUIRE(capture.Offered().count("mcp_files_temporary") == 1);
+    ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
+    REQUIRE(Offers(harness.Runtime().GetToolbox(), "mcp_files_temporary"));
   }
 
-  ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)},
-                       [&](const http::request<http::string_body>& req) { return capture(req); });
-
-  bool is_command = false;
-  harness.Runtime().ProcessInput("hello", is_command);
-
-  REQUIRE(capture.Offered().count("mcp_files_temporary") == 0);
+  ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
+  REQUIRE_FALSE(Offers(harness.Runtime().GetToolbox(), "mcp_files_temporary"));
 }
