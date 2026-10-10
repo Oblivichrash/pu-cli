@@ -38,8 +38,6 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
-// With a third type, answering "is it OpenAI?" turns every answer into "ollama" rather than
-// into a failure, and the Web header showed the wrong backend for the one it talked to.
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
   ServeHarness harness("codebuddy");
   auto client = harness.Client();
@@ -49,7 +47,6 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
   REQUIRE(j.at("success") == true);
   REQUIRE(j.at("backend_type") == "codebuddy");
   REQUIRE(j.at("backend_model") == "test-model");
-  // A gateway that honours reasoning_effort carries the level control.
   REQUIRE(j.at("supports_thinking_level") == true);
 }
 
@@ -64,8 +61,6 @@ TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   REQUIRE(j.as_array().empty());
 }
 
-// The reload draws the conversation from this endpoint alone, so everything the streamed
-// turn showed has to be in it: a tool result as the same output, a call with no result as such.
 TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
@@ -93,8 +88,6 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   };
   conversation.Append(assistant);
 
-  // One call is answered, the other is left as the store keeps it when a turn ends
-  // between a call and its result.
   pu::ChatMessage receipt;
   receipt.role = "tool";
   receipt.tool_call_id = "call_1";
@@ -110,7 +103,6 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   REQUIRE(call_turn.at("tool_calls").as_array().size() == 2);
   REQUIRE(call_turn.at("tool_call_status") == boost::json::array{"done", "pending"});
 
-  // What the tool printed, not the envelope it was wrapped in.
   const boost::json::value& result_turn = j.as_array()[2];
   REQUIRE(result_turn.at("output") == "hi\n");
   REQUIRE(result_turn.at("error") == "");
@@ -134,7 +126,6 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
                                        {"arguments", boost::json::object{{"command", "ls"}}}}}}};
   conversation.Append(assistant);
 
-  // A built-in or MCP tool answers in its own words, which is output too.
   pu::ChatMessage receipt;
   receipt.role = "tool";
   receipt.tool_call_id = "call_1";
@@ -176,8 +167,6 @@ TEST_CASE("serve API /api/clear", "[serve][api]") {
 }
 
 TEST_CASE("serve API /api/thinking", "[serve][api]") {
-  // An OpenAI-compatible backend is where a level lands, so this is where the
-  // control has something to set.
   ServeHarness harness("openai");
   auto client = harness.Client();
 
@@ -187,8 +176,6 @@ TEST_CASE("serve API /api/thinking", "[serve][api]") {
 
   auto set_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
   REQUIRE(set_j.at("success") == true);
-  // The session's own level is what the next request carries, and the session
-  // reports it as its own rather than as the configuration's.
   REQUIRE(set_j.at("thinking") == "high");
   REQUIRE(set_j.at("thinking_override") == "high");
 
@@ -196,7 +183,6 @@ TEST_CASE("serve API /api/thinking", "[serve][api]") {
   REQUIRE(after_j.at("thinking") == "high");
   REQUIRE(after_j.at("thinking_override") == "high");
 
-  // `auto` hands the choice back to the agent's configuration.
   auto auto_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "auto"}}));
   REQUIRE(auto_j.at("success") == true);
   REQUIRE(auto_j.at("thinking") == "default");
@@ -211,17 +197,14 @@ TEST_CASE("serve API /api/thinking refuses what the backend cannot carry", "[ser
   REQUIRE(refused.status == 400);
   REQUIRE(ParseJson(refused.body).at("success") == false);
 
-  // A word that names no level is refused rather than read as some default.
   auto unknown = client.PostFull("/api/thinking", boost::json::object{{"level", "enormous"}});
   REQUIRE(unknown.status == 400);
   REQUIRE(ParseJson(unknown.body).at("success") == false);
 
-  // A request that names no level is refused as that, rather than as a word meaning nothing.
   auto missing = client.PostFull("/api/thinking", boost::json::object{});
   REQUIRE(missing.status == 400);
   REQUIRE(ParseJson(missing.body).at("error") == "Missing or invalid 'level'");
 
-  // So is a body the handler cannot read at all.
   auto malformed = client.PostRaw("/api/thinking", "not json");
   REQUIRE(malformed.status == 400);
   REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
@@ -250,8 +233,6 @@ TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
   conversation.Append("assistant", "two");
   conversation.Append("user", "three");
 
-  // The turn is the 1-based position the page sends: stepping to it drops that turn and what
-  // follows, so the view ends after the second one.
   auto stepped = client.PostFull("/api/rewind", boost::json::object{{"turn", 3}});
   REQUIRE(stepped.status == 200);
   REQUIRE(ParseJson(stepped.body).at("success") == true);
@@ -269,8 +250,6 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   REQUIRE(session != nullptr);
   session->GetConversation().Append("user", "one");
 
-  // No turn named, a turn past the end, and a body that is not JSON: three refusals the
-  // caller can fix, so three 400s rather than a successful answer with a reason in it.
   auto missing = client.PostFull("/api/rewind", boost::json::object{});
   REQUIRE(missing.status == 400);
   REQUIRE(ParseJson(missing.body).at("error") == "Missing or invalid 'turn'");
@@ -283,12 +262,9 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   REQUIRE(malformed.status == 400);
   REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
 
-  // None of them changed the conversation.
   REQUIRE(ParseJson(client.Get("/api/history")).as_array().size() == 1);
 }
 
-// The store refuses a step back while a tool call has not been answered. That refusal is the
-// caller's to act on — a request the state cannot serve, not a failure — so it is a 400.
 TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
@@ -311,15 +287,10 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
   REQUIRE(ParseJson(refused.body).at("success") == false);
 }
 
-// What the workspace picker offers: the directories beside this one that carry an
-// agents.json, which is what makes a directory one the server can be started in.
 TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  // The discovery scans the directory this server's workspace sits in, so it is full of
-  // directories a test does not own. One of them is made here: a directory without the
-  // configuration file, which has to stay out of the list.
   const fs::path stranger = fs::temp_directory_path() /
                             (harness.Home().filename().string() + "_stranger");
   fs::create_directories(stranger);
@@ -335,7 +306,6 @@ TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[ser
 
   fs::remove_all(stranger);
 
-  // The workspace this server was started in is offered, and one it cannot serve is not.
   REQUIRE(listed_own);
   REQUIRE_FALSE(listed_stranger);
 }

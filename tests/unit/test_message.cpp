@@ -127,8 +127,6 @@ TEST_CASE("A tool call keeps its id, name, and arguments through the JSON shape"
   REQUIRE(as_object.arguments.is_object());
   REQUIRE(as_object.arguments.at("path") == ".");
 
-  // A provider may send the arguments as an encoded string; the shape carries it
-  // through rather than deciding what it means.
   record.arguments = boost::json::value(R"({"path":"."})");
   const context::ToolCallRecord as_string =
       context::ToolCallFromJson(context::ToolCallToJson(record));

@@ -11,7 +11,6 @@ using namespace pu::tools;
 
 namespace {
 
-// A stub for McpClient: only CallTool and IsConnected are overridden.
 class StubMcpClient : public pu::mcp::McpClient {
  public:
   StubMcpClient() : McpClient(pu::mcp::McpServerConfig{}) {}
@@ -126,7 +125,6 @@ TEST_CASE("An McpTool keeps its client alive after the caller drops it", "[mcp_t
   def.description = "test";
   def.parameters = boost::json::object{};
 
-  // The client shared_ptr goes out of scope here; the tool must still be usable.
   std::unique_ptr<McpTool> tool;
   {
     auto client = std::make_shared<StubMcpClient>();

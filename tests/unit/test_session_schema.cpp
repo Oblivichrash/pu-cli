@@ -14,8 +14,6 @@ using namespace pu;
 
 namespace {
 
-// A store that is not node storage: a flat list of messages under the right keys, and
-// no version field for this build to recognise.
 boost::json::value FlatMessageList() {
   return boost::json::parse(R"({
     "conversation": {
@@ -44,7 +42,6 @@ TEST_CASE("A session with another version is refused", "[session][schema]") {
 }
 
 TEST_CASE("A version alone is not enough without node storage", "[session][schema]") {
-  // The right number over the wrong layout: a list of messages rather than the graph.
   boost::json::value j = FlatMessageList();
   j.as_object()["schema_version"] = kSessionSchemaVersion;
   REQUIRE(Session::Deserialize(j) == nullptr);
@@ -80,7 +77,6 @@ TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[
       saved.at("conversation").at("history").as_object()["nodes"].as_array();
   REQUIRE(nodes.size() == 2);
 
-  // Nodes are ordered by id, so the payload is found by the content it carries.
   const boost::json::value* assistant_node = nullptr;
   for (const boost::json::value& node : nodes) {
     REQUIRE(node.at("content").is_string());
@@ -155,7 +151,6 @@ TEST_CASE("A tool call keeps its completed status across a save", "[session][sch
       Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
-  // Status is stored, so a reload does not resurrect a finished call.
   REQUIRE_FALSE(restored->GetConversation().HasPendingToolCalls());
   REQUIRE(restored->GetConversation().GetHistory().size() == 2);
 }
@@ -167,8 +162,6 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
   ws.Append("assistant", "two");
   ws.Append("user", "three");
 
-  // The chain is reconstructed from links, so each node but the first names its parent;
-  // nodes are ordered by id, so the check finds them by content.
   const boost::json::value saved = session.Serialize();
   const boost::json::array& nodes = saved.at("conversation").at("history").at("nodes").as_array();
   REQUIRE(nodes.size() == 3);
@@ -210,8 +203,6 @@ TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// Right version and section names, a field of another type: reading it has to reach the same
-// refusal as any foreign layout, or a conversion failure stops the program from starting.
 TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   Session session;
   session.GetConversation().Append("user", "hello");
@@ -239,8 +230,6 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// The three below are about links rather than names: each loads today into a conversation
-// the next append changes — a chain that stops early loses what it cannot reach.
 TEST_CASE("A parent that names no node is refused", "[session][schema]") {
   Session session;
   session.GetConversation().Append("user", "one");
@@ -296,8 +285,6 @@ TEST_CASE("A repeated id is refused", "[session][schema]") {
   nodes.at(1).as_object()["id"] = duplicate;
   saved.at("conversation").at("history").as_object()["leaf"] = duplicate;
 
-  // Keeping one of them would be picking which turn the conversation holds by the
-  // order the file happens to list them in.
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
@@ -308,8 +295,6 @@ TEST_CASE("The view follows the parent links, not the order of the file", "[sess
   session.GetConversation().Append("user", "three");
 
   boost::json::value saved = session.Serialize();
-  // The store writes its nodes sorted by id, so the file order is not the
-  // conversation order; a reader that trusted it would show the turns shuffled.
   auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
   std::reverse(nodes.begin(), nodes.end());
 

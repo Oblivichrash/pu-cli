@@ -53,8 +53,6 @@ TEST_CASE("Session serialization round-trips", "[conversation]") {
 
 TEST_CASE("A message holding invalid UTF-8 survives a save and load", "[conversation]") {
   Session session;
-  // Bytes a localized library error carries: cp936 for two CJK characters,
-  // which is what a Boost.Asio failure message contains on a Chinese Windows.
   session.GetConversation().Append("assistant", "Request failed: \xB2\xBB\xCA\xC7");
 
   const std::string written = json::PrettyPrint(session.Serialize());
@@ -142,8 +140,6 @@ TEST_CASE("Serialization is stable across repeated round trips", "[conversation]
   REQUIRE(second == first);
   REQUIRE(third == first);
 
-  // A conversation serializes under its own key, holding a graph of nodes and a leaf
-  // rather than the flat list of messages an older layout wrote.
   const boost::json::value stored = boost::json::parse(first);
   REQUIRE(stored.is_object());
   REQUIRE(stored.at("history").at("nodes").as_array().size() == 3);

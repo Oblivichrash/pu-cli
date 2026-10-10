@@ -55,8 +55,6 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   REQUIRE_FALSE(has_auth);
 }
 
-// A gateway that has to be told who is calling: the set is asked for once per request, so a
-// caller that generates correlation ids gets fresh ones each time.
 TEST_CASE("OpenAIProvider sends the extra headers a gateway asks for", "[openai]") {
   OpenAIProvider::Config config;
   config.model = "local-model";
@@ -104,7 +102,6 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
-  // Nothing counted the tokens, so the counts stay absent rather than zero.
   REQUIRE_FALSE(result.usage.has_value());
 }
 
@@ -130,7 +127,6 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   auto result = provider.Chat(history, {});
 
-  // The stream carries no usage unless the request asks for it.
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("stream_options").at("include_usage") == true);
 
@@ -220,7 +216,6 @@ TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   provider.Chat(history, {});
 
-  // "On" used to send nothing at all, and the absent level keeps that meaning.
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE_FALSE(json::HasKey(body, "extra_body"));
   REQUIRE_FALSE(json::HasKey(body, "reasoning_effort"));
@@ -230,7 +225,6 @@ TEST_CASE("OpenAIProvider carries a thinking level whatever the level is", "[ope
   OpenAIProvider::Config config;
   auto mock_http = std::make_unique<MockHttpClient>();
   OpenAIProvider provider(config, std::move(mock_http));
-  // The level decides what is sent, not whether a caller may offer the setting.
   REQUIRE(provider.SupportsThinkingLevel() == true);
 }
 
@@ -276,7 +270,6 @@ TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]")
   std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
   auto result = provider.Chat(history, {});
 
-  // Null while the answer is coming, named once the provider is done with it.
   REQUIRE(result.content == "half");
   REQUIRE(result.finish_reason == "length");
 }
@@ -302,7 +295,6 @@ TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][err
     provider.Chat(history, {});
     FAIL("an error inside the stream should reach the caller");
   } catch (const std::exception& e) {
-    // The provider's own words, not a generic empty-answer diagnosis.
     REQUIRE(std::string(e.what()).find("rate limit reached") != std::string::npos);
   }
 }
@@ -326,7 +318,6 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   auto result = provider.Chat(history, {});
 
-  // Without this the refusal is an empty answer with no reason attached.
   REQUIRE(result.content == "I cannot help with that");
 }
 
@@ -350,7 +341,6 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
   std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
   auto result = provider.Chat(history, {});
 
-  // The fragments are calls the provider already made, sentinel or not.
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "exec");
 }
@@ -400,7 +390,6 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   auto result = provider.Chat(history, {});
 
-  // A gateway that answers in one frame is read the same way a streaming one is.
   REQUIRE(result.content == "the whole answer");
   REQUIRE(result.finish_reason == "stop");
 }
@@ -427,7 +416,6 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   auto result = provider.Chat(history, {});
 
-  // The dated build the provider served, not the tag that was requested.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
 
@@ -459,7 +447,6 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
       history, {}, [&](const std::string& token) { content += token; }, nullptr,
       [&](const std::string& token) { streamed += token; });
 
-  // The two channels arrive while the stream is open, and stay apart.
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
   REQUIRE(result.reasoning_content == "weighing the options");

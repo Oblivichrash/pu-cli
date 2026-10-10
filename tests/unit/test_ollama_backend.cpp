@@ -55,7 +55,6 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
 
   REQUIRE(result.content == "Hello world");
-  // Nothing counted the tokens, so the counts stay absent rather than zero.
   REQUIRE_FALSE(result.usage.has_value());
 }
 
@@ -199,7 +198,6 @@ TEST_CASE("OllamaProvider does not claim to carry a thinking level", "[ollama]")
 
   auto mock_http = std::make_unique<MockHttpClient>();
   OllamaProvider provider(std::move(config), std::move(mock_http));
-  // A model decides this for itself here, so a caller offers no control.
   REQUIRE(provider.SupportsThinkingLevel() == false);
 }
 
@@ -223,7 +221,6 @@ TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]")
   auto result = provider.Chat(history, {});
 
   REQUIRE(result.content == "half");
-  // Its own word for the token limit, under a name of its own.
   REQUIRE(result.finish_reason == "length");
 }
 
@@ -247,7 +244,6 @@ TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollam
   std::vector<ChatMessage> history = {{1, "now", "user", "think about it"}};
   auto result = provider.Chat(history, {});
 
-  // Reasoning arrives under a name of its own, beside an empty content.
   REQUIRE(result.reasoning_content == "weighing the options");
   REQUIRE(result.content.empty());
 }
@@ -298,7 +294,6 @@ TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   auto result = provider.Chat(history, {});
 
-  // The build that answered, not the tag that was requested.
   REQUIRE(result.model == "llama3.2:1b");
 }
 
@@ -329,7 +324,6 @@ TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama
       history, {}, [&](const std::string& token) { content += token; }, nullptr,
       [&](const std::string& token) { streamed += token; });
 
-  // The two channels arrive while the stream is open, and stay apart.
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
   REQUIRE(result.reasoning_content == "weighing the options");

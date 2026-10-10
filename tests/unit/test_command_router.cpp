@@ -15,8 +15,6 @@ using namespace pu;
 namespace {
 
 struct RouterFixture {
-  // The directory outlives the variable pointing at it, and the variable outlives everything
-  // built on it: set and left in the process, it would send every later test's data there.
   pu::tests::ScopedTempDir data_dir{"pu_command_router_test_"};
   std::unique_ptr<pu::tests::ScopedEnvVar> home;
 
@@ -87,14 +85,11 @@ TEST_CASE("CommandRouter rejects a command it does not have", "[router]") {
   RouterFixture f;
   std::string output;
 
-  // Bare, and with arguments of its own: neither is a command this build has.
   REQUIRE_FALSE(f.Route("/unknown", output));
   REQUIRE_FALSE(f.Route("/unknown add remember this", output));
   REQUIRE_FALSE(f.Route("/unknown show", output));
 }
 
-// The command names a type and a model; the host it leaves out is the type's own, answered
-// where the command is rather than in the factory.
 TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") {
   RouterFixture f;
   std::string output;

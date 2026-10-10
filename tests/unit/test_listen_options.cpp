@@ -16,7 +16,6 @@ TEST_CASE("A port is the number a text names, or nothing", "[listen]") {
   REQUIRE(ParsePort("1") == 1);
   REQUIRE(ParsePort("65535") == 65535);
 
-  // Not a port: nothing to listen on.
   REQUIRE_FALSE(ParsePort("").has_value());
   REQUIRE_FALSE(ParsePort("0").has_value());
   REQUIRE_FALSE(ParsePort("65536").has_value());
@@ -51,14 +50,11 @@ TEST_CASE("Where to listen: the command line, then the environment, then the fil
   REQUIRE(from_flag.host == "flag-host");
   REQUIRE(from_flag.port == 9200);
 
-  // Each place may answer for one of the two, and the other comes from the place below it.
   const auto mixed = ResolveListenOptions("flag-host", std::nullopt, std::nullopt, "9100", file);
   REQUIRE(mixed.host == "flag-host");
   REQUIRE(mixed.port == 9100);
 }
 
-// A port a shell named is refused rather than answered by a file: what was asked for is not
-// silently replaced by what a directory happens to say.
 TEST_CASE("A port that was named is not overruled by the file", "[listen]") {
   const ServeOptions file{"from-file", 9000};
 

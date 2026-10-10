@@ -158,8 +158,6 @@ TEST_CASE("Every stored node reaches the model, with its tool receipt", "[reques
   REQUIRE(messages.size() == graph.Size());
   REQUIRE(messages.size() == 22);
 
-  // The receipt follows the call it answers, which is the shape a provider
-  // requires and the reason the request is not shortened.
   bool call_followed_by_receipt = false;
   for (std::size_t i = 0; i + 1 < messages.size(); ++i) {
     if (messages[i].HasToolCalls() && messages[i + 1].role == "tool" &&

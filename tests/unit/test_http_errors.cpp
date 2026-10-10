@@ -10,8 +10,6 @@
 
 namespace {
 
-// What the layers below threw, as a status. Kept beside the mapping it checks rather than
-// exercised only through a route, because a route reads the type the same way.
 unsigned StatusFor(const std::exception& e) {
   if (dynamic_cast<const pu::Error*>(&e) != nullptr) return 500;
   if (dynamic_cast<const pu::RuntimeError*>(&e) != nullptr) return 400;
@@ -46,7 +44,6 @@ TEST_CASE("A failure response reports what the server said", "[http][errors]") {
     REQUIRE(message.find("maximum context length is 4096 tokens") != std::string::npos);
   }
 
-  // The body is a failure message, not stream content.
   REQUIRE(received.empty());
 }
 
@@ -103,13 +100,10 @@ TEST_CASE("A success response still streams to the consumer", "[http][errors]") 
 }
 
 TEST_CASE("The error a request is refused with decides its status", "[http][errors]") {
-  // A request the state cannot serve is the caller's to act on, so it is reported as 400 and
-  // must not be an Error: anything derived from Error reads as a fault of this process.
   const pu::RequestRefused refused("tool calls are pending");
   REQUIRE(StatusFor(refused) == 400);
   REQUIRE(dynamic_cast<const pu::Error*>(&refused) == nullptr);
 
-  // A request that is itself wrong, and a failure with no more specific answer, are faults.
   REQUIRE(StatusFor(pu::Error("unknown backend type")) == 500);
   REQUIRE(StatusFor(pu::HttpError("HTTP read error")) == 500);
   REQUIRE(StatusFor(pu::RuntimeError("no more specific answer")) == 400);

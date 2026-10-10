@@ -26,8 +26,6 @@ std::string FrameType(const boost::json::value& frame) {
   return boost::json::value_to<std::string>(frame.at("type"));
 }
 
-// The page: the socket the front end opens, with the reads and writes a test needs. Every
-// read is bounded, so a frame that never comes is a timeout rather than a hung test.
 class Page {
  public:
   explicit Page(int port) : ws_(ioc_) {
@@ -46,7 +44,6 @@ class Page {
 
   void Cancel() { Send(boost::json::value{{"type", "cancel"}}); }
 
-  // One frame, or nothing when the wait ran out or the server closed the socket.
   std::optional<boost::json::value> Read(int timeout_ms) {
     beast::get_lowest_layer(ws_).expires_after(std::chrono::milliseconds(timeout_ms));
     beast::flat_buffer buffer;
@@ -60,8 +57,6 @@ class Page {
     }
   }
 
-  // Everything up to and including the frame that ends the turn, or nothing at all when
-  // the turn did not end within `timeout_ms`.
   std::vector<boost::json::value> ReadUntilEnd(int timeout_ms) {
     std::vector<boost::json::value> frames;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
@@ -78,7 +73,6 @@ class Page {
     return {};
   }
 
-  // Closing the page, which is a socket that stops answering rather than a goodbye.
   void Abort() {
     beast::error_code ec;
     beast::get_lowest_layer(ws_).socket().close(ec);
@@ -103,14 +97,10 @@ std::string ChunkText(const std::vector<boost::json::value>& frames) {
   return text;
 }
 
-// What the conversation holds, read through the endpoint a reload uses. The request waits
-// for a turn to let go of the session, so a turn in flight is over by the time this returns.
 boost::json::value StoredConversation(pu::tests::ServeHarness& harness) {
   return boost::json::parse(harness.Client().Get("/api/history"));
 }
 
-// Waits until the turn has reached the backend, which is what makes it in flight: the
-// conversation holds the question by then. A fixed sleep would be a race under load.
 void WaitForTheTurnToReachTheBackend(pu::tests::ServeHarness& harness) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
@@ -139,7 +129,6 @@ TEST_CASE("A run streams the answer and ends with done", "[serve][ws]") {
   REQUIRE_FALSE(frames.empty());
   REQUIRE(FrameType(frames.back()) == "done");
 
-  // The reply arrives in chunks before the turn closes, and nothing arrives after it.
   REQUIRE(ChunkText(frames) == "OK");
 }
 
@@ -147,7 +136,6 @@ TEST_CASE("A second page is told the session is busy", "[serve][ws]") {
   pu::tests::ServeHarness harness;
   Page first(harness.Port());
 
-  // A completed turn is what shows the server has this page as its client.
   first.Run("mine");
   REQUIRE(FrameType(first.ReadUntilEnd(10000).back()) == "done");
 
@@ -155,10 +143,8 @@ TEST_CASE("A second page is told the session is busy", "[serve][ws]") {
   const auto refusal = second.Read(5000);
   REQUIRE(refusal.has_value());
   REQUIRE(FrameType(*refusal) == "busy");
-  // The refusal closes the socket, rather than leaving a page that cannot be used.
   REQUIRE_FALSE(second.Read(5000).has_value());
 
-  // The page that was there is undisturbed by the one that was turned away.
   first.Run("still mine");
   const auto frames = first.ReadUntilEnd(10000);
   REQUIRE_FALSE(frames.empty());
@@ -176,8 +162,6 @@ TEST_CASE("A page that goes away ends the turn and stores no reply", "[serve][ws
   RequireOnlyTheQuestion(StoredConversation(harness), "hello");
 }
 
-// What arrived before the stop may already have been shown; it is not an answer, so the
-// conversation keeps the question alone. That is the rule, not the absence of frames.
 TEST_CASE("A cancel ends the turn with done and stores no reply", "[serve][ws]") {
   pu::tests::ServeHarness harness("ollama", 600);
   Page page(harness.Port());

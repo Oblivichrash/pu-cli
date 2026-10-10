@@ -18,11 +18,8 @@ TEST_CASE("A step back is abandoned only when something replaces it", "[session]
   REQUIRE(ws.RewindBefore(3));
   REQUIRE(ws.GetHistory().size() == 2);
 
-  // Still stored: stepping back costs nothing until the next message lands.
   REQUIRE(ws.GetGraph().Size() == 3);
 
-  // The append replaces the turns after the new leaf, so the store ends up
-  // holding exactly the conversation the view shows.
   ws.Append("user", "three again");
   REQUIRE(ws.GetHistory().size() == 3);
   REQUIRE(ws.GetHistory()[2].content == "three again");
@@ -65,7 +62,6 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   session.GetConversation().Append(assistant);
 
   REQUIRE(session.GetConversation().HasPendingToolCalls());
-  // A refusal the caller can act on, so it is not an Error: that one reports a fault.
   REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), RequestRefused);
   REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), std::exception);
 }
@@ -80,7 +76,6 @@ TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[se
   auto restored = Session::Deserialize(session.Serialize());
   REQUIRE(restored != nullptr);
   REQUIRE(restored->GetConversation().GetHistory().size() == 2);
-  // The file carries the replacement and not the turn it replaced.
   REQUIRE(restored->GetConversation().GetGraph().Size() == 2);
   REQUIRE(restored->GetConversation().GetHistory()[1].content == "two again");
 }

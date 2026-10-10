@@ -26,8 +26,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// A child that copies a file to stdout verbatim, so the bytes reaching the
-// transport are exactly the bytes written here.
 class FileEmitter {
  public:
   explicit FileEmitter(const std::string& bytes) {
@@ -119,7 +117,6 @@ TEST_CASE("SanitizeUtf8 leaves valid input untouched", "[text]") {
 }
 
 TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]") {
-  // GBK bytes for a localized "not found" message.
   const std::string gbk_stdout = "\xB2\xBB\xCA\xC7\xC4\xDA\xB2\xBF\xBB\xF2";
 
   const std::string result =
@@ -146,7 +143,6 @@ TEST_CASE("Tool results keep valid text byte for byte", "[tools][text]") {
 }
 
 TEST_CASE("ExecuteCommand returns valid UTF-8 for localized shell output", "[platform][text]") {
-  // A localized shell message is not UTF-8 until the capture path decodes it.
   std::string output;
   pu::platform::ExecuteCommand("nonexistent_command_pu_encoding_test", output);
 
@@ -155,16 +151,12 @@ TEST_CASE("ExecuteCommand returns valid UTF-8 for localized shell output", "[pla
 }
 
 TEST_CASE("Process output decoding repairs non-UTF-8 pipe text", "[platform][text]") {
-  // Bytes Python writes to a pipe on a Chinese Windows host (cp936): invalid as
-  // UTF-8, so a JSON-RPC line carrying them could not be parsed.
   const std::string piped = "\xD6\xD0\xCE\xC4";
   REQUIRE_FALSE(text::IsValidUtf8(piped));
 
   const std::string decoded = pu::platform::FromPipedOutput(piped);
   REQUIRE(text::IsValidUtf8(decoded));
 #ifdef _WIN32
-  // The pipe path decodes with the ANSI code page; a console code page here
-  // would produce valid but wrong text.
   if (GetACP() == 936) REQUIRE(decoded == "\xE4\xB8\xAD\xE6\x96\x87");
 #endif
 }
@@ -176,7 +168,6 @@ TEST_CASE("Process output decoding leaves UTF-8 untouched", "[platform][text]") 
 }
 
 TEST_CASE("Process output decoding always yields valid UTF-8", "[platform][text]") {
-  // Bytes that no code page maps cleanly still have to produce parseable text.
   const std::string undecodable = "ok \xFF\xFE tail";
   REQUIRE(text::IsValidUtf8(pu::platform::FromPipedOutput(undecodable)));
   REQUIRE(text::IsValidUtf8(pu::platform::FromConsoleOutput(undecodable)));
@@ -184,8 +175,6 @@ TEST_CASE("Process output decoding always yields valid UTF-8", "[platform][text]
 }
 
 TEST_CASE("MCP stdio transport delivers code-page bytes as UTF-8", "[mcp][text]") {
-  // The child emits its bytes verbatim, so these arrive exactly as a JSON-RPC
-  // response line would: cp936 for two CJK characters, which is not valid UTF-8.
   const FileEmitter emitter("\xD6\xD0\xCE\xC4\n");
 
   const std::string received = CaptureFirstLine(emitter.command(), emitter.args());

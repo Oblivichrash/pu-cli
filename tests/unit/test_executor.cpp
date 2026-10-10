@@ -93,8 +93,6 @@ TEST_CASE("What the environment probe found reaches the request", "[executor]") 
   Executor executor;
   const std::string context = executor.BuildStaticSystemContext();
 
-  // The probe runs at construction and is read once, so what can be asserted from
-  // outside is the context the model is given rather than the field it was cached in.
   REQUIRE(context.find("=== Environment ===") != std::string::npos);
   REQUIRE(context.find("OS: \n") == std::string::npos);
   REQUIRE(context.find("Kernel: \n") == std::string::npos);
@@ -128,7 +126,6 @@ class MockLLM : public LLMProvider {
   bool fire_calls_once_ = false;
 };
 
-// Records the tools it was offered and asks for the one it wants, once.
 class OfferingLLM : public LLMProvider {
  public:
   OfferingLLM(std::string wanted, std::string content = "")
@@ -149,8 +146,6 @@ class OfferingLLM : public LLMProvider {
       if (def.name == wanted_) wanted_is_offered = true;
     }
 
-    // Ask for the tool only when the toolbox on offer actually carries it. Asking for a
-    // tool that was never offered is a request the model would not make.
     if (wanted_is_offered && !asked_) {
       asked_ = true;
       ToolCall call;
@@ -171,8 +166,6 @@ class OfferingLLM : public LLMProvider {
   bool asked_ = false;
 };
 
-// A provider whose request always fails, which is how an over-length or
-// unauthorised request looks to the executor.
 class FailingLLM : public LLMProvider {
  public:
   ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
@@ -186,8 +179,6 @@ class FailingLLM : public LLMProvider {
   bool SupportsTools() const override { return true; }
 };
 
-// Records what the executor sends, which is the only way to observe the request
-// view from the outside.
 class CapturingLLM : public LLMProvider {
  public:
   ChatResult Chat(const std::vector<ChatMessage>& history,
@@ -209,8 +200,6 @@ class CapturingLLM : public LLMProvider {
   std::vector<ChatMessage> history_;
 };
 
-// A provider whose answer says how it ended, which is what the remark is read from,
-// and which can put a line on the reasoning channel as well.
 class StoppingLLM : public LLMProvider {
  public:
   StoppingLLM(std::string content, std::string finish_reason, std::string model = "",
@@ -262,7 +251,6 @@ class TrackingTool : public Tool {
   std::string name_;
 };
 
-// A tool with a fixed name and no bookkeeping, for tool sets that differ only by name.
 class NamedTool : public Tool {
  public:
   explicit NamedTool(std::string name) : name_(std::move(name)) {}
@@ -301,8 +289,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   call.name = "tracking_tool";
   call.arguments = boost::json::value{{"flag", true}};
 
-  // Emit the tool call only on the first turn so the tool loop terminates
-  // after the tool runs and the mock returns its final text response.
   MockLLM mock(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
   std::vector<std::string> started_ids;
@@ -335,7 +321,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(started_ids.size() == 1);
   REQUIRE(ended_ids.size() == 1);
 
-  // start and end must reference the same, non-empty tool id.
   REQUIRE_FALSE(started_ids[0].empty());
   REQUIRE(started_ids[0] == ended_ids[0]);
 
@@ -346,8 +331,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
 
-  // The workspace history must pair the tool message with the same id that was
-  // streamed to the caller.
   bool found_paired_tool_msg = false;
   for (const auto& msg : ws.GetHistory()) {
     if (msg.role == "tool" && msg.tool_call_id == started_ids[0]) {
@@ -365,8 +348,6 @@ TEST_CASE("Each turn reads the toolbox it was given, not one held from an earlie
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  // The two toolboxes offer different tool sets, so an executor that held onto the
-  // first one would offer a tool the turn was not given.
   auto older = std::make_unique<NamedTool>("older_tool");
   Toolbox first;
   first.RegisterTool(std::move(older));
@@ -403,7 +384,6 @@ TEST_CASE("The toolbox a turn reads is the only one it can reach", "[executor][t
   second.RegisterTool(std::move(counter));
 
   Conversation ws;
-  // Asks for the tool the executor is *not* given this turn.
   OfferingLLM provider("older_tool", "done");
 
   const ExecutionResult result = executor.Execute("run it", ws, &provider, &second);
@@ -464,8 +444,6 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   CapturingLLM provider;
   executor.Execute("hello", ws, &provider, &toolbox);
 
-  // The environment context still leads the request; what is absent is the
-  // agent's prompt, which only the runtime supplies.
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
   REQUIRE(sent[0].content.find("=== Environment ===") == 0);
@@ -485,8 +463,6 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   REQUIRE(result.has_error);
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
 
-  // The failure is not a turn: a model never said it, and storing it would grow
-  // the conversation on every refusal, making the next request longer.
   const std::vector<ChatMessage> history = ws.GetHistory();
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
@@ -494,8 +470,6 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
 }
 
 TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor][tool_loop]") {
-  // The interrupt flag is global, so the test states its own starting point
-  // rather than depending on whichever test ran before it.
   platform::ClearInterruptFlag();
 
   Toolbox toolbox;
@@ -504,8 +478,6 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  // A withdrawn request reaches the executor looking like any other failure; what
-  // separates them is the token the caller holds, not the message it threw.
   FailingLLM provider;
   const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
 
@@ -515,7 +487,6 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
 
-  // The user message stands alone: nothing is stored that claims to answer it.
   REQUIRE(ws.GetHistory().size() == 1);
   REQUIRE(ws.GetHistory()[0].role == "user");
 }
@@ -533,7 +504,6 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "half a sentence");
-  // The answer is real and is stored; the remark is what says it may be cut off.
   REQUIRE_FALSE(result.notice.empty());
   REQUIRE(ws.GetHistory().size() == 2);
 }
@@ -573,8 +543,6 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
 
   REQUIRE(result.has_error == false);
 
-  // The call is in the conversation, so it has to be answered: a call the store
-  // holds without its result is a conversation the provider refuses to continue.
   bool stored_call = false;
   bool stored_answer = false;
   for (const auto& msg : ws.GetHistory()) {
@@ -600,7 +568,6 @@ TEST_CASE("The model that answered is carried out of the turn", "[executor][tool
   Conversation ws;
   const ExecutionResult result = executor.Execute("ask", ws, &provider, &toolbox);
 
-  // What replied, which is not necessarily what was configured.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
 
@@ -618,8 +585,6 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
       executor.Execute("think", ws, &provider, &toolbox, nullptr, nullptr, {},
                        [&](const std::string& token) { streamed += token; });
 
-  // Reasoning has a channel of its own, so it neither waits for the answer nor
-  // becomes part of it.
   REQUIRE(streamed == "weighing the options");
   REQUIRE(result.content == "answer");
 }

@@ -22,9 +22,6 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// A transport the test drives by hand: it records what the client wrote and hands a message
-// back when the case says so, which is how the pairing rules are observed without a server or
-// a child process.
 class FakeTransport : public pu::mcp::Transport {
  public:
   bool Start(pu::mcp::MessageCallback on_message) override {
@@ -45,7 +42,6 @@ class FakeTransport : public pu::mcp::Transport {
 
   const std::vector<std::string>& Written() const { return written_; }
 
-  // What a server would send: the callback the transport was started with.
   void Deliver(const std::string& line) {
     REQUIRE(on_message_);
     on_message_(line);
@@ -94,8 +90,6 @@ http::response<http::string_body> Answer(unsigned status, std::string body) {
   return res;
 }
 
-// An MCP server reached over HTTP. It answers a request body with a reply for the method it
-// carries, in a plain JSON body or in one `data:` frame, and refuses a call when asked to.
 class McpServer {
  public:
   struct Options {
@@ -164,8 +158,6 @@ pu::mcp::McpServerConfig ServerConfigAt(int port, std::map<std::string, std::str
   return config;
 }
 
-// The notification the handshake sends is a request of its own, so waiting for a count is how
-// a case knows the server has seen it.
 void WaitForRequests(const pu::tests::FakeHttpServer& server, int wanted) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
@@ -203,7 +195,6 @@ TEST_CASE("Replies are paired by id, not by the order they arrive in", "[mcp][js
   const int second_id = RequestId(rpc.transport.Written()[1]);
   REQUIRE(first_id != second_id);
 
-  // The answer to the second request arrives first.
   rpc.transport.Deliver(Reply(second_id, "for the second"));
   rpc.transport.Deliver(Reply(first_id, "for the first"));
 
@@ -229,7 +220,6 @@ TEST_CASE("An error reply fails the request with what the server said", "[mcp][j
 TEST_CASE("A notification and a line that is not JSON are both ignored", "[mcp][jsonrpc]") {
   Rpc rpc;
 
-  // A notification carries no id, so there is nothing to answer.
   rpc.transport.Deliver(R"({"jsonrpc":"2.0","method":"notifications/message"})");
   rpc.transport.Deliver("this is not json");
 
@@ -263,10 +253,8 @@ TEST_CASE("Connect shakes hands and lists the tools once", "[mcp][http]") {
   REQUIRE(tools[0].description == "Echoes what it is given");
   REQUIRE(tools[0].parameters.is_object());
   REQUIRE(tools[1].name == "count");
-  // A tool without a schema is reported with an empty one rather than a null.
   REQUIRE(tools[1].parameters.as_object().empty());
 
-  // The list is asked for once and kept.
   REQUIRE(client.ListTools().size() == 2);
   REQUIRE(http.Requests() == 3);
 
@@ -283,8 +271,6 @@ TEST_CASE("A connected server that answers without tools is reported, not read a
   REQUIRE(client.Connect());
   REQUIRE(client.IsConnected());
 
-  // An empty list would be indistinguishable from a server that has no tools, so the
-  // caller is told the reply was not a tool list.
   REQUIRE_THROWS_AS(client.ListTools(), pu::Error);
 }
 
@@ -314,8 +300,6 @@ TEST_CASE("A call the server refuses is reported as a failure", "[mcp][http]") {
   pu::mcp::McpClient client(ServerConfigAt(http.Port()));
   REQUIRE(client.Connect());
 
-  // The reply's error travels out of the JSON-RPC client as an exception, so the answer the
-  // caller gets is the one that says the call failed.
   const std::string answer = client.CallTool("echo", boost::json::object{});
   REQUIRE(answer.starts_with("MCP call error:"));
   REQUIRE(answer.find("no such method") != std::string::npos);
@@ -343,7 +327,6 @@ TEST_CASE("A client that never connected reports that on every call", "[mcp][htt
 
 TEST_CASE("A server that does not answer in time leaves the client unconnected", "[mcp][http]") {
   McpServer server({});
-  // The client's request timeout is a fixed five seconds, so this case takes about that long.
   pu::tests::FakeHttpServer http(server.ToResponder(), 6000);
 
   pu::mcp::McpClient client(ServerConfigAt(http.Port()));
