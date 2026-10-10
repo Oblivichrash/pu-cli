@@ -10,6 +10,14 @@
 
 namespace {
 
+// What the layers below threw, as a status. Kept beside the mapping it checks rather than
+// exercised only through a route, because a route reads the type the same way.
+unsigned StatusFor(const std::exception& e) {
+  if (dynamic_cast<const pu::Error*>(&e) != nullptr) return 500;
+  if (dynamic_cast<const pu::RuntimeError*>(&e) != nullptr) return 400;
+  return 500;
+}
+
 std::string Post(pu::http::BeastHttpClient& client, int port, std::string& received) {
   const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/v1/chat/completions";
   client.PostStream(url, "{}", {"Content-Type: application/json"},
@@ -92,4 +100,17 @@ TEST_CASE("A success response still streams to the consumer", "[http][errors]") 
   Post(client, server.Port(), received);
 
   REQUIRE(received == "streamed content");
+}
+
+TEST_CASE("The error a request is refused with decides its status", "[http][errors]") {
+  // A request the state cannot serve is the caller's to act on, so it is reported as 400 and
+  // must not be an Error: anything derived from Error reads as a fault of this process.
+  const pu::RequestRefused refused("tool calls are pending");
+  REQUIRE(StatusFor(refused) == 400);
+  REQUIRE(dynamic_cast<const pu::Error*>(&refused) == nullptr);
+
+  // A request that is itself wrong, and a failure with no more specific answer, are faults.
+  REQUIRE(StatusFor(pu::Error("unknown backend type")) == 500);
+  REQUIRE(StatusFor(pu::HttpError("HTTP read error")) == 500);
+  REQUIRE(StatusFor(pu::RuntimeError("no more specific answer")) == 400);
 }

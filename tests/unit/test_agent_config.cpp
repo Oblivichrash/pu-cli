@@ -143,7 +143,7 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
   fs::remove_all(home, ec);
 }
 
-TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]") {
+TEST_CASE("FindConfigPath reports no configuration when neither location exists", "[agent_config]") {
   auto dir = fs::temp_directory_path() / "pu_findconfig_empty";
   auto home = fs::temp_directory_path() / "pu_findconfig_empty_home";
   std::error_code ec;
@@ -157,7 +157,7 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
 
   {
     ScopedEnvVar env("HOME", home.string());
-    REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+    REQUIRE(config::FindConfigPath().empty());
   }
 
   fs::current_path(old);

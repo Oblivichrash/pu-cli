@@ -65,6 +65,8 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   session.GetConversation().Append(assistant);
 
   REQUIRE(session.GetConversation().HasPendingToolCalls());
+  // A refusal the caller can act on, so it is not an Error: that one reports a fault.
+  REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), RequestRefused);
   REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), std::exception);
 }
 
