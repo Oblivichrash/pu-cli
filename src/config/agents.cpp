@@ -137,7 +137,7 @@ std::optional<ServeOptions> FindServeOptions() {
     std::ostringstream buffer;
     buffer << file.rdbuf();
     j = json::parse(buffer.str());
-  } catch (const std::exception&) {
+  } catch (const boost::system::system_error&) {
     return std::nullopt;
   }
 

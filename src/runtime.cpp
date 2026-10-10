@@ -124,12 +124,10 @@ void Runtime::Initialize(const std::string& config_path) {
   }
 
   is_initialized_ = true;
-  is_running_ = true;
 }
 
 void Runtime::Shutdown() {
   SaveCurrentSession();
-  is_running_ = false;
 }
 
 void Runtime::SaveCurrentSession() {
@@ -217,12 +215,6 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   ExecutionResult result;
   try {
     BeginRequest();
-
-    if (!is_running_) {
-      result.has_error = true;
-      result.error_message = "Runtime is not running.";
-      return result;
-    }
 
     auto session = GetOrCreateDefaultSession();
 

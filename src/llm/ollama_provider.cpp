@@ -134,9 +134,7 @@ void OllamaProvider::ParseLine(std::string_view line,
   try {
     j = boost::json::parse(line);
   } catch (const boost::system::system_error& e) {
-    spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-    return;
-  } catch (const std::exception&) {
+    spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;
   }
   HandleJsonToken(j, content_cb);

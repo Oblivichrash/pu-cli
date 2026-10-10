@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <cassert>
 #include <functional>
 #include <memory>
 #include <string>
@@ -41,7 +42,10 @@ class Runtime {
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
 
-  AgentManager& GetAgentManager() { return *agent_manager_; }
+  AgentManager& GetAgentManager() {
+    assert(agent_manager_ && "Initialize() must run before any agent query");
+    return *agent_manager_;
+  }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
   const config::AgentEntry& ActiveAgent() const;
@@ -64,7 +68,6 @@ class Runtime {
   void RegisterMcpTools();
 
   bool is_initialized_ = false;
-  bool is_running_ = false;
   std::unique_ptr<AgentManager> agent_manager_;
   std::unique_ptr<CommandRouter> command_router_;
   Toolbox toolbox_;

@@ -65,7 +65,7 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     boost::json::value jv;
     try {
       jv = boost::json::parse(text);
-    } catch (const std::exception& e) {
+    } catch (const boost::system::system_error& e) {
       boost::json::value error = {
           {"type", "error"}, {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}};
       const std::string message = boost::json::serialize(error);

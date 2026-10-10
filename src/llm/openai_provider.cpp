@@ -165,7 +165,7 @@ void OpenAIProvider::FlushPendingToolCalls() {
     if (!acc.arguments.empty()) {
       try {
         call.arguments = boost::json::parse(acc.arguments);
-      } catch (const std::exception&) {
+      } catch (const boost::system::system_error&) {
         call.arguments = acc.arguments;
       }
     }
@@ -190,9 +190,7 @@ void OpenAIProvider::ParseLine(std::string_view line,
   try {
     j = boost::json::parse(data);
   } catch (const boost::system::system_error& e) {
-    spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-    return;
-  } catch (const std::exception&) {
+    spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;
   }
   HandleJsonToken(j, content_cb);

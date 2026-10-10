@@ -181,7 +181,7 @@ std::string SummarizeErrorBody(const std::string& body) {
   std::string message;
   try {
     message = json::ErrorMessage(boost::json::parse(text));
-  } catch (const std::exception&) {
+  } catch (const boost::system::system_error&) {
   }
   if (message.empty()) message = text;
 

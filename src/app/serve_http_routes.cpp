@@ -207,7 +207,7 @@ void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value body;
   try {
     body = boost::json::parse(req.body());
-  } catch (const std::exception&) {
+  } catch (const boost::system::system_error&) {
     SendError(res, 400, "Invalid JSON");
     return;
   }
@@ -263,7 +263,7 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
   boost::json::value body;
   try {
     body = boost::json::parse(req.body());
-  } catch (const std::exception&) {
+  } catch (const boost::system::system_error&) {
     SendError(res, 400, "Invalid JSON");
     return;
   }
@@ -291,7 +291,7 @@ void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
   boost::json::value requested;
   try {
     requested = boost::json::parse(req.body());
-  } catch (const std::exception&) {
+  } catch (const boost::system::system_error&) {
     SendError(res, 400, "Invalid JSON");
     return;
   }
