@@ -11,6 +11,7 @@
 
 #include <boost/json.hpp>
 
+#include "pu/core/base.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/mcp/transport.hpp"
 

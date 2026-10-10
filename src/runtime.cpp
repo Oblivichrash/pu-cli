@@ -80,6 +80,9 @@ void Runtime::Initialize(const std::string& config_path) {
   if (!std::filesystem::exists(cfg_path)) {
     cfg_path = config::FindConfigPath();
   }
+  if (cfg_path.empty()) {
+    throw Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  }
 
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 

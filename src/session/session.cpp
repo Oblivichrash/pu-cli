@@ -99,7 +99,7 @@ std::vector<ChatMessage> Conversation::GetHistory() const {
 
 bool Conversation::RewindBefore(size_t turn) {
   if (HasPendingToolCalls()) {
-    throw RuntimeError(
+    throw RequestRefused(
         "Cannot rewind while tool calls are pending. "
         "Please let the current tool finish or /clear.");
   }
@@ -136,7 +136,7 @@ Session::Session(std::shared_ptr<Conversation> conversation, const SessionSpec& 
 
 void Session::SetAgent(const std::string& agent_name) {
   if (HasPendingToolCalls()) {
-    throw RuntimeError(
+    throw RequestRefused(
         "Cannot switch agent while tool calls are pending. "
         "Please let the current tool finish or /clear.");
   }
@@ -148,7 +148,7 @@ void Session::SetAgent(const std::string& agent_name) {
 
 void Session::SetBackendOverride(const config::BackendConfig& new_config) {
   if (HasPendingToolCalls()) {
-    throw RuntimeError(
+    throw RequestRefused(
         "Cannot switch backend while tool calls are pending. "
         "Please let the current tool finish or /clear.");
   }

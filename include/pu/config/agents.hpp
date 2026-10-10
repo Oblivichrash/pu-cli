@@ -57,6 +57,8 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
                                    const std::optional<std::string>& env_port,
                                    const std::optional<ServeOptions>& from_file);
 
+// The path of the workspace's agents.json — `./.pu/` first, then `~/.pu/` — or an empty
+// string when neither exists, which is a state the caller answers for rather than a failure.
 std::string FindConfigPath();
 
 // The `serve` block of the workspace's configuration. A file that is absent, unreadable or

@@ -24,6 +24,14 @@ class RuntimeError : public std::runtime_error {
   explicit RuntimeError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
+// A request this process's state refuses while the request itself is well formed, so a
+// server reports it to the caller rather than as a fault of its own. `Error` covers the
+// request being wrong; this covers the state being unable to serve it.
+class RequestRefused : public RuntimeError {
+ public:
+  using RuntimeError::RuntimeError;
+};
+
 class Error : public RuntimeError {
  public:
   using RuntimeError::RuntimeError;

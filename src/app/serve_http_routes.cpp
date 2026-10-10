@@ -49,8 +49,8 @@ void SendError(http::response<http::string_body>& res, unsigned status, std::str
   SendJson(res, status, boost::json::object{{"success", false}, {"error", std::string(message)}});
 }
 
-// What the layers below threw, as a status: a base RuntimeError is the store refusing a
-// request its state cannot serve, while Error and below are failures.
+// What the layers below threw, as a status. A request refused by the state is the caller's
+// to act on, and a base RuntimeError is a failure with no more specific answer.
 unsigned ErrorStatus(const std::exception& e) {
   if (dynamic_cast<const Error*>(&e) != nullptr) return 500;
   if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;

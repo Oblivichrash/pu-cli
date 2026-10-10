@@ -122,16 +122,13 @@ std::string FindConfigPath() {
     if (std::filesystem::exists(user)) return user.string();
   }
 
-  throw pu::Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  // A workspace without a configuration is a state callers answer for, not a failure.
+  return {};
 }
 
 std::optional<ServeOptions> FindServeOptions() {
-  std::string path;
-  try {
-    path = FindConfigPath();
-  } catch (const std::exception&) {
-    return std::nullopt;
-  }
+  const std::string path = FindConfigPath();
+  if (path.empty()) return std::nullopt;
 
   std::ifstream file(path);
   if (!file.is_open()) return std::nullopt;

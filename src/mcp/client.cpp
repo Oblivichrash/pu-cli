@@ -138,12 +138,12 @@ boost::json::value McpClient::SendRequest(const std::string& method,
                                           const boost::json::value& params, int timeout_ms) {
   // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
-    throw RuntimeError("MCP client not connected");
+    throw RequestRefused("MCP client not connected");
   }
   auto future = pimpl_->rpc->SendRequest(method, params);
   auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
   if (status == std::future_status::timeout) {
-    throw RuntimeError("MCP request timeout");
+    throw RequestRefused("MCP request timeout");
   }
   return future.get();
 }
