@@ -26,6 +26,7 @@ add_executable(pu_tests
     unit/test_options.cpp
     unit/test_http_errors.cpp
     unit/test_backend_resolution.cpp
+    unit/test_listen_options.cpp
     unit/test_rewind.cpp
 )
 

@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <sstream>
 
@@ -156,7 +157,7 @@ std::optional<ServeOptions> FindServeOptions() {
     if (serve.at("port").is_int64()) {
       const auto port = serve.at("port").as_int64();
       if (port >= 1 && port <= 65535) {
-        options.port = static_cast<int>(port);
+        options.port = static_cast<std::uint16_t>(port);
       } else {
         spdlog::warn("Ignoring serve.port {}: not a port number", port);
       }
@@ -166,6 +167,53 @@ std::optional<ServeOptions> FindServeOptions() {
   }
 
   if (!options.host && !options.port) return std::nullopt;
+  return options;
+}
+
+std::optional<std::uint16_t> ParsePort(const std::string& text) {
+  // Five digits at most, so the accumulation cannot overflow before the range is checked.
+  if (text.empty() || text.size() > 5) return std::nullopt;
+  std::uint32_t value = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') return std::nullopt;
+    value = value * 10 + static_cast<std::uint32_t>(c - '0');
+  }
+  if (value < 1 || value > 65535) return std::nullopt;
+  return static_cast<std::uint16_t>(value);
+}
+
+ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
+                                   const std::optional<std::string>& flag_port,
+                                   const std::optional<std::string>& env_host,
+                                   const std::optional<std::string>& env_port,
+                                   const std::optional<ServeOptions>& from_file) {
+  ListenOptions options;
+  if (flag_host || env_host) {
+    options.host = flag_host ? *flag_host : *env_host;
+  } else if (from_file && from_file->host) {
+    options.host = *from_file->host;
+  }
+
+  const std::optional<std::string>* named = nullptr;
+  const char* source = "";
+  if (flag_port) {
+    named = &flag_port;
+    source = "--port";
+  } else if (env_port) {
+    named = &env_port;
+    source = "PU_SERVE_PORT";
+  }
+
+  if (named == nullptr) {
+    if (from_file && from_file->port) options.port = *from_file->port;
+  } else if (const auto port = ParsePort(**named)) {
+    options.port = *port;
+  } else {
+    // Named and refused: a file does not answer for a port a shell asked for. Written to the
+    // error stream because this decides what a command line asked for, before any log exists.
+    std::cerr << "Warning: invalid " << source << " '" << **named << "', using " << options.port
+              << "\n";
+  }
   return options;
 }
 

@@ -34,7 +34,7 @@ using detail::RunWebSocketSession;
 
 }  // namespace
 
-int RunServe(const std::string& host, int port, Runtime& runtime) {
+int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   try {
     runtime.Initialize();
   } catch (const std::exception& e) {

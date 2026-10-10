@@ -375,7 +375,8 @@ class ServeHarness {
     port_ = FindFreePort();
     REQUIRE(port_ > 0);
 
-    server_thread_ = std::thread([this] { cli::RunServe(kServeHost, port_, *runtime_); });
+    server_thread_ =
+        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
 
     REQUIRE(WaitForPort(kServeHost, port_, 15000));
   }
