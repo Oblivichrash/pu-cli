@@ -40,7 +40,6 @@ add_library(pu_lib STATIC
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/projection.cpp
-    # The factory that builds the providers above, and what Session::CreateProvider calls.
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp

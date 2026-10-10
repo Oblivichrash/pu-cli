@@ -165,19 +165,31 @@ Observed on this account: **`deepseek-v4-flash`** answers 200 (and so does
 `deepseek-r1`). Unknown ids — including every dated Claude id the client carries as a
 string — answer 11102.
 
+Zhipu models are served too. `glm-5.3-flash`, `glm-5.3`, `glm-5.2` and `glm-5.1` answer
+200; `glm-5-flash`, `glm-4.7`, `glm-5`, `glm-5-turbo` and `glm-4.6v` answer 11102 with
+`service info not found`. Ids are matched exactly, so the uppercase `GLM-5.3-Flash` is
+11102. An id that exists without this account being entitled to it says so instead:
+`glm-4.7-ioa` answers `model [glm-4.7-ioa] is only available for authorized users`.
+
 The ids the installed client names, for reference: `deepseek-v3`, `deepseek-v3-0324`,
 `deepseek-v4-flash`, `deepseek-v4-flash-202605`, `deepseek-v4-pro`,
 `deepseek-v4-pro-202606`, `deepseek-r1`, `deepseek-reasoner`, `claude-3-5-sonnet-20241022`,
 `claude-3-7-sonnet-20250219`, `claude-4.5`, `claude-opus-4.6`, `claude-sonnet-4.5`,
-`gemini-2.5-flash`, `gemini-3.1-flash`. Being named there does not mean the account may
-use it: entitlement is the server's answer, and only a request settles it.
+`gemini-2.5-flash`, `gemini-3.1-flash`, `glm-4.7`, `glm-4.7-ioa`, `glm-4.6v`, `glm-5`,
+`glm-5.1`, `glm-5.2`, `glm-5-turbo`, `hunyuan-t1`, `hunyuan-turbos`. Being named there
+does not mean the account may use it: entitlement is the server's answer, and only a
+request settles it. Serving a model the client omits shows the reverse also holds, so the
+client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
+there at all.
 
 ## 9. Still open
 
 - Which headers are actually required, and which are the client's own telemetry.
 - Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
   default: it does not, so the field is inert here rather than wrong.
-- Whether a model list can be discovered for an account at all.
+- Whether a model list can be discovered for an account at all. `/v2/accounts` settles
+  identity and entitlement flags but not the model set, so ids are still found by trying
+  them.
 - What `usage.credit` means for a session, and whether it is worth surfacing.
 - Whether `/v2/auth/token/refresh` is needed for keys that expire; a request with a
   valid key needs no refresh.
