@@ -8,6 +8,12 @@
 #include <fstream>
 #include <string>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "pu/config/agents.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -19,13 +25,28 @@ using namespace pu::tests;
 
 namespace {
 
+// The process running this test, so a fixture directory is named uniquely across the
+// processes `catch_discover_tests` starts rather than only within one of them.
+int ProcessId() {
+#ifdef _WIN32
+  return static_cast<int>(_getpid());
+#else
+  return static_cast<int>(getpid());
+#endif
+}
+
 // A workspace the runtime can start from. The configuration is rewritten
 // between starts, which is how a restart is simulated.
 class BackendSourceFixture {
  public:
   BackendSourceFixture() {
+    // Two test cases are two processes, so a per-process counter alone would have every
+    // process claim the same name and delete the directory another one was using. The
+    // process id is what makes the name unique across tests, which is what lets them run
+    // at the same time.
     static int counter = 0;
-    root_ = fs::temp_directory_path() / ("pu_backend_source_" + std::to_string(counter++));
+    root_ = fs::temp_directory_path() /
+            ("pu_backend_source_" + std::to_string(ProcessId()) + "_" + std::to_string(counter++));
     // The name is reused between runs, and a session left in it names the agent it was
     // talking to, which outvotes the configuration this fixture is about to write.
     std::error_code ec;

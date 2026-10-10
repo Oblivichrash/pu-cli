@@ -30,8 +30,12 @@ toolchain on Windows (`-DCMAKE_TOOLCHAIN_FILE=...`).
 ```bash
 cmake -B build -DBUILD_TESTS=ON
 cmake --build build -j$(nproc)
-ctest --test-dir build --output-on-failure
+ctest --test-dir build --parallel --output-on-failure
 ```
+
+Each test case is its own process, so the suite parallelizes without coordination. The
+fixtures name their temporary directories after the process id for that reason; one that
+reused a fixed name would delete another test's workspace mid-run.
 
 ### Configure
 
