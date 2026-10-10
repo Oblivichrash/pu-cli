@@ -416,7 +416,7 @@ include/pu/                  src/
 ├── command_router.hpp       ├── config/               # agents.json, the backend model
 ├── runtime.hpp              ├── runtime.cpp, command_router.cpp
 ├── executor.hpp             ├── executor.cpp
-├── cli.hpp                  ├── core/                 # logging, platform, HTTP client
+├── app/                     ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── context/              # message graph storage
 ├── core/                    ├── llm/                  # providers, streaming parser
 ├── context/                 ├── mcp/                  # transports, JSON-RPC client
@@ -427,10 +427,13 @@ include/pu/                  src/
 ```
 
 A header lives in `include/pu/` when code outside its own directory uses it
-(including tests); otherwise it stays next to its `.cpp`. The CMake targets
-follow the layering: `pu_lib` is the *base* static library (core + domain
-modules), `pu_agent` holds the orchestration layer, `pu_app` holds `src/app/`,
-and the `pu` executable adds only `main.cpp`.
+(including tests); otherwise it stays next to its `.cpp`. A header whose module
+has a directory belongs in that directory, so `app/cli.hpp` sits beside
+`src/app/cli.cpp`.
+
+The CMake targets follow the layering: `pu_lib` is the *base* static library
+(core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
+holds `src/app/`, and the `pu` executable adds only `main.cpp`.
 
 ### Dependency direction
 

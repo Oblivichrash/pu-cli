@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
-#include "pu/cli.hpp"
+#include "pu/app/cli.hpp"
 #include "pu/runtime.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"

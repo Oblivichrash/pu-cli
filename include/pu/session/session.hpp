@@ -19,7 +19,11 @@ class Conversation {
  public:
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
+  // Callers that need both the rendered text and the node-level fields must read the
+  // nodes once through here; GetHistory() renders a separate list and pairing the two
+  // by index would rely on an ordering neither one guarantees.
   std::vector<ChatMessage> GetHistory() const;
+  std::vector<const context::MessageNode*> Chain() const { return graph_.Chain(); }
   bool HasPendingToolCalls() const;
 
   const context::MessageGraph& GetGraph() const { return graph_; }

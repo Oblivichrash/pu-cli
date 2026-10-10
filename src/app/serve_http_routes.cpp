@@ -138,10 +138,10 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
     auto session = runtime.GetOrCreateDefaultSession();
     if (session) {
       Conversation& conversation = session->GetConversation();
-      const std::vector<ChatMessage> history = conversation.GetHistory();
-      const std::vector<const context::MessageNode*> chain = conversation.GetGraph().Chain();
-      for (size_t i = 0; i < history.size(); ++i) {
-        const ChatMessage& msg = history[i];
+      const std::vector<const context::MessageNode*> chain = conversation.Chain();
+      for (size_t i = 0; i < chain.size(); ++i) {
+        const context::MessageNode& node = *chain[i];
+        const ChatMessage msg = session::RenderMessage(node, static_cast<int>(i) + 1);
         boost::json::value item = {
             {"id", msg.id},
             {"role", msg.role},
@@ -151,16 +151,13 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
         if (msg.HasToolCalls()) {
           item.as_object()["tool_calls"] = msg.tool_calls;
 
-          if (i < chain.size()) {
-            if (const auto* assistant =
-                    std::get_if<context::AssistantPayload>(&chain[i]->payload)) {
-              boost::json::array statuses;
-              for (const context::ToolCallRecord& record : assistant->tool_calls) {
-                statuses.push_back(
-                    record.status == context::ToolCallStatus::kCompleted ? "done" : "pending");
-              }
-              item.as_object()["tool_call_status"] = std::move(statuses);
+          if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
+            boost::json::array statuses;
+            for (const context::ToolCallRecord& record : assistant->tool_calls) {
+              statuses.push_back(
+                  record.status == context::ToolCallStatus::kCompleted ? "done" : "pending");
             }
+            item.as_object()["tool_call_status"] = std::move(statuses);
           }
         }
         if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;

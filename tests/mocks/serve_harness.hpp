@@ -29,7 +29,7 @@
 #include <unistd.h>
 #endif
 
-#include "pu/cli.hpp"
+#include "pu/app/cli.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/runtime.hpp"
 #include "tests/mocks/test_helpers.hpp"
