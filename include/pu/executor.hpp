@@ -50,7 +50,7 @@ class Executor {
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
-                          LLMProvider* provider, Toolbox* toolbox,
+                          LLMProvider* provider, Toolbox& toolbox,
                           CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {},
@@ -59,7 +59,7 @@ class Executor {
   std::string BuildStaticSystemContext() const;
 
  private:
-  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox* toolbox,
+  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox& toolbox,
                               CancelToken cancel_token,
                               std::function<void(const std::string&)> content_callback,
                               ToolCallbacks tool_callbacks,

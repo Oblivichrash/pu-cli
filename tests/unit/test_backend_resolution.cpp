@@ -194,7 +194,7 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
   }
 }
 
-TEST_CASE("A turn after an agent switch still has a toolbox to read", "[backend]") {
+TEST_CASE("A turn after an agent switch reaches an initialized registry", "[backend]") {
   BackendSourceFixture fixture;
 
   ScopedWorkingDir in_workspace(fixture.root());
@@ -212,7 +212,6 @@ TEST_CASE("A turn after an agent switch still has a toolbox to read", "[backend]
 
   REQUIRE(is_command == false);
   REQUIRE(result.has_error);
-  REQUIRE(result.error_message.find("Tool registry is not initialized") == std::string::npos);
 
   runtime.Shutdown();
 }

@@ -143,18 +143,11 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
 }
 
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
-                                  LLMProvider* provider, Toolbox* toolbox,
+                                  LLMProvider* provider, Toolbox& toolbox,
                                   CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
                                   ToolCallbacks tool_callbacks,
                                   std::function<void(const std::string&)> reasoning_callback) {
-  if (toolbox == nullptr) {
-    ExecutionResult err;
-    err.has_error = true;
-    err.error_message = "Tool registry is not initialized.";
-    return err;
-  }
-
   conversation.Append("user", input);
 
   ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
@@ -166,7 +159,7 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
 }
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* provider,
-                                      Toolbox* toolbox, CancelToken cancel_token,
+                                      Toolbox& toolbox, CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
                                       ToolCallbacks tool_callbacks,
                                       std::function<void(const std::string&)> reasoning_callback) {
@@ -177,7 +170,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     return result;
   }
 
-  auto tools = toolbox->GetToolDefinitions();
+  auto tools = toolbox.GetToolDefinitions();
   const int max_iterations = 20;
   int iteration = 0;
   bool hit_max_iterations = false;
@@ -288,7 +281,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       SetLogToolName(call.name);
       auto tool_start = std::chrono::steady_clock::now();
       try {
-        tool_result = toolbox->ExecuteTool(call.name, call.arguments, tool_ctx);
+        tool_result = toolbox.ExecuteTool(call.name, call.arguments, tool_ctx);
       } catch (const std::exception& e) {
         tool_result = tools::MakeToolResultJson(
             false, "", "", std::string("Tool execution error: ") + e.what(), -1);

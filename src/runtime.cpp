@@ -242,7 +242,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     auto provider = session->CreateProvider(CurrentBackend());
     auto exec_result =
-        executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_.get(),
+        executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_,
                            cancel_token, content_callback, tool_callbacks, reasoning_callback);
     result = std::move(exec_result);
     SaveCurrentSession();
@@ -291,15 +291,15 @@ bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
 }
 
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
-  toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
+  toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
-  toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+  toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
 }
 
 void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   ShutdownMCP();
 
-  toolbox_ = std::make_unique<Toolbox>();
+  toolbox_.Clear();
   RegisterBuiltinTools(agent);
 
   for (const auto& mcp_cfg : agent.mcp_servers) {
@@ -318,7 +318,11 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
     }
     for (const auto& t : tools) {
       auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
-      toolbox_->RegisterTool(std::move(mcp_tool));
+      if (!toolbox_.RegisterTool(std::move(mcp_tool))) {
+        spdlog::warn("Skipping MCP tool '{}' from '{}' - the server reported no name", t.name,
+                     mcp_cfg.name);
+        continue;
+      }
       spdlog::debug("Registered MCP tool: mcp.{}.{}", mcp_cfg.name, t.name);
     }
   }

@@ -35,7 +35,7 @@ What each dependency is for:
 | `Conversation` | The stored conversation: the `MessageGraph`, plus the `ChatMessage` view rendered from it |
 | `Executor` | Session-state-free tool loop (holds config + probe cache); reads and writes the `Conversation`; injects system context and processes structured tool output |
 | `LLMProvider` | Model gateway; handles transport + format adaptation. `StreamingProvider` implements the shared stream pipeline; a concrete backend fills in the endpoint, headers, and per-line parse |
-| `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
+| `Toolbox` | Tool registry with a fixed address; emptied and refilled per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
@@ -122,7 +122,7 @@ rather than the raw Boost call, so the fallbacks stay in one place.
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
-(`pu::tools::toolbox.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
+(`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
 API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ---
@@ -146,10 +146,11 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/toolbox.hpp` (documented in
+`include/pu/tools/tool.hpp` (documented in
 [README](../README.md#tool-output-format)). The executor stores it verbatim so
 the model sees what the tool produced, and reads `stdout`/`error` out of it only
-for the tool callbacks.
+for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
+when the named tool is absent, so callers never parse two shapes.
 
 **Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
 construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
@@ -214,16 +215,23 @@ data directory.
 ```
 RebuildToolbox(agent)
  ├─ ShutdownMCP()                      // stop all MCP child processes
- ├─ toolbox_ = new Toolbox()
+ ├─ toolbox_.Clear()
  ├─ RegisterBuiltinTools()
  ├─ for each mcp_servers:
  │    StartMCP(cfg) → ListTools() → register mcp.<server>.<tool>
  └─ executor_->SetSecurityPolicy(agent.security)
  ```
 
- `RebuildToolbox` replaces the `Toolbox` outright, which is why the executor does not hold
- one: it receives the current toolbox as an argument to each `Execute` call. An executor
- holding the registry would keep pointing at the one this function destroyed.
+ `Toolbox` is a value member of `Runtime` and `RebuildToolbox` empties it in place rather
+ than replacing it, so the registry keeps one address for the process lifetime. The
+ executor still receives it by reference per `Execute` call, but the reason is ordinary
+ parameter passing rather than self-defence: there is no second address to be left
+ pointing at, and no uninitialized state to guard against.
+
+ `Toolbox::RegisterTool` returns `false` instead of throwing when a name is empty or the
+ tool is null. Both conditions are knowable at the call site, so the caller decides —
+ `RegisterBuiltinTools` names its tools statically and ignores the result, while the MCP
+ loop warns and skips the one tool whose sanitized name was rejected.
 
  An `McpTool` holds its client through a `shared_ptr`, so a rebuild dropping the runtime's
  reference does not pull the client out from under a tool that still refers to it. That is

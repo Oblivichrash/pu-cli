@@ -32,12 +32,12 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
   return result;
 }
 
-void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
-  if (!tool) return;
+void Toolbox::Clear() { tools_.clear(); }
+
+bool Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
+  if (!tool) return false;
   const std::string original_name = tool->Name();
-  if (original_name.empty()) {
-    throw pu::Error("Tool name cannot be empty");
-  }
+  if (original_name.empty()) return false;
 
   std::string display_name = SanitizeToolName(original_name);
 
@@ -51,6 +51,7 @@ void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
 
   tool->display_name_ = display_name;
   tools_[display_name] = std::move(tool);
+  return true;
 }
 
 std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
@@ -58,7 +59,7 @@ std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   defs.reserve(tools_.size());
   for (const auto& [display_name, tool] : tools_) {
     ToolDefinition def;
-    def.name = display_name;  // LLM sees sanitized name
+    def.name = display_name;
     def.description = tool->Description();
     def.parameters = tool->ParametersSchema();
     defs.push_back(std::move(def));
@@ -70,8 +71,7 @@ std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::val
                                  ToolContext& ctx) {
   const auto it = tools_.find(name);
   if (it == tools_.end()) {
-    spdlog::warn("Tool not found: {}", name);
-    return "Tool not found: " + name;
+    return tools::MakeToolResultJson(false, "", "", "Tool not found: " + name, -1);
   }
 
   return it->second->Execute(args, ctx);

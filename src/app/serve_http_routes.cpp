@@ -20,7 +20,7 @@
 #include "pu/core/json.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/tools/tool.hpp"
 
 namespace pu::cli::detail {
 namespace {

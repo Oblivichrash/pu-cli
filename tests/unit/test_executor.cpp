@@ -312,7 +312,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   };
 
   Conversation ws;
-  ExecutionResult result = executor.Execute("run it", ws, &mock, &toolbox, nullptr, nullptr, cb);
+  ExecutionResult result = executor.Execute("run it", ws, &mock, toolbox, nullptr, nullptr, cb);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -341,69 +341,50 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(found_paired_tool_msg);
 }
 
-TEST_CASE("Each turn reads the toolbox it was given, not one held from an earlier turn",
+TEST_CASE("Rebuilding the registry leaves one address the executor can keep reading",
           "[executor][tool_loop]") {
-  Executor executor;
-  config::SecurityPolicy policy;
-  policy.sandbox_root = ".";
-  executor.SetSecurityPolicy(policy);
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<NamedTool>("older_tool"));
+  const Toolbox* address = &toolbox;
 
-  auto older = std::make_unique<NamedTool>("older_tool");
-  Toolbox first;
-  first.RegisterTool(std::move(older));
+  toolbox.Clear();
+  toolbox.RegisterTool(std::make_unique<NamedTool>("newer_tool"));
 
-  auto counter = std::make_unique<TrackingTool>("newer_tool");
-  auto* counter_ptr = counter.get();
-  Toolbox second;
-  second.RegisterTool(std::move(counter));
-
-  Conversation ws;
-  OfferingLLM provider("newer_tool", "done");
-
-  const ExecutionResult result = executor.Execute("run it", ws, &provider, &second);
-
-  REQUIRE(result.has_error == false);
-  REQUIRE(provider.offered == std::vector<std::string>{"newer_tool"});
-  REQUIRE(counter_ptr->executions == 1);
+  REQUIRE(&toolbox == address);
+  const auto defs = toolbox.GetToolDefinitions();
+  REQUIRE(defs.size() == 1);
+  REQUIRE(defs.front().name == "newer_tool");
 }
 
-TEST_CASE("The toolbox a turn reads is the only one it can reach", "[executor][tool_loop]") {
-  Executor executor;
-  config::SecurityPolicy policy;
-  policy.sandbox_root = ".";
-  executor.SetSecurityPolicy(policy);
-
-  auto older = std::make_unique<NamedTool>("older_tool");
-  auto* older_ptr = older.get();
-  Toolbox first;
-  first.RegisterTool(std::move(older));
-
-  auto counter = std::make_unique<TrackingTool>("newer_tool");
-  auto* counter_ptr = counter.get();
-  Toolbox second;
-  second.RegisterTool(std::move(counter));
-
-  Conversation ws;
-  OfferingLLM provider("older_tool", "done");
-
-  const ExecutionResult result = executor.Execute("run it", ws, &provider, &second);
-
-  REQUIRE(result.has_error == false);
-  REQUIRE(provider.offered == std::vector<std::string>{"newer_tool"});
-  REQUIRE(older_ptr->executions == 0);
-  REQUIRE(counter_ptr->executions == 0);
+TEST_CASE("A registry rejects a tool without a name instead of throwing", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  REQUIRE(toolbox.RegisterTool(nullptr) == false);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
+  REQUIRE(toolbox.GetToolDefinitions().empty());
 }
 
-TEST_CASE("A turn with no toolbox reports that it cannot run rather than reading through it",
-          "[executor][tool_loop]") {
-  Conversation ws;
-  MockLLM provider({}, "unused");
-  Executor executor;
+TEST_CASE("A rejected registration leaves the registry usable", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("keeper")) == true);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("later")) == true);
 
-  const ExecutionResult result = executor.Execute("run it", ws, &provider, nullptr);
+  const auto defs = toolbox.GetToolDefinitions();
+  REQUIRE(defs.size() == 2);
+}
 
-  REQUIRE(result.has_error);
-  REQUIRE(result.error_message == "Tool registry is not initialized.");
+TEST_CASE("A tool the registry no longer holds cannot be executed", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<NamedTool>("older_tool"));
+  toolbox.Clear();
+
+  ToolContext ctx;
+  const std::string raw = toolbox.ExecuteTool("older_tool", boost::json::object{}, ctx);
+  const tools::ToolResult parsed = tools::ParseToolResult(raw);
+
+  REQUIRE(parsed.valid);
+  REQUIRE(parsed.success == false);
+  REQUIRE(parsed.error == "Tool not found: older_tool");
 }
 
 TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[executor][request]") {
@@ -417,7 +398,7 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[ex
   Conversation ws;
 
   CapturingLLM provider;
-  ExecutionResult result = executor.Execute("hello", ws, &provider, &toolbox);
+  ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
 
@@ -442,7 +423,7 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   Conversation ws;
 
   CapturingLLM provider;
-  executor.Execute("hello", ws, &provider, &toolbox);
+  executor.Execute("hello", ws, &provider, toolbox);
 
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
@@ -458,7 +439,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
 
   Conversation ws;
   FailingLLM provider;
-  const ExecutionResult result = executor.Execute("hello", ws, &provider, &toolbox);
+  const ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
 
   REQUIRE(result.has_error);
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
@@ -482,7 +463,7 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
 
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, &toolbox, withdrawn);
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox, withdrawn);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
@@ -500,7 +481,7 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
 
   StoppingLLM provider("half a sentence", "length");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("write a lot", ws, &provider, &toolbox);
+  const ExecutionResult result = executor.Execute("write a lot", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "half a sentence");
@@ -517,7 +498,7 @@ TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_l
 
   StoppingLLM provider("a whole answer", "stop");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, &toolbox);
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "a whole answer");
@@ -539,7 +520,7 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
   MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
   Conversation ws;
-  const ExecutionResult result = executor.Execute("go", ws, &provider, &toolbox);
+  const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
 
@@ -566,7 +547,7 @@ TEST_CASE("The model that answered is carried out of the turn", "[executor][tool
 
   StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, &toolbox);
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
 
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
@@ -582,7 +563,7 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
   std::string streamed;
   Conversation ws;
   const ExecutionResult result =
-      executor.Execute("think", ws, &provider, &toolbox, nullptr, nullptr, {},
+      executor.Execute("think", ws, &provider, toolbox, nullptr, nullptr, {},
                        [&](const std::string& token) { streamed += token; });
 
   REQUIRE(streamed == "weighing the options");

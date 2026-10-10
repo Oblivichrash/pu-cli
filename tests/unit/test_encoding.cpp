@@ -4,7 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/mcp/stdio_transport.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/tools/tool.hpp"
 
 #include <boost/json.hpp>
 

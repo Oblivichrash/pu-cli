@@ -68,7 +68,7 @@ class Runtime {
   bool is_running_ = false;
   std::unique_ptr<AgentManager> agent_manager_;
   std::unique_ptr<CommandRouter> command_router_;
-  std::unique_ptr<Toolbox> toolbox_;
+  Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
