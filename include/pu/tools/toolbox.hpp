@@ -23,10 +23,21 @@ struct ToolContext {
 class Tool {
  public:
   virtual ~Tool() = default;
+
+  // The tool's own name, before the registry decides what the model will call it. A name
+  // that carries characters the model may not use is what makes the two differ.
   virtual std::string Name() const = 0;
   virtual std::string Description() const = 0;
   virtual boost::json::value ParametersSchema() const = 0;
   virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
+
+  // What the model calls this tool, set once when the toolbox registers it. Until then it
+  // is empty, and ExecuteTool is the only reader.
+  const std::string& DisplayName() const { return display_name_; }
+
+ private:
+  friend class Toolbox;
+  std::string display_name_;
 };
 
 class Toolbox {
@@ -39,9 +50,9 @@ class Toolbox {
  private:
   static std::string SanitizeToolName(const std::string& name);
 
+  // Keyed by the name the model calls the tool, which is also the tool's own
+  // `DisplayName()`, so an execution reaches the tool without a translation table.
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  // Sanitized (model-facing) name to the tool's own name.
-  std::unordered_map<std::string, std::string> display_to_original_;
 };
 
 namespace tools {

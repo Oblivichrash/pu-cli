@@ -225,6 +225,11 @@ RebuildToolbox(agent)
  one: it receives the current toolbox as an argument to each `Execute` call. An executor
  holding the registry would keep pointing at the one this function destroyed.
 
+ An `McpTool` holds its client through a `shared_ptr`, so a rebuild dropping the runtime's
+ reference does not pull the client out from under a tool that still refers to it. That is
+ what makes the order of the first two steps above a matter of tidiness rather than
+ correctness: whichever runs first, no tool outlives the connection it calls through.
+
 ---
 
 ## Streaming & Cancellation

@@ -34,57 +34,51 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
 
 void Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
   if (!tool) return;
-  std::string original_name = tool->Name();
+  const std::string original_name = tool->Name();
   if (original_name.empty()) {
     throw pu::Error("Tool name cannot be empty");
   }
 
   std::string display_name = SanitizeToolName(original_name);
 
+  // A name the model already has would leave it unable to say which tool it means, so a
+  // repeat gets a suffix until it is a name no other tool holds.
   if (tools_.find(display_name) != tools_.end()) {
+    const std::string base = display_name;
     int suffix = 1;
-    std::string base = display_name;
     while (tools_.find(display_name) != tools_.end()) {
       display_name = base + "_" + std::to_string(suffix++);
     }
   }
 
+  tool->display_name_ = display_name;
   tools_[display_name] = std::move(tool);
-  display_to_original_[display_name] = original_name;
 }
 
 std::vector<ToolDefinition> Toolbox::GetToolDefinitions() const {
   std::vector<ToolDefinition> defs;
+  defs.reserve(tools_.size());
   for (const auto& [display_name, tool] : tools_) {
     ToolDefinition def;
     def.name = display_name;  // LLM sees sanitized name
     def.description = tool->Description();
     def.parameters = tool->ParametersSchema();
-    defs.push_back(def);
+    defs.push_back(std::move(def));
   }
   return defs;
 }
 
 std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::value& args,
                                  ToolContext& ctx) {
-  if (name.empty()) {
-    spdlog::error("Attempted to execute tool with empty name");
-    return "Error: tool name is empty";
-  }
-
-  auto orig_it = display_to_original_.find(name);
-  if (orig_it == display_to_original_.end()) {
-    spdlog::error("Tool not found: {}", name);
+  // A name the model invented and a name it was never offered are the same answer, so one
+  // lookup covers both.
+  const auto it = tools_.find(name);
+  if (it == tools_.end()) {
+    spdlog::warn("Tool not found: {}", name);
     return "Tool not found: " + name;
   }
 
-  auto tool_it = tools_.find(name);
-  if (tool_it == tools_.end()) {
-    spdlog::error("Tool not found in tools_ map: {}", name);
-    return "Tool not found: " + name;
-  }
-
-  return tool_it->second->Execute(args, ctx);
+  return it->second->Execute(args, ctx);
 }
 
 }  // namespace pu

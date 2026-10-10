@@ -90,7 +90,7 @@ class Runtime {
 
   std::string default_agent_override_;
 
-  std::vector<std::unique_ptr<mcp::McpClient>> mcp_clients_;
+  std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;
 };
 
 }  // namespace pu

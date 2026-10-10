@@ -34,15 +34,15 @@ class StubMcpClient : public pu::mcp::McpClient {
 }  // namespace
 
 TEST_CASE("McpTool wraps successful raw output into JSON schema", "[mcp_tool]") {
-  StubMcpClient client;
-  client.SetResponse("Hello from MCP server");
+  auto client = std::make_shared<StubMcpClient>();
+  client->SetResponse("Hello from MCP server");
 
   ToolDefinition def;
   def.name = "read_file";
   def.description = "Reads a file";
   def.parameters = boost::json::parse(R"({"type":"object"})");
 
-  McpTool tool(&client, def, "files");
+  McpTool tool(client, def, "files");
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
@@ -57,15 +57,15 @@ TEST_CASE("McpTool wraps successful raw output into JSON schema", "[mcp_tool]") 
 }
 
 TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON", "[mcp_tool]") {
-  StubMcpClient client;
-  client.SetResponse("Error: something went wrong");
+  auto client = std::make_shared<StubMcpClient>();
+  client->SetResponse("Error: something went wrong");
 
   ToolDefinition def;
   def.name = "bad_tool";
   def.description = "A tool that fails";
   def.parameters = boost::json::object{};
 
-  McpTool tool(&client, def, "mcp");
+  McpTool tool(client, def, "mcp");
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
@@ -79,15 +79,15 @@ TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON", "[mcp_tool]") 
 }
 
 TEST_CASE("McpTool wraps MCP error: output as error", "[mcp_tool]") {
-  StubMcpClient client;
-  client.SetResponse("MCP error: timeout");
+  auto client = std::make_shared<StubMcpClient>();
+  client->SetResponse("MCP error: timeout");
 
   ToolDefinition def;
   def.name = "slow_tool";
   def.description = "A slow tool";
   def.parameters = boost::json::object{};
 
-  McpTool tool(&client, def, "mcp");
+  McpTool tool(client, def, "mcp");
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
@@ -100,15 +100,15 @@ TEST_CASE("McpTool wraps MCP error: output as error", "[mcp_tool]") {
 }
 
 TEST_CASE("McpTool wraps MCP call error: output as error", "[mcp_tool]") {
-  StubMcpClient client;
-  client.SetResponse("MCP call error: connection refused");
+  auto client = std::make_shared<StubMcpClient>();
+  client->SetResponse("MCP call error: connection refused");
 
   ToolDefinition def;
   def.name = "broken_tool";
   def.description = "Broken tool";
   def.parameters = boost::json::object{};
 
-  McpTool tool(&client, def, "mcp");
+  McpTool tool(client, def, "mcp");
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
@@ -120,34 +120,38 @@ TEST_CASE("McpTool wraps MCP call error: output as error", "[mcp_tool]") {
   REQUIRE(j.at("exit_code") == 1);
 }
 
-TEST_CASE("McpTool returns error JSON when client is null", "[mcp_tool]") {
+TEST_CASE("An McpTool keeps its client alive after the caller drops it", "[mcp_tool]") {
   ToolDefinition def;
   def.name = "test";
   def.description = "test";
   def.parameters = boost::json::object{};
 
-  McpTool tool(nullptr, def, "mcp");
+  // The client shared_ptr goes out of scope here; the tool must still be usable.
+  std::unique_ptr<McpTool> tool;
+  {
+    auto client = std::make_shared<StubMcpClient>();
+    client->SetResponse("still here");
+    tool = std::make_unique<McpTool>(client, def, "mcp");
+  }
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;
-  std::string result = tool.Execute(args, ctx);
+  auto j = boost::json::parse(tool->Execute(args, ctx));
 
-  auto j = boost::json::parse(result);
-  REQUIRE(j.at("success") == false);
-  REQUIRE(j.at("error") == "MCP client is null");
-  REQUIRE(j.at("exit_code") == -1);
+  REQUIRE(j.at("success") == true);
+  REQUIRE(j.at("stdout") == "still here");
 }
 
 TEST_CASE("McpTool returns error JSON when client is not connected", "[mcp_tool]") {
-  StubMcpClient client;
-  client.SetConnected(false);
+  auto client = std::make_shared<StubMcpClient>();
+  client->SetConnected(false);
 
   ToolDefinition def;
   def.name = "test";
   def.description = "test";
   def.parameters = boost::json::object{};
 
-  McpTool tool(&client, def, "mcp");
+  McpTool tool(client, def, "mcp");
 
   boost::json::value args = boost::json::object{};
   pu::ToolContext ctx;

@@ -291,7 +291,7 @@ void Runtime::ShutdownMCP() {
 }
 
 bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
-  auto client = std::make_unique<mcp::McpClient>(config);
+  auto client = std::make_shared<mcp::McpClient>(config);
   if (client->Connect()) {
     mcp_clients_.push_back(std::move(client));
     return true;
@@ -318,7 +318,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
       continue;
     }
 
-    auto* client = mcp_clients_.back().get();
+    auto client = mcp_clients_.back();
     // A server that connects but cannot list tools is as unusable as one that never
     // connected, and the same answer applies: skip it, and say so once.
     std::vector<ToolDefinition> tools;
