@@ -90,8 +90,11 @@ Where a layer must report and continue, it converts rather than swallows:
   places a message may be the entire response, because returning is no longer an option.
 
 A catch that logs and then lets the caller believe the operation succeeded is the one
-shape to avoid: `McpClient::ListTools` answering with an empty list on failure hides a
-dead server rather than reporting it.
+shape to avoid. `McpClient::ListTools` used to be the example: it answered with an empty
+list when `tools/list` failed, so a dead server looked like a server with no tools. It now
+throws, because "no tools" and "the reply was not understood" are different things for a
+caller to act on, and the boundary that can act on it — `Runtime::RebuildToolbox` — treats
+the failure the same way it treats a server that never connected: skip it and say so.
 
 ### Configuration is a state, not a failure
 
@@ -100,6 +103,12 @@ returns an empty string for it, and `FindServeOptions` returns `std::nullopt`; t
 place that cannot continue, `Runtime::Initialize`, turns the empty path into the `Error`
 that says where to put the file. A function that cannot answer reports that it cannot
 answer, rather than picking one of its callers' conditions to throw.
+
+The same idea applies to an invariant. `Runtime::ActiveAgent` and `ConfiguredBackend` do
+not check that the runtime was initialized or that the active agent is configured, because
+`Initialize` every path that reaches them must pass through already establishes both. A
+check for a condition that cannot be false is not defensive programming; it is a claim
+that the code is unsure of itself, and it costs a reader the work of proving it false.
 
 ---
 

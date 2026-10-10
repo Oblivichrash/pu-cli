@@ -166,38 +166,29 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   if (current_session_) return current_session_;
 
   auto session = std::make_shared<Session>();
-  const auto active_agent = agent_manager_->GetActiveAgent();
-  if (!agent_manager_->GetAgentConfig(active_agent))
-    throw Error("Active agent is not configured: " + active_agent);
-  session->SetAgent(active_agent);
+  session->SetAgent(agent_manager_->GetActiveAgent());
 
   current_session_ = session;
   return current_session_;
 }
 
 const config::AgentEntry& Runtime::ActiveAgent() const {
-  if (!agent_manager_) throw Error("Runtime is not initialized");
-  const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
-  if (agent == nullptr)
-    throw Error("Active agent is not configured: " + agent_manager_->GetActiveAgent());
-  return *agent;
+  // Initialize() resolves the active agent against the configured set, and every path that
+  // changes it goes through an entry from that set, so the lookup cannot come back empty.
+  return *agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
 }
 
 config::BackendConfig Runtime::ConfiguredBackend() const {
-  if (!agent_manager_) throw Error("Runtime is not initialized");
-
   if (current_session_) {
     const auto& spec = current_session_->GetSpec();
     if (spec.backend_override) return *spec.backend_override;
 
-    const auto* agent = agent_manager_->GetAgentConfig(spec.agent_name);
-    if (agent == nullptr) throw Error("Active agent is not configured: " + spec.agent_name);
-    return agent->backend;
+    // Initialize() repairs a session naming an agent that is not configured, so the name
+    // resolves here as well as the active one does.
+    return agent_manager_->GetAgentConfig(spec.agent_name)->backend;
   }
 
-  const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
-  if (agent == nullptr) throw Error("Active agent is not configured");
-  return agent->backend;
+  return ActiveAgent().backend;
 }
 
 config::BackendConfig Runtime::CurrentBackend() const {
