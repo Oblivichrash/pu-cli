@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/session.hpp"
 
+#include <memory>
+
 #include "pu/core/base.hpp"
-#include "pu/core/beast_http_client.hpp"
+#include "pu/core/http_client.hpp"
 #include "pu/core/text.hpp"
+#include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"
 
 #include <boost/json.hpp>
@@ -150,8 +153,9 @@ void Session::SetBackendOverride(const config::BackendConfig& new_config) {
   spec_.backend_override = new_config;
 }
 
-std::unique_ptr<LLMProvider> Session::CreateProvider(const config::BackendConfig& backend) const {
-  return config::CreateBackend(backend, std::make_unique<pu::http::BeastHttpClient>());
+std::unique_ptr<LLMProvider> Session::CreateProvider(
+    const config::BackendConfig& backend, std::shared_ptr<pu::http::HttpClient> http) const {
+  return config::CreateBackend(backend, std::move(http));
 }
 
 boost::json::value Session::Serialize() const {

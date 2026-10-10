@@ -35,7 +35,7 @@ void OllamaProvider::ResetAccumulators() {
   usage_.reset();
 }
 
-OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
+OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
     : StreamingProvider(config.host, config.api_key, std::move(http)),
       config_(std::move(config)) {}
 

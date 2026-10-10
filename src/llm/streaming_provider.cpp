@@ -9,7 +9,7 @@
 namespace pu {
 
 StreamingProvider::StreamingProvider(std::string host, std::string api_key,
-                                     std::unique_ptr<pu::http::HttpClient> http)
+                                     std::shared_ptr<pu::http::HttpClient> http)
     : host_(std::move(host)), api_key_(std::move(api_key)), http_(std::move(http)) {}
 
 std::vector<std::string> StreamingProvider::Headers() const {

@@ -10,6 +10,7 @@
 
 #include "pu/config/backend.hpp"
 #include "pu/context/graph.hpp"
+#include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
 
@@ -93,7 +94,8 @@ class Session {
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }
 
-  std::unique_ptr<LLMProvider> CreateProvider(const config::BackendConfig& backend) const;
+  std::unique_ptr<LLMProvider> CreateProvider(const config::BackendConfig& backend,
+                                              std::shared_ptr<http::HttpClient> http) const;
 
   boost::json::value Serialize() const;
   static std::unique_ptr<Session> Deserialize(const boost::json::value& j);

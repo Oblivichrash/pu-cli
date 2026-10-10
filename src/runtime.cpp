@@ -14,6 +14,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/beast_http_client.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
@@ -104,6 +105,7 @@ void Runtime::Initialize(const std::string& config_path) {
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
 
   executor_ = std::make_unique<Executor>();
+  http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
   RebuildToolbox(*default_entry);
 
@@ -128,6 +130,7 @@ void Runtime::Initialize(const std::string& config_path) {
 
 void Runtime::Shutdown() {
   SaveCurrentSession();
+  mcp::DisconnectMcpServers(mcp_clients_);
 }
 
 void Runtime::SaveCurrentSession() {
@@ -231,7 +234,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     is_command = false;
 
-    auto provider = session->CreateProvider(CurrentBackend());
+    auto provider = session->CreateProvider(CurrentBackend(), http_client_);
     auto exec_result =
         executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_,
                            cancel_token, content_callback, tool_callbacks, reasoning_callback);

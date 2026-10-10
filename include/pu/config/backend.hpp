@@ -80,6 +80,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
 }
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
-                                               std::unique_ptr<pu::http::HttpClient> http);
+                                               std::shared_ptr<pu::http::HttpClient> http);
 
 }  // namespace pu::config

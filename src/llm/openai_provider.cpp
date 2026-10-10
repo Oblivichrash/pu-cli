@@ -33,7 +33,7 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
-OpenAIProvider::OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http)
+OpenAIProvider::OpenAIProvider(const Config& config, std::shared_ptr<pu::http::HttpClient> http)
     : StreamingProvider(config.host, config.api_key, std::move(http)), config_(config) {}
 
 std::vector<std::string> OpenAIProvider::Headers() const {

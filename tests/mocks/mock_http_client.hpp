@@ -34,8 +34,8 @@ class MockHttpClient : public pu::http::HttpClient {
       simulate_response;
 };
 
-inline std::pair<std::unique_ptr<MockHttpClient>, MockHttpClient*> MakeMockHttpClient() {
-  auto mock = std::make_unique<MockHttpClient>();
+inline std::pair<std::shared_ptr<MockHttpClient>, MockHttpClient*> MakeMockHttpClient() {
+  auto mock = std::make_shared<MockHttpClient>();
   auto* ptr = mock.get();
   return {std::move(mock), ptr};
 }

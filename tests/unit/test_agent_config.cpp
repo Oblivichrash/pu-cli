@@ -337,7 +337,7 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
   cfg.temperature = 0.5f;
   cfg.system_prompt = "Be helpful.";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
@@ -349,7 +349,7 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
   cfg.model = "gpt-4o-mini";
   cfg.api_key = "key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }

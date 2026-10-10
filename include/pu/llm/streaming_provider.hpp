@@ -28,7 +28,7 @@ class StreamingProvider : public LLMProvider {
 
  protected:
   StreamingProvider(std::string host, std::string api_key,
-                    std::unique_ptr<pu::http::HttpClient> http);
+                    std::shared_ptr<pu::http::HttpClient> http);
 
   virtual std::string EndpointPath() const = 0;
   virtual std::string LogTag() const = 0;
@@ -58,7 +58,7 @@ class StreamingProvider : public LLMProvider {
  private:
   std::string host_;
   std::string api_key_;
-  std::unique_ptr<pu::http::HttpClient> http_;
+  std::shared_ptr<pu::http::HttpClient> http_;
   std::function<void(const std::string&)> reasoning_sink_;
 };
 

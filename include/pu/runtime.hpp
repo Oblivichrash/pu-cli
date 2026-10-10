@@ -11,6 +11,7 @@
 #include "pu/agent_manager.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/http_client.hpp"
 #include "pu/executor.hpp"
 #include "pu/mcp/mcp_session.hpp"
 #include "pu/command_router.hpp"
@@ -75,6 +76,7 @@ class Runtime {
   bool is_initialized_ = false;
   std::unique_ptr<AgentManager> agent_manager_;
   std::unique_ptr<CommandRouter> command_router_;
+  std::shared_ptr<pu::http::HttpClient> http_client_;
   Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
   std::filesystem::path workspace_root_;

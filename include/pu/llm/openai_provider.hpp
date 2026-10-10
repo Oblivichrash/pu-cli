@@ -27,7 +27,7 @@ class OpenAIProvider : public StreamingProvider {
     std::function<std::vector<std::string>()> extra_headers;
   };
 
-  explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
+  explicit OpenAIProvider(const Config& config, std::shared_ptr<pu::http::HttpClient> http);
   ~OpenAIProvider() override = default;
 
  protected:

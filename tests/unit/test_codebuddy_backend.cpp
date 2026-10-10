@@ -105,6 +105,6 @@ TEST_CASE("CreateBackend refuses a backend that names no host", "[codebuddy]") {
   cfg.type = config::BackendType::kCodeBuddy;
   cfg.model = "deepseek-v4-flash";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   REQUIRE_THROWS_AS(config::CreateBackend(cfg, std::move(mock_http)), pu::Error);
 }

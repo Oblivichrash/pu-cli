@@ -12,7 +12,7 @@
 namespace pu::config {
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
-                                               std::unique_ptr<pu::http::HttpClient> http) {
+                                               std::shared_ptr<pu::http::HttpClient> http) {
   if (cfg.host.empty()) {
     throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
   }

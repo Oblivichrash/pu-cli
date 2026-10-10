@@ -21,7 +21,7 @@ class OllamaProvider : public StreamingProvider {
     std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
   };
 
-  explicit OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http);
+  explicit OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http);
   ~OllamaProvider() override = default;
 
  protected:

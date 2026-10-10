@@ -196,7 +196,7 @@ TEST_CASE("OllamaProvider declares tool support", "[ollama]") {
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   OllamaProvider provider(std::move(config), std::move(mock_http));
   REQUIRE(provider.SupportsTools());
 }
