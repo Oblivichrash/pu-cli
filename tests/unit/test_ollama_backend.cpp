@@ -14,8 +14,7 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   config.temperature = 0.5f;
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
@@ -33,8 +32,7 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   std::vector<std::string> chunks = {R"({"message":{"content":"Hello"}})",
                                      R"({"message":{"content":" world"}})", R"({"done":true})"};
@@ -66,8 +64,7 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -94,8 +91,7 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -126,8 +122,7 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   ChatMessage tool_msg;
@@ -151,8 +146,7 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   ChatMessage assistant;
@@ -178,8 +172,7 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OllamaProvider provider(std::move(config), std::move(mock_http));
 
   ChatMessage assistant;
@@ -215,8 +208,7 @@ TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]")
   config.model = "llama3.2:1b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -240,8 +232,7 @@ TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollam
   config.model = "deepseek-r1:7b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -266,8 +257,7 @@ TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][err
   config.model = "missing-model";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -291,8 +281,7 @@ TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]
   config.model = "llama3.2";  // a tag, which the daemon resolves to a build
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -318,8 +307,7 @@ TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama
   config.model = "deepseek-r1:7b";
   config.host = "http://localhost:11434";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {

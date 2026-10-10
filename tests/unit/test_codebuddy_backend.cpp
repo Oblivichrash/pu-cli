@@ -66,8 +66,7 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   auto provider = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
@@ -93,8 +92,7 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
   cfg.host = "http://127.0.0.1:9999/v1";
   cfg.model = "deepseek-v4-flash";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   auto provider = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
