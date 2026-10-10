@@ -141,18 +141,23 @@ std::string Executor::BuildStaticSystemContext() const {
   return oss.str();
 }
 
-Executor::Executor(Toolbox* toolbox) : toolbox_(toolbox) { ProbeStaticEnvironment(); }
+
+
+Executor::Executor() { ProbeStaticEnvironment(); }
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
-                                  LLMProvider* provider, CancelToken cancel_token,
+                                  LLMProvider* provider, Toolbox* toolbox,
+                                  CancelToken cancel_token,
                                   std::function<void(const std::string&)> content_callback,
                                   ToolCallbacks tool_callbacks,
                                   std::function<void(const std::string&)> reasoning_callback) {
-  if (!toolbox_) {
+  // A caller that has no registry has nothing to offer the model, so the turn is refused
+  // before the conversation records it as asked.
+  if (toolbox == nullptr) {
     ExecutionResult err;
     err.has_error = true;
     err.error_message = "Tool registry is not initialized.";
@@ -163,8 +168,8 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
 
   // The loop fills the result the caller is given: one turn, one result, rather than a
   // private shape that has to be copied out of it field by field.
-  ExecutionResult result = RunToolLoop(conversation, provider, cancel_token, content_callback,
-                                       tool_callbacks, reasoning_callback);
+  ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
+                                       content_callback, tool_callbacks, reasoning_callback);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
@@ -172,24 +177,18 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
 }
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* provider,
-                                      CancelToken cancel_token,
+                                      Toolbox* toolbox, CancelToken cancel_token,
                                       std::function<void(const std::string&)> content_callback,
                                       ToolCallbacks tool_callbacks,
                                       std::function<void(const std::string&)> reasoning_callback) {
   ExecutionResult result;
-
-  if (!toolbox_) {
-    result.has_error = true;
-    result.error_message = "Tool registry is not initialized.";
-    return result;
-  }
 
   if (!provider->SupportsTools()) {
     result.content = "This provider does not support tool calling. Cannot execute tools.";
     return result;
   }
 
-  auto tools = toolbox_->GetToolDefinitions();
+  auto tools = toolbox->GetToolDefinitions();
   const int max_iterations = 20;
   int iteration = 0;
   bool hit_max_iterations = false;
@@ -306,7 +305,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       SetLogToolName(call.name);
       auto tool_start = std::chrono::steady_clock::now();
       try {
-        tool_result = toolbox_->ExecuteTool(call.name, call.arguments, tool_ctx);
+        tool_result = toolbox->ExecuteTool(call.name, call.arguments, tool_ctx);
       } catch (const std::exception& e) {
         tool_result = tools::MakeToolResultJson(
             false, "", "", std::string("Tool execution error: ") + e.what(), -1);

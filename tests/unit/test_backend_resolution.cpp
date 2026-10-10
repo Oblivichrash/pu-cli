@@ -203,3 +203,29 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     REQUIRE(runtime.CurrentBackend().model == "coder-model");
   }
 }
+
+TEST_CASE("A turn after an agent switch still has a toolbox to read", "[backend]") {
+  BackendSourceFixture fixture;
+
+  ScopedWorkingDir in_workspace(fixture.root());
+  Runtime runtime;
+  runtime.Initialize();
+  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
+
+  const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+  REQUIRE(coder != nullptr);
+  runtime.SwitchAgent(*coder);
+  REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+
+  // Switching agents rebuilds the toolbox. The turn that follows has to run against the
+  // rebuilt one; the host is unreachable, so what is under test is that reaching the
+  // toolbox at all still works rather than that the request succeeded.
+  bool is_command = false;
+  const ExecutionResult result = runtime.ProcessInput("hello", is_command);
+
+  REQUIRE(is_command == false);
+  REQUIRE(result.has_error);
+  REQUIRE(result.error_message.find("Tool registry is not initialized") == std::string::npos);
+
+  runtime.Shutdown();
+}

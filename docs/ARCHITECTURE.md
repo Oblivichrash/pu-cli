@@ -218,9 +218,12 @@ RebuildToolbox(agent)
  ├─ RegisterBuiltinTools()
  ├─ for each mcp_servers:
  │    StartMCP(cfg) → ListTools() → register mcp.<server>.<tool>
- └─ executor_->SetToolbox(toolbox_);
-     executor_->SetSecurityPolicy(agent.security)
-```
+ └─ executor_->SetSecurityPolicy(agent.security)
+ ```
+
+ `RebuildToolbox` replaces the `Toolbox` outright, which is why the executor does not hold
+ one: it receives the current toolbox as an argument to each `Execute` call. An executor
+ holding the registry would keep pointing at the one this function destroyed.
 
 ---
 

@@ -105,7 +105,7 @@ void Runtime::Initialize(const std::string& config_path) {
 
   command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
 
-  executor_ = std::make_unique<Executor>(nullptr);
+  executor_ = std::make_unique<Executor>();
 
   RebuildToolbox(*default_entry);
 
@@ -252,8 +252,8 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     auto provider = session->CreateProvider(CurrentBackend());
     auto exec_result =
-        executor_->Execute(input, session->GetConversation(), provider.get(), cancel_token,
-                           content_callback, tool_callbacks, reasoning_callback);
+        executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_.get(),
+                           cancel_token, content_callback, tool_callbacks, reasoning_callback);
     result = std::move(exec_result);
     SaveCurrentSession();
     return result;
@@ -338,7 +338,6 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   auto security = agent.security;
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
-  executor_->SetToolbox(toolbox_.get());
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
   agent_manager_->SetActiveAgent(agent.name);
 }

@@ -47,17 +47,20 @@ struct StaticEnvInfo {
 
 class Executor {
  public:
-  explicit Executor(Toolbox* toolbox);
+  Executor();
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
-  void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
 
   // The agent's configured prompt, supplied rather than read back out of session state, so
   // a request depends only on the conversation and the inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
+  // The toolbox travels with the turn rather than being held here: a caller that swaps
+  // agents rebuilds it, and an executor holding the rebuilt-over one would read a freed
+  // registry.
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
-                          LLMProvider* provider, CancelToken cancel_token = nullptr,
+                          LLMProvider* provider, Toolbox* toolbox,
+                          CancelToken cancel_token = nullptr,
                           std::function<void(const std::string&)> content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {},
                           std::function<void(const std::string&)> reasoning_callback = nullptr);
@@ -65,7 +68,7 @@ class Executor {
   std::string BuildStaticSystemContext() const;
 
  private:
-  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider,
+  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox* toolbox,
                               CancelToken cancel_token,
                               std::function<void(const std::string&)> content_callback,
                               ToolCallbacks tool_callbacks,
@@ -73,7 +76,6 @@ class Executor {
 
   void ProbeStaticEnvironment();
 
-  Toolbox* toolbox_;
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
