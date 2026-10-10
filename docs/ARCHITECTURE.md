@@ -48,16 +48,58 @@ What each dependency is for:
 
 ## Error Handling
 
+A condition is checked before it happens when the code can know it: an operation that
+can fail visibly returns `std::optional` or `nullptr` rather than throwing. Exceptions
+are for what cannot be known in advance — a body that does not parse, a peer that
+closes the socket, a provider that answers with an error frame.
+
 All non-recoverable runtime errors derive from a single base class:
 
 ```
 pu::RuntimeError : std::runtime_error
-  ├── pu::Error            (e.g. configuration parsing)
-  │     └── pu::HttpError  (HttpClient failures)
+  ├── pu::RequestRefused        (the state cannot serve a well-formed request)
+  └── pu::Error                 (the request or the configuration is wrong)
+        └── pu::HttpError       (HttpClient failures)
 ```
+
+`pu::RequestRefused` sits beside `Error`, not under it, because a `pu serve`
+route reports the two differently: a refused request answers 400, and an `Error`
+answers 500. Deriving a refusal from `Error` would report a caller's mistake as a
+fault of this process.
 
 `main()` wraps top-level dispatch in a `try/catch (const std::exception&)` so any
 `RuntimeError` is converted to a friendly fatal-error message.
+
+### What a catch is for
+
+A catch is worth its place only when it changes the control flow: it returns a value,
+retries, falls back, converts, or ends the process. Logging is not handling, but it is
+not forbidden either — what it must not be is the *whole* body of a catch on a path
+that then carries on as if nothing happened.
+
+Where a layer must report and continue, it converts rather than swallows:
+
+- **A parse that fails is a result.** `json::parse` throwing is how a byte string says
+  it is not JSON; the catch at the call site turns that into the value the caller wants
+  (a default, a fallback, a marked-invalid record). This is the largest group of catches
+  in the tree and none of them are noise.
+- **A background thread reports and ends.** `McpClient` and the WebSocket reader catch
+  at their own boundary because no caller exists above them to be told; the log is the
+  report, and the promise or the socket carries the outcome.
+- **The process boundary logs and stops.** `main()` and the CLI entry points are the only
+  places a message may be the entire response, because returning is no longer an option.
+
+A catch that logs and then lets the caller believe the operation succeeded is the one
+shape to avoid: `McpClient::ListTools` answering with an empty list on failure hides a
+dead server rather than reporting it.
+
+### Configuration is a state, not a failure
+
+A workspace without an `agents.json` is an ordinary state. `config::FindConfigPath`
+returns an empty string for it, and `FindServeOptions` returns `std::nullopt`; the one
+place that cannot continue, `Runtime::Initialize`, turns the empty path into the `Error`
+that says where to put the file. A function that cannot answer reports that it cannot
+answer, rather than picking one of its callers' conditions to throw.
 
 ---
 
