@@ -30,9 +30,9 @@ item comes out as separate paragraphs, so pass the whole message at once.
 - A comment describes what holds now, and does not point at a document. What an
   earlier build did belongs to the commit that changed it, not to the line that
   replaced it.
-- Format with `clang-format`; the settings live in `.clang-format`. Run
-  `clang-format -i <files>` from the repo root before committing — CI checks the
-  formatting, so an unformatted tree fails the build.
+- Match the style `.clang-format` describes; the settings are there to read and
+  to run by hand. Nothing enforces them, so a tree that drifts is not a failed
+  build — it is a change to review like any other.
 
 ## Testing
 A change that alters behavior under `src/` needs a test in `tests/unit/` that
