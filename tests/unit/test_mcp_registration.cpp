@@ -4,31 +4,23 @@
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
 
-#include <atomic>
-#include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <set>
 #include <string>
-#include <thread>
-#include <vector>
 
 #include "pu/core/json.hpp"
-#include "pu/runtime.hpp"
 #include "tests/mocks/serve_harness.hpp"
-#include "tests/mocks/test_helpers.hpp"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
-namespace fs = std::filesystem;
 
 using namespace pu::tests;
 
 namespace {
 
-http::response<http::string_body> Answer(unsigned status, std::string body) {
+http::response<http::string_body> Answer(std::string body) {
   http::response<http::string_body> res;
-  res.result(static_cast<http::status>(status));
+  res.result(http::status::ok);
   res.set(http::field::content_type, "application/json");
   res.body() = std::move(body);
   res.prepare_payload();
@@ -41,7 +33,7 @@ class McpToolServer {
 
   http::response<http::string_body> operator()(const http::request<http::string_body>& req) {
     const auto body = boost::json::parse(req.body());
-    if (!pu::json::HasKey(body, "id")) return Answer(200, "");
+    if (!pu::json::HasKey(body, "id")) return Answer("");
 
     const int id = boost::json::value_to<int>(body.at("id"));
     const std::string method = boost::json::value_to<std::string>(body.at("method"));
@@ -55,35 +47,39 @@ class McpToolServer {
                                       {"description", "A tool served over MCP"},
                                       {"inputSchema", {{"type", "object"}}}}}}};
     } else if (method == "tools/call") {
-      reply["result"] = {{"content", boost::json::array{boost::json::value{
-                                          {"type", "text"}, {"text", "served"}}}}};
+      reply["result"] = {
+          {"content", boost::json::array{boost::json::value{{"type", "text"}, {"text", "served"}}}}};
     } else {
       reply["error"] = {{"code", -32601}, {"message", "no such method"}};
     }
-    return Answer(200, boost::json::serialize(reply));
+    return Answer(boost::json::serialize(reply));
+  }
+
+  FakeHttpServer::Responder ToResponder() {
+    return [this](const http::request<http::string_body>& req) { return (*this)(req); };
   }
 
  private:
   std::string tool_name_;
 };
 
-class ToolCapturingBackend {
+class ToolCapture {
  public:
   http::response<http::string_body> operator()(const http::request<http::string_body>& req) {
     const auto body = boost::json::parse(req.body());
     if (pu::json::HasKey(body, "tools") && body.at("tools").is_array()) {
       std::set<std::string> names;
       for (const auto& tool : body.at("tools").as_array()) {
-        if (pu::json::HasKey(tool, "function")) {
-          names.insert(boost::json::value_to<std::string>(tool.at("function").at("name")));
-        } else if (pu::json::HasKey(tool, "name")) {
-          names.insert(boost::json::value_to<std::string>(tool.at("name")));
+        const boost::json::value& named =
+            pu::json::HasKey(tool, "function") ? tool.at("function") : tool;
+        if (pu::json::HasKey(named, "name")) {
+          names.insert(boost::json::value_to<std::string>(named.at("name")));
         }
       }
       std::lock_guard<std::mutex> lock(mutex_);
       offered_ = std::move(names);
     }
-    return Answer(200, R"({"message":{"content":"OK"}}
+    return Answer(R"({"message":{"content":"OK"}}
 {"done":true}
 )");
   }
@@ -98,93 +94,48 @@ class ToolCapturingBackend {
   std::set<std::string> offered_;
 };
 
-void WriteAgentWithMcpServer(const fs::path& dir, int backend_port, int mcp_port,
-                             const std::string& server_name) {
-  fs::create_directories(dir / ".pu");
-  boost::json::value root = {
-      {"default_agent", "chat"},
-      {"agents",
-       boost::json::array{boost::json::value{
-           {"name", "chat"},
-           {"description", "Chat agent"},
-           {"backend",
-            {{"type", "openai"},
-             {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
-             {"model", "test-model"}}},
-           {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}},
-           {"mcp_servers",
-            boost::json::array{boost::json::value{
-                {"name", server_name},
-                {"url", "http://127.0.0.1:" + std::to_string(mcp_port) + "/mcp"}}}}}}}};
-
-  std::ofstream out(dir / ".pu" / "agents.json", std::ios::trunc);
-  out << boost::json::serialize(root);
-}
+std::string McpUrl(int port) { return "http://127.0.0.1:" + std::to_string(port) + "/mcp"; }
 
 }  // namespace
 
 TEST_CASE("A tool from a configured MCP server reaches the provider", "[mcp][runtime]") {
-  ScopedTempDir workspace("pu_mcp_registration");
-  ScopedWorkingDir in_workspace(workspace.Path());
-
   McpToolServer mcp("search");
-  FakeHttpServer mcp_http([&](const http::request<http::string_body>& req) { return mcp(req); });
+  FakeHttpServer mcp_http(mcp.ToResponder());
 
-  ToolCapturingBackend backend;
-  FakeHttpServer backend_http(
-      [&](const http::request<http::string_body>& req) { return backend(req); });
-
-  WriteAgentWithMcpServer(workspace.Path(), backend_http.Port(), mcp_http.Port(), "files");
-
-  pu::Runtime runtime;
-  runtime.Initialize();
+  ToolCapture capture;
+  ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_http.Port())},
+                       [&](const http::request<http::string_body>& req) { return capture(req); });
 
   bool is_command = false;
-  runtime.ProcessInput("hello", is_command);
+  harness.Runtime().ProcessInput("hello", is_command);
 
-  const std::set<std::string> offered = backend.Offered();
+  const std::set<std::string> offered = capture.Offered();
   REQUIRE(offered.count("mcp_files_search") == 1);
   REQUIRE(offered.count("execute_bash") == 1);
-
-  runtime.Shutdown();
 }
 
 TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "[mcp][runtime]") {
-  ScopedTempDir workspace("pu_mcp_rebuild");
-  ScopedWorkingDir in_workspace(workspace.Path());
-
-  ToolCapturingBackend backend;
-  FakeHttpServer backend_http(
-      [&](const http::request<http::string_body>& req) { return backend(req); });
-
+  ToolCapture capture;
   int mcp_port = 0;
+
   {
     McpToolServer mcp("temporary");
-    FakeHttpServer mcp_http([&](const http::request<http::string_body>& req) { return mcp(req); });
+    FakeHttpServer mcp_http(mcp.ToResponder());
     mcp_port = mcp_http.Port();
 
-    WriteAgentWithMcpServer(workspace.Path(), backend_http.Port(), mcp_port, "files");
-
-    pu::Runtime runtime;
-    runtime.Initialize();
+    ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)},
+                         [&](const http::request<http::string_body>& req) { return capture(req); });
 
     bool is_command = false;
-    runtime.ProcessInput("hello", is_command);
-    REQUIRE(backend.Offered().count("mcp_files_temporary") == 1);
-
-    runtime.Shutdown();
+    harness.Runtime().ProcessInput("hello", is_command);
+    REQUIRE(capture.Offered().count("mcp_files_temporary") == 1);
   }
 
-  WriteAgentWithMcpServer(workspace.Path(), backend_http.Port(), mcp_port, "files");
-
-  pu::Runtime second;
-  second.Initialize();
+  ServeHarness harness("openai", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)},
+                       [&](const http::request<http::string_body>& req) { return capture(req); });
 
   bool is_command = false;
-  second.ProcessInput("hello", is_command);
+  harness.Runtime().ProcessInput("hello", is_command);
 
-  const std::set<std::string> offered = backend.Offered();
-  REQUIRE(offered.count("mcp_files_temporary") == 0);
-
-  second.Shutdown();
+  REQUIRE(capture.Offered().count("mcp_files_temporary") == 0);
 }

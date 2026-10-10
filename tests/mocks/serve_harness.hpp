@@ -15,6 +15,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -249,21 +250,30 @@ class FakeBackend : public FakeHttpServer {
 };
 
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
-                                   const std::string& backend_type = "ollama") {
+                                   const std::string& backend_type = "ollama",
+                                   const std::string& mcp_name = "",
+                                   const std::string& mcp_url = "") {
   fs::create_directories(dir / ".pu");
   fs::path path = dir / ".pu" / "agents.json";
 
+  boost::json::object agent = {
+      {"name", "chat"},
+      {"description", "Chat agent"},
+      {"backend",
+       {{"type", backend_type},
+        {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
+        {"model", "test-model"}}},
+      {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}};
+
+  if (!mcp_url.empty()) {
+    agent["mcp_servers"] = boost::json::array{boost::json::value{{"name", mcp_name},
+                                                                 {"url", mcp_url}}};
+  }
+
   boost::json::value root = {
       {"default_agent", "chat"},
-      {"agents",
-       boost::json::array{boost::json::value{
-           {"name", "chat"},
-           {"description", "Chat agent"},
-           {"backend",
-            {{"type", backend_type},
-             {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
-             {"model", "test-model"}}},
-           {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}}}}};
+      {"agents", boost::json::array{boost::json::value{std::move(agent)}}},
+  };
 
   std::ofstream file(path);
   file << boost::json::serialize(root);
@@ -331,7 +341,14 @@ class TestHttpClient {
 
 class ServeHarness {
  public:
-  explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0) {
+  struct McpServer {
+    std::string name;
+    std::string url;
+  };
+
+  explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
+                        std::optional<McpServer> mcp = std::nullopt,
+                        FakeHttpServer::Responder backend_responder = nullptr) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -343,8 +360,14 @@ class ServeHarness {
     fs::create_directories(data_dir);
     data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
 
-    backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
-    WriteAgentsFile(home_, backend_->Port(), backend_type);
+    if (backend_responder) {
+      backend_http_ = std::make_unique<FakeHttpServer>(std::move(backend_responder));
+    } else {
+      backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
+    }
+    const int backend_port = backend_ ? backend_->Port() : backend_http_->Port();
+
+    WriteAgentsFile(home_, backend_port, backend_type, mcp ? mcp->name : "", mcp ? mcp->url : "");
 
     {
       ScopedWorkingDir in_home(home_);
@@ -385,7 +408,9 @@ class ServeHarness {
 
   int Port() const { return port_; }
 
-  int BackendRequests() const { return backend_->Requests(); }
+  int BackendRequests() const {
+    return backend_ ? backend_->Requests() : backend_http_->Requests();
+  }
 
   Runtime& Runtime() { return *runtime_; }  // NOLINT: the name is the class it returns
 
@@ -394,6 +419,7 @@ class ServeHarness {
   std::unique_ptr<ScopedEnvVar> home_env_;
   std::unique_ptr<ScopedEnvVar> data_env_;
   std::unique_ptr<FakeBackend> backend_;
+  std::unique_ptr<FakeHttpServer> backend_http_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
   std::thread server_thread_;
