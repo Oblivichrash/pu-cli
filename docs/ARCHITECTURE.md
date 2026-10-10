@@ -34,7 +34,7 @@ What each dependency is for:
 | `Session` | Aggregate root: a `Conversation` + its `SessionSpec` |
 | `Conversation` | The stored conversation: the `MessageGraph`, plus the `ChatMessage` view rendered from it |
 | `Executor` | Session-state-free tool loop (holds config + probe cache); reads and writes the `Conversation`; injects system context and processes structured tool output |
-| `LLMProvider` | Model gateway; handles transport + format adaptation |
+| `LLMProvider` | Model gateway; handles transport + format adaptation. `StreamingProvider` implements the shared stream pipeline; a concrete backend fills in the endpoint, headers, and per-line parse |
 | `Toolbox` | Tool registry; rebuilt per active agent, executes built-in and MCP tools |
 | `CommandRouter` | Routes `/` commands to handlers |
 | `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
@@ -360,7 +360,7 @@ and the `pu` executable adds only `main.cpp`.
 
 ## Extension Points
 
-- **New backend**: Implement `LLMProvider` and register it in `CreateBackend()` (`include/pu/config/backend.hpp`).
+- **New backend**: Inherit `StreamingProvider` (`include/pu/llm/streaming_provider.hpp`) and supply the endpoint path, request body, log tag, headers, and a per-line parser; a backend that does not stream over SSE or NDJSON inherits `LLMProvider` directly. Register it in `CreateBackend()` (`include/pu/config/backend.hpp`).
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
