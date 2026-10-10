@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// What a test needs to run a server for real: a server that answers with what the test
-// says, a backend that answers like a provider, a workspace with an agents.json, a REST
-// client, and `pu serve` itself.
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <boost/asio.hpp>
@@ -52,7 +48,6 @@ using tcp = net::ip::tcp;
 
 inline constexpr const char* kServeHost = "127.0.0.1";
 
-// A port with nothing on it yet; the server is started on it a moment later.
 inline int FindFreePort() {
 #ifdef _WIN32
   WSADATA wsa;
@@ -138,15 +133,11 @@ inline bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   return false;
 }
 
-// A server that answers every request with what its responder returns. `response_delay_ms`
-// holds the answer back, which is what keeps a turn in flight long enough to interrupt it,
-// and `Requests()` counts what reached it.
 class FakeHttpServer {
  public:
   using Responder =
       std::function<http::response<http::string_body>(const http::request<http::string_body>&)>;
 
-  // One status and body for every request.
   FakeHttpServer(unsigned status, std::string body, int response_delay_ms = 0)
       : FakeHttpServer(
             [status, body = std::move(body)](const http::request<http::string_body>&) {
@@ -181,7 +172,6 @@ class FakeHttpServer {
 
   int Port() const { return port_; }
 
-  // How many requests have been read, which is a turn that got as far as the backend.
   int Requests() const { return requests_->load(); }
 
   void Stop() {
@@ -237,7 +227,6 @@ class FakeHttpServer {
   std::atomic<bool> stop_requested_{false};
 };
 
-// A backend that answers like a provider, in the shape the Ollama path reads back.
 class FakeBackend : public FakeHttpServer {
  public:
   explicit FakeBackend(int response_delay_ms = 0) : FakeHttpServer(Answer, response_delay_ms) {}
@@ -281,8 +270,6 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   return path.string();
 }
 
-// What a request answered. The status is read where the refusal is one rather than a field
-// in the body.
 struct HttpResponse {
   unsigned status = 0;
   std::string body;
@@ -302,7 +289,6 @@ class TestHttpClient {
     return Request(http::verb::post, path, boost::json::serialize(body));
   }
 
-  // A body that is not JSON at all, which is a refusal the handler judges itself.
   HttpResponse PostRaw(const std::string& path, const std::string& body) {
     return Request(http::verb::post, path, body);
   }
@@ -345,27 +331,21 @@ class TestHttpClient {
 
 class ServeHarness {
  public:
-  // The backend type decides what a client may do, so a test asks for one that carries what
-  // it needs. `backend_delay_ms` holds the answer back, so a turn can be interrupted.
   explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
-    home_ = fs::temp_directory_path() / ("pu_serve_" + tag);
+    home_ = UniqueTempPath("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
     home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    // The log file stays open for the whole process and cannot be deleted while it is, so it
-    // lives in one directory of its own rather than in the workspace a test removes.
-    const fs::path data_dir = fs::temp_directory_path() / "pu_test_data";
+    const fs::path data_dir = UniqueTempPath("pu_test_data");
     fs::create_directories(data_dir);
     data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
     WriteAgentsFile(home_, backend_->Port(), backend_type);
 
-    // Initialised here rather than by the server, so the workspace it reads is this
-    // harness's own. RunServe initialises a second time, which is a no-op.
     {
       ScopedWorkingDir in_home(home_);
       runtime_ = std::make_unique<pu::Runtime>();
@@ -399,19 +379,14 @@ class ServeHarness {
     if (runtime_) runtime_->Shutdown();
   }
 
-  // The workspace this harness serves: the directory the server's discovery scans beside.
   const fs::path& Home() const { return home_; }
 
   TestHttpClient Client() const { return TestHttpClient(kServeHost, port_); }
 
   int Port() const { return port_; }
 
-  // How many turns have reached the backend, so a test can act while one is in flight
-  // instead of guessing at a delay.
   int BackendRequests() const { return backend_->Requests(); }
 
-  // The runtime the server is reading, so a test can seed a conversation in the same
-  // store a turn would have written to.
   Runtime& Runtime() { return *runtime_; }  // NOLINT: the name is the class it returns
 
  private:

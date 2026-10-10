@@ -8,9 +8,30 @@
 #include <string>
 #include <system_error>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace pu::tests {
 
-// RAII helper to set/unset environment variables for testing.
+inline int ProcessId() {
+#ifdef _WIN32
+  return _getpid();
+#else
+  return static_cast<int>(getpid());
+#endif
+}
+
+// catch_discover_tests runs each case in its own process, so a fixed name in a shared temp
+// directory collides as soon as two cases run at once; the process id keeps them apart.
+inline std::filesystem::path UniqueTempPath(const std::string& stem) {
+  static std::atomic<int> counter{0};
+  return std::filesystem::temp_directory_path() /
+         (stem + "_" + std::to_string(ProcessId()) + "_" + std::to_string(counter++));
+}
+
 class ScopedEnvVar {
  public:
   ScopedEnvVar(const std::string& name, const std::string& value) : name_(name) {
@@ -49,8 +70,6 @@ class ScopedEnvVar {
   bool had_prev_ = false;
 };
 
-// Runs a block inside `dir`. A Runtime takes its workspace — session file, agents, tools —
-// from the working directory, so a test that never enters one shares the repository's.
 class ScopedWorkingDir {
  public:
   explicit ScopedWorkingDir(const std::filesystem::path& dir)
@@ -70,8 +89,6 @@ class ScopedWorkingDir {
   std::filesystem::path original_;
 };
 
-// A directory under the system temp, removed with the object: a test's data directory is not
-// the tree it is run from, so it is not one a run may leave behind.
 class ScopedTempDir {
  public:
   explicit ScopedTempDir(const std::string& prefix) {

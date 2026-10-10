@@ -17,7 +17,7 @@ namespace fs = std::filesystem;
 
 struct TempConfigFile {
   fs::path path;
-  TempConfigFile() { path = fs::temp_directory_path() / "pu_test_agents.json"; }
+  TempConfigFile() { path = UniqueTempPath("pu_test_agents").string() + ".json"; }
   ~TempConfigFile() {
     std::error_code ec;
     fs::remove(path, ec);
@@ -30,8 +30,6 @@ struct TempConfigFile {
 
 namespace {
 
-// Serializes an AgentsConfig in the agents.json shape so the loader's
-// round-trip behavior can be tested without a production writer.
 void WriteAgentsConfigForTest(const std::string& config_path, const config::AgentsConfig& cfg) {
   json::value j = {{"default_agent", cfg.default_agent}};
 
@@ -92,10 +90,8 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
 }  // namespace
 
 TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
-  // Use a temporary current directory and empty HOME so we do not disturb the
-  // repo layout or the real user configuration.
-  auto dir = fs::temp_directory_path() / "pu_findconfig_project";
-  auto home = fs::temp_directory_path() / "pu_findconfig_home";
+  auto dir = UniqueTempPath("pu_findconfig_project");
+  auto home = UniqueTempPath("pu_findconfig_home");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -119,8 +115,8 @@ TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
 }
 
 TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
-  auto dir = fs::temp_directory_path() / "pu_findconfig_project2";
-  auto home = fs::temp_directory_path() / "pu_findconfig_home2";
+  auto dir = UniqueTempPath("pu_findconfig_project2");
+  auto home = UniqueTempPath("pu_findconfig_home2");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -144,8 +140,8 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
 }
 
 TEST_CASE("FindConfigPath reports no configuration when neither location exists", "[agent_config]") {
-  auto dir = fs::temp_directory_path() / "pu_findconfig_empty";
-  auto home = fs::temp_directory_path() / "pu_findconfig_empty_home";
+  auto dir = UniqueTempPath("pu_findconfig_empty");
+  auto home = UniqueTempPath("pu_findconfig_empty_home");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -165,11 +161,9 @@ TEST_CASE("FindConfigPath reports no configuration when neither location exists"
   fs::remove_all(home, ec);
 }
 
-// Where a workspace says its server should listen: several directories are served side by
-// side, so each one says which port it answers on.
 TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
-  auto dir = fs::temp_directory_path() / "pu_serve_options";
-  auto home = fs::temp_directory_path() / "pu_serve_options_home";
+  auto dir = UniqueTempPath("pu_serve_options");
+  auto home = UniqueTempPath("pu_serve_options_home");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -182,8 +176,6 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
   {
     ScopedEnvVar env("HOME", home.string());
 
-    // Each write is closed before the read that follows: an ofstream still in scope has not
-    // necessarily reached the disk, and an empty file would pass the assertions anyway.
     {
       std::ofstream f(dir / ".pu" / "agents.json");
       f << R"({"default_agent":"a","agents":[]})";
@@ -202,7 +194,6 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
       REQUIRE(options->host == "127.0.0.2");
     }
 
-    // A number that is not a port is refused rather than listened on.
     {
       std::ofstream f(dir / ".pu" / "agents.json");
       f << R"({"serve":{"port":70000}})";
@@ -210,8 +201,6 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
       REQUIRE_FALSE(config::FindServeOptions().has_value());
     }
 
-    // A file that is not JSON answers as if it had no serve block: the loader reports
-    // on the file a moment later, in words about the file.
     {
       std::ofstream f(dir / ".pu" / "agents.json");
       f << "{ not json";

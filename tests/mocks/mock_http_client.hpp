@@ -34,8 +34,6 @@ class MockHttpClient : public pu::http::HttpClient {
       simulate_response;
 };
 
-// Hands the caller the raw pointer it needs for assertions along with the owning pointer the
-// provider takes, in one line.
 inline std::pair<std::unique_ptr<MockHttpClient>, MockHttpClient*> MakeMockHttpClient() {
   auto mock = std::make_unique<MockHttpClient>();
   auto* ptr = mock.get();

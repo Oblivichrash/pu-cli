@@ -8,12 +8,6 @@
 #include <fstream>
 #include <string>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
-
 #include "pu/config/agents.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -25,30 +19,10 @@ using namespace pu::tests;
 
 namespace {
 
-// The process running this test, so a fixture directory is named uniquely across the
-// processes `catch_discover_tests` starts rather than only within one of them.
-int ProcessId() {
-#ifdef _WIN32
-  return static_cast<int>(_getpid());
-#else
-  return static_cast<int>(getpid());
-#endif
-}
-
-// A workspace the runtime can start from. The configuration is rewritten
-// between starts, which is how a restart is simulated.
 class BackendSourceFixture {
  public:
   BackendSourceFixture() {
-    // Two test cases are two processes, so a per-process counter alone would have every
-    // process claim the same name and delete the directory another one was using. The
-    // process id is what makes the name unique across tests, which is what lets them run
-    // at the same time.
-    static int counter = 0;
-    root_ = fs::temp_directory_path() /
-            ("pu_backend_source_" + std::to_string(ProcessId()) + "_" + std::to_string(counter++));
-    // The name is reused between runs, and a session left in it names the agent it was
-    // talking to, which outvotes the configuration this fixture is about to write.
+    root_ = UniqueTempPath("pu_backend_source");
     std::error_code ec;
     fs::remove_all(root_, ec);
     fs::create_directories(root_ / ".pu");
@@ -114,8 +88,6 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
   REQUIRE(read.model == "test-model");
 }
 
-// Every type, because the stored form used to be written by asking "is it OpenAI?": a third
-// type was spelled "ollama" and read back as one, changing backend across a restart.
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
   for (const config::BackendType type : {config::BackendType::kOllama, config::BackendType::kOpenAI,
                                          config::BackendType::kCodeBuddy}) {
@@ -138,7 +110,6 @@ TEST_CASE("A type is named the same way in configuration and in an answer", "[ba
   REQUIRE(config::ParseBackendType("ollama") == config::BackendType::kOllama);
   REQUIRE_FALSE(config::ParseBackendType("gpt").has_value());
 
-  // The name a session is stored under is the name a client is told.
   REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
 }
 
@@ -214,8 +185,6 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     runtime.Shutdown();
   }
 
-  // agents.json still defaults to "chat", so only the stored session can bring
-  // the runtime back to "coder".
   {
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
@@ -238,9 +207,6 @@ TEST_CASE("A turn after an agent switch still has a toolbox to read", "[backend]
   runtime.SwitchAgent(*coder);
   REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
 
-  // Switching agents rebuilds the toolbox. The turn that follows has to run against the
-  // rebuilt one; the host is unreachable, so what is under test is that reaching the
-  // toolbox at all still works rather than that the request succeeded.
   bool is_command = false;
   const ExecutionResult result = runtime.ProcessInput("hello", is_command);
 
