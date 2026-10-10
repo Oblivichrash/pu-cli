@@ -30,13 +30,7 @@ TEST_CASE("Conversation serialization round-trips", "[conversation]") {
 
 TEST_CASE("Session serialization round-trips", "[conversation]") {
   Session session;
-  config::BackendConfig backend;
-  backend.type = config::BackendType::kOllama;
-  backend.host = "http://127.0.0.1:11434";
-  backend.model = "llama3.2:1b";
-  backend.temperature = 0.7f;
   session.SetAgent("chat");
-  session.SetBackendOverride(backend);
   session.GetConversation().Append("user", "hello");
 
   const boost::json::value saved = session.Serialize();
@@ -47,8 +41,7 @@ TEST_CASE("Session serialization round-trips", "[conversation]") {
   REQUIRE(restored != nullptr);
   REQUIRE(restored->GetConversation().GetHistory().size() == 1);
   REQUIRE(restored->GetConversation().GetHistory()[0].content == "hello");
-  REQUIRE(restored->GetSpec().backend_override.has_value());
-  REQUIRE(restored->GetSpec().backend_override->model == "llama3.2:1b");
+  REQUIRE(restored->GetSpec().agent_name == "chat");
 }
 
 TEST_CASE("A message holding invalid UTF-8 survives a save and load", "[conversation]") {

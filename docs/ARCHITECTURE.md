@@ -372,15 +372,17 @@ lists tools.
 
 `<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`).
 
-The session file carries `schema_version` (currently 5) beside `conversation` and
+The session file carries `schema_version` (currently 6) beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup.
 
-`session_spec` names the agent and carries a backend only when `/backend` gave
-this session one of its own. Every other backend field is read from
-`agents.json` on each start, so editing the configuration takes effect without
-touching the session. The session also decides which agent a restart resumes:
-the named agent wins over `default_agent`.
+`session_spec` names the agent and carries the session's own thinking level when
+`/thinking` set one. Every backend field is read from `agents.json` on each
+start, so editing the configuration takes effect without touching the session.
+`/backend <type> <model>` adopts an agent named after the type, so the backend a
+session reports and the agent it names are always the same answer. The session
+also decides which agent a restart resumes: the named agent wins over
+`default_agent`.
 
 The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
 timestamp, its parent and one role payload, plus the `leaf` that marks the current

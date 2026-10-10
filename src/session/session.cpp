@@ -141,16 +141,6 @@ void Session::SetAgent(const std::string& agent_name) {
         "Please let the current tool finish or /clear.");
   }
   spec_.agent_name = agent_name;
-  spec_.backend_override.reset();
-}
-
-void Session::SetBackendOverride(const config::BackendConfig& new_config) {
-  if (HasPendingToolCalls()) {
-    throw RequestRefused(
-        "Cannot switch backend while tool calls are pending. "
-        "Please let the current tool finish or /clear.");
-  }
-  spec_.backend_override = new_config;
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider(

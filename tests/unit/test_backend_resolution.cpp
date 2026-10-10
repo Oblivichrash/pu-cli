@@ -113,25 +113,20 @@ TEST_CASE("A type is named the same way in configuration and in an answer", "[ba
   REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
 }
 
-TEST_CASE("A session spec carries a backend only when one was overridden", "[backend]") {
+TEST_CASE("A session spec carries only the agent and the thinking override", "[backend]") {
   SessionSpec chosen;
   chosen.agent_name = "chat";
 
   const boost::json::value written = chosen.Serialize();
   REQUIRE(written.as_object().count("agent_name") == 1);
-  REQUIRE(written.as_object().count("backend_override") == 0);
+  REQUIRE(written.as_object().count("thinking_override") == 0);
 
-  config::BackendConfig override_cfg;
-  override_cfg.model = "overridden";
-  override_cfg.thinking = ThinkingLevel::kLow;
-  chosen.backend_override = override_cfg;
+  chosen.thinking_override = ThinkingLevel::kLow;
 
   const auto restored = SessionSpec::Deserialize(chosen.Serialize());
   REQUIRE(restored.has_value());
   REQUIRE(restored->agent_name == "chat");
-  REQUIRE(restored->backend_override.has_value());
-  REQUIRE(restored->backend_override->model == "overridden");
-  REQUIRE(restored->backend_override->thinking == ThinkingLevel::kLow);
+  REQUIRE(restored->thinking_override == ThinkingLevel::kLow);
 }
 
 TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {
@@ -154,21 +149,26 @@ TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {
   }
 }
 
-TEST_CASE("A session override wins over the configured backend", "[backend]") {
+TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backend]") {
   BackendSourceFixture fixture;
   ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
   runtime.Initialize();
 
-  auto session = runtime.GetOrCreateDefaultSession();
-  REQUIRE(session != nullptr);
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
+  const auto names_before = runtime.GetAgentManager().GetAgentNames();
 
-  config::BackendConfig override_cfg = runtime.CurrentBackend();
-  override_cfg.temperature = 1.5f;
-  session->SetBackendOverride(override_cfg);
+  config::BackendConfig replacement = runtime.CurrentBackend();
+  replacement.temperature = 1.5f;
+  runtime.SwitchBackend(replacement);
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
+  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
+  REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "openai");
+
+  const auto names_after = runtime.GetAgentManager().GetAgentNames();
+  REQUIRE(names_after.size() == names_before.size() + 1);
+  REQUIRE(runtime.GetAgentManager().GetAgentConfig("openai") != nullptr);
 }
 
 TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {

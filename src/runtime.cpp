@@ -174,9 +174,9 @@ const config::AgentEntry& Runtime::ActiveAgent() const {
 config::BackendConfig Runtime::ConfiguredBackend() const {
   if (current_session_) {
     const auto& spec = current_session_->GetSpec();
-    if (spec.backend_override) return *spec.backend_override;
-
-    return agent_manager_->GetAgentConfig(spec.agent_name)->backend;
+    if (const auto* configured = agent_manager_->GetAgentConfig(spec.agent_name)) {
+      return configured->backend;
+    }
   }
 
   return ActiveAgent().backend;
@@ -320,6 +320,27 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   if (current_session_) {
     try {
       current_session_->SetAgent(new_agent.name);
+    } catch (const std::exception& e) {
+      spdlog::warn("Failed to sync session config: {}", e.what());
+      return;
+    }
+    SaveCurrentSession();
+  }
+}
+
+void Runtime::SwitchBackend(const config::BackendConfig& backend) {
+  config::AgentEntry transient = ActiveAgent();
+  transient.name = config::BackendTypeName(backend.type);
+  transient.backend = backend;
+  transient.description.clear();
+
+  agent_manager_->Adopt(transient);
+  if (agent_manager_->GetActiveAgent() == transient.name) return;
+  RebuildToolbox(transient);
+
+  if (current_session_) {
+    try {
+      current_session_->SetAgent(transient.name);
     } catch (const std::exception& e) {
       spdlog::warn("Failed to sync session config: {}", e.what());
       return;

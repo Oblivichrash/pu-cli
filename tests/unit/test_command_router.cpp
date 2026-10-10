@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
+
+#include <boost/json.hpp>
+
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -15,30 +20,50 @@ using namespace pu;
 namespace {
 
 struct RouterFixture {
-  pu::tests::ScopedTempDir data_dir{"pu_command_router_test_"};
+  pu::tests::ScopedTempDir root{"pu_command_router_test_"};
   std::unique_ptr<pu::tests::ScopedEnvVar> home;
+  std::unique_ptr<pu::tests::ScopedWorkingDir> cwd;
 
-  AgentManager manager;
   Runtime runtime;
-  Session session;
-  CommandRouter router;
+  std::unique_ptr<CommandRouter> router;
 
-  RouterFixture() : router(manager, runtime) {
-    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", data_dir.Path().string());
+  RouterFixture() {
+    std::filesystem::create_directories(root.Path() / ".pu");
+    WriteAgentsFile();
 
-    config::AgentEntry chat;
-    chat.name = "chat";
-    chat.description = "Default agent";
-    config::AgentEntry coder;
-    coder.name = "coder";
-    coder.description = "Coding agent";
-    manager.LoadAgentConfigs({chat, coder});
-    manager.SetActiveAgent("chat");
-    session.SetAgent("chat");
+    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", root.Path().string());
+    cwd = std::make_unique<pu::tests::ScopedWorkingDir>(root.Path());
+
+    runtime.Initialize();
+    router = std::make_unique<CommandRouter>(runtime.GetAgentManager(), runtime);
   }
 
   bool Route(const std::string& input, std::string& output) {
-    return router.Route(input, session, output);
+    return router->Route(input, *runtime.GetOrCreateDefaultSession(), output);
+  }
+
+ private:
+  void WriteAgentsFile() const {
+    boost::json::value cfg = {
+        {"default_agent", "chat"},
+        {"agents",
+         boost::json::array{
+             boost::json::value{{"name", "chat"},
+                                {"description", "Default agent"},
+                                {"backend",
+                                 {{"type", "ollama"},
+                                  {"host", "http://127.0.0.1:11434"},
+                                  {"model", "chat-model"}}}},
+             boost::json::value{{"name", "coder"},
+                                {"description", "Coding agent"},
+                                {"backend",
+                                 {{"type", "ollama"},
+                                  {"host", "http://127.0.0.1:11434"},
+                                  {"model", "coder-model"}}}},
+         }},
+    };
+    std::ofstream out(root.Path() / ".pu" / "agents.json", std::ios::trunc);
+    out << boost::json::serialize(cfg);
   }
 };
 
@@ -102,4 +127,44 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
 
   REQUIRE(f.Route("/backend gpt whatever", output));
   REQUIRE(output.find("Unknown type") != std::string::npos);
+}
+
+TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("chat (active)") != std::string::npos);
+
+  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  REQUIRE(output.find("codebuddy") != std::string::npos);
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("codebuddy (active)") != std::string::npos);
+
+  REQUIRE(f.Route("/backend", output));
+  REQUIRE(output.find("codebuddy") != std::string::npos);
+
+  REQUIRE(f.Route("/backend coder", output));
+  REQUIRE(output.find("Switched to agent: coder") != std::string::npos);
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("coder (active)") != std::string::npos);
+  REQUIRE(output.find("chat (active)") == std::string::npos);
+}
+
+TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/backend ollama llama3", output));
+  REQUIRE(output.find("Switched backend to") != std::string::npos);
+
+  const auto* chat = f.runtime.GetAgentManager().GetAgentConfig("chat");
+  REQUIRE(chat != nullptr);
+  REQUIRE(chat->backend.model == "chat-model");
+
+  REQUIRE(f.Route("/backend chat", output));
+  REQUIRE(output.find("Switched to agent: chat") != std::string::npos);
+  REQUIRE(output.find("chat-model") != std::string::npos);
 }

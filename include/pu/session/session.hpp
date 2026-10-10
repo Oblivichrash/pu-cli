@@ -42,14 +42,10 @@ class Conversation {
 
 struct SessionSpec {
   std::string agent_name;
-  std::optional<config::BackendConfig> backend_override;
   std::optional<ThinkingLevel> thinking_override;
 
   boost::json::value Serialize() const {
     boost::json::value jv = {{"agent_name", agent_name}};
-    if (backend_override) {
-      jv.as_object()["backend_override"] = boost::json::value_from(*backend_override);
-    }
     if (thinking_override) {
       jv.as_object()["thinking_override"] = ThinkingLevelName(*thinking_override);
     }
@@ -60,10 +56,6 @@ struct SessionSpec {
     if (!jv.is_object()) return std::nullopt;
 
     SessionSpec spec;
-    if (json::HasKey(jv, "backend_override")) {
-      spec.backend_override =
-          boost::json::value_to<config::BackendConfig>(jv.at("backend_override"));
-    }
     if (json::HasKey(jv, "thinking_override") && jv.at("thinking_override").is_string()) {
       spec.thinking_override =
           ParseThinkingLevel(boost::json::value_to<std::string>(jv.at("thinking_override")));
@@ -73,7 +65,7 @@ struct SessionSpec {
   }
 };
 
-inline constexpr int kSessionSchemaVersion = 5;
+inline constexpr int kSessionSchemaVersion = 6;
 
 class Session {
  public:
@@ -89,7 +81,6 @@ class Session {
   SessionSpec& GetSpec() { return spec_; }
   const SessionSpec& GetSpec() const { return spec_; }
 
-  void SetBackendOverride(const config::BackendConfig& new_config);
   void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }

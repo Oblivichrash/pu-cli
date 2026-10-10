@@ -56,7 +56,7 @@ CommandRouter::Registry CommandRouter::BuildRegistry() {
   add("/help", &CommandRouter::HandleHelp, "  /help                  Show this help message\n");
   add("/backend", &CommandRouter::HandleBackend,
       "  /backend <agent_name>  Switch to a predefined agent\n"
-      "  /backend <type> <model> [host] [api_key]  Manually set backend\n");
+      "  /backend <type> <model> [host] [api_key]  Adopt a backend as an agent of its type\n");
   add("/agents", &CommandRouter::HandleAgents, "  /agents                List available agents\n");
   add("/clear", &CommandRouter::HandleClear,
       "  /clear                 Clear conversation history\n");
@@ -121,7 +121,7 @@ bool CommandRouter::HandleHelp(const std::vector<std::string>& /*args*/, Session
   return true;
 }
 
-bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& session,
+bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session& /*session*/,
                                   std::string& output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
@@ -164,7 +164,7 @@ bool CommandRouter::HandleBackend(const std::vector<std::string>& args, Session&
   }
 
   try {
-    session.SetBackendOverride(new_cfg);
+    runtime_.SwitchBackend(new_cfg);
     output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
              ", host: " + new_cfg.host + ")";
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {

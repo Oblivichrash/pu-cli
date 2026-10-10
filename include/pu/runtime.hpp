@@ -39,6 +39,7 @@ class Runtime {
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
+  void SwitchBackend(const config::BackendConfig& backend);
 
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
@@ -76,6 +77,7 @@ class Runtime {
   bool is_initialized_ = false;
   std::unique_ptr<AgentManager> agent_manager_;
   std::unique_ptr<CommandRouter> command_router_;
+  // Shared so the TLS context, built from the OS certificate store, outlives a single turn.
   std::shared_ptr<pu::http::HttpClient> http_client_;
   Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
