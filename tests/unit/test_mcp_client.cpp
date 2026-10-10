@@ -102,6 +102,7 @@ class McpServer {
     bool as_sse = false;
     bool refuse_a_call = false;
     bool refuse_the_handshake = false;
+    bool answer_without_tools = false;
   };
 
   explicit McpServer(Options options) : options_(options) {}
@@ -122,13 +123,17 @@ class McpServer {
     if (method == "initialize") {
       reply["result"] = {{"protocolVersion", "2024-11-05"}};
     } else if (method == "tools/list") {
-      reply["result"] = {
-          {"tools",
-           boost::json::array{
-               boost::json::value{{"name", "echo"},
-                                  {"description", "Echoes what it is given"},
-                                  {"inputSchema", {{"type", "object"}}}},
-               boost::json::value{{"name", "count"}, {"description", "Counts something"}}}}};
+      if (options_.answer_without_tools) {
+        reply["result"] = {{"ok", true}};
+      } else {
+        reply["result"] = {
+            {"tools",
+             boost::json::array{
+                 boost::json::value{{"name", "echo"},
+                                    {"description", "Echoes what it is given"},
+                                    {"inputSchema", {{"type", "object"}}}},
+                 boost::json::value{{"name", "count"}, {"description", "Counts something"}}}}};
+      }
     } else if (method == "tools/call") {
       reply["result"] = {
           {"content", boost::json::array{boost::json::value{{"type", "text"}, {"text", "one"}},
@@ -267,6 +272,20 @@ TEST_CASE("Connect shakes hands and lists the tools once", "[mcp][http]") {
 
   client.Disconnect();
   REQUIRE_FALSE(client.IsConnected());
+}
+
+TEST_CASE("A connected server that answers without tools is reported, not read as none",
+          "[mcp][http]") {
+  McpServer server({.answer_without_tools = true});
+  pu::tests::FakeHttpServer http(server.ToResponder());
+
+  pu::mcp::McpClient client(ServerConfigAt(http.Port()));
+  REQUIRE(client.Connect());
+  REQUIRE(client.IsConnected());
+
+  // An empty list would be indistinguishable from a server that has no tools, so the
+  // caller is told the reply was not a tool list.
+  REQUIRE_THROWS_AS(client.ListTools(), pu::Error);
 }
 
 TEST_CASE("A handshake answered in an SSE frame is read the same way", "[mcp][http]") {

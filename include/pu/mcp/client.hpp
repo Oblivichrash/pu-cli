@@ -59,6 +59,8 @@ class McpClient {
   bool Connect();
   void Disconnect();
 
+  // Empty when there is no connection to ask; throws when a connected server answers
+  // something other than a tool list.
   virtual std::vector<ToolDefinition> ListTools();
   virtual std::string CallTool(const std::string& name, const boost::json::value& arguments);
   virtual bool IsConnected() const;

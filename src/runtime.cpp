@@ -328,7 +328,15 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
     }
 
     auto* client = mcp_clients_.back().get();
-    auto tools = client->ListTools();
+    // A server that connects but cannot list tools is as unusable as one that never
+    // connected, and the same answer applies: skip it, and say so once.
+    std::vector<ToolDefinition> tools;
+    try {
+      tools = client->ListTools();
+    } catch (const std::exception& e) {
+      spdlog::warn("Skipping MCP server '{}' - {}", mcp_cfg.name, e.what());
+      continue;
+    }
     for (const auto& t : tools) {
       auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
       toolbox_->RegisterTool(std::move(mcp_tool));

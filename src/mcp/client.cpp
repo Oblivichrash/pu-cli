@@ -155,25 +155,23 @@ std::vector<ToolDefinition> McpClient::ListTools() {
   }
   if (!pimpl_->cached_tools.empty()) return pimpl_->cached_tools;
 
-  try {
-    auto resp = SendRequest("tools/list", {});
-    if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "tools")) {
-      std::vector<ToolDefinition> defs;
-      for (const auto& t : resp.at("result").at("tools").as_array()) {
-        ToolDefinition def;
-        def.name = json::ValueOrDefault<std::string>(t, "name", "");
-        def.description = json::ValueOrDefault<std::string>(t, "description", "");
-        def.parameters = json::HasKey(t, "inputSchema") ? t.at("inputSchema")
-                                                        : boost::json::value(boost::json::object{});
-        defs.push_back(def);
-      }
-      pimpl_->cached_tools = defs;
-      return defs;
+  auto resp = SendRequest("tools/list", {});
+  if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "tools")) {
+    std::vector<ToolDefinition> defs;
+    for (const auto& t : resp.at("result").at("tools").as_array()) {
+      ToolDefinition def;
+      def.name = json::ValueOrDefault<std::string>(t, "name", "");
+      def.description = json::ValueOrDefault<std::string>(t, "description", "");
+      def.parameters = json::HasKey(t, "inputSchema") ? t.at("inputSchema")
+                                                      : boost::json::value(boost::json::object{});
+      defs.push_back(def);
     }
-  } catch (const std::exception& e) {
-    spdlog::error("ListTools failed: {}", e.what());
+    pimpl_->cached_tools = defs;
+    return defs;
   }
-  return {};
+  // A connected server that answers without tools leaves the caller unable to tell "no
+  // tools" from "the reply was not understood", which are different things to act on.
+  throw Error("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
 }
 
 std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {
