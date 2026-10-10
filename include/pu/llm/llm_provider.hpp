@@ -110,7 +110,6 @@ class LLMProvider {
                           std::function<void(const std::string&)> reasoning_callback = nullptr) = 0;
 
   virtual bool SupportsTools() const = 0;
-  virtual bool SupportsThinkingLevel() const { return false; }
 };
 
 }  // namespace pu

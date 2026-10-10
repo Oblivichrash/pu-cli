@@ -221,13 +221,6 @@ TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[
   REQUIRE_FALSE(json::HasKey(body, "reasoning_effort"));
 }
 
-TEST_CASE("OpenAIProvider carries a thinking level whatever the level is", "[openai]") {
-  OpenAIProvider::Config config;
-  auto mock_http = std::make_unique<MockHttpClient>();
-  OpenAIProvider provider(config, std::move(mock_http));
-  REQUIRE(provider.SupportsThinkingLevel() == true);
-}
-
 TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") {
   for (const ThinkingLevel level :
        {ThinkingLevel::kLow, ThinkingLevel::kMedium, ThinkingLevel::kHigh}) {

@@ -30,8 +30,6 @@ class OpenAIProvider : public StreamingProvider {
   explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
   ~OpenAIProvider() override = default;
 
-  bool SupportsThinkingLevel() const override { return true; }
-
  protected:
   std::string EndpointPath() const override { return "/chat/completions"; }
   std::string LogTag() const override { return "OpenAI"; }

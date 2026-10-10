@@ -115,11 +115,11 @@ void Runtime::Initialize(const std::string& config_path) {
   if (current_session_) {
     auto& spec = current_session_->GetSpec();
     const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
-    if (stored != nullptr) {
-      RebuildToolbox(*stored);
-    } else {
+    if (stored == nullptr) {
       spdlog::warn("Session names an agent that is not configured: {}", spec.agent_name);
       spec.agent_name = active_agent;
+    } else if (stored->name != active_agent) {
+      RebuildToolbox(*stored);
     }
   }
 

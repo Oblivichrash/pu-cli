@@ -15,7 +15,9 @@ thinking mode, vLLM, and compatible gateways.
 A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
 `config/backend.hpp` — because a stored session, an `agents.json` entry and an
 `/api/session` answer all name it; answering "is it OpenAI?" separately at each
-site is what turns a third type into a lie rather than a failure.
+site is what turns a third type into a lie rather than a failure. The same rule
+covers capability: `CarriesThinkingLevel()` answers that question from the type,
+and no provider subclass overrides it.
 
 `codebuddy` is one of these, not a third protocol: the same stream at a different
 base URL plus a header set. Its gateway behavior is recorded in
