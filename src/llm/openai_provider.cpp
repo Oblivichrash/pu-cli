@@ -38,15 +38,24 @@ constexpr llm::ProviderCapabilities kCapabilities{
 }  // namespace
 
 OpenAIProvider::OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http)
-    : config_(config), http_(std::move(http)), host_(config_.host), api_key_(config_.api_key) {}
+    : StreamingProvider(config.host, config.api_key, std::move(http)), config_(config) {}
+
+std::vector<std::string> OpenAIProvider::Headers() const {
+  std::vector<std::string> headers = StreamingProvider::Headers();
+  if (config_.extra_headers) {
+    const std::vector<std::string> extra = config_.extra_headers();
+    headers.insert(headers.end(), extra.begin(), extra.end());
+  }
+  return headers;
+}
 
 void OpenAIProvider::ResetAccumulators() {
   pending_tools_.clear();
+  content_.clear();
   current_reasoning_content_.clear();
   refusal_.clear();
   finish_reason_.clear();
   response_model_.clear();
-  content_.clear();
   tool_calls_.clear();
   usage_.reset();
 }
@@ -125,29 +134,18 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       if (!refusal.empty()) refusal_ += refusal;
 
       if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
-        const std::string reasoning =
-            boost::json::value_to<std::string>(piece->at("reasoning_content"));
-        current_reasoning_content_ += reasoning;
-        if (reasoning_sink_) reasoning_sink_(reasoning);
+        EmitReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")));
       }
 
       if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
         for (const auto& tc : piece->at("tool_calls").as_array()) {
           if (!tc.is_object()) continue;
           const std::string id = json::ValueOrDefault<std::string>(tc, "id", "");
-          int idx = json::ValueOrDefault<int>(tc, "index", -1);
-          if (idx < 0) {
-            // Not every provider indexes its fragments. An id marks a call of its
-            // own; without one the fragment continues the call already open.
-            if (!id.empty()) {
-              idx = pending_tools_.empty() ? 0 : pending_tools_.rbegin()->first + 1;
-            } else if (!pending_tools_.empty()) {
-              idx = pending_tools_.rbegin()->first;
-            } else {
-              idx = 0;
-            }
-          }
-          auto& acc = pending_tools_[idx];
+          // Not every provider indexes its fragments. An id marks a call of its own;
+          // without one the fragment continues the call already open, and a fragment
+          // with neither opens the first.
+          if (!id.empty() || pending_tools_.empty()) pending_tools_.emplace_back();
+          ToolCallAccumulator& acc = pending_tools_.back();
           if (!id.empty()) acc.id = id;
           if (json::HasKey(tc, "function") && tc.at("function").is_object()) {
             auto name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
@@ -180,8 +178,7 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
 }
 
 void OpenAIProvider::FlushPendingToolCalls() {
-  for (auto& entry : pending_tools_) {
-    ToolCallAccumulator& acc = entry.second;
+  for (ToolCallAccumulator& acc : pending_tools_) {
     ToolCall call;
     call.id = acc.id;
     call.name = acc.name;
@@ -197,77 +194,38 @@ void OpenAIProvider::FlushPendingToolCalls() {
   pending_tools_.clear();
 }
 
-ChatResult OpenAIProvider::Chat(const std::vector<ChatMessage>& history,
-                                const std::vector<ToolDefinition>& tools,
-                                std::function<void(const std::string&)> content_callback,
-                                CancelToken cancel_token,
-                                std::function<void(const std::string&)> reasoning_callback) {
-  ChatResult result;
-  platform::ClearInterruptFlag();
-  ResetAccumulators();
-  reasoning_sink_ = std::move(reasoning_callback);
-
-  const std::string body = BuildRequest(history, tools);
-
-  spdlog::debug("OpenAI request body: {}", body);
-
-  std::string url = host_ + "/chat/completions";
-  std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
-  if (config_.extra_headers) {
-    const std::vector<std::string> extra = config_.extra_headers();
-    headers.insert(headers.end(), extra.begin(), extra.end());
+void OpenAIProvider::ParseLine(std::string_view line,
+                               std::function<void(const std::string&)>& content_cb) {
+  constexpr std::string_view kDataPrefix = "data: ";
+  const std::string_view trimmed = text::Trim(line);
+  if (trimmed.empty()) return;
+  if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
+  const std::string_view data = trimmed.substr(kDataPrefix.size());
+  if (data == "[DONE]") {
+    boost::json::value done_obj = {{"done", true}};
+    HandleJsonToken(done_obj, content_cb);
+    return;
   }
+  // Only the parse is guarded: a frame filled with an error is a valid parse and has to
+  // reach the caller.
+  boost::json::value j;
+  try {
+    j = boost::json::parse(data);
+  } catch (const boost::system::system_error& e) {
+    // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+    spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+    return;
+  } catch (const std::exception&) {
+    return;
+  }
+  HandleJsonToken(j, content_cb);
+}
 
-  llm::StreamingJsonParser parser([&](std::string_view line) {
-    constexpr std::string_view kDataPrefix = "data: ";
-    const std::string_view trimmed = text::Trim(line);
-    if (trimmed.empty()) return;
-    if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
-    std::string_view data = trimmed.substr(kDataPrefix.size());
-    if (data == "[DONE]") {
-      boost::json::value done_obj = {{"done", true}};
-      HandleJsonToken(done_obj, content_callback);
-      return;
-    }
-    // Only the parse is guarded: a frame filled with an error is a valid parse and has to
-    // reach the caller.
-    boost::json::value j;
-    try {
-      j = boost::json::parse(data);
-    } catch (const boost::system::system_error& e) {
-      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      return;
-    } catch (const std::exception&) {
-      return;
-    }
-    HandleJsonToken(j, content_callback);
-  });
-
-  auto write_cb = [&](char* ptr, size_t total) -> size_t {
-    parser.Feed(ptr, total);
-    if (platform::IsInterrupted()) return 0;
-    if (cancel_token && cancel_token->load(std::memory_order_acquire)) return 0;
-    return total;
-  };
-
-  http_->PostStream(url, body, headers, write_cb, cancel_token);
-
-  // A stream that ends without its sentinel still carried what it carried: the
-  // fragments held for assembly are calls the provider has already made.
+void OpenAIProvider::FinishStream() {
   FlushPendingToolCalls();
-
-  result.content = std::move(content_);
   // A refusal and an answer do not both arrive; when they do, the answer is what
   // the request was for.
-  if (result.content.empty()) result.content = std::move(refusal_);
-  result.tool_calls = std::move(tool_calls_);
-  result.reasoning_content = std::move(current_reasoning_content_);
-  result.usage = usage_;
-  result.finish_reason = std::move(finish_reason_);
-  result.model = std::move(response_model_);
-  return result;
+  if (content_.empty()) content_ = std::move(refusal_);
 }
 
 }  // namespace pu

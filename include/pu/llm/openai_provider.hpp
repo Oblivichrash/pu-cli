@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/llm/llm_provider.hpp"
 #include "pu/core/http_client.hpp"
+#include "pu/llm/streaming_provider.hpp"
 
 #include <functional>
 #include <map>
@@ -15,7 +15,7 @@
 
 namespace pu {
 
-class OpenAIProvider : public LLMProvider {
+class OpenAIProvider : public StreamingProvider {
  public:
   struct Config {
     std::string host = "https://api.openai.com/v1";
@@ -32,45 +32,38 @@ class OpenAIProvider : public LLMProvider {
   explicit OpenAIProvider(const Config& config, std::unique_ptr<pu::http::HttpClient> http);
   ~OpenAIProvider() override = default;
 
-  ChatResult Chat(const std::vector<ChatMessage>& history, const std::vector<ToolDefinition>& tools,
-                  std::function<void(const std::string&)> content_callback = nullptr,
-                  CancelToken cancel_token = nullptr,
-                  std::function<void(const std::string&)> reasoning_callback = nullptr) override;
-
-  bool SupportsTools() const override { return true; }
   bool SupportsThinkingLevel() const override { return true; }
 
- private:
+ protected:
+  std::string EndpointPath() const override { return "/chat/completions"; }
+  std::string LogTag() const override { return "OpenAI"; }
+  std::vector<std::string> Headers() const override;
+
   // A request without tools omits the block rather than carrying an empty one.
   std::string BuildRequest(const std::vector<ChatMessage>& history,
-                           const std::vector<ToolDefinition>& tools) const;
+                           const std::vector<ToolDefinition>& tools) const override;
+  void ParseLine(std::string_view line,
+                 std::function<void(const std::string&)>& content_cb) override;
+  void ResetAccumulators() override;
+  void FinishStream() override;
+
+ private:
   void HandleJsonToken(const boost::json::value& j,
                        std::function<void(const std::string&)>& content_cb);
   // Tool calls arrive as fragments and only become calls once the answer is
   // assembled, so they are held until the stream says it is finished.
   void FlushPendingToolCalls();
-  void ResetAccumulators();
 
   Config config_;
-  std::unique_ptr<pu::http::HttpClient> http_;
-  std::string host_;
-  std::string api_key_;
 
   struct ToolCallAccumulator {
     std::string id, name, arguments;
   };
-  std::map<int, ToolCallAccumulator> pending_tools_;
+  // Fragments arrive in order, so the last entry is the call a continuation belongs to.
+  std::vector<ToolCallAccumulator> pending_tools_;
 
-  // Where reasoning tokens go while the stream is open; a provider is built per request,
-  // so no stale sink can outlive its caller.
-  std::function<void(const std::string&)> reasoning_sink_;
-  std::string content_;
-  std::string current_reasoning_content_;
+  // The model's own words when it declines to answer; only OpenAI streams these.
   std::string refusal_;
-  std::string finish_reason_;
-  std::string response_model_;
-  std::vector<ToolCall> tool_calls_;
-  std::optional<TokenUsage> usage_;
 };
 
 }  // namespace pu

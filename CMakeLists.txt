@@ -40,6 +40,7 @@ add_library(pu_lib STATIC
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
     src/llm/projection.cpp
+    src/llm/streaming_provider.cpp
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp

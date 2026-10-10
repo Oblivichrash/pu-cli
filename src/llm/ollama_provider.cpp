@@ -38,10 +38,8 @@ void OllamaProvider::ResetAccumulators() {
 }
 
 OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
-    : config_(std::move(config)),
-      host_(config_.host),
-      api_key_(std::move(config_.api_key)),
-      http_(std::move(http)) {}
+    : StreamingProvider(config.host, config.api_key, std::move(http)),
+      config_(std::move(config)) {}
 
 std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history,
                                          const std::vector<ToolDefinition>& tools) const {
@@ -90,9 +88,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
     // A thinking model reports its reasoning here rather than in `content`, under
     // a name of its own. Unread, it is generated and then thrown away.
     if (json::HasKey(msg, "thinking") && msg.at("thinking").is_string()) {
-      const std::string reasoning = boost::json::value_to<std::string>(msg.at("thinking"));
-      current_reasoning_content_ += reasoning;
-      if (reasoning_sink_) reasoning_sink_(reasoning);
+      EmitReasoning(boost::json::value_to<std::string>(msg.at("thinking")));
     }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
@@ -145,56 +141,21 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
   }
 }
 
-ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
-                                const std::vector<ToolDefinition>& tools,
-                                std::function<void(const std::string&)> content_callback,
-                                CancelToken cancel_token,
-                                std::function<void(const std::string&)> reasoning_callback) {
-  ChatResult result;
-  platform::ClearInterruptFlag();
-  ResetAccumulators();
-  reasoning_sink_ = std::move(reasoning_callback);
-
-  const std::string body = BuildRequest(history, tools);
-
-  spdlog::debug("Ollama request body: {}", body);
-
-  std::string url = host_ + "/api/chat";
-  std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
-
-  llm::StreamingJsonParser parser([&](std::string_view line) {
-    // Only the parse is guarded: a frame filled with an error is a valid parse and has to
-    // reach the caller.
-    boost::json::value j;
-    try {
-      j = boost::json::parse(line);
-    } catch (const boost::system::system_error& e) {
-      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      return;
-    } catch (const std::exception&) {
-      return;
-    }
-    HandleJsonToken(j, content_callback);
-  });
-
-  auto write_cb = [&](char* ptr, size_t total) -> size_t {
-    parser.Feed(ptr, total);
-    if (platform::IsInterrupted()) return 0;
-    if (cancel_token && cancel_token->load(std::memory_order_acquire)) return 0;
-    return total;
-  };
-
-  http_->PostStream(url, body, headers, write_cb, cancel_token);
-
-  result.content = std::move(content_);
-  result.tool_calls = std::move(tool_calls_);
-  result.reasoning_content = std::move(current_reasoning_content_);
-  result.usage = usage_;
-  result.finish_reason = std::move(finish_reason_);
-  result.model = std::move(response_model_);
-  return result;
+void OllamaProvider::ParseLine(std::string_view line,
+                               std::function<void(const std::string&)>& content_cb) {
+  // Only the parse is guarded: a frame filled with an error is a valid parse and has to
+  // reach the caller.
+  boost::json::value j;
+  try {
+    j = boost::json::parse(line);
+  } catch (const boost::system::system_error& e) {
+    // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
+    spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
+    return;
+  } catch (const std::exception&) {
+    return;
+  }
+  HandleJsonToken(j, content_cb);
 }
 
 }  // namespace pu
