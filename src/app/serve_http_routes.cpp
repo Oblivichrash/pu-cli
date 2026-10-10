@@ -369,8 +369,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::response<http::string_body>& res) {
   const std::string_view target = req.target();
 
-  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js" ||
-      target == "/history.js") {
+  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js") {
     ServeFile(std::string(target), res);
     return;
   }

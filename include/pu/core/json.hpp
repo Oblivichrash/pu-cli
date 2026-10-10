@@ -66,8 +66,7 @@ inline std::string ErrorMessage(const value& j) {
   return ValueOrDefault<std::string>(j, "msg", "");
 }
 
-namespace detail {
-
+// Pretty-prints `jv` into `out`, indenting each level by `indent` spaces.
 inline void AppendPretty(const value& jv, std::string& out, int depth, int indent) {
   std::string pad(static_cast<std::size_t>(depth) * static_cast<std::size_t>(indent), ' ');
   std::string member_pad(static_cast<std::size_t>(depth + 1) * static_cast<std::size_t>(indent),
@@ -109,12 +108,10 @@ inline void AppendPretty(const value& jv, std::string& out, int depth, int inden
   }
 }
 
-}  // namespace detail
-
 // Serialize `jv` with pretty printing using `indent` spaces per level.
 inline std::string PrettyPrint(const value& jv, int indent = 2) {
   std::string out;
-  detail::AppendPretty(jv, out, 0, indent);
+  AppendPretty(jv, out, 0, indent);
   return out;
 }
 

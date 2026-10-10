@@ -44,6 +44,10 @@ class Runtime {
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
+  // The agent this Runtime resolved at Initialize. Callers report it rather than reading
+  // agents.json again, which is what used to make the CLI load the same file twice.
+  const config::AgentEntry& ActiveAgent() const;
+
   // The two conversation changes the Web API exposes. Both write the session, because the
   // Runtime is the only place that knows a session is on disk at all.
   bool RewindBefore(size_t turn);

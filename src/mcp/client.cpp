@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/client.hpp"
 
-#include "mcp/http_transport.hpp"
+#include "pu/mcp/http_transport.hpp"
 #include "pu/build_config.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"

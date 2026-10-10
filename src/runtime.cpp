@@ -88,8 +88,13 @@ void Runtime::Initialize(const std::string& config_path) {
   const auto default_entry =
       std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
                    [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
-  if (default_entry == agents_cfg.agents.end())
-    throw Error("Requested agent is not configured: " + active_agent);
+  if (default_entry == agents_cfg.agents.end()) {
+    // Named against this list, because a caller would have to read the file again to say it.
+    std::string known;
+    for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
+    throw Error("Requested agent is not configured: " + active_agent +
+                (known.empty() ? " (no agents are configured)" : "; configured:" + known));
+  }
 
   agent_manager_ = std::make_unique<AgentManager>();
   agent_manager_->SetActiveAgent(active_agent);
@@ -165,6 +170,14 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
 
   current_session_ = session;
   return current_session_;
+}
+
+const config::AgentEntry& Runtime::ActiveAgent() const {
+  if (!agent_manager_) throw Error("Runtime is not initialized");
+  const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
+  if (agent == nullptr)
+    throw Error("Active agent is not configured: " + agent_manager_->GetActiveAgent());
+  return *agent;
 }
 
 config::BackendConfig Runtime::ConfiguredBackend() const {

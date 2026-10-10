@@ -13,7 +13,8 @@ namespace pu {
 
 void InitLogging(const std::string& log_level = "");
 
-// Thread-local structured-logging context (used when PU_LOG_JSON=1).
+// Thread-local structured-logging context (used when PU_LOG_JSON=1). Every Set* has a
+// matching Clear*, so the two are always called as a pair.
 void BeginRequest();
 void ClearLogRequestId();
 void SetLogToolName(const std::string& tool_name);

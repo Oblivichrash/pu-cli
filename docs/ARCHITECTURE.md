@@ -143,15 +143,11 @@ environment, or the workspace's own `serve` block names:
    on `/ws` is accepted as the client being written to. A second one while that client
    is attached is answered with a `busy` frame and closed instead: one session, one
    page.
-4. The WebSocket worker reads JSON messages: `{"type":"run","payload":{"text":"..."}}`
-   spawns a worker thread that runs `Runtime::ProcessInput` under the shared
-   `io_mutex`; `{"type":"cancel"}` flips the active `CancelToken`.
-5. Frames are written back over the socket as the run progresses (streamed
-   chunks, tool start/end, completion, or error). The frame schema is documented
-   in [README](../README.md#web-api).
-6. REST endpoints handle control and status queries; the list is in
-   [README](../README.md#web-api). On Ctrl+C the server stops and
-   `Runtime::Shutdown()` persists the session.
+4. The WebSocket worker reads JSON messages, spawns a worker thread per run, and
+   writes each frame back as the run progresses. The message schema, the REST route
+   table, and the status each refusal carries are in
+   [README](../README.md#web-api).
+5. On Ctrl+C the server stops and `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
 
@@ -201,7 +197,7 @@ that says what went wrong is in it.
 
 ### WebSocket streaming
 
-Chat runs exclusively over the `/ws` WebSocket. A `{"type":"run"}` message runs
+Chat runs exclusively over the `/ws` WebSocket. A run message starts
 `ProcessInput` on a detached worker thread; its `content_callback` writes each
 streamed chunk to the socket as it arrives, which produces the typewriter effect
 in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
@@ -254,28 +250,6 @@ Each stored node is rendered into one `ChatMessage` on the way out
 `ChatMessage` a compatibility view rather than a place to grow: a new context
 feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
 a turn is.
-
-### Web request (streaming)
-
-```
-Browser ──WebSocket (/ws)──► RunServe handler
-     │  WebSocket connection established
-     ▼
-Client sends: {"type":"run","payload":{"text":"..."}}
-     │
-     ▼
-Worker thread: Runtime.ProcessInput(..., content_callback)
-     │  content_callback → ws->write({"type":"chunk","payload":{"text":"..."}})
-     ▼
-Browser: WebSocket onmessage → parse JSON → append token to Markdown renderer
-
-Cancellation:
-Client sends: {"type":"cancel"} → CancelToken set → Beast HTTP client aborts
-
-A client that leaves — closing the page, reloading, losing the connection — does the
-same thing, and a second client taking over does it for the first: a turn is only
-ever written for the reader who asked for it.
-```
 
 ---
 
@@ -367,12 +341,12 @@ include/pu/                  src/
 ├── runtime.hpp              ├── runtime.cpp, command_router.cpp
 ├── executor.hpp             ├── executor.cpp
 ├── cli.hpp                  ├── core/                 # logging, platform, HTTP client
-├── config/                  ├── core/                 # logging, platform, HTTP client
-├── core/                    ├── context/              # message graph storage
-├── context/                 ├── llm/                  # providers, streaming parser
-├── llm/                     ├── mcp/                  # transports, JSON-RPC client
-├── mcp/                     ├── session/              # Session, Conversation
-├── session/                 └── tools/                # Toolbox, tools
+├── config/                  ├── context/              # message graph storage
+├── core/                    ├── llm/                  # providers, streaming parser
+├── context/                 ├── mcp/                  # transports, JSON-RPC client
+├── llm/                     ├── session/              # Session, Conversation
+├── mcp/                     └── tools/                # Toolbox, tools
+├── session/
 └── tools/
 ```
 
