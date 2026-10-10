@@ -44,7 +44,6 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   auto session = Session::Deserialize(j);
   if (session) return session;
 
-  // The format changed incompatibly, so the file is reported rather than guessed at.
   std::string reason;
   if (!json::HasKey(j, "schema_version")) {
     reason = "missing schema_version";
@@ -92,7 +91,6 @@ void Runtime::Initialize(const std::string& config_path) {
       std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
                    [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
   if (default_entry == agents_cfg.agents.end()) {
-    // Named against this list, because a caller would have to read the file again to say it.
     std::string known;
     for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
     throw Error("Requested agent is not configured: " + active_agent +
@@ -111,13 +109,9 @@ void Runtime::Initialize(const std::string& config_path) {
 
   const auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
-    // A refused file has already been reported with its reason, so a second, vaguer
-    // line here would only add noise.
     current_session_ = LoadSessionFromFile(session_path);
   }
 
-  // The session's agent name wins over the configured default: otherwise the toolbox would
-  // describe one agent while the provider talks to another.
   if (current_session_) {
     auto& spec = current_session_->GetSpec();
     const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
@@ -173,8 +167,6 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
 }
 
 const config::AgentEntry& Runtime::ActiveAgent() const {
-  // Initialize() resolves the active agent against the configured set, and every path that
-  // changes it goes through an entry from that set, so the lookup cannot come back empty.
   return *agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
 }
 
@@ -183,8 +175,6 @@ config::BackendConfig Runtime::ConfiguredBackend() const {
     const auto& spec = current_session_->GetSpec();
     if (spec.backend_override) return *spec.backend_override;
 
-    // Initialize() repairs a session naming an agent that is not configured, so the name
-    // resolves here as well as the active one does.
     return agent_manager_->GetAgentConfig(spec.agent_name)->backend;
   }
 
@@ -319,8 +309,6 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
     }
 
     auto client = mcp_clients_.back();
-    // A server that connects but cannot list tools is as unusable as one that never
-    // connected, and the same answer applies: skip it, and say so once.
     std::vector<ToolDefinition> tools;
     try {
       tools = client->ListTools();
@@ -353,8 +341,6 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
       spdlog::warn("Failed to sync session config: {}", e.what());
       return;
     }
-    // Which agent a session resumes is session state, so it reaches the file the
-    // way every other change to it does.
     SaveCurrentSession();
   }
 }

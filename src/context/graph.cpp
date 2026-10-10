@@ -74,8 +74,6 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   if (out.id.empty()) return false;
   out.timestamp = json::ValueOrDefault<std::string>(value, "timestamp", "");
   if (json::HasKey(value, "parent")) {
-    // A parent that is not a name cannot point at a node, so the file is refused
-    // rather than loaded with a node that lost its place in the chain.
     if (!value.at("parent").is_string()) return false;
     out.parent = boost::json::value_to<std::string>(value.at("parent"));
   }
@@ -130,8 +128,6 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
 }  // namespace
 
 boost::json::value MessageGraph::Serialize() const {
-  // Sorted by id so the file is stable for the same conversation, which makes a
-  // diff meaningful and a test that compares two saves meaningful as well.
   boost::json::array nodes;
   for (const auto& [id, node] : nodes_) nodes.push_back(SerializeNode(node));
 
@@ -149,18 +145,12 @@ bool MessageGraph::Deserialize(const boost::json::value& value, MessageGraph& ou
   for (const boost::json::value& entry : value.at("nodes").as_array()) {
     MessageNode node;
     if (!DeserializeNode(entry, node)) return false;
-    // A repeated id would keep whichever node the file lists first and drop the
-    // other, which is choosing a turn by the order of the file.
     if (!graph.nodes_.emplace(node.id, std::move(node)).second) return false;
   }
 
   const MessageId leaf = boost::json::value_to<std::string>(value.at("leaf"));
-  // A leaf that names nothing would leave the graph unreadable, so a file in
-  // that state is refused rather than loaded as empty.
   if (!leaf.empty() && graph.nodes_.find(leaf) == graph.nodes_.end()) return false;
 
-  // The links are checked because everything downstream trusts them: a parent naming
-  // nothing stops the chain early, and a chain that returns to itself has no root.
   if (!graph.LinksResolve()) return false;
 
   graph.leaf_ = leaf;

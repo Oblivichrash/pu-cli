@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Text produced outside pu-cli arrives in whatever encoding its producer used, while
-// everything pu-cli stores or sends to a provider must be valid UTF-8.
-
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -61,8 +58,6 @@ constexpr bool IsSurrogate(unsigned int code_point) {
   return code_point >= kSurrogateFirst && code_point <= kSurrogateLast;
 }
 
-// Length of the well-formed sequence starting at `text[index]`, or nothing when
-// the bytes there are not one.
 inline std::optional<std::size_t> ValidSequenceLength(std::string_view text, std::size_t index) {
   const std::size_t length = SequenceLength(static_cast<unsigned char>(text[index]));
   if (length == 0 || index + length > text.size()) return std::nullopt;
@@ -107,8 +102,6 @@ inline std::string SanitizeUtf8(std::string_view text) {
   return result;
 }
 
-// Whitespace removed from both ends. Returned as a slice rather than a copy, because
-// every caller so far only reads it.
 inline std::string_view Trim(std::string_view text) {
   constexpr std::string_view kWhitespace = " \t\r\n";
   const std::size_t first = text.find_first_not_of(kWhitespace);
@@ -117,8 +110,6 @@ inline std::string_view Trim(std::string_view text) {
   return text.substr(first, last - first + 1);
 }
 
-// Runs of whitespace collapsed to one space, with none at either end: what a message
-// written elsewhere becomes before it is put on a single line of a log.
 inline std::string CollapseWhitespace(std::string_view text) {
   std::string out;
   out.reserve(text.size());
@@ -135,8 +126,6 @@ inline std::string CollapseWhitespace(std::string_view text) {
   return out;
 }
 
-// True when the text ends with the start of a multi-byte sequence: a reader that frames a
-// stream itself holds such a tail back, because a line cut mid-character is not a line yet.
 inline bool EndsWithPartialSequence(std::string_view text) {
   if (text.empty()) return false;
 
@@ -144,7 +133,6 @@ inline bool EndsWithPartialSequence(std::string_view text) {
   while (index > 0 && detail::IsContinuationByte(static_cast<unsigned char>(text[index - 1]))) {
     --index;
   }
-  // Nothing but continuation bytes: whatever this is, it is not a whole sequence.
   if (index == 0) return true;
 
   const std::size_t length = detail::SequenceLength(static_cast<unsigned char>(text[index - 1]));

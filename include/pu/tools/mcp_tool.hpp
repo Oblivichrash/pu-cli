@@ -11,9 +11,6 @@
 
 namespace pu::tools {
 
-// One tool as the MCP server defines it, namespaced by server name. The client is shared
-// rather than borrowed: a registry that outlives a rebuilt connection would otherwise
-// call through a pointer to it.
 class McpTool : public Tool {
  public:
   McpTool(std::shared_ptr<mcp::McpClient> client, const ToolDefinition& def, std::string server_name)
@@ -34,7 +31,6 @@ class McpTool : public Tool {
   }
 
  private:
-  // A server reports failure in its text, so the prefix is the only signal there is.
   static std::string WrapResult(const std::string& raw) {
     const bool is_error = raw.rfind("Error:", 0) == 0 || raw.rfind("MCP error:", 0) == 0 ||
                           raw.rfind("MCP call error:", 0) == 0;

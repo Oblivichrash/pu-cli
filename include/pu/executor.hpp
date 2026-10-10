@@ -31,11 +31,7 @@ struct ExecutionResult {
   bool has_error = false;
   std::string error_message;
   int tool_call_count = 0;
-  // A reply that arrived but is known to be incomplete, such as one the provider stopped
-  // at the token limit. Not an error: the content is real, and it is stored.
   std::string notice;
-  // The model that answered the turn, as the response named it, so a caller can
-  // report who replied rather than what was asked for. Empty when it named none.
   std::string model;
 };
 
@@ -51,13 +47,8 @@ class Executor {
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
-  // The agent's configured prompt, supplied rather than read back out of session state, so
-  // a request depends only on the conversation and the inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  // The toolbox travels with the turn rather than being held here: a caller that swaps
-  // agents rebuilds it, and an executor holding the rebuilt-over one would read a freed
-  // registry.
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
                           LLMProvider* provider, Toolbox* toolbox,
                           CancelToken cancel_token = nullptr,

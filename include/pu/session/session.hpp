@@ -15,8 +15,6 @@
 
 namespace pu {
 
-// The stored conversation. Storage is the MessageGraph; the compatibility seam is the
-// ChatMessage view this renders from it.
 class Conversation {
  public:
   void Append(const ChatMessage& msg);
@@ -24,31 +22,22 @@ class Conversation {
   std::vector<ChatMessage> GetHistory() const;
   bool HasPendingToolCalls() const;
 
-  // The stored conversation, for a caller that renders its own view of it.
   const context::MessageGraph& GetGraph() const { return graph_; }
 
-  // Moves the position back to just before the 1-based turn; stored nodes stay until
-  // the next append replaces the turns after it.
   bool RewindBefore(size_t turn);
 
   void ClearHistory();
 
   boost::json::value Serialize() const;
-  // Null for a value that is not node storage, which tells a foreign layout from an
-  // empty conversation.
   static std::shared_ptr<Conversation> Deserialize(const boost::json::value& j);
 
  private:
   context::MessageGraph graph_;
 };
 
-// The agent this session talks to, and a backend only when one was chosen for it;
-// everything else comes from agents.json, so an edit takes effect on restart.
 struct SessionSpec {
   std::string agent_name;
   std::optional<config::BackendConfig> backend_override;
-  // Absent means follow the agent's configuration — a different thing from the level
-  // being absent in the backend, which asks the backend to decide.
   std::optional<ThinkingLevel> thinking_override;
 
   boost::json::value Serialize() const {
@@ -62,7 +51,6 @@ struct SessionSpec {
     return jv;
   }
 
-  // A section that is not an object cannot name an agent, so it is refused.
   static std::optional<SessionSpec> Deserialize(const boost::json::value& jv) {
     if (!jv.is_object()) return std::nullopt;
 
@@ -80,11 +68,8 @@ struct SessionSpec {
   }
 };
 
-// The version this build writes and the only one it reads back; a file carrying another
-// is refused rather than guessed at.
 inline constexpr int kSessionSchemaVersion = 5;
 
-// Aggregate root: the conversation, plus the agent and backend it belongs to.
 class Session {
  public:
   Session();
@@ -100,7 +85,6 @@ class Session {
   const SessionSpec& GetSpec() const { return spec_; }
 
   void SetBackendOverride(const config::BackendConfig& new_config);
-  // Drops the override, so the agent's own configuration is the source again.
   void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }

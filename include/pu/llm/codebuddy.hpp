@@ -8,17 +8,14 @@
 
 namespace pu::llm {
 
-// The gateway's path up to and including the version segment: the provider appends
-// "/chat/completions".
+// Path up to the version segment; the provider appends "/chat/completions".
 inline constexpr const char* kCodeBuddyHost = "https://copilot.tencent.com/v2";
 
-// The headers the installed client sends, quoted; which the server requires has not been
-// isolated, and the correlation ids are generated per call.
+// Headers the installed client sends; which the server requires is not isolated.
 inline std::vector<std::string> CodeBuddyHeaders() {
   constexpr const char* kClientVersion = "1.0.7";
   const std::string version = kClientVersion;
-  // uuid::Generate is hyphenated; the client sends a bare 32-character hex id where the
-  // value is not a uuid.
+  // The client sends a bare 32-char hex id where the value is not a uuid.
   const auto hex_id = [] {
     std::string hex;
     hex.reserve(32);
@@ -40,8 +37,7 @@ inline std::vector<std::string> CodeBuddyHeaders() {
       "X-Conversation-Request-ID: " + hex_id(),
       "X-Conversation-Message-ID: " + hex_id(),
       "X-Request-ID: " + hex_id(),
-      // The client sends its account's user id here; pu-cli has no identity of its own to
-      // offer, and the gateway accepted a generated one.
+      // The gateway accepts a generated id where the real client sends an account user id.
       "X-User-Id: " + uuid::Generate(),
       "x-stainless-lang: js",
       "x-stainless-package-version: 5.10.1",

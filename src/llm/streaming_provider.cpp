@@ -44,7 +44,6 @@ ChatResult StreamingProvider::Chat(const std::vector<ChatMessage>& history,
 
   http_->PostStream(host_ + EndpointPath(), body, headers, write_cb, cancel_token);
 
-  // A stream that ends without its sentinel still carried what it carried.
   FinishStream();
 
   result.content = std::move(content_);

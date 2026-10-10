@@ -15,16 +15,12 @@ namespace pu {
 
 namespace {
 
-// An error arrives at the top level of a frame in one of two shapes; one that cannot be
-// named is kept as it came rather than flattened to nothing.
 std::string StreamErrorDetail(const boost::json::value& error) {
   if (error.is_string()) return boost::json::value_to<std::string>(error);
   const std::string message = json::ErrorMessage(error);
   return message.empty() ? boost::json::serialize(error) : message;
 }
 
-// What this provider needs, as data: roles as stored, reasoning echoed, content nulled
-// beside tool calls, arguments as an encoded string.
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kAsStored,
     .echo_reasoning_content = true,
@@ -65,15 +61,11 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
   boost::json::value req = {
       {"model", config_.model},
       {"stream", true},
-      // Without this the stream carries no usage object, so the token counts the
-      // result reports would never arrive.
       {"stream_options", {{"include_usage", true}}},
       {"temperature", config_.temperature},
       {"max_tokens", config_.max_tokens},
   };
 
-  // How a level reaches this backend: `none` is the marker already sent, the named levels
-  // are OpenAI's own `reasoning_effort`, and absent sends neither.
   if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};
     req.as_object()["extra_body"] = extra_body;
@@ -99,8 +91,6 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
 
 void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                                      std::function<void(const std::string&)>& content_cb) {
-  // An error can arrive in place of a choice: a request the provider accepted can still be
-  // refused mid-answer, and the choice path below never sees it.
   if (json::HasKey(j, "error")) {
     throw Error("provider error: " + StreamErrorDetail(j.at("error")));
   }
@@ -112,8 +102,6 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       !j.at("choices").as_array().empty()) {
     const boost::json::value& choice = j.at("choices").at(0);
 
-    // A streaming provider sends `delta`, one answering in a single frame sends `message`;
-    // reading both keeps such a gateway usable without a second parser path.
     const boost::json::value* piece = nullptr;
     if (json::HasKey(choice, "delta")) {
       piece = &choice.at("delta");
@@ -128,8 +116,6 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
         if (content_cb) content_cb(content);
       }
 
-      // The model's own words when it declines to answer. Dropping them leaves a
-      // refusal looking like a backend that said nothing at all.
       const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
       if (!refusal.empty()) refusal_ += refusal;
 
@@ -141,9 +127,6 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
         for (const auto& tc : piece->at("tool_calls").as_array()) {
           if (!tc.is_object()) continue;
           const std::string id = json::ValueOrDefault<std::string>(tc, "id", "");
-          // Not every provider indexes its fragments. An id marks a call of its own;
-          // without one the fragment continues the call already open, and a fragment
-          // with neither opens the first.
           if (!id.empty() || pending_tools_.empty()) pending_tools_.emplace_back();
           ToolCallAccumulator& acc = pending_tools_.back();
           if (!id.empty()) acc.id = id;
@@ -156,7 +139,6 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
       }
     }
 
-    // Null while the answer is still coming, which is not a reason to stop.
     if (json::HasKey(choice, "finish_reason") && choice.at("finish_reason").is_string()) {
       finish_reason_ = boost::json::value_to<std::string>(choice.at("finish_reason"));
     }
@@ -168,8 +150,6 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j,
                         json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
   }
 
-  // Read from every frame because nothing says which one carries it: a gateway is free to
-  // answer with a model other than the one asked for.
   if (json::HasKey(j, "model") && j.at("model").is_string()) {
     response_model_ = boost::json::value_to<std::string>(j.at("model"));
   }
@@ -206,13 +186,10 @@ void OpenAIProvider::ParseLine(std::string_view line,
     HandleJsonToken(done_obj, content_cb);
     return;
   }
-  // Only the parse is guarded: a frame filled with an error is a valid parse and has to
-  // reach the caller.
   boost::json::value j;
   try {
     j = boost::json::parse(data);
   } catch (const boost::system::system_error& e) {
-    // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
     spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
     return;
   } catch (const std::exception&) {
@@ -223,8 +200,6 @@ void OpenAIProvider::ParseLine(std::string_view line,
 
 void OpenAIProvider::FinishStream() {
   FlushPendingToolCalls();
-  // A refusal and an answer do not both arrive; when they do, the answer is what
-  // the request was for.
   if (content_.empty()) content_ = std::move(refusal_);
 }
 

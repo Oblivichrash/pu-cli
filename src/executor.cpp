@@ -24,9 +24,6 @@ namespace pu {
 
 namespace {
 
-// Why a reply stopped, when the user has to be told: an answer cut off at the token limit
-// reads as the model's whole answer otherwise.
-
 std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason.empty()) return "";
   if (finish_reason == "length") {
@@ -36,8 +33,6 @@ std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason == "content_filter") {
     return "The provider stopped the reply because its content filter matched.";
   }
-  // Anything else is the provider's own word for an ordinary ending. The value is
-  // logged rather than interpreted, because the vocabularies differ between them.
   spdlog::debug("Provider ended the reply with finish_reason={}", finish_reason);
   return "";
 }
@@ -141,8 +136,6 @@ std::string Executor::BuildStaticSystemContext() const {
   return oss.str();
 }
 
-
-
 Executor::Executor() { ProbeStaticEnvironment(); }
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
@@ -155,8 +148,6 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   std::function<void(const std::string&)> content_callback,
                                   ToolCallbacks tool_callbacks,
                                   std::function<void(const std::string&)> reasoning_callback) {
-  // A caller that has no registry has nothing to offer the model, so the turn is refused
-  // before the conversation records it as asked.
   if (toolbox == nullptr) {
     ExecutionResult err;
     err.has_error = true;
@@ -166,8 +157,6 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
 
   conversation.Append("user", input);
 
-  // The loop fills the result the caller is given: one turn, one result, rather than a
-  // private shape that has to be copied out of it field by field.
   ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
                                        content_callback, tool_callbacks, reasoning_callback);
   if (result.has_error) return result;
@@ -248,8 +237,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         break;
       }
     } catch (const std::exception& e) {
-      // A stop the caller asked for is not a failure: the turn ends with nothing to
-      // report, and what arrived before it is not an answer either, so it is not stored.
       if ((cancel_token && cancel_token->load(std::memory_order_acquire)) ||
           platform::IsInterrupted()) {
         spdlog::debug("Request stopped by the caller: {}", e.what());
@@ -258,8 +245,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       result.has_error = true;
       result.error_message = "Request failed: " + std::string(e.what());
       spdlog::error("{}", result.error_message);
-      // Reported and not stored: a model never said it, and appending it would grow the
-      // conversation every time a request is refused.
       break;
     }
 
@@ -293,8 +278,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
     for (const auto& call : chat_result.tool_calls) {
-      // An unnamed call runs like any other: the toolbox answers it with an error, which
-      // keeps the call and its result together in the store.
       ++result.tool_call_count;
 
       if (tool_callbacks.on_start) {
@@ -323,7 +306,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         if (parsed.valid) {
           tool_callbacks.on_end(call.id, parsed.stdout_content, parsed.error);
         } else {
-          // Non-standard JSON output: push it verbatim as output.
           tool_callbacks.on_end(call.id, tool_result, "");
         }
       }
@@ -348,8 +330,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     return result;
   }
 
-  // Only diagnose an empty response when nothing else already failed: a refused request
-  // returns no content either, and this generic reason is what hid its real one.
   if (!result.has_error && result.content.empty() && result.tool_call_count == 0) {
     result.has_error = true;
     result.error_message =

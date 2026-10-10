@@ -14,8 +14,6 @@ using context::kToolRole;
 using context::kUserRole;
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
-  // A provider that accepts any role name is given the conversation's own; one that
-  // knows four roles has anything else sent as the user speaking.
   if (naming == RoleNaming::kAsStored) return role;
   if (role == kUserRole || role == kAssistantRole || role == kSystemRole || role == kToolRole) {
     return role;
@@ -34,8 +32,6 @@ boost::json::value ProjectArguments(const boost::json::value& arguments,
   try {
     return boost::json::parse(boost::json::value_to<std::string>(arguments));
   } catch (const std::exception&) {
-    // A provider may send arguments that are not parseable JSON; keep what
-    // arrived rather than dropping the call.
     return arguments;
   }
 }
@@ -44,8 +40,6 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
                                     const ProviderCapabilities& capabilities) {
   boost::json::array projected;
   for (const boost::json::value& call : tool_calls.as_array()) {
-    // The stored shape nests the function. Anything else is left alone rather
-    // than rebuilt into a shape the call did not have.
     if (!json::HasKey(call, "function") || !call.at("function").is_object()) {
       projected.push_back(call);
       continue;

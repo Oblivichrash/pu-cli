@@ -78,8 +78,6 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "serve") {
-      // A directory is a session, and several are served side by side, so the port belongs in
-      // the workspace: `ResolveListenOptions` says which place answers for it.
       const auto named = [](const char* name) -> std::optional<std::string> {
         const char* value = std::getenv(name);
         if (value == nullptr || *value == '\0') return std::nullopt;

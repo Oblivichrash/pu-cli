@@ -56,7 +56,6 @@ void JsonRpcClient::OnMessage(const std::string& line) {
         pending_.erase(it);
       }
     }
-    // Notifications carry no id, so there is nothing to answer.
   } catch (const std::exception& e) {
     spdlog::warn("JSON-RPC parse error: {}", e.what());
   }
@@ -124,7 +123,7 @@ bool McpClient::Handshake() {
   try {
     auto resp = SendRequest("initialize", init_params);
     if (!json::HasKey(resp, "result")) return false;
-    // The initialized notification expects no reply.
+    // No reply expected for the initialized notification.
     pimpl_->transport->WriteLine(
         boost::json::serialize(boost::json::value{{"jsonrpc", "2.0"}, {"method", "initialized"}}));
     return true;
@@ -169,8 +168,6 @@ std::vector<ToolDefinition> McpClient::ListTools() {
     pimpl_->cached_tools = defs;
     return defs;
   }
-  // A connected server that answers without tools leaves the caller unable to tell "no
-  // tools" from "the reply was not understood", which are different things to act on.
   throw Error("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
 }
 

@@ -8,8 +8,6 @@ namespace pu::mcp {
 
 using MessageCallback = std::function<void(const std::string&)>;
 
-// Shared by StdioTransport and HttpTransport; the client depends only on this, so it is
-// named after the abstraction rather than either transport.
 class Transport {
  public:
   virtual ~Transport() = default;

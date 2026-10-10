@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The context model: every stored turn is a node holding one of these payloads, and
-// ChatMessage is the view a provider still requires. Not thread-safe.
-
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -18,18 +15,15 @@
 
 namespace pu::context {
 
-// Stable node identity: independent of position.
 using MessageId = std::string;
 
 inline MessageId NewMessageId() { return uuid::Generate(); }
 
-// The role words the stored session and every provider round trip spell.
 inline constexpr const char* kUserRole = "user";
 inline constexpr const char* kAssistantRole = "assistant";
 inline constexpr const char* kSystemRole = "system";
 inline constexpr const char* kToolRole = "tool";
 
-// Kept in the provider's own encoding so it can be echoed back unchanged.
 struct Reasoning {
   std::string raw_json;
 };
@@ -39,18 +33,13 @@ enum class ToolCallStatus {
   kCompleted,
 };
 
-// Deliberately separate from the result, which travels in its own ToolPayload node.
 struct ToolCallRecord {
   std::string id;
   std::string name;
-  // JSON, not a string: providers disagree on whether arguments travel as an object or
-  // an encoded string, and the projection decides that.
   boost::json::value arguments;
   ToolCallStatus status = ToolCallStatus::kPending;
 };
 
-// The one place a call's wire shape is built and read, so it cannot drift between the
-// store, the providers and the request path.
 inline boost::json::value ToolCallToJson(const ToolCallRecord& record) {
   return boost::json::value{
       {"id", record.id},
@@ -59,8 +48,6 @@ inline boost::json::value ToolCallToJson(const ToolCallRecord& record) {
   };
 }
 
-// A call without a function object reads back with only its id, which tells a malformed
-// call from a complete one.
 inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
   ToolCallRecord record;
   record.id = json::ValueOrDefault<std::string>(call, "id", "");
@@ -87,7 +74,6 @@ struct SystemPayload {
   std::string content;
 };
 
-// The result of running a tool, answering the record with the same id.
 struct ToolPayload {
   std::string tool_call_id;
   std::string tool_name;
@@ -100,8 +86,6 @@ struct MessageNode {
   MessageId id;
   std::string timestamp;
   MessagePayload payload;
-  // Empty for the first node. One parent, not a list: two would describe a merge the
-  // store deliberately never keeps.
   MessageId parent{};
 };
 
@@ -109,7 +93,6 @@ inline MessageNode MakeNode(MessagePayload payload) {
   return MessageNode{NewMessageId(), std::string{}, std::move(payload)};
 }
 
-// What blocks switching the agent or backend mid-run.
 inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
   if (assistant == nullptr) return false;

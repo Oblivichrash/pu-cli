@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// The pieces every layer above core is allowed to assume: a shared cancel flag,
-// the error hierarchy, identifier generation, and the data directory.
-
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -14,19 +11,13 @@
 
 namespace pu {
 
-// Shared cancel flag observed by every layer (LLM providers and the HTTP
-// client), so it lives in the base layer rather than next to the HTTP adapter.
 using CancelToken = std::shared_ptr<std::atomic<bool>>;
 
-// Base class for all non-recoverable runtime errors, caught at the top level.
 class RuntimeError : public std::runtime_error {
  public:
   explicit RuntimeError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
-// A request this process's state refuses while the request itself is well formed, so a
-// server reports it to the caller rather than as a fault of its own. `Error` covers the
-// request being wrong; this covers the state being unable to serve it.
 class RequestRefused : public RuntimeError {
  public:
   using RuntimeError::RuntimeError;
@@ -44,7 +35,6 @@ class HttpError : public Error {
 
 namespace uuid {
 
-// RFC 4122 version 4, lowercase, hyphenated (8-4-4-4-12).
 inline std::string Generate() {
   static thread_local std::mt19937 generator(std::random_device{}());
   static thread_local std::uniform_int_distribution<int> nibble(0, 15);
@@ -64,7 +54,6 @@ inline std::string Generate() {
 
 namespace path {
 
-// The data directory: PU_HOME when set, otherwise the project's .pu directory.
 inline std::filesystem::path GetDataDir() {
   if (const char* env = std::getenv("PU_HOME")) {
     return std::filesystem::path(env);

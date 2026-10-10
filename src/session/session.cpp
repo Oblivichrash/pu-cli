@@ -22,7 +22,6 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
     context::AssistantPayload assistant;
     assistant.content = msg.content;
     if (!msg.reasoning_content.empty()) {
-      // The legacy field is the reasoning text as the provider sent it.
       assistant.reasoning = context::Reasoning{msg.reasoning_content};
     }
     if (msg.tool_calls.is_array()) {
@@ -52,8 +51,6 @@ context::MessagePayload ToPayload(const ChatMessage& msg) {
   return user;
 }
 
-// Storage holds text from outside pu-cli, which may be in the producer's encoding; it is
-// normalised here, the one way into storage.
 ChatMessage Normalized(const ChatMessage& msg) {
   if (text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
       text::IsValidUtf8(msg.reasoning_content) && text::IsValidUtf8(msg.tool_call_id)) {
@@ -140,8 +137,6 @@ void Session::SetAgent(const std::string& agent_name) {
         "Cannot switch agent while tool calls are pending. "
         "Please let the current tool finish or /clear.");
   }
-  // Choosing an agent drops the override, so the agent's own configuration
-  // becomes the source of the backend again.
   spec_.agent_name = agent_name;
   spec_.backend_override.reset();
 }
@@ -172,8 +167,6 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   const int version = json::ValueOrDefault<int>(j, "schema_version", 0);
   if (!has_version || version != kSessionSchemaVersion) return nullptr;
 
-  // A version field alone is not enough: the storage itself has to look like node
-  // storage, or the file is a layout this build cannot read.
   if (!json::HasKey(j, "conversation") || !json::HasKey(j.at("conversation"), "history") ||
       !j.at("conversation").at("history").is_object()) {
     return nullptr;
@@ -182,8 +175,6 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   auto conversation = Conversation::Deserialize(j.at("conversation"));
   if (!conversation) return nullptr;
 
-  // The spec is what selects the agent, so a file without it would load as a
-  // conversation that cannot reach a model.
   if (!json::HasKey(j, "session_spec") || !j.at("session_spec").is_object()) {
     return nullptr;
   }

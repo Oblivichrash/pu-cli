@@ -16,8 +16,6 @@
 #include <thread>
 
 #ifdef _WIN32
-// Windows keeps its trust anchors in the registry rather than in the Unix layout OpenSSL
-// looks for, so the store is read through its own API.
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
 #endif
@@ -33,8 +31,6 @@ namespace pu::http {
 #ifdef _WIN32
 namespace {
 
-// OpenSSL's default verify paths describe a Unix filesystem, so on Windows every public
-// HTTPS request would fail its handshake until the roots this platform trusts are added.
 void AddWindowsRootStore(net::ssl::context& ctx) {
   HCERTSTORE store = CertOpenSystemStoreA(0, "ROOT");
   if (store == nullptr) {
@@ -55,16 +51,12 @@ void AddWindowsRootStore(net::ssl::context& ctx) {
     if (X509_STORE_add_cert(x509_store, parsed) == 1) {
       ++added;
     } else {
-      // A certificate already in the store, which is why the error is cleared
-      // rather than left for whatever asks next.
       ERR_clear_error();
     }
     X509_free(parsed);
   }
   CertCloseStore(store, 0);
 
-  // Trusting nothing fails in a way no request explains, so it is said here rather
-  // than left to the handshake.
   if (added == 0) spdlog::warn("No certificates loaded from the Windows root store");
 }
 
@@ -119,8 +111,6 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   for (const auto& h : headers) {
     size_t pos = h.find(':');
     if (pos != std::string::npos) {
-      // `Name: value` is how a header is written, so the space after the colon is
-      // framing rather than part of either half.
       req.set(text::Trim(std::string_view(h).substr(0, pos)),
               text::Trim(std::string_view(h).substr(pos + 1)));
     }
@@ -128,8 +118,6 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   req.body() = body;
 }
 
-// Hands each piece of the body to write_cb as it arrives; on a failure status the body is
-// collected into `error_body` instead. `need_buffer` is how the body continues, not an error.
 template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
                         std::string& error_body, CancelToken cancel_token) {
@@ -162,8 +150,6 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
     if (produced == 0) continue;
 
     if (failure) {
-      // Enough of a failure body to explain it; the rest is drained rather than
-      // kept, since the summary keeps a line of it and not a transcript.
       constexpr std::size_t kMaxErrorBody = 64 * 1024;
       if (collected.size() < kMaxErrorBody) {
         collected.append(piece, std::min(produced, kMaxErrorBody - collected.size()));
@@ -175,8 +161,6 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
     if (consumed == 0) {
       throw HttpError("Streaming aborted by consumer");
     }
-    // A stop asked for while the body is arriving ends the request here: the callback is
-    // reached once per read, so a quiet stream would hold a stop until the producer speaks.
     if (cancel_token && cancel_token->load(std::memory_order_acquire)) {
       throw HttpError("Request cancelled");
     }
@@ -190,23 +174,17 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
 
 namespace {
 
-// A failure response explains itself, but usually as nested JSON, and it may be
-// in the producer's locale. This pulls out the text a user can act on.
 std::string SummarizeErrorBody(const std::string& body) {
   if (body.empty()) return "";
 
-  // The body may arrive in the producer's locale, and its shape differs by gateway:
-  // the envelopes `json::ErrorMessage` reads are the ones that turn up here.
   const std::string text = platform::FromPipedOutput(body);
   std::string message;
   try {
     message = json::ErrorMessage(boost::json::parse(text));
   } catch (const std::exception&) {
-    // Not JSON, so the body is the message.
   }
   if (message.empty()) message = text;
 
-  // Collapsed to one line so a multi-line body cannot break the log layout.
   const std::string one_line = text::CollapseWhitespace(message);
 
   constexpr std::size_t kMaxDetail = 400;

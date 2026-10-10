@@ -28,7 +28,6 @@ class OllamaProvider : public StreamingProvider {
   std::string EndpointPath() const override { return "/api/chat"; }
   std::string LogTag() const override { return "Ollama"; }
 
-  // A request without tools omits the block rather than carrying an empty one.
   std::string BuildRequest(const std::vector<ChatMessage>& history,
                            const std::vector<ToolDefinition>& tools) const override;
   void ParseLine(std::string_view line,

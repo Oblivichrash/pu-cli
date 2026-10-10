@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// What a backend is: the type, where it is reached, and the model to ask for; the factory
-// that turns one into a provider is declared beside the model.
-
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,13 +24,9 @@ struct BackendConfig {
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
   int max_tokens = 2048;
-  // How much reasoning to ask for. The default asks for nothing, which is what
-  // "on" meant before there was a level.
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
-// How a type is spelled in configuration, in a stored session and on the wire: one home,
-// because a third type turns every `is it OpenAI?` question into a lie.
 inline const char* BackendTypeName(BackendType type) {
   switch (type) {
     case BackendType::kOllama:
@@ -70,8 +63,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
   const auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
-  // A file naming something this build does not know reads as the default rather
-  // than failing the load: the session it holds is still the user's conversation.
   cfg.type = ParseBackendType(type_str).value_or(BackendType::kOllama);
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
@@ -81,8 +72,6 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
-  // The prompt is configuration, not session state, so a stored override never
-  // carries one.
   cfg.system_prompt = std::nullopt;
   cfg.thinking = ReadThinkingLevel(j);
   return cfg;

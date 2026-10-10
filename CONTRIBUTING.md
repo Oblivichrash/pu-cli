@@ -20,16 +20,17 @@ item comes out as separate paragraphs, so pass the whole message at once.
 - SPDX license header on every `.cpp` and `.hpp` file
   (`// SPDX-License-Identifier: GPL-3.0-only`). Generated or third-party files
   are exempt.
-- Comments add what the code cannot say: an invariant, an external protocol, a
-  platform quirk, or a choice a reader would otherwise question. Do not restate
-  what the next line does, and do not keep commented-out code or change history
-  in the tree.
-- A block is at most two lines, the SPDX header aside. A file header says at most
-  what the file is for; anything longer is a document, and it belongs to the
-  document that [Where Things Live](#where-things-live) names for it.
+- A comment carries only what the code cannot say: an external protocol fact, a
+  platform `#ifdef` behavior, or an invariant no signature expresses. Everything
+  else — intent, rationale, history, structure — is carried by names, types, and
+  tests. Do not restate what the next line does, and keep no commented-out code.
+- Expect comments to be rare. A block reaching two lines needs a reason to exist
+  at all; a file header, where kept, names nothing more than what the file is
+  for, and anything longer is a document belonging to the document that
+  [Where Things Live](#where-things-live) names for it.
 - A comment describes what holds now, and does not point at a document. What an
   earlier build did belongs to the commit that changed it, not to the line that
-  replaced it.
+  replaced it. Design rationale lives in commits and `docs/`, not in the tree.
 - Match the style `.clang-format` describes; the settings are there to read and
   to run by hand. Nothing enforces them, so a tree that drifts is not a failed
   build — it is a change to review like any other.

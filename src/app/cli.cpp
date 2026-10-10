@@ -17,8 +17,6 @@ namespace {
 
 void PrintChatHelp() { std::cout << CommandRouter::GetHelpText() << "\n"; }
 
-// A reply that arrived but is known to be incomplete: it belongs with the answer rather
-// than in the log, and it starts its own line because a stream may not have ended one.
 void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
   if (result.was_streamed) std::cout << "\n";
@@ -37,8 +35,6 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     if (result.has_error) {
       spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     } else if (result.was_streamed) {
-      // The reply is already on screen — the executor typed it out token by token — so
-      // printing the finished content here would show it twice.
       std::cout << "\n";
     } else if (!result.content.empty()) {
       std::cout << result.content << "\n";
@@ -94,7 +90,6 @@ int RunChat(const std::string& agent, Runtime& runtime) {
           std::cout << "\n";
         }
       } else {
-        // streamed output already handles its own line breaks
       }
 
       PrintNotice(result);

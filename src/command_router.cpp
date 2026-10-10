@@ -20,8 +20,6 @@ namespace pu {
 
 namespace {
 
-// The /backend command names a type and a model only, so the missing host is answered here
-// from the default the provider itself states — asking it keeps that value in one place.
 std::string DefaultHostFor(config::BackendType type) {
   switch (type) {
     case config::BackendType::kOllama:
@@ -77,7 +75,6 @@ CommandRouter::CommandRouter(AgentManager& manager, Runtime& runtime)
     : manager_(manager), runtime_(runtime) {}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
-  // Whatever space was pasted in front of the command is not part of it.
   const std::string trimmed(text::Trim(input));
 
   if (trimmed.empty() || trimmed[0] != '/') return false;
@@ -259,8 +256,6 @@ bool CommandRouter::HandleThinking(const std::vector<std::string>& args, Session
     return true;
   }
 
-  // An unrecognised word reads as the absent level, so the word itself is checked
-  // rather than trusting that fallback to mean what was typed.
   if (args[0] != "default" && ParseThinkingLevel(args[0]) == ThinkingLevel::kServerDefault) {
     output =
         "Unknown thinking level: " + args[0] + ". Use none, low, medium, high, default or auto.";

@@ -36,21 +36,15 @@ void SendJson(http::response<http::string_body>& res, unsigned status,
   res.prepare_payload();
 }
 
-// The envelope of the endpoints that carry one; `/api/history`, `/api/agents` and
-// `/api/workspaces` answer with a bare array or object instead.
 void SendOk(http::response<http::string_body>& res, boost::json::object fields = {}) {
   fields["success"] = true;
   SendJson(res, 200, fields);
 }
 
-// Refusals are 400 (a body that is not JSON, a value missing or unknown, a state that cannot
-// serve the request), 404 where a name does not exist, and 500 where an operation failed.
 void SendError(http::response<http::string_body>& res, unsigned status, std::string_view message) {
   SendJson(res, status, boost::json::object{{"success", false}, {"error", std::string(message)}});
 }
 
-// What the layers below threw, as a status. A request refused by the state is the caller's
-// to act on, and a base RuntimeError is a failure with no more specific answer.
 unsigned ErrorStatus(const std::exception& e) {
   if (dynamic_cast<const Error*>(&e) != nullptr) return 500;
   if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;
@@ -105,8 +99,6 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
     res.set(http::field::content_type, "application/javascript");
   else
     res.set(http::field::content_type, "application/octet-stream");
-  // The UI is served from a working tree, so a reload has to be able to pick up a
-  // change in it.
   res.set(http::field::cache_control, "no-cache");
   res.prepare_payload();
 }
@@ -159,8 +151,6 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
         if (msg.HasToolCalls()) {
           item.as_object()["tool_calls"] = msg.tool_calls;
 
-          // A call's fate lives on the node rather than in the projection, so the two
-          // are walked positionally: the same chain in the same order.
           if (i < chain.size()) {
             if (const auto* assistant =
                     std::get_if<context::AssistantPayload>(&chain[i]->payload)) {
@@ -178,8 +168,6 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
         if (!msg.reasoning_content.empty())
           item.as_object()["reasoning_content"] = msg.reasoning_content;
 
-        // Parsed as the running turn parsed it, so a reloaded tool block reads the way
-        // the streamed one did instead of as raw tool JSON.
         if (msg.role == context::kToolRole) {
           const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
           item.as_object()["output"] = parsed.valid ? parsed.stdout_content : msg.content;
@@ -286,8 +274,6 @@ void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http:
   }
   try {
     std::lock_guard<std::mutex> lock(io_mutex);
-    // A turn that is not there and a step back the store refuses while a call is pending are
-    // the same refusal: the request cannot be served as it stands.
     if (!runtime.RewindBefore(static_cast<size_t>(turn))) {
       SendError(res, 400, "No such turn");
       return;
@@ -318,8 +304,6 @@ void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
     }
     const std::string level = boost::json::value_to<std::string>(requested.at("level"));
 
-    // `auto` is the only word that clears the session's own level, so a word that names no
-    // level is refused rather than read as some default.
     if (level != "auto" && level != "default" &&
         ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
       SendError(res, 400, "Unknown thinking level");

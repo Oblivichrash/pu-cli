@@ -9,18 +9,13 @@
 #include "pu/context/graph.hpp"
 #include "pu/llm/llm_provider.hpp"
 
-// The message list a provider receives for one turn; it lives in the session layer because
-// rendering the legacy ChatMessage is the compatibility seam.
 namespace pu::session {
 
-// Supplied by the caller rather than stored, so what reaches the model depends only on the
-// conversation plus these.
 struct RequestInputs {
   std::string system_prompt;  // the agent's configured prompt
   std::string environment;    // generated context: OS, policy, guidelines
 };
 
-// Used by the transcript too, so the two views of a stored node cannot drift apart.
 inline ChatMessage RenderMessage(const context::MessageNode& node, int position) {
   ChatMessage msg;
   msg.id = position;
@@ -54,7 +49,6 @@ inline ChatMessage RenderMessage(const context::MessageNode& node, int position)
   return msg;
 }
 
-// The system inputs first, then the stored chain in order.
 inline std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
                                                  const RequestInputs& inputs) {
   std::vector<ChatMessage> messages;

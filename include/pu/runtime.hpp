@@ -44,34 +44,19 @@ class Runtime {
   AgentManager& GetAgentManager() { return *agent_manager_; }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
-  // The agent this Runtime resolved at Initialize. Callers report it rather than reading
-  // agents.json again, which is what used to make the CLI load the same file twice.
   const config::AgentEntry& ActiveAgent() const;
 
-  // The two conversation changes the Web API exposes. Both write the session, because the
-  // Runtime is the only place that knows a session is on disk at all.
   bool RewindBefore(size_t turn);
   void ClearConversation();
 
-  // The backend the active session talks to: the session's override when it has one,
-  // otherwise the agent's entry in agents.json, with the session's thinking level on top.
   config::BackendConfig CurrentBackend() const;
 
-  // What this session asks for, which is what a caller displays: the session's
-  // override when it has one, the agent's configuration otherwise.
   ThinkingLevel CurrentThinkingLevel() const;
-  // Whether the active backend carries a level at all, so a caller offers the
-  // setting only where it lands.
   bool SupportsThinkingLevel() const;
-  // Absent means the session follows the agent's configuration rather than a level
-  // of its own.
   std::optional<ThinkingLevel> GetThinkingOverride() const;
-  // Sets or clears the session's level and persists it. Answers false, changing nothing,
-  // when the active backend does not carry a level, so both front ends refuse alike.
   bool SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:
-  // The backend as configured, before anything this session asked for is applied.
   config::BackendConfig ConfiguredBackend() const;
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();

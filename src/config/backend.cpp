@@ -13,14 +13,10 @@ namespace pu::config {
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::unique_ptr<pu::http::HttpClient> http) {
-  // Reaching this without a host is a malformed configuration, and saying which type it
-  // was beats a request to "/chat/completions".
   if (cfg.host.empty()) {
     throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
   }
 
-  // The two HTTP backends speak the same protocol, so what they have in common is
-  // filled once and the differences are the name the gateway is called by.
   const auto http_config = [&cfg]() {
     OpenAIProvider::Config http_cfg;
     http_cfg.model = cfg.model;
@@ -44,8 +40,6 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
     case BackendType::kOpenAI:
       return std::make_unique<OpenAIProvider>(http_config(), std::move(http));
     case BackendType::kCodeBuddy: {
-      // The same protocol as OpenAI, at a gateway that has to be told who is
-      // calling and expects to be reached as the CodeBuddy client is.
       OpenAIProvider::Config codebuddy_cfg = http_config();
       codebuddy_cfg.extra_headers = [] { return llm::CodeBuddyHeaders(); };
       return std::make_unique<OpenAIProvider>(codebuddy_cfg, std::move(http));

@@ -31,8 +31,6 @@ class StdioTransport : public Transport {
 
  private:
   bool SpawnProcess();
-  // The reader is a thread procedure on Windows, declared where it is defined, and a
-  // member on POSIX, where it is joined.
 #ifndef _WIN32
   void ReaderLoop();
 #endif

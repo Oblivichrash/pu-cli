@@ -24,8 +24,6 @@ namespace websocket = beast::websocket;
 
 void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
                          std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws) {
-  // This session's own socket, deliberately not read back out of `active_ws`: a replaced
-  // session is still winding down and must read its own stream.
   auto ws = std::make_shared<websocket::stream<tcp::socket>>(std::move(socket));
 
   beast::error_code ec;
@@ -35,8 +33,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     return;
   }
 
-  // One client per session: a second page could only take its place by ending the reply the
-  // first is watching, so it is told the session is busy and closed.
   {
     std::lock_guard<std::mutex> lock(active_ws->mtx);
     if (active_ws->client) {
@@ -84,8 +80,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
 
     const std::string type = json::ValueOrDefault<std::string>(jv, "type", "");
     if (type == "cancel") {
-      // A stop the reader asked for. The turn ends where it is and keeps no answer,
-      // which is what the client that asked is shown.
       std::lock_guard<std::mutex> lock(active_ws->mtx);
       active_ws->cancel_token->store(true);
       continue;
@@ -99,8 +93,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
     CancelToken token;
     {
       std::lock_guard<std::mutex> lock(active_ws->mtx);
-      // A turn still running is withdrawn first: there is one conversation here, so
-      // a second request replaces the first rather than joining it.
       active_ws->cancel_token->store(true);
       active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
       token = active_ws->cancel_token;
@@ -110,8 +102,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       bool is_command = false;
       ExecutionResult result;
 
-      // Says something on this turn's behalf, and only while this turn is the one the chat
-      // is on: a superseded turn goes quiet instead of writing into another's display.
       const auto say = [&](const boost::json::value& frame) {
         std::lock_guard<std::mutex> lock(active_ws->mtx);
         if (active_ws->cancel_token != token) return;
@@ -145,8 +135,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
               say(frame);
             },
             tool_cb,
-            // Reasoning arrives on its own channel and is rendered beside the
-            // answer, so it travels as a frame of its own.
             [&](const std::string& thought) {
               if (thought.empty()) return;
               boost::json::value frame = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
@@ -154,8 +142,6 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
             });
       }
 
-      // A remark about the reply goes out before the turn is closed, so it lands
-      // under the text the client has already rendered.
       if (!result.notice.empty()) {
         boost::json::value frame = {{"type", "notice"}, {"payload", {{"text", result.notice}}}};
         say(frame);
@@ -167,16 +153,12 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       } else if (result.model.empty()) {
         final = {{"type", "done"}};
       } else {
-        // Who answered, which a gateway may have chosen rather than serve the
-        // model that was configured.
         final = {{"type", "done"}, {"payload", {{"model", result.model}}}};
       }
       say(final);
     }).detach();
   }
 
-  // The reader is gone, so its turn ends here and keeps nothing: what had been written is
-  // half an answer. A replaced session does none of this; its successor owns the chat.
   std::lock_guard<std::mutex> lock(active_ws->mtx);
   if (active_ws->client == ws) {
     active_ws->client = nullptr;

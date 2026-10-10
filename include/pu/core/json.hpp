@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Convenience layer over Boost.JSON: value-with-default, has-key, shallow merge, pretty
-// printing. Storage and parsing stay with boost::json.
-
 #include <boost/json.hpp>
 
 #include <cstddef>
@@ -18,8 +15,7 @@ using object = boost::json::object;
 using array = boost::json::array;
 using string = boost::json::string;
 
-// Parsing/serialization entry points (boost::json::parse throws
-// boost::system::system_error on malformed input).
+// boost::json::parse throws boost::system::system_error on malformed input.
 using boost::json::parse;
 using boost::json::serialize;
 
@@ -38,20 +34,17 @@ T ValueOrDefault(const value& j, boost::json::string_view key, const T& def) {
   }
 }
 
-// Convenience overload so ValueOrDefault(j, "key", "literal") yields a
-// std::string (matching the const char* default argument).
+// So ValueOrDefault(j, "key", "literal") yields a std::string.
 inline std::string ValueOrDefault(const value& j, boost::json::string_view key, const char* def) {
   return ValueOrDefault<std::string>(j, key, std::string(def));
 }
 
-// True when `j` is an object containing `key`.
 inline bool HasKey(const value& j, boost::json::string_view key) {
   const object* obj = j.if_object();
   return obj != nullptr && obj->contains(key);
 }
 
-// The message inside an error envelope: `error` as text or object, or a top-level
-// `message` or `msg` (CodeBuddy's name for the cause). Empty when none of them is there.
+// `error` as text or object, else a top-level `message` or `msg` (CodeBuddy's name).
 inline std::string ErrorMessage(const value& j) {
   const object* obj = j.if_object();
   if (obj == nullptr) return {};

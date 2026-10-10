@@ -122,7 +122,6 @@ std::string FindConfigPath() {
     if (std::filesystem::exists(user)) return user.string();
   }
 
-  // A workspace without a configuration is a state callers answer for, not a failure.
   return {};
 }
 
@@ -168,7 +167,6 @@ std::optional<ServeOptions> FindServeOptions() {
 }
 
 std::optional<std::uint16_t> ParsePort(const std::string& text) {
-  // Five digits at most, so the accumulation cannot overflow before the range is checked.
   if (text.empty() || text.size() > 5) return std::nullopt;
   std::uint32_t value = 0;
   for (const char c : text) {
@@ -206,8 +204,6 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
   } else if (const auto port = ParsePort(**named)) {
     options.port = *port;
   } else {
-    // Named and refused: a file does not answer for a port a shell asked for. Written to the
-    // error stream because this decides what a command line asked for, before any log exists.
     std::cerr << "Warning: invalid " << source << " '" << **named << "', using " << options.port
               << "\n";
   }

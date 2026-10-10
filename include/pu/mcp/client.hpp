@@ -21,14 +21,10 @@ struct McpServerConfig {
   std::string name;
   std::string command;
   std::vector<std::string> args;
-  // Remote HTTP (streamable) MCP endpoint. When non-empty, the client uses
-  // HttpTransport instead of the stdio subprocess transport.
   std::string url;
   std::map<std::string, std::string> headers;
 };
 
-// JSON-RPC 2.0 over a transport: one promise per request id, answered by the
-// reply that carries the same id.
 class JsonRpcClient {
  public:
   explicit JsonRpcClient(Transport& transport);
@@ -37,7 +33,6 @@ class JsonRpcClient {
   std::future<boost::json::value> SendRequest(const std::string& method,
                                               const boost::json::value& params = {});
 
-  // Handle incoming messages (called by transport callback).
   void OnMessage(const std::string& line);
 
  private:
@@ -47,7 +42,6 @@ class JsonRpcClient {
   std::mutex mutex_;
 };
 
-// The MCP surface the rest of pu-cli uses: handshake, tool listing, tool calls.
 class McpClient {
  public:
   explicit McpClient(const McpServerConfig& config);
@@ -59,8 +53,6 @@ class McpClient {
   bool Connect();
   void Disconnect();
 
-  // Empty when there is no connection to ask; throws when a connected server answers
-  // something other than a tool list.
   virtual std::vector<ToolDefinition> ListTools();
   virtual std::string CallTool(const std::string& name, const boost::json::value& arguments);
   virtual bool IsConnected() const;

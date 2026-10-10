@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// How a conversation becomes the message objects a provider receives: the differences
-// between providers are data here rather than branches in each request builder.
-
 #include <vector>
 
 #include <boost/json.hpp>
@@ -12,22 +9,16 @@
 
 namespace pu::llm {
 
-// How role names reach the wire.
 enum class RoleNaming {
-  // The role is sent as the conversation holds it.
   kAsStored,
-  // Only the four known roles are sent; anything else becomes `user`.
   kKnownRolesOnly,
 };
 
-// How tool call arguments reach the wire.
 enum class ToolArgumentsEncoding {
   kJsonObject,
   kJsonString,
 };
 
-// Every field is read by the projection below, so a field without a consumer is
-// a field that does not belong here yet.
 struct ProviderCapabilities {
   RoleNaming role_naming = RoleNaming::kKnownRolesOnly;
   bool echo_reasoning_content = false;
@@ -38,11 +29,9 @@ struct ProviderCapabilities {
   bool omits_empty_tool_call_id = true;
 };
 
-// Renders one message as the object a provider receives.
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities);
 
-// Renders a conversation in order.
 boost::json::array ProjectMessages(const std::vector<ChatMessage>& history,
                                    const ProviderCapabilities& capabilities);
 
