@@ -150,8 +150,8 @@ class McpServer {
   Options options_;
 };
 
-pu::mcp::McpServerConfig ServerConfigAt(int port, std::map<std::string, std::string> headers = {}) {
-  pu::mcp::McpServerConfig config;
+pu::config::McpServerConfig ServerConfigAt(int port, std::map<std::string, std::string> headers = {}) {
+  pu::config::McpServerConfig config;
   config.name = "fake";
   config.url = "http://127.0.0.1:" + std::to_string(port) + "/mcp";
   config.headers = std::move(headers);

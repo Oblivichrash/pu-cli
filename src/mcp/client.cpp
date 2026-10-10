@@ -62,14 +62,14 @@ void JsonRpcClient::OnMessage(const std::string& line) {
 }
 
 struct McpClient::Impl {
-  McpServerConfig config;
+  config::McpServerConfig config;
   std::unique_ptr<Transport> transport;
   std::unique_ptr<JsonRpcClient> rpc;
   bool connected = false;
   std::vector<ToolDefinition> cached_tools;
 };
 
-McpClient::McpClient(const McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
+McpClient::McpClient(const config::McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
   pimpl_->config = config;
 }
 

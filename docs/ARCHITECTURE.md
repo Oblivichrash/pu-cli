@@ -423,6 +423,21 @@ follow the layering: `pu_lib` is the *base* static library (core + domain
 modules), `pu_agent` holds the orchestration layer, `pu_app` holds `src/app/`,
 and the `pu` executable adds only `main.cpp`.
 
+### Dependency direction
+
+Includes point one way: `core/` is a leaf, `config/` and `llm/` build on it, and
+`mcp/`, `tools/`, `session/`, and the orchestration headers build on those. No
+directory includes a peer that sits above it, and `config/` in particular never
+reaches `mcp/`.
+
+The rule holds because a record belongs to the layer that *parses* it, not the
+layer that *uses* it. `config/mcp_server.hpp` and `config/security_policy.hpp`
+are leaf headers holding plain data — `McpServerConfig` (read from `agents.json`)
+and `SecurityPolicy` — so `mcp/client.hpp` and `tools/tool.hpp` include them
+rather than the reverse. Before the split both were declared next to their
+consumers, which made `tools/` depend on `config/` depending on `mcp/`: a cycle
+that pulled the whole transport layer into any header naming a `Tool`.
+
 ---
 
 ## Extension Points

@@ -6,7 +6,7 @@
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "pu/config/agents.hpp"
+#include "pu/config/security_policy.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
 #include "pu/llm/llm_provider.hpp"

@@ -7,22 +7,17 @@
 #include <vector>
 
 #include "pu/config/backend.hpp"
-#include "pu/mcp/client.hpp"
+#include "pu/config/mcp_server.hpp"
+#include "pu/config/security_policy.hpp"
 
 namespace pu::config {
-
-struct SecurityPolicy {
-  std::string sandbox_root;
-  size_t max_command_length = 0;
-  std::vector<std::string> forbidden_patterns;
-};
 
 struct AgentEntry {
   std::string name;
   std::string description;
   BackendConfig backend;
   SecurityPolicy security;
-  std::vector<pu::mcp::McpServerConfig> mcp_servers;
+  std::vector<McpServerConfig> mcp_servers;
 };
 
 struct AgentsConfig {

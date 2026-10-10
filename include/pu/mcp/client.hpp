@@ -2,7 +2,6 @@
 #pragma once
 
 #include <future>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -11,19 +10,11 @@
 
 #include <boost/json.hpp>
 
-#include "pu/core/base.hpp"
+#include "pu/config/mcp_server.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
-
-struct McpServerConfig {
-  std::string name;
-  std::string command;
-  std::vector<std::string> args;
-  std::string url;
-  std::map<std::string, std::string> headers;
-};
 
 class JsonRpcClient {
  public:
@@ -44,7 +35,7 @@ class JsonRpcClient {
 
 class McpClient {
  public:
-  explicit McpClient(const McpServerConfig& config);
+  explicit McpClient(const config::McpServerConfig& config);
   virtual ~McpClient();
 
   McpClient(const McpClient&) = delete;

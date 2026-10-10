@@ -62,11 +62,11 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   return cfg;
 }
 
-std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
-  std::vector<pu::mcp::McpServerConfig> servers;
+std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
+  std::vector<McpServerConfig> servers;
   if (!j.is_array()) return servers;
   for (const auto& item : j.as_array()) {
-    pu::mcp::McpServerConfig srv;
+    McpServerConfig srv;
     srv.name = json::ValueOrDefault<std::string>(item, "name", "");
     srv.command = json::ValueOrDefault<std::string>(item, "command", "");
     if (json::HasKey(item, "args") && item.at("args").is_array()) {

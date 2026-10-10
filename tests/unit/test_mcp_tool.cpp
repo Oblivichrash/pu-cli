@@ -13,7 +13,7 @@ namespace {
 
 class StubMcpClient : public pu::mcp::McpClient {
  public:
-  StubMcpClient() : McpClient(pu::mcp::McpServerConfig{}) {}
+  StubMcpClient() : McpClient(pu::config::McpServerConfig{}) {}
 
   std::string CallTool(const std::string& /*name*/,
                        const boost::json::value& /*arguments*/) override {

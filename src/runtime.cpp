@@ -280,7 +280,7 @@ void Runtime::ShutdownMCP() {
   mcp_clients_.clear();
 }
 
-bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
+bool Runtime::StartMCP(const config::McpServerConfig& config) {
   auto client = std::make_shared<mcp::McpClient>(config);
   if (client->Connect()) {
     mcp_clients_.push_back(std::move(client));

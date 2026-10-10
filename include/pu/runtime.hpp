@@ -61,7 +61,7 @@ class Runtime {
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void ShutdownMCP();
-  bool StartMCP(const pu::mcp::McpServerConfig& config);
+  bool StartMCP(const config::McpServerConfig& config);
   void RegisterBuiltinTools(const config::AgentEntry& agent);
 
   bool is_initialized_ = false;
