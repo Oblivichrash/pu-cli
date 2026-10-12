@@ -28,8 +28,9 @@ namespace {
 std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason.empty()) return "";
   if (finish_reason == "length") {
-    return "The reply stopped at the token limit, so it may be incomplete. Raise "
-           "max_tokens for this backend to get the rest.";
+    return "The reply stopped at a token limit, so it may be incomplete. Set "
+           "max_tokens for this backend to lengthen it, or leave it unset to use the "
+           "provider's own limit.";
   }
   if (finish_reason == "content_filter") {
     return "The provider stopped the reply because its content filter matched.";

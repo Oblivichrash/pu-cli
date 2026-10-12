@@ -22,7 +22,7 @@ class OpenAIProvider : public StreamingProvider {
     std::string model;
     float temperature = 0.7f;
     std::string api_key;
-    int max_tokens = 2048;
+    std::optional<int> max_tokens;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
     std::function<std::vector<std::string>()> extra_headers;
   };

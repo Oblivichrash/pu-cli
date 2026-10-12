@@ -41,7 +41,9 @@ struct BackendConfig {
   std::optional<std::string> api_key;
   float temperature = 0.7f;
   std::optional<std::string> system_prompt;
-  int max_tokens = 2048;
+  // Absent means "send no cap", which is not the same as any number. A provider that
+  // caps on its own would otherwise be second-guessed by a default nobody chose.
+  std::optional<int> max_tokens;
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
@@ -81,9 +83,9 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
       {"model", cfg.model},
       {"api_key", cfg.api_key.value_or("")},
       {"temperature", cfg.temperature},
-      {"max_tokens", cfg.max_tokens},
       {"thinking", ThinkingLevelName(cfg.thinking)},
   };
+  if (cfg.max_tokens) j.as_object()["max_tokens"] = *cfg.max_tokens;
 }
 
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
@@ -98,7 +100,7 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
     cfg.api_key = key.empty() ? std::optional<std::string>{} : key;
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
-  cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
   cfg.system_prompt = std::nullopt;
   cfg.thinking = ReadThinkingLevel(j);
   return cfg;

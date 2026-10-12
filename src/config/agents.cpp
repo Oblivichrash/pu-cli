@@ -57,7 +57,7 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
-  cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
   cfg.thinking = ReadThinkingLevel(j);
   return cfg;
 }

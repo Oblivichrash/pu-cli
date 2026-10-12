@@ -63,8 +63,8 @@ std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history
       {"stream", true},
       {"stream_options", {{"include_usage", true}}},
       {"temperature", config_.temperature},
-      {"max_tokens", config_.max_tokens},
-  };
+                                         };
+                                         if (config_.max_tokens) req.as_object()["max_tokens"] = *config_.max_tokens;
 
   if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};

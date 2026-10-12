@@ -2,6 +2,7 @@
 
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/projection.hpp"
+#include "pu/config/backend.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -26,6 +27,22 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   REQUIRE(body.at("model") == "llama3.2:1b");
   REQUIRE(body.at("stream") == true);
   REQUIRE(body.at("options").at("temperature") == 0.5f);
+  REQUIRE_FALSE(body.as_object().contains("max_tokens"));
+  REQUIRE_FALSE(body.at("options").as_object().contains("num_predict"));
+}
+
+TEST_CASE("BackendConfig leaves the token cap unset until it is asked for", "[config]") {
+  const auto config_from = [](const char* text) {
+    return boost::json::value_to<pu::config::BackendConfig>(boost::json::parse(text));
+  };
+
+  REQUIRE_FALSE(config_from(R"({"type":"ollama","model":"m"})").max_tokens.has_value());
+  REQUIRE(config_from(R"({"type":"ollama","model":"m","max_tokens":4096})").max_tokens == 4096);
+
+  // Round-trips keep the absent key absent rather than inventing a cap.
+  const auto bare = config_from(R"({"type":"ollama","model":"m"})");
+  const auto written = boost::json::value_from(bare).as_object();
+  REQUIRE_FALSE(written.contains("max_tokens"));
 }
 
 TEST_CASE("OllamaProvider sends a thinking level as top-level think", "[ollama]") {

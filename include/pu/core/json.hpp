@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <exception>
+#include <optional>
 #include <string>
 
 namespace pu {
@@ -42,6 +43,19 @@ inline std::string ValueOrDefault(const value& j, boost::json::string_view key, 
 inline bool HasKey(const value& j, boost::json::string_view key) {
   const object* obj = j.if_object();
   return obj != nullptr && obj->contains(key);
+}
+
+// `j`'s member `key` as `T`, or nullopt when it is absent, null, or holds another type.
+// For a setting where "absent" must stay distinguishable from any value of `T` — an
+// absent token cap is not the same as a cap of zero.
+template <class T>
+std::optional<T> OptionalOrDefault(const value& j, boost::json::string_view key) {
+  if (!HasKey(j, key)) return std::nullopt;
+  try {
+    return boost::json::value_to<T>(j.at(key));
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
 }
 
 // `error` as text or object, else a top-level `message` or `msg` (CodeBuddy's name).

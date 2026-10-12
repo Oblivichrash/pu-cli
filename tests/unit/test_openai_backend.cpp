@@ -29,12 +29,31 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   REQUIRE(body.at("model") == "gpt-4o-mini");
   REQUIRE(body.at("stream") == true);
   REQUIRE(body.at("temperature") == 0.7f);
+  REQUIRE_FALSE(body.as_object().contains("max_tokens"));
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
     if (h.find("Authorization: Bearer test-key") != std::string::npos) has_auth = true;
   }
   REQUIRE(has_auth);
+}
+
+TEST_CASE("OpenAIProvider sends the token cap only when one is configured", "[openai]") {
+  const auto body_for = [](std::optional<int> cap) {
+    OpenAIProvider::Config config;
+    config.model = "gpt-4o-mini";
+    config.host = "https://api.openai.com/v1";
+    config.api_key = "test-key";
+    config.max_tokens = cap;
+
+    auto [mock_http, mock_ptr] = MakeMockHttpClient();
+    OpenAIProvider provider(config, std::move(mock_http));
+    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
+    return boost::json::parse(mock_ptr->last_body);
+  };
+
+  REQUIRE_FALSE(body_for(std::nullopt).as_object().contains("max_tokens"));
+  REQUIRE(body_for(4096).at("max_tokens") == 4096);
 }
 
 TEST_CASE("OpenAIProvider does not send Authorization header when api_key is empty", "[openai]") {

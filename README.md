@@ -263,7 +263,7 @@ default). See [Quick Start](#configure) for a full example.
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
-| `max_tokens` | `2048` | Sent by the OpenAI-compatible path only |
+| `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply |
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking`. What each level puts on the wire is in [providers.md](docs/providers.md) |
 | `system_prompt` | unset | Merged with the injected context |
 
