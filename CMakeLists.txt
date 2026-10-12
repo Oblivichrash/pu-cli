@@ -78,7 +78,6 @@ add_library(pu_app STATIC
     src/app/cli.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
-    src/app/serve_websocket.cpp
 )
 target_include_directories(pu_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_app PUBLIC pu_agent pu_lib spdlog::spdlog)

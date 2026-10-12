@@ -31,7 +31,4 @@ struct ActiveWebSocket {
   std::mutex mtx;  // guards client and cancel_token
 };
 
-void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
-                         std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws);
-
 }  // namespace pu::cli::detail
