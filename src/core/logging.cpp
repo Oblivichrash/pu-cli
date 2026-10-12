@@ -127,14 +127,11 @@ void InitLogging(const std::string& log_level) {
 
   std::vector<spdlog::sink_ptr> sinks;
 
-  // The console sink is always present but only emits error/critical records.
-  // Info/warn/trace/debug are intentionally never written to the console so
-  // that normal use stays quiet while failures remain visible.
   auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
   console_sink->set_level(spdlog::level::err);
   sinks.push_back(console_sink);
 
-  std::filesystem::path log_dir = pu::path::GetDataDir() / "logs";
+  std::filesystem::path log_dir = pu::path::GetLogDir();
   std::filesystem::create_directories(log_dir);
   auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
       (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);

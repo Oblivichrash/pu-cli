@@ -9,9 +9,6 @@
 
 namespace pu::tools {
 
-// How risky a shell command looks to the built-in sandbox heuristics. Lives
-// here rather than in the orchestration layer because the assessment is a
-// property of the tool that performs it.
 enum class RiskLevel { kSafe, kNeutral, kDangerous };
 
 class ExecuteBashToolStandard : public pu::Tool {

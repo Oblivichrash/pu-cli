@@ -5,18 +5,69 @@
 #include "pu/core/json.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/core/text.hpp"
 
 #include <boost/beast/version.hpp>
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <regex>
 #include <thread>
 
+#ifdef _WIN32
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <windows.h>
+#include <wincrypt.h>
+#endif
+
 namespace pu::http {
+
+#ifdef _WIN32
+namespace {
+
+void AddWindowsRootStore(net::ssl::context& ctx) {
+  HCERTSTORE store = CertOpenSystemStoreA(0, "ROOT");
+  if (store == nullptr) {
+    spdlog::warn("Could not open the Windows root store; HTTPS verification may fail");
+    return;
+  }
+
+  X509_STORE* x509_store = SSL_CTX_get_cert_store(ctx.native_handle());
+  std::size_t added = 0;
+  for (PCCERT_CONTEXT cert = nullptr;
+       (cert = CertEnumCertificatesInStore(store, cert)) != nullptr;) {
+    const unsigned char* der = cert->pbCertEncoded;
+    X509* parsed = d2i_X509(nullptr, &der, static_cast<long>(cert->cbCertEncoded));
+    if (parsed == nullptr) {
+      ERR_clear_error();
+      continue;
+    }
+    if (X509_STORE_add_cert(x509_store, parsed) == 1) {
+      ++added;
+    } else {
+      ERR_clear_error();
+    }
+    X509_free(parsed);
+  }
+  CertCloseStore(store, 0);
+
+  if (added == 0) spdlog::warn("No certificates loaded from the Windows root store");
+}
+
+}  // namespace
+#endif
 
 BeastHttpClient::BeastHttpClient() : ssl_ctx_(net::ssl::context::tlsv12_client) {
   ssl_ctx_.set_default_verify_paths();
+#ifdef _WIN32
+  AddWindowsRootStore(ssl_ctx_);
+#endif
   ssl_ctx_.set_verify_mode(net::ssl::verify_peer);
 }
 
@@ -60,47 +111,62 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
   for (const auto& h : headers) {
     size_t pos = h.find(':');
     if (pos != std::string::npos) {
-      std::string name = h.substr(0, pos);
-      std::string value = h.substr(pos + 1);
-      // Trim leading whitespace from value.
-      size_t first = value.find_first_not_of(" \t");
-      if (first != std::string::npos) value.erase(0, first);
-      req.set(name, value);
+      req.set(text::Trim(std::string_view(h).substr(0, pos)),
+              text::Trim(std::string_view(h).substr(pos + 1)));
     }
   }
   req.body() = body;
 }
 
-// Reads the full response into a string body, then streams it to write_cb in
-// chunks. Returns the HTTP status code, or throws HttpError on failure. On a
-// failure status the body is placed in `error_body` rather than streamed, since
-// the consumer parses a success stream and would discard a message that says what
-// went wrong.
 template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
-                        std::string& error_body, CancelToken /*cancel_token*/) {
-  beast::http::response_parser<beast::http::string_body> parser;
+                        std::string& error_body, CancelToken cancel_token) {
+  beast::http::response_parser<beast::http::buffer_body> parser;
   parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
 
   beast::error_code ec;
-  beast::http::read(stream, buffer, parser, ec);
+  beast::http::read_header(stream, buffer, parser, ec);
   if (ec) {
     throw HttpError("HTTP read error: " + ec.message());
   }
 
   const unsigned status = parser.get().result_int();
-  auto& res_body = parser.get().body();
-  if (res_body.empty()) return status;
+  const bool failure = status >= 400;
 
-  if (status >= 400) {
-    error_body = res_body;
-    return status;
+  char piece[16 * 1024];
+  std::string collected;
+  while (!parser.is_done()) {
+    parser.get().body().data = piece;
+    parser.get().body().size = sizeof(piece);
+
+    beast::http::read_some(stream, buffer, parser, ec);
+    if (ec == beast::http::error::need_buffer) {
+      ec = {};
+    } else if (ec) {
+      throw HttpError("HTTP read error: " + ec.message());
+    }
+
+    const std::size_t produced = sizeof(piece) - parser.get().body().size;
+    if (produced == 0) continue;
+
+    if (failure) {
+      constexpr std::size_t kMaxErrorBody = 64 * 1024;
+      if (collected.size() < kMaxErrorBody) {
+        collected.append(piece, std::min(produced, kMaxErrorBody - collected.size()));
+      }
+      continue;
+    }
+
+    const size_t consumed = write_cb(piece, produced);
+    if (consumed == 0) {
+      throw HttpError("Streaming aborted by consumer");
+    }
+    if (cancel_token && cancel_token->load(std::memory_order_acquire)) {
+      throw HttpError("Request cancelled");
+    }
   }
 
-  const size_t consumed = write_cb(res_body.data(), res_body.size());
-  if (consumed == 0) {
-    throw HttpError("Streaming aborted by consumer");
-  }
+  if (failure) error_body = std::move(collected);
   return status;
 }
 
@@ -108,8 +174,26 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
 
 namespace {
 
-// A failure response explains itself, but usually as nested JSON, and it may be
-// in the producer's locale. This pulls out the text a user can act on.
+// Records the machine-readable half of a gateway rejection: the cause it names,
+// its code, and the id its support would ask for. None of these belong in the
+// message a user sees.
+void LogErrorCause(const boost::json::value& j) {
+  const std::string cause = json::ErrorMessage(j);
+  const std::string request_id = json::ValueOrDefault<std::string>(j, "requestId", "");
+  const std::string code = [&j] {
+    const auto c = json::OptionalOrDefault<int>(j, "code");
+    return c ? std::to_string(*c) : std::string{};
+  }();
+
+  if (cause.empty() && code.empty() && request_id.empty()) return;
+
+  std::string detail;
+  if (!code.empty()) detail += " code=" + code;
+  if (!request_id.empty()) detail += " requestId=" + request_id;
+  spdlog::warn("gateway rejected the request:{}{}", detail,
+               cause.empty() ? "" : " cause=" + cause);
+}
+
 std::string SummarizeErrorBody(const std::string& body) {
   if (body.empty()) return "";
 
@@ -117,33 +201,13 @@ std::string SummarizeErrorBody(const std::string& body) {
   std::string message;
   try {
     const boost::json::value parsed = boost::json::parse(text);
-    // OpenAI-shaped: {"error": {"message": "..."}} or {"error": "..."}.
-    const boost::json::value& error =
-        json::ValueOrDefault<boost::json::value>(parsed, "error", boost::json::value{});
-    if (error.is_object()) {
-      message = json::ValueOrDefault<std::string>(error, "message", "");
-    } else if (error.is_string()) {
-      message = boost::json::value_to<std::string>(error);
-    }
-    if (message.empty()) message = json::ValueOrDefault<std::string>(parsed, "message", "");
-  } catch (const std::exception&) {
-    // Not JSON, so the body is the message.
+    message = json::UserFacingError(parsed);
+    LogErrorCause(parsed);
+  } catch (const boost::system::system_error&) {
   }
   if (message.empty()) message = text;
 
-  // Collapse to one line so a multi-line body cannot break the log layout.
-  std::string one_line;
-  one_line.reserve(message.size());
-  bool pending_space = false;
-  for (char c : message) {
-    if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
-      pending_space = !one_line.empty();
-      continue;
-    }
-    if (pending_space) one_line += ' ';
-    pending_space = false;
-    one_line += c;
-  }
+  const std::string one_line = text::CollapseWhitespace(message);
 
   constexpr std::size_t kMaxDetail = 400;
   if (one_line.size() <= kMaxDetail) return one_line;

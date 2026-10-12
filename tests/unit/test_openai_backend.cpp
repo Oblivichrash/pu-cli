@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/llm/openai_provider.hpp"
+#include "pu/llm/projection.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "pu/core/base.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -17,18 +18,18 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
 
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("model") == "gpt-4o-mini");
   REQUIRE(body.at("stream") == true);
   REQUIRE(body.at("temperature") == 0.7f);
+  REQUIRE_FALSE(body.as_object().contains("max_tokens"));
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -37,18 +38,35 @@ TEST_CASE("OpenAIProvider request building", "[openai]") {
   REQUIRE(has_auth);
 }
 
+TEST_CASE("OpenAIProvider sends the token cap only when one is configured", "[openai]") {
+  const auto body_for = [](std::optional<int> cap) {
+    OpenAIProvider::Config config;
+    config.model = "gpt-4o-mini";
+    config.host = "https://api.openai.com/v1";
+    config.api_key = "test-key";
+    config.max_tokens = cap;
+
+    auto [mock_http, mock_ptr] = MakeMockHttpClient();
+    OpenAIProvider provider(config, std::move(mock_http));
+    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
+    return boost::json::parse(mock_ptr->last_body);
+  };
+
+  REQUIRE_FALSE(body_for(std::nullopt).as_object().contains("max_tokens"));
+  REQUIRE(body_for(4096).at("max_tokens") == 4096);
+}
+
 TEST_CASE("OpenAIProvider does not send Authorization header when api_key is empty", "[openai]") {
   OpenAIProvider::Config config;
   config.model = "local-model";
   config.host = "http://localhost:8080/v1";
   config.api_key = "";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   bool has_auth = false;
   for (const auto& h : mock_ptr->last_headers) {
@@ -57,14 +75,32 @@ TEST_CASE("OpenAIProvider does not send Authorization header when api_key is emp
   REQUIRE_FALSE(has_auth);
 }
 
+TEST_CASE("OpenAIProvider sends the extra headers a gateway asks for", "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "local-model";
+  config.host = "http://localhost:8080/v1";
+  config.extra_headers = [] { return std::vector<std::string>{"X-Domain: example.invalid"}; };
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  provider.Chat(ChatRequest(history, {}));
+
+  bool has_domain = false;
+  for (const auto& h : mock_ptr->last_headers) {
+    if (h == "X-Domain: example.invalid") has_domain = true;
+  }
+  REQUIRE(has_domain);
+}
+
 TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
   config.host = "https://api.openai.com/v1";
   config.api_key = "test-key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   std::vector<std::string> chunks = {R"(data: {"choices":[{"delta":{"content":"Hello"}}]})",
                                      R"(data: {"choices":[{"delta":{"content":" world"}}]})",
@@ -83,10 +119,9 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
   std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
 
   std::string accumulated;
-  auto result = provider.Chat(history, {}, [&](const std::string& token) { accumulated += token; });
+  auto result = provider.Chat(ChatRequest(history, {}, [&](std::string_view token) { accumulated += token; }));
 
   REQUIRE(result.content == "Hello world");
-  // Nothing counted the tokens, so the counts stay absent rather than zero.
   REQUIRE_FALSE(result.usage.has_value());
 }
 
@@ -95,8 +130,7 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
   config.model = "gpt-4o-mini";
   config.host = "https://api.openai.com/v1";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -111,9 +145,8 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // The stream carries no usage unless the request asks for it.
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("stream_options").at("include_usage") == true);
 
@@ -127,8 +160,7 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
   config.model = "gpt-4o-mini";
   config.api_key = "invalid-key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback) {
@@ -138,7 +170,7 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  REQUIRE_THROWS_AS(provider.Chat(history, {}), pu::HttpError);
+  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::HttpError);
 }
 
 TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
@@ -146,8 +178,7 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   config.model = "gpt-4o-mini";
   config.host = "https://api.openai.com/v1";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -167,7 +198,7 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(history, tools, [](const std::string&) {});
+  auto result = provider.Chat(ChatRequest(history, tools, [](std::string_view) {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].id == "call_1");
@@ -181,12 +212,11 @@ TEST_CASE("OpenAIProvider disables thinking with the marker the none level sends
   config.api_key = "test-key";
   config.thinking = ThinkingLevel::kNone;
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(json::HasKey(body, "extra_body"));
@@ -200,25 +230,15 @@ TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[
   config.api_key = "test-key";
   config.thinking = ThinkingLevel::kServerDefault;
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  provider.Chat(history, {});
+  provider.Chat(ChatRequest(history, {}));
 
-  // "On" used to send nothing at all, and the absent level keeps that meaning.
   auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE_FALSE(json::HasKey(body, "extra_body"));
   REQUIRE_FALSE(json::HasKey(body, "reasoning_effort"));
-}
-
-TEST_CASE("OpenAIProvider carries a thinking level whatever the level is", "[openai]") {
-  OpenAIProvider::Config config;
-  auto mock_http = std::make_unique<MockHttpClient>();
-  OpenAIProvider provider(config, std::move(mock_http));
-  // The level decides what is sent, not whether a caller may offer the setting.
-  REQUIRE(provider.SupportsThinkingLevel() == true);
 }
 
 TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") {
@@ -230,12 +250,11 @@ TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") 
     config.api_key = "test-key";
     config.thinking = level;
 
-    auto mock_http = std::make_unique<MockHttpClient>();
-    auto* mock_ptr = mock_http.get();
+    auto [mock_http, mock_ptr] = MakeMockHttpClient();
     OpenAIProvider provider(config, std::move(mock_http));
 
     std::vector<ChatMessage> history = {{1, "now", "user", "think hard"}};
-    provider.Chat(history, {});
+    provider.Chat(ChatRequest(history, {}));
 
     auto body = boost::json::parse(mock_ptr->last_body);
     REQUIRE(body.at("reasoning_effort") == ThinkingLevelName(level));
@@ -247,8 +266,7 @@ TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]")
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -263,9 +281,8 @@ TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]")
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // Null while the answer is coming, named once the provider is done with it.
   REQUIRE(result.content == "half");
   REQUIRE(result.finish_reason == "length");
 }
@@ -274,8 +291,7 @@ TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][err
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -289,10 +305,9 @@ TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][err
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   try {
-    provider.Chat(history, {});
+    provider.Chat(ChatRequest(history, {}));
     FAIL("an error inside the stream should reach the caller");
   } catch (const std::exception& e) {
-    // The provider's own words, not a generic empty-answer diagnosis.
     REQUIRE(std::string(e.what()).find("rate limit reached") != std::string::npos);
   }
 }
@@ -301,8 +316,7 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -315,9 +329,8 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // Without this the refusal is an empty answer with no reason attached.
   REQUIRE(result.content == "I cannot help with that");
 }
 
@@ -326,8 +339,7 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -340,9 +352,8 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // The fragments are calls the provider already made, sentinel or not.
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "exec");
 }
@@ -351,8 +362,7 @@ TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[op
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -366,7 +376,7 @@ TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[op
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].id == "call_7");
@@ -378,8 +388,7 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -392,9 +401,8 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // A gateway that answers in one frame is read the same way a streaming one is.
   REQUIRE(result.content == "the whole answer");
   REQUIRE(result.finish_reason == "stop");
 }
@@ -403,8 +411,7 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";  // what was asked for
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -420,9 +427,8 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(history, {});
+  auto result = provider.Chat(ChatRequest(history, {}));
 
-  // The dated build the provider served, not the tag that was requested.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
 
@@ -430,8 +436,7 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
   OpenAIProvider::Config config;
   config.model = "deepseek-reasoner";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
-  auto* mock_ptr = mock_http.get();
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
   mock_ptr->simulate_response = [&](const std::string&, const std::string&,
                                     const std::vector<std::string>&, pu::http::WriteCallback cb) {
@@ -451,12 +456,12 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
   std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
   std::string streamed;
   std::string content;
-  auto result = provider.Chat(
-      history, {}, [&](const std::string& token) { content += token; }, nullptr,
-      [&](const std::string& token) { streamed += token; });
+  ChatRequest request(history, {});
+  request.on_content = [&](std::string_view token) { content += token; };
+  request.on_reasoning = [&](std::string_view token) { streamed += token; };
+  auto result = provider.Chat(request);
 
-  // The two channels arrive while the stream is open, and stay apart.
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
-  REQUIRE(result.reasoning_content == "weighing the options");
+  REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
 }

@@ -4,7 +4,9 @@
 
 #include "pu/core/http_client.hpp"
 #include <functional>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pu::tests {
@@ -31,5 +33,11 @@ class MockHttpClient : public pu::http::HttpClient {
                      pu::http::WriteCallback)>
       simulate_response;
 };
+
+inline std::pair<std::shared_ptr<MockHttpClient>, MockHttpClient*> MakeMockHttpClient() {
+  auto mock = std::make_shared<MockHttpClient>();
+  auto* ptr = mock.get();
+  return {std::move(mock), ptr};
+}
 
 }  // namespace pu::tests

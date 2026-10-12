@@ -14,12 +14,10 @@ namespace pu {
 
 namespace {
 
-// What this provider needs, as data rather than branches: roles are a closed
-// set, reasoning is not echoed, content may accompany tool calls, arguments
-// travel as an object, and a tool result names the tool that produced it.
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kKnownRolesOnly,
-    .echo_reasoning_content = false,
+    .echoes_reasoning = true,
+    .reasoning_field = "thinking",
     .allows_content_with_tool_calls = true,
     .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
     .tool_calls_carry_type = false,
@@ -31,27 +29,29 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 void OllamaProvider::ResetAccumulators() {
   content_.clear();
-  current_reasoning_content_.clear();
+  reasoning_.clear();
   finish_reason_.clear();
   response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
 }
 
-OllamaProvider::OllamaProvider(Config config, std::unique_ptr<pu::http::HttpClient> http)
-    : config_(std::move(config)),
-      host_(config_.host),
-      api_key_(std::move(config_.api_key)),
-      http_(std::move(http)) {}
+OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
+    : StreamingProvider(config.host, config.api_key, std::move(http)),
+      config_(std::move(config)) {}
 
-std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history,
-                                         const std::vector<ToolDefinition>& tools) const {
+std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
+                                         std::span<const ToolDefinition> tools) const {
   boost::json::value req = {
       {"model", config_.model},
       {"stream", true},
       {"options", {{"temperature", config_.temperature}}},
       {"keep_alive", config_.keep_alive},
   };
+
+  if (config_.thinking != ThinkingLevel::kServerDefault) {
+    req.as_object()["think"] = llm::OllamaThinkValue(config_.thinking);
+  }
 
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
@@ -71,28 +71,20 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
   return boost::json::serialize(req);
 }
 
-void OllamaProvider::HandleJsonToken(const boost::json::value& j,
-                                     std::function<void(const std::string&)>& content_cb) {
-  // A failure arrives in place of a message: a stream that started is not a stream
-  // that will finish, and the reason is in this frame.
-  if (json::HasKey(j, "error") && j.at("error").is_string()) {
-    throw Error("provider error: " + boost::json::value_to<std::string>(j.at("error")));
+void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
+  if (json::HasKey(j, "error")) {
+    const std::string detail = json::ErrorMessage(j);
+    if (!detail.empty()) throw Error("provider error: " + detail);
   }
 
   if (json::HasKey(j, "message")) {
     const auto& msg = j.at("message");
     if (json::HasKey(msg, "content") && msg.at("content").is_string()) {
-      const std::string content = boost::json::value_to<std::string>(msg.at("content"));
-      content_ += content;
-      if (content_cb) content_cb(content);
+      AppendContent(boost::json::value_to<std::string>(msg.at("content")), request);
     }
 
-    // A thinking model reports its reasoning here rather than in `content`, under
-    // a name of its own. Unread, it is generated and then thrown away.
     if (json::HasKey(msg, "thinking") && msg.at("thinking").is_string()) {
-      const std::string reasoning = boost::json::value_to<std::string>(msg.at("thinking"));
-      current_reasoning_content_ += reasoning;
-      if (reasoning_sink_) reasoning_sink_(reasoning);
+      AppendReasoning(boost::json::value_to<std::string>(msg.at("thinking")), request);
     }
 
     if (json::HasKey(msg, "tool_calls") && msg.at("tool_calls").is_array()) {
@@ -112,8 +104,6 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
             try {
               call.arguments = boost::json::parse(boost::json::value_to<std::string>(args));
             } catch (const std::exception& e) {
-              // Preserve the raw value when arguments are not valid JSON
-              // instead of dropping the tool call.
               spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
               call.arguments = args;
             }
@@ -121,81 +111,34 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j,
             call.arguments = args;
           }
         }
-        tool_calls_.push_back(std::move(call));
+        AppendToolCall(std::move(call), request);
       }
     }
   }
 
-  // Ollama reports what the request cost in the final object, beside `done`.
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
     usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
                         json::ValueOrDefault<int>(j, "eval_count", 0)};
   }
 
-  // Why it stopped, in the same final object. The word it uses for the token limit
-  // is the one OpenAI uses, which is what lets a caller read both.
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
     finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));
   }
 
-  // The model that answered: a tag can resolve to a different build than the one
-  // that was asked for.
   if (json::HasKey(j, "model") && j.at("model").is_string()) {
     response_model_ = boost::json::value_to<std::string>(j.at("model"));
   }
 }
 
-ChatResult OllamaProvider::Chat(const std::vector<ChatMessage>& history,
-                                const std::vector<ToolDefinition>& tools,
-                                std::function<void(const std::string&)> content_callback,
-                                CancelToken cancel_token,
-                                std::function<void(const std::string&)> reasoning_callback) {
-  ChatResult result;
-  platform::ClearInterruptFlag();
-  ResetAccumulators();
-  reasoning_sink_ = std::move(reasoning_callback);
-
-  const std::string body = BuildRequest(history, tools);
-
-  spdlog::debug("Ollama request body: {}", body);
-
-  std::string url = host_ + "/api/chat";
-  std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
-
-  llm::StreamingJsonParser parser([&](std::string_view line) {
-    // Only the parse is guarded. A frame the provider filled with an error is a
-    // valid parse and has to reach the caller, which is why the dispatch sits
-    // outside the catch that skips malformed lines.
-    boost::json::value j;
-    try {
-      j = boost::json::parse(line);
-    } catch (const boost::system::system_error& e) {
-      // Skip lines with incomplete/invalid UTF-8 instead of failing the stream.
-      spdlog::warn("Skipping invalid JSON line (UTF-8 error): {}", e.what());
-      return;
-    } catch (const std::exception&) {
-      return;
-    }
-    HandleJsonToken(j, content_callback);
-  });
-
-  auto write_cb = [&](char* ptr, size_t total) -> size_t {
-    parser.Feed(ptr, total);
-    if (platform::IsInterrupted()) return 0;
-    if (cancel_token && cancel_token->load(std::memory_order_acquire)) return 0;
-    return total;
-  };
-
-  http_->PostStream(url, body, headers, write_cb, cancel_token);
-
-  result.content = std::move(content_);
-  result.tool_calls = std::move(tool_calls_);
-  result.reasoning_content = std::move(current_reasoning_content_);
-  result.usage = usage_;
-  result.finish_reason = std::move(finish_reason_);
-  result.model = std::move(response_model_);
-  return result;
+void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
+  boost::json::value j;
+  try {
+    j = boost::json::parse(line);
+  } catch (const boost::system::system_error& e) {
+    spdlog::warn("Skipping invalid JSON line: {}", e.what());
+    return;
+  }
+  HandleJsonToken(j, request);
 }
 
 }  // namespace pu

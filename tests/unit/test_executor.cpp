@@ -17,7 +17,7 @@
 using namespace pu;
 
 TEST_CASE("BuildStaticSystemContext includes environment info", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Environment ===") != std::string::npos);
@@ -26,7 +26,7 @@ TEST_CASE("BuildStaticSystemContext includes environment info", "[executor]") {
 }
 
 TEST_CASE("BuildStaticSystemContext includes security policy when set", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = "/tmp/sandbox";
   policy.forbidden_patterns = {"rm -rf", "sudo"};
@@ -42,7 +42,7 @@ TEST_CASE("BuildStaticSystemContext includes security policy when set", "[execut
 }
 
 TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
@@ -53,14 +53,14 @@ TEST_CASE("BuildStaticSystemContext shows empty forbidden patterns correctly", "
 }
 
 TEST_CASE("BuildStaticSystemContext shows no-security-policy message when unset", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("(no security policy set)") != std::string::npos);
 }
 
 TEST_CASE("BuildStaticSystemContext includes working directory section", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = "/home/user/project";
   executor.SetSecurityPolicy(policy);
@@ -72,7 +72,7 @@ TEST_CASE("BuildStaticSystemContext includes working directory section", "[execu
 }
 
 TEST_CASE("BuildStaticSystemContext working directory defaults to dot", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Working Directory ===") != std::string::npos);
@@ -80,7 +80,7 @@ TEST_CASE("BuildStaticSystemContext working directory defaults to dot", "[execut
 }
 
 TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]") {
-  Executor executor(nullptr);
+  Executor executor;
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
@@ -89,12 +89,13 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 
-TEST_CASE("ProbeStaticEnvironment runs once and caches OS/kernel info", "[executor]") {
-  Executor executor(nullptr);
-  const auto& info = executor.GetStaticEnvInfo();
-  REQUIRE(info.probed);
-  REQUIRE(!info.os_name.empty());
-  REQUIRE(!info.kernel_version.empty());
+TEST_CASE("What the environment probe found reaches the request", "[executor]") {
+  Executor executor;
+  const std::string context = executor.BuildStaticSystemContext();
+
+  REQUIRE(context.find("=== Environment ===") != std::string::npos);
+  REQUIRE(context.find("OS: \n") == std::string::npos);
+  REQUIRE(context.find("Kernel: \n") == std::string::npos);
 }
 
 namespace {
@@ -105,11 +106,7 @@ class MockLLM : public LLMProvider {
                    bool fire_calls_once = false)
       : calls_(std::move(calls)), content_(std::move(content)), fire_calls_once_(fire_calls_once) {}
 
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
+  ChatResult Chat(const ChatRequest& /*request*/) override {
     ChatResult r;
     r.content = content_;
     r.tool_calls = calls_;
@@ -125,31 +122,55 @@ class MockLLM : public LLMProvider {
   bool fire_calls_once_ = false;
 };
 
-// A provider whose request always fails, which is how an over-length or
-// unauthorised request looks to the executor.
+class OfferingLLM : public LLMProvider {
+ public:
+  OfferingLLM(std::string wanted, std::string content = "")
+      : wanted_(std::move(wanted)), content_(std::move(content)) {}
+
+  ChatResult Chat(const ChatRequest& request) override {
+    ChatResult r;
+    r.content = content_;
+
+    offered.clear();
+    bool wanted_is_offered = false;
+    for (const ToolDefinition& def : request.tools) {
+      offered.push_back(def.name);
+      if (def.name == wanted_) wanted_is_offered = true;
+    }
+
+    if (wanted_is_offered && !asked_) {
+      asked_ = true;
+      ToolCall call;
+      call.name = wanted_;
+      call.arguments = boost::json::object{};
+      r.tool_calls = {call};
+    }
+    return r;
+  }
+
+  bool SupportsTools() const override { return true; }
+
+  std::vector<std::string> offered;
+
+ private:
+  std::string wanted_;
+  std::string content_;
+  bool asked_ = false;
+};
+
 class FailingLLM : public LLMProvider {
  public:
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
+  ChatResult Chat(const ChatRequest& /*request*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
 
   bool SupportsTools() const override { return true; }
 };
 
-// Records what the executor sends, which is the only way to observe the request
-// view from the outside.
 class CapturingLLM : public LLMProvider {
  public:
-  ChatResult Chat(const std::vector<ChatMessage>& history,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> /*reasoning_callback*/) override {
-    history_ = history;
+  ChatResult Chat(const ChatRequest& request) override {
+    history_.assign(request.history.begin(), request.history.end());
     ChatResult r;
     r.content = "done";
     return r;
@@ -163,8 +184,6 @@ class CapturingLLM : public LLMProvider {
   std::vector<ChatMessage> history_;
 };
 
-// A provider whose answer says how it ended, which is what the remark is read from,
-// and which can put a line on the reasoning channel as well.
 class StoppingLLM : public LLMProvider {
  public:
   StoppingLLM(std::string content, std::string finish_reason, std::string model = "",
@@ -174,17 +193,13 @@ class StoppingLLM : public LLMProvider {
         model_(std::move(model)),
         reasoning_(std::move(reasoning)) {}
 
-  ChatResult Chat(const std::vector<ChatMessage>& /*history*/,
-                  const std::vector<ToolDefinition>& /*tools*/,
-                  std::function<void(const std::string&)> /*content_callback*/,
-                  CancelToken /*cancel_token*/,
-                  std::function<void(const std::string&)> reasoning_callback) override {
-    if (reasoning_callback && !reasoning_.empty()) reasoning_callback(reasoning_);
+  ChatResult Chat(const ChatRequest& request) override {
+    if (request.on_reasoning && !reasoning_.empty()) request.on_reasoning(reasoning_);
     ChatResult r;
     r.content = content_;
     r.finish_reason = finish_reason_;
     r.model = model_;
-    r.reasoning_content = reasoning_;
+    if (!reasoning_.empty()) r.reasoning.push_back(ReasoningBlock{reasoning_, {}, nullptr});
     return r;
   }
 
@@ -199,7 +214,8 @@ class StoppingLLM : public LLMProvider {
 
 class TrackingTool : public Tool {
  public:
-  std::string Name() const override { return "tracking_tool"; }
+  explicit TrackingTool(std::string name = "tracking_tool") : name_(std::move(name)) {}
+  std::string Name() const override { return name_; }
   std::string Description() const override { return "records execution"; }
   boost::json::value ParametersSchema() const override {
     return boost::json::object{{"type", "object"}};
@@ -210,6 +226,28 @@ class TrackingTool : public Tool {
   }
 
   int executions = 0;
+
+ private:
+  std::string name_;
+};
+
+class NamedTool : public Tool {
+ public:
+  explicit NamedTool(std::string name) : name_(std::move(name)) {}
+  std::string Name() const override { return name_; }
+  std::string Description() const override { return "does nothing"; }
+  boost::json::value ParametersSchema() const override {
+    return boost::json::object{{"type", "object"}};
+  }
+  std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
+    ++executions;
+    return R"({"success":true,"stdout":"","stderr":"","error":"","exit_code":0})";
+  }
+
+  int executions = 0;
+
+ private:
+  std::string name_;
 };
 
 }  // namespace
@@ -221,7 +259,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   auto* tracking_ptr = tracking.get();
   toolbox.RegisterTool(std::move(tracking));
 
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
@@ -231,8 +269,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   call.name = "tracking_tool";
   call.arguments = boost::json::value{{"flag", true}};
 
-  // Emit the tool call only on the first turn so the tool loop terminates
-  // after the tool runs and the mock returns its final text response.
   MockLLM mock(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
   std::vector<std::string> started_ids;
@@ -255,8 +291,8 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     ended_errors.push_back(error);
   };
 
-  Workspace ws;
-  ExecutionResult result = executor.Execute("run it", ws, &mock, nullptr, nullptr, cb);
+  Conversation ws;
+  ExecutionResult result = executor.Execute("run it", ws, &mock, toolbox, nullptr, nullptr, cb);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -265,7 +301,6 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(started_ids.size() == 1);
   REQUIRE(ended_ids.size() == 1);
 
-  // start and end must reference the same, non-empty tool id.
   REQUIRE_FALSE(started_ids[0].empty());
   REQUIRE(started_ids[0] == ended_ids[0]);
 
@@ -273,12 +308,9 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(started_args[0].is_object());
   REQUIRE(started_args[0].as_object().at("flag") == true);
 
-  // Success result: stdout is pushed as output, error stays empty.
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
 
-  // The workspace history must pair the tool message with the same id that was
-  // streamed to the caller.
   bool found_paired_tool_msg = false;
   for (const auto& msg : ws.GetHistory()) {
     if (msg.role == "tool" && msg.tool_call_id == started_ids[0]) {
@@ -289,18 +321,64 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(found_paired_tool_msg);
 }
 
+TEST_CASE("Rebuilding the registry leaves one address the executor can keep reading",
+          "[executor][tool_loop]") {
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<NamedTool>("older_tool"));
+  const Toolbox* address = &toolbox;
+
+  toolbox.Clear();
+  toolbox.RegisterTool(std::make_unique<NamedTool>("newer_tool"));
+
+  REQUIRE(&toolbox == address);
+  const auto defs = toolbox.GetToolDefinitions();
+  REQUIRE(defs.size() == 1);
+  REQUIRE(defs.front().name == "newer_tool");
+}
+
+TEST_CASE("A registry rejects a tool without a name instead of throwing", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  REQUIRE(toolbox.RegisterTool(nullptr) == false);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
+  REQUIRE(toolbox.GetToolDefinitions().empty());
+}
+
+TEST_CASE("A rejected registration leaves the registry usable", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("keeper")) == true);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
+  REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("later")) == true);
+
+  const auto defs = toolbox.GetToolDefinitions();
+  REQUIRE(defs.size() == 2);
+}
+
+TEST_CASE("A tool the registry no longer holds cannot be executed", "[executor][tool_loop]") {
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<NamedTool>("older_tool"));
+  toolbox.Clear();
+
+  ToolContext ctx;
+  const std::string raw = toolbox.ExecuteTool("older_tool", boost::json::object{}, ctx);
+  const tools::ToolResult parsed = tools::ParseToolResult(raw);
+
+  REQUIRE(parsed.valid);
+  REQUIRE(parsed.success == false);
+  REQUIRE(parsed.error == "Tool not found: older_tool");
+}
+
 TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[executor][request]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
   executor.SetSystemPrompt("be brief");
 
-  Workspace ws;
+  Conversation ws;
 
   CapturingLLM provider;
-  ExecutionResult result = executor.Execute("hello", ws, &provider);
+  ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
 
@@ -317,18 +395,16 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[ex
 
 TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  Workspace ws;
+  Conversation ws;
 
   CapturingLLM provider;
-  executor.Execute("hello", ws, &provider);
+  executor.Execute("hello", ws, &provider, toolbox);
 
-  // The environment context still leads the request; what is absent is the
-  // agent's prompt, which only the runtime supplies.
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
   REQUIRE(sent[0].content.find("=== Environment ===") == 0);
@@ -336,21 +412,18 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
 
 TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  Workspace ws;
+  Conversation ws;
   FailingLLM provider;
-  const ExecutionResult result = executor.Execute("hello", ws, &provider);
+  const ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
 
   REQUIRE(result.has_error);
-  // What the server said reaches the caller.
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
 
-  // The failure is not a turn: a model never said it, and storing it would grow
-  // the conversation on every refusal, making the next request longer.
   const std::vector<ChatMessage> history = ws.GetHistory();
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
@@ -358,60 +431,54 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
 }
 
 TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor][tool_loop]") {
-  // The interrupt flag is global, so the test states its own starting point
-  // rather than depending on whichever test ran before it.
   platform::ClearInterruptFlag();
 
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
-  // A withdrawn request reaches the executor looking like any other failure; what
-  // separates them is the token the caller holds, not the message it threw.
   FailingLLM provider;
   const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
 
-  Workspace ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, withdrawn);
+  Conversation ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox, withdrawn);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
 
-  // The user message stands alone: nothing is stored that claims to answer it.
-  REQUIRE(ws.HistorySize() == 1);
+  REQUIRE(ws.GetHistory().size() == 1);
   REQUIRE(ws.GetHistory()[0].role == "user");
 }
 
 TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[executor][tool_loop]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("half a sentence", "length");
-  Workspace ws;
-  const ExecutionResult result = executor.Execute("write a lot", ws, &provider);
+  Conversation ws;
+  const ExecutionResult result = executor.Execute("write a lot", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "half a sentence");
-  // The answer is real and is stored; the remark is what says it may be cut off.
   REQUIRE_FALSE(result.notice.empty());
-  REQUIRE(ws.HistorySize() == 2);
+  REQUIRE(ws.GetHistory().size() == 2);
 }
 
 TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_loop]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("a whole answer", "stop");
-  Workspace ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+  Conversation ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "a whole answer");
@@ -420,7 +487,7 @@ TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_l
 
 TEST_CASE("A tool call without a name still gets an answer in the store", "[executor][tool_loop]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
@@ -432,13 +499,11 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
 
   MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
-  Workspace ws;
-  const ExecutionResult result = executor.Execute("go", ws, &provider);
+  Conversation ws;
+  const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox);
 
   REQUIRE(result.has_error == false);
 
-  // The call is in the conversation, so it has to be answered: a call the store
-  // holds without its result is a conversation the provider refuses to continue.
   bool stored_call = false;
   bool stored_answer = false;
   for (const auto& msg : ws.GetHistory()) {
@@ -455,35 +520,32 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
 
 TEST_CASE("The model that answered is carried out of the turn", "[executor][tool_loop]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
-  Workspace ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider);
+  Conversation ws;
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
 
-  // What replied, which is not necessarily what was configured.
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
 
 TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loop]") {
   Toolbox toolbox;
-  Executor executor(&toolbox);
+  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = ".";
   executor.SetSecurityPolicy(policy);
 
   StoppingLLM provider("answer", "stop", "", "weighing the options");
   std::string streamed;
-  Workspace ws;
+  Conversation ws;
   const ExecutionResult result =
-      executor.Execute("think", ws, &provider, nullptr, nullptr, {},
-                       [&](const std::string& token) { streamed += token; });
+      executor.Execute("think", ws, &provider, toolbox, nullptr, nullptr, {},
+                       [&](std::string_view token) { streamed += token; });
 
-  // Reasoning has a channel of its own, so it neither waits for the answer nor
-  // becomes part of it.
   REQUIRE(streamed == "weighing the options");
   REQUIRE(result.content == "answer");
 }

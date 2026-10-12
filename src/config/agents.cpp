@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent.hpp"
+#include "pu/config/agents.hpp"
+
 #include "pu/core/base.hpp"
-#include "pu/llm/ollama_provider.hpp"
-#include "pu/llm/openai_provider.hpp"
 #include "pu/core/json.hpp"
+
 #include <spdlog/spdlog.h>
+
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <sstream>
 
@@ -26,12 +29,6 @@ std::string ExpandEnvVars(const std::string& input) {
     result.replace(match.position(0), match.length(0), replacement);
   }
   return result;
-}
-
-std::optional<BackendType> ParseBackendType(const std::string& s) noexcept {
-  if (s == "openai") return BackendType::kOpenAI;
-  if (s == "ollama") return BackendType::kOllama;
-  return std::nullopt;
 }
 
 SecurityPolicy ParseSecurityPolicy(const json::value& j) {
@@ -60,16 +57,16 @@ BackendConfig ParseBackendConfig(const json::value& j) {
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
-  cfg.max_tokens = json::ValueOrDefault<int>(j, "max_tokens", 2048);
+  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
   cfg.thinking = ReadThinkingLevel(j);
   return cfg;
 }
 
-std::vector<pu::mcp::McpServerConfig> ParseMcpServers(const json::value& j) {
-  std::vector<pu::mcp::McpServerConfig> servers;
+std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
+  std::vector<McpServerConfig> servers;
   if (!j.is_array()) return servers;
   for (const auto& item : j.as_array()) {
-    pu::mcp::McpServerConfig srv;
+    McpServerConfig srv;
     srv.name = json::ValueOrDefault<std::string>(item, "name", "");
     srv.command = json::ValueOrDefault<std::string>(item, "command", "");
     if (json::HasKey(item, "args") && item.at("args").is_array()) {
@@ -125,7 +122,92 @@ std::string FindConfigPath() {
     if (std::filesystem::exists(user)) return user.string();
   }
 
-  throw pu::Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  return {};
+}
+
+std::optional<ServeOptions> FindServeOptions() {
+  const std::string path = FindConfigPath();
+  if (path.empty()) return std::nullopt;
+
+  std::ifstream file(path);
+  if (!file.is_open()) return std::nullopt;
+
+  json::value j;
+  try {
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    j = json::parse(buffer.str());
+  } catch (const boost::system::system_error&) {
+    return std::nullopt;
+  }
+
+  if (!json::HasKey(j, "serve") || !j.at("serve").is_object()) return std::nullopt;
+  const json::value& serve = j.at("serve");
+
+  ServeOptions options;
+  if (json::HasKey(serve, "host") && serve.at("host").is_string()) {
+    options.host = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("host")));
+    if (options.host->empty()) options.host = std::nullopt;
+  }
+  if (json::HasKey(serve, "port")) {
+    if (serve.at("port").is_int64()) {
+      const auto port = serve.at("port").as_int64();
+      if (port >= 1 && port <= 65535) {
+        options.port = static_cast<std::uint16_t>(port);
+      } else {
+        spdlog::warn("Ignoring serve.port {}: not a port number", port);
+      }
+    } else {
+      spdlog::warn("Ignoring serve.port: not a whole number");
+    }
+  }
+
+  if (!options.host && !options.port) return std::nullopt;
+  return options;
+}
+
+std::optional<std::uint16_t> ParsePort(const std::string& text) {
+  if (text.empty() || text.size() > 5) return std::nullopt;
+  std::uint32_t value = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') return std::nullopt;
+    value = value * 10 + static_cast<std::uint32_t>(c - '0');
+  }
+  if (value < 1 || value > 65535) return std::nullopt;
+  return static_cast<std::uint16_t>(value);
+}
+
+ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
+                                   const std::optional<std::string>& flag_port,
+                                   const std::optional<std::string>& env_host,
+                                   const std::optional<std::string>& env_port,
+                                   const std::optional<ServeOptions>& from_file) {
+  ListenOptions options;
+  if (flag_host || env_host) {
+    options.host = flag_host ? *flag_host : *env_host;
+  } else if (from_file && from_file->host) {
+    options.host = *from_file->host;
+  }
+
+  const std::optional<std::string>* named = nullptr;
+  const char* source = "";
+  if (flag_port) {
+    named = &flag_port;
+    source = "--port";
+  } else if (env_port) {
+    named = &env_port;
+    source = "PU_SERVE_PORT";
+  }
+
+  if (named == nullptr) {
+    if (from_file && from_file->port) options.port = *from_file->port;
+  } else if (const auto port = ParsePort(**named)) {
+    options.port = *port;
+  } else {
+    std::cerr << "Warning: invalid " << source << " '" << **named << "', using " << options.port
+              << "\n";
+  }
+  return options;
 }
 
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
@@ -156,32 +238,6 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   if (default_agent == result.agents.end())
     throw pu::Error("default_agent does not match any configured agent");
   return result;
-}
-
-std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
-                                               std::unique_ptr<pu::http::HttpClient> http) {
-  switch (cfg.type) {
-    case BackendType::kOllama: {
-      OllamaProvider::Config ollama_cfg;
-      ollama_cfg.model = cfg.model;
-      ollama_cfg.temperature = cfg.temperature;
-      ollama_cfg.host = cfg.host;
-      ollama_cfg.api_key = cfg.api_key.value_or("");
-      return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
-    }
-    case BackendType::kOpenAI: {
-      OpenAIProvider::Config openai_cfg;
-      openai_cfg.model = cfg.model;
-      openai_cfg.temperature = cfg.temperature;
-      openai_cfg.host = cfg.host;
-      openai_cfg.api_key = cfg.api_key.value_or("");
-      openai_cfg.max_tokens = cfg.max_tokens;
-      openai_cfg.thinking = cfg.thinking;
-      return std::make_unique<OpenAIProvider>(openai_cfg, std::move(http));
-    }
-    default:
-      throw pu::Error("Unknown backend type");
-  }
 }
 
 }  // namespace pu::config

@@ -14,9 +14,7 @@ using context::kToolRole;
 using context::kUserRole;
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
-  if (naming == RoleNaming::kAliasToolResult) {
-    return role == "tool_result" ? kToolRole : role;
-  }
+  if (naming == RoleNaming::kAsStored) return role;
   if (role == kUserRole || role == kAssistantRole || role == kSystemRole || role == kToolRole) {
     return role;
   }
@@ -34,8 +32,6 @@ boost::json::value ProjectArguments(const boost::json::value& arguments,
   try {
     return boost::json::parse(boost::json::value_to<std::string>(arguments));
   } catch (const std::exception&) {
-    // A provider may send arguments that are not parseable JSON; keep what
-    // arrived rather than dropping the call.
     return arguments;
   }
 }
@@ -44,8 +40,6 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
                                     const ProviderCapabilities& capabilities) {
   boost::json::array projected;
   for (const boost::json::value& call : tool_calls.as_array()) {
-    // The stored shape nests the function. Anything else is left alone rather
-    // than rebuilt into a shape the call did not have.
     if (!json::HasKey(call, "function") || !call.at("function").is_object()) {
       projected.push_back(call);
       continue;
@@ -66,10 +60,39 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
 
 }  // namespace
 
+std::string ProjectReasoningText(const std::vector<ReasoningBlock>& blocks) {
+  std::string text;
+  for (const ReasoningBlock& block : blocks) {
+    if (!text.empty() && !block.text.empty()) text += "\n";
+    text += block.text;
+  }
+  return text;
+}
+
+boost::json::value ProjectReasoning(const std::vector<ReasoningBlock>& blocks) {
+  boost::json::array projected;
+  for (const ReasoningBlock& block : blocks) {
+    if (!block.raw.is_null()) {
+      projected.push_back(block.raw);
+      continue;
+    }
+    boost::json::object out = {{"text", block.text}};
+    if (!block.signature.empty()) out["signature"] = block.signature;
+    projected.push_back(std::move(out));
+  }
+  return projected;
+}
+
+boost::json::value OllamaThinkValue(ThinkingLevel level) {
+  if (level == ThinkingLevel::kNone) return false;
+  return ThinkingLevelName(level);
+}
+
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities) {
   const std::string role = ProjectRole(message.role, capabilities.role_naming);
   const bool has_tool_calls = message.HasToolCalls();
+  const bool has_reasoning = !message.reasoning.empty();
 
   boost::json::value projected = {{"role", role}};
 
@@ -79,9 +102,13 @@ boost::json::value ProjectMessage(const ChatMessage& message,
     projected.as_object()["content"] = message.content;
   }
 
-  if (capabilities.echo_reasoning_content && role == kAssistantRole &&
-      !message.reasoning_content.empty()) {
-    projected.as_object()["reasoning_content"] = message.reasoning_content;
+  if (has_reasoning && role == kAssistantRole && capabilities.echoes_reasoning) {
+    boost::json::value& slot = projected.as_object()[capabilities.reasoning_field];
+    if (capabilities.reasoning_carriage == ReasoningCarriage::kText) {
+      slot = ProjectReasoningText(message.reasoning);
+    } else {
+      slot = ProjectReasoning(message.reasoning);
+    }
   }
 
   if (role == kToolRole) {
@@ -100,7 +127,7 @@ boost::json::value ProjectMessage(const ChatMessage& message,
   return projected;
 }
 
-boost::json::array ProjectMessages(const std::vector<ChatMessage>& history,
+boost::json::array ProjectMessages(std::span<const ChatMessage> history,
                                    const ProviderCapabilities& capabilities) {
   boost::json::array messages;
   messages.reserve(history.size());

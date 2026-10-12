@@ -16,8 +16,9 @@ namespace {
 
 llm::ProviderCapabilities OpenAiLike() {
   return {
-      .role_naming = llm::RoleNaming::kAliasToolResult,
-      .echo_reasoning_content = true,
+      .role_naming = llm::RoleNaming::kAsStored,
+      .echoes_reasoning = true,
+      .reasoning_field = "reasoning_content",
       .allows_content_with_tool_calls = false,
       .tool_arguments = llm::ToolArgumentsEncoding::kJsonString,
       .tool_calls_carry_type = true,
@@ -29,7 +30,8 @@ llm::ProviderCapabilities OpenAiLike() {
 llm::ProviderCapabilities OllamaLike() {
   return {
       .role_naming = llm::RoleNaming::kKnownRolesOnly,
-      .echo_reasoning_content = false,
+      .echoes_reasoning = false,
+      .reasoning_field = "thinking",
       .allows_content_with_tool_calls = true,
       .tool_arguments = llm::ToolArgumentsEncoding::kJsonObject,
       .tool_calls_carry_type = false,
@@ -57,17 +59,10 @@ ChatMessage AssistantWithCall() {
 
 TEST_CASE("Role naming differs by capability", "[projection]") {
   REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OpenAiLike()).at("role")) == "tool");
-  REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(Text("tool_result", ""), OllamaLike()).at("role")) == "user");
-
-  // A known role passes through both.
-  REQUIRE(boost::json::value_to<std::string>(
               llm::ProjectMessage(Text("assistant", ""), OpenAiLike()).at("role")) == "assistant");
   REQUIRE(boost::json::value_to<std::string>(
               llm::ProjectMessage(Text("assistant", ""), OllamaLike()).at("role")) == "assistant");
 
-  // An unknown role is only corrected where the naming is a closed set.
   REQUIRE(boost::json::value_to<std::string>(
               llm::ProjectMessage(Text("custom", ""), OpenAiLike()).at("role")) == "custom");
   REQUIRE(boost::json::value_to<std::string>(
@@ -84,7 +79,6 @@ TEST_CASE("Content beside tool calls follows the capability", "[projection]") {
   REQUIRE(ollama.at("content").is_string());
   REQUIRE(boost::json::value_to<std::string>(ollama.at("content")).empty());
 
-  // Without tool calls both keep the text.
   const ChatMessage plain = Text("assistant", "hello");
   REQUIRE(boost::json::value_to<std::string>(
               llm::ProjectMessage(plain, OpenAiLike()).at("content")) == "hello");
@@ -92,18 +86,51 @@ TEST_CASE("Content beside tool calls follows the capability", "[projection]") {
               llm::ProjectMessage(plain, OllamaLike()).at("content")) == "hello");
 }
 
-TEST_CASE("Reasoning is echoed only where supported", "[projection]") {
+TEST_CASE("Reasoning is echoed as one string where the provider takes text", "[projection]") {
   ChatMessage assistant = Text("assistant", "answer");
-  assistant.reasoning_content = "because";
+  assistant.reasoning.push_back(ReasoningBlock{"first", {}, nullptr});
+  assistant.reasoning.push_back(ReasoningBlock{"second", "sig", nullptr});
 
-  REQUIRE(boost::json::value_to<std::string>(
-              llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content")) == "because");
-  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()), "reasoning_content"));
+  const boost::json::value projected = llm::ProjectMessage(assistant, OpenAiLike());
+  REQUIRE(projected.at("reasoning_content").is_string());
+  REQUIRE(boost::json::value_to<std::string>(projected.at("reasoning_content")) == "first\nsecond");
 
-  // Never attached to a non-assistant message.
+  REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(assistant, OllamaLike()), "thinking"));
+
   ChatMessage user = Text("user", "question");
-  user.reasoning_content = "because";
+  user.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(user, OpenAiLike()), "reasoning_content"));
+}
+
+TEST_CASE("Reasoning is echoed as blocks where the provider signed them", "[projection]") {
+  ChatMessage assistant = Text("assistant", "answer");
+  assistant.reasoning.push_back(ReasoningBlock{"first", {}, nullptr});
+  assistant.reasoning.push_back(ReasoningBlock{"second", "sig", nullptr});
+
+  llm::ProviderCapabilities capabilities = OpenAiLike();
+  capabilities.reasoning_carriage = llm::ReasoningCarriage::kBlocks;
+
+  const boost::json::value projected = llm::ProjectMessage(assistant, capabilities);
+  REQUIRE(projected.at("reasoning_content").is_array());
+  const boost::json::array& blocks = projected.at("reasoning_content").as_array();
+  REQUIRE(blocks.size() == 2);
+  REQUIRE(boost::json::value_to<std::string>(blocks[0].at("text")) == "first");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("text")) == "second");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("signature")) == "sig");
+  REQUIRE_FALSE(json::HasKey(blocks[0], "signature"));
+}
+
+TEST_CASE("A block carrying the provider's raw encoding is replayed verbatim", "[projection]") {
+  ChatMessage assistant = Text("assistant", "answer");
+  assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"b":1})")});
+
+  llm::ProviderCapabilities capabilities = OpenAiLike();
+  capabilities.reasoning_carriage = llm::ReasoningCarriage::kBlocks;
+
+  const boost::json::value projected = llm::ProjectMessage(assistant, capabilities);
+  const boost::json::array& blocks = projected.at("reasoning_content").as_array();
+  REQUIRE(blocks.size() == 1);
+  REQUIRE(blocks[0].at("b") == 1);
 }
 
 TEST_CASE("Tool call envelope and arguments differ by capability", "[projection]") {
@@ -132,7 +159,6 @@ TEST_CASE("Arguments already in the target form are left alone", "[projection]")
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","function":{"name":"ls","arguments":"{\"path\":\".\"}"}}])");
 
-  // An object-shaped capability parses the string, a string-shaped one keeps it.
   REQUIRE(llm::ProjectMessage(assistant, OllamaLike())
               .at("tool_calls")
               .as_array()
@@ -183,7 +209,6 @@ TEST_CASE("Tool result fields follow the capability", "[projection]") {
   REQUIRE(ollama.at("tool_name") == "ls");
   REQUIRE(ollama.at("tool_call_id") == "call_1");
 
-  // An empty id is dropped only where the capability says so.
   ChatMessage nameless = Text("tool", "done");
   REQUIRE(llm::ProjectMessage(nameless, OpenAiLike()).at("tool_call_id") == "");
   REQUIRE_FALSE(json::HasKey(llm::ProjectMessage(nameless, OllamaLike()), "tool_call_id"));

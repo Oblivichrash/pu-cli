@@ -1,6 +1,5 @@
 "use strict";
 
-import { BLOCK_TYPES, groupHistory } from "./history.js";
 
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
@@ -9,9 +8,8 @@ let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
 
-// The level the server resolved: the session's own when it has one, the agent's
-// configuration otherwise. Only the server can tell those apart, so the control
-// shows what it reports rather than what was picked.
+// The level the server resolved: the session's own when it has one, the agent's otherwise.
+// Only the server can tell those apart, so the control shows what it reports.
 function renderThinkingControl(level, override) {
   const sessionLevel = override && override !== "default" ? override : null;
   thinkingSelect.value = sessionLevel || "auto";
@@ -269,9 +267,8 @@ function removeCurrentAssistantMessage() {
 
 let assistantRenderQueued = false;
 
-// Coalesce a burst of tokens into one render per frame, and rebuild only
-// the blocks that changed: re-parsing the whole answer per token re-renders
-// text and re-highlights code that is already on screen.
+// Coalesce a burst of tokens into one render per frame, and rebuild only the blocks that
+// changed: re-parsing the whole answer per token re-renders text and code already shown.
 function updateCurrentAssistantBlocks() {
   if (assistantRenderQueued) return;
   assistantRenderQueued = true;
@@ -362,9 +359,8 @@ function handleThinking(payload) {
   updateCurrentAssistantBlocks();
 }
 
-// The header says who replied rather than what was asked for: a gateway may serve
-// a different build than the one that was configured, and the response is the only
-// place that says which.
+// The header says who replied rather than what was asked for: a gateway may serve a
+// different build, and the response is the only place that says which.
 function setBackendLabel(backendType, model) {
   const suffix = model ? " · " + model : "";
   document.getElementById("session-status")?.remove();
@@ -413,6 +409,19 @@ function handleNotice(payload) {
   if (text) createSystemMessage(text);
 }
 
+// One page per session: the server refuses a second one rather than ending the reply the
+// first is watching — a state to report, not a connection to keep retrying.
+const MAX_BUSY_RETRIES = 2;
+let busyRefusals = 0;
+
+function handleBusy(payload) {
+  busyRefusals += 1;
+  const reason = payload && payload.text ? payload.text : "This session is already open in another page.";
+  createSystemMessage(busyRefusals > MAX_BUSY_RETRIES
+      ? reason + " Reload this page once it is free."
+      : reason + " Trying again…");
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws`;
@@ -426,6 +435,10 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
+
+    // Anything but a refusal means this page is the client of the session, which is
+    // what stops the knocking in onclose from being counted.
+    if (data.type !== "busy") busyRefusals = 0;
 
     switch (data.type) {
       case "tool_start":
@@ -449,19 +462,29 @@ function connectWebSocket() {
       case "notice":
         handleNotice(data.payload);
         break;
+      case "busy":
+        handleBusy(data.payload);
+        break;
       default:
         break;
     }
   };
 
-  // A run interrupted by a drop keeps the message it was given, so the length
-  // is read back even though no reply arrived; the socket then reconnects.
+  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing, so
+  // what was drawn here was all there was. The message stays, so the length is read back.
   ws.onclose = () => {
+    const refused = busyRefusals > 0;
     if (isStreaming) {
       removeCurrentAssistantMessage();
       setSendButtonState(false);
+      replyLostToDisconnect = true;
     }
     refreshChainLength();
+    if (refused) {
+      connState = "offline";
+      if (busyRefusals <= MAX_BUSY_RETRIES) scheduleReconnect();
+      return;
+    }
     setConnectionState("offline");
     scheduleReconnect();
   };
@@ -471,16 +494,22 @@ function connectWebSocket() {
   };
 }
 
-// A dropped socket reconnects on its own, backing off so a server that is
-// down is not hammered. The state is spoken only when it changes, so a retry
-// loop stays silent.
+// Set when a reply was being written as the socket went, so the reader is told the answer
+// was stopped rather than left to wonder where it went.
+let replyLostToDisconnect = false;
+
+// A dropped socket reconnects on its own, backing off so a server that is down is not
+// hammered; the state is spoken only when it changes.
 function setConnectionState(state) {
   if (state === connState) return;
   if (state === "offline" && connState === "online") {
-    createSystemMessage("Disconnected from server; reconnecting…");
+    createSystemMessage(replyLostToDisconnect
+        ? "Disconnected from server; the reply in progress was stopped and is not kept. Reconnecting…"
+        : "Disconnected from server; reconnecting…");
   } else if (state === "online" && connState === "offline") {
     createSystemMessage("Reconnected to server.");
   }
+  replyLostToDisconnect = false;
   connState = state;
 }
 
@@ -513,9 +542,8 @@ async function refreshChainLength() {
   } catch (_) {}
 }
 
-// Steps the session back to before `turn` and hands the text back to the
-// composer, so sending it again replaces that turn; the turn it replaced is
-// dropped when the replacement is sent.
+// Steps the session back to before `turn` and hands the text back to the composer, so
+// sending it again replaces that turn.
 async function rewindToTurn(turn, text) {
   if (isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
@@ -546,9 +574,8 @@ async function rewindToTurn(turn, text) {
 
 function sendMessage() {
   if (isStreaming) {
-    // Cancelling only asks the server to stop: the socket stays open so the
-    // turn still ends with its done frame, and the partial reply is dropped
-    // because the store keeps none.
+    // Cancelling only asks the server to stop, and the partial reply is dropped because
+    // the store keeps none.
     if (ws && ws.readyState === WebSocket.OPEN) {
       stopRequested = true;
       ws.send(JSON.stringify({ type: "cancel" }));
@@ -586,9 +613,8 @@ async function loadHistory() {
     const history = await res.json();
     if (!Array.isArray(history)) return;
 
-    // Grouped rather than walked one message at a time: a turn that used a tool is
-    // several stored messages, and drawing each of them on its own would show the
-    // reader a different conversation from the one the stream built.
+    // Grouped rather than walked one message at a time: a tool-using turn is several
+    // stored messages, and drawing each alone would show another conversation.
     for (const turn of groupHistory(history)) {
       if (turn.role === "system") {
         createSystemMessage(turn.text);
@@ -607,7 +633,7 @@ async function loadSession() {
   try {
     const res = await fetch("/api/session");
     const data = await res.json();
-    if (data.ok) {
+    if (data.success) {
       setBackendLabel(data.backend_type, data.backend_model);
       // Offered only where a level lands: a backend that ignores one shows nothing
       // rather than a control that would do nothing.
@@ -700,3 +726,112 @@ connectWebSocket();
   await loadSession();
   await loadHistory();
 })();
+
+const BLOCK_TYPES = {
+  THINKING: "thinking",
+  TOOL_CALL: "tool_call",
+  TEXT: "text",
+};
+
+// Arguments travel as an object or an encoded string; a string that is not JSON is kept as
+// it came, because one unreadable call must not hide the rest of the turn.
+function parseToolArguments(raw) {
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return raw;
+    }
+  }
+  return raw === undefined ? null : raw;
+}
+
+// What the store recorded: a result answered the call, or nothing has. "running"
+// is the stream's word for a call in flight and is never stored.
+function callStatus(statuses, index) {
+  return statuses[index] === "pending" ? "pending" : "done";
+}
+
+// Rebuilds the transcript from the stored conversation: a node per provider message is
+// grouped into a bubble per turn, the way the streaming path builds them.
+function groupHistory(history) {
+  const turns = [];
+  let reply = null;
+
+  const closeReply = () => {
+    if (reply) turns.push(reply);
+    reply = null;
+  };
+  const currentReply = () => {
+    if (!reply) reply = { role: "assistant", blocks: [] };
+    return reply;
+  };
+
+  for (const msg of history) {
+    const role = msg.role;
+    const content = msg.content || "";
+
+    if (role === "system") {
+      closeReply();
+      turns.push({ role: "system", text: content });
+      continue;
+    }
+
+    if (role === "user") {
+      closeReply();
+      turns.push({ role: "user", text: content, turn: msg.id });
+      continue;
+    }
+
+    if (role === "tool") {
+      const bubble = currentReply();
+      const block = bubble.blocks.find(
+        (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === msg.tool_call_id
+      );
+      if (!block) continue;
+      // `output` and `error` are the result as the running turn parsed it; the raw
+      // content is what is left when the server could not parse it either.
+      block.output = typeof msg.output === "string" ? msg.output : content;
+      block.error = msg.error || "";
+      block.status = "done";
+      continue;
+    }
+
+    if (role !== "assistant") continue;
+
+    const bubble = currentReply();
+
+    if (Array.isArray(msg.reasoning) && msg.reasoning.length > 0) {
+      // One thinking block per reply, above the rest, where the streaming path puts it and
+      // appends every iteration's reasoning. Blocks are concatenated back into one blob.
+      const text = msg.reasoning.map((block) => block.text || "").join("");
+      let thinking = bubble.blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
+      if (!thinking) {
+        thinking = { type: BLOCK_TYPES.THINKING, content: "", collapsed: true };
+        bubble.blocks.unshift(thinking);
+      }
+      thinking.content += text;
+    }
+
+    const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+    const statuses = Array.isArray(msg.tool_call_status) ? msg.tool_call_status : [];
+    calls.forEach((call, index) => {
+      const fn = call.function || {};
+      bubble.blocks.push({
+        type: BLOCK_TYPES.TOOL_CALL,
+        id: call.id || "unknown",
+        name: fn.name || "unknown",
+        args: parseToolArguments(fn.arguments),
+        output: "",
+        error: "",
+        status: callStatus(statuses, index),
+        collapsed: true,
+      });
+    });
+
+    if (content) bubble.blocks.push({ type: BLOCK_TYPES.TEXT, content });
+  }
+
+  closeReply();
+  return turns;
+}

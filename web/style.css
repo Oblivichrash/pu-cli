@@ -62,12 +62,15 @@ header h1 {
   gap: 16px;
 }
 
+/* A message is a column of blocks, not preformatted text: markdown decides where the
+   lines break, so the container does not preserve whitespace of its own -- doing both
+   rendered markdown's own newlines between blocks as well, which read as blank lines.
+   The blocks that are set as raw text keep their own white-space. */
 .msg {
   padding: 12px 18px;
   border-radius: 2px;
-  line-height: 1.7;
+  line-height: 1.65;
   font-size: 15px;
-  white-space: pre-wrap;
   word-break: break-word;
   border: 1px solid transparent;
 }
@@ -99,6 +102,7 @@ header h1 {
   border: none;
   padding: 4px 12px;
   font-style: italic;
+  white-space: pre-wrap;
 }
 .msg .role {
   display: block;
@@ -262,8 +266,18 @@ header h1 {
   padding: 8px 12px;
 }
 
-.msg p {
+/* One rhythm inside a reply: what markdown emits carries no margins of its own, and
+   consecutive blocks are separated by a single step, so a paragraph, a list and a code
+   block are spaced alike instead of by the browser's defaults around some of them. */
+.msg .block-text > * {
   margin: 0;
+}
+.msg .block-text > * + * {
+  margin-top: 0.5em;
+}
+.msg .block-text ul,
+.msg .block-text ol {
+  padding-left: 1.5em;
 }
 
 .msg.assistant.typing .block-text:last-child::after {

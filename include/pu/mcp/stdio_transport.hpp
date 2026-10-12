@@ -29,11 +29,11 @@ class StdioTransport : public Transport {
   void Stop() override;
   bool WriteLine(const std::string& line) override;
 
-  bool IsRunning() const { return running_; }
-
  private:
   bool SpawnProcess();
+#ifndef _WIN32
   void ReaderLoop();
+#endif
 
   std::string command_;
   std::vector<std::string> args_;

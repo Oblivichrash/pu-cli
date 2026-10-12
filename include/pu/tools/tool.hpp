@@ -1,16 +1,39 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <exception>
 #include <string>
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "pu/config/security_policy.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
+#include "pu/llm/llm_provider.hpp"
 
-namespace pu::tools {
+namespace pu {
+
+struct ToolContext {
+  const config::SecurityPolicy* security = nullptr;
+};
+
+class Tool {
+ public:
+  virtual ~Tool() = default;
+
+  virtual std::string Name() const = 0;
+  virtual std::string Description() const = 0;
+  virtual boost::json::value ParametersSchema() const = 0;
+  virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
+
+  const std::string& DisplayName() const { return display_name_; }
+
+ private:
+  friend class Toolbox;
+  std::string display_name_;
+};
+
+namespace tools {
 
 struct ToolResult {
   bool valid = false;
@@ -24,7 +47,6 @@ struct ToolResult {
 inline std::string MakeToolResultJson(bool success, const std::string& stdout_content,
                                       const std::string& stderr_content, const std::string& error,
                                       int exit_code) {
-  // JSON strings must be UTF-8; tool output may not be.
   boost::json::value j = {
       {"success", success},
       {"stdout", text::SanitizeUtf8(stdout_content)},
@@ -48,11 +70,11 @@ inline ToolResult ParseToolResult(const std::string& raw) {
       r.exit_code = json::ValueOrDefault<int>(j, "exit_code", 0);
     }
   } catch (const std::exception& e) {
-    // Raw built-in/MCP text is valid tool output; keep it, but log so
-    // malformed structured output stays diagnosable.
     spdlog::debug("Tool result is not structured JSON: {}", e.what());
   }
   return r;
 }
 
-}  // namespace pu::tools
+}  // namespace tools
+
+}  // namespace pu

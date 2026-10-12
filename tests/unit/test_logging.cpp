@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/logging.hpp"
+#include "pu/core/base.hpp"
+#include "tests/mocks/test_helpers.hpp"
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
 
 using namespace pu;
+using pu::tests::ScopedEnvVar;
 
 namespace {
 
@@ -78,4 +81,19 @@ TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
   fmt.format(msg, buf);
   auto j = boost::json::parse(std::string(buf.data(), buf.size()));
   REQUIRE(j.at("message") == "say \"hi\"\nnext line");
+}
+
+TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
+  const auto scratch = std::filesystem::temp_directory_path() / "pu_log_dir_test";
+  std::filesystem::remove_all(scratch);
+
+  REQUIRE(pu::path::GetLogDir() == std::filesystem::current_path() / ".pu" / "logs");
+
+  {
+    ScopedEnvVar home("PU_HOME", scratch.string());
+    REQUIRE(pu::path::GetLogDir() == scratch / "logs");
+  }
+
+  REQUIRE(pu::path::GetLogDir() == std::filesystem::current_path() / ".pu" / "logs");
+  std::filesystem::remove_all(scratch);
 }

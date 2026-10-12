@@ -9,26 +9,15 @@
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_provider.hpp"
-#include "pu/agent.hpp"
+#include "pu/tools/tool.hpp"
 
 namespace pu {
 
-struct ToolContext {
-  const config::SecurityPolicy* security = nullptr;
-};
-
-class Tool {
- public:
-  virtual ~Tool() = default;
-  virtual std::string Name() const = 0;
-  virtual std::string Description() const = 0;
-  virtual boost::json::value ParametersSchema() const = 0;
-  virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
-};
-
 class Toolbox {
  public:
-  void RegisterTool(std::unique_ptr<Tool> tool);
+  void Clear();
+  bool RegisterTool(std::unique_ptr<Tool> tool);
+  std::vector<std::string> Names() const;
   std::vector<ToolDefinition> GetToolDefinitions() const;
   std::string ExecuteTool(const std::string& name, const boost::json::value& args,
                           ToolContext& ctx);
@@ -37,8 +26,6 @@ class Toolbox {
   static std::string SanitizeToolName(const std::string& name);
 
   std::unordered_map<std::string, std::unique_ptr<Tool>> tools_;
-  // Map from sanitized (LLM-friendly) name to original Tool::Name()
-  std::unordered_map<std::string, std::string> display_to_original_;
 };
 
 }  // namespace pu

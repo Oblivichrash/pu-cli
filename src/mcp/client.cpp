@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/client.hpp"
 
-#include "mcp/http_transport.hpp"
+#include "pu/mcp/http_transport.hpp"
 #include "pu/build_config.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -56,21 +56,20 @@ void JsonRpcClient::OnMessage(const std::string& line) {
         pending_.erase(it);
       }
     }
-    // Notifications carry no id, so there is nothing to answer.
   } catch (const std::exception& e) {
     spdlog::warn("JSON-RPC parse error: {}", e.what());
   }
 }
 
 struct McpClient::Impl {
-  McpServerConfig config;
+  config::McpServerConfig config;
   std::unique_ptr<Transport> transport;
   std::unique_ptr<JsonRpcClient> rpc;
   bool connected = false;
   std::vector<ToolDefinition> cached_tools;
 };
 
-McpClient::McpClient(const McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
+McpClient::McpClient(const config::McpServerConfig& config) : pimpl_(std::make_unique<Impl>()) {
   pimpl_->config = config;
 }
 
@@ -124,7 +123,7 @@ bool McpClient::Handshake() {
   try {
     auto resp = SendRequest("initialize", init_params);
     if (!json::HasKey(resp, "result")) return false;
-    // The initialized notification expects no reply.
+    // No reply expected for the initialized notification.
     pimpl_->transport->WriteLine(
         boost::json::serialize(boost::json::value{{"jsonrpc", "2.0"}, {"method", "initialized"}}));
     return true;
@@ -138,12 +137,12 @@ boost::json::value McpClient::SendRequest(const std::string& method,
                                           const boost::json::value& params, int timeout_ms) {
   // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
-    throw RuntimeError("MCP client not connected");
+    throw Error("MCP client not connected");
   }
   auto future = pimpl_->rpc->SendRequest(method, params);
   auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
   if (status == std::future_status::timeout) {
-    throw RuntimeError("MCP request timeout");
+    throw Error("MCP request timeout");
   }
   return future.get();
 }
@@ -155,25 +154,21 @@ std::vector<ToolDefinition> McpClient::ListTools() {
   }
   if (!pimpl_->cached_tools.empty()) return pimpl_->cached_tools;
 
-  try {
-    auto resp = SendRequest("tools/list", {});
-    if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "tools")) {
-      std::vector<ToolDefinition> defs;
-      for (const auto& t : resp.at("result").at("tools").as_array()) {
-        ToolDefinition def;
-        def.name = json::ValueOrDefault<std::string>(t, "name", "");
-        def.description = json::ValueOrDefault<std::string>(t, "description", "");
-        def.parameters = json::HasKey(t, "inputSchema") ? t.at("inputSchema")
-                                                        : boost::json::value(boost::json::object{});
-        defs.push_back(def);
-      }
-      pimpl_->cached_tools = defs;
-      return defs;
+  auto resp = SendRequest("tools/list", {});
+  if (json::HasKey(resp, "result") && json::HasKey(resp.at("result"), "tools")) {
+    std::vector<ToolDefinition> defs;
+    for (const auto& t : resp.at("result").at("tools").as_array()) {
+      ToolDefinition def;
+      def.name = json::ValueOrDefault<std::string>(t, "name", "");
+      def.description = json::ValueOrDefault<std::string>(t, "description", "");
+      def.parameters = json::HasKey(t, "inputSchema") ? t.at("inputSchema")
+                                                      : boost::json::value(boost::json::object{});
+      defs.push_back(def);
     }
-  } catch (const std::exception& e) {
-    spdlog::error("ListTools failed: {}", e.what());
+    pimpl_->cached_tools = defs;
+    return defs;
   }
-  return {};
+  throw Error("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
 }
 
 std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {
@@ -192,8 +187,6 @@ std::string McpClient::CallTool(const std::string& name, const boost::json::valu
       }
       if (!output.empty()) return output;
       return boost::json::serialize(resp.at("result"));
-    } else if (json::HasKey(resp, "error")) {
-      return "MCP error: " + boost::json::serialize(resp.at("error"));
     }
     return boost::json::serialize(resp);
   } catch (const std::exception& e) {
@@ -203,5 +196,7 @@ std::string McpClient::CallTool(const std::string& name, const boost::json::valu
 }
 
 bool McpClient::IsConnected() const { return pimpl_->connected; }
+
+const std::string& McpClient::ServerName() const { return pimpl_->config.name; }
 
 }  // namespace pu::mcp

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/cli.hpp"
+#include "pu/app/cli.hpp"
 
-#include "pu/agent.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
 #include "pu/runtime.hpp"
@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace po = boost::program_options;
@@ -30,7 +31,7 @@ int main(int argc, char* argv[]) {
 
   po::options_description serve_opts("serve options");
   serve_opts.add_options()("host", po::value<std::string>(), "bind address (default 127.0.0.1)")(
-      "port", po::value<int>(), "port to listen on (default 8080)");
+      "port", po::value<std::string>(), "port to listen on (default 8080)");
 
   po::positional_options_description pos;
   pos.add("command", 1);
@@ -77,29 +78,16 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "serve") {
-      // Determine final host and port with fallback to environment and defaults
-      std::string host = "127.0.0.1";
-      int port = 8080;
-
-      if (vm.count("host")) {
-        host = vm["host"].as<std::string>();
-      } else if (const char* env = std::getenv("PU_SERVE_HOST"); env && *env != '\0') {
-        host = env;
-      }
-
-      if (vm.count("port")) {
-        port = vm["port"].as<int>();
-      } else if (const char* env = std::getenv("PU_SERVE_PORT"); env && *env != '\0') {
-        char* end = nullptr;
-        long parsed = std::strtol(env, &end, 10);
-        if (end && *end == '\0' && parsed >= 1 && parsed <= 65535) {
-          port = static_cast<int>(parsed);
-        } else {
-          std::cerr << "Warning: invalid PU_SERVE_PORT '" << env << "', using default 8080\n";
-        }
-      }
-
-      return pu::cli::RunServe(host, port, runtime);
+      const auto named = [](const char* name) -> std::optional<std::string> {
+        const char* value = std::getenv(name);
+        if (value == nullptr || *value == '\0') return std::nullopt;
+        return std::string(value);
+      };
+      const auto listen = pu::config::ResolveListenOptions(
+          vm.count("host") ? std::optional(vm["host"].as<std::string>()) : std::nullopt,
+          vm.count("port") ? std::optional(vm["port"].as<std::string>()) : std::nullopt,
+          named("PU_SERVE_HOST"), named("PU_SERVE_PORT"), pu::config::FindServeOptions());
+      return pu::cli::RunServe(listen.host, listen.port, runtime);
     }
 
     std::cerr << "Unknown command: " << cmd << "\n\n" << all << "\n";

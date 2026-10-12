@@ -17,7 +17,6 @@ TEST_CASE("ExecuteCommand runs a simple command", "[platform][command]") {
 TEST_CASE("ExecuteCommand runs compound command with pipe", "[platform][command]") {
   std::string output;
 #ifdef _WIN32
-  // cmd.exe has no `tr`; use a native filter to exercise the same pipe path.
   int rc = ExecuteCommand("echo hello | findstr hello", output);
   REQUIRE(rc == 0);
   REQUIRE(output.find("hello") != std::string::npos);
@@ -32,7 +31,6 @@ TEST_CASE("ExecuteCommand runs compound command with pipe", "[platform][command]
 TEST_CASE("ExecuteCommand runs compound command with semicolons and redirection",
           "[platform][command]") {
   std::string output;
-  // A compound command with redirection must not block and must return output.
   int rc = ExecuteCommand("which g++ 2>&1; ls /usr/bin/g++ 2>&1", output);
   REQUIRE(rc == 0);
   REQUIRE(!output.empty());

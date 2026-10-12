@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/builtin_tools.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -10,6 +11,7 @@
 
 using namespace pu;
 using namespace pu::tools;
+using namespace pu::tests;
 
 namespace {
 
@@ -117,7 +119,7 @@ TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
 }
 
 TEST_CASE("Write_file returns success JSON on successful write", "[builtin_tools]") {
-  std::filesystem::path tmpdir = std::filesystem::temp_directory_path() / "pu_write_test";
+  std::filesystem::path tmpdir = UniqueTempPath("pu_write_test");
   std::filesystem::create_directories(tmpdir);
 
   WriteFileTool tool;

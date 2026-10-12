@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// Text produced outside pu-cli (subprocess output, file contents) arrives in
-// whatever encoding its producer used, while everything pu-cli stores, serialises
-// or sends to a provider must be valid UTF-8.
-
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -62,8 +58,6 @@ constexpr bool IsSurrogate(unsigned int code_point) {
   return code_point >= kSurrogateFirst && code_point <= kSurrogateLast;
 }
 
-// Length of the well-formed sequence starting at `text[index]`, or nothing when
-// the bytes there are not one.
 inline std::optional<std::size_t> ValidSequenceLength(std::string_view text, std::size_t index) {
   const std::size_t length = SequenceLength(static_cast<unsigned char>(text[index]));
   if (length == 0 || index + length > text.size()) return std::nullopt;
@@ -106,6 +100,44 @@ inline std::string SanitizeUtf8(std::string_view text) {
     index += *length;
   }
   return result;
+}
+
+inline std::string_view Trim(std::string_view text) {
+  constexpr std::string_view kWhitespace = " \t\r\n";
+  const std::size_t first = text.find_first_not_of(kWhitespace);
+  if (first == std::string_view::npos) return {};
+  const std::size_t last = text.find_last_not_of(kWhitespace);
+  return text.substr(first, last - first + 1);
+}
+
+inline std::string CollapseWhitespace(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  bool pending_space = false;
+  for (const char c : text) {
+    if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+      pending_space = !out.empty();
+      continue;
+    }
+    if (pending_space) out += ' ';
+    pending_space = false;
+    out += c;
+  }
+  return out;
+}
+
+inline bool EndsWithPartialSequence(std::string_view text) {
+  if (text.empty()) return false;
+
+  std::size_t index = text.size();
+  while (index > 0 && detail::IsContinuationByte(static_cast<unsigned char>(text[index - 1]))) {
+    --index;
+  }
+  if (index == 0) return true;
+
+  const std::size_t length = detail::SequenceLength(static_cast<unsigned char>(text[index - 1]));
+  if (length <= 1) return false;  // ASCII, or a lead byte that begins no sequence at all
+  return text.size() - (index - 1) < length;
 }
 
 }  // namespace pu::text
