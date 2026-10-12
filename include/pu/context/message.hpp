@@ -38,8 +38,11 @@ inline boost::json::value ReasoningToJson(const Reasoning& reasoning) {
 }
 
 inline Reasoning ReasoningFromJson(const boost::json::value& value) {
-  if (value.is_string()) return Reasoning{.text = boost::json::value_to<std::string>(value)};
   Reasoning reasoning;
+  if (value.is_string()) {
+    reasoning.text = boost::json::value_to<std::string>(value);
+    return reasoning;
+  }
   reasoning.text = json::ValueOrDefault<std::string>(value, "text", "");
   reasoning.signature = json::ValueOrDefault<std::string>(value, "signature", "");
   if (json::HasKey(value, "raw")) reasoning.raw = value.at("raw");

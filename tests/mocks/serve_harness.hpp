@@ -405,7 +405,7 @@ class ServeHarness {
 
   int BackendRequests() const { return backend_->Requests(); }
 
-  Runtime& Runtime() { return *runtime_; }  // NOLINT: the name is the class it returns
+  Runtime& RuntimeRef() { return *runtime_; }
 
  private:
   fs::path home_;

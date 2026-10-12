@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <string>
+#include <type_traits>
 
 namespace {
 
@@ -102,7 +103,7 @@ TEST_CASE("A success response still streams to the consumer", "[http][errors]") 
 TEST_CASE("The error a request is refused with decides its status", "[http][errors]") {
   const pu::RequestRefused refused("tool calls are pending");
   REQUIRE(StatusFor(refused) == 400);
-  REQUIRE(dynamic_cast<const pu::Error*>(&refused) == nullptr);
+  static_assert(!std::is_base_of_v<pu::Error, pu::RequestRefused>);
 
   REQUIRE(StatusFor(pu::Error("unknown backend type")) == 500);
   REQUIRE(StatusFor(pu::HttpError("HTTP read error")) == 500);

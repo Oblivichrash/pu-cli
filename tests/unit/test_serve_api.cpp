@@ -65,7 +65,7 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
   pu::Conversation& conversation = session->GetConversation();
   conversation.Append("user", "run it");
@@ -112,7 +112,7 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
   pu::Conversation& conversation = session->GetConversation();
   conversation.Append("user", "run it");
@@ -226,7 +226,7 @@ TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
   pu::Conversation& conversation = session->GetConversation();
   conversation.Append("user", "one");
@@ -246,7 +246,7 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
   session->GetConversation().Append("user", "one");
 
@@ -269,7 +269,7 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.Runtime().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
   REQUIRE(session != nullptr);
   pu::Conversation& conversation = session->GetConversation();
   conversation.Append("user", "one");
