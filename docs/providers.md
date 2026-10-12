@@ -33,7 +33,7 @@ base URL plus a header set. Its gateway behavior is recorded in
 | Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
 | Token cap | not sent; Ollama's own default stands, and `max_tokens` has no effect here | `max_tokens` when set |
 | Extra options | `keep_alive` is a fixed `30m` (not configurable) | nothing beyond the level below |
-| Thinking level | top-level `think`: `false` for `none`, the level name for `low`/`medium`/`high`, not sent for `default` | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
+| Thinking level | top-level `think`: `false` for `none`, the level name for `low`/`medium`/`high`, not sent for `default` | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default`. A gateway that does not reason by default has nothing for the first field to suppress, so it is inert there — [codebuddy's gateway](design/codebuddy-cloud-api.md) is one |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
 | Reasoning on request | sent on assistant messages as `thinking` when non-empty | sent on assistant messages as `reasoning_content` when non-empty |
@@ -45,6 +45,7 @@ base URL plus a header set. Its gateway behavior is recorded in
 | Reasoning with signatures | n/a | a provider that signs its blocks gets `[{text, signature?}]` instead of one string, replayed verbatim when a block carries the provider's own JSON |
 | End of reply | `done_reason` on the final object | `finish_reason` on each choice |
 | Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
+| Error outside the stream | a non-200 body is summarized into the failure detail | same; a gateway that sends `displayMsg` has it shown in place of the log line, and its `msg`, `code` and `requestId` are logged at warning |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
 
 The level names are newer than the setting they name: until `low`/`medium`/`high`

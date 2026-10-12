@@ -139,8 +139,8 @@ backend produces.
 ## 7. Errors
 
 A rejected request answers non-200 with an envelope of its own, and the provider has to
-read two fields out of it: `displayMsg` is written for a user and is what should be
-shown, `msg` names the specific cause and is what belongs in a log.
+read two fields out of it: `displayMsg` is written for a user and is what gets shown,
+`msg` names the specific cause and is what belongs in a log.
 
 ```json
 {"code":11102,
@@ -154,3 +154,7 @@ shown, `msg` names the specific cause and is what belongs in a log.
 A single `code` covers more than one cause — 11102 is raised both for a model that does
 not exist and for one this account may not use, told apart only by `msg`. The codes seen
 so far are recorded in [codebuddy-fieldnotes.md](codebuddy-fieldnotes.md).
+
+What the provider does with a non-200 body: `displayMsg.en` becomes the error a user
+reads, and `msg`, `code` and `requestId` go to the log at warning. A body carrying no
+`displayMsg` falls back to `msg`, which is what every other gateway already relies on.
