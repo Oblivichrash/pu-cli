@@ -23,7 +23,6 @@ at one time and are not part of the contract below.
 POST {base}/chat/completions        base = https://copilot.tencent.com/v2
 ```
 
-`staging-copilot.tencent.com/v2` is the staging base, and the client carries both.
 `GET /v2/models`, `GET /config/models` and `GET /v2/config` do **not** exist (404 from
 the gateway), so the base cannot be used to list models.
 
@@ -63,10 +62,14 @@ lifetime.
 An OpenAI chat-completions body. Two things differ from a plain OpenAI call:
 
 - **`stream` is effectively required.** The third-party bridge forces `stream: true`
-  before forwarding, with the comment that the endpoint only answers streamed.
+  before forwarding, with the comment that the endpoint only answers streamed. The
+  provider sends it unconditionally for every backend, so nothing has to change here.
 - **Two messages minimum.** The same bridge prepends a system message when the request
-  carries a single user message. Not reproduced here yet, but a request that always
-  carries a system prompt is on the safe side of it.
+  carries a single user message. This is not implemented: the provider sends the
+  history it is given, so a session whose first turn has no system prompt sends one
+  message. No request has been observed to fail that way, and the bridge's rule is
+  recorded here as the reason to keep a system prompt in play rather than as a step
+  this code takes.
 
 `tools` is accepted and honoured: a request carrying one `function` tool produced a
 call for it (section 6).

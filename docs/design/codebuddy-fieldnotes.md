@@ -67,6 +67,13 @@ request settles it. Serving a model the client omits shows the reverse also hold
 client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
 there at all.
 
+## Bases the client carries
+
+The installed client carries two bases: `https://copilot.tencent.com/v2`, which the
+code's `DefaultHostFor` names, and `staging-copilot.tencent.com/v2`. Only the first was
+probed, and only the first is reachable without a staging credential, so the second is
+recorded here rather than in the contract. Whether it answers the same way is unprobed.
+
 ## Settled by reading the client's generator
 
 The three per-call correlation headers — `X-Request-ID`, `X-Conversation-Request-ID`,
