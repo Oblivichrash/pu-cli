@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -249,34 +250,55 @@ class FakeBackend : public FakeHttpServer {
   }
 };
 
+// Builds every string through json::value explicitly. A brace-init list of char* leaves the
+// member type to overload resolution, and Boost is free to pick differently across versions;
+// assigning a constructed value leaves no room to guess.
+inline boost::json::value JsonStr(const std::string& s) {
+  return boost::json::value(boost::json::string(s));
+}
+
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
                                    const std::string& backend_type = "ollama",
                                    const std::string& mcp_name = "",
                                    const std::string& mcp_url = "") {
-  fs::create_directories(dir / ".pu");
+  std::error_code ec;
+  fs::create_directories(dir / ".pu", ec);
+  REQUIRE_FALSE(ec);
   fs::path path = dir / ".pu" / "agents.json";
 
-  boost::json::object agent = {
-      {"name", "chat"},
-      {"description", "Chat agent"},
-      {"backend",
-       {{"type", backend_type},
-        {"host", "http://127.0.0.1:" + std::to_string(backend_port)},
-        {"model", "test-model"}}},
-      {"security", {{"sandbox_root", "."}, {"forbidden_patterns", boost::json::array{}}}}};
+  boost::json::object backend;
+  backend["type"] = JsonStr(backend_type);
+  backend["host"] = JsonStr("http://127.0.0.1:" + std::to_string(backend_port));
+  backend["model"] = JsonStr("test-model");
+
+  boost::json::object security;
+  security["sandbox_root"] = JsonStr(".");
+  security["forbidden_patterns"] = boost::json::array{};
+
+  boost::json::object agent;
+  agent["name"] = JsonStr("chat");
+  agent["description"] = JsonStr("Chat agent");
+  agent["backend"] = std::move(backend);
+  agent["security"] = std::move(security);
 
   if (!mcp_url.empty()) {
-    agent["mcp_servers"] = boost::json::array{boost::json::value{{"name", mcp_name},
-                                                                 {"url", mcp_url}}};
+    boost::json::object server;
+    server["name"] = JsonStr(mcp_name);
+    server["url"] = JsonStr(mcp_url);
+    agent["mcp_servers"] = boost::json::array{std::move(server)};
   }
 
-  boost::json::value root = {
-      {"default_agent", "chat"},
-      {"agents", boost::json::array{boost::json::value{std::move(agent)}}},
-  };
+  boost::json::object root;
+  root["default_agent"] = JsonStr("chat");
+  root["agents"] = boost::json::array{std::move(agent)};
 
-  std::ofstream file(path);
-  file << boost::json::serialize(root);
+  const std::string text = boost::json::serialize(root);
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << text;
+    REQUIRE(file.good());
+  }
   return path.string();
 }
 
@@ -363,6 +385,20 @@ class ServeHarness {
 
     WriteAgentsFile(home_, backend_->Port(), backend_type, mcp ? mcp->name : "",
                     mcp ? mcp->url : "");
+
+    {
+      // Read back what was written, the way the runtime will. A config the harness cannot
+      // round-trip here would surface deeper as an unrelated startup error.
+      std::ifstream written(home_ / ".pu" / "agents.json", std::ios::binary);
+      REQUIRE(written.is_open());
+      const std::string text((std::istreambuf_iterator<char>(written)),
+                             std::istreambuf_iterator<char>());
+      CAPTURE(text);
+      const boost::json::value parsed = boost::json::parse(text);
+      const boost::json::value& first = parsed.at("agents").at(0).at("name");
+      REQUIRE(first.is_string());
+      REQUIRE(boost::json::value_to<std::string>(first) == "chat");
+    }
 
     {
       ScopedWorkingDir in_home(home_);
