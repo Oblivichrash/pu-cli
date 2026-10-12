@@ -19,10 +19,18 @@ enum class ToolArgumentsEncoding {
   kJsonString,
 };
 
+// How a provider's API accepts reasoning on echoed assistant turns. Blocks are always the
+// storage shape; this only decides what goes back on the wire.
+enum class ReasoningCarriage {
+  kText,    // one string, blocks joined (OpenAI-compatible `reasoning_content`)
+  kBlocks,  // one object per block (`{text, signature}`), for APIs that signed them
+};
+
 struct ProviderCapabilities {
   RoleNaming role_naming = RoleNaming::kKnownRolesOnly;
   bool echoes_reasoning = false;
   const char* reasoning_field = "reasoning_content";
+  ReasoningCarriage reasoning_carriage = ReasoningCarriage::kText;
   bool allows_content_with_tool_calls = true;
   ToolArgumentsEncoding tool_arguments = ToolArgumentsEncoding::kJsonObject;
   bool tool_calls_carry_type = false;

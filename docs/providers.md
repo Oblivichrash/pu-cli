@@ -41,7 +41,8 @@ base URL plus a header set. Its gateway behavior is recorded in
 | `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
 | Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` |
 | Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated |
-| Reasoning on the wire | an array of `{text, signature?}` blocks under `thinking` | the same under `reasoning_content`; a block that carries the provider's own JSON is replayed verbatim |
+| Reasoning on the wire | one string under `thinking` | one string under `reasoning_content` |
+| Reasoning with signatures | n/a | a provider that signs its blocks sets `ReasoningCarriage::kBlocks` and gets `[{text, signature?}]` instead, replayed verbatim when a block carries the provider's own JSON |
 | End of reply | `done_reason` on the final object | `finish_reason` on each choice |
 | Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
 | Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |

@@ -98,7 +98,12 @@ boost::json::value ProjectMessage(const ChatMessage& message,
   }
 
   if (has_reasoning && role == kAssistantRole && capabilities.echoes_reasoning) {
-    projected.as_object()[capabilities.reasoning_field] = ProjectReasoning(message.reasoning);
+    boost::json::value& slot = projected.as_object()[capabilities.reasoning_field];
+    if (capabilities.reasoning_carriage == ReasoningCarriage::kText) {
+      slot = ProjectReasoningText(message.reasoning);
+    } else {
+      slot = ProjectReasoning(message.reasoning);
+    }
   }
 
   if (role == kToolRole) {
