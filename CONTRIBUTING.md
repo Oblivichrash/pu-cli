@@ -13,11 +13,12 @@ not comply is left as it is.
 ## Commit Messages
 Follow [Conventional Commits](https://www.conventionalcommits.org/): one
 coherent change per commit and an imperative summary within 72 characters. The
-body has exactly two parts:
+body has exactly two parts, and both are required:
 
 - The `- ` list alone. No prose above it, each item starting with a capital
   letter and ending without a period.
-- A `Co-authored-by:` trailer on its own line, ending the message.
+- A `Co-authored-by:` trailer on its own line, ending the message. A message
+  without it is incomplete, however good the list above it.
 
 A body assembled with one `-m` per item comes out as separate paragraphs, so
 pass the whole message at once.
