@@ -42,7 +42,10 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
       return std::make_unique<OpenAIProvider>(http_config(), std::move(http));
     case BackendType::kCodeBuddy: {
       OpenAIProvider::Config codebuddy_cfg = http_config();
-      codebuddy_cfg.extra_headers = [] { return llm::CodeBuddyHeaders(); };
+      const std::string conversation_id = llm::CodeBuddyConversationId();
+      codebuddy_cfg.extra_headers = [conversation_id] {
+        return llm::CodeBuddyHeaders(conversation_id);
+      };
       return std::make_unique<OpenAIProvider>(codebuddy_cfg, std::move(http));
     }
     default:

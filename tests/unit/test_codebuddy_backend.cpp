@@ -35,7 +35,7 @@ std::string HeaderValue(const std::vector<std::string>& headers, const std::stri
 }  // namespace
 
 TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[codebuddy]") {
-  const std::vector<std::string> headers = llm::CodeBuddyHeaders();
+  const std::vector<std::string> headers = llm::CodeBuddyHeaders(llm::CodeBuddyConversationId());
 
   for (const char* name :
        {"X-Requested-With", "X-Domain", "X-Product", "X-Agent-Intent", "X-IDE-Type", "X-IDE-Name",
@@ -47,20 +47,30 @@ TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[code
   REQUIRE(HeaderValue(headers, "X-Product") == "SaaS");
 }
 
-TEST_CASE("The CodeBuddy correlation ids are generated per call", "[codebuddy]") {
-  const std::vector<std::string> first = llm::CodeBuddyHeaders();
-  const std::vector<std::string> second = llm::CodeBuddyHeaders();
+TEST_CASE("The conversation id is stable and the request ids are not", "[codebuddy]") {
+  const std::string conversation_id = llm::CodeBuddyConversationId();
+  const std::vector<std::string> first = llm::CodeBuddyHeaders(conversation_id);
+  const std::vector<std::string> second = llm::CodeBuddyHeaders(conversation_id);
+
+  REQUIRE(HeaderValue(first, "X-Conversation-ID") == conversation_id);
+  REQUIRE(HeaderValue(second, "X-Conversation-ID") == conversation_id);
+  REQUIRE(HeaderValue(first, "X-Conversation-ID").size() == 36);
+  REQUIRE(HeaderValue(second, "X-Conversation-ID").size() == 36);
 
   REQUIRE(HeaderValue(first, "X-Request-ID") != HeaderValue(second, "X-Request-ID"));
-  REQUIRE(HeaderValue(first, "X-Conversation-ID") != HeaderValue(second, "X-Conversation-ID"));
+  REQUIRE(HeaderValue(first, "X-Conversation-Request-ID") !=
+          HeaderValue(second, "X-Conversation-Request-ID"));
+  REQUIRE(HeaderValue(first, "X-Conversation-Message-ID") !=
+          HeaderValue(second, "X-Conversation-Message-ID"));
   REQUIRE(HeaderValue(first, "X-Request-ID").size() == 32);
-  REQUIRE(HeaderValue(first, "X-Conversation-ID").size() == 36);
+
+  REQUIRE(llm::CodeBuddyConversationId() != conversation_id);
 }
 
 TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[codebuddy]") {
   config::BackendConfig cfg;
   cfg.type = config::BackendType::kCodeBuddy;
-  cfg.host = llm::kCodeBuddyHost;
+  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
@@ -71,11 +81,54 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
   provider->Chat(ChatRequest(history, {}));
 
-  REQUIRE(mock_ptr->last_url == std::string(llm::kCodeBuddyHost) + "/chat/completions");
+  REQUIRE(mock_ptr->last_url ==
+          config::DefaultHostFor(config::BackendType::kCodeBuddy) + "/chat/completions");
   REQUIRE(mock_ptr->last_body.find("\"stream\":true") != std::string::npos);
   REQUIRE(HeaderValue(mock_ptr->last_headers, "Authorization") == "Bearer key");
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Agent-Intent"));
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Conversation-ID"));
+}
+
+TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[codebuddy]") {
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kCodeBuddy;
+  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  cfg.model = "deepseek-v4-flash";
+  cfg.api_key = "key";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+  auto provider = config::CreateBackend(cfg, std::move(mock_http));
+  REQUIRE(provider != nullptr);
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  provider->Chat(ChatRequest(history, {}));
+  const std::string first_conversation = HeaderValue(mock_ptr->last_headers, "X-Conversation-ID");
+  const std::string first_request = HeaderValue(mock_ptr->last_headers, "X-Request-ID");
+
+  provider->Chat(ChatRequest(history, {}));
+
+  REQUIRE(HeaderValue(mock_ptr->last_headers, "X-Conversation-ID") == first_conversation);
+  REQUIRE(HeaderValue(mock_ptr->last_headers, "X-Request-ID") != first_request);
+}
+
+TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
+  config::BackendConfig cfg;
+  cfg.type = config::BackendType::kCodeBuddy;
+  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  cfg.model = "deepseek-v4-flash";
+  cfg.api_key = "key";
+
+  auto [first_http, first_ptr] = MakeMockHttpClient();
+  auto first = config::CreateBackend(cfg, std::move(first_http));
+  auto [second_http, second_ptr] = MakeMockHttpClient();
+  auto second = config::CreateBackend(cfg, std::move(second_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  first->Chat(ChatRequest(history, {}));
+  second->Chat(ChatRequest(history, {}));
+
+  REQUIRE(HeaderValue(first_ptr->last_headers, "X-Conversation-ID") !=
+          HeaderValue(second_ptr->last_headers, "X-Conversation-ID"));
 }
 
 TEST_CASE("Every backend type carries a thinking level", "[codebuddy][openai][ollama]") {
