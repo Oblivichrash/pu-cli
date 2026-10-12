@@ -16,9 +16,10 @@ inline std::string CodeBuddyUserId() { return uuid::Generate(); }
 // remembers; the per-request ids below are what vary between calls.
 inline std::string CodeBuddyConversationId() { return uuid::Generate(); }
 
-// Headers the installed client sends; which the server requires is not isolated.
-// `conversation_id` is supplied by the caller so that every turn of a session carries
-// the same conversation name.
+// Headers the installed client sends. Only Authorization is required — the server
+// answers with the rest absent — so this set imitates the client rather than satisfying
+// the gateway. `conversation_id` is supplied by the caller so that every turn of a
+// session carries the same conversation name.
 inline std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
   constexpr const char* kClientVersion = "1.0.7";
   const std::string version = kClientVersion;

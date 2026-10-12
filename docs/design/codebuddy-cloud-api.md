@@ -43,7 +43,10 @@ response header.
 ## 3. Headers
 
 The set below is the one the installed client sends, and the one every captured
-request used. Which of them are strictly required has **not** been isolated.
+request used. Only `Authorization` is required: dropping any other header, or all of
+them, still returns 200, and the gateway answers with nothing but the key present.
+The rest are the client's own telemetry and product routing, sent to match the client
+exactly rather than to satisfy the server.
 
 ```http
 Authorization: Bearer <key>

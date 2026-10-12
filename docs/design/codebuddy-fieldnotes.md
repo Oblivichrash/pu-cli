@@ -75,6 +75,17 @@ format, which is why they are 32 characters where `X-Conversation-ID` and `X-Use
 36. Whether the server would accept the dashed form was not probed; the stripped form is
 what every captured request used, so that is what is sent.
 
+## Settled by dropping headers one at a time
+
+`Authorization` is the only required header. Each of the sixteen others was dropped on
+its own and the gateway still answered 200; dropping every one of them together did too,
+and `GET /v2/accounts` answers with no header but the key. The set is sent to match the
+installed client's request byte for byte, not because the server reads it.
+
+This does not make the set removable. A gateway may require a header it does not yet
+check, and the client's own request is the safest thing to imitate; the finding is that
+the client is not what makes the calls succeed.
+
 ## Corrected by a later probe
 
 Claims made here from an early run that did not survive a second look.
@@ -96,7 +107,6 @@ account's remaining budget.
 
 ## Still open
 
-- Which headers are actually required, and which are the client's own telemetry.
 - Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
   default: it does not, so the field is inert here rather than wrong.
 - Whether a model list can be discovered for an account at all. `/v2/accounts` settles
