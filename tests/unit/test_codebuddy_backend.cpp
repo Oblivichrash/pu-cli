@@ -8,6 +8,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <vector>
 
@@ -62,7 +64,13 @@ TEST_CASE("The conversation id is stable and the request ids are not", "[codebud
           HeaderValue(second, "X-Conversation-Request-ID"));
   REQUIRE(HeaderValue(first, "X-Conversation-Message-ID") !=
           HeaderValue(second, "X-Conversation-Message-ID"));
-  REQUIRE(HeaderValue(first, "X-Request-ID").size() == 32);
+
+  for (const char* name : {"X-Request-ID", "X-Conversation-Request-ID", "X-Conversation-Message-ID"}) {
+    const std::string id = HeaderValue(first, name);
+    REQUIRE(id.size() == 32);
+    REQUIRE(id.find('-') == std::string::npos);
+    REQUIRE(std::ranges::all_of(id, [](const char c) { return std::isxdigit(static_cast<unsigned char>(c)); }));
+  }
 
   REQUIRE(llm::CodeBuddyConversationId() != conversation_id);
 }

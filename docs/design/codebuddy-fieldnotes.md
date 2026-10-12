@@ -67,8 +67,21 @@ request settles it. Serving a model the client omits shows the reverse also hold
 client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
 there at all.
 
+## Settled by reading the client's generator
+
+The three per-call correlation headers — `X-Request-ID`, `X-Conversation-Request-ID`,
+`X-Conversation-Message-ID` — carry a uuid with its dashes removed, not a second id
+format, which is why they are 32 characters where `X-Conversation-ID` and `X-User-Id` are
+36. Whether the server would accept the dashed form was not probed; the stripped form is
+what every captured request used, so that is what is sent.
+
 ## Still open
 
+- Whether the server keeps a conversation's history. Every request carries the whole
+  message array, so nothing observed so far depends on the server remembering anything —
+  a stable `X-Conversation-ID` groups turns without implying it stores them. The probe
+  that settles it is a second turn sent with an empty `messages` array under the same
+  conversation id: an answer that accounts for the first turn means it is stored.
 - Which headers are actually required, and which are the client's own telemetry.
 - Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
   default: it does not, so the field is inert here rather than wrong.

@@ -57,11 +57,11 @@ X-IDE-Type: CLI
 X-IDE-Name: CLI
 X-IDE-Version: 1.0.7
 User-Agent: CLI/1.0.7 CodeBuddy/1.0.7
-X-Conversation-ID: <uuid>
+X-Conversation-ID: <uuid, with dashes>
 X-Conversation-Request-ID: <32 hex>
-X-Conversation-Message-ID: <uuid, no dashes>
+X-Conversation-Message-ID: <32 hex>
 X-Request-ID: <32 hex>
-X-User-Id: <uuid>
+X-User-Id: <uuid, with dashes>
 x-stainless-lang: js
 x-stainless-package-version: 5.10.1
 x-stainless-runtime: node
@@ -69,7 +69,9 @@ x-stainless-runtime: node
 
 The `x-stainless-*` trio and the `CLI/1.0.7` self-identification are what the client
 sends because it is generated from an SDK; the conversation and request ids are
-correlation values the server echoes.
+correlation values the server echoes. The three per-call ids are one shape — a uuid
+with its dashes removed, spliced from the client's generator rather than a second id
+format — while the two values that name a thing rather than an event keep their dashes.
 
 ## 4. Request body
 
