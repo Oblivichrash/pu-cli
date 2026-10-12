@@ -61,3 +61,8 @@ one of these, update the document in the same commit:
 
 A document in `docs/design/` records what an outside system answers; the code
 that follows from it belongs to the files above. A stale document is a bug.
+
+Probed findings that are expected to drift — which fields a gateway honors, which
+model ids answer — go in a `*-fieldnotes.md` beside the contract and say plainly that
+they are observations rather than requirements. That is what keeps the contract
+document able to be stale-proof.
