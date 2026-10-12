@@ -272,7 +272,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     if (security_policy_.has_value()) {
       tool_ctx.security = &security_policy_.value();
     } else {
-      static config::SecurityPolicy empty_policy;
+      static const config::SecurityPolicy empty_policy;
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
