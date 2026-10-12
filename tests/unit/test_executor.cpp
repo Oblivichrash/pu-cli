@@ -133,7 +133,7 @@ class OfferingLLM : public LLMProvider {
 
     offered.clear();
     bool wanted_is_offered = false;
-    for (const ToolDefinition& def : *request.tools) {
+    for (const ToolDefinition& def : request.tools) {
       offered.push_back(def.name);
       if (def.name == wanted_) wanted_is_offered = true;
     }
@@ -170,7 +170,7 @@ class FailingLLM : public LLMProvider {
 class CapturingLLM : public LLMProvider {
  public:
   ChatResult Chat(const ChatRequest& request) override {
-    history_ = *request.history;
+    history_.assign(request.history.begin(), request.history.end());
     ChatResult r;
     r.content = "done";
     return r;

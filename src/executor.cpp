@@ -198,8 +198,8 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
 
     try {
       ChatRequest request;
-      request.history = &chat_history;
-      request.tools = &tools;
+      request.history = chat_history;
+      request.tools = tools;
       request.cancel_token = cancel_token;
       if (reasoning_callback) request.on_reasoning = reasoning_callback;
       request.on_content = [&](std::string_view token) {

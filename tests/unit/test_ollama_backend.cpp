@@ -221,7 +221,8 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
   ToolDefinition tool;
   tool.name = "ls";
   tool.parameters = boost::json::object{};
-  provider.Chat(ChatRequest(history, {tool}));
+  const std::vector<ToolDefinition> tools = {tool};
+  provider.Chat(ChatRequest(history, tools));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
@@ -247,7 +248,8 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   ToolDefinition tool;
   tool.name = "ls";
   tool.parameters = boost::json::object{};
-  provider.Chat(ChatRequest(history, {tool}));
+  const std::vector<ToolDefinition> tools = {tool};
+  provider.Chat(ChatRequest(history, tools));
 
   auto body = boost::json::parse(mock_ptr->last_body);
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];

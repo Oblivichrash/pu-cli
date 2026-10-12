@@ -57,14 +57,15 @@ void OpenAIProvider::ResetAccumulators() {
   usage_.reset();
 }
 
-std::string OpenAIProvider::BuildRequest(const std::vector<ChatMessage>& history,
-                                         const std::vector<ToolDefinition>& tools) const {  boost::json::value req = {
+std::string OpenAIProvider::BuildRequest(std::span<const ChatMessage> history,
+                                         std::span<const ToolDefinition> tools) const {
+  boost::json::value req = {
       {"model", config_.model},
       {"stream", true},
       {"stream_options", {{"include_usage", true}}},
       {"temperature", config_.temperature},
-                                         };
-                                         if (config_.max_tokens) req.as_object()["max_tokens"] = *config_.max_tokens;
+  };
+  if (config_.max_tokens) req.as_object()["max_tokens"] = *config_.max_tokens;
 
   if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};

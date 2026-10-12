@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <cstddef>
+#include <span>
 #include <vector>
 
 #include <boost/json.hpp>
@@ -49,7 +51,7 @@ boost::json::value OllamaThinkValue(ThinkingLevel level);
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities);
 
-boost::json::array ProjectMessages(const std::vector<ChatMessage>& history,
+boost::json::array ProjectMessages(std::span<const ChatMessage> history,
                                    const ProviderCapabilities& capabilities);
 
 }  // namespace pu::llm

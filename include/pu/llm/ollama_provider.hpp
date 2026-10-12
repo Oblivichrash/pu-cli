@@ -29,8 +29,8 @@ class OllamaProvider : public StreamingProvider {
   std::string EndpointPath() const override { return "/api/chat"; }
   std::string LogTag() const override { return "Ollama"; }
 
-  std::string BuildRequest(const std::vector<ChatMessage>& history,
-                           const std::vector<ToolDefinition>& tools) const override;
+  std::string BuildRequest(std::span<const ChatMessage> history,
+                           std::span<const ToolDefinition> tools) const override;
   void ParseLine(std::string_view line, const ChatRequest& request) override;
   void ResetAccumulators() override;
 

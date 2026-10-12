@@ -127,7 +127,7 @@ boost::json::value ProjectMessage(const ChatMessage& message,
   return projected;
 }
 
-boost::json::array ProjectMessages(const std::vector<ChatMessage>& history,
+boost::json::array ProjectMessages(std::span<const ChatMessage> history,
                                    const ProviderCapabilities& capabilities) {
   boost::json::array messages;
   messages.reserve(history.size());

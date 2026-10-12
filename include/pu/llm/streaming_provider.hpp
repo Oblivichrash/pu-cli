@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -29,8 +30,8 @@ class StreamingProvider : public LLMProvider {
   virtual std::string EndpointPath() const = 0;
   virtual std::string LogTag() const = 0;
   virtual void ParseLine(std::string_view line, const ChatRequest& request) = 0;
-  virtual std::string BuildRequest(const std::vector<ChatMessage>& history,
-                                   const std::vector<ToolDefinition>& tools) const = 0;
+  virtual std::string BuildRequest(std::span<const ChatMessage> history,
+                                   std::span<const ToolDefinition> tools) const = 0;
   virtual void ResetAccumulators() {}
   virtual void FinishStream(const ChatRequest& request) { (void)request; }
 

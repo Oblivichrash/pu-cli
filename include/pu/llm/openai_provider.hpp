@@ -35,8 +35,8 @@ class OpenAIProvider : public StreamingProvider {
   std::string LogTag() const override { return "OpenAI"; }
   std::vector<std::string> Headers() const override;
 
-  std::string BuildRequest(const std::vector<ChatMessage>& history,
-                           const std::vector<ToolDefinition>& tools) const override;
+  std::string BuildRequest(std::span<const ChatMessage> history,
+                           std::span<const ToolDefinition> tools) const override;
   void ParseLine(std::string_view line, const ChatRequest& request) override;
   void ResetAccumulators() override;
   void FinishStream(const ChatRequest& request) override;

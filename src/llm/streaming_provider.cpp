@@ -52,7 +52,7 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   platform::ClearInterruptFlag();
   ResetAccumulators();
 
-  const std::string body = BuildRequest(*request.history, *request.tools);
+  const std::string body = BuildRequest(request.history, request.tools);
   spdlog::debug("{} request body: {}", LogTag(), body);
 
   std::vector<std::string> headers = Headers();

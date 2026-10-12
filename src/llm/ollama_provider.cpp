@@ -40,8 +40,8 @@ OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClie
     : StreamingProvider(config.host, config.api_key, std::move(http)),
       config_(std::move(config)) {}
 
-std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history,
-                                         const std::vector<ToolDefinition>& tools) const {
+std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
+                                         std::span<const ToolDefinition> tools) const {
   boost::json::value req = {
       {"model", config_.model},
       {"stream", true},

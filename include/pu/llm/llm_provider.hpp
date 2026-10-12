@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <span>
 #include <functional>
 #include <optional>
 
@@ -108,8 +109,8 @@ struct ChatResult {
 };
 
 struct ChatRequest {
-  const std::vector<ChatMessage>* history = nullptr;
-  const std::vector<ToolDefinition>* tools = nullptr;
+  std::span<const ChatMessage> history;
+  std::span<const ToolDefinition> tools;
   TokenCallback on_content;
   TokenCallback on_reasoning;
   std::function<void(const ToolCall&)> on_tool_call;
@@ -117,13 +118,13 @@ struct ChatRequest {
 
   ChatRequest() = default;
 
-  ChatRequest(const std::vector<ChatMessage>& history_messages,
-              const std::vector<ToolDefinition>& tool_definitions)
-      : history(&history_messages), tools(&tool_definitions) {}
+  ChatRequest(std::span<const ChatMessage> history_messages,
+              std::span<const ToolDefinition> tool_definitions)
+      : history(history_messages), tools(tool_definitions) {}
 
-  ChatRequest(const std::vector<ChatMessage>& history_messages,
-              const std::vector<ToolDefinition>& tool_definitions, TokenCallback content)
-      : history(&history_messages), tools(&tool_definitions), on_content(std::move(content)) {}
+  ChatRequest(std::span<const ChatMessage> history_messages,
+              std::span<const ToolDefinition> tool_definitions, TokenCallback content)
+      : history(history_messages), tools(tool_definitions), on_content(std::move(content)) {}
 };
 
 class LLMProvider {
