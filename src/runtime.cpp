@@ -256,13 +256,18 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {
   std::vector<std::pair<std::string, std::string>> workspaces;
   const auto parent = workspace_root_.parent_path();
-  for (const auto& entry : std::filesystem::directory_iterator(parent)) {
-    if (entry.is_directory()) {
-      auto agents_path = entry.path() / ".pu" / "agents.json";
-      if (std::filesystem::exists(agents_path)) {
-        workspaces.emplace_back(entry.path().filename().string(),
-                                std::filesystem::absolute(entry.path()).string());
-      }
+
+  std::error_code ec;
+  std::filesystem::directory_iterator entries(parent, ec);
+  if (ec) return workspaces;
+
+  for (const auto& entry : entries) {
+    std::error_code entry_ec;
+    if (!entry.is_directory(entry_ec) || entry_ec) continue;
+    auto agents_path = entry.path() / ".pu" / "agents.json";
+    if (std::filesystem::exists(agents_path, entry_ec) && !entry_ec) {
+      workspaces.emplace_back(entry.path().filename().string(),
+                              std::filesystem::absolute(entry.path()).string());
     }
   }
   return workspaces;

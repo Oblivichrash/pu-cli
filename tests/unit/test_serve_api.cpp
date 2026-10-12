@@ -12,6 +12,7 @@
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -291,21 +292,29 @@ TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[ser
   ServeHarness harness;
   auto client = harness.Client();
 
-  const fs::path stranger = fs::temp_directory_path() /
-                            (harness.Home().filename().string() + "_stranger");
+  const fs::path parent = harness.Home().parent_path();
+  const std::string tag = harness.Home().filename().string();
+  const fs::path stranger = parent / (tag + "_stranger");
+  const fs::path sibling = parent / (tag + "_sibling");
   fs::create_directories(stranger);
+  fs::create_directories(sibling / ".pu");
+  std::ofstream(sibling / ".pu" / "agents.json") << R"({"agents":[],"default":"chat"})";
 
   auto workspaces = ParseJson(client.Get("/api/workspaces")).at("workspaces").as_array();
   bool listed_own = false;
   bool listed_stranger = false;
+  bool listed_sibling = false;
   for (const auto& workspace : workspaces) {
     const fs::path path{std::string(workspace.at("path").as_string())};
     if (path == harness.Home()) listed_own = true;
     if (path == fs::absolute(stranger)) listed_stranger = true;
+    if (path == fs::absolute(sibling)) listed_sibling = true;
   }
 
   fs::remove_all(stranger);
+  fs::remove_all(sibling);
 
   REQUIRE(listed_own);
+  REQUIRE(listed_sibling);
   REQUIRE_FALSE(listed_stranger);
 }
