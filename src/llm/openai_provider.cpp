@@ -162,6 +162,13 @@ void OpenAIProvider::FlushPendingToolCalls(const ChatRequest& request) {
       try {
         call.arguments = boost::json::parse(acc.arguments);
       } catch (const boost::system::system_error&) {
+        // The cap that ended the reply is what left the arguments half written, so
+        // the call never finished; keeping the fragment would run a tool on a
+        // truncated argument. A backend that answers with something other than JSON
+        // is a different thing, and its text is kept as it stands.
+        if (finish_reason_ == "length") {
+          throw Error("tool call '" + acc.name + "' was cut off by the output token cap");
+        }
         call.arguments = acc.arguments;
       }
     }

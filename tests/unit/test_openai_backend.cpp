@@ -358,6 +358,60 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
   REQUIRE(result.tool_calls[0].name == "exec");
 }
 
+TEST_CASE("OpenAIProvider rejects a tool call the token cap cut short", "[openai][tools]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+  config.host = "https://api.openai.com/v1";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  // The stream ends on the token cap with the arguments half written, which is what
+  // a reply that runs out of budget looks like: finish_reason "length", not a full
+  // JSON object.
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"write_file","arguments":"{\"path\": \"/tmp/a\","}}]},"finish_reason":"length"}]})" +
+        std::string("\n");
+    std::string done = "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+    cb(done.data(), done.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "write"}};
+  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::Error);
+}
+
+TEST_CASE("OpenAIProvider keeps a tool call whose arguments are not JSON", "[openai][tools]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+  config.host = "https://api.openai.com/v1";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  // A complete, non-JSON argument string is a backend that answers with something
+  // other than JSON; it is not the token cap cutting a reply short.
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"exec","arguments":"ls -la"}}]}}]})" +
+        std::string("\n");
+    std::string done = "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+    cb(done.data(), done.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "run"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.tool_calls.size() == 1);
+  REQUIRE(result.tool_calls[0].name == "exec");
+}
+
 TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[openai][tools]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";

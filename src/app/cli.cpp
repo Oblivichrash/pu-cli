@@ -25,6 +25,35 @@ void PrintNotice(const ExecutionResult& result) {
 
 }  // namespace
 
+CommandLine BuildCommandLine() {
+  boost::program_options::options_description global("Global options");
+  global.add_options()("help,h", "show help message")("version", "show version and exit")(
+      "command", boost::program_options::value<std::string>(),
+      "command to execute (ask/chat/serve)");
+
+  // ask and chat name the same option, and program_options treats a long name
+  // registered twice as ambiguous however it is grouped, so the two share one entry.
+  boost::program_options::options_description session("ask and chat options");
+  session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
+
+  boost::program_options::options_description ask("ask options");
+  ask.add_options()("prompt", boost::program_options::value<std::string>(), "prompt to send");
+
+  boost::program_options::options_description serve("serve options");
+  serve.add_options()("host", boost::program_options::value<std::string>(),
+                      "bind address (default 127.0.0.1)")(
+      "port", boost::program_options::value<std::string>(), "port to listen on (default 8080)");
+
+  boost::program_options::positional_options_description positional;
+  positional.add("command", 1);
+  positional.add("prompt", 1);
+
+  CommandLine line;
+  line.all.add(global).add(session).add(ask).add(serve);
+  line.positional = std::move(positional);
+  return line;
+}
+
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
   try {
     if (!agent.empty()) runtime.SetDefaultAgent(agent);

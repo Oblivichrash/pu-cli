@@ -120,3 +120,41 @@ TEST_CASE("Boost.Program_options rejects unknown command", "[boost][program_opti
   REQUIRE(vm.count("command"));
   REQUIRE(vm["command"].as<std::string>() == "unknown");
 }
+
+TEST_CASE("The command line names every option once", "[options]") {
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+
+  const auto parse = [&](std::vector<std::string> args) {
+    std::vector<const char*> argv;
+    argv.reserve(args.size());
+    for (const std::string& arg : args) argv.push_back(arg.c_str());
+    po::variables_map vm;
+    po::store(po::command_line_parser(static_cast<int>(argv.size()), argv.data())
+                  .options(line.all)
+                  .positional(line.positional)
+                  .run(),
+              vm);
+    po::notify(vm);
+    return vm;
+  };
+
+  SECTION("ask takes an agent and a prompt") {
+    const po::variables_map vm =
+        parse({"pu", "ask", "summarize the readme", "--agent", "test-agent"});
+    REQUIRE(vm["command"].as<std::string>() == "ask");
+    REQUIRE(vm["agent"].as<std::string>() == "test-agent");
+    REQUIRE(vm["prompt"].as<std::string>() == "summarize the readme");
+  }
+
+  SECTION("chat takes an agent") {
+    const po::variables_map vm = parse({"pu", "chat", "--agent", "test-agent"});
+    REQUIRE(vm["command"].as<std::string>() == "chat");
+    REQUIRE(vm["agent"].as<std::string>() == "test-agent");
+  }
+
+  SECTION("serve takes a host and a port") {
+    const po::variables_map vm = parse({"pu", "serve", "--host", "0.0.0.0", "--port", "9000"});
+    REQUIRE(vm["host"].as<std::string>() == "0.0.0.0");
+    REQUIRE(vm["port"].as<std::string>() == "9000");
+  }
+}
