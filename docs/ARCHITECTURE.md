@@ -147,8 +147,8 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool.hpp` (documented in
-[README](../README.md#tool-output-format)). The executor stores it verbatim so
+`include/pu/tools/tool.hpp`, whose field set is documented in
+[README](../README.md#tool-output-format). The executor stores it verbatim so
 the model sees what the tool produced, and reads `stdout`/`error` out of it only
 for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
 when the named tool is absent, so callers never parse two shapes.
@@ -278,9 +278,8 @@ Chat runs exclusively over the `/ws` WebSocket. A run message starts
 streamed chunk to the socket as it arrives, which produces the typewriter effect
 in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
 keyed by the tool call `id`. Commands and non-streaming backends deliver their
-full text as a single chunk frame. The frame schema and client-side rendering
-are documented in [README](../README.md#web-api) and implemented in
-`web/app.js`.
+full text as a single chunk frame. The frame schema is owned by
+[README](../README.md#web-api) and implemented in `web/app.js`.
 
 A turn belongs to the client watching it. Closing the page, losing the socket, or a
 second client taking over all end it, and nothing of it is kept: what it had written
@@ -368,17 +367,21 @@ lists tools.
 
 ```
 <workspace>/.pu/session.json   # Single session state
+./.pu/logs/                    # Log output, moved by PU_HOME
 ```
 
-`<workspace>` is the directory `pu` was started in (`Runtime::workspace_root_`).
+`<workspace>` is the directory `pu` was started in. Logs are the only thing
+`PU_HOME` moves; the environment table in [README](../README.md#environment-variables)
+owns both paths.
 
-The session file carries `schema_version` (currently 7) beside `conversation` and
+The session file carries `schema_version` beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
-shutdown, and restored on startup.
+shutdown, and restored on startup. A file stamped with a version this build does
+not accept is refused rather than read best-effort.
 
 `session_spec` names the agent and carries the session's own thinking level when
-`/thinking` set one. Every backend field is read from `agents.json` on each
-start, so editing the configuration takes effect without touching the session.
+`/thinking` set one. Backend fields are read from `agents.json` on each start, so
+editing the configuration takes effect without touching the session.
 `/backend <type> <model>` adopts an agent named after the type, so the backend a
 session reports and the agent it names are always the same answer. The session
 also decides which agent a restart resumes: the named agent wins over

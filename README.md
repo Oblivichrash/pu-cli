@@ -92,11 +92,11 @@ interaction and restored on restart, so each directory keeps its own session.
 |---------|-------------|
 | `/help` | Show available commands |
 | `/backend <agent>` | Switch to a predefined agent (rebuilds the tool set) |
-| `/backend <type> <model> [host] [api_key]` | Override the backend for this session, outranking `agents.json` |
+| `/backend <type> <model> [host] [api_key]` | Override the backend for this session, outranking `agents.json` for this run; the session keeps only the agent it names, and the fields are read afresh from `agents.json` on each start |
 | `/agents` | List available agents |
 | `/clear` | Clear conversation history |
 | `/rewind <turn>` | Step back to before a turn; the next message replaces it |
-| `/thinking [level]` | Show or set this session's thinking level (`auto` follows the agent's configuration) |
+| `/thinking [level]` | Show or set this session's thinking level (`auto` drops the session override and follows the agent's configuration again) |
 | `/exit`, `/quit` | Exit |
 
 `pu serve` is a CLI subcommand, not a chat command.
@@ -264,7 +264,7 @@ default). See [Quick Start](#configure) for a full example.
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
 | `max_tokens` | `2048` | Sent by the OpenAI-compatible path only |
-| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`; the level is sent only on the OpenAI-compatible path — `none` as `thinking.type = "disabled"`, `low`/`medium`/`high` as `reasoning_effort`, `default` as neither. `enable_thinking: false|true` from an older file reads as `none|default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking` |
+| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking`. What each level puts on the wire is in [providers.md](docs/providers.md) |
 | `system_prompt` | unset | Merged with the injected context |
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
@@ -290,9 +290,9 @@ logs a warning.
 
 | Field | Description |
 |-------|-------------|
-| `sandbox_root` | All file operations are relative to this directory |
+| `sandbox_root` | All file operations are relative to this directory. Empty by default, which means the workspace itself |
 | `forbidden_patterns` | Commands containing these substrings are blocked; include `"cd"` so the model cannot change the working directory |
-| `max_command_length` | Reject a shell command longer than this many bytes (`0` disables the check) |
+| `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
 
 **`mcp_servers`**
 
@@ -314,7 +314,7 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 
 | Variable | Purpose |
 |----------|---------|
-| `PU_HOME` | Moves the data directory used for logs (default `./.pu/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
+| `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |
