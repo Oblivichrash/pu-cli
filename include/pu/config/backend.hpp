@@ -19,8 +19,9 @@ enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
 inline constexpr BackendType kBackendTypes[] = {BackendType::kOllama, BackendType::kOpenAI,
                                                 BackendType::kCodeBuddy};
 
-inline bool CarriesThinkingLevel(BackendType type) { return type != BackendType::kOllama; }
-
+// Every backend type carries a thinking level: Ollama as a top-level `think`, the
+// OpenAI-compatible ones as `reasoning_effort` / `extra_body`. A backend that cannot
+// is a new one, and it will say so rather than being carved out here.
 inline std::string DefaultHostFor(BackendType type) {
   switch (type) {
     case BackendType::kOllama:

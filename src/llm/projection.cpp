@@ -83,6 +83,11 @@ boost::json::value ProjectReasoning(const std::vector<ReasoningBlock>& blocks) {
   return projected;
 }
 
+boost::json::value OllamaThinkValue(ThinkingLevel level) {
+  if (level == ThinkingLevel::kNone) return false;
+  return ThinkingLevelName(level);
+}
+
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities) {
   const std::string role = ProjectRole(message.role, capabilities.role_naming);

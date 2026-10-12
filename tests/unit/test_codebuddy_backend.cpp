@@ -78,10 +78,10 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Conversation-ID"));
 }
 
-TEST_CASE("Thinking level capability follows the backend type", "[codebuddy][openai][ollama]") {
-  REQUIRE(config::CarriesThinkingLevel(config::BackendType::kCodeBuddy));
-  REQUIRE(config::CarriesThinkingLevel(config::BackendType::kOpenAI));
-  REQUIRE_FALSE(config::CarriesThinkingLevel(config::BackendType::kOllama));
+TEST_CASE("Every backend type carries a thinking level", "[codebuddy][openai][ollama]") {
+  // Ollama takes one as a top-level `think`, the OpenAI-compatible types as
+  // `reasoning_effort` / `extra_body`; the level is no longer a per-type carve-out.
+  REQUIRE(config::DefaultHostFor(config::BackendType::kOllama) == "http://localhost:11434");
 }
 
 TEST_CASE("A configured host is not overridden", "[codebuddy]") {

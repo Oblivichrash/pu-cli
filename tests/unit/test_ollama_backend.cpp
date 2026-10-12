@@ -28,6 +28,44 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   REQUIRE(body.at("options").at("temperature") == 0.5f);
 }
 
+TEST_CASE("OllamaProvider sends a thinking level as top-level think", "[ollama]") {
+  const auto body_for = [](ThinkingLevel level) {
+    OllamaProvider::Config config;
+    config.model = "llama3.2:1b";
+    config.host = "http://localhost:11434";
+    config.thinking = level;
+
+    auto [mock_http, mock_ptr] = MakeMockHttpClient();
+    OllamaProvider provider(std::move(config), std::move(mock_http));
+    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
+    return boost::json::parse(mock_ptr->last_body);
+  };
+
+  REQUIRE(body_for(ThinkingLevel::kNone).at("think") == false);
+  REQUIRE(body_for(ThinkingLevel::kLow).at("think") == "low");
+  REQUIRE(body_for(ThinkingLevel::kHigh).at("think") == "high");
+
+  const auto undecided = body_for(ThinkingLevel::kServerDefault);
+  REQUIRE_FALSE(undecided.as_object().contains("think"));
+}
+
+TEST_CASE("OllamaProvider caps tokens only when one is set", "[ollama]") {
+  const auto options_for = [](int max_tokens) {
+    OllamaProvider::Config config;
+    config.model = "llama3.2:1b";
+    config.host = "http://localhost:11434";
+    config.max_tokens = max_tokens;
+
+    auto [mock_http, mock_ptr] = MakeMockHttpClient();
+    OllamaProvider provider(std::move(config), std::move(mock_http));
+    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
+    return boost::json::parse(mock_ptr->last_body).at("options").as_object();
+  };
+
+  REQUIRE(options_for(512).at("num_predict") == 512);
+  REQUIRE_FALSE(options_for(0).contains("num_predict"));
+}
+
 TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";

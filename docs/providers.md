@@ -31,9 +31,9 @@ base URL plus a header set. Its gateway behavior is recorded in
 | Auth | `Authorization: Bearer` only when a key is set | same |
 | Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
 | Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
-| Token cap | not sent | `max_tokens` |
+| Token cap | `options.num_predict`, sent only when a cap is configured | `max_tokens` |
 | Extra options | `keep_alive` is a fixed `30m` (not configurable) | nothing beyond the level below |
-| Thinking level | not sent; the model decides for itself | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
+| Thinking level | top-level `think`: `false` for `none`, the level name for `low`/`medium`/`high`, not sent for `default` | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default` |
 | Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
 | Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
 | Reasoning on request | sent on assistant messages as `thinking` when non-empty | sent on assistant messages as `reasoning_content` when non-empty |

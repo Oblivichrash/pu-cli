@@ -35,6 +35,8 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
       ollama_cfg.temperature = cfg.temperature;
       ollama_cfg.host = cfg.host;
       ollama_cfg.api_key = cfg.api_key.value_or("");
+      ollama_cfg.max_tokens = cfg.max_tokens;
+      ollama_cfg.thinking = cfg.thinking;
       return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
     }
     case BackendType::kOpenAI:

@@ -42,6 +42,10 @@ std::string ProjectReasoningText(const std::vector<ReasoningBlock>& blocks);
 
 boost::json::value ProjectReasoning(const std::vector<ReasoningBlock>& blocks);
 
+// Ollama takes a top-level `think` as either a boolean or a level name, and only while
+// a level is set: `kServerDefault` is not representable, so callers must not send it.
+boost::json::value OllamaThinkValue(ThinkingLevel level);
+
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities);
 
