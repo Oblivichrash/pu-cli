@@ -112,7 +112,6 @@ struct ChatRequest {
   const std::vector<ToolDefinition>* tools = nullptr;
   TokenCallback on_content;
   TokenCallback on_reasoning;
-  std::function<void(const ReasoningBlock&)> on_reasoning_block;
   std::function<void(const ToolCall&)> on_tool_call;
   CancelToken cancel_token;
 

@@ -19,7 +19,6 @@ class OllamaProvider : public StreamingProvider {
     float temperature = 0.7f;
     std::string api_key;
     std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
-    int max_tokens = 0;              // 0 leaves the model's own num_predict alone
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
   };
 

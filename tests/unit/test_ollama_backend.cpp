@@ -49,23 +49,6 @@ TEST_CASE("OllamaProvider sends a thinking level as top-level think", "[ollama]"
   REQUIRE_FALSE(undecided.as_object().contains("think"));
 }
 
-TEST_CASE("OllamaProvider caps tokens only when one is set", "[ollama]") {
-  const auto options_for = [](int max_tokens) {
-    OllamaProvider::Config config;
-    config.model = "llama3.2:1b";
-    config.host = "http://localhost:11434";
-    config.max_tokens = max_tokens;
-
-    auto [mock_http, mock_ptr] = MakeMockHttpClient();
-    OllamaProvider provider(std::move(config), std::move(mock_http));
-    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
-    return boost::json::parse(mock_ptr->last_body).at("options").as_object();
-  };
-
-  REQUIRE(options_for(512).at("num_predict") == 512);
-  REQUIRE_FALSE(options_for(0).contains("num_predict"));
-}
-
 TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";
@@ -95,6 +78,31 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
 
   REQUIRE(result.content == "Hello world");
   REQUIRE_FALSE(result.usage.has_value());
+}
+
+TEST_CASE("OllamaProvider joins consecutive thinking deltas into one block", "[ollama][reasoning]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    for (const char* chunk : {R"({"message":{"thinking":"Let me "}})" "\n",
+                              R"({"message":{"thinking":"think."}})" "\n",
+                              R"({"message":{"content":"done"},"done":true})" "\n"}) {
+      std::string line = chunk;
+      cb(line.data(), line.size());
+    }
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+  auto result = provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hi"}}}, {}));
+
+  REQUIRE(result.reasoning.size() == 1);
+  REQUIRE(result.reasoning.front().text == "Let me think.");
+  REQUIRE(result.content == "done");
 }
 
 TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage]") {

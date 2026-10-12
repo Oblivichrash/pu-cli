@@ -40,7 +40,6 @@ void StreamingProvider::AppendReasoning(std::string_view text, const ChatRequest
   block.text.append(text);
 
   if (request.on_reasoning) request.on_reasoning(text);
-  if (request.on_reasoning_block) request.on_reasoning_block(block);
 }
 
 void StreamingProvider::AppendToolCall(ToolCall call, const ChatRequest& request) {

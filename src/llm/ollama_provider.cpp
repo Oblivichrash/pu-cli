@@ -49,10 +49,6 @@ std::string OllamaProvider::BuildRequest(const std::vector<ChatMessage>& history
       {"keep_alive", config_.keep_alive},
   };
 
-  if (config_.max_tokens > 0) {
-    req.as_object()["options"].as_object()["num_predict"] = config_.max_tokens;
-  }
-
   if (config_.thinking != ThinkingLevel::kServerDefault) {
     req.as_object()["think"] = llm::OllamaThinkValue(config_.thinking);
   }
