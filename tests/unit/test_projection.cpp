@@ -108,8 +108,8 @@ TEST_CASE("A block carrying the provider's raw encoding is replayed verbatim", "
   ChatMessage assistant = Text("assistant", "answer");
   assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"b":1})")});
 
-  const boost::json::array& blocks =
-      llm::ProjectMessage(assistant, OpenAiLike()).at("reasoning_content").as_array();
+  const boost::json::value projected = llm::ProjectMessage(assistant, OpenAiLike());
+  const boost::json::array& blocks = projected.at("reasoning_content").as_array();
   REQUIRE(blocks.size() == 1);
   REQUIRE(blocks[0].at("b") == 1);
 }
