@@ -90,6 +90,60 @@ TEST_CASE("Failure detail is one line and bounded", "[http][errors]") {
   }
 }
 
+TEST_CASE("A gateway that writes a user-facing message has it shown", "[http][errors]") {
+  const std::string body =
+      R"({"code":11102,)"
+      R"("msg":"model [deepseek-v3] service info not found",)"
+      R"("requestId":"req-7",)"
+      R"("displayMsg":{"en":"Model unavailable. Please switch models",)"
+      R"("zh":"\u5f53\u524d\u6a21\u578b\u4e0d\u53ef\u7528\uff0c\u8bf7\u5207\u6362\u6a21\u578b"},)"
+      R"("actions":["SWITCH_MODEL"]})";
+  pu::tests::FakeHttpServer server(400, body);
+  pu::http::BeastHttpClient client;
+
+  std::string received;
+  try {
+    Post(client, server.Port(), received);
+    FAIL("expected HttpError");
+  } catch (const pu::HttpError& e) {
+    const std::string message = e.what();
+    REQUIRE(message.find("HTTP error 400") != std::string::npos);
+    REQUIRE(message.find("Model unavailable. Please switch models") != std::string::npos);
+  }
+}
+
+TEST_CASE("The cause a gateway names is not what a user is shown", "[http][errors]") {
+  const std::string body =
+      R"({"code":11102,"msg":"model [deepseek-v3] service info not found",)"
+      R"("requestId":"req-7","displayMsg":{"en":"Model unavailable. Please switch models"},)"
+      R"("actions":["SWITCH_MODEL"]})";
+  pu::tests::FakeHttpServer server(400, body);
+  pu::http::BeastHttpClient client;
+
+  std::string received;
+  try {
+    Post(client, server.Port(), received);
+    FAIL("expected HttpError");
+  } catch (const pu::HttpError& e) {
+    REQUIRE(std::string(e.what()).find("service info not found") == std::string::npos);
+  }
+}
+
+TEST_CASE("A gateway body naming no user message falls back to the cause", "[http][errors]") {
+  const std::string body =
+      R"({"code":11102,"msg":"model [deepseek-v3] service info not found","requestId":"req-7"})";
+  pu::tests::FakeHttpServer server(400, body);
+  pu::http::BeastHttpClient client;
+
+  std::string received;
+  try {
+    Post(client, server.Port(), received);
+    FAIL("expected HttpError");
+  } catch (const pu::HttpError& e) {
+    REQUIRE(std::string(e.what()).find("service info not found") != std::string::npos);
+  }
+}
+
 TEST_CASE("A success response still streams to the consumer", "[http][errors]") {
   pu::tests::FakeHttpServer server(200, "streamed content");
   pu::http::BeastHttpClient client;

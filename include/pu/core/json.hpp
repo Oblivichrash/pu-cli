@@ -73,6 +73,27 @@ inline std::string ErrorMessage(const value& j) {
   return ValueOrDefault<std::string>(j, "msg", "");
 }
 
+// The user-facing wording a gateway supplies in place of its own log line. A
+// gateway that writes `displayMsg` as an object gets its `en` member; the caller
+// falls back to `ErrorMessage` when this is empty.
+inline std::string DisplayMessage(const value& j) {
+  const object* obj = j.if_object();
+  if (obj == nullptr) return {};
+
+  const auto it = obj->find("displayMsg");
+  if (it == obj->end()) return {};
+  if (it->value().is_string()) return boost::json::value_to<std::string>(it->value());
+  return ValueOrDefault<std::string>(it->value(), "en", "");
+}
+
+// What to show a user for a rejected request: the gateway's `displayMsg` when it
+// supplies one, else whatever names the cause.
+inline std::string UserFacingError(const value& j) {
+  const std::string display = DisplayMessage(j);
+  if (!display.empty()) return display;
+  return ErrorMessage(j);
+}
+
 // Pretty-prints `jv` into `out`, indenting each level by `indent` spaces.
 inline void AppendPretty(const value& jv, std::string& out, int depth, int indent) {
   std::string pad(static_cast<std::size_t>(depth) * static_cast<std::size_t>(indent), ' ');

@@ -174,13 +174,35 @@ unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallbac
 
 namespace {
 
+// Records the machine-readable half of a gateway rejection: the cause it names,
+// its code, and the id its support would ask for. None of these belong in the
+// message a user sees.
+void LogErrorCause(const boost::json::value& j) {
+  const std::string cause = json::ErrorMessage(j);
+  const std::string request_id = json::ValueOrDefault<std::string>(j, "requestId", "");
+  const std::string code = [&j] {
+    const auto c = json::OptionalOrDefault<int>(j, "code");
+    return c ? std::to_string(*c) : std::string{};
+  }();
+
+  if (cause.empty() && code.empty() && request_id.empty()) return;
+
+  std::string detail;
+  if (!code.empty()) detail += " code=" + code;
+  if (!request_id.empty()) detail += " requestId=" + request_id;
+  spdlog::warn("gateway rejected the request:{}{}", detail,
+               cause.empty() ? "" : " cause=" + cause);
+}
+
 std::string SummarizeErrorBody(const std::string& body) {
   if (body.empty()) return "";
 
   const std::string text = platform::FromPipedOutput(body);
   std::string message;
   try {
-    message = json::ErrorMessage(boost::json::parse(text));
+    const boost::json::value parsed = boost::json::parse(text);
+    message = json::UserFacingError(parsed);
+    LogErrorCause(parsed);
   } catch (const boost::system::system_error&) {
   }
   if (message.empty()) message = text;
