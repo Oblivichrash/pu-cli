@@ -11,19 +11,18 @@ namespace pu::llm {
 // The gateway accepts a generated id where the real client sends an account user id.
 inline std::string CodeBuddyUserId() { return uuid::Generate(); }
 
-// The header a conversation's turns are all sent under. The server keeps no history
-// for it, so this names a conversation in the server's records rather than one it
-// remembers; the per-request ids below are what vary between calls.
+// The header a conversation's turns are all sent under. The caller supplies it so a
+// session's turns carry one name; the per-request ids below are what vary between calls.
 inline std::string CodeBuddyConversationId() { return uuid::Generate(); }
 
-// Headers the installed client sends. Only Authorization is required — the server
-// answers with the rest absent — so this set imitates the client rather than satisfying
-// the gateway. `conversation_id` is supplied by the caller so that every turn of a
-// session carries the same conversation name.
+// Headers the installed client sends, imitated rather than derived from what the server
+// checks. `conversation_id` is supplied by the caller so that every turn of a session
+// carries the same conversation name.
 inline std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
   constexpr const char* kClientVersion = "1.0.7";
   const std::string version = kClientVersion;
-  // The client sends a bare 32-char hex id where the value is not a uuid.
+  // A uuid with its dashes removed: the client's shape for the ids that name an event
+  // rather than a thing.
   const auto hex_id = [] {
     std::string hex;
     hex.reserve(32);
