@@ -33,6 +33,9 @@ struct ExecutionResult {
   int tool_call_count = 0;
   std::string notice;
   std::string model;
+  // What the provider counted for the turn that ended; prompt_tokens is the context
+  // that turn ran against. A provider that reports none leaves this unset.
+  std::optional<TokenUsage> usage;
 };
 
 struct StaticEnvInfo {

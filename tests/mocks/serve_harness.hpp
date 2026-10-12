@@ -233,6 +233,13 @@ class FakeBackend : public FakeHttpServer {
  public:
   explicit FakeBackend(int response_delay_ms = 0) : FakeHttpServer(Answer, response_delay_ms) {}
 
+  // The answer is built by a static function, so the counts a test wants to observe
+  // live where that function can read them.
+  static void ReportUsage(int prompt_tokens, int completion_tokens) {
+    prompt_tokens_ = prompt_tokens;
+    completion_tokens_ = completion_tokens;
+  }
+
  private:
   static http::response<http::string_body> Answer(const http::request<http::string_body>& req) {
     http::response<http::string_body> res;
@@ -240,7 +247,8 @@ class FakeBackend : public FakeHttpServer {
       res.result(http::status::ok);
       res.set(http::field::content_type, "application/json");
       res.body() = R"({"message":{"content":"OK"}}
-{"done":true}
+{"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_) +
+                   R"(,"eval_count":)" + std::to_string(completion_tokens_) + R"(}
 )";
     } else {
       res.result(http::status::not_found);
@@ -248,6 +256,9 @@ class FakeBackend : public FakeHttpServer {
     res.prepare_payload();
     return res;
   }
+
+  static inline int prompt_tokens_ = 1234;
+  static inline int completion_tokens_ = 56;
 };
 
 // Builds every string through json::value explicitly. A brace-init list of char* leaves the

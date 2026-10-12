@@ -160,6 +160,15 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         say(frame);
       }
 
+      if (result.usage) {
+        boost::json::value frame = {
+            {"type", "usage"},
+            {"payload",
+             {{"prompt_tokens", result.usage->prompt_tokens},
+              {"completion_tokens", result.usage->completion_tokens}}}};
+        say(frame);
+      }
+
       boost::json::value final;
       if (result.has_error) {
         final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};

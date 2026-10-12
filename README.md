@@ -186,10 +186,16 @@ and status.
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
+{"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
 {"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
+
+`usage` carries what the provider counted for the turn that just ended;
+`prompt_tokens` is the context that turn ran against, so it grows with the
+conversation and is what a page can show against a model's window. It arrives
+before `done`, and a provider that reports no counts sends none.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
 its call. `cancel` sets the cancel token and leaves the connection open; the turn

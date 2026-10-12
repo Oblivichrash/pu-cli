@@ -215,6 +215,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       chat_result = provider->Chat(request);
 
       if (chat_result.usage) {
+        result.usage = chat_result.usage;
         spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
                       chat_result.usage->completion_tokens);
       }
