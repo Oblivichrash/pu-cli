@@ -10,6 +10,11 @@ a client would need that CLI installed, while this endpoint is reachable on its 
 is already the surface the installed client uses. The code side of this — the type's
 name, where the base and the header set live — is in [providers.md](../providers.md).
 
+What was measured *about* this gateway rather than required *of* it — which fields are
+honored, which models answer, and what is still unresolved — is in
+[codebuddy-fieldnotes.md](codebuddy-fieldnotes.md). Those findings describe one account
+at one time and are not part of the contract below.
+
 ---
 
 ## 1. Endpoint
@@ -79,16 +84,9 @@ An OpenAI chat-completions body. Two things differ from a plain OpenAI call:
 `tools` is accepted and honoured: a request carrying one `function` tool produced a
 call for it (section 6).
 
-What the fields the OpenAI provider already sends do here. Each was tried as the
-baseline request plus one difference:
-
-| Field | Result |
-| --- | --- |
-| `stream: true` | required in practice |
-| `temperature`, `max_tokens` | accepted |
-| `reasoning_effort: "high"` | **accepted and honoured**. The same prompt answered `ok` with no reasoning at all on the baseline; with this field the stream carried `reasoning_content` fragments (`"We"`, `" need"`, …) |
-| `extra_body: {"thinking":{"type":"disabled"}}` | accepted (200), and inert on this gateway: the default request already emits no reasoning for a prompt that benefits from one, so there is nothing for the field to suppress |
-| `stream_options: {"include_usage": true}` | accepted (200), and the `usage` object arrives per chunk with or without it |
+`temperature` and `max_tokens` are accepted. `reasoning_effort` is honoured — it is what
+makes this gateway reason at all — while `extra_body.thinking` is accepted and inert.
+[codebuddy-fieldnotes.md](codebuddy-fieldnotes.md) records how each was measured.
 
 ## 5. Response stream
 
@@ -140,7 +138,9 @@ backend produces.
 
 ## 7. Errors
 
-A rejected request answers non-200 with an envelope of its own:
+A rejected request answers non-200 with an envelope of its own, and the provider has to
+read two fields out of it: `displayMsg` is written for a user and is what should be
+shown, `msg` names the specific cause and is what belongs in a log.
 
 ```json
 {"code":11102,
@@ -151,45 +151,6 @@ A rejected request answers non-200 with an envelope of its own:
  "actions":["SWITCH_MODEL","SUBMIT_FEEDBACK","RETRY"]}
 ```
 
-`displayMsg` is written for a user and is what should be shown; `msg` names the
-specific cause and is what belongs in a log. `code` 11102 covers both an unknown model
-and one the account is not entitled to, distinguished only by `msg`:
-
-```
-model [claude-opus-4.6] is only available for authorized users
-```
-
-## 8. Models
-
-Observed on this account: **`deepseek-v4-flash`** answers 200 (and so does
-`deepseek-r1`). Unknown ids — including every dated Claude id the client carries as a
-string — answer 11102.
-
-Zhipu models are served too. `glm-5.3-flash`, `glm-5.3`, `glm-5.2` and `glm-5.1` answer
-200; `glm-5-flash`, `glm-4.7`, `glm-5`, `glm-5-turbo` and `glm-4.6v` answer 11102 with
-`service info not found`. Ids are matched exactly, so the uppercase `GLM-5.3-Flash` is
-11102. An id that exists without this account being entitled to it says so instead:
-`glm-4.7-ioa` answers `model [glm-4.7-ioa] is only available for authorized users`.
-
-The ids the installed client names, for reference: `deepseek-v3`, `deepseek-v3-0324`,
-`deepseek-v4-flash`, `deepseek-v4-flash-202605`, `deepseek-v4-pro`,
-`deepseek-v4-pro-202606`, `deepseek-r1`, `deepseek-reasoner`, `claude-3-5-sonnet-20241022`,
-`claude-3-7-sonnet-20250219`, `claude-4.5`, `claude-opus-4.6`, `claude-sonnet-4.5`,
-`gemini-2.5-flash`, `gemini-3.1-flash`, `glm-4.7`, `glm-4.7-ioa`, `glm-4.6v`, `glm-5`,
-`glm-5.1`, `glm-5.2`, `glm-5-turbo`, `hunyuan-t1`, `hunyuan-turbos`. Being named there
-does not mean the account may use it: entitlement is the server's answer, and only a
-request settles it. Serving a model the client omits shows the reverse also holds, so the
-client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
-there at all.
-
-## 9. Still open
-
-- Which headers are actually required, and which are the client's own telemetry.
-- Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
-  default: it does not, so the field is inert here rather than wrong.
-- Whether a model list can be discovered for an account at all. `/v2/accounts` settles
-  identity and entitlement flags but not the model set, so ids are still found by trying
-  them.
-- What `usage.credit` means for a session, and whether it is worth surfacing.
-- Whether `/v2/auth/token/refresh` is needed for keys that expire; a request with a
-  valid key needs no refresh.
+A single `code` covers more than one cause — 11102 is raised both for a model that does
+not exist and for one this account may not use, told apart only by `msg`. The codes seen
+so far are recorded in [codebuddy-fieldnotes.md](codebuddy-fieldnotes.md).
