@@ -102,11 +102,14 @@ Blank lines separate events. Every chunk is an OpenAI-shaped
 
 and every chunk carries a full `usage` object — not only the last one — including
 `prompt_tokens`, `completion_tokens`, `total_tokens`, a `completion_tokens_details`
-breakdown and a `credit` figure.
+breakdown and a `credit` figure. `credit` is the call's cost, not an account balance:
+it was `0` for a one-token answer and `0.05` for a 203-token one.
 
-The chunk `id` is the conversation's rather than the response's: five requests sent
-under one `X-Conversation-ID` came back with the same `id` and only `created`
-differing, so that header is what groups a conversation on the server.
+The chunk `id` is per-response, not per-conversation: three turns sent under one
+`X-Conversation-ID` came back with three different ids. So no part of the response
+carries the conversation's identity back, and `X-Conversation-ID` is a correlation
+value the server records rather than one it echoes. What it buys is not observable
+from a single client.
 
 `delta` fields seen:
 

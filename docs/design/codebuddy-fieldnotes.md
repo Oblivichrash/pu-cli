@@ -75,19 +75,32 @@ format, which is why they are 32 characters where `X-Conversation-ID` and `X-Use
 36. Whether the server would accept the dashed form was not probed; the stripped form is
 what every captured request used, so that is what is sent.
 
+## Corrected by a later probe
+
+Claims made here from an early run that did not survive a second look.
+
+**The chunk `id` does not group a conversation.** An early run saw one `id` across five
+requests under a shared `X-Conversation-ID`; re-running with three turns produced three
+different ids. The early reading was of a single turn's repeated chunks, not of several
+turns. Nothing in the response echoes the conversation back.
+
+**The server does not store a conversation.** A turn that established a rule ("end every
+reply with ZQ7") was followed by a turn sending **no history** under the same
+conversation id; the rule was gone from the answer. Since every request already carries
+the whole message array, this changes nothing the client must do — but it does mean a
+stable `X-Conversation-ID` buys grouping for the server's own records, not memory.
+
+**`usage.credit` is the call's cost, not a balance** — it read `0` for a one-token answer
+and `0.05` for a 203-token one, so it scales with the work rather than reporting an
+account's remaining budget.
+
 ## Still open
 
-- Whether the server keeps a conversation's history. Every request carries the whole
-  message array, so nothing observed so far depends on the server remembering anything —
-  a stable `X-Conversation-ID` groups turns without implying it stores them. The probe
-  that settles it is a second turn sent with an empty `messages` array under the same
-  conversation id: an answer that accounts for the first turn means it is stored.
 - Which headers are actually required, and which are the client's own telemetry.
 - Whether `extra_body.thinking` would suppress reasoning if this gateway ever reasoned by
   default: it does not, so the field is inert here rather than wrong.
 - Whether a model list can be discovered for an account at all. `/v2/accounts` settles
   identity and entitlement flags but not the model set, so ids are still found by trying
   them.
-- What `usage.credit` means for a session, and whether it is worth surfacing.
 - Whether `/v2/auth/token/refresh` is needed for keys that expire; a request with a
   valid key needs no refresh.
