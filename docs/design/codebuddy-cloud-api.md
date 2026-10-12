@@ -42,39 +42,21 @@ response header.
 
 ## 3. Headers
 
-The set below is the one the installed client sends, and the one every captured
-request used. Only `Authorization` is required: dropping any other header, or all of
-them, still returns 200, and the gateway answers with nothing but the key present.
-The rest are the client's own telemetry and product routing, sent to match the client
+The set is the one the installed client sends and every captured request used:
+the sixteen in `include/pu/llm/codebuddy.hpp`, with the bearer token, `Accept`
+and `Content-Type` headers the HTTP layer adds. Only
+`Authorization` is required: dropping any other header, or all of them, still
+returns 200, and the gateway answers with nothing but the key present. The rest
+are the client's own telemetry and product routing, sent to match the client
 exactly rather than to satisfy the server.
-
-```http
-Authorization: Bearer <key>
-Accept: application/json
-Content-Type: application/json
-X-Requested-With: XMLHttpRequest
-X-Domain: www.codebuddy.ai
-X-Product: SaaS
-X-Agent-Intent: craft
-X-IDE-Type: CLI
-X-IDE-Name: CLI
-X-IDE-Version: 1.0.7
-User-Agent: CLI/1.0.7 CodeBuddy/1.0.7
-X-Conversation-ID: <uuid, with dashes>
-X-Conversation-Request-ID: <32 hex>
-X-Conversation-Message-ID: <32 hex>
-X-Request-ID: <32 hex>
-X-User-Id: <uuid, with dashes>
-x-stainless-lang: js
-x-stainless-package-version: 5.10.1
-x-stainless-runtime: node
-```
 
 The `x-stainless-*` trio and the `CLI/1.0.7` self-identification are what the client
 sends because it is generated from an SDK; the conversation and request ids are
-correlation values the server echoes. The three per-call ids are one shape — a uuid
-with its dashes removed, spliced from the client's generator rather than a second id
-format — while the two values that name a thing rather than an event keep their dashes.
+correlation values the server records rather than echoes. The three per-call ids are
+one shape, a uuid with its dashes removed, spliced from the client's generator rather
+than a second id format, while the two values that name a thing rather than an event
+keep their dashes. `codebuddy.hpp` is the source for that shape and for each id's
+lifetime.
 
 ## 4. Request body
 
@@ -127,18 +109,16 @@ from a single client.
 ## 6. Tool calls
 
 The first fragment of a call carries the identity; the rest carry only the argument
-text and the index:
+text and the index. Reassembling every fragment in order gives the call's arguments,
+so the assembly is the one [providers.md](../providers.md) already describes for the
+OpenAI path — `index`-keyed, tolerating fragments without an `id` or a `type`. The turn
+ends with `finish_reason: "tool_calls"`.
 
 ```json
 {"id":"call_00_5tZoah0yC3OkEkSONqY82854","type":"function","function":{"name":"get_weather","arguments":""},"index":0}
 {"function":{"name":"","arguments":"{"},"index":0}
 {"function":{"name":"","arguments":"\"city\""},"index":0}
 ```
-
-Reassembling every fragment of that call in order gives `{"city": "Beijing"}`. So a
-call is assembled by `index`, tolerating fragments without an `id` and without a
-`type`, which is the same assembly the OpenAI provider path already does after the
-work in `8144ae0`. The turn ends with `finish_reason: "tool_calls"`.
 
 Nothing in the observed stream is CodeBuddy-specific except the header set and the
 error envelope: text, reasoning and calls all arrive in the shapes an OpenAI-compatible
