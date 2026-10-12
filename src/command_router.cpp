@@ -36,8 +36,8 @@ const std::vector<std::string>& CommandRouter::CommandOrder() {
   return order;
 }
 
-const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() {
-  static const std::unordered_map<std::string, Command> commands = {
+CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
+  commands_ = {
       {"/help",
        {"  /help                  Show this help message\n",
         [this](Args, Session&, Output output) {
@@ -70,10 +70,11 @@ const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Co
         "  /thinking auto         Follow the agent's configuration again\n",
         [this](Args args, Session&, Output output) { return HandleThinking(args, output); }}},
   };
-  return commands;
 }
 
-CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {}
+const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() const {
+  return commands_;
+}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   const std::string trimmed(text::Trim(input));
