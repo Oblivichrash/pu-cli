@@ -49,12 +49,12 @@ What each dependency is for:
 
 ## Error Handling
 
-A condition is checked before it happens when the code can know it: an operation that
-can fail visibly returns `std::optional` or `nullptr` rather than throwing. Exceptions
-are for what cannot be known in advance — a body that does not parse, a peer that
-closes the socket, a provider that answers with an error frame.
+A condition the code can know in advance is checked, not thrown: an operation that can
+fail visibly returns `std::optional` or `nullptr`. Exceptions are for what cannot be known
+in advance — a body that does not parse, a peer that closes the socket, a provider that
+answers with an error frame.
 
-All non-recoverable runtime errors derive from a single base class:
+All non-recoverable runtime errors derive from one base class:
 
 ```
 pu::RuntimeError : std::runtime_error
@@ -63,53 +63,36 @@ pu::RuntimeError : std::runtime_error
         └── pu::HttpError       (HttpClient failures)
 ```
 
-`pu::RequestRefused` sits beside `Error`, not under it, because a `pu serve`
-route reports the two differently: a refused request answers 400, and an `Error`
-answers 500. Deriving a refusal from `Error` would report a caller's mistake as a
-fault of this process.
+`pu::RequestRefused` sits beside `Error` rather than under it: `pu serve` answers a refusal
+with `400` and an `Error` with `500`, so deriving one from the other would report a
+caller's mistake as a fault of this process. The status a route chooses, and the body that
+carries it, are in [README](../README.md#web-api).
 
-`main()` wraps top-level dispatch in a `try/catch (const std::exception&)` so any
-`RuntimeError` is converted to a friendly fatal-error message.
+A catch earns its place only by changing the control flow — returning a value, retrying,
+falling back, converting, or ending the process. Logging is not handling, and a catch
+whose whole body logs before the path carries on as if nothing happened is the shape to
+avoid. The three boundaries where reporting and continuing coexist:
 
-### What a catch is for
+| Boundary | Why a catch is there | What it carries |
+|----------|---------------------|-----------------|
+| A call site that parses | `json::parse` throwing is how a byte string says it is not JSON | the value the caller wants: a default, a fallback, a marked-invalid record |
+| A background thread (`McpClient`, the WebSocket reader) | no caller exists above it to be told | the log is the report; the promise or socket carries the outcome |
+| The process boundary (`main`, CLI entry points) | returning is no longer an option | the message is the entire response |
 
-A catch is worth its place only when it changes the control flow: it returns a value,
-retries, falls back, converts, or ends the process. Logging is not handling, but it is
-not forbidden either — what it must not be is the *whole* body of a catch on a path
-that then carries on as if nothing happened.
+A failure that cannot be converted is raised, not answered with a plausible-looking empty
+value: a `tools/list` that fails is not a server with no tools, so `McpClient::ListTools`
+throws and `Runtime::RebuildToolbox` skips that server the way it skips one that never
+connected.
 
-Where a layer must report and continue, it converts rather than swallows:
+An absent `agents.json` is an ordinary state, not a failure: `config::FindConfigPath`
+returns an empty string and `FindServeOptions` returns `std::nullopt`. Only
+`Runtime::Initialize`, which cannot continue, turns the empty path into the `Error` naming
+where the file goes. A function reports that it cannot answer rather than picking one
+caller's condition to raise.
 
-- **A parse that fails is a result.** `json::parse` throwing is how a byte string says
-  it is not JSON; the catch at the call site turns that into the value the caller wants
-  (a default, a fallback, a marked-invalid record). This is the largest group of catches
-  in the tree and none of them are noise.
-- **A background thread reports and ends.** `McpClient` and the WebSocket reader catch
-  at their own boundary because no caller exists above them to be told; the log is the
-  report, and the promise or the socket carries the outcome.
-- **The process boundary logs and stops.** `main()` and the CLI entry points are the only
-  places a message may be the entire response, because returning is no longer an option.
-
-A catch that logs and then lets the caller believe the operation succeeded is the one
-shape to avoid. `McpClient::ListTools` used to be the example: it answered with an empty
-list when `tools/list` failed, so a dead server looked like a server with no tools. It now
-throws, because "no tools" and "the reply was not understood" are different things for a
-caller to act on, and the boundary that can act on it — `Runtime::RebuildToolbox` — treats
-the failure the same way it treats a server that never connected: skip it and say so.
-
-### Configuration is a state, not a failure
-
-A workspace without an `agents.json` is an ordinary state. `config::FindConfigPath`
-returns an empty string for it, and `FindServeOptions` returns `std::nullopt`; the one
-place that cannot continue, `Runtime::Initialize`, turns the empty path into the `Error`
-that says where to put the file. A function that cannot answer reports that it cannot
-answer, rather than picking one of its callers' conditions to throw.
-
-The same idea applies to an invariant. `Runtime::ActiveAgent` and `ConfiguredBackend` do
-not check that the runtime was initialized or that the active agent is configured, because
-`Initialize` every path that reaches them must pass through already establishes both. A
-check for a condition that cannot be false is not defensive programming; it is a claim
-that the code is unsure of itself, and it costs a reader the work of proving it false.
+The same holds for invariants: `Runtime::ActiveAgent` and `ConfiguredBackend` do not check
+that `Initialize` ran, because every path reaching them passes through it. A test for a
+condition that cannot be false asserts that the code distrusts itself.
 
 ---
 
