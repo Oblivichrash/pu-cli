@@ -292,29 +292,40 @@ TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[ser
   ServeHarness harness;
   auto client = harness.Client();
 
+  // The scan reads the harness home's parent, so the neighbours go there too. They are named
+  // after this harness and removed below, so a parallel case's own neighbours stay untouched.
   const fs::path parent = harness.Home().parent_path();
   const std::string tag = harness.Home().filename().string();
   const fs::path stranger = parent / (tag + "_stranger");
   const fs::path sibling = parent / (tag + "_sibling");
-  fs::create_directories(stranger);
-  fs::create_directories(sibling / ".pu");
-  std::ofstream(sibling / ".pu" / "agents.json") << R"({"agents":[],"default":"chat"})";
+  std::error_code ec;
+  fs::create_directories(stranger, ec);
+  REQUIRE_FALSE(ec);
+  fs::create_directories(sibling / ".pu", ec);
+  REQUIRE_FALSE(ec);
+  {
+    std::ofstream config(sibling / ".pu" / "agents.json", std::ios::binary | std::ios::trunc);
+    REQUIRE(config.is_open());
+    config << R"({"agents":[],"default":"chat"})";
+  }
 
-  auto workspaces = ParseJson(client.Get("/api/workspaces")).at("workspaces").as_array();
+  const auto workspaces = ParseJson(client.Get("/api/workspaces")).at("workspaces").as_array();
   bool listed_own = false;
   bool listed_stranger = false;
   bool listed_sibling = false;
   for (const auto& workspace : workspaces) {
     const fs::path path{std::string(workspace.at("path").as_string())};
-    if (path == harness.Home()) listed_own = true;
-    if (path == fs::absolute(stranger)) listed_stranger = true;
-    if (path == fs::absolute(sibling)) listed_sibling = true;
+    // The API answers with absolute paths, and on a platform where /tmp is a symlink the
+    // harness home and the answer differ before canonicalization. Compare canonically.
+    if (fs::weakly_canonical(path) == fs::weakly_canonical(harness.Home())) listed_own = true;
+    if (fs::weakly_canonical(path) == fs::weakly_canonical(stranger)) listed_stranger = true;
+    if (fs::weakly_canonical(path) == fs::weakly_canonical(sibling)) listed_sibling = true;
   }
 
-  fs::remove_all(stranger);
-  fs::remove_all(sibling);
+  fs::remove_all(stranger, ec);
+  fs::remove_all(sibling, ec);
 
-  REQUIRE(listed_own);
-  REQUIRE(listed_sibling);
-  REQUIRE_FALSE(listed_stranger);
+  CHECK(listed_own);
+  CHECK(listed_sibling);
+  CHECK_FALSE(listed_stranger);
 }
