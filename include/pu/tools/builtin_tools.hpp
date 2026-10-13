@@ -9,7 +9,7 @@
 
 namespace pu::tools {
 
-enum class RiskLevel { kSafe, kNeutral, kDangerous };
+enum class RiskLevel { kSafe, kNeutral, kApproval, kDangerous };
 
 class ExecuteBashToolStandard : public pu::Tool {
  public:

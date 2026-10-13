@@ -460,6 +460,9 @@ function connectWebSocket() {
     if (data.type !== "busy") busyRefusals = 0;
 
     switch (data.type) {
+      case "approval_ask":
+        showApprovalBar(data.payload.command);
+        break;
       case "tool_start":
         handleToolStart(data.payload);
         break;

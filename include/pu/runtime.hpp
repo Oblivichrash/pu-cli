@@ -63,6 +63,19 @@ class Runtime {
     return command_stop_token_;
   }
 
+  // The approval gate. Ask fires on the turn thread when a command matches the
+  // policy's approval patterns; Resolve answers it from the serve thread.
+  void EnableApprovalGate() {
+    assert(is_initialized_ && "Initialize() must run before any gate");
+    executor_->EnableApprovalGate();
+  }
+  void SetOnApprovalAsk(std::function<void(const std::string&)> cb) {
+    executor_->SetOnApprovalAsk(std::move(cb));
+  }
+  void ResolveApproval(bool allow, std::string note) {
+    executor_->ResolveApproval(allow, std::move(note));
+  }
+
   AgentManager& GetAgentManager() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;

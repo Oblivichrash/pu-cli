@@ -10,6 +10,9 @@ struct SecurityPolicy {
   std::string sandbox_root;
   size_t max_command_length = 0;
   std::vector<std::string> forbidden_patterns;
+  // Commands matching one of these wait for the user's approval before they run.
+  // Empty means everything matching the sandbox rules just runs.
+  std::vector<std::string> approval_patterns;
 };
 
 }  // namespace pu::config

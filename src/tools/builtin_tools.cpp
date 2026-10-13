@@ -49,12 +49,17 @@ class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path) : sandbox_path_(std::move(sandbox_path)) {}
 
-  RiskAssessment AssessRisk(const std::string& command) const {
+  RiskAssessment AssessRisk(const std::string& command,
+                            const std::vector<std::string>& approval_patterns = {}) const {
     RiskAssessment result;
     std::string pattern;
     if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
       result.level = RiskLevel::kDangerous;
       result.reason = "Matches dangerous pattern: " + pattern;
+      return result;
+    }
+    if (!approval_patterns.empty() && MatchAnyPattern(command, approval_patterns)) {
+      result.level = RiskLevel::kApproval;
       return result;
     }
     result.level =
@@ -152,14 +157,37 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
   }
 
   CommandExecutor executor(sandbox_root_);
-  auto risk = executor.AssessRisk(command);
+  auto risk = executor.AssessRisk(
+      command, ctx.security ? ctx.security->approval_patterns : std::vector<std::string>{});
   if (risk.level == RiskLevel::kDangerous) {
     return tools::MakeToolResultJson(false, "", "Command rejected: " + risk.reason, -1, true);
+  }
+  std::string approval_note;
+  if (risk.level == RiskLevel::kApproval) {
+    if (ctx.approval == nullptr || ctx.approval->ask == nullptr) {
+      // Nowhere to ask is a refusal, not a silent run: the policy named this command.
+      return tools::MakeToolResultJson(
+          false, "",
+          "Command needs user approval and no approval channel is open. Rework it to avoid: " +
+              tools::QuoteJoin(ctx.security ? ctx.security->approval_patterns
+                                            : std::vector<std::string>{}) +
+              ".",
+          -1, true);
+    }
+    std::string note;
+    if (!ctx.approval->ask(command, note)) {
+      std::string msg = "Command rejected by the user";
+      if (!note.empty()) msg += ". The user adds: " + note;
+      return tools::MakeToolResultJson(false, "", msg, -1, true);
+    }
   }
 
   const pu::CancelToken& stop_token =
       ctx.control ? ctx.control->stop_token : pu::CancelToken{};
   auto result = executor.Execute(command, stop_token);
+  if (!approval_note.empty() && ctx.control && ctx.control->on_note) {
+    ctx.control->on_note(approval_note);
+  }
   if (result.was_stopped) {
     std::string note = "Command stopped by the user";
     if (ctx.control && !ctx.control->note.empty()) {

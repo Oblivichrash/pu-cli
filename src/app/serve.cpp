@@ -104,6 +104,14 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       if (!note.empty()) runtime.SetUserNote(note);
       continue;
     }
+    if (type == "resolve_approval") {
+      const auto payload = json::ValueOrDefault<boost::json::value>(
+          jv, "payload", boost::json::object{});
+      const bool allow = json::ValueOrDefault<bool>(payload, "allow", false);
+      const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
+      runtime.ResolveApproval(allow, note);
+      continue;
+    }
     if (type == "stop_command") {
       const auto payload = json::ValueOrDefault<boost::json::value>(
           jv, "payload", boost::json::object{});
@@ -165,6 +173,13 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         active_ws->command_note.clear();
         command_stop = active_ws->command_stop;
       }
+
+      runtime.EnableApprovalGate();
+      runtime.SetOnApprovalAsk([&](const std::string& command) {
+        boost::json::value frame = {
+            {"type", "approval_ask"}, {"payload", {{"command", command}}}};
+        say(frame);
+      });
 
       {
         std::lock_guard<std::mutex> lock(io_mutex);

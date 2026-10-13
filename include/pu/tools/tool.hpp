@@ -2,6 +2,7 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,8 +24,20 @@ struct ToolContext {
   struct Control {
     CancelToken stop_token;
     std::string note;  // the user's own words, carried in the stopped result
+    // Written by an approval that carried words; the executor reads it as a
+    // user note beside the tool result it would read any note at.
+    std::function<void(std::string)> on_note;
   };
   const Control* control = nullptr;
+
+  // The approval gate: a command matching the policy's approval patterns asks here
+  // and parks until the answer arrives. Null where there is nobody to ask, which
+  // makes every gate open - the CLI has no channel to ask on.
+  struct Approval {
+    // Returns the user's decision and their optional words beside it.
+    std::function<bool(const std::string& command, std::string& note)> ask;
+  };
+  const Approval* approval = nullptr;
 };
 
 class Tool {

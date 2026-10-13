@@ -42,6 +42,11 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
       if (pat.is_string())
         policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
   }
+  if (json::HasKey(j, "approval_patterns") && j.at("approval_patterns").is_array()) {
+    for (const auto& pat : j.at("approval_patterns").as_array())
+      if (pat.is_string())
+        policy.approval_patterns.push_back(boost::json::value_to<std::string>(pat));
+  }
   return policy;
 }
 

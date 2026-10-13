@@ -310,3 +310,27 @@ header h1 {
   color: var(--ink-light);
   min-height: 1.1em;
 }
+
+#approval-bar {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg, #fff);
+  border: 1px solid #d33;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+#approval-bar[hidden] { display: none; }
+#approval-command {
+  font-family: monospace;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

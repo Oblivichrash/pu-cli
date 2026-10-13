@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,20 +30,12 @@ struct ToolCallbacks {
 struct ExecutionResult {
   std::string content;
   bool was_streamed = false;
-  bool has_error = false;
-  std::string error_message;
   int tool_call_count = 0;
+  std::optional<TokenUsage> usage;
   std::string notice;
   std::string model;
-  // What the provider counted for the turn that ended; prompt_tokens is the context
-  // that turn ran against. A provider that reports none leaves this unset.
-  std::optional<TokenUsage> usage;
-};
-
-struct StaticEnvInfo {
-  std::string os_name;
-  std::string kernel_version;
-  bool probed = false;
+  bool has_error = false;
+  std::string error_message;
 };
 
 class Executor {
@@ -55,6 +49,24 @@ class Executor {
   // The user's words typed while a turn runs. The tool loop drains it: into the
   // stop result when a command is killed, beside a tool result otherwise.
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
+
+  // Opens the approval gate: a command matching the policy's approval patterns
+  // parks in AskApproval until ResolveApproval answers it.
+  void EnableApprovalGate() { approval_asks_ = true; }
+  void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
+    on_approval_ask = std::move(cb);
+  }
+  // Answers the pending ask. Without one pending, this is a harmless no-op: the
+  // waiting thread is the only reader of the answer.
+  void ResolveApproval(bool allow, std::string note) {
+    {
+      std::lock_guard<std::mutex> lock(approval_mtx_);
+      approval_allowed_ = allow;
+      approval_answer_note_ = std::move(note);
+      approval_answered_ = true;
+    }
+    approval_cv_.notify_all();
+  }
 
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
                           LLMProvider* provider, Toolbox& toolbox,
@@ -76,12 +88,32 @@ class Executor {
 
   void ProbeStaticEnvironment();
 
+  // Parks the tool thread until ResolveApproval answers. The answer's note rides
+  // back beside the command; the model never sees the wait itself.
+  bool AskApproval(const std::string& command, std::string& note);
+
   std::string user_note_;
+
+  // The approval gate: one pending ask, answered from the serve thread.
+  bool approval_asks_ = false;
+  std::function<void(const std::string&)> on_approval_ask;
+  std::mutex approval_mtx_;
+  std::condition_variable approval_cv_;
+  bool approval_answered_ = false;
+  bool approval_allowed_ = false;
+  std::string approval_answer_note_;
+  std::string approval_pending_command_;
+  std::string pending_approval_note_;
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
 
+  struct StaticEnvInfo {
+    std::string os_name;
+    std::string kernel_version;
+    bool probed = false;
+  };
   StaticEnvInfo static_env_info_;
 };
 

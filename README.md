@@ -186,6 +186,7 @@ and status.
 {"type":"cancel"}
 {"type":"note","payload":{"text":"words for the model at the next tool boundary"}}
 {"type":"stop_command","payload":{"text":"why the command was stopped"}}
+{"type":"resolve_approval","payload":{"allow":true,"text":"optional note"}}
 ```
 
 **Server → client**
@@ -211,7 +212,12 @@ before `done`, and a provider that reports no counts sends none.
 its call. While one runs, `stop_command` kills that command's process group: the
 tool result comes back `success: false` with the note in `error`, and the turn
 continues. `note` delivers words without a kill, which the executor appends beside
-the next tool result. `cancel` sets the cancel token and leaves the connection open; the turn
+the next tool result.
+
+When the agent's policy names `approval_patterns`, a matching command sends
+`approval_ask` before it runs and the turn thread parks until
+`resolve_approval` answers. Allowed, the command runs and the note rides beside
+its result; denied, the result is the refusal with the note in `error`. `cancel` sets the cancel token and leaves the connection open; the turn
 then ends with `done`. `thinking` is a channel of its own, rendered beside the
 answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
@@ -312,6 +318,7 @@ logs a warning.
 | `sandbox_root` | All file operations are relative to this directory. Empty by default, which means the workspace itself |
 | `forbidden_patterns` | Commands containing these substrings are blocked; include `"cd"` so the model cannot change the working directory |
 | `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
+| `approval_patterns` | Commands matching one of these wait for the user's approval before they run; the Web UI shows the command with Approve and Deny buttons and an optional note, which reaches the model beside the result. `pu serve` only: the CLI has no channel to ask on, so a matching command there is refused |
 
 **`mcp_servers`**
 

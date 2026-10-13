@@ -144,6 +144,20 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
+bool Executor::AskApproval(const std::string& command, std::string& note) {
+  {
+    std::lock_guard<std::mutex> lock(approval_mtx_);
+    approval_answered_ = false;
+    approval_answer_note_.clear();
+  }
+  if (on_approval_ask) on_approval_ask(command);
+
+  std::unique_lock<std::mutex> lock(approval_mtx_);
+  approval_cv_.wait(lock, [this] { return approval_answered_; });
+  note = approval_answer_note_;
+  return approval_allowed_;
+}
+
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
                                   LLMProvider* provider, Toolbox& toolbox,
                                   CancelToken cancel_token,
@@ -298,6 +312,11 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     control.note = user_note_;
     user_note_.clear();  // one note stops one command; a fresh one needs a new word
     tool_ctx.control = command_stop_token ? &control : nullptr;
+    ToolContext::Approval approval;
+    approval.ask = [this](const std::string& command, std::string& note) {
+      return AskApproval(command, note);
+    };
+    tool_ctx.approval = approval_asks_ ? &approval : nullptr;
     for (const auto& call : chat_result.tool_calls) {
       ++result.tool_call_count;
 
