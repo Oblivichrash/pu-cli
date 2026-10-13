@@ -65,6 +65,7 @@ void OpenAIProvider::ResetAccumulators() {
   response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
+  raw_usage_ = nullptr;
   pending_data_.clear();
   reply_choice_index_ = -1;
   reported_extra_choice_ = false;
@@ -168,9 +169,23 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 
   if (json::HasKey(j, "usage") && j.at("usage").is_object()) {
-    const auto& usage = j.at("usage");
-    usage_ = TokenUsage{json::ValueOrDefault<int>(usage, "prompt_tokens", 0),
-                        json::ValueOrDefault<int>(usage, "completion_tokens", 0)};
+    const boost::json::value& usage = j.at("usage");
+    TokenUsage counted;
+    counted.prompt_tokens = json::ValueOrDefault<int>(usage, "prompt_tokens", 0);
+    counted.completion_tokens = json::ValueOrDefault<int>(usage, "completion_tokens", 0);
+    counted.total_tokens = json::ValueOrDefault<int>(usage, "total_tokens", 0);
+    // The cached prompt is named in the nested OpenAI field by one gateway and at the
+    // top level by another; both carry the same count.
+    if (json::HasKey(usage, "prompt_tokens_details")) {
+      counted.cached_tokens =
+          json::ValueOrDefault<int>(usage.at("prompt_tokens_details"), "cached_tokens", 0);
+    }
+    if (counted.cached_tokens == 0) {
+      counted.cached_tokens = json::ValueOrDefault<int>(usage, "prompt_cache_hit_tokens", 0);
+    }
+    counted.credit = json::ValueOrDefault<double>(usage, "credit", 0.0);
+    usage_ = counted;
+    raw_usage_ = usage;
   }
 
   if (json::HasKey(j, "model") && j.at("model").is_string()) {

@@ -74,6 +74,7 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   result.tool_calls = std::move(tool_calls_);
   result.reasoning = std::move(reasoning_);
   result.usage = usage_;
+  result.raw_usage = std::move(raw_usage_);
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);
   return result;

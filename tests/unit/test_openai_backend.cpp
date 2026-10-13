@@ -196,6 +196,14 @@ TEST_CASE("OpenAIProvider reads the counts it models from a real gateway respons
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 549556);
   REQUIRE(result.usage->completion_tokens == 2);
+  REQUIRE(result.usage->total_tokens == 549558);
+  REQUIRE(result.usage->cached_tokens == 549376);
+
+  // The frame carried more than the counts above, and the parts nothing reads yet are
+  // kept as the gateway wrote them rather than dropped with the frame.
+  REQUIRE(json::HasKey(result.raw_usage, "completion_tokens_details"));
+  REQUIRE(json::HasKey(result.raw_usage, "prompt_tokens_details"));
+  REQUIRE(result.raw_usage.at("prompt_cache_miss_tokens") == 180);
 }
 
 TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
@@ -660,6 +668,61 @@ TEST_CASE("OpenAIProvider ignores the fields that name an event", "[openai][stre
   auto result = provider.Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "ok");
+}
+
+TEST_CASE("OpenAIProvider reads the counts a cached prompt is billed with", "[openai][usage]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"content":"hi"}}]})"
+        "\n"
+        R"(data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":9},"completion_tokens_details":{"reasoning_tokens":1},"credit":0.05}})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->total_tokens == 15);
+  REQUIRE(result.usage->cached_tokens == 9);
+  REQUIRE(result.usage->credit == 0.05);
+  REQUIRE(json::HasKey(result.raw_usage, "completion_tokens_details"));
+}
+
+TEST_CASE("OpenAIProvider reads a cached prompt the gateway names at the top level",
+          "[openai][usage]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":1,"prompt_cache_hit_tokens":96,"prompt_cache_miss_tokens":4}})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->cached_tokens == 96);
+  REQUIRE(result.raw_usage.at("prompt_cache_miss_tokens") == 4);
 }
 
 TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][streaming]") {

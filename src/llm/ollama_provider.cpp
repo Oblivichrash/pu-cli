@@ -35,6 +35,7 @@ void OllamaProvider::ResetAccumulators() {
   response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
+  raw_usage_ = nullptr;
 }
 
 OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
@@ -121,6 +122,15 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
     usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
                         json::ValueOrDefault<int>(j, "eval_count", 0)};
   }
+
+  // Ollama reports no usage object: the counts and durations ride on the final line,
+  // where they are kept as it wrote them rather than dropped with the line.
+  boost::json::object reported;
+  for (const char* key : {"prompt_eval_count", "eval_count", "total_duration", "load_duration",
+                          "prompt_eval_duration", "eval_duration"}) {
+    if (json::HasKey(j, key)) reported[key] = j.at(key);
+  }
+  if (!reported.empty()) raw_usage_ = std::move(reported);
 
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
     finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));

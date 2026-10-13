@@ -54,7 +54,8 @@ existed it was a boolean, and `default` is what that switch's on-state meant whi
 
 ## What comes back
 
-The table above covers what goes out. This is what is read from the answer.
+The table above covers what goes out. This is what is read from the answer, and where a
+field it does not name ends up.
 
 ### SSE framing
 
@@ -64,6 +65,22 @@ rather than carry it, and the event ends at a blank line. Only `data` is read, a
 payload split over several `data:` lines is joined until what they hold parses — a
 gateway that writes `data:{...}` with no space reads the same as one that writes
 `data: {...}`. Ollama's NDJSON frames nothing, so a blank line there says nothing.
+
+### Usage
+
+| Field | Where it is read from |
+| --- | --- |
+| the two counts the turn is shown against | `prompt_tokens` / `completion_tokens`, or Ollama's `prompt_eval_count` / `eval_count` |
+| `total_tokens` | the provider's own total. A backend that reports none leaves it `0` rather than having it summed from the two counts above |
+| the cached prompt | `prompt_tokens_details.cached_tokens` where nested, else the top-level `prompt_cache_hit_tokens` |
+| `credit` | the call's cost, where the gateway prices one |
+
+Ollama reports no usage object: the durations on the line carrying the counts are kept
+verbatim beside them.
+
+The whole object as the gateway sent it is kept on `ChatResult::raw_usage`, so a field no
+row here names is carried rather than dropped. Nothing reads it beyond the `debug` log
+that prints it: it is a record, not a feature.
 
 ### Completions
 

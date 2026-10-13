@@ -216,8 +216,14 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
 
       if (chat_result.usage) {
         result.usage = chat_result.usage;
-        spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
-                      chat_result.usage->completion_tokens);
+        spdlog::debug("tokens: prompt={}, completion={}, total={}, cached={}, credit={}",
+                      chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
+                      chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
+                      chat_result.usage->credit);
+      }
+      if (!chat_result.raw_usage.is_null()) {
+        spdlog::debug("usage as the provider reported it: {}",
+                      json::serialize(chat_result.raw_usage));
       }
 
       tool_was_called = !chat_result.tool_calls.empty();

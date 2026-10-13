@@ -134,7 +134,7 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
     std::string chunk =
         R"({"message":{"content":"hi"}})"
         "\n"
-        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9})"
+        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9,"total_duration":123456,"eval_duration":789})"
         "\n";
     cb(chunk.data(), chunk.size());
   };
@@ -147,6 +147,11 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 21);
   REQUIRE(result.usage->completion_tokens == 9);
+
+  // The final line carries timings beside the counts; they are kept as the daemon wrote
+  // them rather than dropped with the line.
+  REQUIRE(result.raw_usage.as_object().contains("total_duration"));
+  REQUIRE(result.raw_usage.at("eval_duration") == 789);
 }
 
 TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streaming]") {

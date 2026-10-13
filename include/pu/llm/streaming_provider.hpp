@@ -48,6 +48,7 @@ class StreamingProvider : public LLMProvider {
   std::string finish_reason_;
   std::string response_model_;
   std::optional<TokenUsage> usage_;
+  boost::json::value raw_usage_;
 
  private:
   std::string host_;
