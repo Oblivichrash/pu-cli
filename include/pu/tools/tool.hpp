@@ -24,9 +24,7 @@ struct ToolContext {
   struct Control {
     CancelToken stop_token;
     std::string note;  // the user's own words, carried in the stopped result
-    // Written by an approval that carried words; the executor reads it as a
-    // user note beside the tool result it would read any note at.
-    std::function<void(std::string)> on_note;
+    std::function<void(std::string)> on_note;  // an approval's words, back to the model
   };
   const Control* control = nullptr;
 

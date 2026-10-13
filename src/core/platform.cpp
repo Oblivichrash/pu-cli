@@ -95,18 +95,6 @@ std::string FromPipedOutput(std::string_view text) {
 
 namespace {
 
-// One self-pipe, written by the stop handler, read here. A signal arriving while
-// fgets is parked breaks nothing on its own, so the handler writes a byte and the
-// read loop wakes on the merged pipe's next read - which may never come. The
-// self-pipe is what makes the wake-up independent of the child's output.
-int stop_signal_fds[2] = {-1, -1};
-
-void HandleStopSignal(int) {
-  const char byte = 's';
-  ssize_t ignored = write(stop_signal_fds[1], &byte, 1);
-  (void)ignored;
-}
-
 }  // namespace
 
 int ExecuteCommand(const std::string& command, std::string& output,
@@ -129,12 +117,7 @@ int ExecuteCommand(const std::string& command, std::string& output,
 
   auto start = std::chrono::steady_clock::now();
 
-  const bool wants_stop = static_cast<bool>(stop_token);
-  bool stops = wants_stop;
-  if (stops && pipe(stop_signal_fds) != 0) {
-    spdlog::debug("[ExecuteCommand] stop pipe failed for command: {}", command);
-    stops = false;
-  }
+  const bool stops = static_cast<bool>(stop_token);
 
   int pipe_fds[2];
   if (pipe(pipe_fds) != 0) {
@@ -171,21 +154,8 @@ int ExecuteCommand(const std::string& command, std::string& output,
   FILE* pipe = fdopen(pipe_fds[0], "r");
   if (pipe == nullptr) {
     close(pipe_fds[0]);
-    if (stops) {
-      close(stop_signal_fds[0]);
-      close(stop_signal_fds[1]);
-      stop_signal_fds[0] = stop_signal_fds[1] = -1;
-    }
     output = "fdopen failed";
     return -1;
-  }
-
-  struct sigaction old_pipe {};
-  if (stops) {
-    struct sigaction act {};
-    act.sa_handler = HandleStopSignal;
-    sigemptyset(&act.sa_mask);
-    sigaction(SIGPIPE, &act, &old_pipe);
   }
 
   // fgets parks on the pipe until the child writes, so a quiet command would keep
@@ -215,13 +185,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   fclose(pipe);
   int status = 0;
   waitpid(pid, &status, 0);
-
-  if (stops) {
-    sigaction(SIGPIPE, &old_pipe, nullptr);
-    close(stop_signal_fds[0]);
-    close(stop_signal_fds[1]);
-    stop_signal_fds[0] = stop_signal_fds[1] = -1;
-  }
 
   int exit_code = -1;
   if (!stopped && status != -1 && WIFEXITED(status)) {

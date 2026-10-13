@@ -50,14 +50,14 @@ class Executor {
   // stop result when a command is killed, beside a tool result otherwise.
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
-  // Opens the approval gate: a command matching the policy's approval patterns
-  // parks in AskApproval until ResolveApproval answers it.
+  // A command matching the policy's approval patterns parks in AskApproval until
+  // ResolveApproval answers it.
   void EnableApprovalGate() { approval_asks_ = true; }
   void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
     on_approval_ask = std::move(cb);
   }
-  // Answers the pending ask. Without one pending, this is a harmless no-op: the
-  // waiting thread is the only reader of the answer.
+  // Answers the pending ask; without one, a harmless no-op the waiting thread
+  // alone reads.
   void ResolveApproval(bool allow, std::string note) {
     {
       std::lock_guard<std::mutex> lock(approval_mtx_);
@@ -88,13 +88,13 @@ class Executor {
 
   void ProbeStaticEnvironment();
 
-  // Parks the tool thread until ResolveApproval answers. The answer's note rides
-  // back beside the command; the model never sees the wait itself.
+  // Parks the tool thread until ResolveApproval answers; the answer's note rides
+  // back beside the command.
   bool AskApproval(const std::string& command, std::string& note);
 
   std::string user_note_;
 
-  // The approval gate: one pending ask, answered from the serve thread.
+  // One pending ask, answered from the serve thread.
   bool approval_asks_ = false;
   std::function<void(const std::string&)> on_approval_ask;
   std::mutex approval_mtx_;
