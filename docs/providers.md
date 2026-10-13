@@ -78,13 +78,13 @@ counterpart for a request.
 | --- | --- |
 | the two counts the turn is shown against | `prompt_tokens` / `completion_tokens`, or Ollama's `prompt_eval_count` / `eval_count` |
 | `total_tokens` | the provider's own total. A backend that reports none leaves it `0` rather than having it summed from the two counts above |
-| the cached prompt | `prompt_tokens_details.cached_tokens` where nested, else the top-level `prompt_cache_hit_tokens` |
+| the cached prompt | `prompt_tokens_details.cached_tokens` where nested, else the top-level `prompt_cache_hit_tokens`; Ollama names it `prompt_eval_cached_count` |
 | `credit` | the call's cost, where the gateway prices one |
 
 A name left empty in a shape means the field does not exist on that gateway.
 
-Ollama reports no usage object: the durations on the line carrying the counts are kept
-verbatim beside them.
+Ollama reports no usage object: the counts and durations ride on the final line, where
+they are kept verbatim rather than dropped with it.
 
 The whole object as the gateway sent it is kept on `ChatResult::raw_usage`, so a field no
 row here names is carried rather than dropped. Nothing reads it beyond the `debug` log

@@ -773,6 +773,33 @@ TEST_CASE("The default shape reads the OpenAI field names", "[openai][usage]") {
   REQUIRE(shape.finish_reason_field == "finish_reason");
 }
 
+TEST_CASE("The default shape reads a captured DeepSeek stream", "[openai][usage]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-chat";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("deepseek-chat.sse");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "pong");
+  REQUIRE(result.finish_reason == "stop");
+  REQUIRE(result.model == "deepseek-flash");
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 11);
+  REQUIRE(result.usage->completion_tokens == 2);
+  REQUIRE(result.usage->total_tokens == 13);
+  REQUIRE(result.usage->cached_tokens == 0);
+}
+
 TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][streaming]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";

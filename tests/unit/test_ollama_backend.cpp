@@ -7,8 +7,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
 
+#include <fstream>
+#include <sstream>
+
 using namespace pu;
 using namespace pu::tests;
+
+namespace {
+
+std::string ReadFixture(const std::string& name) {
+  std::ifstream file(std::string(PU_FIXTURES_DIR) + "/" + name, std::ios::binary);
+  std::ostringstream buf;
+  buf << file.rdbuf();
+  return buf.str();
+}
+
+}  // namespace
 
 TEST_CASE("OllamaProvider request building", "[ollama]") {
   OllamaProvider::Config config;
@@ -152,6 +166,35 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   // them rather than dropped with the line.
   REQUIRE(result.raw_usage.as_object().contains("total_duration"));
   REQUIRE(result.raw_usage.at("eval_duration") == 789);
+}
+
+TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
+  OllamaProvider::Config config;
+  config.model = "gpt-oss:120b";
+  config.host = "https://ollama.com";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("ollama-thinking.ndjson");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "pong");
+  REQUIRE(result.finish_reason == "stop");
+  REQUIRE(result.model == "gpt-oss:120b");
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 73);
+  REQUIRE(result.usage->completion_tokens == 42);
+  // The prompt was answered partly from the cache, and the count rides on the same line
+  // under Ollama's own name rather than a usage object.
+  REQUIRE(result.usage->cached_tokens == 48);
 }
 
 TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streaming]") {

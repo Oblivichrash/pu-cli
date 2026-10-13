@@ -121,13 +121,17 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
     usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
                         json::ValueOrDefault<int>(j, "eval_count", 0)};
+    // The cached prompt rides on the same line under Ollama's own name; without it the
+    // count reads as a gateway that cached nothing.
+    usage_->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
   }
 
   // Ollama reports no usage object: the counts and durations ride on the final line,
   // where they are kept as it wrote them rather than dropped with the line.
   boost::json::object reported;
-  for (const char* key : {"prompt_eval_count", "eval_count", "total_duration", "load_duration",
-                          "prompt_eval_duration", "eval_duration"}) {
+  for (const char* key : {"prompt_eval_count", "eval_count", "prompt_eval_cached_count",
+                          "total_duration", "load_duration", "prompt_eval_duration",
+                          "eval_duration"}) {
     if (json::HasKey(j, key)) reported[key] = j.at(key);
   }
   if (!reported.empty()) raw_usage_ = std::move(reported);
