@@ -261,9 +261,10 @@ class FakeBackend : public FakeHttpServer {
   static inline int completion_tokens_ = 56;
 };
 
-// Builds every string through json::value explicitly. A brace-init list of char* leaves the
-// member type to overload resolution, and Boost is free to pick differently across versions;
-// assigning a constructed value leaves no room to guess.
+// The name is a string, and this says so instead of leaving it to a conversion. A brace-init
+// list of char* here was read as something other than a string on CI's Boost, so the config
+// serialized without the name and startup threw "Missing agent name"; assigning a constructed
+// value is what made those tests pass.
 inline boost::json::value JsonStr(const std::string& s) {
   return boost::json::value(boost::json::string(s));
 }

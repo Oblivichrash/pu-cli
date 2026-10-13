@@ -63,3 +63,30 @@ thinks, calls a tool, then thinks again keeps that order. A block carries the
 `text`, an optional `signature` the provider wants replayed, and the provider's own
 `raw` JSON when it round-trips. Whether a block list reaches the wire as one string
 or as a list is decided per provider, as the signatures row says.
+
+### No backend here reports a context window
+
+Each was asked rather than assumed, and the answers are observations that drift
+rather than a contract to code against. Nothing reads them; they are kept because
+they explain why a window is not shown anywhere.
+
+| Backend | Endpoint | Answer |
+| --- | --- | --- |
+| DeepSeek | `GET /v1/models` | `context_window: 1048576` on each model |
+| Ollama Cloud | `POST /api/show` | a `model_info` key ending in `context_length` |
+| Ollama Cloud | `GET /api/ps` | `401 unauthorized`, so the loaded-model window is unreachable |
+| NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` |
+| NVIDIA NIM | `GET /v1/metadata` | `404 page not found` |
+| CodeBuddy | `GET /v2/models`, `/v3/config` | `models` is `null`; the endpoint answers 200 and names no models |
+
+Ollama's key prefix varies with the model's architecture, so a reader has to match
+the suffix rather than a fixed name. Measured across five models — `gptoss.`,
+`nemotron_h_moe.` and `gemma4.` for the first three, and none at all for
+`nemotron-3-ultra`, which a lookup naming `gptoss.` therefore misses.
+
+CodeBuddy truncates instead of refusing: a request carrying two million characters
+was answered `200` with a normal reply whose counts (`prompt_tokens: 250004` against
+`prompt_cache_hit_tokens: 249856` plus `prompt_cache_miss_tokens: 148`) put the
+cache ceiling at 250,000 tokens. The gateway never said so, so a request that
+outgrows the window is answered as though it fit and nothing on the client side can
+detect it from the status alone.
