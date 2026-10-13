@@ -134,15 +134,17 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
       }
 
       if (piece != nullptr && piece->is_object()) {
-        AppendContent(json::ValueOrDefault<std::string>(*piece, "content", ""), request);
+        AppendContent(
+            json::ValueOrDefault<std::string>(*piece, config_.shape.content_field, ""), request);
 
-        const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
+        const std::string refusal =
+            json::ValueOrDefault<std::string>(*piece, config_.shape.refusal_field, "");
         if (!refusal.empty()) refusal_ += refusal;
 
-        if (json::HasKey(*piece, "reasoning_content") &&
-            piece->at("reasoning_content").is_string()) {
-          AppendReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")),
-                          request);
+        const std::string_view reasoning_field = config_.shape.reasoning_field;
+        if (!reasoning_field.empty() && json::HasKey(*piece, reasoning_field) &&
+            piece->at(reasoning_field).is_string()) {
+          AppendReasoning(boost::json::value_to<std::string>(piece->at(reasoning_field)), request);
         }
 
         if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
@@ -162,28 +164,35 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
         }
       }
 
-      if (json::HasKey(choice, "finish_reason") && choice.at("finish_reason").is_string()) {
-        finish_reason_ = boost::json::value_to<std::string>(choice.at("finish_reason"));
+      const std::string_view finish_field = config_.shape.finish_reason_field;
+      if (!finish_field.empty() && json::HasKey(choice, finish_field) &&
+          choice.at(finish_field).is_string()) {
+        finish_reason_ = boost::json::value_to<std::string>(choice.at(finish_field));
       }
     }
   }
 
-  if (json::HasKey(j, "usage") && j.at("usage").is_object()) {
-    const boost::json::value& usage = j.at("usage");
+  const llm::ResponseShape& shape = config_.shape;
+  if (!shape.usage_field.empty() && json::HasKey(j, shape.usage_field) &&
+      j.at(shape.usage_field).is_object()) {
+    const boost::json::value& usage = j.at(shape.usage_field);
     TokenUsage counted;
-    counted.prompt_tokens = json::ValueOrDefault<int>(usage, "prompt_tokens", 0);
-    counted.completion_tokens = json::ValueOrDefault<int>(usage, "completion_tokens", 0);
-    counted.total_tokens = json::ValueOrDefault<int>(usage, "total_tokens", 0);
+    counted.prompt_tokens = json::ValueOrDefault<int>(usage, shape.prompt_tokens_field, 0);
+    counted.completion_tokens = json::ValueOrDefault<int>(usage, shape.completion_tokens_field, 0);
+    if (!shape.total_tokens_field.empty()) {
+      counted.total_tokens = json::ValueOrDefault<int>(usage, shape.total_tokens_field, 0);
+    }
     // The cached prompt is named in the nested OpenAI field by one gateway and at the
     // top level by another; both carry the same count.
-    if (json::HasKey(usage, "prompt_tokens_details")) {
+    if (!shape.cached_tokens_parent.empty() && json::HasKey(usage, shape.cached_tokens_parent)) {
+      counted.cached_tokens = json::ValueOrDefault<int>(usage.at(shape.cached_tokens_parent),
+                                                        shape.cached_tokens_nested_field, 0);
+    }
+    if (counted.cached_tokens == 0 && !shape.cached_tokens_top_level_field.empty()) {
       counted.cached_tokens =
-          json::ValueOrDefault<int>(usage.at("prompt_tokens_details"), "cached_tokens", 0);
+          json::ValueOrDefault<int>(usage, shape.cached_tokens_top_level_field, 0);
     }
-    if (counted.cached_tokens == 0) {
-      counted.cached_tokens = json::ValueOrDefault<int>(usage, "prompt_cache_hit_tokens", 0);
-    }
-    counted.credit = json::ValueOrDefault<double>(usage, "credit", 0.0);
+    counted.credit = json::ValueOrDefault<double>(usage, shape.credit_field, 0.0);
     usage_ = counted;
     raw_usage_ = usage;
   }

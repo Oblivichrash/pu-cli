@@ -725,6 +725,54 @@ TEST_CASE("OpenAIProvider reads a cached prompt the gateway names at the top lev
   REQUIRE(result.raw_usage.at("prompt_cache_miss_tokens") == 4);
 }
 
+TEST_CASE("A shape renames the fields the reply is read from", "[openai][usage]") {
+  OpenAIProvider::Config config;
+  config.model = "nim-model";
+  config.shape.reasoning_field = "reasoning";
+  config.shape.content_field = "text";
+  config.shape.usage_field = "token_usage";
+  config.shape.prompt_tokens_field = "input_tokens";
+  config.shape.completion_tokens_field = "output_tokens";
+  config.shape.cached_tokens_parent = "";
+  config.shape.cached_tokens_top_level_field = "cached_tokens";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"index":0,"delta":{"text":"hi","reasoning":"why"}}]})"
+        "\n"
+        R"(data: {"choices":[{"index":0,"finish_reason":"stop"}],"token_usage":{"input_tokens":7,"output_tokens":2,"cached_tokens":5}})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "hi");
+  REQUIRE(result.reasoning.size() == 1);
+  REQUIRE(result.reasoning[0].text == "why");
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 7);
+  REQUIRE(result.usage->completion_tokens == 2);
+  REQUIRE(result.usage->cached_tokens == 5);
+}
+
+TEST_CASE("The default shape reads the OpenAI field names", "[openai][usage]") {
+  const llm::ResponseShape shape;
+  REQUIRE(shape.content_field == "content");
+  REQUIRE(shape.reasoning_field == "reasoning_content");
+  REQUIRE(shape.usage_field == "usage");
+  REQUIRE(shape.prompt_tokens_field == "prompt_tokens");
+  REQUIRE(shape.cached_tokens_top_level_field == "prompt_cache_hit_tokens");
+  REQUIRE(shape.finish_reason_field == "finish_reason");
+}
+
 TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][streaming]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";

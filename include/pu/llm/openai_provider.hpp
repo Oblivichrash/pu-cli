@@ -2,6 +2,7 @@
 #pragma once
 
 #include "pu/core/http_client.hpp"
+#include "pu/llm/response_shape.hpp"
 #include "pu/llm/streaming_provider.hpp"
 
 #include <functional>
@@ -25,6 +26,7 @@ class OpenAIProvider : public StreamingProvider {
     std::optional<int> max_tokens;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
     std::function<std::vector<std::string>()> extra_headers;
+    llm::ResponseShape shape;
   };
 
   explicit OpenAIProvider(const Config& config, std::shared_ptr<pu::http::HttpClient> http);

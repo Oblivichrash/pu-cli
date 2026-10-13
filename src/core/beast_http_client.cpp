@@ -122,7 +122,7 @@ template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
                         std::string& error_body, CancelToken cancel_token) {
   beast::http::response_parser<beast::http::buffer_body> parser;
-  parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
+  parser.body_limit(64 * 1024 * 1024);
 
   beast::error_code ec;
   beast::http::read_header(stream, buffer, parser, ec);

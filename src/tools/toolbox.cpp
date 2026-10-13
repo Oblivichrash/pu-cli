@@ -26,7 +26,7 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
     if (IsAllowedToolNameChar(c)) {
       result.push_back(c);
     } else {
-      result.push_back('_');  // replace non-compliant chars with '_'
+      result.push_back('_');
     }
   }
   return result;

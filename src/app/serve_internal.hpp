@@ -28,7 +28,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
 struct ActiveWebSocket {
   std::shared_ptr<websocket::stream<tcp::socket>> client;  // null while nobody listens
   CancelToken cancel_token;
-  std::mutex mtx;  // guards client and cancel_token
+  std::mutex mtx;
 };
 
 }  // namespace pu::cli::detail

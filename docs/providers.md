@@ -68,12 +68,20 @@ gateway that writes `data:{...}` with no space reads the same as one that writes
 
 ### Usage
 
+Field names are not hardcoded in the reader: `ResponseShape`
+(`include/pu/llm/response_shape.hpp`) names every comparison a reply is read with, and a
+provider config carries the shape its gateway speaks. The default is the OpenAI-compatible
+spelling, so a gateway that renames nothing states nothing. `ProviderCapabilities` is the
+counterpart for a request.
+
 | Field | Where it is read from |
 | --- | --- |
 | the two counts the turn is shown against | `prompt_tokens` / `completion_tokens`, or Ollama's `prompt_eval_count` / `eval_count` |
 | `total_tokens` | the provider's own total. A backend that reports none leaves it `0` rather than having it summed from the two counts above |
 | the cached prompt | `prompt_tokens_details.cached_tokens` where nested, else the top-level `prompt_cache_hit_tokens` |
 | `credit` | the call's cost, where the gateway prices one |
+
+A name left empty in a shape means the field does not exist on that gateway.
 
 Ollama reports no usage object: the durations on the line carrying the counts are kept
 verbatim beside them.
