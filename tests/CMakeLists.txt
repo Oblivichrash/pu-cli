@@ -29,6 +29,7 @@ add_executable(pu_tests
     unit/test_backend_resolution.cpp
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
+    unit/test_list_models.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

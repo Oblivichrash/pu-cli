@@ -53,6 +53,10 @@ class Runtime {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
   }
+  pu::http::HttpClient& GetHttpClient() {
+    assert(is_initialized_ && "Initialize() must run before any HTTP call");
+    return *http_client_;
+  }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
   std::string HelpText();

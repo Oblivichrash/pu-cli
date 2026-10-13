@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <boost/json.hpp>
 
@@ -108,5 +109,10 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
+
+// Reads the model listing the backend's host reports and returns the ids it names.
+// Ollama lists at /api/tags, the OpenAI-compatible types at /models. A listing that
+// names no model is an empty vector, not an error. Throws HttpError on a failed read.
+std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
 
 }  // namespace pu::config

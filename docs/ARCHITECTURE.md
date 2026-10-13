@@ -443,7 +443,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New backend**: Inherit `StreamingProvider` (`include/pu/llm/streaming_provider.hpp`) and supply the endpoint path, request body, log tag, headers, and a per-line parser; a backend that does not stream over SSE or NDJSON inherits `LLMProvider` directly. Register it in `CreateBackend()` (`include/pu/config/backend.hpp`).
+- **New backend**: Inherit `StreamingProvider` (`include/pu/llm/streaming_provider.hpp`) and supply the endpoint path, request body, log tag, headers, and a per-line parser; a backend that does not stream over SSE or NDJSON inherits `LLMProvider` directly. Register it in `CreateBackend()` and its listing endpoint in `ListModels()` (both in `include/pu/config/backend.hpp`).
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

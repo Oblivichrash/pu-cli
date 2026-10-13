@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
 #include "pu/runtime.hpp"
+#include "pu/config/backend.hpp"
 
 #include <sstream>
 
@@ -32,7 +33,8 @@ std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string
 
 const std::vector<std::string>& CommandRouter::CommandOrder() {
   static const std::vector<std::string> order = {"/help",     "/backend", "/agents",
-                                                 "/clear",    "/rewind",  "/thinking"};
+                                                 "/models",   "/clear",   "/rewind",
+                                                 "/thinking"};
   return order;
 }
 
@@ -52,6 +54,10 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
         [this](Args args, Session& session, Output output) {
           return HandleAgents(args, session, output);
         }}},
+      {"/models",
+       {"  /models                List the models the active agent's backend reports\n"
+        "  /models <agent>        List the models a named agent's backend reports\n",
+        [this](Args args, Session&, Output output) { return HandleModels(args, output); }}},
       {"/clear",
        {"  /clear                 Clear conversation history\n",
         [](Args, Session& session, Output output) {
@@ -160,6 +166,42 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {
       output += " (API key set)";
     }
+  } catch (const std::exception& e) {
+    output = "Error: " + std::string(e.what());
+  }
+  return true;
+}
+
+bool CommandRouter::HandleModels(Args args, Output output) {
+  if (args.empty()) {
+    return ReportModels(runtime_.CurrentBackend(), output);
+  }
+  const config::AgentEntry* agent_config = runtime_.GetAgentManager().GetAgentConfig(args[0]);
+  if (!agent_config) {
+    output = "Unknown agent: " + args[0];
+    return true;
+  }
+  return ReportModels(agent_config->backend, output);
+}
+
+bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output) {
+  try {
+    const std::vector<std::string> models =
+        config::ListModels(cfg, runtime_.GetHttpClient());
+    if (models.empty()) {
+      output = "No models reported by " + std::string(config::BackendTypeName(cfg.type)) +
+               " at " + cfg.host;
+      return true;
+    }
+    std::ostringstream oss;
+    oss << models.size() << " model(s) reported by " <<
+           config::BackendTypeName(cfg.type) << " at " << cfg.host << ":\n";
+    for (const auto& model : models) {
+      oss << "  " << model;
+      if (model == cfg.model) oss << " (active)";
+      oss << "\n";
+    }
+    output = oss.str();
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }

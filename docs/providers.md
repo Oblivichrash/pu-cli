@@ -10,7 +10,7 @@ is reference material: which layer decides the provider is in
 provider and is the only path `Session` uses to obtain one. Accepted values are
 `ollama`, `openai`, and `codebuddy`; anything else is refused at load time, and
 an absent field means Ollama. "OpenAI compatible" covers OpenAI, DeepSeek
-thinking mode, vLLM, and compatible gateways.
+thinking mode, vLLM, and compatible gateways. The same file owns `ListModels`, which reads each type's listing endpoint - `/api/tags` for Ollama, `/models` for the OpenAI-compatible ones.
 
 A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
 `config/backend.hpp` — because a stored session, an `agents.json` entry and an

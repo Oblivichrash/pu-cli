@@ -53,4 +53,57 @@ std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
   }
 }
 
+std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http) {
+  if (cfg.host.empty()) {
+    throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
+  }
+
+  // A host must not end in a slash; the path is appended verbatim, as with the chat
+  // endpoints.
+  std::string url = cfg.host;
+  std::vector<std::string> headers;
+  if (cfg.type == BackendType::kOllama) {
+    url += "/api/tags";
+  } else {
+    url += "/models";
+  }
+  if (cfg.api_key && !cfg.api_key->empty()) {
+    headers.push_back("Authorization: Bearer " + *cfg.api_key);
+  }
+
+  const http::Response response = http.Get(url, headers);
+  if (response.body.empty()) return {};
+
+  boost::json::value parsed;
+  try {
+    parsed = boost::json::parse(response.body);
+  } catch (const boost::system::system_error&) {
+    throw pu::Error("Model listing from " + url + " does not parse as JSON");
+  }
+  if (!parsed.is_object()) return {};
+
+  const auto& obj = parsed.as_object();
+  const boost::json::value* container = nullptr;
+  if (cfg.type == BackendType::kOllama) {
+    const auto it = obj.find("models");
+    container = it != obj.end() ? &it->value() : nullptr;
+  } else {
+    const auto it = obj.find("data");
+    container = it != obj.end() ? &it->value() : nullptr;
+  }
+  if (container == nullptr || !container->is_array()) return {};
+
+  std::vector<std::string> models;
+  for (const auto& entry : container->as_array()) {
+    if (!entry.is_object()) continue;
+    const auto& entry_obj = entry.as_object();
+    const char* field = cfg.type == BackendType::kOllama ? "name" : "id";
+    const auto it = entry_obj.find(field);
+    if (it != entry_obj.end() && it->value().is_string()) {
+      models.push_back(boost::json::value_to<std::string>(it->value()));
+    }
+  }
+  return models;
+}
+
 }  // namespace pu::config

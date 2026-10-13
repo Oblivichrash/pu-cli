@@ -94,6 +94,7 @@ interaction and restored on restart, so each directory keeps its own session.
 | `/backend <agent>` | Switch to a predefined agent (rebuilds the tool set) |
 | `/backend <type> <model> [host] [api_key]` | Override the backend for this session, outranking `agents.json` for this run; the session keeps only the agent it names, and the fields are read afresh from `agents.json` on each start |
 | `/agents` | List available agents |
+| `/models [agent]` | List the models the active agent's (or a named agent's) backend reports |
 | `/clear` | Clear conversation history |
 | `/rewind <turn>` | Step back to before a turn; the next message replaces it |
 | `/thinking [level]` | Show or set this session's thinking level (`auto` drops the session override and follows the agent's configuration again) |

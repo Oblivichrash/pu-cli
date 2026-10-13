@@ -18,7 +18,7 @@ mkdir -p "$OUT"
 : "${CODEBUDDY_HOST:=https://www.codebuddy.ai}"
 
 DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-chat}"
-NIM_MODEL="${NIM_MODEL:-deepseek-ai/deepseek-r1}"
+NIM_MODEL="${NIM_MODEL:-deepseek-ai/deepseek-v4.1-flash}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-gpt-oss:120b}"
 CODEBUDDY_MODEL="${CODEBUDDY_MODEL:-deepseek-v4-flash}"
 

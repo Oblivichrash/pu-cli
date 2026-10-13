@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pu/config/backend.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
@@ -40,6 +41,8 @@ class CommandRouter {
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
   bool HandleBackend(Args args, Output output);
+  bool HandleModels(Args args, Output output);
+  bool ReportModels(const config::BackendConfig& cfg, Output output);
   bool HandleAgents(Args args, Session& session, Output output);
   bool HandleRewind(Args args, Session& session, Output output);
   bool HandleThinking(Args args, Output output);
