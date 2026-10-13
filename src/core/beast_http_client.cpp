@@ -216,6 +216,53 @@ std::string SummarizeErrorBody(const std::string& body) {
 
 }  // namespace
 
+http::Response BeastHttpClient::Get(const std::string& url,
+                                    const std::vector<std::string>& headers) {
+  auto parts = ParseUrl(url);
+
+  tcp::resolver resolver(ioc_);
+  beast::tcp_stream stream(ioc_);
+  const auto endpoints = resolver.resolve(parts.host, parts.port);
+  stream.connect(endpoints);
+
+  beast::http::response<beast::http::string_body> res;
+
+  if (parts.scheme == "https") {
+    beast::ssl_stream<beast::tcp_stream> ssl_stream(std::move(stream), ssl_ctx_);
+    ssl_stream.handshake(net::ssl::stream_base::client);
+
+    beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
+    ApplyHeaders(req, parts.host, "", headers);
+    beast::http::write(ssl_stream, req);
+
+    beast::flat_buffer buffer;
+    beast::http::read(ssl_stream, buffer, res);
+
+    beast::error_code ec;
+    ssl_stream.shutdown(ec);
+  } else {
+    beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
+    ApplyHeaders(req, parts.host, "", headers);
+    beast::http::write(stream, req);
+
+    beast::flat_buffer buffer;
+    beast::http::read(stream, buffer, res);
+
+    beast::error_code ec;
+    stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+  }
+
+  const unsigned status = res.result_int();
+  if (status >= 400) {
+    std::string detail = "HTTP error " + std::to_string(status);
+    const std::string summary = SummarizeErrorBody(res.body());
+    if (!summary.empty()) detail += ": " + summary;
+    throw HttpError(detail);
+  }
+
+  return Response{status, std::move(res.body())};
+}
+
 void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
                                  const std::vector<std::string>& headers, WriteCallback write_cb,
                                  CancelToken cancel_token) {

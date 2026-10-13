@@ -29,6 +29,8 @@ class BeastHttpClient : public HttpClient {
                   const std::vector<std::string>& headers, WriteCallback write_cb,
                   CancelToken cancel_token = nullptr) override;
 
+  Response Get(const std::string& url, const std::vector<std::string>& headers) override;
+
   void SetInterruptChecker(std::function<bool()> checker);
 
  private:

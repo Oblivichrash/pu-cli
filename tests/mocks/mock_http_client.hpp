@@ -25,10 +25,22 @@ class MockHttpClient : public pu::http::HttpClient {
     }
   }
 
+  pu::http::Response Get(const std::string& url,
+                         const std::vector<std::string>& headers) override {
+    last_url = url;
+    last_headers = headers;
+    last_get_url = url;
+    if (simulate_get) return simulate_get(url, headers);
+    throw pu::HttpError("no Get response configured");
+  }
+
   std::string last_url;
   std::string last_body;
   std::vector<std::string> last_headers;
   pu::CancelToken last_cancel_token;
+  std::string last_get_url;
+  std::function<pu::http::Response(const std::string&, const std::vector<std::string>&)>
+      simulate_get;
   std::function<void(const std::string&, const std::string&, const std::vector<std::string>&,
                      pu::http::WriteCallback)>
       simulate_response;

@@ -154,6 +154,26 @@ TEST_CASE("A success response still streams to the consumer", "[http][errors]") 
   REQUIRE(received == "streamed content");
 }
 
+TEST_CASE("A GET is read into one body", "[http][errors]") {
+  pu::tests::FakeHttpServer server(200, R"({"data":[{"id":"m","context_window":131072}]})");
+  pu::http::BeastHttpClient client;
+
+  const pu::http::Response res =
+      client.Get("http://127.0.0.1:" + std::to_string(server.Port()) + "/models", {});
+
+  REQUIRE(res.status == 200);
+  REQUIRE(res.body.find("131072") != std::string::npos);
+}
+
+TEST_CASE("A GET that fails reports what the server said", "[http][errors]") {
+  pu::tests::FakeHttpServer server(404, "not found here");
+  pu::http::BeastHttpClient client;
+
+  REQUIRE_THROWS_AS(
+      client.Get("http://127.0.0.1:" + std::to_string(server.Port()) + "/models", {}),
+      pu::HttpError);
+}
+
 TEST_CASE("The error a request is refused with decides its status", "[http][errors]") {
   const pu::RequestRefused refused("tool calls are pending");
   REQUIRE(StatusFor(refused) == 400);
