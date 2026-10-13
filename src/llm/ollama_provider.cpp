@@ -127,14 +127,11 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 
   // Ollama reports no usage object: the counts and durations ride on the final line,
-  // where they are kept as it wrote them rather than dropped with the line.
-  boost::json::object reported;
-  for (const char* key : {"prompt_eval_count", "eval_count", "prompt_eval_cached_count",
-                          "total_duration", "load_duration", "prompt_eval_duration",
-                          "eval_duration"}) {
-    if (json::HasKey(j, key)) reported[key] = j.at(key);
+  // which is kept whole rather than filtered to a list of names -- a list is a name
+  // someone has to remember to add to, and `prompt_eval_cached_count` was missed by one.
+  if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
+    raw_usage_ = j;
   }
-  if (!reported.empty()) raw_usage_ = std::move(reported);
 
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
     finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));

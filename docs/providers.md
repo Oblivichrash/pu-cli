@@ -83,8 +83,8 @@ counterpart for a request.
 
 A name left empty in a shape means the field does not exist on that gateway.
 
-Ollama reports no usage object: the counts and durations ride on the final line, where
-they are kept verbatim rather than dropped with it.
+Ollama reports no usage object: the counts and durations ride on the final line, which is
+kept whole rather than filtered to a list of names.
 
 The whole object as the gateway sent it is kept on `ChatResult::raw_usage`, so a field no
 row here names is carried rather than dropped. Nothing reads it beyond the `debug` log

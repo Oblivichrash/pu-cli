@@ -168,6 +168,33 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   REQUIRE(result.raw_usage.at("eval_duration") == 789);
 }
 
+TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"({"message":{"content":"hi"}})"
+        "\n"
+        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9,"a_count_from_the_future":7})"
+        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  // A count this build has never heard of survives, because the line is kept whole
+  // rather than filtered to a list of names that would have to be remembered.
+  REQUIRE(result.raw_usage.at("a_count_from_the_future") == 7);
+}
+
 TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
   OllamaProvider::Config config;
   config.model = "gpt-oss:120b";
