@@ -10,10 +10,10 @@ mkdir -p "$OUT"
 # ---------------------------------------------------------------------------
 # Fill these in. A host must not end in a slash; the path is appended verbatim.
 # ---------------------------------------------------------------------------
-: "${DEEPSEEK_KEY:=}"      # https://platform.deepseek.com
-: "${NIM_KEY:=}"           # https://build.nvidia.com   (key starts with nvapi-)
-: "${OLLAMA_KEY:=}"        # Ollama Cloud; leave empty for a local daemon
-: "${CODEBUDDY_KEY:=}"     # optional
+: "${DEEPSEEK_API_KEY:=}"      # https://platform.deepseek.com
+: "${NVIDIA_API_KEY:=}"           # https://build.nvidia.com   (key starts with nvapi-)
+: "${OLLAMA_API_KEY:=}"        # Ollama Cloud; leave empty for a local daemon
+: "${CODEBUDDY_API_KEY:=}"     # optional
 : "${OLLAMA_HOST:=https://ollama.com}"
 : "${CODEBUDDY_HOST:=https://www.codebuddy.ai}"
 
@@ -81,16 +81,16 @@ fetch() {
 }
 
 say "1. Chat streams (this is where the ResponseShape fields come from)"
-[ -n "$DEEPSEEK_KEY" ] && collect deepseek-stream \
-  "https://api.deepseek.com/chat/completions" "Authorization: Bearer $DEEPSEEK_KEY" \
+[ -n "$DEEPSEEK_API_KEY" ] && collect deepseek-stream \
+  "https://api.deepseek.com/chat/completions" "Authorization: Bearer $DEEPSEEK_API_KEY" \
   "$(body "$DEEPSEEK_MODEL")"
 
-[ -n "$NIM_KEY" ] && collect nim-stream \
-  "https://integrate.api.nvidia.com/v1/chat/completions" "Authorization: Bearer $NIM_KEY" \
+[ -n "$NVIDIA_API_KEY" ] && collect nim-stream \
+  "https://integrate.api.nvidia.com/v1/chat/completions" "Authorization: Bearer $NVIDIA_API_KEY" \
   "$(body "$NIM_MODEL")"
 
-if [ -n "$OLLAMA_KEY" ]; then
-  collect ollama-stream "$OLLAMA_HOST/api/chat" "Authorization: Bearer $OLLAMA_KEY" \
+if [ -n "$OLLAMA_API_KEY" ]; then
+  collect ollama-stream "$OLLAMA_HOST/api/chat" "Authorization: Bearer $OLLAMA_API_KEY" \
     "$(cat <<JSON
 {"model":"$OLLAMA_MODEL","stream":true,
  "messages":[{"role":"user","content":"$PROMPT"}]}
@@ -105,20 +105,20 @@ JSON
 )"
 fi
 
-[ -n "$CODEBUDDY_KEY" ] && collect codebuddy-stream \
-  "$CODEBUDDY_HOST/v1/chat/completions" "Authorization: Bearer $CODEBUDDY_KEY" \
+[ -n "$CODEBUDDY_API_KEY" ] && collect codebuddy-stream \
+  "$CODEBUDDY_HOST/v1/chat/completions" "Authorization: Bearer $CODEBUDDY_API_KEY" \
   "$(body "$CODEBUDDY_MODEL")"
 
 say "2. Model listings (context window and how a model is named)"
-[ -n "$DEEPSEEK_KEY" ] && fetch deepseek-models \
-  "https://api.deepseek.com/v1/models" "Authorization: Bearer $DEEPSEEK_KEY"
+[ -n "$DEEPSEEK_API_KEY" ] && fetch deepseek-models \
+  "https://api.deepseek.com/v1/models" "Authorization: Bearer $DEEPSEEK_API_KEY"
 
-[ -n "$NIM_KEY" ] && fetch nim-models \
-  "https://integrate.api.nvidia.com/v1/models" "Authorization: Bearer $NIM_KEY"
+[ -n "$NVIDIA_API_KEY" ] && fetch nim-models \
+  "https://integrate.api.nvidia.com/v1/models" "Authorization: Bearer $NVIDIA_API_KEY"
 
-if [ -n "$OLLAMA_KEY" ]; then
-  fetch ollama-tags "$OLLAMA_HOST/api/tags" "Authorization: Bearer $OLLAMA_KEY"
-  fetch ollama-show "$OLLAMA_HOST/api/show" "Authorization: Bearer $OLLAMA_KEY" \
+if [ -n "$OLLAMA_API_KEY" ]; then
+  fetch ollama-tags "$OLLAMA_HOST/api/tags" "Authorization: Bearer $OLLAMA_API_KEY"
+  fetch ollama-show "$OLLAMA_HOST/api/show" "Authorization: Bearer $OLLAMA_API_KEY" \
     -H 'Content-Type: application/json' -d "{\"model\":\"$OLLAMA_MODEL\"}"
 fi
 
