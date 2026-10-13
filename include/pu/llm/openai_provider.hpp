@@ -52,6 +52,9 @@ class OpenAIProvider : public StreamingProvider {
   };
   std::vector<ToolCallAccumulator> pending_tools_;
 
+  // The gateway's refusal text, kept apart from `content_` until the stream ends: a
+  // reply can arrive with both, and folding one into the other mid-stream would make
+  // the two indistinguishable.
   std::string refusal_;
 };
 

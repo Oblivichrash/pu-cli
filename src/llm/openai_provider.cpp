@@ -200,7 +200,12 @@ void OpenAIProvider::ParseLine(std::string_view line, const ChatRequest& request
 
 void OpenAIProvider::FinishStream(const ChatRequest& request) {
   FlushPendingToolCalls(request);
-  if (content_.empty()) content_ = std::move(refusal_);
+  // A refusal that arrived beside content is still the provider's own report on the
+  // turn, so it follows the reply rather than being dropped with the empty-content case.
+  if (!refusal_.empty()) {
+    if (!content_.empty()) content_ += "\n";
+    content_ += std::move(refusal_);
+  }
 }
 
 }  // namespace pu

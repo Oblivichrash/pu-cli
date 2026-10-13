@@ -334,6 +334,31 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
   REQUIRE(result.content == "I cannot help with that");
 }
 
+TEST_CASE("OpenAIProvider keeps a refusal that arrives beside content", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"delta":{"content":"Here is the answer"}}]})"
+        "\n"
+        R"(data: {"choices":[{"delta":{"refusal":"I cannot help with that"}}]})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "Here is the answer\nI cannot help with that");
+}
+
 TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its sentinel",
           "[openai][tools]") {
   OpenAIProvider::Config config;
