@@ -221,7 +221,8 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
                                       CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      TokenCallback reasoning_callback) {
+                                      TokenCallback reasoning_callback,
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
   try {
     BeginRequest();
@@ -245,7 +246,8 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     auto provider = session->CreateProvider(CurrentBackend(), http_client_);
     auto exec_result =
         executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_,
-                           cancel_token, content_callback, tool_callbacks, reasoning_callback);
+                           cancel_token, content_callback, tool_callbacks, reasoning_callback,
+                           command_stop_token);
     result = std::move(exec_result);
     SaveCurrentSession();
     return result;

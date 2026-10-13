@@ -52,12 +52,17 @@ class Executor {
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
+  // The user's words typed while a turn runs. The tool loop drains it: into the
+  // stop result when a command is killed, beside a tool result otherwise.
+  void SetUserNote(std::string note) { user_note_ = std::move(note); }
+
   ExecutionResult Execute(const std::string& input, Conversation& conversation,
                           LLMProvider* provider, Toolbox& toolbox,
                           CancelToken cancel_token = nullptr,
                           TokenCallback content_callback = nullptr,
                           ToolCallbacks tool_callbacks = {},
-                          TokenCallback reasoning_callback = nullptr);
+                          TokenCallback reasoning_callback = nullptr,
+                          CancelToken command_stop_token = nullptr);
 
   std::string BuildStaticSystemContext() const;
 
@@ -66,9 +71,12 @@ class Executor {
                               CancelToken cancel_token,
                               TokenCallback content_callback,
                               ToolCallbacks tool_callbacks,
-                              TokenCallback reasoning_callback);
+                              TokenCallback reasoning_callback,
+                              CancelToken command_stop_token = nullptr);
 
   void ProbeStaticEnvironment();
+
+  std::string user_note_;
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;

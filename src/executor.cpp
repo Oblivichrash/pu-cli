@@ -149,11 +149,13 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   CancelToken cancel_token,
                                   TokenCallback content_callback,
                                   ToolCallbacks tool_callbacks,
-                                  TokenCallback reasoning_callback) {
+                                  TokenCallback reasoning_callback,
+                                  CancelToken command_stop_token) {
   conversation.Append("user", input);
 
-  ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
-                                       content_callback, tool_callbacks, reasoning_callback);
+  ExecutionResult result =
+      RunToolLoop(conversation, provider, toolbox, cancel_token, content_callback,
+                  tool_callbacks, reasoning_callback, command_stop_token);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
@@ -164,7 +166,8 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
                                       Toolbox& toolbox, CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      TokenCallback reasoning_callback) {
+                                      TokenCallback reasoning_callback,
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
 
   if (!provider->SupportsTools()) {
@@ -290,6 +293,11 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
+    ToolContext::Control control;
+    control.stop_token = command_stop_token;
+    control.note = user_note_;
+    user_note_.clear();  // one note stops one command; a fresh one needs a new word
+    tool_ctx.control = command_stop_token ? &control : nullptr;
     for (const auto& call : chat_result.tool_calls) {
       ++result.tool_call_count;
 
@@ -321,6 +329,15 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         } else {
           tool_callbacks.on_end(call.id, tool_result, "");
         }
+      }
+
+      // A note typed while the command ran reaches the model beside its result.
+      if (!user_note_.empty() && cancel_token) {
+        ChatMessage note_msg;
+        note_msg.role = "user";
+        note_msg.content = "[user note during the turn] " + user_note_;
+        conversation.Append(note_msg);
+        user_note_.clear();
       }
 
       ChatMessage tool_msg;

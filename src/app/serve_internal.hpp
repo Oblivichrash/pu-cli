@@ -28,6 +28,10 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
 struct ActiveWebSocket {
   std::shared_ptr<websocket::stream<tcp::socket>> client;  // null while nobody listens
   CancelToken cancel_token;
+  // Arms the running command's stop, one command at a time: the executor reads and
+  // clears it at the next tool boundary, and the killed result carries the note.
+  CancelToken command_stop;
+  std::string command_note;
   std::mutex mtx;
 };
 

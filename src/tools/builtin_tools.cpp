@@ -40,9 +40,9 @@ struct RiskAssessment {
 struct CommandResult {
   int exit_code = 0;
   std::string stdout_content;
-  std::string stderr_content;
   bool was_intercepted = false;
   std::string intercept_reason;
+  bool was_stopped = false;  // killed through the stop token before it finished
 };
 
 class CommandExecutor {
@@ -62,7 +62,7 @@ class CommandExecutor {
     return result;
   }
 
-  CommandResult Execute(const std::string& command) {
+  CommandResult Execute(const std::string& command, const pu::CancelToken& stop_token = {}) {
     CommandResult result;
     auto risk = AssessRisk(command);
     if (risk.level == RiskLevel::kDangerous) {
@@ -73,10 +73,10 @@ class CommandExecutor {
     }
 
     std::string output;
-    int exit_code = pu::platform::ExecuteCommand(command, output, sandbox_path_);
+    int exit_code = pu::platform::ExecuteCommand(command, output, stop_token, sandbox_path_);
     result.exit_code = exit_code;
     result.stdout_content = output;
-    if (exit_code != 0) result.stderr_content = output;
+    result.was_stopped = static_cast<bool>(stop_token) && exit_code == -1;
     return result;
   }
 
@@ -157,7 +157,16 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
     return tools::MakeToolResultJson(false, "", "Command rejected: " + risk.reason, -1, true);
   }
 
-  auto result = executor.Execute(command);
+  const pu::CancelToken& stop_token =
+      ctx.control ? ctx.control->stop_token : pu::CancelToken{};
+  auto result = executor.Execute(command, stop_token);
+  if (result.was_stopped) {
+    std::string note = "Command stopped by the user";
+    if (ctx.control && !ctx.control->note.empty()) {
+      note += ". The user adds: " + ctx.control->note;
+    }
+    return tools::MakeToolResultJson(false, result.stdout_content, note, -1);
+  }
   if (result.was_intercepted) {
     return tools::MakeToolResultJson(false, "", "Command rejected: " + result.intercept_reason,
                                      -1, true);

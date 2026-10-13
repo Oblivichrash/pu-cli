@@ -35,7 +35,8 @@ class Runtime {
       const std::string& input, bool& is_command, CancelToken cancel_token = nullptr,
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
-      TokenCallback reasoning_callback = nullptr);
+      TokenCallback reasoning_callback = nullptr,
+      CancelToken command_stop_token = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -47,6 +48,19 @@ class Runtime {
   Toolbox& GetToolbox() {
     assert(is_initialized_ && "Initialize() must run before any toolbox query");
     return toolbox_;
+  }
+
+  // Words typed while a turn runs. The next tool boundary carries them to the
+  // model; a command killed through the token names them in its result.
+  void SetUserNote(std::string note) {
+    assert(is_initialized_ && "Initialize() must run before any note");
+    executor_->SetUserNote(std::move(note));
+  }
+
+  // A fresh token per turn, stored so stop_command can arm it while the turn runs.
+  CancelToken NewCommandStopToken() {
+    command_stop_token_ = std::make_shared<std::atomic<bool>>(false);
+    return command_stop_token_;
   }
 
   AgentManager& GetAgentManager() {
@@ -88,6 +102,7 @@ class Runtime {
   std::shared_ptr<pu::http::HttpClient> http_client_;
   Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
+  CancelToken command_stop_token_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
 

@@ -184,6 +184,8 @@ and status.
 ```json
 {"type":"run","payload":{"text":"user message"}}
 {"type":"cancel"}
+{"type":"note","payload":{"text":"words for the model at the next tool boundary"}}
+{"type":"stop_command","payload":{"text":"why the command was stopped"}}
 ```
 
 **Server → client**
@@ -206,7 +208,10 @@ conversation and is what a page can show against a model's window. It arrives
 before `done`, and a provider that reports no counts sends none.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
-its call. `cancel` sets the cancel token and leaves the connection open; the turn
+its call. While one runs, `stop_command` kills that command's process group: the
+tool result comes back `success: false` with the note in `error`, and the turn
+continues. `note` delivers words without a kill, which the executor appends beside
+the next tool result. `cancel` sets the cancel token and leaves the connection open; the turn
 then ends with `done`. `thinking` is a channel of its own, rendered beside the
 answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include "pu/config/security_policy.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
 #include "pu/llm/llm_provider.hpp"
@@ -16,6 +18,13 @@ namespace pu {
 
 struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
+  // Who can stop a running command, and what the user wants the model to know
+  // about it. Null when the caller offers no control, which the CLI does.
+  struct Control {
+    CancelToken stop_token;
+    std::string note;  // the user's own words, carried in the stopped result
+  };
+  const Control* control = nullptr;
 };
 
 class Tool {

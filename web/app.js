@@ -4,6 +4,7 @@
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
+const stopToolBtn = document.getElementById("stop-tool");
 let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
@@ -315,9 +316,11 @@ function handleToolStart(payload) {
   };
   currentAssistantBlocks.push(block);
   updateCurrentAssistantBlocks();
+  setStopToolVisible(true);
 }
 
 function handleToolEnd(payload) {
+  setStopToolVisible(false);
   const block = currentAssistantBlocks.find(b =>
     b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id
   );
@@ -542,10 +545,17 @@ function scheduleReconnect() {
   }, delay);
 }
 
+// The stop-command button is only meaningful while a command is actually running,
+// which is what tool_start and tool_end mark.
+function setStopToolVisible(visible) {
+  stopToolBtn.hidden = !visible;
+}
+
 function setSendButtonState(streaming) {
   isStreaming = streaming;
   sendBtn.textContent = streaming ? "Stop" : "Send";
   sendBtn.disabled = false;
+  if (!streaming) setStopToolVisible(false);
   // The level applies to the next message, so it is locked while one is in flight
   // rather than left changeable into something that would not have applied.
   thinkingSelect.disabled = streaming;
@@ -590,6 +600,14 @@ async function rewindToTurn(turn, text) {
     createSystemMessage("Could not step back: " + e.message);
   }
 }
+
+stopToolBtn.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const note = prompt("Optional note for the model (why the command was stopped):");
+  if (note === null) return;  // cancelled: leave the command running
+  ws.send(JSON.stringify({ type: "stop_command", payload: { text: note || "" } }));
+  setStopToolVisible(false);
+});
 
 function sendMessage() {
   if (isStreaming) {

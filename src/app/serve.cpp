@@ -97,6 +97,26 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
       active_ws->cancel_token->store(true);
       continue;
     }
+    if (type == "note") {
+      const std::string note = json::ValueOrDefault<std::string>(
+          json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}),
+          "text", "");
+      if (!note.empty()) runtime.SetUserNote(note);
+      continue;
+    }
+    if (type == "stop_command") {
+      const auto payload = json::ValueOrDefault<boost::json::value>(
+          jv, "payload", boost::json::object{});
+      const std::string note =
+          json::ValueOrDefault<std::string>(payload, "text", "");
+      std::lock_guard<std::mutex> lock(active_ws->mtx);
+      if (!active_ws->command_stop) {
+        active_ws->command_stop = std::make_shared<std::atomic<bool>>(false);
+      }
+      active_ws->command_note = note;
+      active_ws->command_stop->store(true);
+      continue;
+    }
     if (type != "run") continue;
 
     const std::string payload_text = json::ValueOrDefault<std::string>(
@@ -138,6 +158,14 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
         say(frame);
       };
 
+      CancelToken command_stop;
+      {
+        std::lock_guard<std::mutex> lock(active_ws->mtx);
+        active_ws->command_stop = std::make_shared<std::atomic<bool>>(false);
+        active_ws->command_note.clear();
+        command_stop = active_ws->command_stop;
+      }
+
       {
         std::lock_guard<std::mutex> lock(io_mutex);
         result = runtime.ProcessInput(
@@ -152,7 +180,8 @@ void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> re
               if (thought.empty()) return;
               boost::json::value frame = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
               say(frame);
-            });
+            },
+            command_stop);
       }
 
       if (!result.notice.empty()) {
