@@ -78,7 +78,7 @@ std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::val
                                  ToolContext& ctx) {
   const auto it = tools_.find(name);
   if (it == tools_.end()) {
-    return tools::MakeToolResultJson(false, "", "", "Tool not found: " + name, -1);
+    return tools::MakeToolResultJson(false, "", "Tool not found: " + name, -1);
   }
 
   return it->second->Execute(args, ctx);

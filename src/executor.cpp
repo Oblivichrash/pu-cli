@@ -304,7 +304,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         tool_result = toolbox.ExecuteTool(call.name, call.arguments, tool_ctx);
       } catch (const std::exception& e) {
         tool_result = tools::MakeToolResultJson(
-            false, "", "", std::string("Tool execution error: ") + e.what(), -1);
+            false, "", std::string("Tool execution error: ") + e.what(), -1);
       }
       auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now() - tool_start)
@@ -317,7 +317,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       if (tool_callbacks.on_end) {
         auto parsed = tools::ParseToolResult(tool_result);
         if (parsed.valid) {
-          tool_callbacks.on_end(call.id, parsed.stdout_content, parsed.error);
+          tool_callbacks.on_end(call.id, parsed.output, parsed.error);
         } else {
           tool_callbacks.on_end(call.id, tool_result, "");
         }

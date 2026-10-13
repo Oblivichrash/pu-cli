@@ -169,7 +169,7 @@ void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http
 
         if (msg.role == context::kToolRole) {
           const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
-          item.as_object()["output"] = parsed.valid ? parsed.stdout_content : msg.content;
+          item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
           item.as_object()["error"] = parsed.error;
         }
 

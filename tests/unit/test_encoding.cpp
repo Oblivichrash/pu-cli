@@ -120,13 +120,13 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
   const std::string gbk_stdout = "\xB2\xBB\xCA\xC7\xC4\xDA\xB2\xBF\xBB\xF2";
 
   const std::string result =
-      tools::MakeToolResultJson(false, gbk_stdout, gbk_stdout, "Command failed (exit 1)", 1);
+      tools::MakeToolResultJson(false, gbk_stdout, "Command failed (exit 1)", 1);
 
   const auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("exit_code") == 1);
-  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("stdout"))));
-  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("stderr"))));
+  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
+  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
 
   const auto parsed = tools::ParseToolResult(result);
   REQUIRE(parsed.valid);
@@ -136,10 +136,10 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
 
 TEST_CASE("Tool results keep valid text byte for byte", "[tools][text]") {
   const std::string utf8_stdout = "success \xE4\xB8\xAD\xE6\x96\x87";
-  const std::string result = tools::MakeToolResultJson(true, utf8_stdout, "", "", 0);
+  const std::string result = tools::MakeToolResultJson(true, utf8_stdout, "", 0);
 
   const auto j = boost::json::parse(result);
-  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")) == utf8_stdout);
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == utf8_stdout);
 }
 
 TEST_CASE("ExecuteCommand returns valid UTF-8 for localized shell output", "[platform][text]") {

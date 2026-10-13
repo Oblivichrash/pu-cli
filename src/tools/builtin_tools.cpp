@@ -126,15 +126,15 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
     command = boost::json::value_to<std::string>(args.at("command"));
   }
   if (command.empty()) {
-    return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
+    return tools::MakeToolResultJson(false, "", "'command' parameter is required", -1);
   }
 
   if (ctx.security && ctx.security->max_command_length > 0 &&
       command.size() > ctx.security->max_command_length) {
-    return tools::MakeToolResultJson(false, "", "",
-                                     "command exceeds maximum allowed length (" +
-                                         std::to_string(ctx.security->max_command_length) + ")",
-                                     -1);
+    return tools::MakeToolResultJson(
+        false, "", "command exceeds maximum allowed length (" +
+                        std::to_string(ctx.security->max_command_length) + ")",
+        -1);
   }
 
   if (ctx.security) {
@@ -142,7 +142,11 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
       std::regex re("\\b" + pattern + "\\b");
       if (std::regex_search(command, re)) {
         return tools::MakeToolResultJson(
-            false, "", "", "command contains forbidden pattern '" + pattern + "'", -1);
+            false, "",
+            "Command rejected: contains forbidden pattern '" + pattern + "'. This sandbox " +
+                "forbids " + tools::QuoteJoin(ctx.security->forbidden_patterns) +
+                ". Rework the command to stay within them.",
+            -1, true);
       }
     }
   }
@@ -150,19 +154,20 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
   CommandExecutor executor(sandbox_root_);
   auto risk = executor.AssessRisk(command);
   if (risk.level == RiskLevel::kDangerous) {
-    return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
+    return tools::MakeToolResultJson(false, "", "Command rejected: " + risk.reason, -1, true);
   }
 
   auto result = executor.Execute(command);
   if (result.was_intercepted) {
-    return tools::MakeToolResultJson(false, "", "", "Blocked: " + result.intercept_reason, -1);
+    return tools::MakeToolResultJson(false, "", "Command rejected: " + result.intercept_reason,
+                                     -1, true);
   }
 
   if (result.exit_code == 0) {
-    return tools::MakeToolResultJson(true, result.stdout_content, result.stderr_content, "", 0);
+    return tools::MakeToolResultJson(true, result.stdout_content, "", 0);
   } else {
     return tools::MakeToolResultJson(
-        false, result.stdout_content, result.stderr_content,
+        false, result.stdout_content,
         "Command failed (exit " + std::to_string(result.exit_code) + ")", result.exit_code);
   }
 }
@@ -195,11 +200,11 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   std::string path = json::ValueOrDefault<std::string>(args, "path", "");
   std::string content = json::ValueOrDefault<std::string>(args, "content", "");
   if (path.empty()) {
-    return tools::MakeToolResultJson(false, "", "", "'path' is required", -1);
+    return tools::MakeToolResultJson(false, "", "'path' is required", -1);
   }
 
   if (!ctx.security) {
-    return tools::MakeToolResultJson(false, "", "", "security policy not set", -1);
+    return tools::MakeToolResultJson(false, "", "security policy not set", -1);
   }
 
   std::error_code ec;
@@ -207,36 +212,36 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
   if (ec) {
     return tools::MakeToolResultJson(
-        false, "", "", "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
+        false, "", "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
   }
 
   std::filesystem::path full_path = sandbox_canonical / path;
   full_path = std::filesystem::weakly_canonical(full_path, ec);
   if (ec) {
-    return tools::MakeToolResultJson(false, "", "", "invalid path", -1);
+    return tools::MakeToolResultJson(false, "", "invalid path", -1);
   }
 
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
-    return tools::MakeToolResultJson(false, "", "",
-                                     "path outside sandbox root (traversal not allowed)", -1);
+    return tools::MakeToolResultJson(
+        false, "", "path outside sandbox root (traversal not allowed)", -1, true);
   }
 
   std::filesystem::create_directories(full_path.parent_path(), ec);
   if (ec) {
-    return tools::MakeToolResultJson(false, "", "", "cannot create parent directories", -1);
+    return tools::MakeToolResultJson(false, "", "cannot create parent directories", -1);
   }
 
   std::ofstream file(full_path);
   if (!file.is_open()) {
-    return tools::MakeToolResultJson(false, "", "", "cannot write to " + path, -1);
+    return tools::MakeToolResultJson(false, "", "cannot write to " + path, -1);
   }
   file << content;
 
   std::string summary =
       "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
-  return tools::MakeToolResultJson(true, summary, "", "", 0);
+  return tools::MakeToolResultJson(true, summary, "", 0);
 }
 
 }  // namespace pu::tools

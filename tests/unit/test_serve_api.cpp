@@ -94,7 +94,7 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "execute_bash";
   receipt.content = boost::json::serialize(boost::json::object{
-      {"success", true}, {"stdout", "hi\n"}, {"stderr", ""}, {"error", ""}, {"exit_code", 0}});
+      {"success", true}, {"blocked", false}, {"output", "hi\n"}, {"error", ""}, {"exit_code", 0}});
   conversation.Append(receipt);
 
   auto j = ParseJson(client.Get("/api/history"));

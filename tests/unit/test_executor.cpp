@@ -222,7 +222,7 @@ class TrackingTool : public Tool {
   }
   std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
     ++executions;
-    return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
+    return R"({"success":true,"blocked":false,"output":"ran","error":"","exit_code":0})";
   }
 
   int executions = 0;
@@ -241,7 +241,7 @@ class NamedTool : public Tool {
   }
   std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
     ++executions;
-    return R"({"success":true,"stdout":"","stderr":"","error":"","exit_code":0})";
+    return R"({"success":true,"blocked":false,"output":"","error":"","exit_code":0})";
   }
 
   int executions = 0;

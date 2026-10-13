@@ -114,6 +114,8 @@ int ExecuteCommand(const std::string& command, std::string& output,
     full_cmd = "cd \"" + quoted_dir + "\" && (" + command + ")";
 #endif
   }
+  // The merged stream is the tool's whole output; the caller cannot tell stderr
+  // from stdout afterward, which is why the tool result carries one field for it.
   full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();

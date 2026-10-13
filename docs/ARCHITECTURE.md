@@ -132,7 +132,7 @@ switching the backend does not clear it.
 **Structured tool output.** Tools return JSON through the schema in
 `include/pu/tools/tool.hpp`, whose field set is documented in
 [README](../README.md#tool-output-format). The executor stores it verbatim so
-the model sees what the tool produced, and reads `stdout`/`error` out of it only
+the model sees what the tool produced, and reads `output`/`error` out of it only
 for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
 when the named tool is absent, so callers never parse two shapes.
 

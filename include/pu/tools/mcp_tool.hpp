@@ -25,7 +25,7 @@ class McpTool : public Tool {
 
   std::string Execute(const boost::json::value& args, ToolContext& /*ctx*/) override {
     if (!client_->IsConnected()) {
-      return MakeToolResultJson(false, "", "", "MCP client is not connected", -1);
+      return MakeToolResultJson(false, "", "MCP client is not connected", -1);
     }
     return WrapResult(client_->CallTool(original_tool_name_, args));
   }
@@ -34,7 +34,7 @@ class McpTool : public Tool {
   static std::string WrapResult(const std::string& raw) {
     const bool is_error = raw.rfind("Error:", 0) == 0 || raw.rfind("MCP error:", 0) == 0 ||
                           raw.rfind("MCP call error:", 0) == 0;
-    return MakeToolResultJson(!is_error, raw, {}, is_error ? raw : std::string{}, is_error ? 1 : 0);
+    return MakeToolResultJson(!is_error, raw, is_error ? raw : std::string{}, is_error ? 1 : 0);
   }
 
   std::shared_ptr<mcp::McpClient> client_;

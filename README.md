@@ -124,14 +124,18 @@ All tools return structured JSON with the following fields:
 ```json
 {
   "success": true/false,
-  "stdout": "...",
-  "stderr": "...",
+  "blocked": true/false,
+  "output": "...",
   "error": "...",
   "exit_code": 0
 }
 ```
 
-The executor reads `success` and `stdout`/`error` from it; the transcript keeps the result verbatim, so the model sees what the tool produced.
+- `output` carries everything the command itself printed (a merged stream: the executor cannot tell stderr from stdout afterward)
+- `error` is the tool layer's verdict — why the command failed, or why it was refused
+- `blocked: true` marks a refusal by policy: the command never ran, so `exit_code` is `-1` and `output` is empty. The refusal names the forbidden pattern that matched and the sandbox's whole pattern list, so one denial teaches the model the full boundary
+
+The executor reads `success` and `output`/`error` from it; the transcript keeps the result verbatim, so the model sees what the tool produced.
 
 ---
 
