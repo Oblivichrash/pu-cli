@@ -195,6 +195,32 @@ TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
   REQUIRE(result.raw_usage.at("a_count_from_the_future") == 7);
 }
 
+TEST_CASE("OllamaProvider names the fields on a captured frame that nothing reads",
+          "[ollama][usage][fixture]") {
+  OllamaProvider::Config config;
+  config.model = "gpt-oss:120b";
+  config.host = "https://ollama.com";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("ollama-thinking.ndjson");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.usage->cached_tokens == 48);
+
+  // `created_at` arrives on every line and nothing names it; the set is asserted whole so
+  // that a field the daemon adds fails here rather than passing unread.
+  REQUIRE(result.unread_fields == std::vector<std::string>{"created_at"});
+}
+
 TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
   OllamaProvider::Config config;
   config.model = "gpt-oss:120b";

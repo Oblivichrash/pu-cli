@@ -225,6 +225,13 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         spdlog::debug("usage as the provider reported it: {}",
                       json::serialize(chat_result.raw_usage));
       }
+      if (!chat_result.unread_fields.empty()) {
+        // Not a failure: a gateway may add a field at will. It is the one signal that says
+        // a field the backend should have read reached us and nothing named it.
+        spdlog::debug("fields on the reply nothing reads: {}",
+                      boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
+                                                                chat_result.unread_fields.end())));
+      }
 
       tool_was_called = !chat_result.tool_calls.empty();
       if (!tool_was_called) {

@@ -66,6 +66,8 @@ void OpenAIProvider::ResetAccumulators() {
   tool_calls_.clear();
   usage_.reset();
   raw_usage_ = nullptr;
+  unread_fields_.clear();
+  inspected_frame_ = false;
   pending_data_.clear();
   reply_choice_index_ = -1;
   reported_extra_choice_ = false;
@@ -105,6 +107,13 @@ std::string OpenAIProvider::BuildRequest(std::span<const ChatMessage> history,
 }
 
 void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
+  // The top-level names this reads, kept beside the reads themselves so a name added to
+  // the wire has to pass them to go unnoticed. `done` is this provider's own sentinel.
+  static constexpr std::string_view kReadKeys[] = {
+      "error", "choices", "usage", "model", "done",
+  };
+  NoteUnreadFields(j, kReadKeys);
+
   if (json::HasKey(j, "error")) {
     throw Error("provider error: " + StreamErrorDetail(j.at("error")));
   }

@@ -113,6 +113,10 @@ struct ChatResult {
   // The usage object exactly as the gateway sent it, so a field nothing reads yet is
   // carried rather than dropped. Null where the backend reports no usage object.
   boost::json::value raw_usage;
+  // Keys a frame carried that no code names. A gateway is free to add one, so this is a
+  // signal rather than an error: it is what says a field the backend should have read
+  // went unnoticed, and it is asserted by the tests that pin a captured stream.
+  std::vector<std::string> unread_fields;
   std::string finish_reason;
   std::string model;
 };

@@ -6,6 +6,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+
 namespace pu {
 
 StreamingProvider::StreamingProvider(std::string host, std::string api_key,
@@ -47,6 +49,25 @@ void StreamingProvider::AppendToolCall(ToolCall call, const ChatRequest& request
   if (request.on_tool_call) request.on_tool_call(tool_calls_.back());
 }
 
+void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
+                                         std::span<const std::string_view> read_keys) {
+  // One frame is enough: a stream repeats its shape, and walking every one of 300 frames
+  // would put this on the hot path to learn what the first already said.
+  if (inspected_frame_) return;
+
+  const boost::json::object* obj = j.if_object();
+  if (obj == nullptr) return;
+  inspected_frame_ = true;
+
+  for (const auto& member : *obj) {
+    const std::string_view key = member.key();
+    const bool read = std::any_of(read_keys.begin(), read_keys.end(), [key](std::string_view name) {
+      return name == key;
+    });
+    if (!read) unread_fields_.emplace_back(key);
+  }
+}
+
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ChatResult result;
   platform::ClearInterruptFlag();
@@ -75,6 +96,7 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   result.reasoning = std::move(reasoning_);
   result.usage = usage_;
   result.raw_usage = std::move(raw_usage_);
+  result.unread_fields = std::move(unread_fields_);
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);
   return result;

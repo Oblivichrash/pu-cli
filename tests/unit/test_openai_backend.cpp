@@ -206,6 +206,31 @@ TEST_CASE("OpenAIProvider reads the counts it models from a real gateway respons
   REQUIRE(result.raw_usage.at("prompt_cache_miss_tokens") == 180);
 }
 
+TEST_CASE("OpenAIProvider names the fields on a captured frame that nothing reads",
+          "[openai][usage][fixture]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-chat";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("deepseek-chat.sse");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  // The set is asserted whole rather than one name at a time: a gateway that adds a field
+  // to what this capture holds fails here, which is the signal that a name the backend
+  // should have read may have arrived and been missed by every read above.
+  REQUIRE(result.unread_fields ==
+          std::vector<std::string>{"id", "object", "created", "system_fingerprint"});
+}
+
 TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";

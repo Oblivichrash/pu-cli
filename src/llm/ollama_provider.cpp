@@ -36,6 +36,8 @@ void OllamaProvider::ResetAccumulators() {
   tool_calls_.clear();
   usage_.reset();
   raw_usage_ = nullptr;
+  unread_fields_.clear();
+  inspected_frame_ = false;
 }
 
 OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
@@ -74,6 +76,14 @@ std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
 }
 
 void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
+  // The top-level names this reads, kept beside the reads themselves so a name added to
+  // the wire has to pass them to go unnoticed.
+  static constexpr std::string_view kReadKeys[] = {
+      "error", "message", "done", "done_reason", "model",
+      "prompt_eval_count", "eval_count", "prompt_eval_cached_count",
+  };
+  NoteUnreadFields(j, kReadKeys);
+
   if (json::HasKey(j, "error")) {
     const std::string detail = json::ErrorMessage(j);
     if (!detail.empty()) throw Error("provider error: " + detail);

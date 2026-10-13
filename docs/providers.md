@@ -90,6 +90,15 @@ The whole object as the gateway sent it is kept on `ChatResult::raw_usage`, so a
 row here names is carried rather than dropped. Nothing reads it beyond the `debug` log
 that prints it: it is a record, not a feature.
 
+`ChatResult::unread_fields` names the keys on the first frame that no code reads. A gateway
+is free to add a field, so this is a signal rather than a failure: it is printed on the
+`debug` log, and the tests that pin a captured stream assert the set whole, so a field
+arriving on a gateway we hold a capture of fails the build instead of passing unread.
+
+The name lists it compares against sit in each backend's `HandleJsonToken`, beside the
+reads they describe, and hold top-level keys only — a field nested inside `choices` or
+`message` is not seen.
+
 ### Completions
 
 The request asks for one completion, so the reply is read from the first choice `index`
