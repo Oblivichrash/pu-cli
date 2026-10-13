@@ -150,6 +150,8 @@ int ExecuteCommand(const std::string& command, std::string& output,
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
+  // The command and its byte count are the whole story at debug level; the output
+  // itself reaches the transcript, and a full copy here grows the file sink alone.
   spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}", command,
                 exit_code, elapsed_ms, output.size());
   return exit_code;

@@ -74,7 +74,9 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ResetAccumulators();
 
   const std::string body = BuildRequest(request.history, request.tools);
-  spdlog::debug("{} request body: {}", LogTag(), body);
+  // The body itself is the conversation, which session.json already carries; logging
+  // it whole would double every tool output the transcript keeps.
+  spdlog::debug("{} request: {} bytes", LogTag(), body.size());
 
   std::vector<std::string> headers = Headers();
 
