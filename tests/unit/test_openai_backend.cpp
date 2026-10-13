@@ -8,8 +8,25 @@
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
 
+#include <fstream>
+#include <sstream>
+
 using namespace pu;
 using namespace pu::tests;
+
+namespace {
+
+// The captured responses sit in tests/fixtures/ and are read as they are, so a
+// test asserts against the bytes a gateway actually sent rather than a rewrite.
+std::string ReadFixture(const std::string& name) {
+  std::ifstream file(std::string(PU_FIXTURES_DIR) + "/" + name, std::ios::binary);
+  REQUIRE(file.is_open());
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  return buffer.str();
+}
+
+}  // namespace
 
 TEST_CASE("OpenAIProvider request building", "[openai]") {
   OpenAIProvider::Config config;
@@ -153,6 +170,32 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 11);
   REQUIRE(result.usage->completion_tokens == 7);
+}
+
+TEST_CASE("OpenAIProvider reads the counts it models from a real gateway response",
+          "[openai][usage][fixture]") {
+  OpenAIProvider::Config config;
+  config.model = "deepseek-v4-flash";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("codebuddy-usage.sse");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "pong");
+  REQUIRE(result.finish_reason == "stop");
+  REQUIRE(result.model == "deepseek-v4-flash");
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 549556);
+  REQUIRE(result.usage->completion_tokens == 2);
 }
 
 TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
