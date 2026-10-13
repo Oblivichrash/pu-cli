@@ -164,7 +164,10 @@ Each message carries an **edit** link that steps back to before that turn; sendi
 the text again replaces it. See `/rewind` below.
 
 The front-end lives in `web/`. History is folded into one bubble per turn, with
-each tool result keeping the output the stream showed.
+each tool result keeping the output the stream showed. Under the composer it shows
+the context the last reply ran against, from the counts the provider returned. No
+window is shown beside it: none of the backends here reports one, and a guess would
+read like a fact.
 
 ### Web API
 

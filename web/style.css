@@ -303,3 +303,10 @@ header h1 {
 #messages::-webkit-scrollbar-thumb:hover {
   background: var(--ink-light);
 }
+
+#context-usage {
+  font-size: 0.75rem;
+  padding: 0.25rem 1rem 0;
+  color: var(--ink-light);
+  min-height: 1.1em;
+}

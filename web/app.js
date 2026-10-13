@@ -402,6 +402,22 @@ function handleError(payload) {
   refreshChainLength();
 }
 
+// What the last turn ran against, from the counts the provider returned. The window
+// itself is not shown: no gateway here reports one, and a guess would read like a fact.
+function handleUsage(payload) {
+  const el = document.getElementById("context-usage");
+  if (!el || !payload) return;
+  const prompt = Number(payload.prompt_tokens);
+  const completion = Number(payload.completion_tokens);
+  if (!Number.isFinite(prompt)) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent =
+      `Context: ${prompt.toLocaleString()} tokens` +
+      (Number.isFinite(completion) ? ` (last reply ${completion.toLocaleString()})` : "");
+}
+
 // A reply that arrived but is known to be incomplete. The answer stands as it is,
 // and the remark says why it may be cut short, next to the reply it applies to.
 function handleNotice(payload) {
@@ -461,6 +477,9 @@ function connectWebSocket() {
         break;
       case "notice":
         handleNotice(data.payload);
+        break;
+      case "usage":
+        handleUsage(data.payload);
         break;
       case "busy":
         handleBusy(data.payload);
