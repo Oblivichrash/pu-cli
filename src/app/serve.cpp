@@ -16,6 +16,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 
 #include "pu/core/json.hpp"
@@ -247,9 +248,37 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   spdlog::info("Workspace: {}", runtime.GetWorkspaceRoot().string());
 
   net::io_context ioc;
-  tcp::acceptor acceptor(ioc, tcp::endpoint(net::ip::make_address(host), port));
+  // Opened by hand rather than from an endpoint, so the option is set before the bind and
+  // the socket exists for the shutdown path to close. reuse_address lets a restart bind a
+  // port a just-closed server left connections in TIME_WAIT on.
+  const tcp::endpoint listen_endpoint(net::ip::make_address(host), port);
+  tcp::acceptor acceptor(ioc);
+  {
+    beast::error_code open_ec;
+    acceptor.open(listen_endpoint.protocol(), open_ec);
+    if (open_ec) {
+      spdlog::error("Cannot open {}:{}: {}", host, port, open_ec.message());
+      return 1;
+    }
+    acceptor.set_option(net::socket_base::reuse_address(true), open_ec);
+    if (open_ec) spdlog::warn("Cannot set reuse_address: {}", open_ec.message());
+    acceptor.bind(listen_endpoint, open_ec);
+    if (open_ec) {
+      spdlog::error("Cannot bind {}:{}: {}", host, port, open_ec.message());
+      return 1;
+    }
+    acceptor.listen(net::socket_base::max_listen_connections, open_ec);
+    if (open_ec) {
+      spdlog::error("Cannot listen on {}:{}: {}", host, port, open_ec.message());
+      return 1;
+    }
+  }
 
   std::mutex io_mutex;
+  // Every socket the server has accepted, so shutdown can close them and free the threads
+  // blocked on them rather than leaving the process to exit out from under them.
+  std::mutex conn_mutex;
+  std::unordered_set<tcp::socket*> live_sockets;
   auto active_ws = std::make_shared<ActiveWebSocket>();
   active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
 
@@ -261,22 +290,32 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     }
 
     std::thread([&, socket = std::move(socket)]() mutable {
+      {
+        std::lock_guard<std::mutex> lock(conn_mutex);
+        live_sockets.insert(&socket);
+      }
       beast::flat_buffer buffer;
       http::request<http::string_body> req;
       beast::error_code ec;
       http::read(socket, buffer, req, ec);
       if (ec) {
         spdlog::warn("HTTP read error: {}", ec.message());
+        std::lock_guard<std::mutex> lock(conn_mutex);
+        live_sockets.erase(&socket);
         return;
       }
 
       if (websocket::is_upgrade(req)) {
+        std::lock_guard<std::mutex> lock(conn_mutex);
+        live_sockets.erase(&socket);
         RunWebSocketSession(std::move(socket), std::move(req), runtime, io_mutex, active_ws);
       } else {
         http::response<http::string_body> res;
         DispatchHttpRequest(runtime, io_mutex, std::move(req), res);
         http::write(socket, res, ec);
         if (ec) spdlog::warn("HTTP write error: {}", ec.message());
+        std::lock_guard<std::mutex> lock(conn_mutex);
+        live_sockets.erase(&socket);
       }
     }).detach();
 
@@ -290,6 +329,13 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   while (!pu::platform::IsInterrupted())
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+  // The listener is closed before anything that can block: a slow session save or an MCP
+  // teardown must not leave the port held by a process on its way out.
+  {
+    beast::error_code acceptor_ec;
+    acceptor.close(acceptor_ec);
+  }
+
   ioc.stop();
   if (ioc_thread.joinable()) ioc_thread.join();
 
@@ -302,6 +348,16 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   if (client) {
     beast::error_code client_ec;
     beast::get_lowest_layer(*client).close(client_ec);
+  }
+
+  // A thread blocked on http::read has no caller to return to; closing its socket is what
+  // lets it fall out and finish, rather than holding the connection open past shutdown.
+  {
+    std::lock_guard<std::mutex> lock(conn_mutex);
+    for (tcp::socket* socket : live_sockets) {
+      beast::error_code close_ec;
+      socket->close(close_ec);
+    }
   }
 
   runtime.Shutdown();

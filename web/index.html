@@ -10,24 +10,88 @@
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
 </head>
 <body>
-<header>
-  <h1>· 朴 ·</h1>
-  <select id="agent-select"></select>
-  <select id="thinking-select" title="How much reasoning to ask for" hidden>
-    <option value="auto" title="Follow the agent's configuration">Thinking: Auto</option>
-    <option value="none" title="Ask the backend not to think">Thinking: Off</option>
-    <option value="low" title="A little reasoning">Thinking: Low</option>
-    <option value="medium" title="Balanced reasoning">Thinking: Medium</option>
-    <option value="high" title="As much reasoning as the backend allows">Thinking: High</option>
-  </select>
-</header>
-<div id="messages"></div>
-<div id="composer">
-  <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
-  <button id="stop-tool" title="Stop the command that is running now" hidden>Stop command</button>
-  <button id="send">Send</button>
+<div id="shell">
+
+  <header>
+    <div class="brand">· 朴 ·</div>
+    <div class="header-right">
+      <span id="conn-dot" class="conn-dot" title="Connection"></span>
+      <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
+    </div>
+  </header>
+
+  <div id="stage">
+
+    <main>
+      <div id="messages"></div>
+
+      <div id="notice-bar" hidden></div>
+
+      <div id="approval-bar" hidden>
+        <div class="approval-head">
+          <span class="approval-label">Run this command?</span>
+          <button id="approval-command" class="approval-command" title="Show the whole command"></button>
+        </div>
+        <input id="approval-note" placeholder="Optional note for the model…">
+        <div class="approval-actions">
+          <button id="approval-deny">Deny <kbd>Esc</kbd></button>
+          <button id="approval-allow">Approve <kbd>Enter</kbd></button>
+        </div>
+      </div>
+
+      <div id="composer">
+        <!-- Two choices, each shown by its own control: what the agent name is and what
+             was picked are the same fact, so a separate label would repeat the select.
+             Everything that is read rather than chosen lives in the panel. -->
+        <div id="session-bar">
+          <label class="session-field">Agent
+            <select id="agent-select"></select>
+          </label>
+          <label class="session-field">Thinking
+            <select id="thinking-select" title="How much reasoning to ask for">
+              <option value="auto" title="Follow the agent's configuration">Auto</option>
+              <option value="none" title="Ask the backend not to think">Off</option>
+              <option value="low" title="A little reasoning">Low</option>
+              <option value="medium" title="Balanced reasoning">Medium</option>
+              <option value="high" title="As much reasoning as the backend allows">High</option>
+            </select>
+          </label>
+        </div>
+        <div id="composer-row">
+          <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
+          <button id="send">Send</button>
+        </div>
+      </div>
+    </main>
+
+    <aside id="sidebar">
+      <div class="panel">
+        <div class="panel-title">Context</div>
+        <div id="context-usage" title="How much context the last reply ran against"></div>
+        <div class="context-bar"><div id="context-fill"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Backend</div>
+        <dl id="panel-backend" class="kv">
+          <dt>Type</dt><dd id="kb-type">—</dd>
+          <dt>Model</dt><dd id="kb-model">—</dd>
+          <dt>Host</dt><dd id="kb-host">—</dd>
+        </dl>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Tools</div>
+        <ul id="panel-tools" class="tool-list"></ul>
+      </div>
+    </aside>
+
+  </div>
+
+  <div id="scrim" hidden></div>
 </div>
-<div id="context-usage" title="How much context the last reply ran against"></div>
+
+<script src="layout.js"></script>
 <script src="approval.js"></script>
 <script src="app.js"></script>
 </body>

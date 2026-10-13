@@ -124,6 +124,11 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
     if (const auto override_level = runtime.GetThinkingOverride()) {
       body["thinking_override"] = ThinkingLevelName(*override_level);
     }
+    boost::json::array tools;
+    for (const std::string& name : runtime.GetToolbox().Names()) {
+      tools.emplace_back(name);
+    }
+    body["tools"] = std::move(tools);
   } catch (const std::exception& e) {
     SendError(res, ErrorStatus(e), e.what());
     return;
@@ -352,7 +357,8 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::response<http::string_body>& res) {
   const std::string_view target = req.target();
 
-  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js") {
+  if (target == "/" || target == "/index.html" || target == "/style.css" || target == "/app.js" ||
+      target == "/approval.js" || target == "/layout.js") {
     ServeFile(std::string(target), res);
     return;
   }

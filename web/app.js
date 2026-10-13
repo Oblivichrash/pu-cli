@@ -4,7 +4,6 @@
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
-const stopToolBtn = document.getElementById("stop-tool");
 let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
@@ -32,12 +31,6 @@ async function setThinkingLevel(level) {
       return;
     }
     renderThinkingControl(data.thinking, data.thinking_override || null);
-    // Said out loud: the level applies to the next message, not to the one on
-    // screen, and a setting that changed nothing visible would look broken.
-    createSystemMessage(
-      data.thinking_override
-        ? "Thinking: " + data.thinking + " for the rest of this session."
-        : "Thinking follows the agent's configuration (" + data.thinking + ").");
   } catch (e) {
     createSystemMessage("Thinking could not be set: " + e.message);
   }
@@ -201,6 +194,21 @@ function renderToolBlock(block) {
   }
   header.appendChild(statusSpan);
 
+  // A running command carries its own stop, on the block it would kill: the button sits
+  // where the command does, so the thing stopped is the thing on screen.
+  if (block.status === "running" && block.id) {
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "stop-command";
+    stop.textContent = "■ Stop";
+    stop.title = "Stop this command";
+    stop.onclick = (e) => {
+      e.stopPropagation();
+      askStopNote(wrapper, block.id);
+    };
+    header.appendChild(stop);
+  }
+
   const icon = document.createElement("span");
   icon.className = "toggle-icon";
   icon.textContent = block.collapsed ? "▶" : "▼";
@@ -223,6 +231,46 @@ function renderToolBlock(block) {
   wrapper.appendChild(header);
   wrapper.appendChild(body);
   return wrapper;
+}
+
+// Stopping a command is two steps in one place: the note is written against the command
+// it explains, not in a modal that closes before the reason can be read. Enter stops,
+// Esc leaves it running.
+function askStopNote(wrapper, toolId) {
+  if (wrapper.querySelector(".stop-note")) return;
+  const body = wrapper.querySelector(".block-body");
+  if (!body) return;
+  wrapper.querySelector(".block-body")?.classList.remove("collapsed");
+  const row = document.createElement("div");
+  row.className = "stop-note";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Why stop it? (Enter to stop, Esc to keep running)";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.textContent = "Stop";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "stop-note-cancel";
+  cancel.textContent = "Cancel";
+
+  const commit = () => {
+    const note = input.value.trim();
+    row.remove();
+    stopRunningCommand(toolId, note);
+  };
+  const dismiss = () => row.remove();
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); dismiss(); }
+  });
+  confirm.addEventListener("click", commit);
+  cancel.addEventListener("click", dismiss);
+
+  row.append(input, confirm, cancel);
+  body.appendChild(row);
+  input.focus();
 }
 
 function renderTextBlock(block) {
@@ -316,11 +364,9 @@ function handleToolStart(payload) {
   };
   currentAssistantBlocks.push(block);
   updateCurrentAssistantBlocks();
-  setStopToolVisible(true);
 }
 
 function handleToolEnd(payload) {
-  setStopToolVisible(false);
   const block = currentAssistantBlocks.find(b =>
     b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id
   );
@@ -362,15 +408,21 @@ function handleThinking(payload) {
   updateCurrentAssistantBlocks();
 }
 
-// The header says who replied rather than what was asked for: a gateway may serve a
-// different build, and the response is the only place that says which.
-function setBackendLabel(backendType, model) {
-  const suffix = model ? " · " + model : "";
-  document.getElementById("session-status")?.remove();
-  const status = document.createElement("span");
-  status.id = "session-status";
-  status.textContent = `Backend: ${backendType || "?"}${suffix}`;
-  document.querySelector("header").appendChild(status);
+// What the session talks through, read rather than chosen, so it lives in the panel
+// where the other read-only facts do. The model is refreshed from every reply: a gateway
+// may serve a different build, and the answer is the only place that says which.
+let backendTypeShown = "";
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text || "—";
+}
+
+function setBackendLabel(backendType, model, host) {
+  if (backendType) backendTypeShown = backendType;
+  setText("kb-type", backendTypeShown);
+  if (model) setText("kb-model", model);
+  if (host) setText("kb-host", host);
 }
 
 function handleDone(payload) {
@@ -383,9 +435,7 @@ function handleDone(payload) {
   }
 
   if (payload && payload.model) {
-    const current = document.getElementById("session-status");
-    const backend = current ? current.textContent.split(" · ")[0].replace("Backend: ", "") : "";
-    setBackendLabel(backend, payload.model);
+    setBackendLabel(backendTypeShown, payload.model);
   }
 }
 
@@ -409,23 +459,61 @@ function handleError(payload) {
 // itself is not shown: no gateway here reports one, and a guess would read like a fact.
 function handleUsage(payload) {
   const el = document.getElementById("context-usage");
+  const fill = document.getElementById("context-fill");
   if (!el || !payload) return;
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
   if (!Number.isFinite(prompt)) {
     el.textContent = "";
+    if (fill) fill.style.width = "0";
     return;
   }
   el.textContent =
-      `Context: ${prompt.toLocaleString()} tokens` +
-      (Number.isFinite(completion) ? ` (last reply ${completion.toLocaleString()})` : "");
+      `${prompt.toLocaleString()} tokens` +
+      (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
+  // No gateway here reports its window, so the bar can only be shown against one we
+  // know; where none is known the number stands alone rather than a guess reading as fact.
+  if (fill) {
+    const window = contextWindowFor(backendTypeShown);
+    if (window) {
+      const ratio = Math.min(prompt / window, 1);
+      fill.style.width = (ratio * 100).toFixed(1) + "%";
+      fill.className = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
+    } else {
+      fill.style.width = "0";
+    }
+  }
 }
 
-// A reply that arrived but is known to be incomplete. The answer stands as it is,
-// and the remark says why it may be cut short, next to the reply it applies to.
+// Only what is certain: a window a backend is documented to have. An absent entry means
+// the bar stays empty rather than implying a limit that was never probed.
+const CONTEXT_WINDOWS = {};
+function contextWindowFor(backendType) {
+  return CONTEXT_WINDOWS[backendType] || null;
+}
+
+// A reply that arrived but is known to be incomplete. The answer stands as it is, and
+// the remark is a strip above the composer rather than a line in the transcript, so it
+// does not read as part of the conversation.
+function showNotice(text) {
+  const bar = document.getElementById("notice-bar");
+  if (!bar) return;
+  bar.textContent = text;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss");
+  close.onclick = hideNotice;
+  bar.appendChild(close);
+  bar.hidden = false;
+}
+function hideNotice() {
+  const bar = document.getElementById("notice-bar");
+  if (bar) bar.hidden = true;
+}
 function handleNotice(payload) {
   const text = payload && payload.text ? payload.text : "";
-  if (text) createSystemMessage(text);
+  if (text) showNotice(text);
 }
 
 // One page per session: the server refuses a second one rather than ending the reply the
@@ -436,7 +524,7 @@ let busyRefusals = 0;
 function handleBusy(payload) {
   busyRefusals += 1;
   const reason = payload && payload.text ? payload.text : "This session is already open in another page.";
-  createSystemMessage(busyRefusals > MAX_BUSY_RETRIES
+  showNotice(busyRefusals > MAX_BUSY_RETRIES
       ? reason + " Reload this page once it is free."
       : reason + " Trying again…");
 }
@@ -524,16 +612,20 @@ function connectWebSocket() {
 let replyLostToDisconnect = false;
 
 // A dropped socket reconnects on its own, backing off so a server that is down is not
-// hammered; the state is spoken only when it changes.
+// hammered. The state lives in the header dot; only a lost reply is worth a notice, since
+// that is the one outcome the reader has to be told about.
 function setConnectionState(state) {
   if (state === connState) return;
-  if (state === "offline" && connState === "online") {
-    createSystemMessage(replyLostToDisconnect
-        ? "Disconnected from server; the reply in progress was stopped and is not kept. Reconnecting…"
-        : "Disconnected from server; reconnecting…");
-  } else if (state === "online" && connState === "offline") {
-    createSystemMessage("Reconnected to server.");
+  const dot = document.getElementById("conn-dot");
+  if (dot) {
+    dot.className = "conn-dot " + state;
+    dot.title = state === "online" ? "Connected"
+      : (state === "offline" ? "Disconnected" : "Reconnecting…");
   }
+  if (state === "offline" && connState === "online" && replyLostToDisconnect) {
+    showNotice("Disconnected; the reply in progress was stopped and is not kept.");
+  }
+  if (state === "online" && connState === "offline") hideNotice();
   replyLostToDisconnect = false;
   connState = state;
 }
@@ -548,17 +640,12 @@ function scheduleReconnect() {
   }, delay);
 }
 
-// The stop-command button is only meaningful while a command is actually running,
-// which is what tool_start and tool_end mark.
-function setStopToolVisible(visible) {
-  stopToolBtn.hidden = !visible;
-}
-
 function setSendButtonState(streaming) {
   isStreaming = streaming;
-  sendBtn.textContent = streaming ? "Stop" : "Send";
+  // Cancelling the turn and stopping a command are different acts, so they are not both
+  // called Stop: this one ends the reply, the command's own button ends the command.
+  sendBtn.textContent = streaming ? "Cancel reply" : "Send";
   sendBtn.disabled = false;
-  if (!streaming) setStopToolVisible(false);
   // The level applies to the next message, so it is locked while one is in flight
   // rather than left changeable into something that would not have applied.
   thinkingSelect.disabled = streaming;
@@ -604,13 +691,12 @@ async function rewindToTurn(turn, text) {
   }
 }
 
-stopToolBtn.addEventListener("click", () => {
+// One command, one stop: the id names which command, and the note is why. Serial turns
+// make the id a formality today, but the frame already carries the note the result keeps.
+function stopRunningCommand(toolId, note) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const note = prompt("Optional note for the model (why the command was stopped):");
-  if (note === null) return;  // cancelled: leave the command running
-  ws.send(JSON.stringify({ type: "stop_command", payload: { text: note || "" } }));
-  setStopToolVisible(false);
-});
+  ws.send(JSON.stringify({ type: "stop_command", payload: { text: note || "", id: toolId } }));
+}
 
 function sendMessage() {
   if (isStreaming) {
@@ -674,7 +760,7 @@ async function loadSession() {
     const res = await fetch("/api/session");
     const data = await res.json();
     if (data.success) {
-      setBackendLabel(data.backend_type, data.backend_model);
+      setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
       // Offered only where a level lands: a backend that ignores one shows nothing
       // rather than a control that would do nothing.
       thinkingSelect.hidden = !data.supports_thinking_level;
@@ -684,8 +770,35 @@ async function loadSession() {
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
       }
+      renderToolList(data.tools);
     }
   } catch (_) {}
+}
+
+// The tools the active agent holds, as the session reports them. A name under the
+// `mcp.` prefix came from a server rather than the built-in set.
+function renderToolList(tools) {
+  const list = document.getElementById("panel-tools");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!Array.isArray(tools) || tools.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "—";
+    li.style.color = "var(--ink-light)";
+    list.appendChild(li);
+    return;
+  }
+  for (const name of tools) {
+    const li = document.createElement("li");
+    li.textContent = name;
+    if (name.startsWith("mcp.")) {
+      const src = document.createElement("span");
+      src.className = "tool-src";
+      src.textContent = "mcp";
+      li.appendChild(src);
+    }
+    list.appendChild(li);
+  }
 }
 
 async function loadAgents() {
@@ -725,7 +838,6 @@ async function loadAgents() {
         const data = await res.json();
         if (data.success) {
           messagesEl.innerHTML = "";
-          createSystemMessage("Switched to agent: " + name);
           await loadSession();
           await loadHistory();
         } else {
@@ -749,8 +861,13 @@ messagesEl.addEventListener("scroll", () => {
 });
 
 sendBtn.addEventListener("click", sendMessage);
+// While an input method is composing, Enter confirms a candidate rather than sending;
+// the flag keeps a Chinese candidate from firing the message the moment it is picked.
+let composing = false;
+inputEl.addEventListener("compositionstart", () => { composing = true; });
+inputEl.addEventListener("compositionend", () => { composing = false; });
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !composing) {
     e.preventDefault();
     if (!isStreaming) sendMessage();
   }

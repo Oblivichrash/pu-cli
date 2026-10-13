@@ -1,5 +1,6 @@
 :root {
-  --column: 768px;
+  --column: 720px;
+  --sidebar: 280px;
   --paper: #fdfbf7;
   --ink: #2c2c2c;
   --ink-light: #6b5f55;
@@ -9,6 +10,8 @@
   --assistant-bg: #ffffff;
   --error-border: #b5312a;
   --error-text: #8a2a1a;
+  --ok: #4a7c59;
+  --warn: #b5892a;
 }
 
 * { box-sizing: border-box; }
@@ -17,40 +20,75 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: "Noto Serif SC", "华文楷体", "KaiTi", "楷体", "STKaiti", serif;
-  display: flex;
-  flex-direction: column;
   line-height: 1.6;
 }
 
+#shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- header: brand | controls | status ---------- */
 header {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 20px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-  background: rgba(255, 252, 245, 0.6);
+  background: rgba(255, 252, 245, 0.7);
+  flex: 0 0 auto;
 }
-header h1 {
+.brand {
   font-size: 20px;
-  margin: 0;
   font-weight: 400;
   letter-spacing: 4px;
   color: var(--ink-light);
+  flex-shrink: 0;
 }
-/* The controls that describe the session sit together: which agent, and how much
-   reasoning it is asked for. */
-#agent-select,
-#thinking-select {
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+/* Connection is a dot, not a message: the state changes without a line of prose
+   landing in the conversation. */
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-light);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.conn-dot.online { background: var(--ok); }
+.conn-dot.offline { background: var(--accent); }
+.conn-dot.connecting { background: var(--warn); }
+#sidebar-toggle {
   background: transparent;
-  color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 2px;
-  padding: 4px 8px;
+  color: var(--ink-light);
   font-size: 14px;
+  padding: 4px 8px;
+  cursor: pointer;
   font-family: inherit;
-  min-width: 120px;
-  flex-shrink: 0;
+}
+#sidebar-toggle:hover { color: var(--accent); }
+
+/* ---------- stage: conversation + sidebar ---------- */
+#stage {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #messages {
@@ -74,9 +112,10 @@ header h1 {
   word-break: break-word;
   border: 1px solid transparent;
 }
+/* Document flow, not an IM thread: every message is anchored left with a rule down
+   its side, so a long conversation reads as one column of text. */
 .msg.user {
-  align-self: flex-end;
-  max-width: 85%;
+  align-self: stretch;
   background: var(--user-bg);
   border-color: #d0c4b0;
 }
@@ -86,7 +125,7 @@ header h1 {
   border-color: var(--border);
 }
 .msg.error {
-  align-self: flex-start;
+  align-self: stretch;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
@@ -134,14 +173,9 @@ header h1 {
   cursor: pointer;
   border-bottom: 1px dotted var(--border);
 }
+.edit-btn:hover { color: var(--accent); }
 
-.edit-btn:hover {
-  color: var(--accent);
-}
-
-.blocks-container {
-  width: 100%;
-}
+.blocks-container { width: 100%; }
 
 .block-thinking,
 .block-tool {
@@ -175,9 +209,7 @@ header h1 {
   border-top: 1px solid var(--border);
   background: rgba(255, 252, 245, 0.3);
 }
-.block-body.collapsed {
-  display: none;
-}
+.block-body.collapsed { display: none; }
 
 .toggle-icon {
   font-size: 12px;
@@ -191,9 +223,7 @@ header h1 {
 }
 
 .tool-args,
-.tool-result {
-  margin: 4px 0;
-}
+.tool-result { margin: 4px 0; }
 .tool-args pre,
 .tool-result pre {
   margin: 4px 0 0 0;
@@ -204,7 +234,7 @@ header h1 {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 300px;
+  max-height: 70vh;
   overflow: auto;
 }
 .tool-error {
@@ -213,12 +243,47 @@ header h1 {
   padding-left: 10px;
 }
 
+/* ---------- composer, approval, notice: bottom stack ---------- */
 #composer {
   display: flex;
-  gap: 12px;
-  padding: 16px max(20px, calc(50% - var(--column) / 2));
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px max(20px, calc(50% - var(--column) / 2)) 12px;
   border-top: 1px solid var(--border);
-  background: rgba(255, 252, 245, 0.6);
+  background: rgba(255, 252, 245, 0.7);
+  flex: 0 0 auto;
+}
+
+/* The two choices that change between messages, kept with the input they affect. Each is
+   shown by its own control, so no read-only text repeats what the select already says. */
+#session-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.session-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-light);
+}
+#agent-select,
+#thinking-select {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  min-width: 120px;
+  max-width: 220px;
+}
+#composer-row {
+  display: flex;
+  gap: 12px;
 }
 #input {
   flex: 1;
@@ -236,29 +301,292 @@ header h1 {
   max-height: 160px;
   transition: border-color 0.2s;
 }
-#input:focus {
-  border-color: var(--accent);
-}
+#input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 #send {
   background: var(--ink);
   color: var(--paper);
   border: none;
   border-radius: 2px;
-  padding: 0 24px;
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
   font-family: inherit;
   font-weight: 400;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   transition: background 0.2s;
+  /* One width for both labels, so "Cancel reply" does not shrink the field mid-run. */
+  min-width: 128px;
+  padding: 0 16px;
 }
-#send:hover {
-  background: var(--accent);
+#send:hover { background: var(--accent); }
+#send:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The stop sits on the command it would kill, so the thing stopped is the thing on
+   screen rather than a button that names it from far away. */
+.stop-command {
+  background: transparent;
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  border-radius: 2px;
+  padding: 1px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
-#send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.stop-command:hover { background: rgba(181, 49, 42, 0.08); }
+
+/* The note is written beside the command it explains: shown before the stop lands, and
+   left in place so the reason can be read afterwards. */
+.stop-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--border);
 }
+.stop-note input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+}
+.stop-note input:focus { border-color: var(--accent); }
+.stop-note button {
+  background: var(--error-border);
+  color: var(--paper);
+  border: 1px solid var(--error-border);
+  border-radius: 2px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.stop-note button.stop-note-cancel {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+/* The approval gate is parked above the composer, not floating over the page: a
+   decision waited on is the one thing that must not be scrolled past or missed. */
+#approval-bar {
+  margin: 0 max(20px, calc(50% - var(--column) / 2));
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: rgba(181, 49, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#approval-bar[hidden] { display: none; }
+.approval-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.approval-label {
+  font-size: 14px;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.approval-command {
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-size: 13px;
+  color: var(--error-text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dotted var(--accent);
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 200px;
+}
+.approval-command.expanded {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+#approval-note {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+#approval-note:focus { border-color: var(--accent); }
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.approval-actions button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 16px;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+}
+#approval-allow {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+#approval-allow:hover { background: var(--ok); border-color: var(--ok); }
+#approval-deny:hover { color: var(--accent); border-color: var(--accent); }
+.approval-actions kbd {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+#approval-allow kbd { color: rgba(255, 255, 255, 0.75); border-color: rgba(255, 255, 255, 0.4); }
+
+/* A notice (disconnect, token limit) is a dismissible strip above the composer, kept
+   out of the transcript. */
+#notice-bar {
+  margin: 0 max(20px, calc(50% - var(--column) / 2)) 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  background: rgba(181, 137, 42, 0.08);
+  color: var(--ink);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+#notice-bar[hidden] { display: none; }
+#notice-bar button {
+  background: transparent;
+  border: none;
+  color: var(--ink-light);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ---------- sidebar ---------- */
+#sidebar {
+  width: var(--sidebar);
+  flex: 0 0 var(--sidebar);
+  border-left: 1px solid var(--border);
+  padding: 18px 16px;
+  overflow-y: auto;
+  background: rgba(255, 252, 245, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+#shell.sidebar-hidden #sidebar { display: none; }
+.panel-title {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  border-bottom: 1px dotted var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+.panel-value {
+  font-size: 14px;
+  color: var(--ink);
+  word-break: break-word;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+/* Read-only facts are named and valued, so a long host wraps under its own label instead
+   of running into the value above it. */
+.kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+.kv dt {
+  color: var(--ink-light);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  padding-top: 2px;
+}
+.kv dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  word-break: break-all;
+}
+#context-usage {
+  font-size: 13px;
+  color: var(--ink);
+  min-height: 1.2em;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.context-bar {
+  margin-top: 6px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#context-fill {
+  height: 100%;
+  width: 0;
+  background: var(--ink-light);
+  transition: width 0.3s, background 0.3s;
+}
+#context-fill.warn { background: var(--warn); }
+#context-fill.high { background: var(--accent); }
+.tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tool-list li {
+  font-size: 13px;
+  color: var(--ink);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  padding: 2px 0;
+}
+.tool-list li .tool-src {
+  color: var(--ink-light);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+/* ---------- scrollbar ---------- */
+#messages::-webkit-scrollbar,
+#sidebar::-webkit-scrollbar { width: 6px; }
+#messages::-webkit-scrollbar-track,
+#sidebar::-webkit-scrollbar-track { background: var(--paper); }
+#messages::-webkit-scrollbar-thumb,
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#messages::-webkit-scrollbar-thumb:hover,
+#sidebar::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 
 .hljs {
   background: #f0ebe0;
@@ -269,16 +597,10 @@ header h1 {
 /* One rhythm inside a reply: what markdown emits carries no margins of its own, and
    consecutive blocks are separated by a single step, so a paragraph, a list and a code
    block are spaced alike instead of by the browser's defaults around some of them. */
-.msg .block-text > * {
-  margin: 0;
-}
-.msg .block-text > * + * {
-  margin-top: 0.5em;
-}
+.msg .block-text > * { margin: 0; }
+.msg .block-text > * + * { margin-top: 0.5em; }
 .msg .block-text ul,
-.msg .block-text ol {
-  padding-left: 1.5em;
-}
+.msg .block-text ol { padding-left: 1.5em; }
 
 .msg.assistant.typing .block-text:last-child::after {
   content: "▌";
@@ -290,47 +612,65 @@ header h1 {
   50% { opacity: 0; }
 }
 
-#messages::-webkit-scrollbar {
-  width: 6px;
-}
-#messages::-webkit-scrollbar-track {
-  background: var(--paper);
-}
-#messages::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-#messages::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-light);
-}
-
-#context-usage {
-  font-size: 0.75rem;
-  padding: 0.25rem 1rem 0;
-  color: var(--ink-light);
-  min-height: 1.1em;
-}
-
-#approval-bar {
+#scrim {
   position: fixed;
-  bottom: 72px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px;
-  background: var(--bg, #fff);
-  border: 1px solid #d33;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 10;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 15;
 }
-#approval-bar[hidden] { display: none; }
-#approval-command {
-  font-family: monospace;
-  max-width: 40ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+#scrim[hidden] { display: none; }
+
+/* The toggle is a column control, not a drawer handle: under the drawer breakpoint the
+   panel is opened and closed by its own rules, so the button would only confuse. */
+@media (max-width: 1024px) {
+  #sidebar-toggle { display: none; }
+}
+
+/* ---------- narrow screens: sidebar becomes a drawer ---------- */
+@media (max-width: 1024px) {
+  #sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    background: var(--paper);
+    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
+    transform: translateX(100%);
+    transition: transform 0.2s;
+  }
+  #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
+  #shell.sidebar-hidden #sidebar { display: flex; }
+}
+@media (max-width: 640px) {
+  :root { --column: 100%; }
+  header { padding: 10px 12px; gap: 8px; }
+  .msg { font-size: 14px; }
+  #composer-row { flex-wrap: wrap; }
+  #input { flex-basis: 100%; }
+  #send { flex: 1; height: 40px; min-width: 0; }
+  #session-bar { gap: 10px; }
+  #agent-select, #thinking-select { max-width: 140px; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1c1a17;
+    --ink: #e8e2d8;
+    --ink-light: #9c9284;
+    --border: #3d3830;
+    --accent: #d4645a;
+    --user-bg: #262320;
+    --assistant-bg: #201e1a;
+    --error-border: #d4645a;
+    --error-text: #e08b82;
+    --ok: #6fa07d;
+    --warn: #c9a24a;
+  }
+  header, #composer, #sidebar { background: rgba(28, 26, 23, 0.7); }
+  #input:focus { box-shadow: 0 0 0 1px var(--accent); }
+  #send { background: var(--ink); color: var(--paper); }
+  #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .hljs { background: #2a2620; }
+  .tool-args pre, .tool-result pre { background: #262320; }
 }
