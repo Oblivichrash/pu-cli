@@ -43,6 +43,7 @@ class OpenAIProvider : public StreamingProvider {
 
  private:
   void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);
+  void FlushPendingData(const ChatRequest& request);
   void FlushPendingToolCalls(const ChatRequest& request);
 
   Config config_;
@@ -51,6 +52,16 @@ class OpenAIProvider : public StreamingProvider {
     std::string id, name, arguments;
   };
   std::vector<ToolCallAccumulator> pending_tools_;
+
+  // One SSE payload can arrive as several `data:` lines; a payload that parses is the
+  // whole of it, and a blank line closes the event either way.
+  std::string pending_data_;
+
+  // The request asks for one completion, so the choice the reply is read from is the
+  // first index the stream names; another index is a gateway sending more than was asked
+  // for, and is reported rather than folded into the reply.
+  int reply_choice_index_ = -1;
+  bool reported_extra_choice_ = false;
 
   // The gateway's refusal text, kept apart from `content_` until the stream ends: a
   // reply can arrive with both, and folding one into the other mid-stream would make

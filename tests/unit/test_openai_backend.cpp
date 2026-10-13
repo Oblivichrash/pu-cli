@@ -587,3 +587,101 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
   REQUIRE(content == "answer");
   REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
 }
+
+TEST_CASE("OpenAIProvider assembles one payload split over several data lines",
+          "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        "data: {\"choices\":[{\"delta\":{\"content\":\n"
+        "data: \"split answer\"}}]}\n"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "split answer");
+}
+
+TEST_CASE("OpenAIProvider reads a data field with no space", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        "data:{\"choices\":[{\"delta\":{\"content\":\"bare\"}}]}\n"
+        "data:[DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "bare");
+}
+
+TEST_CASE("OpenAIProvider ignores the fields that name an event", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        ": keep-alive\n"
+        "event: message\n"
+        "id: 7\n"
+        "retry: 100\n"
+        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "ok");
+}
+
+TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][streaming]") {
+  OpenAIProvider::Config config;
+  config.model = "gpt-4o-mini";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"(data: {"choices":[{"index":0,"delta":{"content":"asked"},"finish_reason":"stop"},{"index":1,"delta":{"content":"unasked"},"finish_reason":"stop"}]})"
+        "\n"
+        "data: [DONE]\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "asked");
+  REQUIRE(result.finish_reason == "stop");
+}

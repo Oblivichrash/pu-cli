@@ -6,6 +6,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -131,6 +132,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
 }
 
 void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
+  if (text::Trim(line).empty()) return;  // NDJSON frames nothing, so a blank line says nothing
   boost::json::value j;
   try {
     j = boost::json::parse(line);

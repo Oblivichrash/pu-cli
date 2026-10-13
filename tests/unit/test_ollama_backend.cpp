@@ -149,6 +149,29 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   REQUIRE(result.usage->completion_tokens == 9);
 }
 
+TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"({"message":{"content":"hi"}})"
+                        "\n"
+                        "\n"
+                        R"({"message":{"content":""},"done":true})"
+                        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+  auto result = provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hi"}}}, {}));
+
+  REQUIRE(result.content == "hi");
+}
+
 TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";

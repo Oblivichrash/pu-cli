@@ -6,7 +6,6 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
-#include "pu/core/text.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -19,6 +18,17 @@ std::string StreamErrorDetail(const boost::json::value& error) {
   if (error.is_string()) return boost::json::value_to<std::string>(error);
   const std::string message = json::ErrorMessage(error);
   return message.empty() ? boost::json::serialize(error) : message;
+}
+
+// A payload carried over several `data:` lines is the gateway splitting one object, and
+// the line that closes it is the one that parses.
+bool ParsesAsJson(std::string_view text) {
+  try {
+    boost::json::parse(text);
+    return true;
+  } catch (const boost::system::system_error&) {
+    return false;
+  }
 }
 
 constexpr llm::ProviderCapabilities kCapabilities{
@@ -55,6 +65,9 @@ void OpenAIProvider::ResetAccumulators() {
   response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
+  pending_data_.clear();
+  reply_choice_index_ = -1;
+  reported_extra_choice_ = false;
 }
 
 std::string OpenAIProvider::BuildRequest(std::span<const ChatMessage> history,
@@ -98,45 +111,59 @@ void OpenAIProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   bool is_final = false;
   if (json::HasKey(j, "done") && boost::json::value_to<bool>(j.at("done"))) is_final = true;
 
-  if (json::HasKey(j, "choices") && j.at("choices").is_array() &&
-      !j.at("choices").as_array().empty()) {
-    const boost::json::value& choice = j.at("choices").at(0);
+  if (json::HasKey(j, "choices") && j.at("choices").is_array()) {
+    for (const boost::json::value& choice : j.at("choices").as_array()) {
+      if (!choice.is_object()) continue;
 
-    const boost::json::value* piece = nullptr;
-    if (json::HasKey(choice, "delta")) {
-      piece = &choice.at("delta");
-    } else if (json::HasKey(choice, "message")) {
-      piece = &choice.at("message");
-    }
-
-    if (piece != nullptr && piece->is_object()) {
-      AppendContent(json::ValueOrDefault<std::string>(*piece, "content", ""), request);
-
-      const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
-      if (!refusal.empty()) refusal_ += refusal;
-
-      if (json::HasKey(*piece, "reasoning_content") && piece->at("reasoning_content").is_string()) {
-        AppendReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")), request);
+      const int index = json::ValueOrDefault<int>(choice, "index", 0);
+      if (reply_choice_index_ < 0) reply_choice_index_ = index;
+      if (index != reply_choice_index_) {
+        if (!reported_extra_choice_) {
+          reported_extra_choice_ = true;
+          spdlog::debug("Ignoring completion index {}: the request asked for one", index);
+        }
+        continue;
       }
 
-      if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
-        for (const auto& tc : piece->at("tool_calls").as_array()) {
-          if (!tc.is_object()) continue;
-          const std::string id = json::ValueOrDefault<std::string>(tc, "id", "");
-          if (!id.empty() || pending_tools_.empty()) pending_tools_.emplace_back();
-          ToolCallAccumulator& acc = pending_tools_.back();
-          if (!id.empty()) acc.id = id;
-          if (json::HasKey(tc, "function") && tc.at("function").is_object()) {
-            auto name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
-            if (!name.empty()) acc.name = name;
-            acc.arguments += json::ValueOrDefault<std::string>(tc.at("function"), "arguments", "");
+      const boost::json::value* piece = nullptr;
+      if (json::HasKey(choice, "delta")) {
+        piece = &choice.at("delta");
+      } else if (json::HasKey(choice, "message")) {
+        piece = &choice.at("message");
+      }
+
+      if (piece != nullptr && piece->is_object()) {
+        AppendContent(json::ValueOrDefault<std::string>(*piece, "content", ""), request);
+
+        const std::string refusal = json::ValueOrDefault<std::string>(*piece, "refusal", "");
+        if (!refusal.empty()) refusal_ += refusal;
+
+        if (json::HasKey(*piece, "reasoning_content") &&
+            piece->at("reasoning_content").is_string()) {
+          AppendReasoning(boost::json::value_to<std::string>(piece->at("reasoning_content")),
+                          request);
+        }
+
+        if (json::HasKey(*piece, "tool_calls") && piece->at("tool_calls").is_array()) {
+          for (const auto& tc : piece->at("tool_calls").as_array()) {
+            if (!tc.is_object()) continue;
+            const std::string id = json::ValueOrDefault<std::string>(tc, "id", "");
+            if (!id.empty() || pending_tools_.empty()) pending_tools_.emplace_back();
+            ToolCallAccumulator& acc = pending_tools_.back();
+            if (!id.empty()) acc.id = id;
+            if (json::HasKey(tc, "function") && tc.at("function").is_object()) {
+              auto name = json::ValueOrDefault<std::string>(tc.at("function"), "name", "");
+              if (!name.empty()) acc.name = name;
+              acc.arguments +=
+                  json::ValueOrDefault<std::string>(tc.at("function"), "arguments", "");
+            }
           }
         }
       }
-    }
 
-    if (json::HasKey(choice, "finish_reason") && choice.at("finish_reason").is_string()) {
-      finish_reason_ = boost::json::value_to<std::string>(choice.at("finish_reason"));
+      if (json::HasKey(choice, "finish_reason") && choice.at("finish_reason").is_string()) {
+        finish_reason_ = boost::json::value_to<std::string>(choice.at("finish_reason"));
+      }
     }
   }
 
@@ -178,16 +205,41 @@ void OpenAIProvider::FlushPendingToolCalls(const ChatRequest& request) {
 }
 
 void OpenAIProvider::ParseLine(std::string_view line, const ChatRequest& request) {
-  constexpr std::string_view kDataPrefix = "data: ";
-  const std::string_view trimmed = text::Trim(line);
-  if (trimmed.empty()) return;
-  if (trimmed.substr(0, kDataPrefix.size()) != kDataPrefix) return;
-  const std::string_view data = trimmed.substr(kDataPrefix.size());
+  if (line.empty()) {  // an SSE event ends at a blank line
+    FlushPendingData(request);
+    return;
+  }
+  if (line.front() == ':') return;  // a comment
+
+  const std::size_t colon = line.find(':');
+  if (colon == std::string_view::npos) return;
+  const std::string_view field = line.substr(0, colon);
+  std::string_view value = line.substr(colon + 1);
+  // One optional space follows the colon; what is left is the value.
+  if (!value.empty() && value.front() == ' ') value.remove_prefix(1);
+
+  // `event`, `id` and `retry` name the event rather than carry it, so only `data` is read.
+  if (field != "data") return;
+
+  if (!pending_data_.empty()) pending_data_ += '\n';
+  pending_data_.append(value);
+  // The sentinel ends the stream on its own, and a payload split over several data lines
+  // is whole once it parses — either way what follows starts a fresh one.
+  if (pending_data_ == "[DONE]" || ParsesAsJson(pending_data_)) FlushPendingData(request);
+}
+
+void OpenAIProvider::FlushPendingData(const ChatRequest& request) {
+  if (pending_data_.empty()) return;
+
+  std::string data = std::move(pending_data_);
+  pending_data_.clear();
+
   if (data == "[DONE]") {
     boost::json::value done_obj = {{"done", true}};
     HandleJsonToken(done_obj, request);
     return;
   }
+
   boost::json::value j;
   try {
     j = boost::json::parse(data);
@@ -199,6 +251,7 @@ void OpenAIProvider::ParseLine(std::string_view line, const ChatRequest& request
 }
 
 void OpenAIProvider::FinishStream(const ChatRequest& request) {
+  FlushPendingData(request);
   FlushPendingToolCalls(request);
   // A refusal that arrived beside content is still the provider's own report on the
   // turn, so it follows the reply rather than being dropped with the empty-content case.

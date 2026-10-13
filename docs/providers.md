@@ -52,6 +52,25 @@ The level names are newer than the setting they name: until `low`/`medium`/`high
 existed it was a boolean, and `default` is what that switch's on-state meant while
 `none` is the off-state it replaced.
 
+## What comes back
+
+The table above covers what goes out. This is what is read from the answer.
+
+### SSE framing
+
+An OpenAI-compatible stream is SSE: a line is `field: value` with one optional space after
+the colon, a line starting with `:` is a comment, `event`/`id`/`retry` name the event
+rather than carry it, and the event ends at a blank line. Only `data` is read, and a
+payload split over several `data:` lines is joined until what they hold parses — a
+gateway that writes `data:{...}` with no space reads the same as one that writes
+`data: {...}`. Ollama's NDJSON frames nothing, so a blank line there says nothing.
+
+### Completions
+
+The request asks for one completion, so the reply is read from the first choice `index`
+the stream names. A gateway that sends a second index has it reported at `debug` rather
+than folded into the reply.
+
 ## Limits
 
 Neither backend implements a capability the table above does not name. Both

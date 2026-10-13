@@ -44,11 +44,20 @@ TEST_CASE("StreamingJsonParser handles fragmented UTF-8", "[streaming_parser]") 
   REQUIRE(lines[0] == "{\"val\":\"€\"}");
 }
 
-TEST_CASE("StreamingJsonParser skips empty lines", "[streaming_parser]") {
+TEST_CASE("StreamingJsonParser hands on the blank line that ends an event", "[streaming_parser]") {
   std::vector<std::string> lines;
   auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
 
-  parser.Feed("\n\nhello\n\n", 9);
-  REQUIRE(lines.size() == 1);
-  REQUIRE(lines[0] == "hello");
+  parser.Feed("data: one\n\ndata: two\n\n", 22);
+  REQUIRE(lines == std::vector<std::string>{"data: one", "", "data: two", ""});
+}
+
+TEST_CASE("StreamingJsonParser keeps a blank line where it falls", "[streaming_parser]") {
+  std::vector<std::string> lines;
+  auto parser = StreamingJsonParser([&](std::string_view line) { lines.emplace_back(line); });
+
+  parser.Feed("\nhello\n", 7);
+  REQUIRE(lines.size() == 2);
+  REQUIRE(lines[0].empty());
+  REQUIRE(lines[1] == "hello");
 }
