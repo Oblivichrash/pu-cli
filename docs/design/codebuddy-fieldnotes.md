@@ -81,6 +81,24 @@ request settles it. Serving a model the client omits shows the reverse also hold
 client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
 there at all.
 
+## What each catalogue entry carries
+
+`data.models[]` entries carry capability fields beside the id, which is what a caller
+deciding whether to send `reasoning_effort` or to offer an image needs. Observed keys:
+`credits`, `id`, `maxAllowedSize`, `maxInputTokens`, `maxOutputTokens`, `name`,
+`relatedModels`, `supportsImages`, `supportsToolCall`, `vendor`, and on reasoning
+models also `supportsReasoning`, `onlyReasoning` and `reasoning: {effort, summary}`.
+
+| id | supportsReasoning | onlyReasoning | reasoning.effort | supportsImages |
+| --- | --- | --- | --- | --- |
+| `deepseek-v4-pro` | true | true | high | true |
+| `glm-5.3` | true | true | medium | true |
+| `glm-5.1` | true | true | medium | false |
+
+`onlyReasoning: true` is what makes an effort mandatory rather than optional, which is
+the `11150` above. The set of keys drifts with the gateway, so this is a record of what
+one account answered, not a schema to parse against.
+
 ## Bases the client carries
 
 The installed client carries two bases: `https://copilot.tencent.com/v2`, which the
@@ -125,6 +143,23 @@ chat route's version segment rather than inside it.
 
 **`User-Agent` is not required for the catalogue.** The early `code: 12403` reading came
 from a request that also carried `Accept`; a bare `Authorization` request answers 200.
+
+**`glm-5.1` is not an unavailable model.** A `pu models --verify` run reported it
+`unavailable: HTTP error 400: Reasoning effort not supported`, which read as an
+entitlement refusal. It is not one: the probe sent no `reasoning_effort`, because the
+agent's `thinking` was `default`, and this model rejects a request that carries none.
+Four bare-key probes against `glm-5.1` settled it:
+
+| Request | Answer |
+| --- | --- |
+| `reasoning_effort: "high"` | 200 |
+| `reasoning_effort: "medium"` | 200 |
+| no `reasoning_effort` | 400 `code 11150`, "the reasoning effort value is not supported by the current model" |
+| `extra_body.thinking.type = "disabled"` | 400 `code 11150`, the same |
+
+So the model requires an effort rather than refusing one, and `11150` is what its
+absence looks like - not a property of the id, and not a refusal of the account. What
+`--verify` reported as unavailable was a request missing a field the model demands.
 
 **The chunk `id` does not group a conversation.** An early run saw one `id` across five
 requests under a shared `X-Conversation-ID`; re-running with three turns produced three
