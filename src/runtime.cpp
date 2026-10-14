@@ -29,6 +29,24 @@ std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
   return path.is_absolute() ? path : root / path;
 }
 
+// A session this build cannot read is moved aside rather than left to be overwritten by
+// the first save of the fresh conversation that replaces it. The backup is one file, so a
+// second unreadable session replaces it: a backup left unread is one nobody needed.
+void SetAside(const std::filesystem::path& path, const std::string& reason) {
+  std::filesystem::path backup = path;
+  backup += ".bak";
+
+  std::error_code ec;
+  std::filesystem::rename(path, backup, ec);
+
+  spdlog::error(
+      "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
+      "  file:    {}\n"
+      "  reason:  {}\n"
+      "  kept at: {}",
+      path.string(), reason, ec ? "(left in place: " + ec.message() + ")" : backup.string());
+}
+
 std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path)) return nullptr;
   std::ifstream file(path);
@@ -38,7 +56,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   try {
     file >> j;
   } catch (const std::exception& e) {
-    spdlog::error("Session file {} could not be parsed: {}", path.string(), e.what());
+    SetAside(path, std::string("body does not parse: ") + e.what());
     return nullptr;
   }
 
@@ -55,12 +73,7 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   } else {
     reason = "history is not node storage";
   }
-  spdlog::error(
-      "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
-      "  file:    {}\n"
-      "  reason:  {}\n"
-      "The file is replaced by the next save.",
-      path.string(), reason);
+  SetAside(path, reason);
   return nullptr;
 }
 

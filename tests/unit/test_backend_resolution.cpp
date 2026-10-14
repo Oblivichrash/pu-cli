@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 #include "pu/config/agents.hpp"
@@ -240,4 +241,40 @@ TEST_CASE("A turn after an agent switch reaches an initialized registry", "[back
   REQUIRE(result.has_error);
 
   runtime.Shutdown();
+}
+
+TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend]") {
+  BackendSourceFixture fixture;
+  const fs::path session_path = fixture.root() / ".pu" / "session.json";
+  const fs::path backup_path = fixture.root() / ".pu" / "session.json.bak";
+
+  const std::string unreadable =
+      R"({"schema_version": 6, "conversation": {"history": {}}, "session_spec": {"agent_name": "chat"}})";
+  {
+    std::ofstream out(session_path, std::ios::trunc);
+    out << unreadable;
+  }
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.Initialize();
+    runtime.Shutdown();
+  }
+
+  std::ifstream backup(backup_path, std::ios::binary);
+  REQUIRE(backup.is_open());
+  const std::string kept((std::istreambuf_iterator<char>(backup)),
+                         std::istreambuf_iterator<char>());
+  REQUIRE(kept == unreadable);
+
+  // The path no longer holds what could not be read: either the fresh conversation has
+  // not been saved yet, or what stands there is that fresh conversation.
+  const auto holds_unreadable = [&] {
+    std::ifstream in(session_path, std::ios::binary);
+    if (!in.is_open()) return false;
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return text == unreadable;
+  }();
+  REQUIRE_FALSE(holds_unreadable);
 }
