@@ -121,6 +121,7 @@ reason it was not asked is reported in place of the host's own refusal. A turn i
 refused this way — nothing on that path reads the catalogue — so this is as far as the
 field reaches until a capability is available where a turn is built.
 
+
 ## 7. Who decides which backend a turn uses
 
 Four sources, resolved once, highest first:
@@ -149,20 +150,24 @@ resolution belongs in one function so that a new entry point — a Web selector,
   the listing logic is protocol-level, and only the path and field names differ, so a
   per-vendor class repeats what a shape describes.
 - **Appending the catalogue path to the chat base.** Dropped: measured 404.
-- **Splitting the protocol out of the provider.** Attempted, then reverted, and deferred
-  until a compile failure with no explanation is understood. The work was to move
-  `openai_provider.cpp` (297 lines) into `openai_protocol.cpp` piece by piece, leaving the
-  provider with the session-level work; restart it that way rather than rewriting the file
-  from memory. Three probes, all against the same `MakeOpenAI(...)` whose return type is
+- **Splitting the protocol out of the provider.** Attempted, then reverted; the reason
+  recorded here was a compile failure nobody could explain, and the failure was not real.
+  What was measured, against the same `MakeOpenAI(...)` whose return type is
   `std::unique_ptr<pu::LLMProvider>`:
 
   ```
   decltype(p) is unique_ptr<pu::LLMProvider>        // holds
-  LLMProvider& p = *MakeOpenAI(...); p.Chat(req);   // compiles
+  LLMProvider& p = *MakeOpenAI(...); p.Chat(req);   // compiles: p is a reference
   auto p = MakeOpenAI(...);          p.Chat(req);   // error: no member named 'Chat'
+  auto p = MakeOpenAI(...);          p->Chat(req);  // compiles
   ```
 
-  The preprocessed output says the same translation unit holds `LLMProvider` complete,
-  with `virtual ChatResult Chat(const ChatRequest&) = 0;`. The three facts contradict each
-  other and the cause is not known, so nothing here explains it; it is recorded so that the
-  next attempt starts from the measurement rather than from the assumption.
+  The third line calls `.Chat()` on a smart pointer, which has no such member, and the
+  compiler says so: "is not a member of `std::unique_ptr<pu::LLMProvider, ...>`". The
+  second line compiles because it dereferences first. There is no contradiction between
+  the three, and `LLMProvider`'s completeness — the thing the preprocessed output was
+  read to check — does not enter into looking a member up on a `unique_ptr`, which has no
+  `Chat` whether or not the pointee is complete. So this route is open: it was set aside
+  over a probe that spelled `->` as `.`, and nothing about the provider needs to change
+  for the work to be done. Whether it is work worth doing is a separate question, since
+  one `OpenAIProvider` already serves every OpenAI-protocol gate.
