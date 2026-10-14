@@ -91,17 +91,13 @@ std::string FromPipedOutput(std::string_view text) {
 #endif
 }
 
-#ifndef _WIN32
-
-namespace {
-
-}  // namespace
-
 int ExecuteCommand(const std::string& command, std::string& output,
                    const std::string& working_dir) {
   CancelToken no_stop;
   return ExecuteCommand(command, output, no_stop, working_dir);
 }
+
+#ifndef _WIN32
 
 int ExecuteCommand(const std::string& command, std::string& output,
                    const CancelToken& stop_token, const std::string& working_dir) {
