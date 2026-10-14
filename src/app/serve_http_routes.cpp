@@ -13,6 +13,12 @@
 #include <string_view>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include "pu/agent_manager.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/context/message.hpp"
@@ -92,6 +98,36 @@ bool IsPageFile(std::string_view target) {
   return false;
 }
 
+// The directory this executable was launched from, or empty when the platform will not
+// say. The page files travel with the binary, not with the workspace it is pointed at.
+std::filesystem::path ExecutableDir() {
+#if defined(_WIN32)
+  std::vector<wchar_t> buffer(MAX_PATH);
+  for (;;) {
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
+                                            static_cast<DWORD>(buffer.size()));
+    if (length == 0) return {};
+    if (length < buffer.size()) break;
+    buffer.resize(buffer.size() * 2);
+  }
+  return std::filesystem::path(std::wstring(buffer.data(), buffer.size())).parent_path();
+#elif defined(__APPLE__)
+  // _NSGetExecutablePath fills a buffer whose size it also reports; the result may hold
+  // .., so it is resolved before its directory is taken.
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::vector<char> buffer(size);
+  if (_NSGetExecutablePath(buffer.data(), &size) != 0) return {};
+  std::error_code ec;
+  auto resolved = std::filesystem::weakly_canonical(buffer.data(), ec);
+  return ec ? std::filesystem::path(buffer.data()).parent_path() : resolved.parent_path();
+#else
+  std::error_code ec;
+  auto resolved = std::filesystem::read_symlink("/proc/self/exe", ec);
+  return ec ? std::filesystem::path{} : resolved.parent_path();
+#endif
+}
+
 std::string GetWebDir() {
   static std::string dir;
   static std::once_flag flag;
@@ -101,15 +137,21 @@ std::string GetWebDir() {
       dir = env;
       return;
     }
-    std::vector<std::string> candidates = {
-        "./web",
-        "../share/pu/web",
-        "/usr/share/pu/web",
-        "/usr/local/share/pu/web",
-    };
+    std::vector<std::filesystem::path> candidates;
+    // Beside the binary first: a build tree or an install keeps the page under its own
+    // prefix, and a workspace somewhere else must not hide it.
+    if (const std::filesystem::path exe_dir = ExecutableDir(); !exe_dir.empty()) {
+      candidates.push_back(exe_dir / "web");
+      candidates.push_back(exe_dir / ".." / "web");
+      candidates.push_back(exe_dir / ".." / "share" / "pu" / "web");
+    }
+    candidates.push_back("./web");
+    candidates.push_back("../share/pu/web");
+    candidates.push_back("/usr/share/pu/web");
+    candidates.push_back("/usr/local/share/pu/web");
     for (const auto& d : candidates) {
       if (std::filesystem::exists(d) && std::filesystem::is_directory(d)) {
-        dir = d;
+        dir = d.string();
         return;
       }
     }
