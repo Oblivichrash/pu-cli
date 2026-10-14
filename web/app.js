@@ -285,11 +285,27 @@ function renderMarkdown(text) {
 }
 
 function toggleBlock(headerEl) {
-  const body = headerEl.parentElement.querySelector(".block-body");
+  const wrapper = headerEl.parentElement;
+  const body = wrapper.querySelector(".block-body");
   const icon = headerEl.querySelector(".toggle-icon");
   if (!body) return;
   const isCollapsed = body.classList.toggle("collapsed");
   if (icon) icon.textContent = isCollapsed ? "▶" : "▼";
+
+  const block = blockForElement(wrapper);
+  if (block) block.collapsed = isCollapsed;
+}
+
+function blockForElement(el) {
+  for (const block of currentAssistantBlocks) {
+    if (block.node === el) return block;
+  }
+  const id = el.dataset && el.dataset.toolId;
+  if (id) {
+    return currentAssistantBlocks.find(
+               (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === id) || null;
+  }
+  return null;
 }
 
 function startAssistantMessage() {
@@ -315,19 +331,24 @@ function removeCurrentAssistantMessage() {
 }
 
 let assistantRenderQueued = false;
+let pendingScrollFollow = false;
 
 // Coalesce a burst of tokens into one render per frame, and rebuild only the blocks that
 // changed: re-parsing the whole answer per token re-renders text and code already shown.
-function updateCurrentAssistantBlocks() {
+function updateCurrentAssistantBlocks(stickToBottom) {
+  // A following update must not be lost to one already queued that would not follow.
+  if (stickToBottom !== false) pendingScrollFollow = true;
   if (assistantRenderQueued) return;
   assistantRenderQueued = true;
   requestAnimationFrame(() => {
     assistantRenderQueued = false;
-    renderAssistantBlocks();
+    const follow = pendingScrollFollow;
+    pendingScrollFollow = false;
+    renderAssistantBlocks(follow);
   });
 }
 
-function renderAssistantBlocks() {
+function renderAssistantBlocks(stickToBottom) {
   if (!currentAssistantEl) return;
   const container = currentAssistantEl.querySelector(".blocks-container");
   if (!container) return;
@@ -341,14 +362,22 @@ function renderAssistantBlocks() {
       block.node.innerHTML = renderMarkdown(block.content);
     } else if (block.type === BLOCK_TYPES.THINKING) {
       const body = block.node.querySelector(".block-body");
-      if (body) body.textContent = block.content;
+      if (body) {
+        body.textContent = block.content;
+        body.classList.toggle("collapsed", block.collapsed);
+        const icon = block.node.querySelector(".toggle-icon");
+        if (icon) icon.textContent = block.collapsed ? "▶" : "▼";
+      }
     }
   });
 
   while (container.childNodes.length > currentAssistantBlocks.length) {
     container.removeChild(container.lastChild);
   }
-  if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  // A reasoning chunk is not the answer arriving, so it does not pull the view down.
+  if (stickToBottom !== false && isAtBottom) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 }
 
 function handleToolStart(payload) {
@@ -405,7 +434,7 @@ function handleThinking(payload) {
     currentAssistantBlocks.unshift(block);
   }
   block.content += text;
-  updateCurrentAssistantBlocks();
+  updateCurrentAssistantBlocks(false);
 }
 
 // What the session talks through, read rather than chosen, so it lives in the panel
@@ -761,12 +790,7 @@ async function loadSession() {
     const data = await res.json();
     if (data.success) {
       setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
-      // Offered only where a level lands: a backend that ignores one shows nothing
-      // rather than a control that would do nothing.
-      thinkingSelect.hidden = !data.supports_thinking_level;
-      if (data.supports_thinking_level) {
-        renderThinkingControl(data.thinking || "default", data.thinking_override || null);
-      }
+      renderThinkingControl(data.thinking || "default", data.thinking_override || null);
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
       }
