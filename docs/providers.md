@@ -6,18 +6,22 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-`CreateBackend` (`config/backend.hpp`) maps the `agents.json` backend `type` to a concrete
-provider and is the only path `Session` uses to obtain one. Accepted values are
-`ollama`, `openai`, and `codebuddy`; anything else is refused at load time, and
-an absent field means Ollama. "OpenAI compatible" covers OpenAI, DeepSeek
-thinking mode, vLLM, and compatible gateways. The same file owns `ListModels`, which reads each type's listing endpoint - `/api/tags` for Ollama, `/models` for the OpenAI-compatible ones.
+A gate answers for a backend type. `src/gateways/<name>.cpp` states that gate's name,
+default host, provider and catalogue read, and `src/gateways/registry.cpp` names the
+files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the type up in
+that table, so neither spells a gate's endpoint or provider itself. Adding a gate is a
+file plus a line, and removing one is the reverse.
 
-A type is spelled in one place — `BackendTypeName()` / `ParseBackendType()` in
-`config/backend.hpp` — because a stored session, an `agents.json` entry and an
-`/api/session` answer all name it; answering "is it OpenAI?" separately at each
-site is what turns a third type into a lie rather than a failure. The same rule
-covers capability: whether a backend carries a thinking level follows from its
-type, and no provider subclass overrides it.
+The types a build knows are the gates it carries: `ollama`, `openai` and `codebuddy`
+today, and a `type` no gate answers for is refused at load time. "OpenAI compatible"
+covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which are
+the one `openai` gate with a different `host`.
+
+A gate is spelled in one place for the same reason as before — a stored session, an
+`agents.json` entry and an `/api/session` answer all name the type, and answering "is it
+OpenAI?" separately at each site is what turns a third type into a lie rather than a
+failure. Whether a gate carries a thinking level follows from the gate, and no provider
+subclass overrides it.
 
 `codebuddy` is one of these, not a third protocol: the same stream at a different
 base URL plus a header set. Its gateway behavior is recorded in

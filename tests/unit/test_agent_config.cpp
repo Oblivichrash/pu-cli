@@ -290,6 +290,40 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
   REQUIRE(cfg.default_agent == "only");
 }
 
+TEST_CASE("A backend may leave out the host its gate supplies", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "type": "ollama", "model": "qwen" }
+      },
+      {
+        "name": "cloud",
+        "backend": { "type": "codebuddy", "model": "glm-5.3" }
+      }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+
+  REQUIRE(cfg.agents[0].backend.host == "http://localhost:11434");
+  REQUIRE(cfg.agents[1].backend.host == "https://copilot.tencent.com/v2");
+}
+
+TEST_CASE("A backend without a model is still refused", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "type": "ollama" } }
+    ]
+  })");
+
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+}
+
 TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({

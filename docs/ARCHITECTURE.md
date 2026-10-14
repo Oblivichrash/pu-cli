@@ -459,7 +459,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New backend**: Inherit `StreamingProvider` (`include/pu/llm/streaming_provider.hpp`) and supply the endpoint path, request body, log tag, headers, and a per-line parser; a backend that does not stream over SSE or NDJSON inherits `LLMProvider` directly. Register it in `CreateBackend()` and its listing endpoint in `ListModels()` (both in `include/pu/config/backend.hpp`).
+- **New gate**: Add `src/gateways/<name>.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then name it in the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the file and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

@@ -104,8 +104,8 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::Error("Missing backend field");
   entry.backend = ParseBackendConfig(j.at("backend"));
-  if (entry.backend.host.empty() || entry.backend.model.empty())
-    throw pu::Error("Missing host or model in backend");
+  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.type);
+  if (entry.backend.model.empty()) throw pu::Error("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
