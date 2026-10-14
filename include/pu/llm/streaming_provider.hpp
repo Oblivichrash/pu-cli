@@ -22,8 +22,6 @@ class StreamingProvider : public LLMProvider {
 
   ChatResult Chat(const ChatRequest& request) final;
 
-  bool SupportsTools() const override { return true; }
-
  protected:
   StreamingProvider(std::string host, std::string api_key,
                     std::shared_ptr<pu::http::HttpClient> http);

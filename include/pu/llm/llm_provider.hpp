@@ -145,8 +145,6 @@ class LLMProvider {
   virtual ~LLMProvider() = default;
 
   virtual ChatResult Chat(const ChatRequest& request) = 0;
-
-  virtual bool SupportsTools() const = 0;
 };
 
 }  // namespace pu

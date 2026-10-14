@@ -114,8 +114,6 @@ class MockLLM : public LLMProvider {
     return r;
   }
 
-  bool SupportsTools() const override { return true; }
-
  private:
   std::vector<ToolCall> calls_;
   std::string content_;
@@ -148,8 +146,6 @@ class OfferingLLM : public LLMProvider {
     return r;
   }
 
-  bool SupportsTools() const override { return true; }
-
   std::vector<std::string> offered;
 
  private:
@@ -163,8 +159,6 @@ class FailingLLM : public LLMProvider {
   ChatResult Chat(const ChatRequest& /*request*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
-
-  bool SupportsTools() const override { return true; }
 };
 
 class CapturingLLM : public LLMProvider {
@@ -175,8 +169,6 @@ class CapturingLLM : public LLMProvider {
     r.content = "done";
     return r;
   }
-
-  bool SupportsTools() const override { return true; }
 
   const std::vector<ChatMessage>& captured() const { return history_; }
 
@@ -202,8 +194,6 @@ class StoppingLLM : public LLMProvider {
     if (!reasoning_.empty()) r.reasoning.push_back(ReasoningBlock{reasoning_, {}, nullptr});
     return r;
   }
-
-  bool SupportsTools() const override { return true; }
 
  private:
   std::string content_;

@@ -381,16 +381,6 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   REQUIRE(sent.at("function").at("arguments").at("path") == ".");
 }
 
-TEST_CASE("OllamaProvider declares tool support", "[ollama]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto mock_http = std::make_shared<MockHttpClient>();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-  REQUIRE(provider.SupportsTools());
-}
-
 TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]") {
   OllamaProvider::Config config;
   config.model = "llama3.2:1b";

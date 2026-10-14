@@ -184,11 +184,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
                                       CancelToken command_stop_token) {
   ExecutionResult result;
 
-  if (!provider->SupportsTools()) {
-    result.content = "This provider does not support tool calling. Cannot execute tools.";
-    return result;
-  }
-
   auto tools = toolbox.GetToolDefinitions();
   const int max_iterations = 20;
   int iteration = 0;
