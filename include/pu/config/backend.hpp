@@ -44,7 +44,7 @@ struct BackendConfig {
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-      {"type", BackendTypeName(cfg.type)},
+      {"gateway", BackendTypeName(cfg.type)},
       {"host", cfg.host},
       {"model", cfg.model},
       {"api_key", cfg.api_key.value_or("")},
@@ -57,9 +57,9 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
-  const auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
-  const auto parsed = ParseBackendType(type_str);
-  if (!parsed) throw Error("Unknown backend type: " + type_str);
+  const auto gateway_name = json::ValueOrDefault<std::string>(j, "gateway", "ollama");
+  const auto parsed = ParseBackendType(gateway_name);
+  if (!parsed) throw Error("Unknown gateway: " + gateway_name);
   cfg.type = *parsed;
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");

@@ -279,7 +279,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   fs::path path = dir / ".pu" / "agents.json";
 
   boost::json::object backend;
-  backend["type"] = JsonStr(backend_type);
+  backend["gateway"] = JsonStr(backend_type);
   backend["host"] = JsonStr("http://127.0.0.1:" + std::to_string(backend_port));
   backend["model"] = JsonStr("test-model");
 

@@ -46,7 +46,7 @@ class BackendSourceFixture {
                  {"name", "chat"},
                  {"backend",
                   {
-                      {"type", "openai"},
+                      {"gateway", "openai"},
                       {"host", "http://127.0.0.1:1"},
                       {"model", "test-model"},
                       {"temperature", temperature},
@@ -57,7 +57,7 @@ class BackendSourceFixture {
                  {"name", "coder"},
                  {"backend",
                   {
-                      {"type", "openai"},
+                      {"gateway", "openai"},
                       {"host", "http://127.0.0.1:1"},
                       {"model", "coder-model"},
                       {"temperature", 0.4},
@@ -107,7 +107,7 @@ TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
 
 TEST_CASE("A stored backend naming a gate this build has not got is refused", "[backend]") {
   const boost::json::value stored = {
-      {"type", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
+      {"gateway", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
 
   REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
 }

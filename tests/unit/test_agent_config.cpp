@@ -48,7 +48,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
     item.as_object()["security"] = security;
 
     json::value backend = {
-        {"type", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
+        {"gateway", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
         {"host", entry.backend.host},
         {"model", entry.backend.model},
         {"temperature", entry.backend.temperature},
@@ -224,7 +224,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
         "type": "llm",
         "description": "Local Chat",
         "backend": {
-          "type": "ollama",
+          "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "qwen3.5:4b",
           "temperature": 0.7
@@ -235,7 +235,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
         "type": "llm",
         "description": "Command Runner",
         "backend": {
-          "type": "openai",
+          "gateway": "openai",
           "host": "https://api.openai.com/v1",
           "api_key": "${OPENAI_KEY}",
           "model": "gpt-4o-mini"
@@ -281,7 +281,7 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
       {
         "name": "only",
         "type": "llm",
-        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+        "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
       }
     ]
   })";
@@ -297,11 +297,11 @@ TEST_CASE("A backend may leave out the host its gate supplies", "[agent_config]"
     "agents": [
       {
         "name": "chat",
-        "backend": { "type": "ollama", "model": "qwen" }
+        "backend": { "gateway": "ollama", "model": "qwen" }
       },
       {
         "name": "cloud",
-        "backend": { "type": "codebuddy", "model": "glm-5.3" }
+        "backend": { "gateway": "codebuddy", "model": "glm-5.3" }
       }
     ]
   })");
@@ -317,7 +317,7 @@ TEST_CASE("A backend without a model is still refused", "[agent_config]") {
   tmp.write(R"({
     "default_agent": "chat",
     "agents": [
-      { "name": "chat", "backend": { "type": "ollama" } }
+      { "name": "chat", "backend": { "gateway": "ollama" } }
     ]
   })");
 
@@ -331,7 +331,7 @@ TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]")
     "agents": [
       {
         "name": "chat",
-        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+        "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
       }
     ]
   })");
@@ -397,7 +397,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
         "name": "x",
         "type": "llm",
         "backend": {
-          "type": "ollama",
+          "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "llama3.2",
           "system_prompt": "${UNDEFINED_VAR_FOR_TEST}"
@@ -419,7 +419,7 @@ TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
       {
         "name": "deepseek",
         "backend": {
-          "type": "openai",
+          "gateway": "openai",
           "host": "https://api.deepseek.com/v1",
           "model": "deepseek-reasoner",
           "thinking": "high"
@@ -439,7 +439,7 @@ TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent
     "agents": [
       {
         "name": "chat",
-        "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen" }
+        "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen" }
       }
     ]
   })";
