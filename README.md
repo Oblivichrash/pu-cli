@@ -69,16 +69,28 @@ Every field is listed under [Configuration](#agentsjson).
 | :------ | :---------- |
 | `pu ask <prompt>` | Send one prompt, print the reply, and exit |
 | `pu chat` | Start an interactive session |
+| `pu models [--verify]` | List the models the agent's backend reports; `--verify` asks each one for a token first (see below) |
 | `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
 
-Global options: `-h`/`--help` and `--version`. `ask` and `chat` also accept
-`--agent <name>`; `ask` accepts `--prompt <text>` in place of the positional
-prompt.
+Global options: `-h`/`--help` and `--version`. `ask`, `chat` and `models` also
+accept `--agent <name>`; `ask` accepts `--prompt <text>` in place of the
+positional prompt.
 
 ```bash
 ./build/pu ask "summarize README.md"
 ./build/pu chat --agent local-assistant
 > /backend deepseek-pro    # switch to predefined agent
+```
+
+`pu models` reads the listing endpoint the backend's type names - `/api/tags` for
+Ollama, `/models` for the OpenAI-compatible ones - and prints what it names, with
+the active model marked. A listing says a model is advertised; it does not say the
+account may run it. `--verify` settles that by asking each listed model for a
+single token and reporting what answered, one line per model, so an entitlement a
+gateway would otherwise only report on first use is known up front:
+
+```bash
+./build/pu models --verify
 ```
 
 Your conversation is saved to `<workspace>/.pu/session.json` after every

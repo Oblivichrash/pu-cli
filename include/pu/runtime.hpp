@@ -78,6 +78,12 @@ class Runtime {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return *http_client_;
   }
+  // For a collaborator that outlives the call and needs the client shared, which a
+  // provider built per model does.
+  std::shared_ptr<pu::http::HttpClient> GetHttpClientShared() {
+    assert(is_initialized_ && "Initialize() must run before any HTTP call");
+    return http_client_;
+  }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
   std::string HelpText();

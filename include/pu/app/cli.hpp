@@ -23,6 +23,7 @@ CommandLine BuildCommandLine();
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime);
 int RunChat(const std::string& agent, Runtime& runtime);
+int RunModels(const std::string& agent, bool verify, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 
 }  // namespace cli

@@ -152,6 +152,17 @@ TEST_CASE("The command line names every option once", "[options]") {
     REQUIRE(vm["agent"].as<std::string>() == "test-agent");
   }
 
+  SECTION("models takes an agent and a verify flag") {
+    const po::variables_map plain = parse({"pu", "models", "--agent", "test-agent"});
+    REQUIRE(plain["command"].as<std::string>() == "models");
+    REQUIRE(plain["agent"].as<std::string>() == "test-agent");
+    REQUIRE(plain.count("verify") == 0);
+
+    const po::variables_map verifying = parse({"pu", "models", "--verify"});
+    REQUIRE(verifying["command"].as<std::string>() == "models");
+    REQUIRE(verifying.count("verify") == 1);
+  }
+
   SECTION("serve takes a host and a port") {
     const po::variables_map vm = parse({"pu", "serve", "--host", "0.0.0.0", "--port", "9000"});
     REQUIRE(vm["host"].as<std::string>() == "0.0.0.0");

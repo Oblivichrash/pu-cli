@@ -4,11 +4,14 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <spdlog/spdlog.h>
 
 #include "pu/config/agents.hpp"
+#include "pu/config/backend.hpp"
 #include "pu/command_router.hpp"
+#include "pu/llm/model_verifier.hpp"
 #include "pu/runtime.hpp"
 
 namespace pu::cli {
@@ -23,21 +26,28 @@ void PrintNotice(const ExecutionResult& result) {
   std::cout << result.notice << "\n";
 }
 
+std::string BackendLabel(const config::BackendConfig& backend) {
+  return std::string(config::BackendTypeName(backend.type)) + " at " + backend.host;
+}
+
 }  // namespace
 
 CommandLine BuildCommandLine() {
   boost::program_options::options_description global("Global options");
   global.add_options()("help,h", "show help message")("version", "show version and exit")(
       "command", boost::program_options::value<std::string>(),
-      "command to execute (ask/chat/serve)");
+      "command to execute (ask/chat/models/serve)");
 
   // ask and chat name the same option, and program_options treats a long name
   // registered twice as ambiguous however it is grouped, so the two share one entry.
-  boost::program_options::options_description session("ask and chat options");
+  boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
 
   boost::program_options::options_description ask("ask options");
   ask.add_options()("prompt", boost::program_options::value<std::string>(), "prompt to send");
+
+  boost::program_options::options_description models("models options");
+  models.add_options()("verify", "ask each listed model for one token and report what answered");
 
   boost::program_options::options_description serve("serve options");
   serve.add_options()("host", boost::program_options::value<std::string>(),
@@ -49,7 +59,7 @@ CommandLine BuildCommandLine() {
   positional.add("prompt", 1);
 
   CommandLine line;
-  line.all.add(global).add(session).add(ask).add(serve);
+  line.all.add(global).add(session).add(ask).add(models).add(serve);
   line.positional = std::move(positional);
   return line;
 }
@@ -109,7 +119,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
           std::cout << "Unknown command. ";
           PrintChatHelp(runtime);
         } else {
-          spdlog::error("{}",
+          spdlog::error("{}\n",
                         result.error_message.empty() ? "Processing failed" : result.error_message);
         }
       } else if (!result.was_streamed) {
@@ -129,6 +139,48 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 
   runtime.Shutdown();
   std::cout << "\nGoodbye!\n";
+  return 0;
+}
+
+int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
+  try {
+    if (!agent.empty()) runtime.SetDefaultAgent(agent);
+    runtime.Initialize();
+
+    const config::BackendConfig backend = runtime.CurrentBackend();
+    const std::vector<std::string> models =
+        config::ListModels(backend, runtime.GetHttpClient());
+
+    if (models.empty()) {
+      std::cout << "No models reported by " << BackendLabel(backend) << "\n";
+    } else if (!verify) {
+      for (const std::string& model : models) {
+        std::cout << model;
+        if (model == backend.model) std::cout << " (active)";
+        std::cout << "\n";
+      }
+    } else {
+      const std::vector<llm::ModelCheck> checks =
+          llm::VerifyModels(backend, models, runtime.GetHttpClientShared());
+      int answered = 0;
+      for (const llm::ModelCheck& check : checks) {
+        std::cout << check.model << "  ";
+        if (check.answered) {
+          std::cout << "ok";
+          ++answered;
+        } else {
+          std::cout << "unavailable: " << check.detail;
+        }
+        std::cout << "\n";
+      }
+      std::cout << answered << " of " << checks.size() << " model(s) answered\n";
+    }
+
+    runtime.Shutdown();
+  } catch (const std::exception& e) {
+    spdlog::error("{}", e.what());
+    return 1;
+  }
   return 0;
 }
 

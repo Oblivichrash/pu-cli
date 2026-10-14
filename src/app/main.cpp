@@ -58,6 +58,11 @@ int main(int argc, char* argv[]) {
       return pu::cli::RunChat(agent, runtime);
     }
 
+    if (cmd == "models") {
+      std::string agent = vm.count("agent") ? vm["agent"].as<std::string>() : "";
+      return pu::cli::RunModels(agent, vm.count("verify") > 0, runtime);
+    }
+
     if (cmd == "serve") {
       const auto named = [](const char* name) -> std::optional<std::string> {
         const char* value = std::getenv(name);
