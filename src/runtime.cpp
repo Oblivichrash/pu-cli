@@ -49,15 +49,20 @@ void SetAside(const std::filesystem::path& path, const std::string& reason) {
 
 std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path)) return nullptr;
-  std::ifstream file(path);
-  if (!file.is_open()) return nullptr;
 
   boost::json::value j;
-  try {
-    file >> j;
-  } catch (const std::exception& e) {
-    SetAside(path, std::string("body does not parse: ") + e.what());
-    return nullptr;
+  {
+    std::ifstream file(path);
+    if (!file.is_open()) return nullptr;
+
+    try {
+      file >> j;
+    } catch (const std::exception& e) {
+      // The stream is closed by scope exit: Windows refuses to rename a file with an
+      // open handle, so the set-aside below would silently do nothing.
+      SetAside(path, std::string("body does not parse: ") + e.what());
+      return nullptr;
+    }
   }
 
   auto session = Session::Deserialize(j);
