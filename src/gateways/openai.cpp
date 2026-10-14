@@ -32,6 +32,7 @@ std::unique_ptr<pu::ModelLister> MakeOpenAIListing() {
 
 const Gateway& OpenAIGateway() {
   static const Gateway gateway{
+      .type = BackendType::kOpenAI,
       .name = "openai",
       .default_host = "https://api.openai.com/v1",
       .make_provider = &MakeOpenAIProvider,

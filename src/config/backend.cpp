@@ -1,15 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/config/backend.hpp"
 
-#include "pu/llm/capabilities.hpp"
-
 #include "pu/config/gateway.hpp"
+#include "pu/llm/capabilities.hpp"
 #include "pu/core/base.hpp"
 
 #include <memory>
 #include <utility>
 
 namespace pu::config {
+
+std::string DefaultHostFor(BackendType type) {
+  return std::string(GatewayForType(type).default_host);
+}
+
+const char* BackendTypeName(BackendType type) { return GatewayForType(type).name.data(); }
+
+std::string BackendTypeNames() {
+  std::string names;
+  for (const Gateway* gateway : Gateways()) {
+    if (!names.empty()) names += ", ";
+    names += gateway->name;
+  }
+  return names;
+}
+
+std::optional<BackendType> ParseBackendType(std::string_view name) {
+  if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->type;
+  return std::nullopt;
+}
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http) {

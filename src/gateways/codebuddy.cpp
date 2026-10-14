@@ -34,6 +34,7 @@ std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
 
 const Gateway& CodeBuddyGateway() {
   static const Gateway gateway{
+      .type = BackendType::kCodeBuddy,
       .name = "codebuddy",
       .default_host = "https://copilot.tencent.com/v2",
       .make_provider = &MakeCodeBuddyProvider,

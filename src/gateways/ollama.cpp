@@ -27,6 +27,7 @@ std::unique_ptr<pu::ModelLister> MakeOllamaListing() {
 
 const Gateway& OllamaGateway() {
   static const Gateway gateway{
+      .type = BackendType::kOllama,
       .name = "ollama",
       .default_host = "http://localhost:11434",
       .make_provider = &MakeOllamaProvider,

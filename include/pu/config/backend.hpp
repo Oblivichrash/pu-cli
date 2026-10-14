@@ -20,20 +20,12 @@ enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
 inline constexpr BackendType kBackendTypes[] = {BackendType::kOllama, BackendType::kOpenAI,
                                                 BackendType::kCodeBuddy};
 
-// Every backend type carries a thinking level: Ollama as a top-level `think`, the
-// OpenAI-compatible ones as `reasoning_effort` / `extra_body`. A backend that cannot
-// is a new one, and it will say so rather than being carved out here.
-inline std::string DefaultHostFor(BackendType type) {
-  switch (type) {
-    case BackendType::kOllama:
-      return "http://localhost:11434";
-    case BackendType::kOpenAI:
-      return "https://api.openai.com/v1";
-    case BackendType::kCodeBuddy:
-      return "https://copilot.tencent.com/v2";
-  }
-  return "";
-}
+// A type keeps no default host and no name of its own: both come from the gate that
+// answers for it, so a type whose gate differs cannot disagree with itself.
+std::string DefaultHostFor(BackendType type);
+const char* BackendTypeName(BackendType type);
+std::string BackendTypeNames();
+std::optional<BackendType> ParseBackendType(std::string_view name);
 
 struct BackendConfig {
   BackendType type = BackendType::kOllama;
@@ -48,33 +40,6 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
-inline const char* BackendTypeName(BackendType type) {
-  switch (type) {
-    case BackendType::kOllama:
-      return "ollama";
-    case BackendType::kOpenAI:
-      return "openai";
-    case BackendType::kCodeBuddy:
-      return "codebuddy";
-  }
-  return "ollama";
-}
-
-inline std::string BackendTypeNames() {
-  std::string names;
-  for (const BackendType type : kBackendTypes) {
-    if (!names.empty()) names += ", ";
-    names += BackendTypeName(type);
-  }
-  return names;
-}
-
-inline std::optional<BackendType> ParseBackendType(std::string_view name) {
-  if (name == "ollama") return BackendType::kOllama;
-  if (name == "openai") return BackendType::kOpenAI;
-  if (name == "codebuddy") return BackendType::kCodeBuddy;
-  return std::nullopt;
-}
 
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {

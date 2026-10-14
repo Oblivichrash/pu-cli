@@ -13,6 +13,7 @@ namespace pu::config {
 // One gate: the name it answers to, the host a config may leave out, and how to build its
 // provider and its catalogue read. What a gate does differently lives in its own file.
 struct Gateway {
+  BackendType type;
   std::string_view name;
   std::string_view default_host;
   std::unique_ptr<pu::LLMProvider> (*make_provider)(const BackendConfig&,
