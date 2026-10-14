@@ -120,7 +120,6 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
     body["backend_model"] = backend.model;
     body["backend_host"] = backend.host;
     body["thinking"] = ThinkingLevelName(backend.thinking);
-    body["supports_thinking_level"] = runtime.SupportsThinkingLevel();
     if (const auto override_level = runtime.GetThinkingOverride()) {
       body["thinking_override"] = ThinkingLevelName(*override_level);
     }
@@ -313,12 +312,8 @@ void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
       SendError(res, 400, "Unknown thinking level");
       return;
     }
-    const bool accepted = runtime.SetThinkingLevel(
+    runtime.SetThinkingLevel(
         level == "auto" ? std::nullopt : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
-    if (!accepted) {
-      SendError(res, 400, "This backend does not carry a thinking level");
-      return;
-    }
     body["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
     if (const auto override_level = runtime.GetThinkingOverride()) {
       body["thinking_override"] = ThinkingLevelName(*override_level);

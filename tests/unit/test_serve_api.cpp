@@ -48,7 +48,6 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
   REQUIRE(j.at("success") == true);
   REQUIRE(j.at("backend_type") == "codebuddy");
   REQUIRE(j.at("backend_model") == "test-model");
-  REQUIRE(j.at("supports_thinking_level") == true);
 }
 
 TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
@@ -173,7 +172,6 @@ TEST_CASE("serve API /api/thinking", "[serve][api]") {
 
   auto session_j = ParseJson(client.Get("/api/session"));
   REQUIRE(session_j.at("thinking") == "default");
-  REQUIRE(session_j.at("supports_thinking_level") == true);
 
   auto set_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
   REQUIRE(set_j.at("success") == true);
@@ -190,13 +188,13 @@ TEST_CASE("serve API /api/thinking", "[serve][api]") {
   REQUIRE_FALSE(auto_j.as_object().count("thinking_override") == 1);
 }
 
-TEST_CASE("serve API /api/thinking refuses what the backend cannot carry", "[serve][api]") {
-  ServeHarness harness;  // ollama, where the model decides for itself
+TEST_CASE("serve API /api/thinking takes a level on every backend", "[serve][api]") {
+  ServeHarness harness;  // ollama, which carries the level as a top-level `think`
   auto client = harness.Client();
 
-  auto refused = client.PostFull("/api/thinking", boost::json::object{{"level", "high"}});
-  REQUIRE(refused.status == 400);
-  REQUIRE(ParseJson(refused.body).at("success") == false);
+  auto accepted = client.PostFull("/api/thinking", boost::json::object{{"level", "high"}});
+  REQUIRE(accepted.status == 200);
+  REQUIRE(ParseJson(accepted.body).at("thinking") == "high");
 
   auto unknown = client.PostFull("/api/thinking", boost::json::object{{"level", "enormous"}});
   REQUIRE(unknown.status == 400);

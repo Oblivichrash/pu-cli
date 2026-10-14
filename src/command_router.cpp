@@ -250,11 +250,6 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
 }
 
 bool CommandRouter::HandleThinking(Args args, Output output) {
-  if (!runtime_.SupportsThinkingLevel()) {
-    output = "This backend does not carry a thinking level.";
-    return true;
-  }
-
   if (args.empty()) {
     output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
     output += runtime_.GetThinkingOverride() ? " (set for this session)"
@@ -268,10 +263,7 @@ bool CommandRouter::HandleThinking(Args args, Output output) {
   }
 
   if (args[0] == "auto") {
-    if (!runtime_.SetThinkingLevel(std::nullopt)) {
-      output = "This backend does not carry a thinking level.";
-      return true;
-    }
+    runtime_.SetThinkingLevel(std::nullopt);
     output = "Thinking follows the agent's configuration again (" +
              std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) + ").";
     return true;
@@ -283,10 +275,7 @@ bool CommandRouter::HandleThinking(Args args, Output output) {
     return true;
   }
 
-  if (!runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]))) {
-    output = "This backend does not carry a thinking level.";
-    return true;
-  }
+  runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]));
   output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) +
            " for this session.";
   return true;

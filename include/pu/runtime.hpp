@@ -57,12 +57,6 @@ class Runtime {
     executor_->SetUserNote(std::move(note));
   }
 
-  // A fresh token per turn, stored so stop_command can arm it while the turn runs.
-  CancelToken NewCommandStopToken() {
-    command_stop_token_ = std::make_shared<std::atomic<bool>>(false);
-    return command_stop_token_;
-  }
-
   // The approval gate. Ask fires on the turn thread when a command matches the
   // policy's approval patterns; Resolve answers it from the serve thread.
   void EnableApprovalGate() {
@@ -96,9 +90,8 @@ class Runtime {
   config::BackendConfig CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
-  bool SupportsThinkingLevel() const;
   std::optional<ThinkingLevel> GetThinkingOverride() const;
-  bool SetThinkingLevel(std::optional<ThinkingLevel> level);
+  void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:
   config::BackendConfig ConfiguredBackend() const;
@@ -115,7 +108,6 @@ class Runtime {
   std::shared_ptr<pu::http::HttpClient> http_client_;
   Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
-  CancelToken command_stop_token_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
 

@@ -203,18 +203,9 @@ std::optional<ThinkingLevel> Runtime::GetThinkingOverride() const {
   return current_session_->GetSpec().thinking_override;
 }
 
-bool Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
-  if (!SupportsThinkingLevel()) return false;
+void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
   GetOrCreateDefaultSession()->GetSpec().thinking_override = level;
   SaveCurrentSession();
-  return true;
-}
-
-bool Runtime::SupportsThinkingLevel() const {
-  // Every backend type carries a level, so the only thing left to answer is whether a
-  // session is active to hold the override. The field stays on the API surface because
-  // the web UI hides the level selector from it.
-  return current_session_ != nullptr;
 }
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,

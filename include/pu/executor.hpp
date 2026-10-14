@@ -102,8 +102,6 @@ class Executor {
   bool approval_answered_ = false;
   bool approval_allowed_ = false;
   std::string approval_answer_note_;
-  std::string approval_pending_command_;
-  std::string pending_approval_note_;
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
