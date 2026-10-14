@@ -112,6 +112,18 @@ TEST_CASE("A stored backend naming a gate this build has not got is refused", "[
   REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
 }
 
+TEST_CASE("A stored backend naming no gate is refused rather than defaulted", "[backend]") {
+  // The field was named `type` before the gate table; a file still carrying it names no
+  // gate, and reading it as ollama would send its turns to a host nobody chose.
+  for (const boost::json::value stored :
+       {boost::json::value{{"host", "https://example.invalid/v1"}, {"model", "test-model"}},
+        boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
+                           {"model", "test-model"}},
+        boost::json::value{{"gateway", ""}, {"model", "test-model"}}}) {
+    REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+  }
+}
+
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
   REQUIRE(config::ParseGatewayId("codebuddy") == config::GatewayId::kCodeBuddy);
   REQUIRE(config::ParseGatewayId("openai") == config::GatewayId::kOpenAI);

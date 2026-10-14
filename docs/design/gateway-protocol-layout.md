@@ -7,10 +7,11 @@ left to describe what was decided rather than how it was implemented.
 
 The first step of it is built: `src/gateways/` holds one file per gate behind the explicit
 table, `Gateway` carries the id, the name, the default host and the two factories, and
-`agents.json` names a `gateway`. The rest is still target rather than state — the struct
-carries no `entries`, `headers` or `catalog`, no `entry` is read, and the schema version
-in section 5 has not moved — so read each section as the shape the work is done towards,
-and change this document rather than quietly diverging from it.
+`agents.json` names a `gateway` — required, with an unknown or missing name refused. The
+rest is still target rather than state — the struct carries no `entries`, `headers` or
+`catalog`, no `entry` is read, and the schema version in section 5 has not moved — so read
+each section as the shape the work is done towards, and change this document rather than
+quietly diverging from it.
 
 ---
 
@@ -89,7 +90,8 @@ The table is explicit, so the linker always sees it.
 ```
 
 - `gateway` is required and names a file in the table. An unknown name is refused rather
-  than defaulting, which today's `ParseBackendType(...).value_or(kOllama)` does not do.
+  than defaulting, and so is a missing one; a backend that named no gate would otherwise
+  be answered by whichever gate happened to be the default.
 - `entry` is optional and defaults to the gateway's first.
 - `model` is required: no default is honest about a choice only the account can make.
 - `host` is optional and overrides the entry's default. It stays overridable because a

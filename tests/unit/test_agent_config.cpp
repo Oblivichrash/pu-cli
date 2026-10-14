@@ -324,6 +324,25 @@ TEST_CASE("A backend without a model is still refused", "[agent_config]") {
   REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
 }
 
+TEST_CASE("A backend naming no gate is refused, and says which field is missing",
+          "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "host": "http://localhost", "model": "x" } }
+    ]
+  })");
+
+  try {
+    (void)config::LoadAgentsConfig(tmp.path.string());
+    FAIL("a backend with no gateway was accepted");
+  } catch (const std::exception& e) {
+    REQUIRE(std::string(e.what()).find("Missing gateway") != std::string::npos);
+    REQUIRE(std::string(e.what()).find("ollama") != std::string::npos);
+  }
+}
+
 TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({

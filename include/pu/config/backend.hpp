@@ -30,6 +30,17 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
+// The gate a backend names, from an agents.json entry or a stored one. Required rather
+// than defaulted: a file that never named a gate is one whose author meant another one,
+// and the wrong gate's host fails a long way from the line that is wrong.
+inline GatewayId ReadGateway(const boost::json::value& j) {
+  const std::string name = json::ValueOrDefault<std::string>(j, "gateway", "");
+  if (name.empty()) throw Error("Missing gateway in backend: name one of " + GatewayNames());
+  const std::optional<GatewayId> parsed = ParseGatewayId(name);
+  if (!parsed) throw Error("Unknown gateway: " + name);
+  return *parsed;
+}
+
 
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
@@ -47,10 +58,7 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
-  const auto gateway_name = json::ValueOrDefault<std::string>(j, "gateway", "ollama");
-  const auto parsed = ParseGatewayId(gateway_name);
-  if (!parsed) throw Error("Unknown gateway: " + gateway_name);
-  cfg.gateway = *parsed;
+  cfg.gateway = ReadGateway(j);
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
   if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {

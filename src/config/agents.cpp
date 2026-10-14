@@ -52,10 +52,7 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
 
 BackendConfig ParseBackendConfig(const json::value& j) {
   BackendConfig cfg;
-  const auto gateway_name = json::ValueOrDefault<std::string>(j, "gateway", "ollama");
-  const auto gateway = ParseGatewayId(gateway_name);
-  if (!gateway) throw pu::Error("Unknown gateway: " + gateway_name);
-  cfg.gateway = *gateway;
+  cfg.gateway = ReadGateway(j);
   cfg.host = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "host", ""));
   cfg.model = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "model", ""));
   if (json::HasKey(j, "api_key"))

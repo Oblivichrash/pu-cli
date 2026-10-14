@@ -12,14 +12,14 @@ files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the typ
 that table, so neither spells a gate's endpoint or provider itself. Adding a gate is a
 file plus a line, and removing one is the reverse.
 
-The types a build knows are the gates it carries: `ollama`, `openai` and `codebuddy`
-today, and a `type` no gate answers for is refused at load time. "OpenAI compatible"
-covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which are
-the one `openai` gate with a different `host`.
+The gates a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
+today, and an entry that names none of them is refused at load time — as is one that
+names no gate at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and
+compatible gateways, all of which are the one `openai` gate with a different `host`.
 
 A gate is spelled in one place for the same reason as before — a stored session, an
-`agents.json` entry and an `/api/session` answer all name the type, and answering "is it
-OpenAI?" separately at each site is what turns a third type into a lie rather than a
+`agents.json` entry and an `/api/session` answer all name it, and answering "is it
+OpenAI?" separately at each site is what turns a third gate into a lie rather than a
 failure. Whether a gate carries a thinking level follows from the gate, and no provider
 subclass overrides it.
 

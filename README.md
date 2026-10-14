@@ -48,7 +48,7 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
     {
       "name": "local-assistant",
       "backend": {
-        "type": "ollama",
+        "gateway": "ollama",
         "host": "http://localhost:11434",
         "model": "qwen3.5:2b"
       },
@@ -297,8 +297,8 @@ default). See [Quick Start](#configure) for a full example.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `type` | `ollama` | `ollama`, `openai`, or `codebuddy`; any other value is rejected |
-| `host` | per type | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
+| `gateway` | — | Required. `ollama`, `openai`, or `codebuddy`; a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
+| `host` | per gateway | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
@@ -314,7 +314,7 @@ use is answered by the gateway itself.
 
 ```json
 "backend": {
-  "type": "codebuddy",
+  "gateway": "codebuddy",
   "host": "https://copilot.tencent.com/v2",
   "model": "deepseek-v4-flash",
   "api_key": "${CODEBUDDY_API_KEY}"

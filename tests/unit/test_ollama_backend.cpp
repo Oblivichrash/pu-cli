@@ -50,11 +50,11 @@ TEST_CASE("BackendConfig leaves the token cap unset until it is asked for", "[co
     return boost::json::value_to<pu::config::BackendConfig>(boost::json::parse(text));
   };
 
-  REQUIRE_FALSE(config_from(R"({"type":"ollama","model":"m"})").max_tokens.has_value());
-  REQUIRE(config_from(R"({"type":"ollama","model":"m","max_tokens":4096})").max_tokens == 4096);
+  REQUIRE_FALSE(config_from(R"({"gateway":"ollama","model":"m"})").max_tokens.has_value());
+  REQUIRE(config_from(R"({"gateway":"ollama","model":"m","max_tokens":4096})").max_tokens == 4096);
 
   // Round-trips keep the absent key absent rather than inventing a cap.
-  const auto bare = config_from(R"({"type":"ollama","model":"m"})");
+  const auto bare = config_from(R"({"gateway":"ollama","model":"m"})");
   const auto written = boost::json::value_from(bare).as_object();
   REQUIRE_FALSE(written.contains("max_tokens"));
 }
