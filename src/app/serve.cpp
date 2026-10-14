@@ -16,7 +16,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_set>
 #include <utility>
 
 #include "pu/core/json.hpp"
@@ -33,207 +32,317 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
-using detail::ActiveWebSocket;
 using detail::DispatchHttpRequest;
+using detail::SessionRunner;
+using detail::WebSocketConnection;
 
-void RunWebSocketSession(tcp::socket socket, http::request<http::string_body> req, Runtime& runtime,
-                         std::mutex& io_mutex, std::shared_ptr<ActiveWebSocket> active_ws) {
-  auto ws = std::make_shared<websocket::stream<tcp::socket>>(std::move(socket));
+}  // namespace
 
-  beast::error_code ec;
-  ws->accept(req, ec);
+namespace detail {
+
+WebSocketConnection::WebSocketConnection(tcp::socket socket,
+                                         net::strand<net::io_context::executor_type> strand,
+                                         Runtime& runtime, SessionRunner& runner)
+    : ws_(std::move(socket)), strand_(std::move(strand)), runtime_(runtime), runner_(runner) {}
+
+void WebSocketConnection::Start(http::request<http::string_body> req) {
+  auto self = shared_from_this();
+  ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+  ws_.async_accept(req, net::bind_executor(strand_, [self](beast::error_code ec) {
+                     if (ec) {
+                       spdlog::warn("WebSocket accept error: {}", ec.message());
+                       self->Finish();
+                       return;
+                     }
+                     if (!self->runner_.Attach(self)) {
+                       self->Send({{"type", "busy"},
+                                   {"payload",
+                                    {{"text", "This session is already open in another page."}}}});
+                       self->SendPendingThenClose();
+                       return;
+                     }
+                     self->SetAttached(true);
+                     self->DoRead();
+                   }));
+}
+
+void WebSocketConnection::SendPendingThenClose() {
+  auto self = shared_from_this();
+  net::post(strand_, [self] {
+    if (!self->writing_ && !self->write_queue_.empty()) self->DoWrite();
+    self->close_after_write_ = true;
+    if (!self->writing_) self->Finish();
+  });
+}
+
+void WebSocketConnection::Send(boost::json::value frame) {
+  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
+  auto self = shared_from_this();
+  net::post(strand_, [self, text] {
+    if (self->closed_) return;
+    self->write_queue_.push_back(text);
+    if (!self->writing_) self->DoWrite();
+  });
+}
+
+void WebSocketConnection::DoRead() {
+  read_buffer_.consume(read_buffer_.size());
+  auto self = shared_from_this();
+  ws_.async_read(read_buffer_, net::bind_executor(strand_, [self](beast::error_code ec,
+                                                                  std::size_t bytes) {
+                   self->OnRead(ec, bytes);
+                 }));
+}
+
+void WebSocketConnection::OnRead(beast::error_code ec, std::size_t) {
   if (ec) {
-    spdlog::warn("WebSocket accept error: {}", ec.message());
+    if (ec != websocket::error::closed && ec != net::error::operation_aborted) {
+      spdlog::warn("WebSocket read error: {}", ec.message());
+    }
+    Finish();
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(active_ws->mtx);
-    if (active_ws->client) {
-      boost::json::value busy = {
-          {"type", "busy"},
-          {"payload", {{"text", "This session is already open in another page."}}}};
-      const std::string message = boost::json::serialize(busy);
-      beast::error_code write_ec;
-      ws->write(net::buffer(message), write_ec);
-      beast::error_code close_ec;
-      ws->close(websocket::close_code::policy_error, close_ec);
-      return;
-    }
-    active_ws->client = ws;
+  const std::string text = beast::buffers_to_string(read_buffer_.data());
+  boost::json::value jv;
+  try {
+    jv = boost::json::parse(text);
+  } catch (const boost::system::system_error& e) {
+    Send({{"type", "error"}, {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}});
+    DoRead();
+    return;
   }
 
-  for (;;) {
-    beast::flat_buffer buffer;
-    beast::error_code read_ec;
-    ws->read(buffer, read_ec);
-    if (read_ec) {
-      if (read_ec != websocket::error::closed) {
-        spdlog::warn("WebSocket read error: {}", read_ec.message());
-      }
-      break;
-    }
-
-    const std::string text = beast::buffers_to_string(buffer.data());
-
-    boost::json::value jv;
+  if (jv.is_object()) {
     try {
-      jv = boost::json::parse(text);
-    } catch (const boost::system::system_error& e) {
-      boost::json::value error = {
-          {"type", "error"}, {"payload", {{"text", std::string("Invalid JSON: ") + e.what()}}}};
-      const std::string message = boost::json::serialize(error);
-      std::lock_guard<std::mutex> lock(active_ws->mtx);
-      if (active_ws->client == ws && ws->is_open()) {
-        beast::error_code write_ec;
-        ws->write(net::buffer(message), write_ec);
-      }
-      continue;
+      HandleMessage(jv);
+    } catch (const std::exception& e) {
+      spdlog::warn("WebSocket message error: {}", e.what());
     }
-    if (!jv.is_object()) continue;
-
-    const std::string type = json::ValueOrDefault<std::string>(jv, "type", "");
-    if (type == "cancel") {
-      std::lock_guard<std::mutex> lock(active_ws->mtx);
-      active_ws->cancel_token->store(true);
-      continue;
-    }
-    if (type == "note") {
-      const std::string note = json::ValueOrDefault<std::string>(
-          json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}),
-          "text", "");
-      if (!note.empty()) runtime.SetUserNote(note);
-      continue;
-    }
-    if (type == "resolve_approval") {
-      const auto payload = json::ValueOrDefault<boost::json::value>(
-          jv, "payload", boost::json::object{});
-      const bool allow = json::ValueOrDefault<bool>(payload, "allow", false);
-      const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
-      runtime.ResolveApproval(allow, note);
-      continue;
-    }
-    if (type == "stop_command") {
-      const auto payload = json::ValueOrDefault<boost::json::value>(
-          jv, "payload", boost::json::object{});
-      const std::string note =
-          json::ValueOrDefault<std::string>(payload, "text", "");
-      std::lock_guard<std::mutex> lock(active_ws->mtx);
-      if (!active_ws->command_stop) {
-        active_ws->command_stop = std::make_shared<std::atomic<bool>>(false);
-      }
-      active_ws->command_note = note;
-      active_ws->command_stop->store(true);
-      continue;
-    }
-    if (type != "run") continue;
-
-    const std::string payload_text = json::ValueOrDefault<std::string>(
-        json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{}), "text", "");
-    if (payload_text.empty()) continue;
-
-    CancelToken token;
-    {
-      std::lock_guard<std::mutex> lock(active_ws->mtx);
-      active_ws->cancel_token->store(true);
-      active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
-      token = active_ws->cancel_token;
-    }
-
-    std::thread([&runtime, &io_mutex, active_ws, token, payload_text]() {
-      bool is_command = false;
-      ExecutionResult result;
-
-      const auto say = [&](const boost::json::value& frame) {
-        std::lock_guard<std::mutex> lock(active_ws->mtx);
-        if (active_ws->cancel_token != token) return;
-        if (!active_ws->client || !active_ws->client->is_open()) return;
-        const std::string message = boost::json::serialize(frame);
-        beast::error_code write_ec;
-        active_ws->client->write(net::buffer(message), write_ec);
-      };
-
-      ToolCallbacks tool_cb;
-      tool_cb.on_start = [&](const std::string& id, const std::string& name,
-                             const boost::json::value& args) {
-        boost::json::value frame = {{"type", "tool_start"},
-                                    {"payload", {{"id", id}, {"name", name}, {"args", args}}}};
-        say(frame);
-      };
-      tool_cb.on_end = [&](const std::string& id, const std::string& output,
-                           const std::string& error) {
-        boost::json::value frame = {
-            {"type", "tool_end"}, {"payload", {{"id", id}, {"output", output}, {"error", error}}}};
-        say(frame);
-      };
-
-      CancelToken command_stop;
-      {
-        std::lock_guard<std::mutex> lock(active_ws->mtx);
-        active_ws->command_stop = std::make_shared<std::atomic<bool>>(false);
-        active_ws->command_note.clear();
-        command_stop = active_ws->command_stop;
-      }
-
-      runtime.EnableApprovalGate();
-      runtime.SetOnApprovalAsk([&](const std::string& command) {
-        boost::json::value frame = {
-            {"type", "approval_ask"}, {"payload", {{"command", command}}}};
-        say(frame);
-      });
-
-      {
-        std::lock_guard<std::mutex> lock(io_mutex);
-        result = runtime.ProcessInput(
-            payload_text, is_command, token,
-            [&](std::string_view chunk) {
-              if (chunk.empty()) return;
-              boost::json::value frame = {{"type", "chunk"}, {"payload", {{"text", chunk}}}};
-              say(frame);
-            },
-            tool_cb,
-            [&](std::string_view thought) {
-              if (thought.empty()) return;
-              boost::json::value frame = {{"type", "thinking"}, {"payload", {{"text", thought}}}};
-              say(frame);
-            },
-            command_stop);
-      }
-
-      if (!result.notice.empty()) {
-        boost::json::value frame = {{"type", "notice"}, {"payload", {{"text", result.notice}}}};
-        say(frame);
-      }
-
-      if (result.usage) {
-        boost::json::value frame = {
-            {"type", "usage"},
-            {"payload",
-             {{"prompt_tokens", result.usage->prompt_tokens},
-              {"completion_tokens", result.usage->completion_tokens}}}};
-        say(frame);
-      }
-
-      boost::json::value final;
-      if (result.has_error) {
-        final = {{"type", "error"}, {"payload", {{"text", result.error_message}}}};
-      } else if (result.model.empty()) {
-        final = {{"type", "done"}};
-      } else {
-        final = {{"type", "done"}, {"payload", {{"model", result.model}}}};
-      }
-      say(final);
-    }).detach();
   }
+  DoRead();
+}
 
-  std::lock_guard<std::mutex> lock(active_ws->mtx);
-  if (active_ws->client == ws) {
-    active_ws->client = nullptr;
-    active_ws->cancel_token->store(true);
+void WebSocketConnection::HandleMessage(const boost::json::value& jv) {
+  const std::string type = json::ValueOrDefault<std::string>(jv, "type", "");
+  const auto payload =
+      json::ValueOrDefault<boost::json::value>(jv, "payload", boost::json::object{});
+
+  if (type == "run") {
+    const std::string text = json::ValueOrDefault<std::string>(payload, "text", "");
+    if (!text.empty()) runner_.Submit(text, shared_from_this());
+    return;
+  }
+  if (type == "cancel") {
+    runner_.CancelTurn();
+    return;
+  }
+  if (type == "note") {
+    const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
+    if (!note.empty()) runtime_.SetUserNote(note);
+    return;
+  }
+  if (type == "stop_command") {
+    const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
+    runner_.StopCommand(note);
+    return;
+  }
+  if (type == "resolve_approval") {
+    const bool allow = json::ValueOrDefault<bool>(payload, "allow", false);
+    const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
+    runtime_.ResolveApproval(allow, note);
+    return;
   }
 }
 
-}  // namespace
+void WebSocketConnection::DoWrite() {
+  if (closed_ || write_queue_.empty()) {
+    writing_ = false;
+    return;
+  }
+  writing_ = true;
+  auto self = shared_from_this();
+  ws_.text(true);
+  ws_.async_write(net::buffer(*write_queue_.front()),
+                  net::bind_executor(strand_, [self](beast::error_code ec, std::size_t bytes) {
+                    self->OnWrite(ec, bytes);
+                  }));
+}
+
+void WebSocketConnection::OnWrite(beast::error_code ec, std::size_t) {
+  writing_ = false;
+  if (ec) {
+    Finish();
+    return;
+  }
+  write_queue_.pop_front();
+  if (write_queue_.empty() && close_after_write_) {
+    Finish();
+    return;
+  }
+  DoWrite();
+}
+
+void WebSocketConnection::Finish() {
+  if (closed_) return;
+  closed_ = true;
+  write_queue_.clear();
+  runner_.Detach(shared_from_this());
+  beast::error_code ignore;
+  ws_.next_layer().close(ignore);
+}
+
+SessionRunner::SessionRunner(Runtime& runtime) : runtime_(runtime) {
+  worker_ = std::thread([this] { WorkerMain(); });
+}
+
+SessionRunner::~SessionRunner() { Stop(); }
+
+bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
+  std::lock_guard<std::mutex> lock(attach_mutex_);
+  auto current = attached_.lock();
+  if (current && current != conn) return false;
+  attached_ = conn;
+  return true;
+}
+
+void SessionRunner::Detach(const std::shared_ptr<WebSocketConnection>& conn) {
+  std::lock_guard<std::mutex> lock(attach_mutex_);
+  if (auto current = attached_.lock(); current == conn) {
+    CancelTurn();
+    attached_.reset();
+  }
+}
+
+void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    jobs_.push_back(Job{std::move(text), std::move(conn)});
+  }
+  cv_.notify_one();
+}
+
+void SessionRunner::Stop() {
+  CancelToken cancel;
+  CancelToken command_stop;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stopping_) return;
+    stopping_ = true;
+    jobs_.clear();
+  }
+  {
+    std::lock_guard<std::mutex> lock(turn_mutex_);
+    cancel = cancel_token_;
+    command_stop = command_stop_;
+  }
+  if (cancel) cancel->store(true);
+  if (command_stop) command_stop->store(true);
+  cv_.notify_all();
+  if (worker_.joinable()) worker_.join();
+}
+
+void SessionRunner::CancelTurn() {
+  std::lock_guard<std::mutex> lock(turn_mutex_);
+  if (cancel_token_) cancel_token_->store(true);
+}
+
+void SessionRunner::StopCommand(const std::string& note) {
+  if (!note.empty()) runtime_.SetUserNote(note);
+  std::lock_guard<std::mutex> lock(turn_mutex_);
+  if (command_stop_) command_stop_->store(true);
+}
+
+void SessionRunner::Deliver(const std::shared_ptr<WebSocketConnection>& conn,
+                            boost::json::value frame) {
+  if (conn) conn->Send(std::move(frame));
+}
+
+void SessionRunner::WorkerMain() {
+  for (;;) {
+    Job job;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      cv_.wait(lock, [this] { return stopping_ || !jobs_.empty(); });
+      if (stopping_ && jobs_.empty()) return;
+      job = std::move(jobs_.front());
+      jobs_.pop_front();
+    }
+
+    auto conn = job.conn;
+    if (!conn) continue;
+
+    const auto say = [&](boost::json::value frame) { Deliver(conn, std::move(frame)); };
+
+    {
+      std::lock_guard<std::mutex> lock(turn_mutex_);
+      cancel_token_ = std::make_shared<std::atomic<bool>>(false);
+      command_stop_ = std::make_shared<std::atomic<bool>>(false);
+    }
+
+    bool is_command = false;
+    ToolCallbacks tool_cb;
+    tool_cb.on_start = [&](const std::string& id, const std::string& name,
+                           const boost::json::value& args) {
+      say({{"type", "tool_start"}, {"payload", {{"id", id}, {"name", name}, {"args", args}}}});
+    };
+    tool_cb.on_end = [&](const std::string& id, const std::string& output,
+                         const std::string& error) {
+      say({{"type", "tool_end"}, {"payload", {{"id", id}, {"output", output}, {"error", error}}}});
+    };
+
+    runtime_.EnableApprovalGate();
+    runtime_.SetOnApprovalAsk([&](const std::string& command) {
+      say({{"type", "approval_ask"}, {"payload", {{"command", command}}}});
+    });
+
+    CancelToken cancel;
+    CancelToken command_stop;
+    {
+      std::lock_guard<std::mutex> lock(turn_mutex_);
+      cancel = cancel_token_;
+      command_stop = command_stop_;
+    }
+
+    ExecutionResult result = runtime_.ProcessInput(
+        job.text, is_command, cancel,
+        [&](std::string_view chunk) {
+          if (chunk.empty()) return;
+          say({{"type", "chunk"}, {"payload", {{"text", std::string(chunk)}}}});
+        },
+        tool_cb,
+        [&](std::string_view thought) {
+          if (thought.empty()) return;
+          say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
+        },
+        command_stop);
+
+    {
+      std::lock_guard<std::mutex> lock(turn_mutex_);
+      cancel_token_.reset();
+      command_stop_.reset();
+    }
+
+    if (!result.notice.empty()) {
+      say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
+    }
+    if (result.usage) {
+      say({{"type", "usage"},
+           {"payload",
+            {{"prompt_tokens", result.usage->prompt_tokens},
+             {"completion_tokens", result.usage->completion_tokens}}}});
+    }
+    if (result.has_error) {
+      say({{"type", "error"}, {"payload", {{"text", result.error_message}}}});
+    } else if (result.model.empty()) {
+      say({{"type", "done"}});
+    } else {
+      say({{"type", "done"}, {"payload", {{"model", result.model}}}});
+    }
+  }
+}
+
+}  // namespace detail
 
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   try {
@@ -248,9 +357,6 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   spdlog::info("Workspace: {}", runtime.GetWorkspaceRoot().string());
 
   net::io_context ioc;
-  // Opened by hand rather than from an endpoint, so the option is set before the bind and
-  // the socket exists for the shutdown path to close. reuse_address lets a restart bind a
-  // port a just-closed server left connections in TIME_WAIT on.
   const tcp::endpoint listen_endpoint(net::ip::make_address(host), port);
   tcp::acceptor acceptor(ioc);
   {
@@ -275,12 +381,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   }
 
   std::mutex io_mutex;
-  // Every socket the server has accepted, so shutdown can close them and free the threads
-  // blocked on them rather than leaving the process to exit out from under them.
-  std::mutex conn_mutex;
-  std::unordered_set<tcp::socket*> live_sockets;
-  auto active_ws = std::make_shared<ActiveWebSocket>();
-  active_ws->cancel_token = std::make_shared<std::atomic<bool>>(false);
+  auto runner = std::make_shared<SessionRunner>(runtime);
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
                                                                       tcp::socket socket) {
@@ -289,76 +390,46 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
       return;
     }
 
-    std::thread([&, socket = std::move(socket)]() mutable {
-      {
-        std::lock_guard<std::mutex> lock(conn_mutex);
-        live_sockets.insert(&socket);
-      }
-      beast::flat_buffer buffer;
-      http::request<http::string_body> req;
-      beast::error_code ec;
-      http::read(socket, buffer, req, ec);
-      if (ec) {
-        spdlog::warn("HTTP read error: {}", ec.message());
-        std::lock_guard<std::mutex> lock(conn_mutex);
-        live_sockets.erase(&socket);
+    auto strand = net::make_strand(ioc);
+    auto conn = std::make_shared<WebSocketConnection>(std::move(socket), strand, runtime, *runner);
+    net::post(strand, [&, conn] {
+      auto buffer = std::make_shared<beast::flat_buffer>();
+      auto req = std::make_shared<http::request<http::string_body>>();
+      tcp::socket& sock = conn->mutable_socket();
+      beast::error_code read_ec;
+      http::read(sock, *buffer, *req, read_ec);
+      if (read_ec) {
+        spdlog::warn("HTTP read error: {}", read_ec.message());
         return;
       }
-
-      if (websocket::is_upgrade(req)) {
-        std::lock_guard<std::mutex> lock(conn_mutex);
-        live_sockets.erase(&socket);
-        RunWebSocketSession(std::move(socket), std::move(req), runtime, io_mutex, active_ws);
+      if (websocket::is_upgrade(*req)) {
+        conn->Start(std::move(*req));
       } else {
-        http::response<http::string_body> res;
-        DispatchHttpRequest(runtime, io_mutex, std::move(req), res);
-        http::write(socket, res, ec);
-        if (ec) spdlog::warn("HTTP write error: {}", ec.message());
-        std::lock_guard<std::mutex> lock(conn_mutex);
-        live_sockets.erase(&socket);
+        auto res = std::make_shared<http::response<http::string_body>>();
+        DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res);
+        beast::error_code write_ec;
+        http::write(sock, *res, write_ec);
+        if (write_ec) spdlog::warn("HTTP write error: {}", write_ec.message());
       }
-    }).detach();
+    });
 
     acceptor.async_accept(ioc, do_accept);
   };
 
   acceptor.async_accept(ioc, do_accept);
+  std::thread ioc_thread([&] { ioc.run(); });
 
-  std::thread ioc_thread([&]() { ioc.run(); });
-
-  while (!pu::platform::IsInterrupted())
+  while (!pu::platform::IsInterrupted()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-  // The listener is closed before anything that can block: a slow session save or an MCP
-  // teardown must not leave the port held by a process on its way out.
-  {
-    beast::error_code acceptor_ec;
-    acceptor.close(acceptor_ec);
   }
 
+  {
+    beast::error_code ec;
+    acceptor.close(ec);
+  }
   ioc.stop();
   if (ioc_thread.joinable()) ioc_thread.join();
-
-  std::shared_ptr<websocket::stream<tcp::socket>> client;
-  {
-    std::lock_guard<std::mutex> lock(active_ws->mtx);
-    active_ws->cancel_token->store(true);
-    client = std::move(active_ws->client);
-  }
-  if (client) {
-    beast::error_code client_ec;
-    beast::get_lowest_layer(*client).close(client_ec);
-  }
-
-  // A thread blocked on http::read has no caller to return to; closing its socket is what
-  // lets it fall out and finish, rather than holding the connection open past shutdown.
-  {
-    std::lock_guard<std::mutex> lock(conn_mutex);
-    for (tcp::socket* socket : live_sockets) {
-      beast::error_code close_ec;
-      socket->close(close_ec);
-    }
-  }
+  runner->Stop();
 
   runtime.Shutdown();
   return 0;
