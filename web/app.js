@@ -8,8 +8,7 @@ let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
 
-// The level the server resolved: the session's own when it has one, the agent's otherwise.
-// Only the server can tell those apart, so the control shows what it reports.
+// Only the server tells a session level from the agent's, so the control shows what it reports.
 function renderThinkingControl(level, override) {
   const sessionLevel = override && override !== "default" ? override : null;
   thinkingSelect.value = sessionLevel || "auto";
@@ -36,7 +35,6 @@ async function setThinkingLevel(level) {
   }
 }
 
-// A change is the whole interaction: the level is a choice, not a step to repeat.
 thinkingSelect.addEventListener("change", () => setThinkingLevel(thinkingSelect.value));
 
 let ws = null;
@@ -47,8 +45,7 @@ let reconnectAttempts = 0;
 let reconnectTimer = null;
 let connState = "connecting";
 
-// How many nodes the store holds for the current chain. The next message sent
-// becomes turn chainLength + 1, which is the number /api/rewind expects.
+// The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
 let chainLength = 0;
 
 let currentAssistantBlocks = [];
@@ -155,8 +152,7 @@ function renderThinkingBlock(block) {
   return wrapper;
 }
 
-// Tool output is the raw product of a command, so it is set as text:
-// markup in a command's output is data rather than markup.
+// Tool output is a command's raw product, so it is set as text: its markup is data.
 function labelledPre(wrapperClass, label, text, preClass) {
   const wrapper = document.createElement("div");
   wrapper.className = wrapperClass;
@@ -194,8 +190,7 @@ function renderToolBlock(block) {
   }
   header.appendChild(statusSpan);
 
-  // A running command carries its own stop, on the block it would kill: the button sits
-  // where the command does, so the thing stopped is the thing on screen.
+  // The stop sits on the block it would kill, so the thing stopped is the thing on screen.
   if (block.status === "running" && block.id) {
     const stop = document.createElement("button");
     stop.type = "button";
@@ -233,9 +228,7 @@ function renderToolBlock(block) {
   return wrapper;
 }
 
-// Stopping a command is two steps in one place: the note is written against the command
-// it explains, not in a modal that closes before the reason can be read. Enter stops,
-// Esc leaves it running.
+// The note is written against the command it explains, not in a modal. Enter stops, Esc does not.
 function askStopNote(wrapper, toolId) {
   if (wrapper.querySelector(".stop-note")) return;
   const body = wrapper.querySelector(".block-body");
@@ -403,7 +396,6 @@ function handleToolEnd(payload) {
   block.output = payload.output || "";
   block.error = payload.error || "";
   block.status = "done";
-  // The status and body changed, so this one block is rebuilt in place.
   if (block.node) {
     const rebuilt = renderBlock(block);
     block.node.replaceWith(rebuilt);
@@ -423,8 +415,7 @@ function handleChunk(payload) {
   updateCurrentAssistantBlocks();
 }
 
-// Reasoning arrives on its own channel while the answer is still coming, and reads
-// above the text in the same order the history renderer puts it in.
+// Reasoning reads above the answer, in the order the history renderer puts it in.
 function handleThinking(payload) {
   const text = payload.text || "";
   if (!text) return;
@@ -437,9 +428,7 @@ function handleThinking(payload) {
   updateCurrentAssistantBlocks(false);
 }
 
-// What the session talks through, read rather than chosen, so it lives in the panel
-// where the other read-only facts do. The model is refreshed from every reply: a gateway
-// may serve a different build, and the answer is the only place that says which.
+// Refreshed from every reply: a gateway may serve a different build, and only the answer says which.
 let backendTypeShown = "";
 
 function setText(id, text) {
@@ -484,8 +473,7 @@ function handleError(payload) {
   refreshChainLength();
 }
 
-// What the last turn ran against, from the counts the provider returned. The window
-// itself is not shown: no gateway here reports one, and a guess would read like a fact.
+// No window is shown beside the counts: no gateway here reports one, and a guess reads as fact.
 function handleUsage(payload) {
   const el = document.getElementById("context-usage");
   const fill = document.getElementById("context-fill");
@@ -500,8 +488,7 @@ function handleUsage(payload) {
   el.textContent =
       `${prompt.toLocaleString()} tokens` +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
-  // No gateway here reports its window, so the bar can only be shown against one we
-  // know; where none is known the number stands alone rather than a guess reading as fact.
+  // The bar needs a known window; without one the number stands alone.
   if (fill) {
     const window = contextWindowFor(backendTypeShown);
     if (window) {
@@ -514,16 +501,13 @@ function handleUsage(payload) {
   }
 }
 
-// Only what is certain: a window a backend is documented to have. An absent entry means
-// the bar stays empty rather than implying a limit that was never probed.
+// Only a window a backend is documented to have; an absent entry leaves the bar empty.
 const CONTEXT_WINDOWS = {};
 function contextWindowFor(backendType) {
   return CONTEXT_WINDOWS[backendType] || null;
 }
 
-// A reply that arrived but is known to be incomplete. The answer stands as it is, and
-// the remark is a strip above the composer rather than a line in the transcript, so it
-// does not read as part of the conversation.
+// The remark is a strip above the composer, not a line in the transcript.
 function showNotice(text) {
   const bar = document.getElementById("notice-bar");
   if (!bar) return;
@@ -545,8 +529,7 @@ function handleNotice(payload) {
   if (text) showNotice(text);
 }
 
-// One page per session: the server refuses a second one rather than ending the reply the
-// first is watching — a state to report, not a connection to keep retrying.
+// One page per session: a refusal is a state to report, not a connection to keep retrying.
 const MAX_BUSY_RETRIES = 2;
 let busyRefusals = 0;
 
@@ -572,8 +555,7 @@ function connectWebSocket() {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
 
-    // Anything but a refusal means this page is the client of the session, which is
-    // what stops the knocking in onclose from being counted.
+    // Anything but a refusal means this page is the session's client.
     if (data.type !== "busy") busyRefusals = 0;
 
     switch (data.type) {
@@ -612,8 +594,7 @@ function connectWebSocket() {
     }
   };
 
-  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing, so
-  // what was drawn here was all there was. The message stays, so the length is read back.
+  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing.
   ws.onclose = () => {
     const refused = busyRefusals > 0;
     if (isStreaming) {
@@ -632,17 +613,13 @@ function connectWebSocket() {
   };
 
   ws.onerror = () => {
-    // onclose follows and schedules the reconnect; nothing to report here.
   };
 }
 
-// Set when a reply was being written as the socket went, so the reader is told the answer
-// was stopped rather than left to wonder where it went.
+// Set when a reply was in flight as the socket went, so the reader is told it was stopped.
 let replyLostToDisconnect = false;
 
-// A dropped socket reconnects on its own, backing off so a server that is down is not
-// hammered. The state lives in the header dot; only a lost reply is worth a notice, since
-// that is the one outcome the reader has to be told about.
+// The state lives in the header dot; only a lost reply is worth a notice.
 function setConnectionState(state) {
   if (state === connState) return;
   const dot = document.getElementById("conn-dot");
@@ -671,17 +648,14 @@ function scheduleReconnect() {
 
 function setSendButtonState(streaming) {
   isStreaming = streaming;
-  // Cancelling the turn and stopping a command are different acts, so they are not both
-  // called Stop: this one ends the reply, the command's own button ends the command.
+  // Cancelling the turn and stopping a command are different acts, so neither is "Stop".
   sendBtn.textContent = streaming ? "Cancel reply" : "Send";
   sendBtn.disabled = false;
-  // The level applies to the next message, so it is locked while one is in flight
-  // rather than left changeable into something that would not have applied.
+  // The level applies to the next message, so it is locked while one is in flight.
   thinkingSelect.disabled = streaming;
 }
 
-// The store is the authority on how long the chain is, so the next turn number
-// is read back from it after every run rather than counted here.
+// The store is the authority on the chain's length, so it is read back after every run.
 async function refreshChainLength() {
   try {
     const res = await fetch("/api/history");
@@ -690,8 +664,8 @@ async function refreshChainLength() {
   } catch (_) {}
 }
 
-// Steps the session back to before `turn` and hands the text back to the composer, so
-// sending it again replaces that turn.
+// Steps the session back before `turn` and hands the text to the composer, so sending it
+// again replaces that turn.
 async function rewindToTurn(turn, text) {
   if (isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
@@ -720,8 +694,7 @@ async function rewindToTurn(turn, text) {
   }
 }
 
-// One command, one stop: the id names which command, and the note is why. Serial turns
-// make the id a formality today, but the frame already carries the note the result keeps.
+// The id names which command and the note is why; the frame already carries both.
 function stopRunningCommand(toolId, note) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "stop_command", payload: { text: note || "", id: toolId } }));
@@ -729,8 +702,7 @@ function stopRunningCommand(toolId, note) {
 
 function sendMessage() {
   if (isStreaming) {
-    // Cancelling only asks the server to stop, and the partial reply is dropped because
-    // the store keeps none.
+    // Cancelling only asks; the partial reply is dropped because the store keeps none.
     if (ws && ws.readyState === WebSocket.OPEN) {
       stopRequested = true;
       ws.send(JSON.stringify({ type: "cancel" }));
@@ -753,8 +725,7 @@ function sendMessage() {
   inputEl.value = "";
   inputEl.style.height = "auto";
 
-  // The store appends this message to the chain, so its turn is the next one;
-  // the reply and any tool results follow it.
+  // The store appends this message, so its turn is the next one.
   createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], chainLength + 1, text);
   startAssistantMessage();
   setSendButtonState(true);
@@ -768,8 +739,7 @@ async function loadHistory() {
     const history = await res.json();
     if (!Array.isArray(history)) return;
 
-    // Grouped rather than walked one message at a time: a tool-using turn is several
-    // stored messages, and drawing each alone would show another conversation.
+    // A tool-using turn is several messages; drawing each alone would show another chat.
     for (const turn of groupHistory(history)) {
       if (turn.role === "system") {
         createSystemMessage(turn.text);
@@ -799,8 +769,6 @@ async function loadSession() {
   } catch (_) {}
 }
 
-// The tools the active agent holds, as the session reports them. A name under the
-// `mcp.` prefix came from a server rather than the built-in set.
 function renderToolList(tools) {
   const list = document.getElementById("panel-tools");
   if (!list) return;
@@ -885,8 +853,7 @@ messagesEl.addEventListener("scroll", () => {
 });
 
 sendBtn.addEventListener("click", sendMessage);
-// While an input method is composing, Enter confirms a candidate rather than sending;
-// the flag keeps a Chinese candidate from firing the message the moment it is picked.
+// While an input method composes, Enter confirms a candidate rather than sending.
 let composing = false;
 inputEl.addEventListener("compositionstart", () => { composing = true; });
 inputEl.addEventListener("compositionend", () => { composing = false; });
@@ -914,8 +881,7 @@ const BLOCK_TYPES = {
   TEXT: "text",
 };
 
-// Arguments travel as an object or an encoded string; a string that is not JSON is kept as
-// it came, because one unreadable call must not hide the rest of the turn.
+// A string that is not JSON is kept as it came, so one unreadable call hides no other.
 function parseToolArguments(raw) {
   if (typeof raw === "string") {
     try {
@@ -927,14 +893,11 @@ function parseToolArguments(raw) {
   return raw === undefined ? null : raw;
 }
 
-// What the store recorded: a result answered the call, or nothing has. "running"
-// is the stream's word for a call in flight and is never stored.
+// "running" is the stream's word and is never stored; the store holds answered or not.
 function callStatus(statuses, index) {
   return statuses[index] === "pending" ? "pending" : "done";
 }
 
-// Rebuilds the transcript from the stored conversation: a node per provider message is
-// grouped into a bubble per turn, the way the streaming path builds them.
 function groupHistory(history) {
   const turns = [];
   let reply = null;
@@ -970,8 +933,7 @@ function groupHistory(history) {
         (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === msg.tool_call_id
       );
       if (!block) continue;
-      // `output` and `error` are the result as the running turn parsed it; the raw
-      // content is what is left when the server could not parse it either.
+      // Parsed by the running turn; the raw content is what is left when it could not be.
       block.output = typeof msg.output === "string" ? msg.output : content;
       block.error = msg.error || "";
       block.status = "done";
@@ -983,8 +945,6 @@ function groupHistory(history) {
     const bubble = currentReply();
 
     if (Array.isArray(msg.reasoning) && msg.reasoning.length > 0) {
-      // One thinking block per reply, above the rest, where the streaming path puts it and
-      // appends every iteration's reasoning. Blocks are concatenated back into one blob.
       const text = msg.reasoning.map((block) => block.text || "").join("");
       let thinking = bubble.blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
       if (!thinking) {
