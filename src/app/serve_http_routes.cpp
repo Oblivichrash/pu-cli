@@ -155,7 +155,7 @@ void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http
         }
         const config::BackendConfig backend = runtime.CurrentBackend();
         body["agent_name"] = session->GetSpec().agent_name;
-        body["backend_type"] = config::BackendTypeName(backend.type);
+        body["backend_type"] = config::GatewayName(backend.gateway);
         body["backend_model"] = backend.model;
         body["backend_host"] = backend.host;
         body["thinking"] = ThinkingLevelName(backend.thinking);

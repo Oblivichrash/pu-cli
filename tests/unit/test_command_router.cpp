@@ -138,7 +138,7 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
   std::string output;
 
   REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
-  REQUIRE(output.find(config::DefaultHostFor(config::BackendType::kCodeBuddy)) != std::string::npos);
+  REQUIRE(output.find(config::DefaultHostFor(config::GatewayId::kCodeBuddy)) != std::string::npos);
 
   REQUIRE(f.Route("/backend ollama llama3", output));
   REQUIRE(output.find("http://localhost:11434") != std::string::npos);

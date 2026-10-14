@@ -53,9 +53,9 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
 BackendConfig ParseBackendConfig(const json::value& j) {
   BackendConfig cfg;
   const auto gateway_name = json::ValueOrDefault<std::string>(j, "gateway", "ollama");
-  const auto gateway = ParseBackendType(gateway_name);
+  const auto gateway = ParseGatewayId(gateway_name);
   if (!gateway) throw pu::Error("Unknown gateway: " + gateway_name);
-  cfg.type = *gateway;
+  cfg.gateway = *gateway;
   cfg.host = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "host", ""));
   cfg.model = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "model", ""));
   if (json::HasKey(j, "api_key"))
@@ -105,7 +105,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::Error("Missing backend field");
   entry.backend = ParseBackendConfig(j.at("backend"));
-  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.type);
+  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
   if (entry.backend.model.empty()) throw pu::Error("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())

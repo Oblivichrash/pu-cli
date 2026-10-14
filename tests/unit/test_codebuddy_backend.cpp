@@ -77,8 +77,8 @@ TEST_CASE("The conversation id is stable and the request ids are not", "[codebud
 
 TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[codebuddy]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  cfg.gateway = config::GatewayId::kCodeBuddy;
+  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
@@ -90,7 +90,7 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url ==
-          config::DefaultHostFor(config::BackendType::kCodeBuddy) + "/chat/completions");
+          config::DefaultHostFor(config::GatewayId::kCodeBuddy) + "/chat/completions");
   REQUIRE(mock_ptr->last_body.find("\"stream\":true") != std::string::npos);
   REQUIRE(HeaderValue(mock_ptr->last_headers, "Authorization") == "Bearer key");
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Agent-Intent"));
@@ -99,8 +99,8 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
 
 TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[codebuddy]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  cfg.gateway = config::GatewayId::kCodeBuddy;
+  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
@@ -121,8 +121,8 @@ TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[code
 
 TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  cfg.gateway = config::GatewayId::kCodeBuddy;
+  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
@@ -142,12 +142,12 @@ TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
 TEST_CASE("Every backend type carries a thinking level", "[codebuddy][openai][ollama]") {
   // Ollama takes one as a top-level `think`, the OpenAI-compatible types as
   // `reasoning_effort` / `extra_body`; the level is no longer a per-type carve-out.
-  REQUIRE(config::DefaultHostFor(config::BackendType::kOllama) == "http://localhost:11434");
+  REQUIRE(config::DefaultHostFor(config::GatewayId::kOllama) == "http://localhost:11434");
 }
 
 TEST_CASE("A configured host is not overridden", "[codebuddy]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kCodeBuddy;
+  cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = "http://127.0.0.1:9999/v1";
   cfg.model = "deepseek-v4-flash";
 
@@ -164,7 +164,7 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
 
 TEST_CASE("CreateBackend refuses a backend that names no host", "[codebuddy]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kCodeBuddy;
+  cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.model = "deepseek-v4-flash";
 
   auto mock_http = std::make_shared<MockHttpClient>();

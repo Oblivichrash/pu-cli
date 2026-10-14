@@ -356,7 +356,7 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
 
 void Runtime::SwitchBackend(const config::BackendConfig& backend) {
   config::AgentEntry transient = ActiveAgent();
-  transient.name = config::BackendTypeName(backend.type);
+  transient.name = config::GatewayName(backend.gateway);
   transient.backend = backend;
   transient.description.clear();
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "gateways.hpp"
 
+#include "pu/config/backend.hpp"
+
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/ollama_provider.hpp"
 
@@ -27,7 +29,7 @@ std::unique_ptr<pu::ModelLister> MakeOllamaListing() {
 
 const Gateway& OllamaGateway() {
   static const Gateway gateway{
-      .type = BackendType::kOllama,
+      .id = GatewayId::kOllama,
       .name = "ollama",
       .default_host = "http://localhost:11434",
       .make_provider = &MakeOllamaProvider,

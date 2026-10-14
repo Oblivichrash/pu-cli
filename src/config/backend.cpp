@@ -10,13 +10,13 @@
 
 namespace pu::config {
 
-std::string DefaultHostFor(BackendType type) {
-  return std::string(GatewayForType(type).default_host);
+std::string DefaultHostFor(GatewayId type) {
+  return std::string(GatewayForId(type).default_host);
 }
 
-const char* BackendTypeName(BackendType type) { return GatewayForType(type).name.data(); }
+const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data(); }
 
-std::string BackendTypeNames() {
+std::string GatewayNames() {
   std::string names;
   for (const Gateway* gateway : Gateways()) {
     if (!names.empty()) names += ", ";
@@ -25,25 +25,25 @@ std::string BackendTypeNames() {
   return names;
 }
 
-std::optional<BackendType> ParseBackendType(std::string_view name) {
-  if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->type;
+std::optional<GatewayId> ParseGatewayId(std::string_view name) {
+  if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->id;
   return std::nullopt;
 }
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http) {
   if (cfg.host.empty()) {
-    throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
+    throw pu::Error("Missing host for backend type: " + std::string(GatewayName(cfg.gateway)));
   }
-  return GatewayForType(cfg.type).make_provider(cfg, std::move(http));
+  return GatewayForId(cfg.gateway).make_provider(cfg, std::move(http));
 }
 
 std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http) {
   if (cfg.host.empty()) {
-    throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
+    throw pu::Error("Missing host for backend type: " + std::string(GatewayName(cfg.gateway)));
   }
 
-  const std::unique_ptr<pu::ModelLister> listing = GatewayForType(cfg.type).make_listing();
+  const std::unique_ptr<pu::ModelLister> listing = GatewayForId(cfg.gateway).make_listing();
   std::vector<std::string> ids;
   for (const llm::ModelEntry& entry : listing->ListModels(cfg.host, cfg.api_key.value_or(""), http)) {
     ids.push_back(entry.id);

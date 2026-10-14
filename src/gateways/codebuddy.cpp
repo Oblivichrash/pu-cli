@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "gateways.hpp"
 
+#include "pu/config/backend.hpp"
+
 #include "pu/llm/codebuddy.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/openai_provider.hpp"
@@ -34,7 +36,7 @@ std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
 
 const Gateway& CodeBuddyGateway() {
   static const Gateway gateway{
-      .type = BackendType::kCodeBuddy,
+      .id = GatewayId::kCodeBuddy,
       .name = "codebuddy",
       .default_host = "https://copilot.tencent.com/v2",
       .make_provider = &MakeCodeBuddyProvider,

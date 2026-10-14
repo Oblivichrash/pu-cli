@@ -77,7 +77,7 @@ class BackendSourceFixture {
 
 TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kOpenAI;
+  cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
   cfg.thinking = ThinkingLevel::kHigh;
@@ -90,18 +90,18 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
 }
 
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
-  for (const config::BackendType type : {config::BackendType::kOllama, config::BackendType::kOpenAI,
-                                         config::BackendType::kCodeBuddy}) {
+  for (const config::GatewayId type : {config::GatewayId::kOllama, config::GatewayId::kOpenAI,
+                                         config::GatewayId::kCodeBuddy}) {
     config::BackendConfig cfg;
-    cfg.type = type;
+    cfg.gateway = type;
     cfg.host = "https://example.invalid/v1";
     cfg.model = "test-model";
 
     const config::BackendConfig read =
         boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
 
-    REQUIRE(read.type == type);
-    REQUIRE(std::string(config::BackendTypeName(type)) == config::BackendTypeName(read.type));
+    REQUIRE(read.gateway == type);
+    REQUIRE(std::string(config::GatewayName(type)) == config::GatewayName(read.gateway));
   }
 }
 
@@ -113,12 +113,12 @@ TEST_CASE("A stored backend naming a gate this build has not got is refused", "[
 }
 
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
-  REQUIRE(config::ParseBackendType("codebuddy") == config::BackendType::kCodeBuddy);
-  REQUIRE(config::ParseBackendType("openai") == config::BackendType::kOpenAI);
-  REQUIRE(config::ParseBackendType("ollama") == config::BackendType::kOllama);
-  REQUIRE_FALSE(config::ParseBackendType("gpt").has_value());
+  REQUIRE(config::ParseGatewayId("codebuddy") == config::GatewayId::kCodeBuddy);
+  REQUIRE(config::ParseGatewayId("openai") == config::GatewayId::kOpenAI);
+  REQUIRE(config::ParseGatewayId("ollama") == config::GatewayId::kOllama);
+  REQUIRE_FALSE(config::ParseGatewayId("gpt").has_value());
 
-  REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(config::GatewayName(config::GatewayId::kCodeBuddy)) == "codebuddy");
 }
 
 TEST_CASE("A session spec carries only the agent and the thinking override", "[backend]") {

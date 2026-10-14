@@ -13,10 +13,10 @@ using namespace pu::tests;
 
 namespace {
 
-config::BackendConfig BackendOfType(config::BackendType type, const std::string& host,
+config::BackendConfig BackendOfType(config::GatewayId type, const std::string& host,
                                     const std::string& key = "") {
   config::BackendConfig cfg;
-  cfg.type = type;
+  cfg.gateway = type;
   cfg.host = host;
   cfg.model = "the-active-model";
   if (!key.empty()) cfg.api_key = key;
@@ -38,7 +38,7 @@ TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_m
   };
 
   const auto models = config::ListModels(
-      BackendOfType(config::BackendType::kOllama, "http://localhost:11434"), *mock);
+      BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(models == std::vector<std::string>{"gpt-oss:20b", "q:2b"});
   REQUIRE(mock->last_get_url == "http://localhost:11434/api/tags");
 }
@@ -50,7 +50,7 @@ TEST_CASE("[list_models] openai reads /models and the data array's ids", "[list_
   };
 
   const auto models = config::ListModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
   REQUIRE(models == std::vector<std::string>{"org/one", "org/two"});
   REQUIRE(mock->last_get_url == "https://x.example/v1/models");
 }
@@ -62,7 +62,7 @@ TEST_CASE("[list_models] an api key rides the request as a bearer header", "[lis
   };
 
   (void)config::ListModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1", "nvapi-secret"),
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1", "nvapi-secret"),
       *mock);
   REQUIRE(mock->last_headers.size() == 1);
   REQUIRE(mock->last_headers[0] == "Authorization: Bearer nvapi-secret");
@@ -76,7 +76,7 @@ TEST_CASE("[list_models] a listing that names no model is empty, not an error",
   };
 
   const auto models = config::ListModels(
-      BackendOfType(config::BackendType::kOllama, "http://localhost:11434"), *mock);
+      BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(models.empty());
 }
 
@@ -88,7 +88,7 @@ TEST_CASE("[list_models] a body that does not parse is an Error, not a crash",
   };
 
   REQUIRE_THROWS_AS(config::ListModels(
-                        BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"),
+                        BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
                         *mock),
                     pu::Error);
 }
@@ -104,9 +104,9 @@ TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
     return pu::http::Response{200, body};
   };
 
-  const std::string host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  const std::string host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   const auto models =
-      config::ListModels(BackendOfType(config::BackendType::kCodeBuddy, host), *mock);
+      config::ListModels(BackendOfType(config::GatewayId::kCodeBuddy, host), *mock);
 
   REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
   REQUIRE(models == std::vector<std::string>{"glm-5.2", "hy3"});
@@ -122,7 +122,7 @@ TEST_CASE("[list_models] a codebuddy key rides the config read too", "[list_mode
   };
 
   (void)config::ListModels(
-      BackendOfType(config::BackendType::kCodeBuddy, "https://copilot.tencent.com/v2", "ck_x"),
+      BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2", "ck_x"),
       *mock);
   REQUIRE(HasHeader(mock->last_headers, "Authorization"));
 }

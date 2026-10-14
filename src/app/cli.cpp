@@ -27,7 +27,7 @@ void PrintNotice(const ExecutionResult& result) {
 }
 
 std::string BackendLabel(const config::BackendConfig& backend) {
-  return std::string(config::BackendTypeName(backend.type)) + " at " + backend.host;
+  return std::string(config::GatewayName(backend.gateway)) + " at " + backend.host;
 }
 
 }  // namespace

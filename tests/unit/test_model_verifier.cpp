@@ -13,10 +13,10 @@ using namespace pu::tests;
 
 namespace {
 
-config::BackendConfig BackendOfType(config::BackendType type, const std::string& host,
+config::BackendConfig BackendOfType(config::GatewayId type, const std::string& host,
                                     const std::string& key = "") {
   config::BackendConfig cfg;
-  cfg.type = type;
+  cfg.gateway = type;
   cfg.host = host;
   cfg.model = "the-active-model";
   if (!key.empty()) cfg.api_key = key;
@@ -42,7 +42,7 @@ TEST_CASE("[model_verifier] a model that answers is reported as answered",
   AnswerWithContent(*mock, "p");
 
   const auto checks = llm::VerifyModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"),
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
       {"m-one", "m-two"}, http);
 
   REQUIRE(checks.size() == 2);
@@ -59,7 +59,7 @@ TEST_CASE("[model_verifier] the probe names the model under test, not the active
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"), {"org/two"}, http);
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), {"org/two"}, http);
 
   REQUIRE(mock->last_body.find("\"model\":\"org/two\"") != std::string::npos);
 }
@@ -78,7 +78,7 @@ TEST_CASE("[model_verifier] a refusal is a result, not a throw, and the loop goe
   };
 
   const auto checks = llm::VerifyModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"),
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
       {"dead", "live"}, http);
 
   REQUIRE(checks.size() == 2);
@@ -93,7 +93,7 @@ TEST_CASE("[model_verifier] one token is asked for, and it rides the probe",
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"), {"m"}, http);
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), {"m"}, http);
 
   REQUIRE(mock->last_body.find("\"max_tokens\":1") != std::string::npos);
 }

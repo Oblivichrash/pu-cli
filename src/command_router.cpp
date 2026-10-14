@@ -125,7 +125,7 @@ std::string CommandRouter::GetHelpText() {
 bool CommandRouter::HandleBackend(Args args, Output output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
-    output = "Current backend: " + std::string(config::BackendTypeName(cfg.type)) +
+    output = "Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
              " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
@@ -135,7 +135,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     try {
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
-               std::string(config::BackendTypeName(agent_config->backend.type)) + "/" +
+               std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
                agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
@@ -146,14 +146,14 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
   if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
-  const auto type = config::ParseBackendType(args[0]);
+  const auto type = config::ParseGatewayId(args[0]);
   if (!type) {
-    output = "Unknown type: " + args[0] + ". Use " + config::BackendTypeNames() + ".";
+    output = "Unknown type: " + args[0] + ". Use " + config::GatewayNames() + ".";
     return true;
   }
 
   config::BackendConfig new_cfg;
-  new_cfg.type = *type;
+  new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
   if (args.size() > 3) new_cfg.api_key = args[3];
@@ -189,13 +189,13 @@ bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output
     const std::vector<std::string> models =
         config::ListModels(cfg, runtime_.GetHttpClient());
     if (models.empty()) {
-      output = "No models reported by " + std::string(config::BackendTypeName(cfg.type)) +
+      output = "No models reported by " + std::string(config::GatewayName(cfg.gateway)) +
                " at " + cfg.host;
       return true;
     }
     std::ostringstream oss;
     oss << models.size() << " model(s) reported by " <<
-           config::BackendTypeName(cfg.type) << " at " << cfg.host << ":\n";
+           config::GatewayName(cfg.gateway) << " at " << cfg.host << ":\n";
     for (const auto& model : models) {
       oss << "  " << model;
       if (model == cfg.model) oss << " (active)";

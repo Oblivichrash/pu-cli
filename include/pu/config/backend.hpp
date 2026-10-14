@@ -9,26 +9,15 @@
 
 #include <boost/json.hpp>
 
+#include "pu/config/gateway.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::config {
 
-enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
-
-inline constexpr BackendType kBackendTypes[] = {BackendType::kOllama, BackendType::kOpenAI,
-                                                BackendType::kCodeBuddy};
-
-// A type keeps no default host and no name of its own: both come from the gate that
-// answers for it, so a type whose gate differs cannot disagree with itself.
-std::string DefaultHostFor(BackendType type);
-const char* BackendTypeName(BackendType type);
-std::string BackendTypeNames();
-std::optional<BackendType> ParseBackendType(std::string_view name);
-
 struct BackendConfig {
-  BackendType type = BackendType::kOllama;
+  GatewayId gateway = GatewayId::kOllama;
   std::string host;
   std::string model;
   std::optional<std::string> api_key;
@@ -44,7 +33,7 @@ struct BackendConfig {
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-      {"gateway", BackendTypeName(cfg.type)},
+      {"gateway", GatewayName(cfg.gateway)},
       {"host", cfg.host},
       {"model", cfg.model},
       {"api_key", cfg.api_key.value_or("")},
@@ -58,9 +47,9 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
   const auto gateway_name = json::ValueOrDefault<std::string>(j, "gateway", "ollama");
-  const auto parsed = ParseBackendType(gateway_name);
+  const auto parsed = ParseGatewayId(gateway_name);
   if (!parsed) throw Error("Unknown gateway: " + gateway_name);
-  cfg.type = *parsed;
+  cfg.gateway = *parsed;
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
   if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {

@@ -26,11 +26,11 @@ const Gateway* FindGateway(std::string_view name) {
   return nullptr;
 }
 
-const Gateway& GatewayForType(BackendType type) {
+const Gateway& GatewayForId(GatewayId id) {
   for (const Gateway* gateway : kGateways) {
-    if (gateway->type == type) return *gateway;
+    if (gateway->id == id) return *gateway;
   }
-  throw Error("No gate answers for backend type " + std::to_string(static_cast<int>(type)));
+  throw Error("No gate answers for " + std::to_string(static_cast<int>(id)));
 }
 
 }  // namespace pu::config

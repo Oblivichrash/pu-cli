@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "gateways.hpp"
 
+#include "pu/config/backend.hpp"
+
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/openai_provider.hpp"
 
@@ -32,7 +34,7 @@ std::unique_ptr<pu::ModelLister> MakeOpenAIListing() {
 
 const Gateway& OpenAIGateway() {
   static const Gateway gateway{
-      .type = BackendType::kOpenAI,
+      .id = GatewayId::kOpenAI,
       .name = "openai",
       .default_host = "https://api.openai.com/v1",
       .make_provider = &MakeOpenAIProvider,
