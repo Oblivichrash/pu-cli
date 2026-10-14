@@ -103,11 +103,7 @@ BeastHttpClient::UrlParts BeastHttpClient::ParseUrl(const std::string& url) cons
 namespace {
 
 template <typename Request>
-void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
-                  const std::vector<std::string>& headers) {
-  req.set(beast::http::field::host, host);
-  req.set(beast::http::field::content_type, "application/json");
-  req.set(beast::http::field::content_length, std::to_string(body.size()));
+void AddHeaders(Request& req, const std::vector<std::string>& headers) {
   for (const auto& h : headers) {
     size_t pos = h.find(':');
     if (pos != std::string::npos) {
@@ -115,6 +111,15 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
               text::Trim(std::string_view(h).substr(pos + 1)));
     }
   }
+}
+
+template <typename Request>
+void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
+                  const std::vector<std::string>& headers) {
+  req.set(beast::http::field::host, host);
+  req.set(beast::http::field::content_type, "application/json");
+  req.set(beast::http::field::content_length, std::to_string(body.size()));
+  AddHeaders(req, headers);
   req.body() = body;
 }
 
@@ -232,7 +237,8 @@ http::Response BeastHttpClient::Get(const std::string& url,
     ssl_stream.handshake(net::ssl::stream_base::client);
 
     beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
-    ApplyHeaders(req, parts.host, "", headers);
+    req.set(beast::http::field::host, parts.host);
+    AddHeaders(req, headers);
     beast::http::write(ssl_stream, req);
 
     beast::flat_buffer buffer;
@@ -242,7 +248,8 @@ http::Response BeastHttpClient::Get(const std::string& url,
     ssl_stream.shutdown(ec);
   } else {
     beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
-    ApplyHeaders(req, parts.host, "", headers);
+    req.set(beast::http::field::host, parts.host);
+    AddHeaders(req, headers);
     beast::http::write(stream, req);
 
     beast::flat_buffer buffer;

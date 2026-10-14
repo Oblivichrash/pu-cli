@@ -30,14 +30,22 @@ at the base's `/v3/config`, below, and that is what `ListModels` reads for this 
 ## 2. Model listing
 
 ```
-GET {base}/v3/config
+GET {origin}/v3/config
 ```
 
-The same headers as a turn (section 3); `Authorization` carries the account key and is
-the only one the server is known to check. `User-Agent` is load-bearing here rather than
-imitation: a request without it is answered `code: 12403` and `msg: "check ua, get coding
-copilot version error"`, so the client's `CLI/<version>` form is what makes the catalogue
-come back. A successful answer is
+The `/v2` segment a turn's URL carries belongs to the chat route, not to the origin: the
+catalogue hangs off `/v3` beside it. Appending the path to the chat base asks for
+`/v2/v3/config` and is answered `404 Route Not Found`; the same path on the origin is
+answered 200. So the catalogue URL is the chat base with its trailing version segment
+replaced, which is what `CodeBuddyCatalogUrl` (`include/pu/llm/codebuddy_catalog.hpp`)
+does rather than concatenating.
+
+The same headers as a turn (section 3). `Authorization` carries the account key and is
+the only header shown to matter: a bare `Authorization` request was answered 200, as were
+runs dropping `Accept`, `User-Agent` and each of the client's other headers in turn. (An
+early reading held `User-Agent` to be required; it came from a request that also carried
+`Accept`, and the bare run above does not reproduce it.) The client's header set is still
+what is sent, for the reason section 4 gives. A successful answer is
 
 ```json
 {"code":0,"msg":"OK","requestId":"...",

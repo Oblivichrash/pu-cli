@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,12 @@ config::BackendConfig BackendOfType(config::BackendType type, const std::string&
   return cfg;
 }
 
+bool HasHeader(const std::vector<std::string>& headers, const std::string& name) {
+  return std::any_of(headers.begin(), headers.end(), [&name](const std::string& header) {
+    return header.rfind(name + ":", 0) == 0;
+  });
+}
+
 }  // namespace
 
 TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_models]") {
@@ -30,9 +37,8 @@ TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_m
     return pu::http::Response{200, R"({"models":[{"name":"gpt-oss:20b"},{"name":"q:2b"}]})"};
   };
 
-  const auto models = config::ListModels(BackendOfType(config::BackendType::kOllama,
-                                                       "http://localhost:11434"),
-                                         *mock);
+  const auto models = config::ListModels(
+      BackendOfType(config::BackendType::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(models == std::vector<std::string>{"gpt-oss:20b", "q:2b"});
   REQUIRE(mock->last_get_url == "http://localhost:11434/api/tags");
 }
@@ -43,9 +49,8 @@ TEST_CASE("[list_models] openai reads /models and the data array's ids", "[list_
     return pu::http::Response{200, R"({"data":[{"id":"org/one"},{"id":"org/two"}]})"};
   };
 
-  const auto models =
-      config::ListModels(BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"),
-                         *mock);
+  const auto models = config::ListModels(
+      BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"), *mock);
   REQUIRE(models == std::vector<std::string>{"org/one", "org/two"});
   REQUIRE(mock->last_get_url == "https://x.example/v1/models");
 }
@@ -71,7 +76,7 @@ TEST_CASE("[list_models] a listing that names no model is empty, not an error",
   };
 
   const auto models = config::ListModels(
-      BackendOfType(config::BackendType::kCodeBuddy, "https://x.example/v2"), *mock);
+      BackendOfType(config::BackendType::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(models.empty());
 }
 
@@ -86,4 +91,40 @@ TEST_CASE("[list_models] a body that does not parse is an Error, not a crash",
                         BackendOfType(config::BackendType::kOpenAI, "https://x.example/v1"),
                         *mock),
                     pu::Error);
+}
+
+TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
+          "[list_models]") {
+  auto [http, mock] = MakeMockHttpClient();
+  const std::string body =
+      "{\"code\":0,\"data\":{"
+      "\"agents\":[{\"name\":\"cli\",\"models\":[\"glm-5.2\",\"hy3\"]}],"
+      "\"models\":[{\"id\":\"glm-5.2\"},{\"id\":\"hunyuan-image-alpha\"}]}}";
+  mock->simulate_get = [body](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, body};
+  };
+
+  const std::string host = config::DefaultHostFor(config::BackendType::kCodeBuddy);
+  const auto models =
+      config::ListModels(BackendOfType(config::BackendType::kCodeBuddy, host), *mock);
+
+  // The chat base carries /v2; the catalogue is a sibling at /v3 on the same origin.
+  REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
+  REQUIRE(models == std::vector<std::string>{"glm-5.2", "hy3"});
+  // The gateway reads the User-Agent to decide whether to answer a catalogue at all.
+  REQUIRE(HasHeader(mock->last_headers, "User-Agent"));
+  REQUIRE(HasHeader(mock->last_headers, "X-User-Id"));
+}
+
+TEST_CASE("[list_models] a codebuddy key rides the config read too", "[list_models]") {
+  auto [http, mock] = MakeMockHttpClient();
+  const std::string body = "{\"data\":{\"agents\":[{\"models\":[]}]}}";
+  mock->simulate_get = [body](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, body};
+  };
+
+  (void)config::ListModels(
+      BackendOfType(config::BackendType::kCodeBuddy, "https://copilot.tencent.com/v2", "ck_x"),
+      *mock);
+  REQUIRE(HasHeader(mock->last_headers, "Authorization"));
 }
