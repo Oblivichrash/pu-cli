@@ -116,12 +116,20 @@ void Runtime::Initialize(const std::string& config_path) {
 
   if (current_session_) {
     auto& spec = current_session_->GetSpec();
-    const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
+    // An agent named on the command line outranks the one the session remembers: a caller
+    // that says which agent it wants is not to be answered by a different one. Without
+    // one, the session decides, which is what makes a restart continue where it stopped.
+    const bool agent_chosen_here = !default_agent_override_.empty();
+    const std::string remembered = agent_chosen_here ? active_agent : spec.agent_name;
+    const auto* stored = agent_manager_->GetAgentConfig(remembered);
     if (stored == nullptr) {
-      spdlog::warn("Session names an agent that is not configured: {}", spec.agent_name);
+      spdlog::warn("Session names an agent that is not configured: {}", remembered);
       spec.agent_name = active_agent;
-    } else if (stored->name != active_agent) {
-      RebuildToolbox(*stored);
+    } else {
+      spec.agent_name = stored->name;
+      if (stored->name != active_agent) {
+        RebuildToolbox(*stored);
+      }
     }
   }
 

@@ -171,6 +171,32 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   REQUIRE(runtime.GetAgentManager().GetAgentConfig("openai") != nullptr);
 }
 
+TEST_CASE("An agent named on the command line outranks the one a session remembers",
+          "[backend]") {
+  BackendSourceFixture fixture;
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.Initialize();
+    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    REQUIRE(coder != nullptr);
+    runtime.SwitchAgent(*coder);
+    runtime.Shutdown();
+  }
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.SetDefaultAgent("chat");
+    runtime.Initialize();
+
+    REQUIRE(runtime.ActiveAgent().name == "chat");
+    REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "chat");
+    REQUIRE(runtime.CurrentBackend().model == "test-model");
+  }
+}
+
 TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {
   BackendSourceFixture fixture;
 
