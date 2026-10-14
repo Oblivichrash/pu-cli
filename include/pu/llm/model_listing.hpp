@@ -14,16 +14,15 @@ struct CatalogShape {
   std::string path;
   std::string container;
   std::string id_key;
-  std::string nested;
-  // An empty name leaves that capability unknown.
-  std::string supports_tools;
-  std::string supports_images;
-  std::string supports_reasoning;
-  std::string only_reasoning;
+  std::string nested{};
+  std::string supports_tools{};
+  std::string supports_images{};
+  std::string supports_reasoning{};
+  std::string only_reasoning{};
   // One level: the parent object and the field under it.
-  std::string effort_parent;
-  std::string effort_field;
-  std::string max_input_tokens;
+  std::string effort_parent{};
+  std::string effort_field{};
+  std::string max_input_tokens{};
 };
 
 class OllamaModelLister final : public pu::ModelLister {
