@@ -173,17 +173,27 @@ environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
-2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
-   accepted connection is handled on a detached thread.
-3. A plain HTTP request is dispatched to the static/REST routes; a WebSocket upgrade
-   on `/ws` is accepted as the client being written to. A second one while that client
-   is attached is answered with a `busy` frame and closed instead: one session, one
-   page.
-4. The WebSocket worker reads JSON messages, spawns a worker thread per run, and
-   writes each frame back as the run progresses. The message schema, the REST route
-   table, and the status each refusal carries are in
+2. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
+   `reuse_address` set before the bind so a restart can take a port a just-closed
+   server left connections in `TIME_WAIT` on.
+3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
+   is read and dispatched to the static/REST routes on that strand — a short request
+   and response, so its I/O stays synchronous and the connection ends with it. A
+   WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O is
+   asynchronous from there on.
+4. A second upgrade while a page is attached is answered with a `busy` frame and
+   closed: one session, one page. Claiming the session happens when the upgrade is
+   accepted, not when the first run arrives, so the refusal reaches the peer before its
+   socket goes.
+5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
+   posts each frame back through the connection. The runner holds only the tokens that
+   steer the turn; the worker reads them by value, so a `cancel` or `stop_command` on
+   the strand reaches a turn in flight without waiting for it. The message schema, the
+   REST route table, and the status each refusal carries are in
    [README](../README.md#web-api).
-5. On Ctrl+C the server stops and `Runtime::Shutdown()` persists the session.
+6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
+   pending read and write, so no connection thread is left blocked — the runner is
+   stopped, and `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
 
@@ -256,13 +266,19 @@ that says what went wrong is in it.
 
 ### WebSocket streaming
 
-Chat runs exclusively over the `/ws` WebSocket. A run message starts
-`ProcessInput` on a detached worker thread; its `content_callback` writes each
-streamed chunk to the socket as it arrives, which produces the typewriter effect
-in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
-keyed by the tool call `id`. Commands and non-streaming backends deliver their
-full text as a single chunk frame. The frame schema is owned by
-[README](../README.md#web-api) and implemented in `web/app.js`.
+Chat runs exclusively over the `/ws` WebSocket. A run message is queued to the
+`SessionRunner`, whose single worker starts `ProcessInput`; its `content_callback`
+hands each streamed chunk back through the connection, which queues it and writes it on
+the connection's strand, producing the typewriter effect in the browser. The
+`ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
+`id`. Commands and non-streaming backends deliver their full text as a single chunk
+frame. The frame schema is owned by [README](../README.md#web-api) and implemented in
+`web/app.js`.
+
+The read loop is what an asynchronous stream buys: a connection parked in a synchronous
+read cannot be woken by closing its socket, so a shutdown would wait on a client that
+will never speak again. Here the run happens on the runner's own thread and the stream
+belongs to the strand, so shutdown stops the `io_context` and every read returns at once.
 
 A turn belongs to the client watching it. Closing the page, losing the socket, or a
 second client taking over all end it, and nothing of it is kept: what it had written
