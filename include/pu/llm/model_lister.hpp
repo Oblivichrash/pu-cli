@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "pu/core/http_client.hpp"
+#include "pu/llm/capabilities.hpp"
 
 namespace pu {
 
@@ -17,10 +18,12 @@ class ModelLister {
  public:
   virtual ~ModelLister() = default;
 
-  // The model ids the host names. A listing that names none is an empty vector, not an
-  // error; a failed read throws HttpError, as the client does.
-  virtual std::vector<std::string> ListModels(const std::string& host, const std::string& api_key,
-                                              http::HttpClient& http) const = 0;
+  // The models the host names, each with whatever it said about them. A listing that
+  // names none is an empty vector, not an error; a failed read throws HttpError, as the
+  // client does.
+  virtual std::vector<llm::ModelEntry> ListModels(const std::string& host,
+                                                  const std::string& api_key,
+                                                  http::HttpClient& http) const = 0;
 };
 
 }  // namespace pu

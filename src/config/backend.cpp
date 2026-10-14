@@ -3,6 +3,8 @@
 
 #include "pu/config/model_listing.hpp"
 
+#include "pu/llm/capabilities.hpp"
+
 #include "pu/core/base.hpp"
 #include "pu/llm/codebuddy.hpp"
 #include "pu/llm/ollama_provider.hpp"
@@ -67,7 +69,11 @@ std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClie
   if (!listing) {
     throw pu::Error("No model listing for backend type: " + std::string(BackendTypeName(cfg.type)));
   }
-  return listing->ListModels(cfg.host, cfg.api_key.value_or(""), http);
+  std::vector<std::string> ids;
+  for (const llm::ModelEntry& entry : listing->ListModels(cfg.host, cfg.api_key.value_or(""), http)) {
+    ids.push_back(entry.id);
+  }
+  return ids;
 }
 
 }  // namespace pu::config

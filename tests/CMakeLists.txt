@@ -31,6 +31,7 @@ add_executable(pu_tests
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
     unit/test_list_models.cpp
+    unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
     unit/test_approval_gate.cpp
 )
