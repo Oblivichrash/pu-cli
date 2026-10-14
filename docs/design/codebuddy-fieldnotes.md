@@ -56,6 +56,16 @@ Ids are matched exactly, so `GLM-5.3-Flash` is 11102. An id that exists without 
 account being entitled to it says so instead: `glm-4.7-ioa` answers `model
 [glm-4.7-ioa] is only available for authorized users`.
 
+The candidate set a sweep needs comes from `GET {base}/v3/config`, which answers the
+account's whole catalogue at `data.models[].id` and the agent's usable subset at
+`data.agents[].models[]` (the shape is in
+[codebuddy-cloud-api.md](codebuddy-cloud-api.md#2-model-listing)). One call with
+`Authorization` and the client's `User-Agent` returned 34 ids in the first list and 19
+in the second, so the union the early sweep needed is one request, not a probe loop.
+Which of the two is honest about entitlement is unanswered: the wider list carries
+`hunyuan-image-alpha`, which a chat turn cannot name, so listing is still not the same
+as being allowed to run, and only a request settles that.
+
 The ids the installed client names, for reference: `deepseek-v3`, `deepseek-v3-0324`,
 `deepseek-v4-flash`, `deepseek-v4-flash-202605`, `deepseek-v4-pro`,
 `deepseek-v4-pro-202606`, `deepseek-r1`, `deepseek-reasoner`, `claude-3-5-sonnet-20241022`,

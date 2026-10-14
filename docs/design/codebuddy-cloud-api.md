@@ -24,7 +24,37 @@ POST {base}/chat/completions        base = https://copilot.tencent.com/v2
 ```
 
 `GET /v2/models`, `GET /config/models` and `GET /v2/config` do **not** exist (404 from
-the gateway), so the base cannot be used to list models.
+the gateway), so a listing cannot be read from the chat base. The model catalogue lives
+at the base's `/v3/config`, below, and that is what `ListModels` reads for this type.
+
+## 2. Model listing
+
+```
+GET {base}/v3/config
+```
+
+The same headers as a turn (section 3); `Authorization` carries the account key and is
+the only one the server is known to check. `User-Agent` is load-bearing here rather than
+imitation: a request without it is answered `code: 12403` and `msg: "check ua, get coding
+copilot version error"`, so the client's `CLI/<version>` form is what makes the catalogue
+come back. A successful answer is
+
+```json
+{"code":0,"msg":"OK","requestId":"...",
+ "data":{"agents":[{"name":"cli","models":["hy4-preview","deepseek-v4.1-flash", "..."]}],
+         "enterpriseId":"","models":[{"id":"deepseek-v4-pro","name":"Deepseek-V4-Pro","maxInputTokens":1000000,"...":...}]}}
+```
+
+Two lists answer two different questions and are not the same set:
+
+| Field | Answers |
+| --- | --- |
+| `data.models[].id` | Every model the account is offered, images and all; each entry also carries `credits`, `maxInputTokens`, `maxOutputTokens`, `supportsImages`, `supportsToolCall` |
+| `data.agents[].models[]` | The subset the named agent may run, which is what a chat turn can name |
+
+`ListModels` returns the agent's list, because that is the one a turn can use; the wider
+catalogue is a service fact a caller has no verb for. A model in the wider list and not
+the agent's is one this client cannot reach by naming it.
 
 `GET /v2/accounts` answers 200 and is the cheapest way to check a credential:
 
@@ -32,14 +62,14 @@ the gateway), so the base cannot be used to list models.
 {"code":0,"msg":"OK","requestId":"...","data":{"accounts":[{"uid":"...","nickname":"...","uin":"...","type":"personal","lastLogin":true}]}}
 ```
 
-## 2. Authentication
+## 3. Authentication
 
 `Authorization: Bearer <key>`, where the key is the same `ck_...` string the CLI and
 the IDE use. No exchange or refresh is needed for a request: a key that authenticates
 returns 200, and the server reports the identity it resolved in its `X-User-Id`
 response header.
 
-## 3. Headers
+## 4. Headers
 
 The set is the one the installed client sends and every captured request used:
 the sixteen in `include/pu/llm/codebuddy.hpp`, with the bearer token, `Accept`
@@ -57,7 +87,7 @@ than a second id format, while the two values that name a thing rather than an e
 keep their dashes. `codebuddy.hpp` is the source for that shape and for each id's
 lifetime.
 
-## 4. Request body
+## 5. Request body
 
 An OpenAI chat-completions body. Two things differ from a plain OpenAI call:
 
@@ -72,13 +102,13 @@ An OpenAI chat-completions body. Two things differ from a plain OpenAI call:
   this code takes.
 
 `tools` is accepted and honoured: a request carrying one `function` tool produced a
-call for it (section 6).
+call for it (section 7).
 
 `temperature` and `max_tokens` are accepted. `reasoning_effort` is honoured — it is what
 makes this gateway reason at all — while `extra_body.thinking` is accepted and inert.
 [codebuddy-fieldnotes.md](codebuddy-fieldnotes.md) records how each was measured.
 
-## 5. Response stream
+## 6. Response stream
 
 `text/event-stream`, one JSON object per `data:` line, terminated by `data: [DONE]`.
 Blank lines separate events. Every chunk is an OpenAI-shaped
@@ -109,7 +139,7 @@ from a single client.
 | `tool_calls` | an array, empty on chunks that carry no call |
 | `function_call` | present and empty on one chunk, `{"name":"","arguments":""}` |
 
-## 6. Tool calls
+## 7. Tool calls
 
 The first fragment of a call carries the identity; the rest carry only the argument
 text and the index. Reassembling every fragment in order gives the call's arguments,
@@ -127,7 +157,7 @@ Nothing in the observed stream is CodeBuddy-specific except the header set and t
 error envelope: text, reasoning and calls all arrive in the shapes an OpenAI-compatible
 backend produces.
 
-## 7. Errors
+## 8. Errors
 
 A rejected request answers non-200 with an envelope of its own, and the provider has to
 read two fields out of it: `displayMsg` is written for a user and is what gets shown,

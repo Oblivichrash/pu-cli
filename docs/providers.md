@@ -126,7 +126,7 @@ they explain why a window is not shown anywhere.
 | Ollama Cloud | `GET /api/ps` | `401 unauthorized`, so the loaded-model window is unreachable |
 | NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` |
 | NVIDIA NIM | `GET /v1/metadata` | `404 page not found` |
-| CodeBuddy | `GET /v2/models`, `/v3/config` | `models` is `null`; the endpoint answers 200 and names no models |
+| CodeBuddy | `GET /v3/config` | `data.models[]` (the account's catalogue) and `data.agents[].models[]` (the agent's usable subset); a request without the client's `User-Agent` is refused `code: 12403` |
 
 Ollama's key prefix varies with the model's architecture, so a reader has to match
 the suffix rather than a fixed name. Measured across five models — `gptoss.`,
