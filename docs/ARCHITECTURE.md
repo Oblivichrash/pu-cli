@@ -423,7 +423,7 @@ include/pu/                  src/
 ├── executor.hpp             ├── executor.cpp
 ├── app/                     ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── context/              # message graph storage
-├── core/                    ├── llm/                  # providers, streaming parser
+├── core/                    ├── llm/                  # protocols, providers, streaming parser
 ├── context/                 ├── mcp/                  # transports, JSON-RPC client
 ├── llm/                     ├── session/              # Session, Conversation
 ├── mcp/                     └── tools/                # Toolbox, tools

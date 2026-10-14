@@ -12,6 +12,12 @@ files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the typ
 that table, so neither spells a gate's endpoint or provider itself. Adding a gate is a
 file plus a line, and removing one is the reverse.
 
+The OpenAI protocol itself is a layer below the gate: `src/llm/openai_protocol.cpp` holds
+the endpoint, the request body and the SSE parse, and `OpenAIProvider`
+(`openai_provider.{hpp,cpp}`) is the shell that puts one host and one set of headers on it.
+So the `openai` and `codebuddy` gates build the same protocol, and an agent of the `openai`
+gate changes only the host, the headers and the response shape.
+
 The gates a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
 today, and an entry that names none of them is refused at load time — as is one that
 names no gate at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and

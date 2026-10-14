@@ -33,6 +33,9 @@ beside `openai`. Adding a gate means touching seven places — the enum, `Defaul
 
 Two facts about vendors that look alike are not alike, and the refactor separates them:
 a protocol is *how to talk*, a gateway is *which product*, and a connection is *where*.
+That problem is solved for the OpenAI protocol: the seven places are the table plus a file
+per gate, and §2 records the layout that replaced them. The rest of this section is kept as
+the problem the layout was written against.
 
 ## 2. The layout
 
@@ -45,6 +48,18 @@ Gateway    data: one file per product
 
 Entry      a binding: one gateway × one protocol × one default host
 ```
+
+What is built of this today: the `openai` protocol is `include/pu/llm/openai_protocol.hpp`
+and `src/llm/openai_protocol.cpp`, and `OpenAIProvider` (`openai_provider.{hpp,cpp}`) is the
+shell a gate builds — the protocol at that gate's host and with that gate's headers. The
+protocol layer is a step of the pipeline rather than a thing beside it, because it reads
+the stream through `StreamingProvider`'s virtuals and writes into the pipeline's
+accumulators; what it does not hold is a host or a set of headers, which is the gate's.
+
+`ollama` is not split this way yet: its protocol and its provider are still one class
+(`ollama_provider.{hpp,cpp}`). The listing parse is not part of either protocol class — it
+is `CatalogShape` data read by `src/llm/model_listing.cpp`, which is where it belongs,
+since a catalogue is read once and not over a stream.
 
 A gateway states the protocols it offers, because one product may offer more than one:
 DeepSeek publishes both an OpenAI-compatible and an Anthropic-compatible endpoint.
@@ -150,24 +165,11 @@ resolution belongs in one function so that a new entry point — a Web selector,
   the listing logic is protocol-level, and only the path and field names differ, so a
   per-vendor class repeats what a shape describes.
 - **Appending the catalogue path to the chat base.** Dropped: measured 404.
-- **Splitting the protocol out of the provider.** Attempted, then reverted; the reason
-  recorded here was a compile failure nobody could explain, and the failure was not real.
-  What was measured, against the same `MakeOpenAI(...)` whose return type is
-  `std::unique_ptr<pu::LLMProvider>`:
-
-  ```
-  decltype(p) is unique_ptr<pu::LLMProvider>        // holds
-  LLMProvider& p = *MakeOpenAI(...); p.Chat(req);   // compiles: p is a reference
-  auto p = MakeOpenAI(...);          p.Chat(req);   // error: no member named 'Chat'
-  auto p = MakeOpenAI(...);          p->Chat(req);  // compiles
-  ```
-
-  The third line calls `.Chat()` on a smart pointer, which has no such member, and the
-  compiler says so: "is not a member of `std::unique_ptr<pu::LLMProvider, ...>`". The
-  second line compiles because it dereferences first. There is no contradiction between
-  the three, and `LLMProvider`'s completeness — the thing the preprocessed output was
-  read to check — does not enter into looking a member up on a `unique_ptr`, which has no
-  `Chat` whether or not the pointee is complete. So this route is open: it was set aside
-  over a probe that spelled `->` as `.`, and nothing about the provider needs to change
-  for the work to be done. Whether it is work worth doing is a separate question, since
-  one `OpenAIProvider` already serves every OpenAI-protocol gate.
+- **Reading the first protocol-split attempt's failure as a compiler defect.** It was not
+  one. The probes recorded against that attempt do not contradict each other: one called
+  `.Chat()` on a `unique_ptr` where `->` was needed, and the compiler named the type it was
+  calling on ("is not a member of `std::unique_ptr<pu::LLMProvider, ...>`"). The same line
+  with `->` compiles, and the reference form compiles because it dereferences first.
+  `LLMProvider`'s completeness — the thing the preprocessed output was read to check — does
+  not enter into looking a member up on a `unique_ptr`. The split was then done (§2); this
+  stays so that the phantom blocker is not re-derived from the first attempt's notes.
