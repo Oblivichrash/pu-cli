@@ -105,6 +105,13 @@ TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
   }
 }
 
+TEST_CASE("A stored backend naming a gate this build has not got is refused", "[backend]") {
+  const boost::json::value stored = {
+      {"type", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
+
+  REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+}
+
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
   REQUIRE(config::ParseBackendType("codebuddy") == config::BackendType::kCodeBuddy);
   REQUIRE(config::ParseBackendType("openai") == config::BackendType::kOpenAI);

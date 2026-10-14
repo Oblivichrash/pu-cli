@@ -58,7 +58,9 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
   const auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
-  cfg.type = ParseBackendType(type_str).value_or(BackendType::kOllama);
+  const auto parsed = ParseBackendType(type_str);
+  if (!parsed) throw Error("Unknown backend type: " + type_str);
+  cfg.type = *parsed;
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
   if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {
@@ -75,9 +77,9 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
 
-// Reads the model listing the backend's host reports and returns the ids it names.
-// Ollama lists at /api/tags, the OpenAI-compatible types at /models. A listing that
-// names no model is an empty vector, not an error. Throws HttpError on a failed read.
+// Reads the model listing the backend's host reports and returns the ids it names. The
+// gate answers where that listing lives. A listing that names no model is an empty
+// vector, not an error. Throws HttpError on a failed read.
 std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
 
 }  // namespace pu::config
