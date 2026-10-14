@@ -38,11 +38,17 @@ class OpenAIModelLister final : public pu::ModelLister {
                                           http::HttpClient& http) const override;
 };
 
-// Read from `{origin}/v3/config`; `/models` is not a route there.
+// Read from `{origin}/v3/config`; `/models` is not a route there. The headers are the
+// gate's, which is why they are handed in rather than named here.
 class CodeBuddyModelLister final : public pu::ModelLister {
  public:
+  explicit CodeBuddyModelLister(std::vector<std::string> headers = {});
+
   std::vector<llm::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
                                           http::HttpClient& http) const override;
+
+ private:
+  std::vector<std::string> headers_;
 };
 
 }  // namespace pu::llm

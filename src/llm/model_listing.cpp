@@ -2,7 +2,6 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
-#include "pu/llm/codebuddy.hpp"
 #include "pu/llm/codebuddy_catalog.hpp"
 
 #include <boost/json.hpp>
@@ -166,10 +165,13 @@ std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
   return ReadFlat(ParseListing(host + kShape.path, http, headers), kShape);
 }
 
+CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
+    : headers_(std::move(headers)) {}
+
 std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
                                                          const std::string& api_key,
                                                          http::HttpClient& http) const {
-  std::vector<std::string> headers = CodeBuddyHeaders(CodeBuddyConversationId());
+  std::vector<std::string> headers = headers_;
   if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
 
   static const CatalogShape kShape = {

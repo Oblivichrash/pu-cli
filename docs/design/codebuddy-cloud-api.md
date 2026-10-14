@@ -40,7 +40,9 @@ answered 200. So the catalogue URL is the chat base with its trailing version se
 replaced, which is what `CodeBuddyCatalogUrl` (`include/pu/llm/codebuddy_catalog.hpp`)
 does rather than concatenating.
 
-The same headers as a turn (section 3). `Authorization` carries the account key and is
+The same headers as a turn (section 3), which is why the gate builds them and hands them
+to the lister rather than the lister naming them. `Authorization` carries the account key
+and is
 the only header shown to matter: a bare `Authorization` request was answered 200, as were
 runs dropping `Accept`, `User-Agent` and each of the client's other headers in turn. (An
 early reading held `User-Agent` to be required; it came from a request that also carried
@@ -80,7 +82,7 @@ response header.
 ## 4. Headers
 
 The set is the one the installed client sends and every captured request used:
-the sixteen in `include/pu/llm/codebuddy.hpp`, with the bearer token, `Accept`
+the sixteen in `src/gateways/codebuddy.cpp`, with the bearer token, `Accept`
 and `Content-Type` headers the HTTP layer adds. Only
 `Authorization` is required: dropping any other header, or all of them, still
 returns 200, and the gateway answers with nothing but the key present. The rest
@@ -92,8 +94,8 @@ sends because it is generated from an SDK; the conversation and request ids are
 correlation values the server records rather than echoes. The three per-call ids are
 one shape, a uuid with its dashes removed, spliced from the client's generator rather
 than a second id format, while the two values that name a thing rather than an event
-keep their dashes. `codebuddy.hpp` is the source for that shape and for each id's
-lifetime.
+keep their dashes. The gate in `src/gateways/codebuddy.cpp` is the source for that shape
+and for each id's lifetime.
 
 ## 5. Request body
 

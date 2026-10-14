@@ -10,7 +10,6 @@
 
 #include "pu/agent_manager.hpp"
 #include "pu/command_router.hpp"
-#include "pu/llm/codebuddy.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
