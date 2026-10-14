@@ -12,7 +12,6 @@ using namespace pu::tests;
 
 namespace {
 
-// The gateway's answer, trimmed to the fields a capability read names.
 std::string CodeBuddyBody() {
   std::string body = "{\"code\":0,\"data\":{";
   body += "\"agents\":[{\"name\":\"cli\",\"models\":[\"glm-5.1\",\"glm-5.3\"]}],";

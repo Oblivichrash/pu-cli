@@ -37,8 +37,6 @@ int IntField(const boost::json::object& object, const std::string& name) {
   return value != nullptr && value->is_int64() ? static_cast<int>(value->as_int64()) : 0;
 }
 
-// What the shape names, read off one listing entry. A name the shape leaves empty is a
-// capability this host does not state, and stays at its default.
 Capabilities ReadCapabilities(const boost::json::object& entry, const CatalogShape& shape) {
   Capabilities caps;
   caps.supports_tools = BoolField(entry, shape.supports_tools);
@@ -81,8 +79,6 @@ const boost::json::array* ArrayAt(const boost::json::value& parsed, const std::s
   return &it->value().as_array();
 }
 
-// A listing whose array is one level deep: container[].id_key, with the capability
-// fields read off the same entry.
 std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape) {
   const boost::json::array* container = ArrayAt(parsed, shape.container);
   if (container == nullptr) return {};
@@ -98,9 +94,6 @@ std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const Catalog
   return models;
 }
 
-// CodeBuddy's shape: data.agents[].models[] names the agent's ids, and data.models[]
-// carries what the host says about each. The ids lead, because they are the ones a turn
-// can name; the capability fields are joined on from the wider list.
 std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape) {
   if (!parsed.is_object()) return {};
   const auto top = parsed.as_object();
@@ -176,8 +169,6 @@ std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
 std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
                                                          const std::string& api_key,
                                                          http::HttpClient& http) const {
-  // The client's own header set: the User-Agent is what the gateway reads to answer a
-  // catalogue at all rather than refusing the request.
   std::vector<std::string> headers = CodeBuddyHeaders(CodeBuddyConversationId());
   if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
 

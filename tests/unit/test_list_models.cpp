@@ -108,10 +108,8 @@ TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
   const auto models =
       config::ListModels(BackendOfType(config::BackendType::kCodeBuddy, host), *mock);
 
-  // The chat base carries /v2; the catalogue is a sibling at /v3 on the same origin.
   REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
   REQUIRE(models == std::vector<std::string>{"glm-5.2", "hy3"});
-  // The gateway reads the User-Agent to decide whether to answer a catalogue at all.
   REQUIRE(HasHeader(mock->last_headers, "User-Agent"));
   REQUIRE(HasHeader(mock->last_headers, "X-User-Id"));
 }

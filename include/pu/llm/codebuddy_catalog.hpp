@@ -6,10 +6,8 @@
 
 namespace pu::llm {
 
-// The gateway's model catalogue does not hang off the chat base: a turn goes to
-// {base}/chat/completions, while the catalogue is at /v3/config on the same origin, with
-// the chat base's version segment replaced. Both were measured; appending /v3/config to
-// the chat base answers 404.
+// The catalogue is on the chat base's origin, not under it: appending /v3/config to
+// the chat base is answered 404.
 inline std::string CodeBuddyCatalogUrl(const std::string& host) {
   constexpr std::string_view kVersionSegment = "/v2";
   std::string origin = host;

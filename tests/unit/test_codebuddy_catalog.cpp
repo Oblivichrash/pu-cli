@@ -9,8 +9,6 @@ using namespace pu;
 
 TEST_CASE("[codebuddy] the catalogue is read on the chat base's origin, not under it",
           "[codebuddy]") {
-  // Measured: {chat base}/v3/config answers 404, because the v3 segment is a sibling of
-  // the chat base's v2 one rather than a child of it.
   REQUIRE(llm::CodeBuddyCatalogUrl("https://copilot.tencent.com/v2") ==
           "https://copilot.tencent.com/v3/config");
 }

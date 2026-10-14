@@ -62,9 +62,6 @@ std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClie
     throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
   }
 
-  // The endpoint and the shape of its answer are the backend type's own knowledge, so a
-  // type that names its catalogue in a different way is a new listing rather than another
-  // branch here.
   const std::unique_ptr<pu::ModelLister> listing = FindModelListing(cfg.type);
   if (!listing) {
     throw pu::Error("No model listing for backend type: " + std::string(BackendTypeName(cfg.type)));

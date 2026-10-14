@@ -9,8 +9,6 @@ namespace pu::llm {
 
 namespace {
 
-// One token is enough to prove the model ran: the reply's text is not read, only
-// whether a reply came back at all.
 constexpr int kProbeMaxTokens = 1;
 
 ChatRequest ProbeRequest(std::span<const ChatMessage> history) {

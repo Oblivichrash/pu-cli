@@ -38,8 +38,6 @@ CommandLine BuildCommandLine() {
       "command", boost::program_options::value<std::string>(),
       "command to execute (ask/chat/models/serve)");
 
-  // ask and chat name the same option, and program_options treats a long name
-  // registered twice as ambiguous however it is grouped, so the two share one entry.
   boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
 

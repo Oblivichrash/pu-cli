@@ -23,7 +23,6 @@ config::BackendConfig BackendOfType(config::BackendType type, const std::string&
   return cfg;
 }
 
-// The OpenAI path's stream is SSE; one content frame is enough for Chat() to return.
 void AnswerWithContent(MockHttpClient& mock, const std::string& content) {
   mock.simulate_response = [content](const std::string&, const std::string&,
                                      const std::vector<std::string>&,
