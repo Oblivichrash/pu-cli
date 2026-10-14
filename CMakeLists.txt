@@ -43,8 +43,11 @@ add_library(pu_lib STATIC
     src/llm/model_listing.cpp
     src/llm/model_verifier.cpp
     src/llm/streaming_provider.cpp
+    src/gateways/ollama.cpp
+    src/gateways/openai.cpp
+    src/gateways/codebuddy.cpp
+    src/gateways/registry.cpp
     src/config/backend.cpp
-    src/config/model_listing.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
