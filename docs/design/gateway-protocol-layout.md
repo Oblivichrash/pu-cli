@@ -5,8 +5,12 @@ The code that follows from it belongs to the files [CONTRIBUTING.md](../../CONTR
 names for them; this document is the design rationale, so it is written once and then
 left to describe what was decided rather than how it was implemented.
 
-Nothing here is implemented yet. It exists so that the work can be done in steps
-without the shape moving under it.
+The first step of it is built: `src/gateways/` holds one file per gate behind the explicit
+table, `Gateway` carries the id, the name, the default host and the two factories, and
+`agents.json` names a `gateway`. The rest is still target rather than state — the struct
+carries no `entries`, `headers` or `catalog`, no `entry` is read, and the schema version
+in section 5 has not moved — so read each section as the shape the work is done towards,
+and change this document rather than quietly diverging from it.
 
 ---
 
@@ -137,3 +141,20 @@ resolution belongs in one function so that a new entry point — a Web selector,
   the listing logic is protocol-level, and only the path and field names differ, so a
   per-vendor class repeats what a shape describes.
 - **Appending the catalogue path to the chat base.** Dropped: measured 404.
+- **Splitting the protocol out of the provider.** Attempted, then reverted, and deferred
+  until a compile failure with no explanation is understood. The work was to move
+  `openai_provider.cpp` (297 lines) into `openai_protocol.cpp` piece by piece, leaving the
+  provider with the session-level work; restart it that way rather than rewriting the file
+  from memory. Three probes, all against the same `MakeOpenAI(...)` whose return type is
+  `std::unique_ptr<pu::LLMProvider>`:
+
+  ```
+  decltype(p) is unique_ptr<pu::LLMProvider>        // holds
+  LLMProvider& p = *MakeOpenAI(...); p.Chat(req);   // compiles
+  auto p = MakeOpenAI(...);          p.Chat(req);   // error: no member named 'Chat'
+  ```
+
+  The preprocessed output says the same translation unit holds `LLMProvider` complete,
+  with `virtual ChatResult Chat(const ChatRequest&) = 0;`. The three facts contradict each
+  other and the cause is not known, so nothing here explains it; it is recorded so that the
+  next attempt starts from the measurement rather than from the assumption.
