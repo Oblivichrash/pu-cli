@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,14 @@ void AnswerWithContent(MockHttpClient& mock, const std::string& content) {
   };
 }
 
+// A catalogue entry that carries no capability, which is what a listing naming only an id
+// reports.
+std::vector<llm::ModelEntry> EntriesOf(std::initializer_list<const char*> ids) {
+  std::vector<llm::ModelEntry> entries;
+  for (const char* id : ids) entries.push_back(llm::ModelEntry{id, {}});
+  return entries;
+}
+
 }  // namespace
 
 TEST_CASE("[model_verifier] a model that answers is reported as answered",
@@ -43,7 +52,7 @@ TEST_CASE("[model_verifier] a model that answers is reported as answered",
 
   const auto checks = llm::VerifyModels(
       BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
-      {"m-one", "m-two"}, http);
+      EntriesOf({"m-one", "m-two"}), http);
 
   REQUIRE(checks.size() == 2);
   REQUIRE(checks[0].model == "m-one");
@@ -59,7 +68,8 @@ TEST_CASE("[model_verifier] the probe names the model under test, not the active
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), {"org/two"}, http);
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"org/two"}),
+      http);
 
   REQUIRE(mock->last_body.find("\"model\":\"org/two\"") != std::string::npos);
 }
@@ -79,7 +89,7 @@ TEST_CASE("[model_verifier] a refusal is a result, not a throw, and the loop goe
 
   const auto checks = llm::VerifyModels(
       BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
-      {"dead", "live"}, http);
+      EntriesOf({"dead", "live"}), http);
 
   REQUIRE(checks.size() == 2);
   REQUIRE_FALSE(checks[0].answered);
@@ -93,7 +103,60 @@ TEST_CASE("[model_verifier] one token is asked for, and it rides the probe",
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), {"m"}, http);
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"m"}), http);
 
   REQUIRE(mock->last_body.find("\"max_tokens\":1") != std::string::npos);
+}
+
+TEST_CASE("[model_verifier] a model the catalogue needs a level for is not asked without one",
+          "[model_verifier]") {
+  auto [http, mock] = MakeMockHttpClient();
+  int calls = 0;
+  mock->simulate_response = [&calls](const std::string&, const std::string&,
+                                     const std::vector<std::string>&,
+                                     pu::http::WriteCallback write_cb) {
+    ++calls;
+    const std::string frame = "data: {\"choices\":[{\"delta\":{\"content\":\"p\"}}]}\n\n";
+    write_cb(const_cast<char*>(frame.data()), frame.size());
+  };
+
+  llm::ModelEntry needs_level{"glm-5.1", {}};
+  needs_level.caps.only_reasoning = true;
+  needs_level.caps.default_effort = "medium";
+
+  // Both values a backend can hold that put no level on the wire: unset, and disabled.
+  for (const ThinkingLevel level : {ThinkingLevel::kServerDefault, ThinkingLevel::kNone}) {
+    calls = 0;
+    config::BackendConfig cfg =
+        BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
+    cfg.thinking = level;
+
+    const auto checks = llm::VerifyModels(cfg, {needs_level, llm::ModelEntry{"m-one", {}}}, http);
+
+    REQUIRE(checks.size() == 2);
+    REQUIRE(checks[0].model == "glm-5.1");
+    REQUIRE_FALSE(checks[0].answered);
+    REQUIRE(checks[0].detail.find("reasoning level") != std::string::npos);
+    REQUIRE(checks[0].detail.find("medium") != std::string::npos);
+    REQUIRE(checks[1].answered);
+    REQUIRE(calls == 1);
+  }
+}
+
+TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
+          "[model_verifier]") {
+  auto [http, mock] = MakeMockHttpClient();
+  AnswerWithContent(*mock, "p");
+
+  config::BackendConfig cfg =
+      BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
+  cfg.thinking = ThinkingLevel::kMedium;
+
+  llm::ModelEntry needs_level{"glm-5.1", {}};
+  needs_level.caps.only_reasoning = true;
+
+  const auto checks = llm::VerifyModels(cfg, {needs_level}, http);
+
+  REQUIRE(checks[0].answered);
+  REQUIRE(mock->last_body.find("\"reasoning_effort\":\"medium\"") != std::string::npos);
 }

@@ -29,6 +29,13 @@ bool HasHeader(const std::vector<std::string>& headers, const std::string& name)
   });
 }
 
+std::vector<std::string> IdsOf(const std::vector<llm::ModelEntry>& entries) {
+  std::vector<std::string> ids;
+  ids.reserve(entries.size());
+  for (const llm::ModelEntry& entry : entries) ids.push_back(entry.id);
+  return ids;
+}
+
 }  // namespace
 
 TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_models]") {
@@ -39,7 +46,7 @@ TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_m
 
   const auto models = config::ListModels(
       BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock);
-  REQUIRE(models == std::vector<std::string>{"gpt-oss:20b", "q:2b"});
+  REQUIRE(IdsOf(models) == std::vector<std::string>{"gpt-oss:20b", "q:2b"});
   REQUIRE(mock->last_get_url == "http://localhost:11434/api/tags");
 }
 
@@ -51,7 +58,7 @@ TEST_CASE("[list_models] openai reads /models and the data array's ids", "[list_
 
   const auto models = config::ListModels(
       BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
-  REQUIRE(models == std::vector<std::string>{"org/one", "org/two"});
+  REQUIRE(IdsOf(models) == std::vector<std::string>{"org/one", "org/two"});
   REQUIRE(mock->last_get_url == "https://x.example/v1/models");
 }
 
@@ -109,7 +116,7 @@ TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
       config::ListModels(BackendOfType(config::GatewayId::kCodeBuddy, host), *mock);
 
   REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
-  REQUIRE(models == std::vector<std::string>{"glm-5.2", "hy3"});
+  REQUIRE(IdsOf(models) == std::vector<std::string>{"glm-5.2", "hy3"});
   REQUIRE(HasHeader(mock->last_headers, "User-Agent"));
   REQUIRE(HasHeader(mock->last_headers, "X-User-Id"));
 }

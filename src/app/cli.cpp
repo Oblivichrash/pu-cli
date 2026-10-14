@@ -146,15 +146,15 @@ int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
     runtime.Initialize();
 
     const config::BackendConfig backend = runtime.CurrentBackend();
-    const std::vector<std::string> models =
+    const std::vector<llm::ModelEntry> models =
         config::ListModels(backend, runtime.GetHttpClient());
 
     if (models.empty()) {
       std::cout << "No models reported by " << BackendLabel(backend) << "\n";
     } else if (!verify) {
-      for (const std::string& model : models) {
-        std::cout << model;
-        if (model == backend.model) std::cout << " (active)";
+      for (const llm::ModelEntry& model : models) {
+        std::cout << model.id;
+        if (model.id == backend.model) std::cout << " (active)";
         std::cout << "\n";
       }
     } else {

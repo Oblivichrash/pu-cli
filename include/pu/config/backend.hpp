@@ -12,6 +12,7 @@
 #include "pu/config/gateway.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/capabilities.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::config {
@@ -66,9 +67,9 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
 
-// Reads the model listing the backend's host reports and returns the ids it names. The
-// gate answers where that listing lives. A listing that names no model is an empty
-// vector, not an error. Throws HttpError on a failed read.
-std::vector<std::string> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
+// Reads the model listing the backend's host reports, with what the host says about each
+// model. The gate answers where that listing lives. A listing that names no model is an
+// empty vector, not an error. Throws HttpError on a failed read.
+std::vector<llm::ModelEntry> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
 
 }  // namespace pu::config

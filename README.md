@@ -87,7 +87,9 @@ Ollama, `/models` for the OpenAI-compatible ones - and prints what it names, wit
 the active model marked. A listing says a model is advertised; it does not say the
 account may run it. `--verify` settles that by asking each listed model for a
 single token and reporting what answered, one line per model, so an entitlement a
-gateway would otherwise only report on first use is known up front:
+gateway would otherwise only report on first use is known up front. A model the
+catalogue says is answered only with a reasoning level is reported rather than
+asked when the backend sends none, since that request cannot succeed:
 
 ```bash
 ./build/pu models --verify

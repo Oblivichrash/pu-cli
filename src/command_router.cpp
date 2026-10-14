@@ -186,7 +186,7 @@ bool CommandRouter::HandleModels(Args args, Output output) {
 
 bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output) {
   try {
-    const std::vector<std::string> models =
+    const std::vector<llm::ModelEntry> models =
         config::ListModels(cfg, runtime_.GetHttpClient());
     if (models.empty()) {
       output = "No models reported by " + std::string(config::GatewayName(cfg.gateway)) +
@@ -197,8 +197,8 @@ bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output
     oss << models.size() << " model(s) reported by " <<
            config::GatewayName(cfg.gateway) << " at " << cfg.host << ":\n";
     for (const auto& model : models) {
-      oss << "  " << model;
-      if (model == cfg.model) oss << " (active)";
+      oss << "  " << model.id;
+      if (model.id == cfg.model) oss << " (active)";
       oss << "\n";
     }
     output = oss.str();
