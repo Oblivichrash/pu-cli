@@ -423,11 +423,11 @@ include/pu/                  src/
 ├── executor.hpp             ├── executor.cpp
 ├── app/                     ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── context/              # message graph storage
-├── core/                    ├── llm/                  # protocols, providers, streaming parser
-├── context/                 ├── mcp/                  # transports, JSON-RPC client
-├── llm/                     ├── session/              # Session, Conversation
-├── mcp/                     └── tools/                # Toolbox, tools
-├── session/
+├── core/                    ├── gateways/            # one file per gate, behind a table
+├── context/                 ├── llm/                  # protocols, providers, streaming parser
+├── llm/                     ├── mcp/                  # transports, JSON-RPC client
+├── mcp/                     ├── session/              # Session, Conversation
+├── session/                 └── tools/                # Toolbox, tools
 └── tools/
 ```
 
@@ -439,6 +439,30 @@ has a directory belongs in that directory, so `app/cli.hpp` sits beside
 The CMake targets follow the layering: `pu_lib` is the *base* static library
 (core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
 holds `src/app/`, and the `pu` executable adds only `main.cpp`.
+
+### Gates, protocols and providers
+
+Three facts about a vendor that look alike are three different things: a **protocol** is
+*how to talk*, a **gate** is *which product*, and a connection is *where*. `config/gateway.hpp`
+holds the middle one: `GatewayId` names the gates a build carries, `Gateway` is
+`{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
+/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Each gate
+is a file beside it, stating its own name, host, provider and catalogue read; adding one is
+that file and one line of the table, and there is no registry the linker can drop.
+
+`agents.json` names a gate through `gateway`, and a missing or unknown name is refused rather
+than defaulted, so a backend never reaches a host its author did not choose. The field is what
+a stored config carries; `BackendTypeName()` / `ParseBackendType()` are gone, and one parser
+resolves the name.
+
+A protocol stays what it was — the implementation of how a gate talks. `openai` is split into
+`llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
+host with one set of headers), because a change to the SSE parse and a change to a gate's
+headers are different changes; `ollama` keeps protocol and provider in one class. The gate
+abstraction stops short of one thing the design chose not to build yet: a gate offering more
+than one protocol, which would need an `entry` between the gate and the protocol. Every gate
+measured so far speaks exactly one, so that layer is deferred rather than carried as unused
+state — see [design/gateway-protocol-layout.md](design/gateway-protocol-layout.md).
 
 ### Dependency direction
 

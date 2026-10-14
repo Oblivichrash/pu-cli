@@ -1,17 +1,18 @@
 # Gateway, protocol, and entry layout
 
-This records the layer layout the refactor follows, and the routes it did not take.
-The code that follows from it belongs to the files [CONTRIBUTING.md](../../CONTRIBUTING.md)
-names for them; this document is the design rationale, so it is written once and then
-left to describe what was decided rather than how it was implemented.
+This records the design behind the gate layout, the routes it did not take, and the one
+layer it deferred. What is built is described in
+[ARCHITECTURE.md](../ARCHITECTURE.md#gates-protocols-and-providers); what is not is here,
+so this document carries only the reasoning rather than the state.
 
-The first step of it is built: `src/gateways/` holds one file per gate behind the explicit
-table, `Gateway` carries the id, the name, the default host and the two factories, and
-`agents.json` names a `gateway` — required, with an unknown or missing name refused. The
-rest is still target rather than state — the struct carries no `entries`, `headers` or
-`catalog`, no `entry` is read, and the schema version in section 5 has not moved — so read
-each section as the shape the work is done towards, and change this document rather than
-quietly diverging from it.
+**Built:** `src/gateways/` holds one file per gate behind the explicit table, `Gateway`
+carries the id, the name, the default host and the two factories, and `agents.json` names a
+`gateway` — required, with an unknown or missing name refused.
+
+**Deferred:** the `entry` layer — a gate offering more than one protocol, bound by a config
+field of that name. Every gate measured so far speaks exactly one protocol, so the layer
+would be unused state. Sections 3 and 5 describe the shape it would take; they are not
+current behaviour, and nothing in them should be read as built.
 
 ---
 
@@ -56,20 +57,20 @@ protocol layer is a step of the pipeline rather than a thing beside it, because 
 the stream through `StreamingProvider`'s virtuals and writes into the pipeline's
 accumulators; what it does not hold is a host or a set of headers, which is the gate's.
 
-`ollama` is not split this way yet: its protocol and its provider are still one class
+`ollama` is not split this way: its protocol and its provider are still one class
 (`ollama_provider.{hpp,cpp}`). The listing parse is not part of either protocol class — it
 is `CatalogShape` data read by `src/llm/model_listing.cpp`, which is where it belongs,
 since a catalogue is read once and not over a stream.
 
-A gateway states the protocols it offers, because one product may offer more than one:
-DeepSeek publishes both an OpenAI-compatible and an Anthropic-compatible endpoint.
-Configuring one names the gateway and, when a gateway offers more than one entry, which
-entry.
+`provider` is what the code makes it — the implementation of a protocol, not the gate: one
+`OpenAIProvider` serves OpenAI, DeepSeek, NVIDIA and CodeBuddy.
 
-`provider` stays what it is in the code today — the implementation of a protocol. It is
-not the gateway: one `OpenAIProvider` serves OpenAI, DeepSeek, NVIDIA and CodeBuddy.
+Had a gate needed to offer more than one protocol — one product may publish an
+OpenAI-compatible and an Anthropic-compatible endpoint — configuring it would name the
+gateway and, since it offers more than one, which entry. That is the deferred layer, and
+the rest of this section is its shape.
 
-## 3. What a gateway file holds
+## 3. What a gateway file would hold, once a gate offers more than one protocol
 
 ```
 Gateway {
@@ -114,8 +115,10 @@ The table is explicit, so the linker always sees it.
   endpoint has no default at all.
 - `api_key` is optional and unchanged.
 
-`kSessionSchemaVersion` moves from 7 to 8. A stored `type` maps to the gateway of the
-same name, so `ollama`, `openai` and `codebuddy` keep reading.
+The `entry` field is not read today, and the section above describes the shape it would
+take rather than a change made. `kSessionSchemaVersion` is still 7: a stored `type` maps to
+the gateway of the same name, so `ollama`, `openai` and `codebuddy` keep reading, and the
+version moves to 8 only if `entry` is built.
 
 ## 6. Capability
 
@@ -155,6 +158,11 @@ resolution belongs in one function so that a new entry point — a Web selector,
 
 ## 8. Routes not taken
 
+- **An `entry` layer between a gate and a protocol.** Deferred, not dropped: no gate
+  measured so far speaks more than one protocol, so the field would be state a user can set
+  wrong with nothing to gain. It comes back when a product is found that publishes two
+  protocols worth choosing between — DeepSeek's OpenAI- and Anthropic-compatible endpoints
+  are the candidate, and neither is served here yet.
 - **A `Register` call per gateway file.** Dropped: it needs a global registry and an
   `OBJECT` library to survive linking, against `ARCHITECTURE.md`'s "no global state".
 - **`protocol` as a configuration field.** Dropped: every gateway measured so far
