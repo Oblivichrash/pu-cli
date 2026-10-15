@@ -344,7 +344,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   bool budget_reached = false;
   bool wrap_up_asked = false;
 
-  for (int iteration = 0;; ++iteration) {
+  for (;;) {
     // The budget counts tool calls, not replies: one reply can carry several calls.
     if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
       budget_reached = true;
