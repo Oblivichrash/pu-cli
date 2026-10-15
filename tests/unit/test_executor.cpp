@@ -5,6 +5,9 @@
 #include "pu/tools/builtin_tools.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
+
+using Catch::Approx;
 #include <boost/json.hpp>
 
 #include <atomic>
@@ -111,13 +114,29 @@ class MockLLM : public LLMProvider {
     r.content = content_;
     r.tool_calls = calls_;
     if (fire_calls_once_) calls_.clear();
+    if (per_round_credit_ > 0.0) {
+      TokenUsage usage;
+      usage.prompt_tokens = per_round_prompt_;
+      usage.total_tokens = per_round_prompt_;
+      usage.credit = per_round_credit_;
+      r.usage = usage;
+    }
     return r;
+  }
+
+  // Makes every round report the same usage, so a test can check the turn's result
+  // sums the rounds rather than keeping the last one.
+  void ReportUsagePerRound(int prompt_tokens, double credit) {
+    per_round_prompt_ = prompt_tokens;
+    per_round_credit_ = credit;
   }
 
  private:
   std::vector<ToolCall> calls_;
   std::string content_;
   bool fire_calls_once_ = false;
+  int per_round_prompt_ = 0;
+  double per_round_credit_ = 0.0;
 };
 
 class OfferingLLM : public LLMProvider {
@@ -309,6 +328,37 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     }
   }
   REQUIRE(found_paired_tool_msg);
+}
+
+TEST_CASE("A turn's usage sums what every round of the tool loop reported", "[executor][tool_loop][usage]") {
+  Toolbox toolbox;
+  auto tracking = std::make_unique<TrackingTool>();
+  toolbox.RegisterTool(std::move(tracking));
+
+  Executor executor;
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  ToolCall call;
+  call.name = "tracking_tool";
+  call.arguments = boost::json::value{{"flag", true}};
+
+  // Two rounds, each reporting its own usage: the tool-call round and the final one.
+  MockLLM mock(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
+  mock.ReportUsagePerRound(/*prompt_tokens=*/100, /*credit=*/0.05);
+
+  Conversation ws;
+  ExecutionResult result = executor.Execute("run it", ws, &mock, toolbox);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "done");
+  REQUIRE(result.usage.has_value());
+  // Two rounds at 100 prompt tokens each: the turn's figure is the sum, not the
+  // last round's 100.
+  REQUIRE(result.usage->prompt_tokens == 200);
+  // Credit is a per-call cost, so it adds across rounds the same way.
+  REQUIRE(result.usage->credit == Approx(0.10));
 }
 
 TEST_CASE("Rebuilding the registry leaves one address the executor can keep reading",

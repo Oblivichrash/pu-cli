@@ -599,6 +599,12 @@ readable as a set — side by side, a field one gateway fills and another drops 
 in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
 `FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
 
+Billing follows the same split. What a call costs is read in the protocol layer, through
+`ResponseShape`: one gateway names the field `credit`, another names nothing at all, and the
+difference never leaves `TokenUsage::credit`. The upper layers never branch on which gateway
+is in use — there is no `if (cfg.gateway == kCodeBuddy)` in the code above the protocol, and
+a turn's usage is the sum over every round its tool loop ran, accumulated in the executor.
+
 `agents.json` names a gateway through `gateway`, and a missing or unknown name is refused rather
 than defaulted, so a backend never reaches a host its author did not choose. The field is what
 a stored config carries; `BackendTypeName()` / `ParseBackendType()` are gone, and one parser

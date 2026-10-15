@@ -100,7 +100,10 @@ struct TokenUsage {
   int completion_tokens = 0;
   int total_tokens = 0;
   int cached_tokens = 0;  // the prompt the provider answered from its cache
-  double credit = 0.0;    // what the call cost, where the gateway prices one
+  // What the call cost, in the gateway's own unit, where the gateway prices one — and
+  // not an account balance: one gateway's `credit` read 0 for a one-token answer and
+  // 0.05 for a 203-token one. Zero where the gateway prices nothing.
+  double credit = 0.0;
 };
 
 using TokenCallback = std::function<void(std::string_view)>;

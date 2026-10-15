@@ -245,8 +245,17 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
   try {
     ChatResult chat_result = turn.provider->Chat(request);
     if (chat_result.usage) {
-      result.usage = chat_result.usage;
-      spdlog::debug("tokens: prompt={}, completion={}, total={}, cached={}, credit={}",
+      // One turn bills once per round the tool loop runs, so the turn's usage is the
+      // sum across rounds, not the last round's. The counts are the provider's own
+      // figures, summed as they were reported; `credit` adds the same way, since it
+      // is a per-call cost.
+      if (!result.usage) result.usage = TokenUsage{};
+      result.usage->prompt_tokens += chat_result.usage->prompt_tokens;
+      result.usage->completion_tokens += chat_result.usage->completion_tokens;
+      result.usage->total_tokens += chat_result.usage->total_tokens;
+      result.usage->cached_tokens += chat_result.usage->cached_tokens;
+      result.usage->credit += chat_result.usage->credit;
+      spdlog::debug("tokens this round: prompt={}, completion={}, total={}, cached={}, credit={}",
                     chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
                     chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
                     chat_result.usage->credit);
