@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Everything the page learns from the server: the session it is attached to, the replies
 // it replays into the transcript, and the two controls that change it.
+
 "use strict";
 
 // The store is the authority on the chain's length, so it is read back after every run.

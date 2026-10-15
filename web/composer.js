@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The composer's two jobs: turning what is typed into a run, and turning a second press
-// while one is in flight into a cancel. Both are one act from the reader's side, so the
-// button says which it will be rather than naming itself once.
+// while one is in flight into a cancel.
 
 "use strict";
 

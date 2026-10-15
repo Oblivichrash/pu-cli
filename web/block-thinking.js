@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The transcript's leaf widgets, each owning the element it draws and the handful of
-// facts it is expected to re-read. `block-node.js` decides which one a block gets.
+// The reasoning and answer blocks, each owning the element it draws and the facts it
+// re-reads. `block-node.js` decides which one a block gets.
 
 "use strict";
 

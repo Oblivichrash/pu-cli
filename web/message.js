@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // A message is a role, a container of blocks, and the edit affordance a user turn needs.
-// The blocks are handed their own state, so this only wires the frame around them.
 
 "use strict";
 

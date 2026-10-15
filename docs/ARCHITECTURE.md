@@ -393,7 +393,7 @@ home and no module has to be told about another's.
 | File | Owns |
 | :--- | :--- |
 | `web/state.js` | The `PU` object, the frame-coalesced render queue, the connection dot's state |
-| `web/block-thinking.js`, `web/block-tool.js` | The two block custom elements and their own drawing |
+| `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
 | `web/block-node.js` | Picking the element a block type becomes, and the shared toggle |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |

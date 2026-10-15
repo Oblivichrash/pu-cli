@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The approval gate's page half: a card parked above the composer while the turn
-// thread waits for an answer. Approve is Enter, Deny is Esc, and the command is
-// expandable -- a decision waited on is the one thing that must not be missed.
+// The approval gate's page half: a card parked above the composer while the turn thread
+// waits for an answer.
 
 let approvalPending = null;
 

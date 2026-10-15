@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The store keeps a turn as several messages, because a model, its calls, and their
-// results are separate records. This folds them back into the bubbles a reader saw, so a
-// replayed transcript is not a different shape from a live one.
+// Folds a stored turn back into the bubbles a reader saw, so a replayed transcript is
+// not a different shape from a live one.
 
 "use strict";
 
