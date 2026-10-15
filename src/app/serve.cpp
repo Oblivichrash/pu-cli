@@ -334,7 +334,13 @@ void SessionRunner::WorkerMain() {
              {"completion_tokens", result.usage->completion_tokens}}}});
     }
     if (result.has_error) {
-      say({{"type", "error"}, {"payload", {{"text", result.error_message}}}});
+      // The message a turn carries sits on `content` when the turn answered with its
+      // own refusal (the wrap-up that never answered), and on `error_message` when the
+      // failure came from below. Send whichever holds text, so the page never shows
+      // "Unknown error" over an error the server did describe.
+      const std::string& text =
+          !result.error_message.empty() ? result.error_message : result.content;
+      say({{"type", "error"}, {"payload", {{"text", text}}}});
     } else if (result.model.empty()) {
       say({{"type", "done"}});
     } else {

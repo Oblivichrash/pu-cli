@@ -322,20 +322,23 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
       }
     }
 
-    if (!user_note_.empty() && turn.cancel_token) {
-      ChatMessage note_msg;
-      note_msg.role = "user";
-      note_msg.content = "[user note during the turn] " + user_note_;
-      conversation.Append(note_msg);
-      user_note_.clear();
-    }
-
     ChatMessage tool_msg;
     tool_msg.role = "tool";
     tool_msg.content = tool_result;
     tool_msg.tool_name = call.name;
     tool_msg.tool_call_id = call.id;
     conversation.Append(tool_msg);
+  }
+
+  // The note rides after every receipt of this round: inside the loop it would land
+  // between two tool receipts, and a user message splitting the assistant's
+  // tool_calls from their receipts is answered 400 by the gateway on the next round.
+  if (!user_note_.empty() && turn.cancel_token) {
+    ChatMessage note_msg;
+    note_msg.role = "user";
+    note_msg.content = "[user note during the turn] " + user_note_;
+    conversation.Append(note_msg);
+    user_note_.clear();
   }
 }
 

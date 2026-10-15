@@ -259,6 +259,56 @@ class NamedTool : public Tool {
   std::string name_;
 };
 
+class TwoCallLLM : public LLMProvider {
+ public:
+  ChatResult Chat(const ChatRequest& request) override {
+    if (asked_) {
+      second_round_.assign(request.history.begin(), request.history.end());
+      ChatResult r;
+      r.content = "done";
+      return r;
+    }
+    asked_ = true;
+    ChatResult r;
+    ToolCall first;
+    first.id = "call_1";
+    first.name = "noting_tool";
+    first.arguments = boost::json::object{};
+    ToolCall second;
+    second.id = "call_2";
+    second.name = "noting_tool";
+    second.arguments = boost::json::object{};
+    r.tool_calls = {first, second};
+    return r;
+  }
+
+  const std::vector<ChatMessage>& second_round() const { return second_round_; }
+
+ private:
+  bool asked_ = false;
+  std::vector<ChatMessage> second_round_;
+};
+
+// Stands in for the web page's stop-command note, which arrives while a tool runs.
+class NotingTool : public Tool {
+ public:
+  NotingTool(Executor* executor, std::string note)
+      : executor_(executor), note_(std::move(note)) {}
+  std::string Name() const override { return "noting_tool"; }
+  std::string Description() const override { return "raises the note"; }
+  boost::json::value ParametersSchema() const override {
+    return boost::json::object{{"type", "object"}};
+  }
+  std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
+    if (executor_ != nullptr) executor_->SetUserNote(note_);
+    return R"({"success":true,"blocked":false,"output":"ran","error":"","exit_code":0})";
+  }
+
+ private:
+  Executor* executor_;
+  std::string note_;
+};
+
 }  // namespace
 
 TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
@@ -588,4 +638,55 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(result.content == "answer");
+}
+
+TEST_CASE("A note raised mid-turn lands after every receipt of the round",
+          "[executor][tool_loop][note]") {
+  Toolbox toolbox;
+  Executor executor;
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  auto noting = std::make_unique<NotingTool>(&executor, "stopped: wrong file");
+  toolbox.RegisterTool(std::move(noting));
+
+  TwoCallLLM provider;
+  Conversation ws;
+  // The note rides into the store only when the turn is cancellable, which the
+  // served turn always is; the CLI passes one too.
+  const CancelToken live = std::make_shared<std::atomic<bool>>(false);
+  const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox, live);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.content == "done");
+
+  // The second round's request view: the note must sit after both receipts, never
+  // between them - a user message splitting the assistant's tool_calls from their
+  // receipts is what the gateway answers with a 400. The view leads with the
+  // environment context, so the turn's own messages start at index 1.
+  const std::vector<ChatMessage>& messages = provider.second_round();
+  REQUIRE(messages.size() == 6);
+  REQUIRE(messages[1].role == "user");
+  REQUIRE(messages[2].role == "assistant");
+  REQUIRE(messages[2].HasToolCalls());
+  REQUIRE(messages[3].role == "tool");
+  REQUIRE(messages[3].tool_call_id == "call_1");
+  REQUIRE(messages[4].role == "tool");
+  REQUIRE(messages[4].tool_call_id == "call_2");
+  REQUIRE(messages[5].role == "user");
+  REQUIRE(messages[5].content.find("stopped: wrong file") != std::string::npos);
+
+  // The store keeps the same order, so a saved session cannot carry the split either.
+  // The final round's answer is stored after the note, hence six entries.
+  const std::vector<ChatMessage> stored = ws.History();
+  REQUIRE(stored.size() == 6);
+  REQUIRE(stored[0].role == "user");
+  REQUIRE(stored[1].role == "assistant");
+  REQUIRE(stored[2].role == "tool");
+  REQUIRE(stored[3].role == "tool");
+  REQUIRE(stored[4].role == "user");
+  REQUIRE(stored[4].content.find("stopped: wrong file") != std::string::npos);
+  REQUIRE(stored[5].role == "assistant");
+  REQUIRE(stored[5].content == "done");
 }
