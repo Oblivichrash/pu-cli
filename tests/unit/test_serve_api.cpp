@@ -17,6 +17,8 @@
 
 namespace fs = std::filesystem;
 
+using pu::tests::HttpResponse;
+using pu::tests::ScopedEnvVar;
 using pu::tests::ServeHarness;
 using pu::tests::TestHttpClient;
 
@@ -65,9 +67,9 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
@@ -112,9 +114,9 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
@@ -221,13 +223,25 @@ TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
   REQUIRE(j.at("error") == "Invalid JSON");
 }
 
+TEST_CASE("serve API switching to an agent that does not exist returns 404", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto res = client.PostFull("/api/agent/switch", boost::json::object{{"agent_name", "ghost"}});
+
+  REQUIRE(res.status == 404);
+  auto j = ParseJson(res.body);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "Agent not found: ghost");
+}
+
 TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "one");
   conversation.Append("assistant", "two");
   conversation.Append("user", "three");
@@ -245,9 +259,9 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  session->GetConversation().Append("user", "one");
+  session->Messages().Append("user", "one");
 
   auto missing = client.PostFull("/api/rewind", boost::json::object{});
   REQUIRE(missing.status == 400);
@@ -268,9 +282,9 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "one");
 
   pu::ChatMessage assistant;
@@ -326,4 +340,48 @@ TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[ser
   CHECK(listed_own);
   CHECK(listed_sibling);
   CHECK_FALSE(listed_stranger);
+}
+
+TEST_CASE("serve page files are mounted and served from the web directory", "[serve][page]") {
+  const fs::path web = fs::temp_directory_path() / "pu_serve_web_fixture";
+  std::error_code ec;
+  fs::remove_all(web, ec);
+  fs::create_directories(web, ec);
+  REQUIRE_FALSE(ec);
+
+  const auto write_page = [&](const std::string& name, const std::string& body) {
+    std::ofstream file(web / name, std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << body;
+    REQUIRE(file.good());
+  };
+  write_page("index.html", "<!doctype html>fixture index");
+  write_page("style.css", ":root{--column:720px}");
+  write_page("app.js", "const APP = true;");
+
+  const ScopedEnvVar web_dir("PU_WEB_DIR", web.string());
+
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const HttpResponse root = client.GetRaw("/");
+  CHECK(root.status == 200);
+  CHECK(root.body == "<!doctype html>fixture index");
+
+  const HttpResponse explicit_index = client.GetRaw("/index.html");
+  CHECK(explicit_index.status == 200);
+  CHECK(explicit_index.body == "<!doctype html>fixture index");
+
+  const HttpResponse css = client.GetRaw("/style.css");
+  CHECK(css.status == 200);
+  CHECK(css.body == ":root{--column:720px}");
+
+  const HttpResponse script = client.GetRaw("/app.js");
+  CHECK(script.status == 200);
+  CHECK(script.body == "const APP = true;");
+
+  const HttpResponse unmounted = client.GetRaw("/secret.txt");
+  CHECK(unmounted.status == 404);
+
+  fs::remove_all(web, ec);
 }

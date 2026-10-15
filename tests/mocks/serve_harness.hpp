@@ -325,6 +325,8 @@ class TestHttpClient {
 
   std::string Get(const std::string& path) { return Request(http::verb::get, path, "").body; }
 
+  HttpResponse GetRaw(const std::string& path) { return Request(http::verb::get, path, ""); }
+
   std::string Post(const std::string& path, const boost::json::value& body) {
     return PostFull(path, body).body;
   }
