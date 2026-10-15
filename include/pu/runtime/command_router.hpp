@@ -38,7 +38,7 @@ class CommandRouter {
 
   bool HandleBackend(Args args, Output output);
   bool HandleModels(Args args, Output output);
-  bool ReportModels(const config::BackendConfig& cfg, Output output);
+  bool ReportModels(const config::Backend& cfg, Output output);
   bool HandleAgents(Args args, Session& session, Output output);
   bool HandleRewind(Args args, Session& session, Output output);
   bool HandleThinking(Args args, Output output);

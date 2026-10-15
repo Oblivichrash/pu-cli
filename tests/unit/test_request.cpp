@@ -13,14 +13,14 @@ using namespace pu;
 
 namespace {
 
-context::MessageId AppendUser(context::MessageGraph& graph, const std::string& text) {
-  context::UserPayload user;
+session::MessageId AppendUser(session::MessageGraph& graph, const std::string& text) {
+  session::UserPayload user;
   user.content = text;
   return graph.AppendAfterLeaf(std::move(user)).id;
 }
 
-context::MessagePayload Assistant(const std::string& text) {
-  context::AssistantPayload assistant;
+session::MessagePayload Assistant(const std::string& text) {
+  session::AssistantPayload assistant;
   assistant.content = text;
   return assistant;
 }
@@ -28,7 +28,7 @@ context::MessagePayload Assistant(const std::string& text) {
 }  // namespace
 
 TEST_CASE("The system inputs come before the stored turns", "[request]") {
-  context::MessageGraph graph;
+  session::MessageGraph graph;
   AppendUser(graph, "hello");
   graph.AppendAfterLeaf(Assistant("hi"));
 
@@ -48,7 +48,7 @@ TEST_CASE("The system inputs come before the stored turns", "[request]") {
 }
 
 TEST_CASE("Each system input is optional", "[request]") {
-  context::MessageGraph graph;
+  session::MessageGraph graph;
   AppendUser(graph, "hello");
 
   session::RequestInputs prompt_only;
@@ -69,7 +69,7 @@ TEST_CASE("Each system input is optional", "[request]") {
 }
 
 TEST_CASE("An empty conversation still carries its system inputs", "[request]") {
-  const context::MessageGraph graph;
+  const session::MessageGraph graph;
 
   session::RequestInputs inputs;
   inputs.system_prompt = "be brief";
@@ -82,10 +82,10 @@ TEST_CASE("An empty conversation still carries its system inputs", "[request]") 
 }
 
 TEST_CASE("A stored system node is passed through", "[request]") {
-  context::MessageGraph graph;
+  session::MessageGraph graph;
   AppendUser(graph, "one");
 
-  context::SystemPayload note;
+  session::SystemPayload note;
   note.content = "a note from the caller";
   graph.AppendAfterLeaf(std::move(note));
 
@@ -101,15 +101,15 @@ TEST_CASE("A stored system node is passed through", "[request]") {
 }
 
 TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
-  context::MessageGraph graph;
-  context::AssistantPayload assistant;
+  session::MessageGraph graph;
+  session::AssistantPayload assistant;
   assistant.content = "checking";
-  assistant.reasoning.push_back(context::Reasoning{"because", {}, nullptr});
+  assistant.reasoning.push_back(session::Reasoning{"because", {}, nullptr});
   assistant.tool_calls.push_back(
-      context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
+      session::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
 
-  context::ToolPayload receipt;
+  session::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "ls";
   receipt.content = "file.txt";
@@ -127,7 +127,7 @@ TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
 }
 
 TEST_CASE("Rendered positions follow the view, not the stored ids", "[request]") {
-  context::MessageGraph graph;
+  session::MessageGraph graph;
   AppendUser(graph, "one");
   graph.AppendAfterLeaf(Assistant("two"));
   AppendUser(graph, "three");
@@ -140,15 +140,15 @@ TEST_CASE("Rendered positions follow the view, not the stored ids", "[request]")
 }
 
 TEST_CASE("Every stored node reaches the model, with its tool receipt", "[request]") {
-  context::MessageGraph graph;
+  session::MessageGraph graph;
   for (int i = 1; i <= 20; ++i) AppendUser(graph, "msg" + std::to_string(i));
 
-  context::AssistantPayload assistant;
+  session::AssistantPayload assistant;
   assistant.tool_calls.push_back(
-      context::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
+      session::ToolCallRecord{"call_1", "ls", boost::json::parse(R"({"path":"."})")});
   graph.AppendAfterLeaf(std::move(assistant));
 
-  context::ToolPayload receipt;
+  session::ToolPayload receipt;
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "ls";
   receipt.content = "file.txt";

@@ -8,8 +8,8 @@
 #include <memory>
 #include <string>
 
-#include "pu/command_router.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/command_router.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
 

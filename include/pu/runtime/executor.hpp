@@ -27,6 +27,15 @@ struct ToolCallbacks {
       on_end;
 };
 
+// How a turn ended. `kToolBudgetReached` means the wrap-up round also failed to
+// produce an answer; a turn that was stopped at the budget but did answer is
+// `kCompleted`, with the answer the wrap-up round produced.
+enum class TurnOutcome {
+  kCompleted,
+  kFailed,
+  kToolBudgetReached,
+};
+
 struct ExecutionResult {
   std::string content;
   bool was_streamed = false;
@@ -34,6 +43,7 @@ struct ExecutionResult {
   std::optional<TokenUsage> usage;
   std::string notice;
   std::string model;
+  TurnOutcome outcome = TurnOutcome::kCompleted;
   bool has_error = false;
   std::string error_message;
 };
@@ -45,6 +55,8 @@ class Executor {
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
+
+  void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
@@ -113,7 +125,12 @@ class Executor {
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
 
-  inline static constexpr int kMaxToolIterations = 20;
+  // The tool-call budget for one turn: how many tool calls the model may make
+  // before it is asked to wrap up. Counted per call, not per reply, since one
+  // reply can carry several.
+  inline static constexpr int kDefaultToolCallBudget = 100;
+
+  int tool_call_budget_ = kDefaultToolCallBudget;
 
   ToolContext::Control control_;
   ToolContext::Approval approval_;

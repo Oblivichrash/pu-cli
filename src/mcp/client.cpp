@@ -137,12 +137,12 @@ boost::json::value McpClient::SendRequest(const std::string& method,
                                           const boost::json::value& params, int timeout_ms) {
   // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
-    throw Error("MCP client not connected");
+    throw GenericError("MCP client not connected");
   }
   auto future = pimpl_->rpc->SendRequest(method, params);
   auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
   if (status == std::future_status::timeout) {
-    throw Error("MCP request timeout");
+    throw GenericError("MCP request timeout");
   }
   return future.get();
 }
@@ -168,7 +168,7 @@ std::vector<ToolDefinition> McpClient::ListTools() {
     pimpl_->cached_tools = defs;
     return defs;
   }
-  throw Error("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
+  throw GenericError("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
 }
 
 std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {

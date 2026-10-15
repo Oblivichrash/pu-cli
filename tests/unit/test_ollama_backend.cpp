@@ -45,9 +45,9 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
   REQUIRE_FALSE(body.at("options").as_object().contains("num_predict"));
 }
 
-TEST_CASE("BackendConfig leaves the token cap unset until it is asked for", "[config]") {
+TEST_CASE("Backend leaves the token cap unset until it is asked for", "[config]") {
   const auto config_from = [](const char* text) {
-    return boost::json::value_to<pu::config::BackendConfig>(boost::json::parse(text));
+    return boost::json::value_to<pu::config::Backend>(boost::json::parse(text));
   };
 
   REQUIRE_FALSE(config_from(R"({"gateway":"ollama","model":"m"})").max_tokens.has_value());

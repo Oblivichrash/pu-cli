@@ -17,7 +17,7 @@
 
 namespace pu::config {
 
-struct BackendConfig {
+struct Backend {
   GatewayId gateway = GatewayId::kOllama;
   std::string host;
   std::string model;
@@ -30,21 +30,21 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
-// The gate a backend names, from an agents.json entry or a stored one. Required rather
-// than defaulted: a file that never named a gate is one whose author meant another one,
-// and the wrong gate's host fails a long way from the line that is wrong.
+// The gateway a backend names, from an agents.json entry or a stored one. Required rather
+// than defaulted: a file that never named a gateway is one whose author meant another one,
+// and the wrong gateway's host fails a long way from the line that is wrong.
 inline GatewayId ReadGateway(const boost::json::value& j) {
   const std::string name = json::ValueOrDefault<std::string>(j, "gateway", "");
-  if (name.empty()) throw Error("Missing gateway in backend: name one of " + GatewayNames());
+  if (name.empty()) throw GenericError("Missing gateway in backend: name one of " + GatewayNames());
   const std::optional<GatewayId> parsed = ParseGatewayId(name);
-  if (!parsed) throw Error("Unknown gateway: " + name);
+  if (!parsed) throw GenericError("Unknown gateway: " + name);
   return *parsed;
 }
 
 
 // The fields a stored backend shares with an agents.json entry, read the one way both go
 // through so their defaults cannot drift apart.
-inline void ReadBackendFields(BackendConfig& cfg, const boost::json::value& j) {
+inline void ReadBackendFields(Backend& cfg, const boost::json::value& j) {
   cfg.gateway = ReadGateway(j);
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
@@ -57,15 +57,15 @@ inline void ReadBackendFields(BackendConfig& cfg, const boost::json::value& j) {
   cfg.thinking = ReadThinkingLevel(j);
 }
 
-inline BackendConfig ReadBackend(const boost::json::value& j) {
-  BackendConfig cfg;
+inline Backend ReadBackend(const boost::json::value& j) {
+  Backend cfg;
   ReadBackendFields(cfg, j);
   return cfg;
 }
 
 
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
-                       const BackendConfig& cfg) {
+                       const Backend& cfg) {
   j = {
       {"gateway", GatewayName(cfg.gateway)},
       {"host", cfg.host},
@@ -77,17 +77,17 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
   if (cfg.max_tokens) j.as_object()["max_tokens"] = *cfg.max_tokens;
 }
 
-inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
+inline Backend tag_invoke(boost::json::value_to_tag<Backend>,
                                 const boost::json::value& j) {
   return ReadBackend(j);
 }
 
-std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
+std::unique_ptr<pu::LLMProvider> CreateBackend(const Backend& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
 
 // Reads the model listing the backend's host reports, with what the host says about each
-// model. The gate answers where that listing lives. A listing that names no model is an
+// model. The gateway answers where that listing lives. A listing that names no model is an
 // empty vector, not an error. Throws HttpError on a failed read.
-std::vector<llm::ModelEntry> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
+std::vector<llm::ModelEntry> ListModels(const Backend& cfg, pu::http::HttpClient& http);
 
 }  // namespace pu::config

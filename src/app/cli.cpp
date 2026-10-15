@@ -11,10 +11,10 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend.hpp"
-#include "pu/command_router.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/model_listing.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {
 
@@ -135,7 +135,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 
 int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::BackendConfig backend = runtime.CurrentBackend();
+    const config::Backend backend = runtime.CurrentBackend();
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
 
     if (!verify) {

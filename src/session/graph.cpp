@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/context/graph.hpp"
+#include "pu/session/graph.hpp"
 
 #include "pu/core/json.hpp"
 
-namespace pu::context {
+namespace pu::session {
 
 namespace {
 
@@ -163,4 +163,4 @@ bool MessageGraph::Deserialize(const boost::json::value& value, MessageGraph& ou
   return true;
 }
 
-}  // namespace pu::context
+}  // namespace pu::session

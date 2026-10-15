@@ -33,7 +33,7 @@
 
 #include "pu/app/cli.hpp"
 #include "pu/core/platform.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 namespace pu::platform {

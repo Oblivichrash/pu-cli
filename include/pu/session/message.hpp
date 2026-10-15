@@ -13,7 +13,7 @@
 #include "pu/core/json.hpp"
 #include "pu/core/base.hpp"
 
-namespace pu::context {
+namespace pu::session {
 
 using MessageId = std::string;
 
@@ -123,4 +123,4 @@ inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   return false;
 }
 
-}  // namespace pu::context
+}  // namespace pu::session

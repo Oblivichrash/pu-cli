@@ -482,7 +482,7 @@ TEST_CASE("OpenAIProvider rejects a tool call the token cap cut short", "[openai
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "write"}};
-  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::Error);
+  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::GenericError);
 }
 
 TEST_CASE("OpenAIProvider keeps a tool call whose arguments are not JSON", "[openai][tools]") {

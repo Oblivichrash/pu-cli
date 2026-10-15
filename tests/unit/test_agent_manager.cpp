@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 using namespace pu;
 TEST_CASE("AgentManager AgentNames returns names from configs", "[agent]") {

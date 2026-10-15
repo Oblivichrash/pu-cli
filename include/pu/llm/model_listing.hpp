@@ -11,7 +11,7 @@
 namespace pu {
 
 namespace config {
-struct BackendConfig;
+struct Backend;
 }
 
 }  // namespace pu
@@ -106,7 +106,7 @@ class OpenAIModelLister final : public pu::ModelLister {
 };
 
 // Read from `{origin}/v3/config`; `/models` is not a route there. The headers are the
-// gate's, which is why they are handed in rather than named here.
+// gateway's, which is why they are handed in rather than named here.
 class CodeBuddyModelLister final : public pu::ModelLister {
  public:
   explicit CodeBuddyModelLister(std::vector<std::string> headers = {});
@@ -138,7 +138,7 @@ struct ModelCheck {
 // job is to report every model, and a credential the host rejects fails all of them.
 // A model the catalogue says is answered only with a reasoning level is not asked at all
 // when the backend sends none, since that request cannot succeed.
-std::vector<ModelCheck> VerifyModels(const config::BackendConfig& cfg,
+std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
                                      const std::vector<ModelEntry>& models,
                                      std::shared_ptr<http::HttpClient> http);
 

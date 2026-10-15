@@ -15,9 +15,11 @@ namespace pu::config {
 struct AgentEntry {
   std::string name;
   std::string description;
-  BackendConfig backend;
+  Backend backend;
   SecurityPolicy security;
   std::vector<McpServerConfig> mcp_servers;
+  // The tool-call budget for one turn. Absent: the executor's default applies.
+  std::optional<int> tool_call_budget;
 };
 
 struct AgentsConfig {

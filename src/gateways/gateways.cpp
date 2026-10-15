@@ -16,12 +16,12 @@
 
 namespace pu::config {
 
-OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg);
+OpenAIProvider::Config OpenAIConfig(const Backend& cfg);
 
 namespace {
 
 template <typename Config>
-void FillProtocolConfig(Config& protocol, const BackendConfig& cfg) {
+void FillProtocolConfig(Config& protocol, const Backend& cfg) {
   protocol.host = cfg.host;
   protocol.model = cfg.model;
   protocol.temperature = cfg.temperature;
@@ -29,7 +29,7 @@ void FillProtocolConfig(Config& protocol, const BackendConfig& cfg) {
   protocol.thinking = cfg.thinking;
 }
 
-std::unique_ptr<pu::LLMProvider> MakeOllamaProvider(const BackendConfig& cfg,
+std::unique_ptr<pu::LLMProvider> MakeOllamaProvider(const Backend& cfg,
                                                     std::shared_ptr<pu::http::HttpClient> http) {
   OllamaProvider::Config protocol;
   FillProtocolConfig(protocol, cfg);
@@ -40,7 +40,7 @@ std::unique_ptr<pu::ModelLister> MakeOllamaListing() {
   return std::make_unique<llm::OllamaModelLister>();
 }
 
-std::unique_ptr<pu::LLMProvider> MakeOpenAIProvider(const BackendConfig& cfg,
+std::unique_ptr<pu::LLMProvider> MakeOpenAIProvider(const Backend& cfg,
                                                     std::shared_ptr<pu::http::HttpClient> http) {
   return std::make_unique<OpenAIProvider>(OpenAIConfig(cfg), std::move(http));
 }
@@ -82,7 +82,7 @@ std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
   };
 }
 
-std::unique_ptr<pu::LLMProvider> MakeCodeBuddyProvider(const BackendConfig& cfg,
+std::unique_ptr<pu::LLMProvider> MakeCodeBuddyProvider(const Backend& cfg,
                                                        std::shared_ptr<pu::http::HttpClient> http) {
   OpenAIProvider::Config protocol = OpenAIConfig(cfg);
   const std::string conversation_id = CodeBuddyConversationId();
@@ -96,7 +96,7 @@ std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
 
 }  // namespace
 
-OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg) {
+OpenAIProvider::Config OpenAIConfig(const Backend& cfg) {
   OpenAIProvider::Config protocol;
   FillProtocolConfig(protocol, cfg);
   protocol.max_tokens = cfg.max_tokens;
@@ -161,7 +161,7 @@ const Gateway& GatewayForId(GatewayId id) {
   for (const Gateway* gateway : kGateways) {
     if (gateway->id == id) return *gateway;
   }
-  throw Error("No gateway answers for " + std::to_string(static_cast<int>(id)));
+  throw GenericError("No gateway answers for " + std::to_string(static_cast<int>(id)));
 }
 
 }  // namespace pu::config

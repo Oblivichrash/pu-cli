@@ -50,8 +50,8 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   return policy;
 }
 
-BackendConfig ParseBackendConfig(const json::value& j) {
-  BackendConfig cfg;
+Backend ParseBackend(const json::value& j) {
+  Backend cfg;
   ReadBackendFields(cfg, j);
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
@@ -94,18 +94,19 @@ std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
 AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
-  if (entry.name.empty()) throw pu::Error("Missing agent name");
+  if (entry.name.empty()) throw pu::GenericError("Missing agent name");
   entry.description = json::ValueOrDefault<std::string>(j, "description", "");
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
-    throw pu::Error("Missing backend field");
-  entry.backend = ParseBackendConfig(j.at("backend"));
+    throw pu::GenericError("Missing backend field");
+  entry.backend = ParseBackend(j.at("backend"));
   if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
-  if (entry.backend.model.empty()) throw pu::Error("Missing model in backend");
+  if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
+  entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");
 
   return entry;
 }
@@ -213,7 +214,7 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) throw pu::Error("Configuration file not found: " + config_path);
+  if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + config_path);
 
   json::value j;
   try {
@@ -221,22 +222,22 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
     buffer << file.rdbuf();
     j = json::parse(buffer.str());
   } catch (const boost::system::system_error&) {
-    throw pu::Error("Failed to parse configuration JSON");
+    throw pu::GenericError("Failed to parse configuration JSON");
   }
 
   if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
-    throw pu::Error("Missing default_agent field");
+    throw pu::GenericError("Missing default_agent field");
   result.default_agent = boost::json::value_to<std::string>(j.at("default_agent"));
 
   if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
-    throw pu::Error("Missing agents array");
+    throw pu::GenericError("Missing agents array");
   for (const auto& item : j.at("agents").as_array()) result.agents.push_back(ParseAgentEntry(item));
 
   const auto default_agent =
       std::find_if(result.agents.begin(), result.agents.end(),
                    [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end())
-    throw pu::Error("default_agent does not match any configured agent");
+    throw pu::GenericError("default_agent does not match any configured agent");
   return result;
 }
 

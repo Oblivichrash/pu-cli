@@ -465,7 +465,7 @@ Runtime.ProcessInput(input, ...)
 Each stored node is rendered into one `ChatMessage` on the way out
 (`include/pu/session/request.hpp`), which is the view a provider requires. That makes
 `ChatMessage` a compatibility view rather than a place to grow: a new context
-feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
+feature belongs to `MessageNode` (`include/pu/session/message.hpp`), which owns what
 a turn is.
 
 ---
@@ -560,28 +560,25 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/                  src/
-├── agent_manager.hpp        ├── app/                  # main, CLI parsing, serve
-├── command_router.hpp       ├── config/               # agents.json, the backend model
-├── runtime.hpp              ├── runtime.cpp, command_router.cpp
-├── executor.hpp             ├── executor.cpp
-├── app/                     ├── core/                 # logging, platform, HTTP client
-├── config/                  ├── context/              # message graph storage
-├── core/                    ├── gateways/            # every gate and its table
-├── context/                 ├── llm/                  # protocols, providers, streaming parser
-├── llm/                     ├── mcp/                  # transports, JSON-RPC client
-├── mcp/                     ├── session/              # Session, Conversation
-├── session/                 └── tools/                # Toolbox, tools
+├── app/                     ├── app/                  # main, CLI parsing, serve
+├── config/                  ├── config/               # agents.json, the backend model
+├── core/                    ├── core/                 # logging, platform, HTTP client
+├── llm/                     ├── gateways/             # every gateway and its table
+├── mcp/                     ├── llm/                  # protocols, providers, streaming parser
+├── runtime/                 ├── mcp/                  # transports, JSON-RPC client
+│   ├── command_router.hpp   ├── runtime/              # runtime, executor, command router
+│   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
+│   └── runtime.hpp          └── tools/                # Toolbox, tools
+├── session/                 # message graph, Session, Conversation
 └── tools/
 ```
 
-A header lives in `include/pu/` when code outside its own directory uses it
-(including tests); otherwise it stays next to its `.cpp`. A header whose module
-has a directory belongs in that directory, so `app/cli.hpp` sits beside
-`src/app/cli.cpp`.
+A header lives in its module's directory; `include/pu/runtime/` holds the
+orchestration layer (`Runtime`, `Executor`, `CommandRouter`). A header whose
+module has no directory of its own stays beside the sources that include it.
 
-The CMake targets follow the layering: `pu_lib` is the *base* static library
-(core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
-holds `src/app/`, and the `pu` executable adds only `main.cpp`.
+The build is one static library, `pu_core` (everything but `main.cpp`), and the
+`pu` executable links it.
 
 `web/` is the page the server mounts, served from the file list in
 `kPageFiles` (`src/app/serve_http_routes.cpp`) — adding a file there means adding
@@ -592,27 +589,27 @@ the directory. Its module split is described under
 ### Gates, protocols and providers
 
 Three facts about a vendor that look alike are three different things: a **protocol** is
-*how to talk*, a **gate** is *which product*, and a connection is *where*. `config/gateway.hpp`
-holds the middle one: `GatewayId` names the gates a build carries, `Gateway` is
+*how to talk*, a **gateway** is *which product*, and a connection is *where*. `config/gateway.hpp`
+holds the middle one: `GatewayId` names the gateways a build carries, `Gateway` is
 `{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
-/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Every gate
-lives in `src/gateways/gateways.cpp` with its neighbours: a gate is mostly a table row plus
+/ `GatewayForId()` answer from one explicit table (`kGateways`) in that file. Every gateway
+lives in `src/gateways/gateways.cpp` with its neighbours: a gateway is mostly a table row plus
 the mapping from the backend config to its protocol's config, and those mappings are only
-readable as a set — side by side, a field one gate fills and another drops is visible, and
-in one file per gate it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
+readable as a set — side by side, a field one gateway fills and another drops is visible, and
+in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
 `FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
 
-`agents.json` names a gate through `gateway`, and a missing or unknown name is refused rather
+`agents.json` names a gateway through `gateway`, and a missing or unknown name is refused rather
 than defaulted, so a backend never reaches a host its author did not choose. The field is what
 a stored config carries; `BackendTypeName()` / `ParseBackendType()` are gone, and one parser
 resolves the name.
 
-A protocol stays what it was — the implementation of how a gate talks. `openai` is split into
+A protocol stays what it was — the implementation of how a gateway talks. `openai` is split into
 `llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
-host with one set of headers), because a change to the SSE parse and a change to a gate's
-headers are different changes; `ollama` keeps protocol and provider in one class. The gate
-abstraction stops short of one thing the design chose not to build yet: a gate offering more
-than one protocol, which would need an `entry` between the gate and the protocol. Every gate
+host with one set of headers), because a change to the SSE parse and a change to a gateway's
+headers are different changes; `ollama` keeps protocol and provider in one class. The gateway
+abstraction stops short of one thing the design chose not to build yet: a gateway offering more
+than one protocol, which would need an `entry` between the gateway and the protocol. Every gateway
 measured so far speaks exactly one, so that layer is deferred rather than carried as unused
 state — see [design/gateway-protocol-layout.md](design/gateway-protocol-layout.md).
 
@@ -635,7 +632,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gate**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/gateways/gateways.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then add the pointer to the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the four fragments and its line.
+- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/gateways/gateways.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

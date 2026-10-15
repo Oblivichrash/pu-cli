@@ -106,7 +106,7 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
   NoteUnreadFields(j, kReadKeys);
 
   if (json::HasKey(j, "error")) {
-    throw Error("provider error: " + StreamErrorDetail(j.at("error")));
+    throw GenericError("provider error: " + StreamErrorDetail(j.at("error")));
   }
 
   bool is_final = false;
@@ -218,7 +218,7 @@ void OpenAIProtocol::FlushPendingToolCalls(const ChatRequest& request) {
         // truncated argument. A backend that answers with something other than JSON
         // is a different thing, and its text is kept as it stands.
         if (finish_reason_ == "length") {
-          throw Error("tool call '" + acc.name + "' was cut off by the output token cap");
+          throw GenericError("tool call '" + acc.name + "' was cut off by the output token cap");
         }
         call.arguments = acc.arguments;
       }

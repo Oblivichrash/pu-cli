@@ -56,7 +56,7 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = context::kAssistantRole;
+  assistant.role = session::kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
   session.Messages().Append(assistant);

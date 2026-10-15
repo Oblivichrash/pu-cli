@@ -13,9 +13,9 @@ using namespace pu::tests;
 
 namespace {
 
-config::BackendConfig BackendOfType(config::GatewayId type, const std::string& host,
+config::Backend BackendOfType(config::GatewayId type, const std::string& host,
                                     const std::string& key = "") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = type;
   cfg.host = host;
   cfg.model = "the-active-model";
@@ -97,7 +97,7 @@ TEST_CASE("[list_models] a body that does not parse is an Error, not a crash",
   REQUIRE_THROWS_AS(config::ListModels(
                         BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
                         *mock),
-                    pu::Error);
+                    pu::GenericError);
 }
 
 TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",

@@ -32,7 +32,7 @@ function(pu_configure_target target)
 endfunction()
 
 add_library(pu_core STATIC
-    src/context/graph.cpp
+    src/session/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
     src/session/session.cpp
@@ -50,11 +50,11 @@ add_library(pu_core STATIC
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
     src/config/agents.cpp
-    src/executor.cpp
+    src/runtime/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp
-    src/runtime.cpp
-    src/command_router.cpp
+    src/runtime/runtime.cpp
+    src/runtime/command_router.cpp
     src/app/cli.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp

@@ -2,16 +2,16 @@
 #include "pu/llm/projection.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/context/message.hpp"
+#include "pu/session/message.hpp"
 
 namespace pu::llm {
 
 namespace {
 
-using context::kAssistantRole;
-using context::kSystemRole;
-using context::kToolRole;
-using context::kUserRole;
+using session::kAssistantRole;
+using session::kSystemRole;
+using session::kToolRole;
+using session::kUserRole;
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
   if (naming == RoleNaming::kAsStored) return role;
@@ -44,7 +44,7 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
       projected.push_back(call);
       continue;
     }
-    const context::ToolCallRecord record = context::ToolCallFromJson(call);
+    const session::ToolCallRecord record = session::ToolCallFromJson(call);
 
     boost::json::value entry = boost::json::object{};
     if (json::HasKey(call, "id")) entry.as_object()["id"] = call.at("id");

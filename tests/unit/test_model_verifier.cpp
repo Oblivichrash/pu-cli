@@ -16,9 +16,9 @@ using namespace pu::tests;
 
 namespace {
 
-config::BackendConfig BackendOfType(config::GatewayId type, const std::string& host,
+config::Backend BackendOfType(config::GatewayId type, const std::string& host,
                                     const std::string& key = "") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = type;
   cfg.host = host;
   cfg.model = "the-active-model";
@@ -129,7 +129,7 @@ TEST_CASE("[model_verifier] a model the catalogue needs a level for is not asked
   // Both values a backend can hold that put no level on the wire: unset, and disabled.
   for (const ThinkingLevel level : {ThinkingLevel::kServerDefault, ThinkingLevel::kNone}) {
     calls = 0;
-    config::BackendConfig cfg =
+    config::Backend cfg =
         BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
     cfg.thinking = level;
 
@@ -150,7 +150,7 @@ TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
-  config::BackendConfig cfg =
+  config::Backend cfg =
       BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
   cfg.thinking = ThinkingLevel::kMedium;
 

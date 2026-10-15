@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-#include "pu/context/message.hpp"
+#include "pu/session/message.hpp"
 
 #include <boost/json.hpp>
 
-namespace pu::context {
+namespace pu::session {
 
 class MessageGraph {
  public:
@@ -136,4 +136,4 @@ class MessageGraph {
   MessageId leaf_;
 };
 
-}  // namespace pu::context
+}  // namespace pu::session

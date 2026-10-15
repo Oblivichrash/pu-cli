@@ -6,27 +6,27 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-A gate answers for a backend type. `src/gateways/<name>.cpp` states that gate's name,
-default host, provider and catalogue read, and `src/gateways/registry.cpp` names the
+A gateway answers for a backend type. `src/gateways/<name>.cpp` states that gateway's name,
+default host, provider and catalogue read, and `src/gateways/gateways.cpp` names the
 files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the type up in
-that table, so neither spells a gate's endpoint or provider itself. Adding a gate is a
+that table, so neither spells a gateway's endpoint or provider itself. Adding a gateway is a
 file plus a line, and removing one is the reverse.
 
-The OpenAI protocol itself is a layer below the gate: `src/llm/openai_protocol.cpp` holds
+The OpenAI protocol itself is a layer below the gateway: `src/llm/openai_protocol.cpp` holds
 the endpoint, the request body and the SSE parse, and `OpenAIProvider`
 (`openai_provider.{hpp,cpp}`) is the shell that puts one host and one set of headers on it.
-So the `openai` and `codebuddy` gates build the same protocol, and an agent of the `openai`
-gate changes only the host, the headers and the response shape.
+So the `openai` and `codebuddy` gateways build the same protocol, and an agent of the `openai`
+gateway changes only the host, the headers and the response shape.
 
-The gates a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
+The gateways a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
 today, and an entry that names none of them is refused at load time — as is one that
-names no gate at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and
-compatible gateways, all of which are the one `openai` gate with a different `host`.
+names no gateway at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and
+compatible gateways, all of which are the one `openai` gateway with a different `host`.
 
-A gate is spelled in one place for the same reason as before — a stored session, an
+A gateway is spelled in one place for the same reason as before — a stored session, an
 `agents.json` entry and an `/api/session` answer all name it, and answering "is it
-OpenAI?" separately at each site is what turns a third gate into a lie rather than a
-failure. Whether a gate carries a thinking level follows from the gate, and no provider
+OpenAI?" separately at each site is what turns a third gateway into a lie rather than a
+failure. Whether a gateway carries a thinking level follows from the gateway, and no provider
 subclass overrides it.
 
 `codebuddy` is one of these, not a third protocol: the same stream at a different

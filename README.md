@@ -305,6 +305,7 @@ default). See [Quick Start](#configure) for a full example.
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
+| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). When the budget is reached the model is asked to wrap up and answer from what it has gathered, rather than the turn ending in an error |
 
 **Backend fields**
 

@@ -10,7 +10,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -76,14 +76,14 @@ class BackendSourceFixture {
 }  // namespace
 
 TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
   cfg.thinking = ThinkingLevel::kHigh;
 
-  const config::BackendConfig read =
-      boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
+  const config::Backend read =
+      boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
 
   REQUIRE(read.thinking == ThinkingLevel::kHigh);
   REQUIRE(read.model == "test-model");
@@ -92,34 +92,34 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
   for (const config::GatewayId type : {config::GatewayId::kOllama, config::GatewayId::kOpenAI,
                                          config::GatewayId::kCodeBuddy}) {
-    config::BackendConfig cfg;
+    config::Backend cfg;
     cfg.gateway = type;
     cfg.host = "https://example.invalid/v1";
     cfg.model = "test-model";
 
-    const config::BackendConfig read =
-        boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
+    const config::Backend read =
+        boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
 
     REQUIRE(read.gateway == type);
   }
 }
 
-TEST_CASE("A stored backend naming a gate this build has not got is refused", "[backend]") {
+TEST_CASE("A stored backend naming a gateway this build has not got is refused", "[backend]") {
   const boost::json::value stored = {
-      {"gateway", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
+      {"gateway", "some-gateway"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
 
-  REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+  REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
 }
 
-TEST_CASE("A stored backend naming no gate is refused rather than defaulted", "[backend]") {
-  // The field was named `type` before the gate table; a file still carrying it names no
-  // gate, and reading it as ollama would send its turns to a host nobody chose.
+TEST_CASE("A stored backend naming no gateway is refused rather than defaulted", "[backend]") {
+  // The field was named `type` before the gateway table; a file still carrying it names no
+  // gateway, and reading it as ollama would send its turns to a host nobody chose.
   for (const boost::json::value stored :
        {boost::json::value{{"host", "https://example.invalid/v1"}, {"model", "test-model"}},
         boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
                            {"model", "test-model"}},
         boost::json::value{{"gateway", ""}, {"model", "test-model"}}}) {
-    REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+    REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
   }
 }
 
@@ -177,7 +177,7 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
   const auto names_before = runtime.Agents().AgentNames();
 
-  config::BackendConfig replacement = runtime.CurrentBackend();
+  config::Backend replacement = runtime.CurrentBackend();
   replacement.temperature = 1.5f;
   runtime.SwitchBackend(replacement);
 

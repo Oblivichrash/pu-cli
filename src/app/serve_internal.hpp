@@ -15,7 +15,7 @@
 #include <thread>
 
 #include "pu/core/base.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 namespace pu::cli::detail {
 

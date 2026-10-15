@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/command_router.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/llm/model_listing.hpp"
 
@@ -121,7 +121,7 @@ std::string CommandRouter::Help() {
 
 bool CommandRouter::HandleBackend(Args args, Output output) {
   if (args.empty()) {
-    const config::BackendConfig cfg = runtime_.CurrentBackend();
+    const config::Backend cfg = runtime_.CurrentBackend();
     output = "Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
              " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
@@ -149,7 +149,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     return true;
   }
 
-  config::BackendConfig new_cfg;
+  config::Backend new_cfg;
   new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
@@ -181,7 +181,7 @@ bool CommandRouter::HandleModels(Args args, Output output) {
   return ReportModels(agent_config->backend, output);
 }
 
-bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output) {
+bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
   try {
     const std::vector<llm::ModelEntry> models =
         config::ListModels(cfg, runtime_.Http());

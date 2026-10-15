@@ -46,7 +46,7 @@ namespace pu {
 // SSE stream it is answered with. It is a layer of the provider rather than a thing beside
 // it because it reads the stream through the pipeline's own virtuals and writes into the
 // pipeline's accumulators; what it does not hold is a host or a set of headers, which is
-// what a gate states and what OpenAIProvider adds.
+// what a gateway states and what OpenAIProvider adds.
 class OpenAIProtocol : public StreamingProvider {
  public:
   struct Config {

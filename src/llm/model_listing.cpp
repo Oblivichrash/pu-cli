@@ -70,7 +70,7 @@ boost::json::value ParseListing(const std::string& url, http::HttpClient& http,
   try {
     return boost::json::parse(body);
   } catch (const boost::system::system_error&) {
-    throw Error("Model listing from " + url + " does not parse as JSON");
+    throw GenericError("Model listing from " + url + " does not parse as JSON");
   }
 }
 

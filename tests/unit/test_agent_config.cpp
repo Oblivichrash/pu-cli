@@ -83,7 +83,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
   j.as_object()["agents"] = agents_array;
 
   std::ofstream file(config_path);
-  if (!file.is_open()) throw pu::Error("Failed to open config file for writing: " + config_path);
+  if (!file.is_open()) throw pu::GenericError("Failed to open config file for writing: " + config_path);
   file << json::PrettyPrint(j);
 }
 
@@ -290,7 +290,7 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
   REQUIRE(cfg.default_agent == "only");
 }
 
-TEST_CASE("A backend may leave out the host its gate supplies", "[agent_config]") {
+TEST_CASE("A backend may leave out the host its gateway supplies", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
     "default_agent": "chat",
@@ -324,7 +324,7 @@ TEST_CASE("A backend without a model is still refused", "[agent_config]") {
   REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
 }
 
-TEST_CASE("A backend naming no gate is refused, and says which field is missing",
+TEST_CASE("A backend naming no gateway is refused, and says which field is missing",
           "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
@@ -383,7 +383,7 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kOllama;
   cfg.host = "http://localhost:11434";
   cfg.model = "llama3.2";
@@ -396,7 +396,7 @@ TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
 }
 
 TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "https://api.openai.com/v1";
   cfg.model = "gpt-4o-mini";

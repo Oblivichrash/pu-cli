@@ -11,9 +11,9 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/http_client.hpp"
-#include "pu/executor.hpp"
+#include "pu/runtime/executor.hpp"
 #include "pu/mcp/client.hpp"
-#include "pu/command_router.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
 
@@ -87,7 +87,7 @@ class Runtime {
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
-  void SwitchBackend(const config::BackendConfig& backend);
+  void SwitchBackend(const config::Backend& backend);
 
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
@@ -107,7 +107,7 @@ class Runtime {
   // The approval gate. Ask fires on the turn thread when a command matches the
   // policy's approval patterns; Resolve answers it from the serve thread.
   void EnableApprovalGate() {
-    assert(is_initialized_ && "Initialize() must run before any gate");
+    assert(is_initialized_ && "Initialize() must run before any gateway");
     executor_->EnableApprovalGate();
   }
   void SetOnApprovalAsk(std::function<void(const std::string&)> cb) {
@@ -140,14 +140,14 @@ class Runtime {
   bool RewindBefore(size_t turn);
   void ClearConversation();
 
-  config::BackendConfig CurrentBackend() const;
+  config::Backend CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
   std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:
-  config::BackendConfig ConfiguredBackend() const;
+  config::Backend ConfiguredBackend() const;
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();

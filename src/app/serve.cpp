@@ -20,8 +20,8 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/platform.hpp"
-#include "pu/executor.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/executor.hpp"
+#include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {
 namespace {

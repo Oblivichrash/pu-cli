@@ -69,7 +69,7 @@ TEST_CASE("A payload stores content as one string and reasoning as ordered block
   session.Messages().Append("user", "hello");
 
   ChatMessage assistant;
-  assistant.role = context::kAssistantRole;
+  assistant.role = session::kAssistantRole;
   assistant.content = "checking";
   assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"raw":true})")});
   assistant.reasoning.push_back(ReasoningBlock{"plain", "sig", nullptr});

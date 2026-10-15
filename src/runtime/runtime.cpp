@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -97,14 +97,14 @@ void Runtime::Initialize(const std::string& config_path) {
   const char* explicit_config = std::getenv("PU_AGENTS_CONFIG");
   if (explicit_config && *explicit_config) {
     if (!std::filesystem::exists(explicit_config)) {
-      throw Error(std::string("PU_AGENTS_CONFIG points at a missing file: ") + explicit_config);
+      throw GenericError(std::string("PU_AGENTS_CONFIG points at a missing file: ") + explicit_config);
     }
     cfg_path = explicit_config;
   } else if (!std::filesystem::exists(cfg_path)) {
     cfg_path = config::FindConfigPath();
   }
   if (cfg_path.empty()) {
-    throw Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+    throw GenericError("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
   }
 
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
@@ -117,7 +117,7 @@ void Runtime::Initialize(const std::string& config_path) {
   if (default_entry == agents_cfg.agents.end()) {
     std::string known;
     for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
-    throw Error("Requested agent is not configured: " + active_agent +
+    throw GenericError("Requested agent is not configured: " + active_agent +
                 (known.empty() ? " (no agents are configured)" : "; configured:" + known));
   }
 
@@ -204,7 +204,7 @@ std::string Runtime::HelpText() {
   return command_router_->Help();
 }
 
-config::BackendConfig Runtime::ConfiguredBackend() const {
+config::Backend Runtime::ConfiguredBackend() const {
   if (current_session_) {
     const auto& spec = current_session_->Spec();
     if (const auto* configured = agent_manager_->AgentConfig(spec.agent_name)) {
@@ -215,8 +215,8 @@ config::BackendConfig Runtime::ConfiguredBackend() const {
   return ActiveAgent().backend;
 }
 
-config::BackendConfig Runtime::CurrentBackend() const {
-  config::BackendConfig backend = ConfiguredBackend();
+config::Backend Runtime::CurrentBackend() const {
+  config::Backend backend = ConfiguredBackend();
   if (current_session_) {
     const auto& spec = current_session_->Spec();
     if (spec.thinking_override) backend.thinking = *spec.thinking_override;
@@ -344,6 +344,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
+  if (agent.tool_call_budget) executor_->SetToolCallBudget(*agent.tool_call_budget);
   agent_manager_->SetActiveAgent(agent.name);
 }
 
@@ -364,7 +365,7 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   Activate(new_agent);
 }
 
-void Runtime::SwitchBackend(const config::BackendConfig& backend) {
+void Runtime::SwitchBackend(const config::Backend& backend) {
   config::AgentEntry transient = ActiveAgent();
   transient.name = config::GatewayName(backend.gateway);
   transient.backend = backend;

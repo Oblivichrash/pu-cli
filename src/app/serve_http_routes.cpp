@@ -20,11 +20,11 @@
 #endif
 
 #include "pu/config/agents.hpp"
-#include "pu/context/message.hpp"
+#include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/projection.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/tool.hpp"
 
@@ -48,7 +48,7 @@ void SendError(http::response<http::string_body>& res, unsigned status, std::str
 
 unsigned ErrorStatus(const std::exception& e) {
   if (dynamic_cast<const NotFound*>(&e) != nullptr) return 404;
-  if (dynamic_cast<const Error*>(&e) != nullptr) return 500;
+  if (dynamic_cast<const GenericError*>(&e) != nullptr) return 500;
   if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;
   return 500;
 }
@@ -167,9 +167,9 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
 
 boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&) {
   auto session = runtime.DefaultSession();
-  if (!session) throw Error("No active session");
+  if (!session) throw GenericError("No active session");
 
-  const config::BackendConfig backend = runtime.CurrentBackend();
+  const config::Backend backend = runtime.CurrentBackend();
   boost::json::object body;
   body["agent_name"] = session->Spec().agent_name;
   body["backend_type"] = config::GatewayName(backend.gateway);
@@ -193,9 +193,9 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
   if (!session) return turns;
 
   Conversation& conversation = session->Messages();
-  const std::vector<const context::MessageNode*> chain = conversation.Chain();
+  const std::vector<const session::MessageNode*> chain = conversation.Chain();
   for (size_t i = 0; i < chain.size(); ++i) {
-    const context::MessageNode& node = *chain[i];
+    const session::MessageNode& node = *chain[i];
     const ChatMessage msg = session::RenderMessage(node, static_cast<int>(i) + 1);
     boost::json::value item = {
         {"id", msg.id},
@@ -206,10 +206,10 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
     if (msg.HasToolCalls()) {
       item.as_object()["tool_calls"] = msg.tool_calls;
 
-      if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
+      if (const auto* assistant = std::get_if<session::AssistantPayload>(&node.payload)) {
         boost::json::array statuses;
-        for (const context::ToolCallRecord& record : assistant->tool_calls) {
-          statuses.push_back(record.status == context::ToolCallStatus::kCompleted ? "done"
+        for (const session::ToolCallRecord& record : assistant->tool_calls) {
+          statuses.push_back(record.status == session::ToolCallStatus::kCompleted ? "done"
                                                                                  : "pending");
         }
         item.as_object()["tool_call_status"] = std::move(statuses);
@@ -221,7 +221,7 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
       item.as_object()["reasoning"] = llm::ProjectReasoning(msg.reasoning);
     }
 
-    if (msg.role == context::kToolRole) {
+    if (msg.role == session::kToolRole) {
       const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
       item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
       item.as_object()["error"] = parsed.error;

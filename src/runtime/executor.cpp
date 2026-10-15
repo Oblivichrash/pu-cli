@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/executor.hpp"
+#include "pu/runtime/executor.hpp"
 
 #include "pu/core/platform.hpp"
 #include "pu/core/logging.hpp"
@@ -206,12 +206,12 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
 void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult& chat_result) const {
   boost::json::array calls;
   for (const ToolCall& call : chat_result.tool_calls) {
-    calls.push_back(context::ToolCallToJson(context::ToolCallRecord{call.id, call.name,
+    calls.push_back(session::ToolCallToJson(session::ToolCallRecord{call.id, call.name,
                                                                    call.arguments}));
   }
 
   ChatMessage assistant_msg;
-  assistant_msg.role = context::kAssistantRole;
+  assistant_msg.role = session::kAssistantRole;
   assistant_msg.content = chat_result.content;
   assistant_msg.reasoning = chat_result.reasoning;
   assistant_msg.tool_calls = std::move(calls);
@@ -332,12 +332,30 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
   ExecutionResult result;
-  bool hit_max_iterations = false;
+  bool budget_reached = false;
+  bool wrap_up_asked = false;
 
   for (int iteration = 0;; ++iteration) {
-    if (iteration >= kMaxToolIterations) {
-      hit_max_iterations = true;
-      spdlog::warn("Tool loop reached max_iterations ({}), breaking", kMaxToolIterations);
+    // The budget counts tool calls, not replies: one reply can carry several calls.
+    if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
+      budget_reached = true;
+      spdlog::warn("Tool-call budget of {} reached, asking the model to wrap up",
+                   tool_call_budget_);
+    }
+
+    if (budget_reached && !wrap_up_asked) {
+      // Rather than ending the turn with an error, spend one round on a wrap-up: the
+      // model answers from what it has gathered, and the user reads an answer instead
+      // of a refusal. A wrap-up that still calls a tool is answered no further.
+      ChatMessage wrap_up;
+      wrap_up.role = session::kUserRole;
+      wrap_up.content =
+          "[system] The tool-call budget for this turn is exhausted. Do not call any "
+          "more tools; answer now from what you have gathered so far.";
+      conversation.Append(wrap_up);
+      wrap_up_asked = true;
+    } else if (budget_reached && wrap_up_asked) {
+      spdlog::warn("Wrap-up round made no final answer, ending the turn");
       break;
     }
 
@@ -375,11 +393,12 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
     RunToolCalls(conversation, turn, chat_result.tool_calls, result);
   }
 
-  if (hit_max_iterations && result.content.empty()) {
+  if (budget_reached && result.content.empty()) {
+    result.outcome = TurnOutcome::kToolBudgetReached;
     result.content =
-        "Tool execution reached the maximum number of iterations without generating a final "
-        "answer. "
-        "Please rephrase your request or narrow the scope.";
+        "The tool-call budget for this turn was reached without a final answer. "
+        "Please rephrase your request or narrow the scope, or raise the budget with "
+        "the tool_call_budget agent setting.";
     result.has_error = true;
     spdlog::error("{}", result.content);
     return result;

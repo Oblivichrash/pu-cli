@@ -62,7 +62,7 @@ TEST_CASE("a denied command is refused with the user's note beside it",
           std::string::npos);
 }
 
-TEST_CASE("a command the gate has no channel for is refused, not silently run",
+TEST_CASE("a command the gateway has no channel for is refused, not silently run",
           "[builtin_tools][approval]") {
   tools::ExecuteBashToolStandard tool(".");
   config::SecurityPolicy policy;

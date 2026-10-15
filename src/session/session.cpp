@@ -20,37 +20,37 @@ namespace pu {
 
 namespace {
 
-context::MessagePayload ToPayload(const ChatMessage& msg) {
-  if (msg.role == context::kAssistantRole) {
-    context::AssistantPayload assistant;
+session::MessagePayload ToPayload(const ChatMessage& msg) {
+  if (msg.role == session::kAssistantRole) {
+    session::AssistantPayload assistant;
     assistant.content = msg.content;
     for (const ReasoningBlock& block : msg.reasoning) {
       assistant.reasoning.push_back(
-          context::Reasoning{block.text, block.signature, block.raw});
+          session::Reasoning{block.text, block.signature, block.raw});
     }
     if (msg.tool_calls.is_array()) {
       for (const boost::json::value& call : msg.tool_calls.as_array()) {
-        assistant.tool_calls.push_back(context::ToolCallFromJson(call));
+        assistant.tool_calls.push_back(session::ToolCallFromJson(call));
       }
     }
     return assistant;
   }
 
-  if (msg.role == context::kToolRole) {
-    context::ToolPayload receipt;
+  if (msg.role == session::kToolRole) {
+    session::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
     receipt.content = msg.content;
     return receipt;
   }
 
-  if (msg.role == context::kSystemRole) {
-    context::SystemPayload system;
+  if (msg.role == session::kSystemRole) {
+    session::SystemPayload system;
     system.content = msg.content;
     return system;
   }
 
-  context::UserPayload user;
+  session::UserPayload user;
   user.content = msg.content;
   return user;
 }
@@ -95,7 +95,7 @@ void Conversation::Append(const std::string& role, const std::string& content) {
 
 std::vector<ChatMessage> Conversation::History() const {
   std::vector<ChatMessage> history;
-  for (const context::MessageNode* node : graph_.Chain()) {
+  for (const session::MessageNode* node : graph_.Chain()) {
     history.push_back(session::RenderMessage(*node, static_cast<int>(history.size()) + 1));
   }
   return history;
@@ -107,15 +107,15 @@ bool Conversation::RewindBefore(size_t turn) {
         "Cannot rewind while tool calls are pending. "
         "Please let the current tool finish or /clear.");
   }
-  const std::vector<const context::MessageNode*> chain = graph_.Chain();
+  const std::vector<const session::MessageNode*> chain = graph_.Chain();
   if (turn < 1 || turn > chain.size()) return false;
-  const context::MessageId target = (turn == 1) ? context::MessageId{} : chain[turn - 2]->id;
+  const session::MessageId target = (turn == 1) ? session::MessageId{} : chain[turn - 2]->id;
   return graph_.RewindTo(target);
 }
 
 bool Conversation::HasPendingToolCalls() const { return graph_.LeafHasUnfinishedToolCalls(); }
 
-void Conversation::ClearHistory() { graph_ = context::MessageGraph{}; }
+void Conversation::ClearHistory() { graph_ = session::MessageGraph{}; }
 
 boost::json::value Conversation::Serialize() const {
   boost::json::value j = boost::json::object{};
@@ -127,7 +127,7 @@ std::shared_ptr<Conversation> Conversation::Deserialize(const boost::json::value
   auto conversation = std::make_shared<Conversation>();
 
   if (json::HasKey(j, "history")) {
-    if (!context::MessageGraph::Deserialize(j.at("history"), conversation->graph_)) return nullptr;
+    if (!session::MessageGraph::Deserialize(j.at("history"), conversation->graph_)) return nullptr;
   }
 
   return conversation;
@@ -148,7 +148,7 @@ void Session::SetAgent(const std::string& agent_name) {
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider(
-    const config::BackendConfig& backend, std::shared_ptr<pu::http::HttpClient> http) const {
+    const config::Backend& backend, std::shared_ptr<pu::http::HttpClient> http) const {
   return config::CreateBackend(backend, std::move(http));
 }
 

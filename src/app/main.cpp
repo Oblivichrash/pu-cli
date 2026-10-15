@@ -4,7 +4,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 #include <boost/program_options.hpp>
 
