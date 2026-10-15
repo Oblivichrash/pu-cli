@@ -5,6 +5,7 @@
 #include "pu/core/text.hpp"
 #include "pu/runtime.hpp"
 #include "pu/config/backend.hpp"
+#include "pu/llm/model_lister.hpp"
 
 #include <sstream>
 
@@ -78,10 +79,6 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
   };
 }
 
-const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() const {
-  return commands_;
-}
-
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   const std::string trimmed(text::Trim(input));
 
@@ -100,7 +97,7 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
     }
   }
 
-  if (const auto it = Commands().find(cmd); it != Commands().end()) {
+  if (const auto it = commands_.find(cmd); it != commands_.end()) {
     return it->second.run(args, session, output);
   }
 
@@ -116,7 +113,7 @@ std::string CommandRouter::GetHelpText() {
   std::ostringstream oss;
   oss << "Available commands:\n";
   for (const auto& cmd : CommandOrder()) {
-    oss << Commands().at(cmd).help;
+    oss << commands_.at(cmd).help;
   }
   oss << "  /exit, /quit           Exit the chat\n";
   return oss.str();
@@ -188,20 +185,7 @@ bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output
   try {
     const std::vector<llm::ModelEntry> models =
         config::ListModels(cfg, runtime_.GetHttpClient());
-    if (models.empty()) {
-      output = "No models reported by " + std::string(config::GatewayName(cfg.gateway)) +
-               " at " + cfg.host;
-      return true;
-    }
-    std::ostringstream oss;
-    oss << models.size() << " model(s) reported by " <<
-           config::GatewayName(cfg.gateway) << " at " << cfg.host << ":\n";
-    for (const auto& model : models) {
-      oss << "  " << model.id;
-      if (model.id == cfg.model) oss << " (active)";
-      oss << "\n";
-    }
-    output = oss.str();
+    output = llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model);
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }

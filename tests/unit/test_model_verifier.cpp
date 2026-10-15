@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "pu/llm/model_lister.hpp"
 #include "pu/llm/model_verifier.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"
@@ -159,4 +160,25 @@ TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
 
   REQUIRE(checks[0].answered);
   REQUIRE(mock->last_body.find("\"reasoning_effort\":\"medium\"") != std::string::npos);
+}
+
+TEST_CASE("[model_verifier] the listing is rendered the one way, whichever command asked",
+          "[model_verifier]") {
+  const std::vector<llm::ModelEntry> models = EntriesOf({"alpha", "the-active-model", "beta"});
+
+  const std::string rendered =
+      llm::FormatModelList(models, "openai", "https://example.invalid/v1", "the-active-model");
+
+  REQUIRE(rendered.find("3 model(s) reported by openai at https://example.invalid/v1") !=
+          std::string::npos);
+  REQUIRE(rendered.find("the-active-model (active)") != std::string::npos);
+  REQUIRE(rendered.find("alpha (active)") == std::string::npos);
+}
+
+TEST_CASE("[model_verifier] a listing that names no model says so rather than heading nothing",
+          "[model_verifier]") {
+  const std::string rendered =
+      llm::FormatModelList({}, "ollama", "http://127.0.0.1:1", "whatever");
+
+  REQUIRE(rendered == "No models reported by ollama at http://127.0.0.1:1");
 }

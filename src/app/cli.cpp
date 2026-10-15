@@ -11,6 +11,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/command_router.hpp"
+#include "pu/llm/model_lister.hpp"
 #include "pu/llm/model_verifier.hpp"
 #include "pu/runtime.hpp"
 
@@ -24,10 +25,6 @@ void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
   if (result.was_streamed) std::cout << "\n";
   std::cout << result.notice << "\n";
-}
-
-std::string BackendLabel(const config::BackendConfig& backend) {
-  return std::string(config::GatewayName(backend.gateway)) + " at " + backend.host;
 }
 
 }  // namespace
@@ -126,7 +123,6 @@ int RunChat(const std::string& agent, Runtime& runtime) {
         } else if (!is_command) {
           std::cout << "\n";
         }
-      } else {
       }
 
       PrintNotice(result);
@@ -149,14 +145,10 @@ int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
     const std::vector<llm::ModelEntry> models =
         config::ListModels(backend, runtime.GetHttpClient());
 
-    if (models.empty()) {
-      std::cout << "No models reported by " << BackendLabel(backend) << "\n";
-    } else if (!verify) {
-      for (const llm::ModelEntry& model : models) {
-        std::cout << model.id;
-        if (model.id == backend.model) std::cout << " (active)";
-        std::cout << "\n";
-      }
+    if (!verify) {
+      std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway),
+                                        backend.host, backend.model)
+                << "\n";
     } else {
       const std::vector<llm::ModelCheck> checks =
           llm::VerifyModels(backend, models, runtime.GetHttpClientShared());

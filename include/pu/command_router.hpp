@@ -32,10 +32,6 @@ class CommandRouter {
 
   static const std::vector<std::string>& CommandOrder();
 
-  // A member, not a function-local static: the entries capture this, so a table
-  // shared across instances would call through whichever instance built it first.
-  const std::unordered_map<std::string, Command>& Commands() const;
-
   bool RequireMinArgs(Args args, size_t min, const std::string& usage, Output output) const;
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;

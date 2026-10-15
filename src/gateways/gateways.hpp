@@ -4,8 +4,15 @@
 #include <memory>
 
 #include "pu/config/gateway.hpp"
+#include "pu/llm/openai_provider.hpp"
 
 namespace pu::config {
+
+struct BackendConfig;
+
+// The OpenAI protocol's config, filled from a backend. Shared because a field added for
+// one gate would otherwise be silently defaulted by the other.
+OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg);
 
 // The Ollama gate: NDJSON at `{host}/api/chat`, a catalogue at `{host}/api/tags`.
 const Gateway& OllamaGateway();

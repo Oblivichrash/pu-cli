@@ -63,6 +63,12 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
 
 Every field is listed under [Configuration](#agentsjson).
 
+> **Upgrading from 0.4.x?** `backend.type` was renamed to `backend.gateway`, and the
+> old key is no longer read. A config still using `type` fails at load with
+> `Missing gateway in backend: name one of ollama, openai, codebuddy`. Rename the
+> one key per backend; nothing else changes. The agent-level `"type": "llm"` is a
+> different field and is unaffected.
+
 ### Usage
 
 | Command | Description |
