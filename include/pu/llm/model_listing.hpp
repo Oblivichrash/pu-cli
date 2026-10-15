@@ -11,7 +11,7 @@
 namespace pu::llm {
 
 struct CatalogShape {
-  std::string path;
+  std::string path{};
   std::string container;
   std::string id_key;
   std::string nested{};
