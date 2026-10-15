@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The page's entry point. Everything it wires has been moved to a module of its own, so
-// this file is only the elements the other modules reach for and the order they start in.
-//
-// Load order (index.html) is the dependency order: state, the block widgets and the entry
-// that picks between them, the frame around a message, the live transcript, the panel,
-// the notice strip, history folding, the socket, the session calls, the composer, and
-// finally this bootstrap.
+// The page's entry point: the elements the other modules reach for, and the order they
+// start in.
 
 "use strict";
 

@@ -23,22 +23,16 @@ namespace pu::config {
 
 struct BackendConfig;
 
-// The gates a build knows, by id. A stored agents.json names one, so the spelling is
-// what a file carries and what this maps onto a gate.
+// A stored agents.json names one of these, and the spelling is what the file carries.
 enum class GatewayId { kOllama, kOpenAI, kCodeBuddy };
 
-// The host a config may leave out, answered by the gate rather than spelled again here.
 std::string DefaultHostFor(GatewayId id);
 
-// The name a gate answers to, and all of them in one line.
 const char* GatewayName(GatewayId id);
 std::string GatewayNames();
 
-// The gate a name refers to, or nothing when no gate answers to it.
 std::optional<GatewayId> ParseGatewayId(std::string_view name);
 
-// One gate: the name it answers to, the host a config may leave out, and how to build its
-// provider and its catalogue read. What a gate does differently lives in its own file.
 struct Gateway {
   GatewayId id;
   std::string_view name;
@@ -48,15 +42,11 @@ struct Gateway {
   std::unique_ptr<pu::ModelLister> (*make_listing)();
 };
 
-// The gates this build knows. Adding one is a file beside the others plus a line in
-// registry.cpp; removing one is the same in reverse.
+// Adding a gate is a file beside the others plus a line in registry.cpp.
 std::span<const Gateway* const> Gateways();
 
-// The gate that answers to `name`, or nullptr when none does.
 const Gateway* FindGateway(std::string_view name);
 
-// The gate an id names. The id is what an agents.json entry carries, so it keeps its
-// spelling and resolves through this.
 const Gateway& GatewayForId(GatewayId id);
 
 }  // namespace pu::config

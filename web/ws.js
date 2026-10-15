@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The page's single socket and the REST calls that go with it. A refusal is a state to
-// report rather than a connection to keep retrying: one page owns a session.
+// The page's single socket and the REST calls that go with it: one page owns a session,
+// so a refusal is a state to report rather than a connection to keep retrying.
 
 "use strict";
 

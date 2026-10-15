@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The live half of the transcript: the assistant message being written, the blocks it is
-// made of, and the frame-coalesced re-render that keeps a token stream from re-parsing
-// text and code already on screen.
+// The live half of the transcript: the assistant message being written and the blocks it
+// is made of.
 
 "use strict";
 

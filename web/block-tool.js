@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // A tool call's card: what was asked, what came back, and the one action that belongs to
-// a command still running. The status is itself the answer to "what happened here", so
-// `sync` derives it rather than storing it twice.
+// a command still running.
 
 "use strict";
 
