@@ -101,7 +101,6 @@ TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
         boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
 
     REQUIRE(read.gateway == type);
-    REQUIRE(std::string(config::GatewayName(type)) == config::GatewayName(read.gateway));
   }
 }
 

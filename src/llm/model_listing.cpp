@@ -3,8 +3,11 @@
 
 #include "pu/core/base.hpp"
 #include "pu/llm/codebuddy_catalog.hpp"
+#include "pu/llm/model_lister.hpp"
 
 #include <boost/json.hpp>
+
+#include <sstream>
 
 namespace pu::llm {
 
@@ -175,7 +178,6 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
   if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
 
   static const CatalogShape kShape = {
-      .path = "/v3/config",
       .container = "agents",
       .id_key = "models",
       .nested = "models",
@@ -187,9 +189,24 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .effort_field = "effort",
       .max_input_tokens = "maxInputTokens",
   };
-  const std::string url = CodeBuddyCatalogUrl(host);
-  if (url.size() <= std::string_view(kShape.path).size()) return {};
-  return ReadCodeBuddy(ParseListing(url, http, headers), kShape);
+  return ReadCodeBuddy(ParseListing(CodeBuddyCatalogUrl(host), http, headers), kShape);
+}
+
+std::string FormatModelList(const std::vector<ModelEntry>& models,
+                            std::string_view gateway,
+                            std::string_view host,
+                            std::string_view active_model) {
+  if (models.empty())
+    return "No models reported by " + std::string(gateway) + " at " + std::string(host);
+
+  std::ostringstream oss;
+  oss << models.size() << " model(s) reported by " << gateway << " at " << host << ":\n";
+  for (const ModelEntry& model : models) {
+    oss << "  " << model.id;
+    if (model.id == active_model) oss << " (active)";
+    oss << "\n";
+  }
+  return oss.str();
 }
 
 }  // namespace pu::llm
