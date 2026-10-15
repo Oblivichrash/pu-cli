@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <boost/json.hpp>
 
-#include "pu/agent.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"
@@ -17,13 +19,10 @@
 
 namespace pu {
 
-// Tool call lifecycle callbacks for streaming/UI feedback.
 struct ToolCallbacks {
-  // Called before a tool is executed.
   std::function<void(const std::string& id, const std::string& name,
                      const boost::json::value& args)>
       on_start;
-  // Called after a tool completes execution.
   std::function<void(const std::string& id, const std::string& output, const std::string& error)>
       on_end;
 };
@@ -31,68 +30,88 @@ struct ToolCallbacks {
 struct ExecutionResult {
   std::string content;
   bool was_streamed = false;
+  int tool_call_count = 0;
+  std::optional<TokenUsage> usage;
+  std::string notice;
+  std::string model;
   bool has_error = false;
   std::string error_message;
-  int tool_call_count = 0;
-  // A remark about a reply that arrived but is known to be incomplete, such as one
-  // the provider stopped at the token limit. Empty when there is nothing to add.
-  // Not an error: the content is real, and it is stored.
-  std::string notice;
-  // The model that answered the turn, as the response named it, so a caller can
-  // report who replied rather than what was asked for. Empty when it named none.
-  std::string model;
-};
-
-struct StaticEnvInfo {
-  std::string os_name;
-  std::string kernel_version;
-  bool probed = false;
 };
 
 class Executor {
  public:
-  explicit Executor(Toolbox* toolbox);
+  Executor();
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
-  void SetToolbox(Toolbox* toolbox) { toolbox_ = toolbox; }
 
-  // The agent's configured prompt, supplied by the runtime rather than read back
-  // out of session state, so a request depends only on the conversation and the
-  // named inputs the caller provides.
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  ExecutionResult Execute(const std::string& input, Workspace& workspace, LLMProvider* provider,
-                          CancelToken cancel_token = nullptr,
-                          std::function<void(const std::string&)> content_callback = nullptr,
-                          ToolCallbacks tool_callbacks = {},
-                          std::function<void(const std::string&)> reasoning_callback = nullptr);
+  // The user's words typed while a turn runs. The tool loop drains it: into the
+  // stop result when a command is killed, beside a tool result otherwise.
+  void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
-  const StaticEnvInfo& GetStaticEnvInfo() const { return static_env_info_; }
+  // A command matching the policy's approval patterns parks in AskApproval until
+  // ResolveApproval answers it.
+  void EnableApprovalGate() { approval_asks_ = true; }
+  void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
+    on_approval_ask = std::move(cb);
+  }
+  // Answers the pending ask; without one, a harmless no-op the waiting thread
+  // alone reads.
+  void ResolveApproval(bool allow, std::string note) {
+    {
+      std::lock_guard<std::mutex> lock(approval_mtx_);
+      approval_allowed_ = allow;
+      approval_answer_note_ = std::move(note);
+      approval_answered_ = true;
+    }
+    approval_cv_.notify_all();
+  }
+
+  ExecutionResult Execute(const std::string& input, Conversation& conversation,
+                          LLMProvider* provider, Toolbox& toolbox,
+                          CancelToken cancel_token = nullptr,
+                          TokenCallback content_callback = nullptr,
+                          ToolCallbacks tool_callbacks = {},
+                          TokenCallback reasoning_callback = nullptr,
+                          CancelToken command_stop_token = nullptr);
+
   std::string BuildStaticSystemContext() const;
 
  private:
-  struct ToolLoopResult {
-    std::string final_response;
-    int tool_call_count = 0;
-    bool has_error = false;
-    bool was_streamed = false;
-    std::string error_message;
-    std::string notice;
-    std::string model;
-  };
-
-  ToolLoopResult RunToolLoop(Workspace& workspace, LLMProvider* provider, CancelToken cancel_token,
-                             std::function<void(const std::string&)> content_callback,
-                             ToolCallbacks tool_callbacks,
-                             std::function<void(const std::string&)> reasoning_callback);
+  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox& toolbox,
+                              CancelToken cancel_token,
+                              TokenCallback content_callback,
+                              ToolCallbacks tool_callbacks,
+                              TokenCallback reasoning_callback,
+                              CancelToken command_stop_token = nullptr);
 
   void ProbeStaticEnvironment();
 
-  Toolbox* toolbox_;
+  // Parks the tool thread until ResolveApproval answers; the answer's note rides
+  // back beside the command.
+  bool AskApproval(const std::string& command, std::string& note);
+
+  std::string user_note_;
+
+  // One pending ask, answered from the serve thread.
+  bool approval_asks_ = false;
+  std::function<void(const std::string&)> on_approval_ask;
+  std::mutex approval_mtx_;
+  std::condition_variable approval_cv_;
+  bool approval_answered_ = false;
+  bool approval_allowed_ = false;
+  std::string approval_answer_note_;
+
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
 
+  struct StaticEnvInfo {
+    std::string os_name;
+    std::string kernel_version;
+    bool probed = false;
+  };
   StaticEnvInfo static_env_info_;
 };
 

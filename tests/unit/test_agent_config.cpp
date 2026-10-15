@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/agent.hpp"
+#include "pu/config/agents.hpp"
+#include "pu/config/backend.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 #include "pu/core/base.hpp"
@@ -16,7 +17,7 @@ namespace fs = std::filesystem;
 
 struct TempConfigFile {
   fs::path path;
-  TempConfigFile() { path = fs::temp_directory_path() / "pu_test_agents.json"; }
+  TempConfigFile() { path = UniqueTempPath("pu_test_agents").string() + ".json"; }
   ~TempConfigFile() {
     std::error_code ec;
     fs::remove(path, ec);
@@ -29,8 +30,6 @@ struct TempConfigFile {
 
 namespace {
 
-// Serializes an AgentsConfig in the agents.json shape so the loader's
-// round-trip behavior can be tested without a production writer.
 void WriteAgentsConfigForTest(const std::string& config_path, const config::AgentsConfig& cfg) {
   json::value j = {{"default_agent", cfg.default_agent}};
 
@@ -49,7 +48,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
     item.as_object()["security"] = security;
 
     json::value backend = {
-        {"type", (entry.backend.type == config::BackendType::kOpenAI) ? "openai" : "ollama"},
+        {"gateway", (entry.backend.gateway == config::GatewayId::kOpenAI) ? "openai" : "ollama"},
         {"host", entry.backend.host},
         {"model", entry.backend.model},
         {"temperature", entry.backend.temperature},
@@ -91,10 +90,8 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
 }  // namespace
 
 TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
-  // Use a temporary current directory and empty HOME so we do not disturb the
-  // repo layout or the real user configuration.
-  auto dir = fs::temp_directory_path() / "pu_findconfig_project";
-  auto home = fs::temp_directory_path() / "pu_findconfig_home";
+  auto dir = UniqueTempPath("pu_findconfig_project");
+  auto home = UniqueTempPath("pu_findconfig_home");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -118,8 +115,8 @@ TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
 }
 
 TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
-  auto dir = fs::temp_directory_path() / "pu_findconfig_project2";
-  auto home = fs::temp_directory_path() / "pu_findconfig_home2";
+  auto dir = UniqueTempPath("pu_findconfig_project2");
+  auto home = UniqueTempPath("pu_findconfig_home2");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -142,9 +139,9 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
   fs::remove_all(home, ec);
 }
 
-TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]") {
-  auto dir = fs::temp_directory_path() / "pu_findconfig_empty";
-  auto home = fs::temp_directory_path() / "pu_findconfig_empty_home";
+TEST_CASE("FindConfigPath reports no configuration when neither location exists", "[agent_config]") {
+  auto dir = UniqueTempPath("pu_findconfig_empty");
+  auto home = UniqueTempPath("pu_findconfig_empty_home");
   std::error_code ec;
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
@@ -156,7 +153,60 @@ TEST_CASE("FindConfigPath throws when neither location exists", "[agent_config]"
 
   {
     ScopedEnvVar env("HOME", home.string());
-    REQUIRE_THROWS_AS(config::FindConfigPath(), std::runtime_error);
+    REQUIRE(config::FindConfigPath().empty());
+  }
+
+  fs::current_path(old);
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+}
+
+TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
+  auto dir = UniqueTempPath("pu_serve_options");
+  auto home = UniqueTempPath("pu_serve_options_home");
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  fs::remove_all(home, ec);
+  fs::create_directories(dir / ".pu");
+  fs::create_directories(home);
+
+  auto old = fs::current_path();
+  fs::current_path(dir);
+
+  {
+    ScopedEnvVar env("HOME", home.string());
+
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << R"({"default_agent":"a","agents":[]})";
+    }
+    REQUIRE_FALSE(config::FindServeOptions().has_value());
+
+    {
+      ScopedEnvVar bind("PU_TEST_SERVE_HOST", "127.0.0.2");
+      {
+        std::ofstream f(dir / ".pu" / "agents.json");
+        f << R"({"serve":{"host":"${PU_TEST_SERVE_HOST}","port":8087}})";
+      }
+      const auto options = config::FindServeOptions();
+      REQUIRE(options.has_value());
+      REQUIRE(options->port == 8087);
+      REQUIRE(options->host == "127.0.0.2");
+    }
+
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << R"({"serve":{"port":70000}})";
+      f.close();
+      REQUIRE_FALSE(config::FindServeOptions().has_value());
+    }
+
+    {
+      std::ofstream f(dir / ".pu" / "agents.json");
+      f << "{ not json";
+      f.close();
+      REQUIRE_FALSE(config::FindServeOptions().has_value());
+    }
   }
 
   fs::current_path(old);
@@ -174,7 +224,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
         "type": "llm",
         "description": "Local Chat",
         "backend": {
-          "type": "ollama",
+          "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "qwen3.5:4b",
           "temperature": 0.7
@@ -185,7 +235,7 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
         "type": "llm",
         "description": "Command Runner",
         "backend": {
-          "type": "openai",
+          "gateway": "openai",
           "host": "https://api.openai.com/v1",
           "api_key": "${OPENAI_KEY}",
           "model": "gpt-4o-mini"
@@ -205,9 +255,9 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
     REQUIRE(cfg.default_agent == "chat");
     REQUIRE(cfg.agents.size() == 2);
     REQUIRE(cfg.agents[0].name == "chat");
-    REQUIRE(cfg.agents[0].backend.type == config::BackendType::kOllama);
+    REQUIRE(cfg.agents[0].backend.gateway == config::GatewayId::kOllama);
     REQUIRE(cfg.agents[1].name == "bash");
-    REQUIRE(cfg.agents[1].backend.type == config::BackendType::kOpenAI);
+    REQUIRE(cfg.agents[1].backend.gateway == config::GatewayId::kOpenAI);
     REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
     REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
   }
@@ -231,13 +281,66 @@ TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]"
       {
         "name": "only",
         "type": "llm",
-        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+        "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
       }
     ]
   })";
   tmp.write(json);
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(cfg.default_agent == "only");
+}
+
+TEST_CASE("A backend may leave out the host its gate supplies", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "gateway": "ollama", "model": "qwen" }
+      },
+      {
+        "name": "cloud",
+        "backend": { "gateway": "codebuddy", "model": "glm-5.3" }
+      }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+
+  REQUIRE(cfg.agents[0].backend.host == "http://localhost:11434");
+  REQUIRE(cfg.agents[1].backend.host == "https://copilot.tencent.com/v2");
+}
+
+TEST_CASE("A backend without a model is still refused", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "gateway": "ollama" } }
+    ]
+  })");
+
+  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+}
+
+TEST_CASE("A backend naming no gate is refused, and says which field is missing",
+          "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "host": "http://localhost", "model": "x" } }
+    ]
+  })");
+
+  try {
+    (void)config::LoadAgentsConfig(tmp.path.string());
+    FAIL("a backend with no gateway was accepted");
+  } catch (const std::exception& e) {
+    REQUIRE(std::string(e.what()).find("Missing gateway") != std::string::npos);
+    REQUIRE(std::string(e.what()).find("ollama") != std::string::npos);
+  }
 }
 
 TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
@@ -247,7 +350,7 @@ TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]")
     "agents": [
       {
         "name": "chat",
-        "backend": { "type": "ollama", "host": "http://localhost", "model": "x" }
+        "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
       }
     ]
   })");
@@ -262,7 +365,7 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   config::AgentEntry entry;
   entry.name = "test";
   entry.description = "desc";
-  entry.backend.type = config::BackendType::kOpenAI;
+  entry.backend.gateway = config::GatewayId::kOpenAI;
   entry.backend.host = "https://api.test.com";
   entry.backend.model = "test-model";
   entry.backend.api_key = "secret";
@@ -274,32 +377,32 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   REQUIRE(loaded.default_agent == "test");
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].name == "test");
-  REQUIRE(loaded.agents[0].backend.type == config::BackendType::kOpenAI);
+  REQUIRE(loaded.agents[0].backend.gateway == config::GatewayId::kOpenAI);
   REQUIRE(loaded.agents[0].backend.host == "https://api.test.com");
   REQUIRE(loaded.agents[0].backend.api_key == "secret");
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kOllama;
+  cfg.gateway = config::GatewayId::kOllama;
   cfg.host = "http://localhost:11434";
   cfg.model = "llama3.2";
   cfg.temperature = 0.5f;
   cfg.system_prompt = "Be helpful.";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
 
 TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kOpenAI;
+  cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "https://api.openai.com/v1";
   cfg.model = "gpt-4o-mini";
   cfg.api_key = "key";
 
-  auto mock_http = std::make_unique<MockHttpClient>();
+  auto mock_http = std::make_shared<MockHttpClient>();
   auto backend = config::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
@@ -313,7 +416,7 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
         "name": "x",
         "type": "llm",
         "backend": {
-          "type": "ollama",
+          "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "llama3.2",
           "system_prompt": "${UNDEFINED_VAR_FOR_TEST}"
@@ -327,30 +430,6 @@ TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   REQUIRE(cfg.agents[0].backend.system_prompt->empty());
 }
 
-TEST_CASE("LoadAgentsConfig reads the thinking switch it replaced", "[agent_config]") {
-  TempConfigFile tmp;
-  std::string json = R"({
-    "default_agent": "deepseek",
-    "agents": [
-      {
-        "name": "deepseek",
-        "backend": {
-          "type": "openai",
-          "host": "https://api.deepseek.com/v1",
-          "model": "deepseek-reasoner",
-          "enable_thinking": true
-        }
-      }
-    ]
-  })";
-  tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents.size() == 1);
-  // `true` was the only setting that sent nothing, which is what the absent level
-  // means now.
-  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kServerDefault);
-}
-
 TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
@@ -359,7 +438,7 @@ TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
       {
         "name": "deepseek",
         "backend": {
-          "type": "openai",
+          "gateway": "openai",
           "host": "https://api.deepseek.com/v1",
           "model": "deepseek-reasoner",
           "thinking": "high"
@@ -379,7 +458,7 @@ TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent
     "agents": [
       {
         "name": "chat",
-        "backend": { "type": "ollama", "host": "http://localhost:11434", "model": "qwen" }
+        "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen" }
       }
     ]
   })";
@@ -394,7 +473,7 @@ TEST_CASE("Agents config writer round-trips a thinking level", "[agent_config]")
   original.default_agent = "deepseek";
   config::AgentEntry entry;
   entry.name = "deepseek";
-  entry.backend.type = config::BackendType::kOpenAI;
+  entry.backend.gateway = config::GatewayId::kOpenAI;
   entry.backend.host = "https://api.deepseek.com/v1";
   entry.backend.model = "deepseek-reasoner";
   entry.backend.thinking = ThinkingLevel::kMedium;

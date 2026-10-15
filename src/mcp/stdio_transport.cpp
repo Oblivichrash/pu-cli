@@ -73,8 +73,6 @@ DWORD WINAPI ReaderThreadProc(LPVOID param) {
   return 0;
 }
 
-// CreateProcess takes a single command-line string; arguments with embedded
-// spaces or quotes must be quoted and escaped.
 std::string BuildCommandLine(const std::string& command, const std::vector<std::string>& args) {
   auto quote = [](const std::string& s) -> std::string {
     if (s.find_first_of(" \"\t\n\v") == std::string::npos) return s;
@@ -249,8 +247,6 @@ void StdioTransport::Stop() {
     process_handle_ = INVALID_HANDLE_VALUE;
   }
 }
-
-void StdioTransport::ReaderLoop() {}
 
 bool StdioTransport::WriteLine(const std::string& line) {
   if (stdin_write_ == INVALID_HANDLE_VALUE) return false;

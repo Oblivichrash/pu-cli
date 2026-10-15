@@ -1,55 +1,68 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
-#include <cstdlib>
+
+#include <boost/json.hpp>
+
 #include <filesystem>
+#include <fstream>
+#include <memory>
 #include <string>
 
-#include "pu/agent.hpp"
+#include "pu/agent_manager.hpp"
 #include "pu/command_router.hpp"
 #include "pu/runtime.hpp"
 #include "pu/session/session.hpp"
-
-#ifdef _WIN32
-// Windows does not have setenv; use _putenv_s instead.
-static inline void setenv(const char* name, const char* value, int /*overwrite*/) {
-  _putenv_s(name, value);
-}
-#endif
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 
 namespace {
 
-std::string MakeTempHome() {
-  static int counter = 0;
-  auto dir = std::filesystem::temp_directory_path() /
-             ("pu_command_router_test_" + std::to_string(++counter));
-  std::filesystem::create_directories(dir);
-  return dir.string();
-}
-
 struct RouterFixture {
-  AgentManager manager;
+  pu::tests::ScopedTempDir root{"pu_command_router_test_"};
+  std::unique_ptr<pu::tests::ScopedEnvVar> home;
+  std::unique_ptr<pu::tests::ScopedWorkingDir> cwd;
+
   Runtime runtime;
-  Session session;
-  CommandRouter router;
+  std::unique_ptr<CommandRouter> router;
 
-  RouterFixture() : router(manager, runtime) {
-    setenv("PU_HOME", MakeTempHome().c_str(), 1);
+  RouterFixture() {
+    std::filesystem::create_directories(root.Path() / ".pu");
+    WriteAgentsFile();
 
-    config::AgentEntry chat;
-    chat.name = "chat";
-    chat.description = "Default agent";
-    config::AgentEntry coder;
-    coder.name = "coder";
-    coder.description = "Coding agent";
-    manager.LoadAgentConfigs({chat, coder});
-    manager.SetActiveAgent("chat");
-    session.SetAgent("chat");
+    home = std::make_unique<pu::tests::ScopedEnvVar>("PU_HOME", root.Path().string());
+    cwd = std::make_unique<pu::tests::ScopedWorkingDir>(root.Path());
+
+    runtime.Initialize();
+    router = std::make_unique<CommandRouter>(runtime);
   }
 
   bool Route(const std::string& input, std::string& output) {
-    return router.Route(input, session, output);
+    return router->Route(input, *runtime.GetOrCreateDefaultSession(), output);
+  }
+
+ private:
+  void WriteAgentsFile() const {
+    boost::json::value cfg = {
+        {"default_agent", "chat"},
+        {"agents",
+         boost::json::array{
+             boost::json::value{{"name", "chat"},
+                                {"description", "Default agent"},
+                                {"backend",
+                                 {{"gateway", "ollama"},
+                                  {"host", "http://127.0.0.1:11434"},
+                                  {"model", "chat-model"}}}},
+             boost::json::value{{"name", "coder"},
+                                {"description", "Coding agent"},
+                                {"backend",
+                                 {{"gateway", "ollama"},
+                                  {"host", "http://127.0.0.1:11434"},
+                                  {"model", "coder-model"}}}},
+         }},
+    };
+    std::ofstream out(root.Path() / ".pu" / "agents.json", std::ios::trunc);
+    out << boost::json::serialize(cfg);
   }
 };
 
@@ -72,6 +85,24 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(output.find("coder") != std::string::npos);
 }
 
+TEST_CASE("CommandRouter routes through the instance that was built last", "[router]") {
+  // The table captures each instance's own `this`, so a second router has to route
+  // through itself. A table shared across instances calls through the first one.
+  {
+    RouterFixture first;
+    std::string output;
+    REQUIRE(first.Route("/help", output));
+    REQUIRE(output.find("/help") != std::string::npos);
+  }
+
+  RouterFixture second;
+  std::string output;
+  REQUIRE(second.Route("/help", output));
+  REQUIRE(output.find("/help") != std::string::npos);
+  REQUIRE(second.Route("/agents", output));
+  REQUIRE(output.find("chat") != std::string::npos);
+}
+
 TEST_CASE("CommandRouter handles /exit and /quit outside the registry", "[router]") {
   RouterFixture f;
   std::string output;
@@ -92,11 +123,82 @@ TEST_CASE("CommandRouter rejects unknown and non-command input", "[router]") {
   REQUIRE_FALSE(f.Route("   ", output));
 }
 
-TEST_CASE("CommandRouter rejects removed /note command", "[router]") {
+TEST_CASE("CommandRouter rejects a command it does not have", "[router]") {
   RouterFixture f;
   std::string output;
 
-  REQUIRE_FALSE(f.Route("/note", output));
-  REQUIRE_FALSE(f.Route("/note add remember this", output));
-  REQUIRE_FALSE(f.Route("/note show", output));
+  REQUIRE_FALSE(f.Route("/unknown", output));
+  REQUIRE_FALSE(f.Route("/unknown add remember this", output));
+  REQUIRE_FALSE(f.Route("/unknown show", output));
+}
+
+TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  REQUIRE(output.find(config::DefaultHostFor(config::GatewayId::kCodeBuddy)) != std::string::npos);
+
+  REQUIRE(f.Route("/backend ollama llama3", output));
+  REQUIRE(output.find("http://localhost:11434") != std::string::npos);
+
+  REQUIRE(f.Route("/backend gpt whatever", output));
+  REQUIRE(output.find("Unknown type") != std::string::npos);
+}
+
+TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("chat (active)") != std::string::npos);
+
+  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  REQUIRE(output.find("codebuddy") != std::string::npos);
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("codebuddy (active)") != std::string::npos);
+
+  REQUIRE(f.Route("/backend", output));
+  REQUIRE(output.find("codebuddy") != std::string::npos);
+
+  REQUIRE(f.Route("/backend coder", output));
+  REQUIRE(output.find("Switched to agent: coder") != std::string::npos);
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("coder (active)") != std::string::npos);
+  REQUIRE(output.find("chat (active)") == std::string::npos);
+}
+
+TEST_CASE("CommandRouter names an adopted agent after switching to it", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  // Adopting a backend puts a transient entry in the manager; switching to that entry
+  // by name walks the same path a configured agent does.
+  REQUIRE(f.Route("/backend ollama llama3", output));
+  REQUIRE(output.find("Switched backend to") != std::string::npos);
+
+  REQUIRE(f.Route("/backend ollama", output));
+  REQUIRE(output.find("Switched to agent: ollama") != std::string::npos);
+  REQUIRE(output.find("llama3") != std::string::npos);
+
+  REQUIRE(f.Route("/agents", output));
+  REQUIRE(output.find("ollama (active)") != std::string::npos);
+}
+
+TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  REQUIRE(f.Route("/backend ollama llama3", output));
+  REQUIRE(output.find("Switched backend to") != std::string::npos);
+
+  const auto* chat = f.runtime.GetAgentManager().GetAgentConfig("chat");
+  REQUIRE(chat != nullptr);
+  REQUIRE(chat->backend.model == "chat-model");
+
+  REQUIRE(f.Route("/backend chat", output));
+  REQUIRE(output.find("Switched to agent: chat") != std::string::npos);
+  REQUIRE(output.find("chat-model") != std::string::npos);
 }

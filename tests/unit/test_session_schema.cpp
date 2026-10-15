@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "pu/llm/projection.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/session/session.hpp"
@@ -14,73 +15,71 @@ using namespace pu;
 
 namespace {
 
-// What a release before the DAG refactor wrote: a flat list of messages and no
-// version field.
-boost::json::value LegacySession() {
+boost::json::value FlatMessageList() {
   return boost::json::parse(R"({
-    "workspace": {
+    "conversation": {
       "history": [
         {"id": 1, "timestamp": "2026-01-01T00:00:00Z", "role": "user", "content": "hi"}
       ]
     },
-    "runtime_spec": {"agent_name": "chat"}
+    "session_spec": {"agent_name": "chat"}
   })");
 }
 
 }  // namespace
 
 TEST_CASE("A session without a version field is refused", "[session][schema]") {
-  REQUIRE(Session::Deserialize(LegacySession()) == nullptr);
+  REQUIRE(Session::Deserialize(FlatMessageList()) == nullptr);
 }
 
 TEST_CASE("A session with another version is refused", "[session][schema]") {
-  boost::json::value j = LegacySession();
-  j.as_object()["schema_version"] = context::kSchemaVersion - 1;
+  boost::json::value j = FlatMessageList();
+  j.as_object()["schema_version"] = kSessionSchemaVersion - 1;
   REQUIRE(Session::Deserialize(j) == nullptr);
 
-  boost::json::value future = LegacySession();
-  future.as_object()["schema_version"] = context::kSchemaVersion + 1;
+  boost::json::value future = FlatMessageList();
+  future.as_object()["schema_version"] = kSessionSchemaVersion + 1;
   REQUIRE(Session::Deserialize(future) == nullptr);
 }
 
 TEST_CASE("A version alone is not enough without node storage", "[session][schema]") {
-  // The layout an unreachable branch used: the right number, a list of messages.
-  boost::json::value j = LegacySession();
-  j.as_object()["schema_version"] = context::kSchemaVersion;
+  boost::json::value j = FlatMessageList();
+  j.as_object()["schema_version"] = kSessionSchemaVersion;
   REQUIRE(Session::Deserialize(j) == nullptr);
 }
 
 TEST_CASE("A session written by this version loads", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
-  session.GetWorkspace().Append("assistant", "hi");
+  session.GetConversation().Append("user", "hello");
+  session.GetConversation().Append("assistant", "hi");
 
   const boost::json::value saved = session.Serialize();
-  REQUIRE(saved.at("schema_version") == context::kSchemaVersion);
-  REQUIRE(saved.at("workspace").at("history").is_object());
+  REQUIRE(saved.at("schema_version") == kSessionSchemaVersion);
+  REQUIRE(saved.at("conversation").at("history").is_object());
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetWorkspace().HistorySize() == 2);
-  REQUIRE(restored->GetWorkspace().GetHistory()[1].content == "hi");
+  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
+  REQUIRE(restored->GetConversation().GetHistory()[1].content == "hi");
 }
 
-TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[session][schema]") {
+TEST_CASE("A payload stores content as one string and reasoning as ordered blocks",
+          "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
+  session.GetConversation().Append("user", "hello");
 
   ChatMessage assistant;
   assistant.role = context::kAssistantRole;
   assistant.content = "checking";
-  assistant.reasoning_content = R"({"raw":true})";
-  session.GetWorkspace().Append(assistant);
+  assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"raw":true})")});
+  assistant.reasoning.push_back(ReasoningBlock{"plain", "sig", nullptr});
+  session.GetConversation().Append(assistant);
 
   boost::json::value saved = session.Serialize();
   const boost::json::array& nodes =
-      saved.at("workspace").at("history").as_object()["nodes"].as_array();
+      saved.at("conversation").at("history").as_object()["nodes"].as_array();
   REQUIRE(nodes.size() == 2);
 
-  // Nodes are ordered by id, so the payload is found by the content it carries.
   const boost::json::value* assistant_node = nullptr;
   for (const boost::json::value& node : nodes) {
     REQUIRE(node.at("content").is_string());
@@ -88,20 +87,23 @@ TEST_CASE("A payload stores content as one string and reasoning as raw JSON", "[
   }
 
   REQUIRE(assistant_node != nullptr);
-  REQUIRE(assistant_node->at("reasoning").as_object().size() == 1);
-  REQUIRE(assistant_node->at("reasoning").at("raw_json") == R"({"raw":true})");
+  const boost::json::array& blocks = assistant_node->at("reasoning").as_array();
+  REQUIRE(blocks.size() == 2);
+  REQUIRE(blocks[0].at("raw").at("raw") == true);
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("text")) == "plain");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("signature")) == "sig");
 }
 
 TEST_CASE("Every role survives a save and load", "[session][schema]") {
   Session session;
-  Workspace& ws = session.GetWorkspace();
+  Conversation& ws = session.GetConversation();
 
   ws.Append("user", "question");
 
   ChatMessage assistant;
   assistant.role = "assistant";
   assistant.content = "checking";
-  assistant.reasoning_content = "because";
+  assistant.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   assistant.tool_calls =
       boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
   ws.Append(assistant);
@@ -122,11 +124,11 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
       Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
-  const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
+  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
   REQUIRE(history.size() == 4);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[1].role == "assistant");
-  REQUIRE(history[1].reasoning_content == "because");
+  REQUIRE(llm::ProjectReasoningText(history[1].reasoning) == "because");
   REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("name") == "ls");
   REQUIRE(history[1].tool_calls.as_array()[0].at("function").at("arguments").at("path") == ".");
   REQUIRE(history[2].role == "tool");
@@ -137,7 +139,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
 
 TEST_CASE("A tool call keeps its completed status across a save", "[session][schema]") {
   Session session;
-  Workspace& ws = session.GetWorkspace();
+  Conversation& ws = session.GetConversation();
 
   ChatMessage assistant;
   assistant.role = "assistant";
@@ -155,23 +157,19 @@ TEST_CASE("A tool call keeps its completed status across a save", "[session][sch
       Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
-  // Status is stored, so a reload does not resurrect a finished call.
-  REQUIRE_FALSE(restored->GetWorkspace().HasPendingToolCalls());
-  REQUIRE(restored->GetWorkspace().HistorySize() == 2);
+  REQUIRE_FALSE(restored->GetConversation().HasPendingToolCalls());
+  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
 }
 
 TEST_CASE("The parent survives a save and load", "[session][schema]") {
   Session session;
-  Workspace& ws = session.GetWorkspace();
+  Conversation& ws = session.GetConversation();
   ws.Append("user", "one");
   ws.Append("assistant", "two");
   ws.Append("user", "three");
 
-  // The chain is reconstructed from links, so each node but the first has to
-  // name its parent in the file. Nodes are ordered by id, not by conversation
-  // order, so the check finds them by content.
   const boost::json::value saved = session.Serialize();
-  const boost::json::array& nodes = saved.at("workspace").at("history").at("nodes").as_array();
+  const boost::json::array& nodes = saved.at("conversation").at("history").at("nodes").as_array();
   REQUIRE(nodes.size() == 3);
 
   const auto node_with_text = [&](const std::string& text) -> const boost::json::value& {
@@ -194,7 +192,7 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
-  const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
+  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
   REQUIRE(history.size() == 3);
   REQUIRE(history[0].content == "one");
   REQUIRE(history[1].content == "two");
@@ -203,62 +201,63 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
 
 TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
+  session.GetConversation().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["leaf"] = "not-a-node-id";
+  saved.at("conversation").at("history").as_object()["leaf"] = "not-a-node-id";
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// A file can carry the right version and the right section names while a field
-// inside holds something else than the stored type. Reading it must reach the
-// same refusal as any other foreign layout, because the alternative is a
-// conversion failure that escapes the loader and stops the program from starting.
 TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
+  session.GetConversation().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(0).as_object()["id"] = 123;
+  saved.at("conversation").at("history").as_object()["nodes"].as_array().at(0).as_object()["id"] =
+      123;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
 TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parent"] =
-      123;
+  saved.at("conversation")
+      .at("history")
+      .as_object()["nodes"]
+      .as_array()
+      .at(1)
+      .as_object()["parent"] = 123;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-// The three below are about links rather than names. Every one of them loads
-// today, and each loads into a conversation the next append changes: a chain that
-// stops early loses what it no longer reaches, and a chain that returns to itself
-// never stops walking.
 TEST_CASE("A parent that names no node is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  saved.at("workspace").at("history").as_object()["nodes"].as_array().at(1).as_object()["parent"] =
-      "not-a-node-id";
+  saved.at("conversation")
+      .at("history")
+      .as_object()["nodes"]
+      .as_array()
+      .at(1)
+      .as_object()["parent"] = "not-a-node-id";
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
 TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
+  session.GetConversation().Append("user", "one");
 
   boost::json::value saved = session.Serialize();
-  auto& node = saved.at("workspace").at("history").as_object()["nodes"].as_array().at(0);
+  auto& node = saved.at("conversation").at("history").as_object()["nodes"].as_array().at(0);
   const std::string id = boost::json::value_to<std::string>(node.at("id"));
   node.as_object()["parent"] = id;
 
@@ -267,51 +266,47 @@ TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
 
 TEST_CASE("Two nodes pointing at each other are refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
   const std::string first = boost::json::value_to<std::string>(nodes.at(0).at("id"));
   const std::string second = boost::json::value_to<std::string>(nodes.at(1).at("id"));
   nodes.at(0).as_object()["parent"] = second;
   nodes.at(1).as_object()["parent"] = first;
-  saved.at("workspace").at("history").as_object()["leaf"] = second;
+  saved.at("conversation").at("history").as_object()["leaf"] = second;
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
 TEST_CASE("A repeated id is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
-  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
   const std::string duplicate = boost::json::value_to<std::string>(nodes.at(0).at("id"));
   nodes.at(1).as_object()["id"] = duplicate;
-  saved.at("workspace").at("history").as_object()["leaf"] = duplicate;
+  saved.at("conversation").at("history").as_object()["leaf"] = duplicate;
 
-  // Keeping one of them would be picking which turn the conversation holds by the
-  // order the file happens to list them in.
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
 TEST_CASE("The view follows the parent links, not the order of the file", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "one");
-  session.GetWorkspace().Append("assistant", "two");
-  session.GetWorkspace().Append("user", "three");
+  session.GetConversation().Append("user", "one");
+  session.GetConversation().Append("assistant", "two");
+  session.GetConversation().Append("user", "three");
 
   boost::json::value saved = session.Serialize();
-  // The store writes its nodes sorted by id, so the file order is not the
-  // conversation order; a reader that trusted it would show the turns shuffled.
-  auto& nodes = saved.at("workspace").at("history").as_object()["nodes"].as_array();
+  auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
   std::reverse(nodes.begin(), nodes.end());
 
   auto restored = Session::Deserialize(saved);
   REQUIRE(restored != nullptr);
-  const std::vector<ChatMessage> history = restored->GetWorkspace().GetHistory();
+  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
   REQUIRE(history.size() == 3);
   REQUIRE(history[0].content == "one");
   REQUIRE(history[1].content == "two");
@@ -320,22 +315,22 @@ TEST_CASE("The view follows the parent links, not the order of the file", "[sess
 
 TEST_CASE("A version that is not a number is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
+  session.GetConversation().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.as_object()["schema_version"] = std::to_string(context::kSchemaVersion);
+  saved.as_object()["schema_version"] = std::to_string(kSessionSchemaVersion);
 
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-TEST_CASE("A session without a runtime section is refused", "[session][schema]") {
+TEST_CASE("A session without a spec section is refused", "[session][schema]") {
   Session session;
-  session.GetWorkspace().Append("user", "hello");
+  session.GetConversation().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
-  saved.as_object().erase("runtime_spec");
+  saved.as_object().erase("session_spec");
   REQUIRE(Session::Deserialize(saved) == nullptr);
 
-  saved.as_object()["runtime_spec"] = "openai";
+  saved.as_object()["session_spec"] = "openai";
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-// How a conversation becomes the message objects a provider receives. The
-// differences between providers are data here rather than branches in each
-// provider's request builder.
-
+#include <cstddef>
+#include <span>
 #include <vector>
 
 #include <boost/json.hpp>
@@ -13,25 +11,28 @@
 
 namespace pu::llm {
 
-// How role names reach the wire.
 enum class RoleNaming {
-  // `tool_result` is sent as `tool`; every other role passes through unchanged.
-  kAliasToolResult,
-  // Only the four known roles are sent; anything else becomes `user`.
+  kAsStored,
   kKnownRolesOnly,
 };
 
-// How tool call arguments reach the wire.
 enum class ToolArgumentsEncoding {
   kJsonObject,
   kJsonString,
 };
 
-// Every field is read by the projection below, so a field without a consumer is
-// a field that does not belong here yet.
+// How a provider's API accepts reasoning on echoed assistant turns. Blocks are always the
+// storage shape; this only decides what goes back on the wire.
+enum class ReasoningCarriage {
+  kText,    // one string, blocks joined (OpenAI-compatible `reasoning_content`)
+  kBlocks,  // one object per block (`{text, signature}`), for APIs that signed them
+};
+
 struct ProviderCapabilities {
   RoleNaming role_naming = RoleNaming::kKnownRolesOnly;
-  bool echo_reasoning_content = false;
+  bool echoes_reasoning = false;
+  const char* reasoning_field = "reasoning_content";
+  ReasoningCarriage reasoning_carriage = ReasoningCarriage::kText;
   bool allows_content_with_tool_calls = true;
   ToolArgumentsEncoding tool_arguments = ToolArgumentsEncoding::kJsonObject;
   bool tool_calls_carry_type = false;
@@ -39,12 +40,18 @@ struct ProviderCapabilities {
   bool omits_empty_tool_call_id = true;
 };
 
-// Renders one message as the object a provider receives.
+std::string ProjectReasoningText(const std::vector<ReasoningBlock>& blocks);
+
+boost::json::value ProjectReasoning(const std::vector<ReasoningBlock>& blocks);
+
+// Ollama takes a top-level `think` as either a boolean or a level name, and only while
+// a level is set: `kServerDefault` is not representable, so callers must not send it.
+boost::json::value OllamaThinkValue(ThinkingLevel level);
+
 boost::json::value ProjectMessage(const ChatMessage& message,
                                   const ProviderCapabilities& capabilities);
 
-// Renders a conversation in order.
-boost::json::array ProjectMessages(const std::vector<ChatMessage>& history,
+boost::json::array ProjectMessages(std::span<const ChatMessage> history,
                                    const ProviderCapabilities& capabilities);
 
 }  // namespace pu::llm

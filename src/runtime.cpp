@@ -4,16 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <system_error>
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
 
-#include "pu/agent.hpp"
+#include "pu/agent_manager.hpp"
+#include "pu/config/agents.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/beast_http_client.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/builtin_tools.hpp"
 #include "pu/tools/mcp_tool.hpp"
@@ -28,64 +29,57 @@ std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
   return path.is_absolute() ? path : root / path;
 }
 
+// A session this build cannot read is moved aside rather than left to be overwritten by
+// the first save of the fresh conversation that replaces it. The backup is one file, so a
+// second unreadable session replaces it: a backup left unread is one nobody needed.
+void SetAside(const std::filesystem::path& path, const std::string& reason) {
+  std::filesystem::path backup = path;
+  backup += ".bak";
+
+  std::error_code ec;
+  std::filesystem::rename(path, backup, ec);
+
+  spdlog::error(
+      "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
+      "  file:    {}\n"
+      "  reason:  {}\n"
+      "  kept at: {}",
+      path.string(), reason, ec ? "(left in place: " + ec.message() + ")" : backup.string());
+}
+
 std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path)) return nullptr;
-  std::ifstream file(path);
-  if (!file.is_open()) return nullptr;
 
   boost::json::value j;
-  try {
-    file >> j;
-  } catch (const std::exception& e) {
-    spdlog::error("Session file {} could not be parsed: {}", path.string(), e.what());
-    return nullptr;
+  {
+    std::ifstream file(path);
+    if (!file.is_open()) return nullptr;
+
+    try {
+      file >> j;
+    } catch (const std::exception& e) {
+      // The stream is closed by scope exit: Windows refuses to rename a file with an
+      // open handle, so the set-aside below would silently do nothing.
+      SetAside(path, std::string("body does not parse: ") + e.what());
+      return nullptr;
+    }
   }
 
   auto session = Session::Deserialize(j);
   if (session) return session;
 
-  // The format changed incompatibly, so the file is reported rather than
-  // guessed at. The backup is the copy that still holds the original.
   std::string reason;
   if (!json::HasKey(j, "schema_version")) {
     reason = "missing schema_version";
   } else if (const int version = json::ValueOrDefault<int>(j, "schema_version", 0);
-             version != context::kSchemaVersion) {
+             version != kSessionSchemaVersion) {
     reason = "schema_version " + std::to_string(version) + ", this build reads " +
-             std::to_string(context::kSchemaVersion);
+             std::to_string(kSessionSchemaVersion);
   } else {
     reason = "history is not node storage";
   }
-  const std::filesystem::path backup = path.parent_path() / "session.backup.json";
-
-  std::ostringstream message;
-  message << "session.json cannot be loaded by this build, so a fresh conversation starts.\n"
-          << "  file:    " << path.string() << "\n"
-          << "  reason:  " << reason << "\n";
-  if (std::filesystem::exists(backup)) {
-    message << "  backup:  " << backup.string() << "\n";
-  }
-  message << "\nThe original conversation is preserved in the backup file only. "
-          << "The main file is overwritten on the next save.";
-  spdlog::error("{}", message.str());
+  SetAside(path, reason);
   return nullptr;
-}
-
-// A file this build cannot read is refused and then overwritten by the next save,
-// so keep one copy of what was there. The name carries no version, because the
-// copy is whatever the file held before an incompatible load. Never overwrites an
-// existing backup, otherwise that state would be lost on the second run.
-void BackupLegacySession(const std::filesystem::path& session_path) {
-  const auto backup_path = session_path.parent_path() / "session.backup.json";
-  if (!std::filesystem::exists(session_path) || std::filesystem::exists(backup_path)) return;
-
-  std::error_code ec;
-  std::filesystem::copy_file(session_path, backup_path, std::filesystem::copy_options::none, ec);
-  if (ec) {
-    spdlog::warn("Failed to back up legacy session to {}: {}", backup_path.string(), ec.message());
-    return;
-  }
-  spdlog::info("Backed up legacy session to {}", backup_path.string());
 }
 
 }  // namespace
@@ -104,6 +98,9 @@ void Runtime::Initialize(const std::string& config_path) {
   if (!std::filesystem::exists(cfg_path)) {
     cfg_path = config::FindConfigPath();
   }
+  if (cfg_path.empty()) {
+    throw Error("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
+  }
 
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
@@ -112,48 +109,51 @@ void Runtime::Initialize(const std::string& config_path) {
   const auto default_entry =
       std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
                    [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
-  if (default_entry == agents_cfg.agents.end())
-    throw Error("Requested agent is not configured: " + active_agent);
+  if (default_entry == agents_cfg.agents.end()) {
+    std::string known;
+    for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
+    throw Error("Requested agent is not configured: " + active_agent +
+                (known.empty() ? " (no agents are configured)" : "; configured:" + known));
+  }
 
   agent_manager_ = std::make_unique<AgentManager>();
   agent_manager_->SetActiveAgent(active_agent);
   agent_manager_->LoadAgentConfigs(agents_cfg.agents);
 
-  command_router_ = std::make_unique<CommandRouter>(*agent_manager_, *this);
+  command_router_ = std::make_unique<CommandRouter>(*this);
 
-  executor_ = std::make_unique<Executor>(nullptr);
+  executor_ = std::make_unique<Executor>();
+  http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
   RebuildToolbox(*default_entry);
 
-  auto session_path = workspace_root_ / ".pu" / "session.json";
-  BackupLegacySession(session_path);
+  const auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
-    // A refused file has already been reported with its reason and backup, so a
-    // second, vaguer line here would only add noise.
     current_session_ = LoadSessionFromFile(session_path);
   }
 
-  // The session names the agent it was talking to, and that name wins over the
-  // configured default: otherwise the toolbox would describe one agent while the
-  // provider talks to another.
   if (current_session_) {
-    auto& spec = current_session_->GetRuntimeSpec();
-    const auto* stored = agent_manager_->GetAgentConfig(spec.agent_name);
-    if (stored != nullptr) {
-      RebuildToolbox(*stored);
-    } else {
-      spdlog::warn("Session names an agent that is not configured: {}", spec.agent_name);
+    auto& spec = current_session_->GetSpec();
+    const bool agent_chosen_here = !default_agent_override_.empty();
+    const std::string remembered = agent_chosen_here ? active_agent : spec.agent_name;
+    const auto* stored = agent_manager_->GetAgentConfig(remembered);
+    if (stored == nullptr) {
+      spdlog::warn("Session names an agent that is not configured: {}", remembered);
       spec.agent_name = active_agent;
+    } else {
+      spec.agent_name = stored->name;
+      if (stored->name != active_agent) {
+        RebuildToolbox(*stored);
+      }
     }
   }
 
   is_initialized_ = true;
-  is_running_ = true;
 }
 
 void Runtime::Shutdown() {
   SaveCurrentSession();
-  is_running_ = false;
+  mcp::DisconnectMcpServers(mcp_clients_);
 }
 
 void Runtime::SaveCurrentSession() {
@@ -170,13 +170,13 @@ void Runtime::SaveCurrentSession() {
 }
 
 bool Runtime::RewindBefore(size_t turn) {
-  if (!GetOrCreateDefaultSession()->GetWorkspace().RewindBefore(turn)) return false;
+  if (!GetOrCreateDefaultSession()->GetConversation().RewindBefore(turn)) return false;
   SaveCurrentSession();
   return true;
 }
 
 void Runtime::ClearConversation() {
-  GetOrCreateDefaultSession()->GetWorkspace().ClearHistory();
+  GetOrCreateDefaultSession()->GetConversation().ClearHistory();
   SaveCurrentSession();
 }
 
@@ -184,36 +184,36 @@ std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
   if (current_session_) return current_session_;
 
   auto session = std::make_shared<Session>();
-  const auto active_agent = agent_manager_->GetActiveAgent();
-  if (!agent_manager_->GetAgentConfig(active_agent))
-    throw Error("Active agent is not configured: " + active_agent);
-  session->SetAgent(active_agent);
+  session->SetAgent(agent_manager_->GetActiveAgent());
 
   current_session_ = session;
   return current_session_;
 }
 
+const config::AgentEntry& Runtime::ActiveAgent() const {
+  return *agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
+}
+
+std::string Runtime::HelpText() {
+  assert(command_router_ && "Initialize() must run before any help query");
+  return command_router_->GetHelpText();
+}
+
 config::BackendConfig Runtime::ConfiguredBackend() const {
-  if (!agent_manager_) throw Error("Runtime is not initialized");
-
   if (current_session_) {
-    const auto& spec = current_session_->GetRuntimeSpec();
-    if (spec.backend_override) return *spec.backend_override;
-
-    const auto* agent = agent_manager_->GetAgentConfig(spec.agent_name);
-    if (agent == nullptr) throw Error("Active agent is not configured: " + spec.agent_name);
-    return agent->backend;
+    const auto& spec = current_session_->GetSpec();
+    if (const auto* configured = agent_manager_->GetAgentConfig(spec.agent_name)) {
+      return configured->backend;
+    }
   }
 
-  const auto* agent = agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
-  if (agent == nullptr) throw Error("Active agent is not configured");
-  return agent->backend;
+  return ActiveAgent().backend;
 }
 
 config::BackendConfig Runtime::CurrentBackend() const {
   config::BackendConfig backend = ConfiguredBackend();
   if (current_session_) {
-    const auto& spec = current_session_->GetRuntimeSpec();
+    const auto& spec = current_session_->GetSpec();
     if (spec.thinking_override) backend.thinking = *spec.thinking_override;
   }
   return backend;
@@ -223,35 +223,23 @@ ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().th
 
 std::optional<ThinkingLevel> Runtime::GetThinkingOverride() const {
   if (!current_session_) return std::nullopt;
-  return current_session_->GetRuntimeSpec().thinking_override;
+  return current_session_->GetSpec().thinking_override;
 }
 
-bool Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
-  if (!SupportsThinkingLevel()) return false;
-  GetOrCreateDefaultSession()->GetRuntimeSpec().thinking_override = level;
+void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
+  GetOrCreateDefaultSession()->GetSpec().thinking_override = level;
   SaveCurrentSession();
-  return true;
-}
-
-bool Runtime::SupportsThinkingLevel() const {
-  if (!current_session_) return false;
-  return current_session_->CreateProvider(CurrentBackend())->SupportsThinkingLevel();
 }
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
-                                      std::function<void(const std::string&)> content_callback,
+                                      TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      std::function<void(const std::string&)> reasoning_callback) {
+                                      TokenCallback reasoning_callback,
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
   try {
     BeginRequest();
-
-    if (!is_running_) {
-      result.has_error = true;
-      result.error_message = "Runtime is not running.";
-      return result;
-    }
 
     auto session = GetOrCreateDefaultSession();
 
@@ -269,10 +257,11 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     is_command = false;
 
-    auto provider = session->CreateProvider(CurrentBackend());
+    auto provider = session->CreateProvider(CurrentBackend(), http_client_);
     auto exec_result =
-        executor_->Execute(input, session->GetWorkspace(), provider.get(), cancel_token,
-                           content_callback, tool_callbacks, reasoning_callback);
+        executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_,
+                           cancel_token, content_callback, tool_callbacks, reasoning_callback,
+                           command_stop_token);
     result = std::move(exec_result);
     SaveCurrentSession();
     return result;
@@ -283,40 +272,21 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   }
 }
 
-bool Runtime::SwitchWorkspace(const std::filesystem::path& new_root) {
-  if (new_root == workspace_root_) return true;
-
-  if (!std::filesystem::exists(new_root / ".pu" / "agents.json")) {
-    spdlog::error("No agents.json found in {}", new_root.string());
-    return false;
-  }
-
-  SaveCurrentSession();
-
-  current_session_.reset();
-  ShutdownMCP();
-  toolbox_.reset();
-  executor_.reset();
-  agent_manager_.reset();
-  command_router_.reset();
-
-  workspace_root_ = std::filesystem::absolute(new_root);
-
-  is_initialized_ = false;
-  Initialize("");
-  return true;
-}
-
 std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {
   std::vector<std::pair<std::string, std::string>> workspaces;
   const auto parent = workspace_root_.parent_path();
-  for (const auto& entry : std::filesystem::directory_iterator(parent)) {
-    if (entry.is_directory()) {
-      auto agents_path = entry.path() / ".pu" / "agents.json";
-      if (std::filesystem::exists(agents_path)) {
-        workspaces.emplace_back(entry.path().filename().string(),
-                                std::filesystem::absolute(entry.path()).string());
-      }
+
+  std::error_code ec;
+  std::filesystem::directory_iterator entries(parent, ec);
+  if (ec) return workspaces;
+
+  for (const auto& entry : entries) {
+    std::error_code entry_ec;
+    if (!entry.is_directory(entry_ec) || entry_ec) continue;
+    auto agents_path = entry.path() / ".pu" / "agents.json";
+    if (std::filesystem::exists(agents_path, entry_ec) && !entry_ec) {
+      workspaces.emplace_back(entry.path().filename().string(),
+                              std::filesystem::absolute(entry.path()).string());
     }
   }
   return workspaces;
@@ -326,73 +296,77 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
 
-void Runtime::ShutdownMCP() {
-  for (auto& client : mcp_clients_) {
-    if (client) client->Disconnect();
-  }
-  mcp_clients_.clear();
-}
-
-bool Runtime::StartMCP(const pu::mcp::McpServerConfig& config) {
-  auto client = std::make_unique<mcp::McpClient>(config);
-  if (client->Connect()) {
-    mcp_clients_.push_back(std::move(client));
-    return true;
-  }
-  spdlog::warn("MCP server '{}' connection failed", config.name);
-  return false;
-}
-
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
-  toolbox_->RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
+  toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
-  toolbox_->RegisterTool(std::make_unique<tools::WriteFileTool>());
+  toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
 }
 
-void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
-  ShutdownMCP();
+void Runtime::RegisterMcpTools() {
+  for (std::size_t i = 0; i < mcp_clients_.size(); ++i) {
+    auto client = mcp_clients_[i];
+    const std::string& server_name = client->ServerName();
 
-  toolbox_ = std::make_unique<Toolbox>();
-  RegisterBuiltinTools(agent);
-
-  for (const auto& mcp_cfg : agent.mcp_servers) {
-    if (!StartMCP(mcp_cfg)) {
-      spdlog::warn("Skipping MCP server '{}' - connection failed", mcp_cfg.name);
+    std::vector<ToolDefinition> tools;
+    try {
+      tools = client->ListTools();
+    } catch (const std::exception& e) {
+      spdlog::warn("Skipping MCP server '{}' - {}", server_name, e.what());
       continue;
     }
 
-    auto* client = mcp_clients_.back().get();
-    auto tools = client->ListTools();
     for (const auto& t : tools) {
-      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, mcp_cfg.name);
-      toolbox_->RegisterTool(std::move(mcp_tool));
-      spdlog::debug("Registered MCP tool: mcp.{}.{}", mcp_cfg.name, t.name);
+      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, server_name);
+      if (!toolbox_.RegisterTool(std::move(mcp_tool))) {
+        spdlog::warn("Skipping MCP tool '{}' from '{}' - the server reported no name", t.name,
+                     server_name);
+        continue;
+      }
+      spdlog::debug("Registered MCP tool: mcp.{}.{}", server_name, t.name);
     }
   }
+}
+
+void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
+  mcp::DisconnectMcpServers(mcp_clients_);
+  mcp_clients_ = mcp::ConnectMcpServers(agent.mcp_servers);
+
+  toolbox_.Clear();
+  RegisterBuiltinTools(agent);
+  RegisterMcpTools();
 
   auto security = agent.security;
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
-  executor_->SetToolbox(toolbox_.get());
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
   agent_manager_->SetActiveAgent(agent.name);
 }
 
+void Runtime::Activate(const config::AgentEntry& agent) {
+  RebuildToolbox(agent);
+  if (!current_session_) return;
+  try {
+    current_session_->SetAgent(agent.name);
+  } catch (const std::exception& e) {
+    spdlog::warn("Failed to sync session config: {}", e.what());
+    return;
+  }
+  SaveCurrentSession();
+}
+
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   if (agent_manager_->GetActiveAgent() == new_agent.name) return;
-  RebuildToolbox(new_agent);
+  Activate(new_agent);
+}
 
-  if (current_session_) {
-    try {
-      current_session_->SetAgent(new_agent.name);
-    } catch (const std::exception& e) {
-      spdlog::warn("Failed to sync session config: {}", e.what());
-      return;
-    }
-    // Which agent a session resumes is session state, so it reaches the file the
-    // way every other change to it does.
-    SaveCurrentSession();
-  }
+void Runtime::SwitchBackend(const config::BackendConfig& backend) {
+  config::AgentEntry transient = ActiveAgent();
+  transient.name = config::GatewayName(backend.gateway);
+  transient.backend = backend;
+  transient.description.clear();
+
+  agent_manager_->Adopt(transient);
+  Activate(transient);
 }
 
 }  // namespace pu
