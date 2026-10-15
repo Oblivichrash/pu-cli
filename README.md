@@ -69,6 +69,11 @@ Every field is listed under [Configuration](#agentsjson).
 > one key per backend; nothing else changes. The agent-level `"type": "llm"` is a
 > different field and is unaffected.
 
+> **Upgrading from 0.5.0?** No configuration changes. `PU_AGENTS_CONFIG` is new: it names
+> an `agents.json` outright, taking precedence over `./.pu/agents.json` and the user
+> configuration, and a path that does not exist is an error rather than a silent
+> fallback.
+
 ### Usage
 
 | Command | Description |
@@ -188,8 +193,10 @@ directory, the workspace can name its own (`--host`/`--port` first, then
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` below.
 
-The front-end lives in `web/`. History is folded into one bubble per turn, with
-each tool result keeping the output the stream showed. Under the composer it shows
+The front-end lives in `web/` as plain scripts with no build step, so the load order in
+`index.html` is the dependency order and each file has one job — see
+[ARCHITECTURE](docs/ARCHITECTURE.md#browser-modules). History is folded into one bubble per
+turn, with each tool result keeping the output the stream showed. Under the composer it shows
 the context the last reply ran against, from the counts the provider returned. No
 window is shown beside it: none of the backends here reports one, and a guess would
 read like a fact.
@@ -360,10 +367,11 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 
 | Variable | Purpose |
 |----------|---------|
+| `PU_AGENTS_CONFIG` | Names the `agents.json` to load, ahead of `./.pu/agents.json` and `~/.pu/agents.json`. A path that does not exist is an error rather than a fallback |
 | `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |
+| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
 | `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
 

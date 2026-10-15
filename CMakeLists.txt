@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pu-cli VERSION 0.5.0 LANGUAGES CXX)
+project(pu-cli VERSION 0.5.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -44,9 +44,7 @@ add_library(pu_lib STATIC
     src/llm/model_listing.cpp
     src/llm/model_verifier.cpp
     src/llm/streaming_provider.cpp
-    src/gateways/ollama.cpp
-    src/gateways/openai.cpp
-    src/gateways/codebuddy.cpp
+    src/gateways/gateways.cpp
     src/gateways/registry.cpp
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
