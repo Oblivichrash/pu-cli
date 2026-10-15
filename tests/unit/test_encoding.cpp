@@ -120,13 +120,13 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
   const std::string gbk_stdout = "\xB2\xBB\xCA\xC7\xC4\xDA\xB2\xBF\xBB\xF2";
 
   const std::string result =
-      tools::MakeToolResultJson(false, gbk_stdout, gbk_stdout, "Command failed (exit 1)", 1);
+      tools::MakeToolResultJson(false, gbk_stdout, "Command failed (exit 1)", 1);
 
   const auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("exit_code") == 1);
-  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("stdout"))));
-  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("stderr"))));
+  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
+  REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
 
   const auto parsed = tools::ParseToolResult(result);
   REQUIRE(parsed.valid);
@@ -136,10 +136,10 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
 
 TEST_CASE("Tool results keep valid text byte for byte", "[tools][text]") {
   const std::string utf8_stdout = "success \xE4\xB8\xAD\xE6\x96\x87";
-  const std::string result = tools::MakeToolResultJson(true, utf8_stdout, "", "", 0);
+  const std::string result = tools::MakeToolResultJson(true, utf8_stdout, "", 0);
 
   const auto j = boost::json::parse(result);
-  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")) == utf8_stdout);
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == utf8_stdout);
 }
 
 TEST_CASE("ExecuteCommand returns valid UTF-8 for localized shell output", "[platform][text]") {
@@ -163,8 +163,24 @@ TEST_CASE("Process output decoding repairs non-UTF-8 pipe text", "[platform][tex
 
 TEST_CASE("Process output decoding leaves UTF-8 untouched", "[platform][text]") {
   const std::string utf8 = "\xE4\xB8\xAD\xE6\x96\x87";
-  REQUIRE(pu::platform::FromPipedOutput(utf8) == utf8);
-  REQUIRE(pu::platform::FromConsoleOutput(utf8) == utf8);
+
+  // Each decode is a pass-through only when its own code page is UTF-8. Under an ANSI code
+  // page the same bytes are valid in both encodings, so the decoder reads them as that code
+  // page and must not be expected to leave them alone. The two functions key off different
+  // code pages: the piped one off the system ANSI page, the console one off the console's.
+  bool piped_pass_through = true;
+  bool console_pass_through = true;
+#ifdef _WIN32
+  piped_pass_through = (GetACP() == CP_UTF8);
+  console_pass_through = (GetConsoleOutputCP() == CP_UTF8);
+#endif
+
+  if (piped_pass_through) REQUIRE(pu::platform::FromPipedOutput(utf8) == utf8);
+  if (console_pass_through) REQUIRE(pu::platform::FromConsoleOutput(utf8) == utf8);
+
+  // Whatever the code page, the result is text the rest of the program can carry.
+  REQUIRE(text::IsValidUtf8(pu::platform::FromPipedOutput(utf8)));
+  REQUIRE(text::IsValidUtf8(pu::platform::FromConsoleOutput(utf8)));
 }
 
 TEST_CASE("Process output decoding always yields valid UTF-8", "[platform][text]") {

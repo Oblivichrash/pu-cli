@@ -8,6 +8,7 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <string>
@@ -130,6 +131,28 @@ TEST_CASE("A run streams the answer and ends with done", "[serve][ws]") {
   REQUIRE(FrameType(frames.back()) == "done");
 
   REQUIRE(ChunkText(frames) == "OK");
+}
+
+TEST_CASE("A run reports the tokens the backend counted", "[serve][ws]") {
+  pu::tests::FakeBackend::ReportUsage(4242, 77);
+  pu::tests::ServeHarness harness;
+
+  Page page(harness.Port());
+  page.Run("hello");
+  const auto frames = page.ReadUntilEnd(10000);
+
+  const auto usage = std::find_if(frames.begin(), frames.end(), [](const boost::json::value& frame) {
+    return FrameType(frame) == "usage";
+  });
+  REQUIRE(usage != frames.end());
+  REQUIRE(usage->at("payload").at("prompt_tokens").as_int64() == 4242);
+  REQUIRE(usage->at("payload").at("completion_tokens").as_int64() == 77);
+
+  // The counts describe the turn that ended, so they arrive before the turn is declared over.
+  REQUIRE(FrameType(frames.back()) == "done");
+  REQUIRE(FrameType(*(usage + 1)) == "done");
+
+  pu::tests::FakeBackend::ReportUsage(1234, 56);
 }
 
 TEST_CASE("A second page is told the session is busy", "[serve][ws]") {

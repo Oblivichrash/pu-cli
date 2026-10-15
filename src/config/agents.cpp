@@ -42,14 +42,17 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
       if (pat.is_string())
         policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
   }
+  if (json::HasKey(j, "approval_patterns") && j.at("approval_patterns").is_array()) {
+    for (const auto& pat : j.at("approval_patterns").as_array())
+      if (pat.is_string())
+        policy.approval_patterns.push_back(boost::json::value_to<std::string>(pat));
+  }
   return policy;
 }
 
 BackendConfig ParseBackendConfig(const json::value& j) {
   BackendConfig cfg;
-  auto type = ParseBackendType(json::ValueOrDefault<std::string>(j, "type", "ollama"));
-  if (!type) throw pu::Error("Unknown backend type");
-  cfg.type = *type;
+  cfg.gateway = ReadGateway(j);
   cfg.host = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "host", ""));
   cfg.model = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "model", ""));
   if (json::HasKey(j, "api_key"))
@@ -99,8 +102,8 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::Error("Missing backend field");
   entry.backend = ParseBackendConfig(j.at("backend"));
-  if (entry.backend.host.empty() || entry.backend.model.empty())
-    throw pu::Error("Missing host or model in backend");
+  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+  if (entry.backend.model.empty()) throw pu::Error("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));

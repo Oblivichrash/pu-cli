@@ -144,16 +144,32 @@ void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
 }
 
+bool Executor::AskApproval(const std::string& command, std::string& note) {
+  {
+    std::lock_guard<std::mutex> lock(approval_mtx_);
+    approval_answered_ = false;
+    approval_answer_note_.clear();
+  }
+  if (on_approval_ask) on_approval_ask(command);
+
+  std::unique_lock<std::mutex> lock(approval_mtx_);
+  approval_cv_.wait(lock, [this] { return approval_answered_; });
+  note = approval_answer_note_;
+  return approval_allowed_;
+}
+
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
                                   LLMProvider* provider, Toolbox& toolbox,
                                   CancelToken cancel_token,
                                   TokenCallback content_callback,
                                   ToolCallbacks tool_callbacks,
-                                  TokenCallback reasoning_callback) {
+                                  TokenCallback reasoning_callback,
+                                  CancelToken command_stop_token) {
   conversation.Append("user", input);
 
-  ExecutionResult result = RunToolLoop(conversation, provider, toolbox, cancel_token,
-                                       content_callback, tool_callbacks, reasoning_callback);
+  ExecutionResult result =
+      RunToolLoop(conversation, provider, toolbox, cancel_token, content_callback,
+                  tool_callbacks, reasoning_callback, command_stop_token);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
@@ -164,13 +180,9 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
                                       Toolbox& toolbox, CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
-                                      TokenCallback reasoning_callback) {
+                                      TokenCallback reasoning_callback,
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
-
-  if (!provider->SupportsTools()) {
-    result.content = "This provider does not support tool calling. Cannot execute tools.";
-    return result;
-  }
 
   auto tools = toolbox.GetToolDefinitions();
   const int max_iterations = 20;
@@ -215,8 +227,22 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       chat_result = provider->Chat(request);
 
       if (chat_result.usage) {
-        spdlog::debug("tokens: prompt={}, completion={}", chat_result.usage->prompt_tokens,
-                      chat_result.usage->completion_tokens);
+        result.usage = chat_result.usage;
+        spdlog::debug("tokens: prompt={}, completion={}, total={}, cached={}, credit={}",
+                      chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
+                      chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
+                      chat_result.usage->credit);
+      }
+      if (!chat_result.raw_usage.is_null()) {
+        spdlog::debug("usage as the provider reported it: {}",
+                      json::serialize(chat_result.raw_usage));
+      }
+      if (!chat_result.unread_fields.empty()) {
+        // Not a failure: a gateway may add a field at will. It is the one signal that says
+        // a field the backend should have read reached us and nothing named it.
+        spdlog::debug("fields on the reply nothing reads: {}",
+                      boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
+                                                                chat_result.unread_fields.end())));
       }
 
       tool_was_called = !chat_result.tool_calls.empty();
@@ -272,10 +298,20 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
     if (security_policy_.has_value()) {
       tool_ctx.security = &security_policy_.value();
     } else {
-      static config::SecurityPolicy empty_policy;
+      static const config::SecurityPolicy empty_policy;
       tool_ctx.security = &empty_policy;
       spdlog::warn("No security policy set for Executor. Using empty policy.");
     }
+    ToolContext::Control control;
+    control.stop_token = command_stop_token;
+    control.note = user_note_;
+    user_note_.clear();  // one note stops one command; a fresh one needs a new word
+    tool_ctx.control = command_stop_token ? &control : nullptr;
+    ToolContext::Approval approval;
+    approval.ask = [this](const std::string& command, std::string& note) {
+      return AskApproval(command, note);
+    };
+    tool_ctx.approval = approval_asks_ ? &approval : nullptr;
     for (const auto& call : chat_result.tool_calls) {
       ++result.tool_call_count;
 
@@ -290,7 +326,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
         tool_result = toolbox.ExecuteTool(call.name, call.arguments, tool_ctx);
       } catch (const std::exception& e) {
         tool_result = tools::MakeToolResultJson(
-            false, "", "", std::string("Tool execution error: ") + e.what(), -1);
+            false, "", std::string("Tool execution error: ") + e.what(), -1);
       }
       auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now() - tool_start)
@@ -303,10 +339,19 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* p
       if (tool_callbacks.on_end) {
         auto parsed = tools::ParseToolResult(tool_result);
         if (parsed.valid) {
-          tool_callbacks.on_end(call.id, parsed.stdout_content, parsed.error);
+          tool_callbacks.on_end(call.id, parsed.output, parsed.error);
         } else {
           tool_callbacks.on_end(call.id, tool_result, "");
         }
+      }
+
+      // A note typed while the command ran reaches the model beside its result.
+      if (!user_note_.empty() && cancel_token) {
+        ChatMessage note_msg;
+        note_msg.role = "user";
+        note_msg.content = "[user note during the turn] " + user_note_;
+        conversation.Append(note_msg);
+        user_note_.clear();
       }
 
       ChatMessage tool_msg;

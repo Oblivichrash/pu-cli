@@ -49,8 +49,8 @@ TEST_CASE("McpTool wraps successful raw output into JSON schema", "[mcp_tool]") 
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("stdout") == "Hello from MCP server");
-  REQUIRE(j.at("stderr") == "");
+  REQUIRE(j.at("output") == "Hello from MCP server");
+  REQUIRE(j.at("blocked") == false);
   REQUIRE(j.at("error") == "");
   REQUIRE(j.at("exit_code") == 0);
 }
@@ -72,7 +72,7 @@ TEST_CASE("McpTool wraps Error:-prefixed output as failure JSON", "[mcp_tool]") 
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(j.at("stdout") == "Error: something went wrong");
+  REQUIRE(j.at("output") == "Error: something went wrong");
   REQUIRE(j.at("error") == "Error: something went wrong");
   REQUIRE(j.at("exit_code") == 1);
 }
@@ -137,7 +137,7 @@ TEST_CASE("An McpTool keeps its client alive after the caller drops it", "[mcp_t
   auto j = boost::json::parse(tool->Execute(args, ctx));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("stdout") == "still here");
+  REQUIRE(j.at("output") == "still here");
 }
 
 TEST_CASE("McpTool returns error JSON when client is not connected", "[mcp_tool]") {

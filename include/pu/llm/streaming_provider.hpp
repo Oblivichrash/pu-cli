@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -21,8 +22,6 @@ class StreamingProvider : public LLMProvider {
 
   ChatResult Chat(const ChatRequest& request) final;
 
-  bool SupportsTools() const override { return true; }
-
  protected:
   StreamingProvider(std::string host, std::string api_key,
                     std::shared_ptr<pu::http::HttpClient> http);
@@ -42,12 +41,21 @@ class StreamingProvider : public LLMProvider {
                        boost::json::value raw = nullptr);
   void AppendToolCall(ToolCall call, const ChatRequest& request);
 
+  // Notes the keys on `j` that no entry of `read_keys` names. A gateway adding a field is
+  // not an error, so nothing is thrown; the names are collected for a caller to look at
+  // and a test to assert, which is what would have caught a count that was read nowhere.
+  // A gateway names a field once per stream, so a stream's frames are not walked twice.
+  void NoteUnreadFields(const boost::json::value& j, std::span<const std::string_view> read_keys);
+
   std::string content_;
   std::vector<ReasoningBlock> reasoning_;
   std::vector<ToolCall> tool_calls_;
   std::string finish_reason_;
   std::string response_model_;
   std::optional<TokenUsage> usage_;
+  boost::json::value raw_usage_;
+  std::vector<std::string> unread_fields_;
+  bool inspected_frame_ = false;
 
  private:
   std::string host_;

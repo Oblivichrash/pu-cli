@@ -103,11 +103,7 @@ BeastHttpClient::UrlParts BeastHttpClient::ParseUrl(const std::string& url) cons
 namespace {
 
 template <typename Request>
-void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
-                  const std::vector<std::string>& headers) {
-  req.set(beast::http::field::host, host);
-  req.set(beast::http::field::content_type, "application/json");
-  req.set(beast::http::field::content_length, std::to_string(body.size()));
+void AddHeaders(Request& req, const std::vector<std::string>& headers) {
   for (const auto& h : headers) {
     size_t pos = h.find(':');
     if (pos != std::string::npos) {
@@ -115,6 +111,15 @@ void ApplyHeaders(Request& req, const std::string& host, const std::string& body
               text::Trim(std::string_view(h).substr(pos + 1)));
     }
   }
+}
+
+template <typename Request>
+void ApplyHeaders(Request& req, const std::string& host, const std::string& body,
+                  const std::vector<std::string>& headers) {
+  req.set(beast::http::field::host, host);
+  req.set(beast::http::field::content_type, "application/json");
+  req.set(beast::http::field::content_length, std::to_string(body.size()));
+  AddHeaders(req, headers);
   req.body() = body;
 }
 
@@ -122,7 +127,7 @@ template <typename Stream>
 unsigned StreamResponse(Stream& stream, beast::flat_buffer& buffer, WriteCallback& write_cb,
                         std::string& error_body, CancelToken cancel_token) {
   beast::http::response_parser<beast::http::buffer_body> parser;
-  parser.body_limit(64 * 1024 * 1024);  // 64 MiB safety cap.
+  parser.body_limit(64 * 1024 * 1024);
 
   beast::error_code ec;
   beast::http::read_header(stream, buffer, parser, ec);
@@ -215,6 +220,55 @@ std::string SummarizeErrorBody(const std::string& body) {
 }
 
 }  // namespace
+
+http::Response BeastHttpClient::Get(const std::string& url,
+                                    const std::vector<std::string>& headers) {
+  auto parts = ParseUrl(url);
+
+  tcp::resolver resolver(ioc_);
+  beast::tcp_stream stream(ioc_);
+  const auto endpoints = resolver.resolve(parts.host, parts.port);
+  stream.connect(endpoints);
+
+  beast::http::response<beast::http::string_body> res;
+
+  if (parts.scheme == "https") {
+    beast::ssl_stream<beast::tcp_stream> ssl_stream(std::move(stream), ssl_ctx_);
+    ssl_stream.handshake(net::ssl::stream_base::client);
+
+    beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
+    req.set(beast::http::field::host, parts.host);
+    AddHeaders(req, headers);
+    beast::http::write(ssl_stream, req);
+
+    beast::flat_buffer buffer;
+    beast::http::read(ssl_stream, buffer, res);
+
+    beast::error_code ec;
+    ssl_stream.shutdown(ec);
+  } else {
+    beast::http::request<beast::http::string_body> req(beast::http::verb::get, parts.target, 11);
+    req.set(beast::http::field::host, parts.host);
+    AddHeaders(req, headers);
+    beast::http::write(stream, req);
+
+    beast::flat_buffer buffer;
+    beast::http::read(stream, buffer, res);
+
+    beast::error_code ec;
+    stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+  }
+
+  const unsigned status = res.result_int();
+  if (status >= 400) {
+    std::string detail = "HTTP error " + std::to_string(status);
+    const std::string summary = SummarizeErrorBody(res.body());
+    if (!summary.empty()) detail += ": " + summary;
+    throw HttpError(detail);
+  }
+
+  return Response{status, std::move(res.body())};
+}
 
 void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
                                  const std::vector<std::string>& headers, WriteCallback write_cb,

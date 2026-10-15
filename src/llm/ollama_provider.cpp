@@ -6,6 +6,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -34,6 +35,9 @@ void OllamaProvider::ResetAccumulators() {
   response_model_.clear();
   tool_calls_.clear();
   usage_.reset();
+  raw_usage_ = nullptr;
+  unread_fields_.clear();
+  inspected_frame_ = false;
 }
 
 OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
@@ -72,6 +76,14 @@ std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
 }
 
 void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
+  // The top-level names this reads, kept beside the reads themselves so a name added to
+  // the wire has to pass them to go unnoticed.
+  static constexpr std::string_view kReadKeys[] = {
+      "error", "message", "done", "done_reason", "model",
+      "prompt_eval_count", "eval_count", "prompt_eval_cached_count",
+  };
+  NoteUnreadFields(j, kReadKeys);
+
   if (json::HasKey(j, "error")) {
     const std::string detail = json::ErrorMessage(j);
     if (!detail.empty()) throw Error("provider error: " + detail);
@@ -119,6 +131,16 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
     usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
                         json::ValueOrDefault<int>(j, "eval_count", 0)};
+    // The cached prompt rides on the same line under Ollama's own name; without it the
+    // count reads as a gateway that cached nothing.
+    usage_->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
+  }
+
+  // Ollama reports no usage object: the counts and durations ride on the final line,
+  // which is kept whole rather than filtered to a list of names -- a list is a name
+  // someone has to remember to add to, and `prompt_eval_cached_count` was missed by one.
+  if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
+    raw_usage_ = j;
   }
 
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
@@ -131,6 +153,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
 }
 
 void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
+  if (text::Trim(line).empty()) return;  // NDJSON frames nothing, so a blank line says nothing
   boost::json::value j;
   try {
     j = boost::json::parse(line);

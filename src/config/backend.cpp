@@ -1,56 +1,50 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/config/backend.hpp"
 
+#include "pu/config/gateway.hpp"
+#include "pu/llm/capabilities.hpp"
 #include "pu/core/base.hpp"
-#include "pu/llm/codebuddy.hpp"
-#include "pu/llm/ollama_provider.hpp"
-#include "pu/llm/openai_provider.hpp"
 
 #include <memory>
 #include <utility>
 
 namespace pu::config {
 
+std::string DefaultHostFor(GatewayId type) {
+  return std::string(GatewayForId(type).default_host);
+}
+
+const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data(); }
+
+std::string GatewayNames() {
+  std::string names;
+  for (const Gateway* gateway : Gateways()) {
+    if (!names.empty()) names += ", ";
+    names += gateway->name;
+  }
+  return names;
+}
+
+std::optional<GatewayId> ParseGatewayId(std::string_view name) {
+  if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->id;
+  return std::nullopt;
+}
+
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http) {
   if (cfg.host.empty()) {
-    throw pu::Error("Missing host for backend type: " + std::string(BackendTypeName(cfg.type)));
+    throw pu::Error("Missing host for backend type: " + std::string(GatewayName(cfg.gateway)));
+  }
+  return GatewayForId(cfg.gateway).make_provider(cfg, std::move(http));
+}
+
+std::vector<llm::ModelEntry> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http) {
+  if (cfg.host.empty()) {
+    throw pu::Error("Missing host for backend type: " + std::string(GatewayName(cfg.gateway)));
   }
 
-  const auto http_config = [&cfg]() {
-    OpenAIProvider::Config http_cfg;
-    http_cfg.model = cfg.model;
-    http_cfg.temperature = cfg.temperature;
-    http_cfg.host = cfg.host;
-    http_cfg.api_key = cfg.api_key.value_or("");
-    http_cfg.max_tokens = cfg.max_tokens;
-    http_cfg.thinking = cfg.thinking;
-    return http_cfg;
-  };
-
-  switch (cfg.type) {
-    case BackendType::kOllama: {
-      OllamaProvider::Config ollama_cfg;
-      ollama_cfg.model = cfg.model;
-      ollama_cfg.temperature = cfg.temperature;
-      ollama_cfg.host = cfg.host;
-      ollama_cfg.api_key = cfg.api_key.value_or("");
-      ollama_cfg.thinking = cfg.thinking;
-      return std::make_unique<OllamaProvider>(std::move(ollama_cfg), std::move(http));
-    }
-    case BackendType::kOpenAI:
-      return std::make_unique<OpenAIProvider>(http_config(), std::move(http));
-    case BackendType::kCodeBuddy: {
-      OpenAIProvider::Config codebuddy_cfg = http_config();
-      const std::string conversation_id = llm::CodeBuddyConversationId();
-      codebuddy_cfg.extra_headers = [conversation_id] {
-        return llm::CodeBuddyHeaders(conversation_id);
-      };
-      return std::make_unique<OpenAIProvider>(codebuddy_cfg, std::move(http));
-    }
-    default:
-      throw pu::Error("Unknown backend type");
-  }
+  const std::unique_ptr<pu::ModelLister> listing = GatewayForId(cfg.gateway).make_listing();
+  return listing->ListModels(cfg.host, cfg.api_key.value_or(""), http);
 }
 
 }  // namespace pu::config

@@ -5,37 +5,20 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <boost/json.hpp>
 
+#include "pu/config/gateway.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/capabilities.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::config {
 
-enum class BackendType { kOllama, kOpenAI, kCodeBuddy };
-
-inline constexpr BackendType kBackendTypes[] = {BackendType::kOllama, BackendType::kOpenAI,
-                                                BackendType::kCodeBuddy};
-
-// Every backend type carries a thinking level: Ollama as a top-level `think`, the
-// OpenAI-compatible ones as `reasoning_effort` / `extra_body`. A backend that cannot
-// is a new one, and it will say so rather than being carved out here.
-inline std::string DefaultHostFor(BackendType type) {
-  switch (type) {
-    case BackendType::kOllama:
-      return "http://localhost:11434";
-    case BackendType::kOpenAI:
-      return "https://api.openai.com/v1";
-    case BackendType::kCodeBuddy:
-      return "https://copilot.tencent.com/v2";
-  }
-  return "";
-}
-
 struct BackendConfig {
-  BackendType type = BackendType::kOllama;
+  GatewayId gateway = GatewayId::kOllama;
   std::string host;
   std::string model;
   std::optional<std::string> api_key;
@@ -47,38 +30,22 @@ struct BackendConfig {
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
 };
 
-inline const char* BackendTypeName(BackendType type) {
-  switch (type) {
-    case BackendType::kOllama:
-      return "ollama";
-    case BackendType::kOpenAI:
-      return "openai";
-    case BackendType::kCodeBuddy:
-      return "codebuddy";
-  }
-  return "ollama";
+// The gate a backend names, from an agents.json entry or a stored one. Required rather
+// than defaulted: a file that never named a gate is one whose author meant another one,
+// and the wrong gate's host fails a long way from the line that is wrong.
+inline GatewayId ReadGateway(const boost::json::value& j) {
+  const std::string name = json::ValueOrDefault<std::string>(j, "gateway", "");
+  if (name.empty()) throw Error("Missing gateway in backend: name one of " + GatewayNames());
+  const std::optional<GatewayId> parsed = ParseGatewayId(name);
+  if (!parsed) throw Error("Unknown gateway: " + name);
+  return *parsed;
 }
 
-inline std::string BackendTypeNames() {
-  std::string names;
-  for (const BackendType type : kBackendTypes) {
-    if (!names.empty()) names += ", ";
-    names += BackendTypeName(type);
-  }
-  return names;
-}
-
-inline std::optional<BackendType> ParseBackendType(std::string_view name) {
-  if (name == "ollama") return BackendType::kOllama;
-  if (name == "openai") return BackendType::kOpenAI;
-  if (name == "codebuddy") return BackendType::kCodeBuddy;
-  return std::nullopt;
-}
 
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
-      {"type", BackendTypeName(cfg.type)},
+      {"gateway", GatewayName(cfg.gateway)},
       {"host", cfg.host},
       {"model", cfg.model},
       {"api_key", cfg.api_key.value_or("")},
@@ -91,8 +58,7 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
   BackendConfig cfg;
-  const auto type_str = json::ValueOrDefault<std::string>(j, "type", "ollama");
-  cfg.type = ParseBackendType(type_str).value_or(BackendType::kOllama);
+  cfg.gateway = ReadGateway(j);
   cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
   cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
   if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {
@@ -108,5 +74,10 @@ inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
+
+// Reads the model listing the backend's host reports, with what the host says about each
+// model. The gate answers where that listing lives. A listing that names no model is an
+// empty vector, not an error. Throws HttpError on a failed read.
+std::vector<llm::ModelEntry> ListModels(const BackendConfig& cfg, pu::http::HttpClient& http);
 
 }  // namespace pu::config

@@ -114,8 +114,6 @@ class MockLLM : public LLMProvider {
     return r;
   }
 
-  bool SupportsTools() const override { return true; }
-
  private:
   std::vector<ToolCall> calls_;
   std::string content_;
@@ -148,8 +146,6 @@ class OfferingLLM : public LLMProvider {
     return r;
   }
 
-  bool SupportsTools() const override { return true; }
-
   std::vector<std::string> offered;
 
  private:
@@ -163,8 +159,6 @@ class FailingLLM : public LLMProvider {
   ChatResult Chat(const ChatRequest& /*request*/) override {
     throw pu::HttpError("HTTP error 400: maximum context length is 4096 tokens");
   }
-
-  bool SupportsTools() const override { return true; }
 };
 
 class CapturingLLM : public LLMProvider {
@@ -175,8 +169,6 @@ class CapturingLLM : public LLMProvider {
     r.content = "done";
     return r;
   }
-
-  bool SupportsTools() const override { return true; }
 
   const std::vector<ChatMessage>& captured() const { return history_; }
 
@@ -203,8 +195,6 @@ class StoppingLLM : public LLMProvider {
     return r;
   }
 
-  bool SupportsTools() const override { return true; }
-
  private:
   std::string content_;
   std::string finish_reason_;
@@ -222,7 +212,7 @@ class TrackingTool : public Tool {
   }
   std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
     ++executions;
-    return R"({"success":true,"stdout":"ran","stderr":"","error":"","exit_code":0})";
+    return R"({"success":true,"blocked":false,"output":"ran","error":"","exit_code":0})";
   }
 
   int executions = 0;
@@ -241,7 +231,7 @@ class NamedTool : public Tool {
   }
   std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
     ++executions;
-    return R"({"success":true,"stdout":"","stderr":"","error":"","exit_code":0})";
+    return R"({"success":true,"blocked":false,"output":"","error":"","exit_code":0})";
   }
 
   int executions = 0;

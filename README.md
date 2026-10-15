@@ -48,7 +48,7 @@ Create `agents.json` inside a `.pu/` directory — either `./.pu/agents.json` (p
     {
       "name": "local-assistant",
       "backend": {
-        "type": "ollama",
+        "gateway": "ollama",
         "host": "http://localhost:11434",
         "model": "qwen3.5:2b"
       },
@@ -69,16 +69,30 @@ Every field is listed under [Configuration](#agentsjson).
 | :------ | :---------- |
 | `pu ask <prompt>` | Send one prompt, print the reply, and exit |
 | `pu chat` | Start an interactive session |
+| `pu models [--verify]` | List the models the agent's backend reports; `--verify` asks each one for a token first (see below) |
 | `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
 
-Global options: `-h`/`--help` and `--version`. `ask` and `chat` also accept
-`--agent <name>`; `ask` accepts `--prompt <text>` in place of the positional
-prompt.
+Global options: `-h`/`--help` and `--version`. `ask`, `chat` and `models` also
+accept `--agent <name>`; `ask` accepts `--prompt <text>` in place of the
+positional prompt.
 
 ```bash
 ./build/pu ask "summarize README.md"
 ./build/pu chat --agent local-assistant
 > /backend deepseek-pro    # switch to predefined agent
+```
+
+`pu models` reads the listing endpoint the backend's type names - `/api/tags` for
+Ollama, `/models` for the OpenAI-compatible ones - and prints what it names, with
+the active model marked. A listing says a model is advertised; it does not say the
+account may run it. `--verify` settles that by asking each listed model for a
+single token and reporting what answered, one line per model, so an entitlement a
+gateway would otherwise only report on first use is known up front. A model the
+catalogue says is answered only with a reasoning level is reported rather than
+asked when the backend sends none, since that request cannot succeed:
+
+```bash
+./build/pu models --verify
 ```
 
 Your conversation is saved to `<workspace>/.pu/session.json` after every
@@ -94,6 +108,7 @@ interaction and restored on restart, so each directory keeps its own session.
 | `/backend <agent>` | Switch to a predefined agent (rebuilds the tool set) |
 | `/backend <type> <model> [host] [api_key]` | Override the backend for this session, outranking `agents.json` for this run; the session keeps only the agent it names, and the fields are read afresh from `agents.json` on each start |
 | `/agents` | List available agents |
+| `/models [agent]` | List the models the active agent's (or a named agent's) backend reports |
 | `/clear` | Clear conversation history |
 | `/rewind <turn>` | Step back to before a turn; the next message replaces it |
 | `/thinking [level]` | Show or set this session's thinking level (`auto` drops the session override and follows the agent's configuration again) |
@@ -123,14 +138,18 @@ All tools return structured JSON with the following fields:
 ```json
 {
   "success": true/false,
-  "stdout": "...",
-  "stderr": "...",
+  "blocked": true/false,
+  "output": "...",
   "error": "...",
   "exit_code": 0
 }
 ```
 
-The executor reads `success` and `stdout`/`error` from it; the transcript keeps the result verbatim, so the model sees what the tool produced.
+- `output` carries everything the command itself printed (a merged stream: the executor cannot tell stderr from stdout afterward)
+- `error` is the tool layer's verdict — why the command failed, or why it was refused
+- `blocked: true` marks a refusal by policy: the command never ran, so `exit_code` is `-1` and `output` is empty. The refusal names the forbidden pattern that matched and the sandbox's whole pattern list, so one denial teaches the model the full boundary
+
+The executor reads `success` and `output`/`error` from it; the transcript keeps the result verbatim, so the model sees what the tool produced.
 
 ---
 
@@ -164,7 +183,10 @@ Each message carries an **edit** link that steps back to before that turn; sendi
 the text again replaces it. See `/rewind` below.
 
 The front-end lives in `web/`. History is folded into one bubble per turn, with
-each tool result keeping the output the stream showed.
+each tool result keeping the output the stream showed. Under the composer it shows
+the context the last reply ran against, from the counts the provider returned. No
+window is shown beside it: none of the backends here reports one, and a guess would
+read like a fact.
 
 ### Web API
 
@@ -176,6 +198,9 @@ and status.
 ```json
 {"type":"run","payload":{"text":"user message"}}
 {"type":"cancel"}
+{"type":"note","payload":{"text":"words for the model at the next tool boundary"}}
+{"type":"stop_command","payload":{"text":"why the command was stopped"}}
+{"type":"resolve_approval","payload":{"allow":true,"text":"optional note"}}
 ```
 
 **Server → client**
@@ -186,13 +211,27 @@ and status.
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
+{"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
 {"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
 
+`usage` carries what the provider counted for the turn that just ended;
+`prompt_tokens` is the context that turn ran against, so it grows with the
+conversation and is what a page can show against a model's window. It arrives
+before `done`, and a provider that reports no counts sends none.
+
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
-its call. `cancel` sets the cancel token and leaves the connection open; the turn
+its call. While one runs, `stop_command` kills that command's process group: the
+tool result comes back `success: false` with the note in `error`, and the turn
+continues. `note` delivers words without a kill, which the executor appends beside
+the next tool result.
+
+When the agent's policy names `approval_patterns`, a matching command sends
+`approval_ask` before it runs and the turn thread parks until
+`resolve_approval` answers. Allowed, the command runs and the note rides beside
+its result; denied, the result is the refusal with the note in `error`. `cancel` sets the cancel token and leaves the connection open; the turn
 then ends with `done`. `thinking` is a channel of its own, rendered beside the
 answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
@@ -258,12 +297,12 @@ default). See [Quick Start](#configure) for a full example.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `type` | `ollama` | `ollama`, `openai`, or `codebuddy`; any other value is rejected |
-| `host` | per type | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
+| `gateway` | — | Required. `ollama`, `openai`, or `codebuddy`; a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
+| `host` | per gateway | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
-| `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply |
+| `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply. A cap reached while a tool call is being written ends the turn with an error, since half an argument would run the tool on a partial value |
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking`. What each level puts on the wire is in [providers.md](docs/providers.md) |
 | `system_prompt` | unset | Merged with the injected context |
 
@@ -275,7 +314,7 @@ use is answered by the gateway itself.
 
 ```json
 "backend": {
-  "type": "codebuddy",
+  "gateway": "codebuddy",
   "host": "https://copilot.tencent.com/v2",
   "model": "deepseek-v4-flash",
   "api_key": "${CODEBUDDY_API_KEY}"
@@ -293,6 +332,7 @@ logs a warning.
 | `sandbox_root` | All file operations are relative to this directory. Empty by default, which means the workspace itself |
 | `forbidden_patterns` | Commands containing these substrings are blocked; include `"cd"` so the model cannot change the working directory |
 | `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
+| `approval_patterns` | Commands matching one of these wait for the user's approval before they run; the Web UI shows the command with Approve and Deny buttons and an optional note, which reaches the model beside the result. `pu serve` only: the CLI has no channel to ask on, so a matching command there is refused |
 
 **`mcp_servers`**
 

@@ -39,8 +39,15 @@ add_library(pu_lib STATIC
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
+    src/llm/openai_protocol.cpp
     src/llm/projection.cpp
+    src/llm/model_listing.cpp
+    src/llm/model_verifier.cpp
     src/llm/streaming_provider.cpp
+    src/gateways/ollama.cpp
+    src/gateways/openai.cpp
+    src/gateways/codebuddy.cpp
+    src/gateways/registry.cpp
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp

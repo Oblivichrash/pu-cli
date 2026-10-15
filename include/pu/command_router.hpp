@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pu/config/backend.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
@@ -30,18 +31,24 @@ class CommandRouter {
   };
 
   static const std::vector<std::string>& CommandOrder();
-  const std::unordered_map<std::string, Command>& Commands();
+
+  // A member, not a function-local static: the entries capture this, so a table
+  // shared across instances would call through whichever instance built it first.
+  const std::unordered_map<std::string, Command>& Commands() const;
 
   bool RequireMinArgs(Args args, size_t min, const std::string& usage, Output output) const;
 
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
   bool HandleBackend(Args args, Output output);
+  bool HandleModels(Args args, Output output);
+  bool ReportModels(const config::BackendConfig& cfg, Output output);
   bool HandleAgents(Args args, Session& session, Output output);
   bool HandleRewind(Args args, Session& session, Output output);
   bool HandleThinking(Args args, Output output);
 
   Runtime& runtime_;
+  std::unordered_map<std::string, Command> commands_;
 };
 
 }  // namespace pu

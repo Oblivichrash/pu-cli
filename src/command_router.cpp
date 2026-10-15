@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
 #include "pu/runtime.hpp"
+#include "pu/config/backend.hpp"
 
 #include <sstream>
 
@@ -32,12 +33,13 @@ std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string
 
 const std::vector<std::string>& CommandRouter::CommandOrder() {
   static const std::vector<std::string> order = {"/help",     "/backend", "/agents",
-                                                 "/clear",    "/rewind",  "/thinking"};
+                                                 "/models",   "/clear",   "/rewind",
+                                                 "/thinking"};
   return order;
 }
 
-const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() {
-  static const std::unordered_map<std::string, Command> commands = {
+CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
+  commands_ = {
       {"/help",
        {"  /help                  Show this help message\n",
         [this](Args, Session&, Output output) {
@@ -52,6 +54,10 @@ const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Co
         [this](Args args, Session& session, Output output) {
           return HandleAgents(args, session, output);
         }}},
+      {"/models",
+       {"  /models                List the models the active agent's backend reports\n"
+        "  /models <agent>        List the models a named agent's backend reports\n",
+        [this](Args args, Session&, Output output) { return HandleModels(args, output); }}},
       {"/clear",
        {"  /clear                 Clear conversation history\n",
         [](Args, Session& session, Output output) {
@@ -70,10 +76,11 @@ const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Co
         "  /thinking auto         Follow the agent's configuration again\n",
         [this](Args args, Session&, Output output) { return HandleThinking(args, output); }}},
   };
-  return commands;
 }
 
-CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {}
+const std::unordered_map<std::string, CommandRouter::Command>& CommandRouter::Commands() const {
+  return commands_;
+}
 
 bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
   const std::string trimmed(text::Trim(input));
@@ -118,7 +125,7 @@ std::string CommandRouter::GetHelpText() {
 bool CommandRouter::HandleBackend(Args args, Output output) {
   if (args.empty()) {
     const config::BackendConfig cfg = runtime_.CurrentBackend();
-    output = "Current backend: " + std::string(config::BackendTypeName(cfg.type)) +
+    output = "Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
              " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
@@ -128,7 +135,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     try {
       runtime_.SwitchAgent(*agent_config);
       output = "Switched to agent: " + args[0] + " (" +
-               std::string(config::BackendTypeName(agent_config->backend.type)) + "/" +
+               std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
                agent_config->backend.model + ")";
     } catch (const std::exception& e) {
       output = "Error: " + std::string(e.what());
@@ -139,14 +146,14 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
   if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
     return true;
 
-  const auto type = config::ParseBackendType(args[0]);
+  const auto type = config::ParseGatewayId(args[0]);
   if (!type) {
-    output = "Unknown type: " + args[0] + ". Use " + config::BackendTypeNames() + ".";
+    output = "Unknown type: " + args[0] + ". Use " + config::GatewayNames() + ".";
     return true;
   }
 
   config::BackendConfig new_cfg;
-  new_cfg.type = *type;
+  new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
   if (args.size() > 3) new_cfg.api_key = args[3];
@@ -159,6 +166,42 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     if (new_cfg.api_key && !new_cfg.api_key->empty()) {
       output += " (API key set)";
     }
+  } catch (const std::exception& e) {
+    output = "Error: " + std::string(e.what());
+  }
+  return true;
+}
+
+bool CommandRouter::HandleModels(Args args, Output output) {
+  if (args.empty()) {
+    return ReportModels(runtime_.CurrentBackend(), output);
+  }
+  const config::AgentEntry* agent_config = runtime_.GetAgentManager().GetAgentConfig(args[0]);
+  if (!agent_config) {
+    output = "Unknown agent: " + args[0];
+    return true;
+  }
+  return ReportModels(agent_config->backend, output);
+}
+
+bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output) {
+  try {
+    const std::vector<llm::ModelEntry> models =
+        config::ListModels(cfg, runtime_.GetHttpClient());
+    if (models.empty()) {
+      output = "No models reported by " + std::string(config::GatewayName(cfg.gateway)) +
+               " at " + cfg.host;
+      return true;
+    }
+    std::ostringstream oss;
+    oss << models.size() << " model(s) reported by " <<
+           config::GatewayName(cfg.gateway) << " at " << cfg.host << ":\n";
+    for (const auto& model : models) {
+      oss << "  " << model.id;
+      if (model.id == cfg.model) oss << " (active)";
+      oss << "\n";
+    }
+    output = oss.str();
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }
@@ -207,11 +250,6 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
 }
 
 bool CommandRouter::HandleThinking(Args args, Output output) {
-  if (!runtime_.SupportsThinkingLevel()) {
-    output = "This backend does not carry a thinking level.";
-    return true;
-  }
-
   if (args.empty()) {
     output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
     output += runtime_.GetThinkingOverride() ? " (set for this session)"
@@ -225,10 +263,7 @@ bool CommandRouter::HandleThinking(Args args, Output output) {
   }
 
   if (args[0] == "auto") {
-    if (!runtime_.SetThinkingLevel(std::nullopt)) {
-      output = "This backend does not carry a thinking level.";
-      return true;
-    }
+    runtime_.SetThinkingLevel(std::nullopt);
     output = "Thinking follows the agent's configuration again (" +
              std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) + ").";
     return true;
@@ -240,10 +275,7 @@ bool CommandRouter::HandleThinking(Args args, Output output) {
     return true;
   }
 
-  if (!runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]))) {
-    output = "This backend does not carry a thinking level.";
-    return true;
-  }
+  runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]));
   output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) +
            " for this session.";
   return true;

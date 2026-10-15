@@ -1,58 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/core/http_client.hpp"
-#include "pu/llm/streaming_provider.hpp"
+#include "pu/llm/openai_protocol.hpp"
 
 #include <functional>
-#include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
-#include <boost/json.hpp>
-
 namespace pu {
 
-class OpenAIProvider : public StreamingProvider {
+// One gate's backend in the OpenAI protocol: that protocol at the gate's host, with the
+// headers the gate sends. Everything the wire format does belongs to OpenAIProtocol; what
+// is left here is which host and which headers, which is what a gate states. The `openai`
+// and `codebuddy` gates build this, and so does every agent of the `openai` gate — OpenAI,
+// DeepSeek, NVIDIA and a vLLM of one's own differ only in host, headers and response shape.
+class OpenAIProvider final : public OpenAIProtocol {
  public:
-  struct Config {
-    std::string host = "https://api.openai.com/v1";
-    std::string model;
-    float temperature = 0.7f;
-    std::string api_key;
-    std::optional<int> max_tokens;
-    ThinkingLevel thinking = ThinkingLevel::kServerDefault;
-    std::function<std::vector<std::string>()> extra_headers;
-  };
+  using Config = OpenAIProtocol::Config;
 
   explicit OpenAIProvider(const Config& config, std::shared_ptr<pu::http::HttpClient> http);
-  ~OpenAIProvider() override = default;
 
  protected:
-  std::string EndpointPath() const override { return "/chat/completions"; }
-  std::string LogTag() const override { return "OpenAI"; }
   std::vector<std::string> Headers() const override;
 
-  std::string BuildRequest(std::span<const ChatMessage> history,
-                           std::span<const ToolDefinition> tools) const override;
-  void ParseLine(std::string_view line, const ChatRequest& request) override;
-  void ResetAccumulators() override;
-  void FinishStream(const ChatRequest& request) override;
-
  private:
-  void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);
-  void FlushPendingToolCalls(const ChatRequest& request);
-
-  Config config_;
-
-  struct ToolCallAccumulator {
-    std::string id, name, arguments;
-  };
-  std::vector<ToolCallAccumulator> pending_tools_;
-
-  std::string refusal_;
+  std::function<std::vector<std::string>()> extra_headers_;
 };
 
 }  // namespace pu

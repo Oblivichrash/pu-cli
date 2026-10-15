@@ -132,7 +132,7 @@ switching the backend does not clear it.
 **Structured tool output.** Tools return JSON through the schema in
 `include/pu/tools/tool.hpp`, whose field set is documented in
 [README](../README.md#tool-output-format). The executor stores it verbatim so
-the model sees what the tool produced, and reads `stdout`/`error` out of it only
+the model sees what the tool produced, and reads `output`/`error` out of it only
 for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
 when the named tool is absent, so callers never parse two shapes.
 
@@ -173,17 +173,27 @@ environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
-2. An Asio `io_context` drives the `tcp::acceptor` on its own thread; each
-   accepted connection is handled on a detached thread.
-3. A plain HTTP request is dispatched to the static/REST routes; a WebSocket upgrade
-   on `/ws` is accepted as the client being written to. A second one while that client
-   is attached is answered with a `busy` frame and closed instead: one session, one
-   page.
-4. The WebSocket worker reads JSON messages, spawns a worker thread per run, and
-   writes each frame back as the run progresses. The message schema, the REST route
-   table, and the status each refusal carries are in
+2. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
+   `reuse_address` set before the bind so a restart can take a port a just-closed
+   server left connections in `TIME_WAIT` on.
+3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
+   is read and dispatched to the static/REST routes on that strand — a short request
+   and response, so its I/O stays synchronous and the connection ends with it. A
+   WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O is
+   asynchronous from there on.
+4. A second upgrade while a page is attached is answered with a `busy` frame and
+   closed: one session, one page. Claiming the session happens when the upgrade is
+   accepted, not when the first run arrives, so the refusal reaches the peer before its
+   socket goes.
+5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
+   posts each frame back through the connection. The runner holds only the tokens that
+   steer the turn; the worker reads them by value, so a `cancel` or `stop_command` on
+   the strand reaches a turn in flight without waiting for it. The message schema, the
+   REST route table, and the status each refusal carries are in
    [README](../README.md#web-api).
-5. On Ctrl+C the server stops and `Runtime::Shutdown()` persists the session.
+6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
+   pending read and write, so no connection thread is left blocked — the runner is
+   stopped, and `Runtime::Shutdown()` persists the session.
 
 ### Single-session auto-persistence
 
@@ -256,13 +266,19 @@ that says what went wrong is in it.
 
 ### WebSocket streaming
 
-Chat runs exclusively over the `/ws` WebSocket. A run message starts
-`ProcessInput` on a detached worker thread; its `content_callback` writes each
-streamed chunk to the socket as it arrives, which produces the typewriter effect
-in the browser. The `ToolCallbacks` passed alongside it emit tool start/end events
-keyed by the tool call `id`. Commands and non-streaming backends deliver their
-full text as a single chunk frame. The frame schema is owned by
-[README](../README.md#web-api) and implemented in `web/app.js`.
+Chat runs exclusively over the `/ws` WebSocket. A run message is queued to the
+`SessionRunner`, whose single worker starts `ProcessInput`; its `content_callback`
+hands each streamed chunk back through the connection, which queues it and writes it on
+the connection's strand, producing the typewriter effect in the browser. The
+`ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
+`id`. Commands and non-streaming backends deliver their full text as a single chunk
+frame. The frame schema is owned by [README](../README.md#web-api) and implemented in
+`web/app.js`.
+
+The read loop is what an asynchronous stream buys: a connection parked in a synchronous
+read cannot be woken by closing its socket, so a shutdown would wait on a client that
+will never speak again. Here the run happens on the runner's own thread and the stream
+belongs to the strand, so shutdown stops the `io_context` and every read returns at once.
 
 A turn belongs to the client watching it. Closing the page, losing the socket, or a
 second client taking over all end it, and nothing of it is kept: what it had written
@@ -407,11 +423,11 @@ include/pu/                  src/
 ├── executor.hpp             ├── executor.cpp
 ├── app/                     ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── context/              # message graph storage
-├── core/                    ├── llm/                  # providers, streaming parser
-├── context/                 ├── mcp/                  # transports, JSON-RPC client
-├── llm/                     ├── session/              # Session, Conversation
-├── mcp/                     └── tools/                # Toolbox, tools
-├── session/
+├── core/                    ├── gateways/            # one file per gate, behind a table
+├── context/                 ├── llm/                  # protocols, providers, streaming parser
+├── llm/                     ├── mcp/                  # transports, JSON-RPC client
+├── mcp/                     ├── session/              # Session, Conversation
+├── session/                 └── tools/                # Toolbox, tools
 └── tools/
 ```
 
@@ -423,6 +439,30 @@ has a directory belongs in that directory, so `app/cli.hpp` sits beside
 The CMake targets follow the layering: `pu_lib` is the *base* static library
 (core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
 holds `src/app/`, and the `pu` executable adds only `main.cpp`.
+
+### Gates, protocols and providers
+
+Three facts about a vendor that look alike are three different things: a **protocol** is
+*how to talk*, a **gate** is *which product*, and a connection is *where*. `config/gateway.hpp`
+holds the middle one: `GatewayId` names the gates a build carries, `Gateway` is
+`{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
+/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Each gate
+is a file beside it, stating its own name, host, provider and catalogue read; adding one is
+that file and one line of the table, and there is no registry the linker can drop.
+
+`agents.json` names a gate through `gateway`, and a missing or unknown name is refused rather
+than defaulted, so a backend never reaches a host its author did not choose. The field is what
+a stored config carries; `BackendTypeName()` / `ParseBackendType()` are gone, and one parser
+resolves the name.
+
+A protocol stays what it was — the implementation of how a gate talks. `openai` is split into
+`llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
+host with one set of headers), because a change to the SSE parse and a change to a gate's
+headers are different changes; `ollama` keeps protocol and provider in one class. The gate
+abstraction stops short of one thing the design chose not to build yet: a gate offering more
+than one protocol, which would need an `entry` between the gate and the protocol. Every gate
+measured so far speaks exactly one, so that layer is deferred rather than carried as unused
+state — see [design/gateway-protocol-layout.md](design/gateway-protocol-layout.md).
 
 ### Dependency direction
 
@@ -443,7 +483,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New backend**: Inherit `StreamingProvider` (`include/pu/llm/streaming_provider.hpp`) and supply the endpoint path, request body, log tag, headers, and a per-line parser; a backend that does not stream over SSE or NDJSON inherits `LLMProvider` directly. Register it in `CreateBackend()` (`include/pu/config/backend.hpp`).
+- **New gate**: Add `src/gateways/<name>.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then name it in the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the file and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
@@ -455,6 +495,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
+- **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 

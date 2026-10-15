@@ -4,6 +4,7 @@ add_executable(pu_tests
     unit/test_ollama_backend.cpp
     unit/test_openai_backend.cpp
     unit/test_codebuddy_backend.cpp
+    unit/test_codebuddy_catalog.cpp
     unit/test_projection.cpp
     unit/test_agent_manager.cpp
     unit/test_agent_config.cpp
@@ -29,6 +30,10 @@ add_executable(pu_tests
     unit/test_backend_resolution.cpp
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
+    unit/test_list_models.cpp
+    unit/test_capabilities.cpp
+    unit/test_model_verifier.cpp
+    unit/test_approval_gate.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -36,6 +41,12 @@ target_include_directories(pu_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/tests
+)
+
+# A captured response is read from the source tree rather than copied, so the
+# fixture a test names stays the one file it was taken from.
+target_compile_definitions(pu_tests PRIVATE
+    PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
 
 target_link_libraries(pu_tests PRIVATE

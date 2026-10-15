@@ -35,7 +35,8 @@ class Runtime {
       const std::string& input, bool& is_command, CancelToken cancel_token = nullptr,
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
-      TokenCallback reasoning_callback = nullptr);
+      TokenCallback reasoning_callback = nullptr,
+      CancelToken command_stop_token = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -49,9 +50,39 @@ class Runtime {
     return toolbox_;
   }
 
+  // Words typed while a turn runs. The next tool boundary carries them to the
+  // model; a command killed through the token names them in its result.
+  void SetUserNote(std::string note) {
+    assert(is_initialized_ && "Initialize() must run before any note");
+    executor_->SetUserNote(std::move(note));
+  }
+
+  // The approval gate. Ask fires on the turn thread when a command matches the
+  // policy's approval patterns; Resolve answers it from the serve thread.
+  void EnableApprovalGate() {
+    assert(is_initialized_ && "Initialize() must run before any gate");
+    executor_->EnableApprovalGate();
+  }
+  void SetOnApprovalAsk(std::function<void(const std::string&)> cb) {
+    executor_->SetOnApprovalAsk(std::move(cb));
+  }
+  void ResolveApproval(bool allow, std::string note) {
+    executor_->ResolveApproval(allow, std::move(note));
+  }
+
   AgentManager& GetAgentManager() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
+  }
+  pu::http::HttpClient& GetHttpClient() {
+    assert(is_initialized_ && "Initialize() must run before any HTTP call");
+    return *http_client_;
+  }
+  // For a collaborator that outlives the call and needs the client shared, which a
+  // provider built per model does.
+  std::shared_ptr<pu::http::HttpClient> GetHttpClientShared() {
+    assert(is_initialized_ && "Initialize() must run before any HTTP call");
+    return http_client_;
   }
   std::shared_ptr<Session> GetOrCreateDefaultSession();
 
@@ -65,9 +96,8 @@ class Runtime {
   config::BackendConfig CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
-  bool SupportsThinkingLevel() const;
   std::optional<ThinkingLevel> GetThinkingOverride() const;
-  bool SetThinkingLevel(std::optional<ThinkingLevel> level);
+  void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:
   config::BackendConfig ConfiguredBackend() const;

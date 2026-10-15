@@ -10,8 +10,10 @@
 
 namespace pu::llm {
 
-// Splits a byte stream into complete lines; a line that does not parse is the callback's
-// to handle, since only the caller knows what the stream was meant to say.
+// Splits a byte stream into complete lines, empty ones included: an SSE event ends at a
+// blank line, so a provider that frames events has to be handed it. A format with no
+// event framing ignores the blanks it receives. A line that does not parse is the
+// callback's to handle, since only the caller knows what the stream was meant to say.
 class StreamingJsonParser {
  public:
   using LineCallback = std::function<void(std::string_view)>;
@@ -25,10 +27,6 @@ class StreamingJsonParser {
       if (pos == std::string::npos) break;
       std::string line = buffer_.substr(0, pos);
       if (!line.empty() && line.back() == '\r') line.pop_back();
-      if (line.empty()) {
-        buffer_.erase(0, pos + 1);
-        continue;
-      }
       // A newline can fall in the middle of a character when the bytes were split across
       // two reads, so a line whose tail is a partial sequence waits for the rest of it.
       if (text::EndsWithPartialSequence(line)) break;

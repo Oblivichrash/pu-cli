@@ -7,8 +7,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
 
+#include <fstream>
+#include <sstream>
+
 using namespace pu;
 using namespace pu::tests;
+
+namespace {
+
+std::string ReadFixture(const std::string& name) {
+  std::ifstream file(std::string(PU_FIXTURES_DIR) + "/" + name, std::ios::binary);
+  std::ostringstream buf;
+  buf << file.rdbuf();
+  return buf.str();
+}
+
+}  // namespace
 
 TEST_CASE("OllamaProvider request building", "[ollama]") {
   OllamaProvider::Config config;
@@ -36,11 +50,11 @@ TEST_CASE("BackendConfig leaves the token cap unset until it is asked for", "[co
     return boost::json::value_to<pu::config::BackendConfig>(boost::json::parse(text));
   };
 
-  REQUIRE_FALSE(config_from(R"({"type":"ollama","model":"m"})").max_tokens.has_value());
-  REQUIRE(config_from(R"({"type":"ollama","model":"m","max_tokens":4096})").max_tokens == 4096);
+  REQUIRE_FALSE(config_from(R"({"gateway":"ollama","model":"m"})").max_tokens.has_value());
+  REQUIRE(config_from(R"({"gateway":"ollama","model":"m","max_tokens":4096})").max_tokens == 4096);
 
   // Round-trips keep the absent key absent rather than inventing a cap.
-  const auto bare = config_from(R"({"type":"ollama","model":"m"})");
+  const auto bare = config_from(R"({"gateway":"ollama","model":"m"})");
   const auto written = boost::json::value_from(bare).as_object();
   REQUIRE_FALSE(written.contains("max_tokens"));
 }
@@ -134,7 +148,7 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
     std::string chunk =
         R"({"message":{"content":"hi"}})"
         "\n"
-        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9})"
+        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9,"total_duration":123456,"eval_duration":789})"
         "\n";
     cb(chunk.data(), chunk.size());
   };
@@ -147,6 +161,116 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 21);
   REQUIRE(result.usage->completion_tokens == 9);
+
+  // The final line carries timings beside the counts; they are kept as the daemon wrote
+  // them rather than dropped with the line.
+  REQUIRE(result.raw_usage.as_object().contains("total_duration"));
+  REQUIRE(result.raw_usage.at("eval_duration") == 789);
+}
+
+TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk =
+        R"({"message":{"content":"hi"}})"
+        "\n"
+        R"({"message":{"content":""},"done":true,"prompt_eval_count":21,"eval_count":9,"a_count_from_the_future":7})"
+        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  // A count this build has never heard of survives, because the line is kept whole
+  // rather than filtered to a list of names that would have to be remembered.
+  REQUIRE(result.raw_usage.at("a_count_from_the_future") == 7);
+}
+
+TEST_CASE("OllamaProvider names the fields on a captured frame that nothing reads",
+          "[ollama][usage][fixture]") {
+  OllamaProvider::Config config;
+  config.model = "gpt-oss:120b";
+  config.host = "https://ollama.com";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("ollama-thinking.ndjson");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.usage->cached_tokens == 48);
+
+  // `created_at` arrives on every line and nothing names it; the set is asserted whole so
+  // that a field the daemon adds fails here rather than passing unread.
+  REQUIRE(result.unread_fields == std::vector<std::string>{"created_at"});
+}
+
+TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
+  OllamaProvider::Config config;
+  config.model = "gpt-oss:120b";
+  config.host = "https://ollama.com";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string chunk = ReadFixture("ollama-thinking.ndjson");
+    cb(const_cast<char*>(chunk.data()), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  auto result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "pong");
+  REQUIRE(result.finish_reason == "stop");
+  REQUIRE(result.model == "gpt-oss:120b");
+  REQUIRE(result.usage.has_value());
+  REQUIRE(result.usage->prompt_tokens == 73);
+  REQUIRE(result.usage->completion_tokens == 42);
+  // The prompt was answered partly from the cache, and the count rides on the same line
+  // under Ollama's own name rather than a usage object.
+  REQUIRE(result.usage->cached_tokens == 48);
+}
+
+TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streaming]") {
+  OllamaProvider::Config config;
+  config.model = "llama3.2:1b";
+  config.host = "http://localhost:11434";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+
+  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
+                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    std::string chunk = R"({"message":{"content":"hi"}})"
+                        "\n"
+                        "\n"
+                        R"({"message":{"content":""},"done":true})"
+                        "\n";
+    cb(chunk.data(), chunk.size());
+  };
+
+  OllamaProvider provider(std::move(config), std::move(mock_http));
+  auto result = provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hi"}}}, {}));
+
+  REQUIRE(result.content == "hi");
 }
 
 TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
@@ -255,16 +379,6 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
   REQUIRE(sent.at("function").at("arguments").is_object());
   REQUIRE(sent.at("function").at("arguments").at("path") == ".");
-}
-
-TEST_CASE("OllamaProvider declares tool support", "[ollama]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto mock_http = std::make_shared<MockHttpClient>();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-  REQUIRE(provider.SupportsTools());
 }
 
 TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]") {

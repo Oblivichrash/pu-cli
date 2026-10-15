@@ -56,6 +56,20 @@ Ids are matched exactly, so `GLM-5.3-Flash` is 11102. An id that exists without 
 account being entitled to it says so instead: `glm-4.7-ioa` answers `model
 [glm-4.7-ioa] is only available for authorized users`.
 
+The candidate set a sweep needs comes from `GET {origin}/v3/config`, which answers the
+account's whole catalogue at `data.models[].id` and the agent's usable subset at
+`data.agents[].models[]` (the shape is in
+[codebuddy-cloud-api.md](codebuddy-cloud-api.md#2-model-listing)). The path is on the
+origin, not under the chat base: `/v2/v3/config` answers `404 Route Not Found`, and
+`GET {base}/models` is 404 as well.
+
+One call returned 34 ids in the first list and 19 in the second; a later run under a
+different key returned 18 in the agent's list (`glm-5.1` among them, `glm-5.3-flashx`
+absent), so both lists drift with the account. Which of the two is honest about
+entitlement is unanswered: the wider list carries image models a chat turn cannot name,
+so listing is still not the same as being allowed to run, and only a request settles
+that — `pu models --verify` does that, one token per id.
+
 The ids the installed client names, for reference: `deepseek-v3`, `deepseek-v3-0324`,
 `deepseek-v4-flash`, `deepseek-v4-flash-202605`, `deepseek-v4-pro`,
 `deepseek-v4-pro-202606`, `deepseek-r1`, `deepseek-reasoner`, `claude-3-5-sonnet-20241022`,
@@ -66,6 +80,24 @@ does not mean the account may use it: entitlement is the server's answer, and on
 request settles it. Serving a model the client omits shows the reverse also holds, so the
 client's list is a hint and not an inventory — `glm-5.3-flash` works without appearing
 there at all.
+
+## What each catalogue entry carries
+
+`data.models[]` entries carry capability fields beside the id, which is what a caller
+deciding whether to send `reasoning_effort` or to offer an image needs. Observed keys:
+`credits`, `id`, `maxAllowedSize`, `maxInputTokens`, `maxOutputTokens`, `name`,
+`relatedModels`, `supportsImages`, `supportsToolCall`, `vendor`, and on reasoning
+models also `supportsReasoning`, `onlyReasoning` and `reasoning: {effort, summary}`.
+
+| id | supportsReasoning | onlyReasoning | reasoning.effort | supportsImages |
+| --- | --- | --- | --- | --- |
+| `deepseek-v4-pro` | true | true | high | true |
+| `glm-5.3` | true | true | medium | true |
+| `glm-5.1` | true | true | medium | false |
+
+`onlyReasoning: true` is what makes an effort mandatory rather than optional, which is
+the `11150` above. The set of keys drifts with the gateway, so this is a record of what
+one account answered, not a schema to parse against.
 
 ## Bases the client carries
 
@@ -89,6 +121,13 @@ its own and the gateway still answered 200; dropping every one of them together 
 and `GET /v2/accounts` answers with no header but the key. The set is sent to match the
 installed client's request byte for byte, not because the server reads it.
 
+This holds for the catalogue read as well: a bare `Authorization` request to
+`/v3/config` answered 200, as did runs dropping `Accept`, `User-Agent` and each other
+client header in turn. An early reading held `User-Agent` to be required there (a
+request without it answered `code: 12403`, "check ua, get coding copilot version
+error"); that run also carried `Accept`, and re-running without it answers 200, so the
+claim is recorded as unreproduced rather than as a rule.
+
 This does not make the set removable. A gateway may require a header it does not yet
 check, and the client's own request is the safest thing to imitate; the finding is that
 the client is not what makes the calls succeed.
@@ -96,6 +135,31 @@ the client is not what makes the calls succeed.
 ## Corrected by a later probe
 
 Claims made here from an early run that did not survive a second look.
+
+**The catalogue is not under the chat base.** An early reading wrote the path as
+`{base}/v3/config` with `base = https://copilot.tencent.com/v2`; the gateway answers
+that `/v2/v3/config` with `404 Route Not Found`. The path is on the origin, beside the
+chat route's version segment rather than inside it.
+
+**`User-Agent` is not required for the catalogue.** The early `code: 12403` reading came
+from a request that also carried `Accept`; a bare `Authorization` request answers 200.
+
+**`glm-5.1` is not an unavailable model.** A `pu models --verify` run reported it
+`unavailable: HTTP error 400: Reasoning effort not supported`, which read as an
+entitlement refusal. It is not one: the probe sent no `reasoning_effort`, because the
+agent's `thinking` was `default`, and this model rejects a request that carries none.
+Four bare-key probes against `glm-5.1` settled it:
+
+| Request | Answer |
+| --- | --- |
+| `reasoning_effort: "high"` | 200 |
+| `reasoning_effort: "medium"` | 200 |
+| no `reasoning_effort` | 400 `code 11150`, "the reasoning effort value is not supported by the current model" |
+| `extra_body.thinking.type = "disabled"` | 400 `code 11150`, the same |
+
+So the model requires an effort rather than refusing one, and `11150` is what its
+absence looks like - not a property of the id, and not a refusal of the account. What
+`--verify` reported as unavailable was a request missing a field the model demands.
 
 **The chunk `id` does not group a conversation.** An early run saw one `id` across five
 requests under a shared `X-Conversation-ID`; re-running with three turns produced three

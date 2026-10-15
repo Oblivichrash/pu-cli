@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 #include "pu/config/agents.hpp"
@@ -45,7 +46,7 @@ class BackendSourceFixture {
                  {"name", "chat"},
                  {"backend",
                   {
-                      {"type", "openai"},
+                      {"gateway", "openai"},
                       {"host", "http://127.0.0.1:1"},
                       {"model", "test-model"},
                       {"temperature", temperature},
@@ -56,7 +57,7 @@ class BackendSourceFixture {
                  {"name", "coder"},
                  {"backend",
                   {
-                      {"type", "openai"},
+                      {"gateway", "openai"},
                       {"host", "http://127.0.0.1:1"},
                       {"model", "coder-model"},
                       {"temperature", 0.4},
@@ -76,7 +77,7 @@ class BackendSourceFixture {
 
 TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
   config::BackendConfig cfg;
-  cfg.type = config::BackendType::kOpenAI;
+  cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
   cfg.thinking = ThinkingLevel::kHigh;
@@ -89,28 +90,47 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
 }
 
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
-  for (const config::BackendType type : {config::BackendType::kOllama, config::BackendType::kOpenAI,
-                                         config::BackendType::kCodeBuddy}) {
+  for (const config::GatewayId type : {config::GatewayId::kOllama, config::GatewayId::kOpenAI,
+                                         config::GatewayId::kCodeBuddy}) {
     config::BackendConfig cfg;
-    cfg.type = type;
+    cfg.gateway = type;
     cfg.host = "https://example.invalid/v1";
     cfg.model = "test-model";
 
     const config::BackendConfig read =
         boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
 
-    REQUIRE(read.type == type);
-    REQUIRE(std::string(config::BackendTypeName(type)) == config::BackendTypeName(read.type));
+    REQUIRE(read.gateway == type);
+    REQUIRE(std::string(config::GatewayName(type)) == config::GatewayName(read.gateway));
+  }
+}
+
+TEST_CASE("A stored backend naming a gate this build has not got is refused", "[backend]") {
+  const boost::json::value stored = {
+      {"gateway", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
+
+  REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+}
+
+TEST_CASE("A stored backend naming no gate is refused rather than defaulted", "[backend]") {
+  // The field was named `type` before the gate table; a file still carrying it names no
+  // gate, and reading it as ollama would send its turns to a host nobody chose.
+  for (const boost::json::value stored :
+       {boost::json::value{{"host", "https://example.invalid/v1"}, {"model", "test-model"}},
+        boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
+                           {"model", "test-model"}},
+        boost::json::value{{"gateway", ""}, {"model", "test-model"}}}) {
+    REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
   }
 }
 
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
-  REQUIRE(config::ParseBackendType("codebuddy") == config::BackendType::kCodeBuddy);
-  REQUIRE(config::ParseBackendType("openai") == config::BackendType::kOpenAI);
-  REQUIRE(config::ParseBackendType("ollama") == config::BackendType::kOllama);
-  REQUIRE_FALSE(config::ParseBackendType("gpt").has_value());
+  REQUIRE(config::ParseGatewayId("codebuddy") == config::GatewayId::kCodeBuddy);
+  REQUIRE(config::ParseGatewayId("openai") == config::GatewayId::kOpenAI);
+  REQUIRE(config::ParseGatewayId("ollama") == config::GatewayId::kOllama);
+  REQUIRE_FALSE(config::ParseGatewayId("gpt").has_value());
 
-  REQUIRE(std::string(config::BackendTypeName(config::BackendType::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(config::GatewayName(config::GatewayId::kCodeBuddy)) == "codebuddy");
 }
 
 TEST_CASE("A session spec carries only the agent and the thinking override", "[backend]") {
@@ -171,6 +191,32 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   REQUIRE(runtime.GetAgentManager().GetAgentConfig("openai") != nullptr);
 }
 
+TEST_CASE("An agent named on the command line outranks the one a session remembers",
+          "[backend]") {
+  BackendSourceFixture fixture;
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.Initialize();
+    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    REQUIRE(coder != nullptr);
+    runtime.SwitchAgent(*coder);
+    runtime.Shutdown();
+  }
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.SetDefaultAgent("chat");
+    runtime.Initialize();
+
+    REQUIRE(runtime.ActiveAgent().name == "chat");
+    REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "chat");
+    REQUIRE(runtime.CurrentBackend().model == "test-model");
+  }
+}
+
 TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {
   BackendSourceFixture fixture;
 
@@ -214,4 +260,40 @@ TEST_CASE("A turn after an agent switch reaches an initialized registry", "[back
   REQUIRE(result.has_error);
 
   runtime.Shutdown();
+}
+
+TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend]") {
+  BackendSourceFixture fixture;
+  const fs::path session_path = fixture.root() / ".pu" / "session.json";
+  const fs::path backup_path = fixture.root() / ".pu" / "session.json.bak";
+
+  const std::string unreadable =
+      R"({"schema_version": 6, "conversation": {"history": {}}, "session_spec": {"agent_name": "chat"}})";
+  {
+    std::ofstream out(session_path, std::ios::trunc);
+    out << unreadable;
+  }
+
+  {
+    ScopedWorkingDir in_workspace(fixture.root());
+    Runtime runtime;
+    runtime.Initialize();
+    runtime.Shutdown();
+  }
+
+  std::ifstream backup(backup_path, std::ios::binary);
+  REQUIRE(backup.is_open());
+  const std::string kept((std::istreambuf_iterator<char>(backup)),
+                         std::istreambuf_iterator<char>());
+  REQUIRE(kept == unreadable);
+
+  // The path no longer holds what could not be read: either the fresh conversation has
+  // not been saved yet, or what stands there is that fresh conversation.
+  const auto holds_unreadable = [&] {
+    std::ifstream in(session_path, std::ios::binary);
+    if (!in.is_open()) return false;
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return text == unreadable;
+  }();
+  REQUIRE_FALSE(holds_unreadable);
 }

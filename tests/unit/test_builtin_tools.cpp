@@ -33,8 +33,8 @@ TEST_CASE("execute_bash returns success JSON on successful command", "[builtin_t
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == true);
-  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")).find("hello") != std::string::npos);
-  REQUIRE(j.at("stderr") == "");
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")).find("hello") != std::string::npos);
+  REQUIRE(j.at("blocked") == false);
   REQUIRE(j.at("error") == "");
   REQUIRE(j.at("exit_code") == 0);
 }
@@ -63,7 +63,7 @@ TEST_CASE("Execute_bash returns error JSON for missing command parameter", "[bui
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(j.at("stdout") == "");
+  REQUIRE(j.at("output") == "");
   REQUIRE(j.at("error") == "'command' parameter is required");
   REQUIRE(j.at("exit_code") == -1);
 }
@@ -83,7 +83,7 @@ TEST_CASE("Execute_bash blocks forbidden patterns", "[builtin_tools]") {
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
   REQUIRE(boost::json::value_to<std::string>(j.at("error"))
-              .find("command contains forbidden pattern") != std::string::npos);
+              .find("forbidden pattern") != std::string::npos);
 }
 
 TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment", "[builtin_tools]") {
@@ -96,7 +96,9 @@ TEST_CASE("ExecuteBash blocks dangerous commands via risk assessment", "[builtin
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
-  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("Blocked:") != std::string::npos);
+  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("Command rejected:") !=
+          std::string::npos);
+  REQUIRE(j.at("blocked") == true);
 }
 
 TEST_CASE("Execute_bash enforces max_command_length", "[builtin_tools]") {
@@ -135,7 +137,7 @@ TEST_CASE("Write_file returns success JSON on successful write", "[builtin_tools
 
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == true);
-  REQUIRE(boost::json::value_to<std::string>(j.at("stdout")).find("Successfully wrote") !=
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")).find("Successfully wrote") !=
           std::string::npos);
   REQUIRE(j.at("error") == "");
   REQUIRE(j.at("exit_code") == 0);

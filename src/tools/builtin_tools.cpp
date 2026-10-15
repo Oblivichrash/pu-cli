@@ -40,16 +40,17 @@ struct RiskAssessment {
 struct CommandResult {
   int exit_code = 0;
   std::string stdout_content;
-  std::string stderr_content;
   bool was_intercepted = false;
   std::string intercept_reason;
+  bool was_stopped = false;  // killed through the stop token before it finished
 };
 
 class CommandExecutor {
  public:
   explicit CommandExecutor(std::string sandbox_path) : sandbox_path_(std::move(sandbox_path)) {}
 
-  RiskAssessment AssessRisk(const std::string& command) const {
+  RiskAssessment AssessRisk(const std::string& command,
+                            const std::vector<std::string>& approval_patterns = {}) const {
     RiskAssessment result;
     std::string pattern;
     if (MatchAnyPattern(command, dangerous_patterns_, &pattern)) {
@@ -57,12 +58,16 @@ class CommandExecutor {
       result.reason = "Matches dangerous pattern: " + pattern;
       return result;
     }
+    if (!approval_patterns.empty() && MatchAnyPattern(command, approval_patterns)) {
+      result.level = RiskLevel::kApproval;
+      return result;
+    }
     result.level =
         MatchAnyPattern(command, safe_commands_) ? RiskLevel::kSafe : RiskLevel::kNeutral;
     return result;
   }
 
-  CommandResult Execute(const std::string& command) {
+  CommandResult Execute(const std::string& command, const pu::CancelToken& stop_token = {}) {
     CommandResult result;
     auto risk = AssessRisk(command);
     if (risk.level == RiskLevel::kDangerous) {
@@ -73,10 +78,10 @@ class CommandExecutor {
     }
 
     std::string output;
-    int exit_code = pu::platform::ExecuteCommand(command, output, sandbox_path_);
+    int exit_code = pu::platform::ExecuteCommand(command, output, stop_token, sandbox_path_);
     result.exit_code = exit_code;
     result.stdout_content = output;
-    if (exit_code != 0) result.stderr_content = output;
+    result.was_stopped = static_cast<bool>(stop_token) && exit_code == -1;
     return result;
   }
 
@@ -126,15 +131,15 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
     command = boost::json::value_to<std::string>(args.at("command"));
   }
   if (command.empty()) {
-    return tools::MakeToolResultJson(false, "", "", "'command' parameter is required", -1);
+    return tools::MakeToolResultJson(false, "", "'command' parameter is required", -1);
   }
 
   if (ctx.security && ctx.security->max_command_length > 0 &&
       command.size() > ctx.security->max_command_length) {
-    return tools::MakeToolResultJson(false, "", "",
-                                     "command exceeds maximum allowed length (" +
-                                         std::to_string(ctx.security->max_command_length) + ")",
-                                     -1);
+    return tools::MakeToolResultJson(
+        false, "", "command exceeds maximum allowed length (" +
+                        std::to_string(ctx.security->max_command_length) + ")",
+        -1);
   }
 
   if (ctx.security) {
@@ -142,27 +147,64 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
       std::regex re("\\b" + pattern + "\\b");
       if (std::regex_search(command, re)) {
         return tools::MakeToolResultJson(
-            false, "", "", "command contains forbidden pattern '" + pattern + "'", -1);
+            false, "",
+            "Command rejected: contains forbidden pattern '" + pattern + "'. This sandbox " +
+                "forbids " + tools::QuoteJoin(ctx.security->forbidden_patterns) +
+                ". Rework the command to stay within them.",
+            -1, true);
       }
     }
   }
 
   CommandExecutor executor(sandbox_root_);
-  auto risk = executor.AssessRisk(command);
+  auto risk = executor.AssessRisk(
+      command, ctx.security ? ctx.security->approval_patterns : std::vector<std::string>{});
   if (risk.level == RiskLevel::kDangerous) {
-    return tools::MakeToolResultJson(false, "", "", "Blocked: " + risk.reason, -1);
+    return tools::MakeToolResultJson(false, "", "Command rejected: " + risk.reason, -1, true);
+  }
+  std::string approval_note;
+  if (risk.level == RiskLevel::kApproval) {
+    if (ctx.approval == nullptr || ctx.approval->ask == nullptr) {
+      // Nowhere to ask is a refusal, not a silent run: the policy named this command.
+      return tools::MakeToolResultJson(
+          false, "",
+          "Command needs user approval and no approval channel is open. Rework it to avoid: " +
+              tools::QuoteJoin(ctx.security ? ctx.security->approval_patterns
+                                            : std::vector<std::string>{}) +
+              ".",
+          -1, true);
+    }
+    std::string note;
+    if (!ctx.approval->ask(command, note)) {
+      std::string msg = "Command rejected by the user";
+      if (!note.empty()) msg += ". The user adds: " + note;
+      return tools::MakeToolResultJson(false, "", msg, -1, true);
+    }
   }
 
-  auto result = executor.Execute(command);
+  const pu::CancelToken& stop_token =
+      ctx.control ? ctx.control->stop_token : pu::CancelToken{};
+  auto result = executor.Execute(command, stop_token);
+  if (!approval_note.empty() && ctx.control && ctx.control->on_note) {
+    ctx.control->on_note(approval_note);
+  }
+  if (result.was_stopped) {
+    std::string note = "Command stopped by the user";
+    if (ctx.control && !ctx.control->note.empty()) {
+      note += ". The user adds: " + ctx.control->note;
+    }
+    return tools::MakeToolResultJson(false, result.stdout_content, note, -1);
+  }
   if (result.was_intercepted) {
-    return tools::MakeToolResultJson(false, "", "", "Blocked: " + result.intercept_reason, -1);
+    return tools::MakeToolResultJson(false, "", "Command rejected: " + result.intercept_reason,
+                                     -1, true);
   }
 
   if (result.exit_code == 0) {
-    return tools::MakeToolResultJson(true, result.stdout_content, result.stderr_content, "", 0);
+    return tools::MakeToolResultJson(true, result.stdout_content, "", 0);
   } else {
     return tools::MakeToolResultJson(
-        false, result.stdout_content, result.stderr_content,
+        false, result.stdout_content,
         "Command failed (exit " + std::to_string(result.exit_code) + ")", result.exit_code);
   }
 }
@@ -195,11 +237,11 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   std::string path = json::ValueOrDefault<std::string>(args, "path", "");
   std::string content = json::ValueOrDefault<std::string>(args, "content", "");
   if (path.empty()) {
-    return tools::MakeToolResultJson(false, "", "", "'path' is required", -1);
+    return tools::MakeToolResultJson(false, "", "'path' is required", -1);
   }
 
   if (!ctx.security) {
-    return tools::MakeToolResultJson(false, "", "", "security policy not set", -1);
+    return tools::MakeToolResultJson(false, "", "security policy not set", -1);
   }
 
   std::error_code ec;
@@ -207,36 +249,36 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   auto sandbox_canonical = std::filesystem::weakly_canonical(sandbox_root, ec);
   if (ec) {
     return tools::MakeToolResultJson(
-        false, "", "", "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
+        false, "", "cannot resolve sandbox root: " + ctx.security->sandbox_root, -1);
   }
 
   std::filesystem::path full_path = sandbox_canonical / path;
   full_path = std::filesystem::weakly_canonical(full_path, ec);
   if (ec) {
-    return tools::MakeToolResultJson(false, "", "", "invalid path", -1);
+    return tools::MakeToolResultJson(false, "", "invalid path", -1);
   }
 
   auto target_str = full_path.string();
   auto sandbox_str = sandbox_canonical.string();
   if (target_str.find(sandbox_str) != 0) {
-    return tools::MakeToolResultJson(false, "", "",
-                                     "path outside sandbox root (traversal not allowed)", -1);
+    return tools::MakeToolResultJson(
+        false, "", "path outside sandbox root (traversal not allowed)", -1, true);
   }
 
   std::filesystem::create_directories(full_path.parent_path(), ec);
   if (ec) {
-    return tools::MakeToolResultJson(false, "", "", "cannot create parent directories", -1);
+    return tools::MakeToolResultJson(false, "", "cannot create parent directories", -1);
   }
 
   std::ofstream file(full_path);
   if (!file.is_open()) {
-    return tools::MakeToolResultJson(false, "", "", "cannot write to " + path, -1);
+    return tools::MakeToolResultJson(false, "", "cannot write to " + path, -1);
   }
   file << content;
 
   std::string summary =
       "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path;
-  return tools::MakeToolResultJson(true, summary, "", "", 0);
+  return tools::MakeToolResultJson(true, summary, "", 0);
 }
 
 }  // namespace pu::tools

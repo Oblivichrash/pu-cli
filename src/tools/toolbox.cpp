@@ -26,7 +26,7 @@ std::string Toolbox::SanitizeToolName(const std::string& name) {
     if (IsAllowedToolNameChar(c)) {
       result.push_back(c);
     } else {
-      result.push_back('_');  // replace non-compliant chars with '_'
+      result.push_back('_');
     }
   }
   return result;
@@ -78,7 +78,7 @@ std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::val
                                  ToolContext& ctx) {
   const auto it = tools_.find(name);
   if (it == tools_.end()) {
-    return tools::MakeToolResultJson(false, "", "", "Tool not found: " + name, -1);
+    return tools::MakeToolResultJson(false, "", "Tool not found: " + name, -1);
   }
 
   return it->second->Execute(args, ctx);

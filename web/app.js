@@ -8,8 +8,7 @@ let agentSelect = document.getElementById("agent-select");
 const thinkingSelect = document.getElementById("thinking-select");
 let agentChangeHandler = null;
 
-// The level the server resolved: the session's own when it has one, the agent's otherwise.
-// Only the server can tell those apart, so the control shows what it reports.
+// Only the server tells a session level from the agent's, so the control shows what it reports.
 function renderThinkingControl(level, override) {
   const sessionLevel = override && override !== "default" ? override : null;
   thinkingSelect.value = sessionLevel || "auto";
@@ -31,18 +30,11 @@ async function setThinkingLevel(level) {
       return;
     }
     renderThinkingControl(data.thinking, data.thinking_override || null);
-    // Said out loud: the level applies to the next message, not to the one on
-    // screen, and a setting that changed nothing visible would look broken.
-    createSystemMessage(
-      data.thinking_override
-        ? "Thinking: " + data.thinking + " for the rest of this session."
-        : "Thinking follows the agent's configuration (" + data.thinking + ").");
   } catch (e) {
     createSystemMessage("Thinking could not be set: " + e.message);
   }
 }
 
-// A change is the whole interaction: the level is a choice, not a step to repeat.
 thinkingSelect.addEventListener("change", () => setThinkingLevel(thinkingSelect.value));
 
 let ws = null;
@@ -53,8 +45,7 @@ let reconnectAttempts = 0;
 let reconnectTimer = null;
 let connState = "connecting";
 
-// How many nodes the store holds for the current chain. The next message sent
-// becomes turn chainLength + 1, which is the number /api/rewind expects.
+// The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
 let chainLength = 0;
 
 let currentAssistantBlocks = [];
@@ -161,8 +152,7 @@ function renderThinkingBlock(block) {
   return wrapper;
 }
 
-// Tool output is the raw product of a command, so it is set as text:
-// markup in a command's output is data rather than markup.
+// Tool output is a command's raw product, so it is set as text: its markup is data.
 function labelledPre(wrapperClass, label, text, preClass) {
   const wrapper = document.createElement("div");
   wrapper.className = wrapperClass;
@@ -200,6 +190,20 @@ function renderToolBlock(block) {
   }
   header.appendChild(statusSpan);
 
+  // The stop sits on the block it would kill, so the thing stopped is the thing on screen.
+  if (block.status === "running" && block.id) {
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "stop-command";
+    stop.textContent = "■ Stop";
+    stop.title = "Stop this command";
+    stop.onclick = (e) => {
+      e.stopPropagation();
+      askStopNote(wrapper, block.id);
+    };
+    header.appendChild(stop);
+  }
+
   const icon = document.createElement("span");
   icon.className = "toggle-icon";
   icon.textContent = block.collapsed ? "▶" : "▼";
@@ -224,6 +228,44 @@ function renderToolBlock(block) {
   return wrapper;
 }
 
+// The note is written against the command it explains, not in a modal. Enter stops, Esc does not.
+function askStopNote(wrapper, toolId) {
+  if (wrapper.querySelector(".stop-note")) return;
+  const body = wrapper.querySelector(".block-body");
+  if (!body) return;
+  wrapper.querySelector(".block-body")?.classList.remove("collapsed");
+  const row = document.createElement("div");
+  row.className = "stop-note";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Why stop it? (Enter to stop, Esc to keep running)";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.textContent = "Stop";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "stop-note-cancel";
+  cancel.textContent = "Cancel";
+
+  const commit = () => {
+    const note = input.value.trim();
+    row.remove();
+    stopRunningCommand(toolId, note);
+  };
+  const dismiss = () => row.remove();
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); dismiss(); }
+  });
+  confirm.addEventListener("click", commit);
+  cancel.addEventListener("click", dismiss);
+
+  row.append(input, confirm, cancel);
+  body.appendChild(row);
+  input.focus();
+}
+
 function renderTextBlock(block) {
   const div = document.createElement("div");
   div.className = "block-text";
@@ -236,11 +278,27 @@ function renderMarkdown(text) {
 }
 
 function toggleBlock(headerEl) {
-  const body = headerEl.parentElement.querySelector(".block-body");
+  const wrapper = headerEl.parentElement;
+  const body = wrapper.querySelector(".block-body");
   const icon = headerEl.querySelector(".toggle-icon");
   if (!body) return;
   const isCollapsed = body.classList.toggle("collapsed");
   if (icon) icon.textContent = isCollapsed ? "▶" : "▼";
+
+  const block = blockForElement(wrapper);
+  if (block) block.collapsed = isCollapsed;
+}
+
+function blockForElement(el) {
+  for (const block of currentAssistantBlocks) {
+    if (block.node === el) return block;
+  }
+  const id = el.dataset && el.dataset.toolId;
+  if (id) {
+    return currentAssistantBlocks.find(
+               (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === id) || null;
+  }
+  return null;
 }
 
 function startAssistantMessage() {
@@ -266,19 +324,24 @@ function removeCurrentAssistantMessage() {
 }
 
 let assistantRenderQueued = false;
+let pendingScrollFollow = false;
 
 // Coalesce a burst of tokens into one render per frame, and rebuild only the blocks that
 // changed: re-parsing the whole answer per token re-renders text and code already shown.
-function updateCurrentAssistantBlocks() {
+function updateCurrentAssistantBlocks(stickToBottom) {
+  // A following update must not be lost to one already queued that would not follow.
+  if (stickToBottom !== false) pendingScrollFollow = true;
   if (assistantRenderQueued) return;
   assistantRenderQueued = true;
   requestAnimationFrame(() => {
     assistantRenderQueued = false;
-    renderAssistantBlocks();
+    const follow = pendingScrollFollow;
+    pendingScrollFollow = false;
+    renderAssistantBlocks(follow);
   });
 }
 
-function renderAssistantBlocks() {
+function renderAssistantBlocks(stickToBottom) {
   if (!currentAssistantEl) return;
   const container = currentAssistantEl.querySelector(".blocks-container");
   if (!container) return;
@@ -292,14 +355,22 @@ function renderAssistantBlocks() {
       block.node.innerHTML = renderMarkdown(block.content);
     } else if (block.type === BLOCK_TYPES.THINKING) {
       const body = block.node.querySelector(".block-body");
-      if (body) body.textContent = block.content;
+      if (body) {
+        body.textContent = block.content;
+        body.classList.toggle("collapsed", block.collapsed);
+        const icon = block.node.querySelector(".toggle-icon");
+        if (icon) icon.textContent = block.collapsed ? "▶" : "▼";
+      }
     }
   });
 
   while (container.childNodes.length > currentAssistantBlocks.length) {
     container.removeChild(container.lastChild);
   }
-  if (isAtBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+  // A reasoning chunk is not the answer arriving, so it does not pull the view down.
+  if (stickToBottom !== false && isAtBottom) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 }
 
 function handleToolStart(payload) {
@@ -325,7 +396,6 @@ function handleToolEnd(payload) {
   block.output = payload.output || "";
   block.error = payload.error || "";
   block.status = "done";
-  // The status and body changed, so this one block is rebuilt in place.
   if (block.node) {
     const rebuilt = renderBlock(block);
     block.node.replaceWith(rebuilt);
@@ -345,8 +415,7 @@ function handleChunk(payload) {
   updateCurrentAssistantBlocks();
 }
 
-// Reasoning arrives on its own channel while the answer is still coming, and reads
-// above the text in the same order the history renderer puts it in.
+// Reasoning reads above the answer, in the order the history renderer puts it in.
 function handleThinking(payload) {
   const text = payload.text || "";
   if (!text) return;
@@ -356,18 +425,22 @@ function handleThinking(payload) {
     currentAssistantBlocks.unshift(block);
   }
   block.content += text;
-  updateCurrentAssistantBlocks();
+  updateCurrentAssistantBlocks(false);
 }
 
-// The header says who replied rather than what was asked for: a gateway may serve a
-// different build, and the response is the only place that says which.
-function setBackendLabel(backendType, model) {
-  const suffix = model ? " · " + model : "";
-  document.getElementById("session-status")?.remove();
-  const status = document.createElement("span");
-  status.id = "session-status";
-  status.textContent = `Backend: ${backendType || "?"}${suffix}`;
-  document.querySelector("header").appendChild(status);
+// Refreshed from every reply: a gateway may serve a different build, and only the answer says which.
+let backendTypeShown = "";
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text || "—";
+}
+
+function setBackendLabel(backendType, model, host) {
+  if (backendType) backendTypeShown = backendType;
+  setText("kb-type", backendTypeShown);
+  if (model) setText("kb-model", model);
+  if (host) setText("kb-host", host);
 }
 
 function handleDone(payload) {
@@ -380,9 +453,7 @@ function handleDone(payload) {
   }
 
   if (payload && payload.model) {
-    const current = document.getElementById("session-status");
-    const backend = current ? current.textContent.split(" · ")[0].replace("Backend: ", "") : "";
-    setBackendLabel(backend, payload.model);
+    setBackendLabel(backendTypeShown, payload.model);
   }
 }
 
@@ -402,22 +473,70 @@ function handleError(payload) {
   refreshChainLength();
 }
 
-// A reply that arrived but is known to be incomplete. The answer stands as it is,
-// and the remark says why it may be cut short, next to the reply it applies to.
-function handleNotice(payload) {
-  const text = payload && payload.text ? payload.text : "";
-  if (text) createSystemMessage(text);
+// No window is shown beside the counts: no gateway here reports one, and a guess reads as fact.
+function handleUsage(payload) {
+  const el = document.getElementById("context-usage");
+  const fill = document.getElementById("context-fill");
+  if (!el || !payload) return;
+  const prompt = Number(payload.prompt_tokens);
+  const completion = Number(payload.completion_tokens);
+  if (!Number.isFinite(prompt)) {
+    el.textContent = "";
+    if (fill) fill.style.width = "0";
+    return;
+  }
+  el.textContent =
+      `${prompt.toLocaleString()} tokens` +
+      (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
+  // The bar needs a known window; without one the number stands alone.
+  if (fill) {
+    const window = contextWindowFor(backendTypeShown);
+    if (window) {
+      const ratio = Math.min(prompt / window, 1);
+      fill.style.width = (ratio * 100).toFixed(1) + "%";
+      fill.className = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
+    } else {
+      fill.style.width = "0";
+    }
+  }
 }
 
-// One page per session: the server refuses a second one rather than ending the reply the
-// first is watching — a state to report, not a connection to keep retrying.
+// Only a window a backend is documented to have; an absent entry leaves the bar empty.
+const CONTEXT_WINDOWS = {};
+function contextWindowFor(backendType) {
+  return CONTEXT_WINDOWS[backendType] || null;
+}
+
+// The remark is a strip above the composer, not a line in the transcript.
+function showNotice(text) {
+  const bar = document.getElementById("notice-bar");
+  if (!bar) return;
+  bar.textContent = text;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss");
+  close.onclick = hideNotice;
+  bar.appendChild(close);
+  bar.hidden = false;
+}
+function hideNotice() {
+  const bar = document.getElementById("notice-bar");
+  if (bar) bar.hidden = true;
+}
+function handleNotice(payload) {
+  const text = payload && payload.text ? payload.text : "";
+  if (text) showNotice(text);
+}
+
+// One page per session: a refusal is a state to report, not a connection to keep retrying.
 const MAX_BUSY_RETRIES = 2;
 let busyRefusals = 0;
 
 function handleBusy(payload) {
   busyRefusals += 1;
   const reason = payload && payload.text ? payload.text : "This session is already open in another page.";
-  createSystemMessage(busyRefusals > MAX_BUSY_RETRIES
+  showNotice(busyRefusals > MAX_BUSY_RETRIES
       ? reason + " Reload this page once it is free."
       : reason + " Trying again…");
 }
@@ -436,11 +555,13 @@ function connectWebSocket() {
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
 
-    // Anything but a refusal means this page is the client of the session, which is
-    // what stops the knocking in onclose from being counted.
+    // Anything but a refusal means this page is the session's client.
     if (data.type !== "busy") busyRefusals = 0;
 
     switch (data.type) {
+      case "approval_ask":
+        showApprovalBar(data.payload.command);
+        break;
       case "tool_start":
         handleToolStart(data.payload);
         break;
@@ -462,6 +583,9 @@ function connectWebSocket() {
       case "notice":
         handleNotice(data.payload);
         break;
+      case "usage":
+        handleUsage(data.payload);
+        break;
       case "busy":
         handleBusy(data.payload);
         break;
@@ -470,8 +594,7 @@ function connectWebSocket() {
     }
   };
 
-  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing, so
-  // what was drawn here was all there was. The message stays, so the length is read back.
+  // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing.
   ws.onclose = () => {
     const refused = busyRefusals > 0;
     if (isStreaming) {
@@ -490,25 +613,25 @@ function connectWebSocket() {
   };
 
   ws.onerror = () => {
-    // onclose follows and schedules the reconnect; nothing to report here.
   };
 }
 
-// Set when a reply was being written as the socket went, so the reader is told the answer
-// was stopped rather than left to wonder where it went.
+// Set when a reply was in flight as the socket went, so the reader is told it was stopped.
 let replyLostToDisconnect = false;
 
-// A dropped socket reconnects on its own, backing off so a server that is down is not
-// hammered; the state is spoken only when it changes.
+// The state lives in the header dot; only a lost reply is worth a notice.
 function setConnectionState(state) {
   if (state === connState) return;
-  if (state === "offline" && connState === "online") {
-    createSystemMessage(replyLostToDisconnect
-        ? "Disconnected from server; the reply in progress was stopped and is not kept. Reconnecting…"
-        : "Disconnected from server; reconnecting…");
-  } else if (state === "online" && connState === "offline") {
-    createSystemMessage("Reconnected to server.");
+  const dot = document.getElementById("conn-dot");
+  if (dot) {
+    dot.className = "conn-dot " + state;
+    dot.title = state === "online" ? "Connected"
+      : (state === "offline" ? "Disconnected" : "Reconnecting…");
   }
+  if (state === "offline" && connState === "online" && replyLostToDisconnect) {
+    showNotice("Disconnected; the reply in progress was stopped and is not kept.");
+  }
+  if (state === "online" && connState === "offline") hideNotice();
   replyLostToDisconnect = false;
   connState = state;
 }
@@ -525,15 +648,14 @@ function scheduleReconnect() {
 
 function setSendButtonState(streaming) {
   isStreaming = streaming;
-  sendBtn.textContent = streaming ? "Stop" : "Send";
+  // Cancelling the turn and stopping a command are different acts, so neither is "Stop".
+  sendBtn.textContent = streaming ? "Cancel reply" : "Send";
   sendBtn.disabled = false;
-  // The level applies to the next message, so it is locked while one is in flight
-  // rather than left changeable into something that would not have applied.
+  // The level applies to the next message, so it is locked while one is in flight.
   thinkingSelect.disabled = streaming;
 }
 
-// The store is the authority on how long the chain is, so the next turn number
-// is read back from it after every run rather than counted here.
+// The store is the authority on the chain's length, so it is read back after every run.
 async function refreshChainLength() {
   try {
     const res = await fetch("/api/history");
@@ -542,8 +664,8 @@ async function refreshChainLength() {
   } catch (_) {}
 }
 
-// Steps the session back to before `turn` and hands the text back to the composer, so
-// sending it again replaces that turn.
+// Steps the session back before `turn` and hands the text to the composer, so sending it
+// again replaces that turn.
 async function rewindToTurn(turn, text) {
   if (isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
@@ -572,10 +694,15 @@ async function rewindToTurn(turn, text) {
   }
 }
 
+// The id names which command and the note is why; the frame already carries both.
+function stopRunningCommand(toolId, note) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "stop_command", payload: { text: note || "", id: toolId } }));
+}
+
 function sendMessage() {
   if (isStreaming) {
-    // Cancelling only asks the server to stop, and the partial reply is dropped because
-    // the store keeps none.
+    // Cancelling only asks; the partial reply is dropped because the store keeps none.
     if (ws && ws.readyState === WebSocket.OPEN) {
       stopRequested = true;
       ws.send(JSON.stringify({ type: "cancel" }));
@@ -598,8 +725,7 @@ function sendMessage() {
   inputEl.value = "";
   inputEl.style.height = "auto";
 
-  // The store appends this message to the chain, so its turn is the next one;
-  // the reply and any tool results follow it.
+  // The store appends this message, so its turn is the next one.
   createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], chainLength + 1, text);
   startAssistantMessage();
   setSendButtonState(true);
@@ -613,8 +739,7 @@ async function loadHistory() {
     const history = await res.json();
     if (!Array.isArray(history)) return;
 
-    // Grouped rather than walked one message at a time: a tool-using turn is several
-    // stored messages, and drawing each alone would show another conversation.
+    // A tool-using turn is several messages; drawing each alone would show another chat.
     for (const turn of groupHistory(history)) {
       if (turn.role === "system") {
         createSystemMessage(turn.text);
@@ -634,18 +759,38 @@ async function loadSession() {
     const res = await fetch("/api/session");
     const data = await res.json();
     if (data.success) {
-      setBackendLabel(data.backend_type, data.backend_model);
-      // Offered only where a level lands: a backend that ignores one shows nothing
-      // rather than a control that would do nothing.
-      thinkingSelect.hidden = !data.supports_thinking_level;
-      if (data.supports_thinking_level) {
-        renderThinkingControl(data.thinking || "default", data.thinking_override || null);
-      }
+      setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
+      renderThinkingControl(data.thinking || "default", data.thinking_override || null);
       if (data.agent_name) {
         agentSelect.value = data.agent_name;
       }
+      renderToolList(data.tools);
     }
   } catch (_) {}
+}
+
+function renderToolList(tools) {
+  const list = document.getElementById("panel-tools");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!Array.isArray(tools) || tools.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "—";
+    li.style.color = "var(--ink-light)";
+    list.appendChild(li);
+    return;
+  }
+  for (const name of tools) {
+    const li = document.createElement("li");
+    li.textContent = name;
+    if (name.startsWith("mcp.")) {
+      const src = document.createElement("span");
+      src.className = "tool-src";
+      src.textContent = "mcp";
+      li.appendChild(src);
+    }
+    list.appendChild(li);
+  }
 }
 
 async function loadAgents() {
@@ -685,7 +830,6 @@ async function loadAgents() {
         const data = await res.json();
         if (data.success) {
           messagesEl.innerHTML = "";
-          createSystemMessage("Switched to agent: " + name);
           await loadSession();
           await loadHistory();
         } else {
@@ -709,8 +853,12 @@ messagesEl.addEventListener("scroll", () => {
 });
 
 sendBtn.addEventListener("click", sendMessage);
+// While an input method composes, Enter confirms a candidate rather than sending.
+let composing = false;
+inputEl.addEventListener("compositionstart", () => { composing = true; });
+inputEl.addEventListener("compositionend", () => { composing = false; });
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !composing) {
     e.preventDefault();
     if (!isStreaming) sendMessage();
   }
@@ -733,8 +881,7 @@ const BLOCK_TYPES = {
   TEXT: "text",
 };
 
-// Arguments travel as an object or an encoded string; a string that is not JSON is kept as
-// it came, because one unreadable call must not hide the rest of the turn.
+// A string that is not JSON is kept as it came, so one unreadable call hides no other.
 function parseToolArguments(raw) {
   if (typeof raw === "string") {
     try {
@@ -746,14 +893,11 @@ function parseToolArguments(raw) {
   return raw === undefined ? null : raw;
 }
 
-// What the store recorded: a result answered the call, or nothing has. "running"
-// is the stream's word for a call in flight and is never stored.
+// "running" is the stream's word and is never stored; the store holds answered or not.
 function callStatus(statuses, index) {
   return statuses[index] === "pending" ? "pending" : "done";
 }
 
-// Rebuilds the transcript from the stored conversation: a node per provider message is
-// grouped into a bubble per turn, the way the streaming path builds them.
 function groupHistory(history) {
   const turns = [];
   let reply = null;
@@ -789,8 +933,7 @@ function groupHistory(history) {
         (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === msg.tool_call_id
       );
       if (!block) continue;
-      // `output` and `error` are the result as the running turn parsed it; the raw
-      // content is what is left when the server could not parse it either.
+      // Parsed by the running turn; the raw content is what is left when it could not be.
       block.output = typeof msg.output === "string" ? msg.output : content;
       block.error = msg.error || "";
       block.status = "done";
@@ -802,8 +945,6 @@ function groupHistory(history) {
     const bubble = currentReply();
 
     if (Array.isArray(msg.reasoning) && msg.reasoning.length > 0) {
-      // One thinking block per reply, above the rest, where the streaming path puts it and
-      // appends every iteration's reasoning. Blocks are concatenated back into one blob.
       const text = msg.reasoning.map((block) => block.text || "").join("");
       let thinking = bubble.blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
       if (!thinking) {

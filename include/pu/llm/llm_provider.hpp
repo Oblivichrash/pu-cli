@@ -92,9 +92,15 @@ struct ToolCall {
   boost::json::value arguments;
 };
 
+// What a provider counted for a turn. A field a backend does not report stays zero rather
+// than being derived: `total_tokens` is the provider's own total, and a sum of the two
+// counts beside it would read as a figure the provider gave.
 struct TokenUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
+  int total_tokens = 0;
+  int cached_tokens = 0;  // the prompt the provider answered from its cache
+  double credit = 0.0;    // what the call cost, where the gateway prices one
 };
 
 using TokenCallback = std::function<void(std::string_view)>;
@@ -104,6 +110,13 @@ struct ChatResult {
   std::vector<ReasoningBlock> reasoning;
   std::vector<ToolCall> tool_calls;
   std::optional<TokenUsage> usage;
+  // The usage object exactly as the gateway sent it, so a field nothing reads yet is
+  // carried rather than dropped. Null where the backend reports no usage object.
+  boost::json::value raw_usage;
+  // Keys a frame carried that no code names. A gateway is free to add one, so this is a
+  // signal rather than an error: it is what says a field the backend should have read
+  // went unnoticed, and it is asserted by the tests that pin a captured stream.
+  std::vector<std::string> unread_fields;
   std::string finish_reason;
   std::string model;
 };
@@ -132,8 +145,6 @@ class LLMProvider {
   virtual ~LLMProvider() = default;
 
   virtual ChatResult Chat(const ChatRequest& request) = 0;
-
-  virtual bool SupportsTools() const = 0;
 };
 
 }  // namespace pu
