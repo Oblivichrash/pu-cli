@@ -72,15 +72,15 @@ function renderAssistantBlocks(stickToBottom) {
   const container = PU.currentAssistantEl.querySelector(".blocks-container");
   if (!container) return;
 
+  // A reasoning chunk is not the answer arriving, so it does not pull the view down.
+  const follow = stickToBottom !== false && isAtBottom();
+
   PU.currentAssistantBlocks.forEach((block, i) => syncBlockNode(block, container, i));
 
   while (container.childNodes.length > PU.currentAssistantBlocks.length) {
     container.removeChild(container.lastChild);
   }
-  // A reasoning chunk is not the answer arriving, so it does not pull the view down.
-  if (stickToBottom !== false && PU.isAtBottom) {
-    PU.composer.messagesEl.scrollTop = PU.composer.messagesEl.scrollHeight;
-  }
+  if (follow) scrollToBottom();
 }
 
 function handleToolStart(payload) {

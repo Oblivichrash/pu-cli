@@ -421,6 +421,15 @@ A block that folds says so by setting `collapsible`, and `block-node.js` builds 
 re-reads the header, the body and the arrow for it; an element that folds is not named
 anywhere else.
 
+Whether the view follows the reply is a question asked of the transcript element at the
+moment of use, never a stored answer. Content grows under the reader without any scroll
+event, so a flag set only by scrolling goes stale the instant a bubble is appended: it
+then reads "the reader has scrolled away" while the reader is still at the bottom, and
+the reply stops following for the rest of the turn. `isAtBottom()` therefore measures the
+element each time it is asked, and a writer reads it *before* it appends, because the
+append is the very thing that moves the content being measured. A reader who scrolls up
+is left where they are; returning to the bottom resumes following with no other gesture.
+
 ## Provider Differences
 
 What each backend puts on the wire is reference material, not architecture, and

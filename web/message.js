@@ -42,6 +42,12 @@ function createMessage(role, blocks, turn, text) {
 
   if (blocks) renderBlocks(blocks, container);
 
+  // Read the position before the append, because the append itself moves the content
+  // the reader is measured against: appending grows the scroll height without firing a
+  // scroll event, so a view that only reacted to scrolling would never notice the row
+  // it is now one bubble away from.
+  const wasAtBottom = isAtBottom();
   PU.composer.messagesEl.appendChild(el);
+  if (wasAtBottom) scrollToBottom();
   return el;
 }

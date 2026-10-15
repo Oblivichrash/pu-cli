@@ -92,6 +92,7 @@ async function switchAgent(name) {
     PU.composer.messagesEl.replaceChildren();
     await loadSession();
     await loadHistory();
+    scrollToBottom();
   } catch (e) {
     createSystemMessage("Switch failed: " + e.message);
   }
@@ -131,6 +132,7 @@ async function rewindToTurn(turn, text) {
     }
     PU.composer.messagesEl.replaceChildren();
     await loadHistory();
+    scrollToBottom();
     input.value = text;
     input.focus();
     input.style.height = "auto";

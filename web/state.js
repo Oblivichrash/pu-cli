@@ -17,7 +17,6 @@ const CONTEXT_WINDOWS = {};
 const PU = {
   ws: null,
   isStreaming: false,
-  isAtBottom: true,
   stopRequested: false,
   reconnectAttempts: 0,
   reconnectTimer: null,
@@ -68,4 +67,17 @@ function createSystemMessage(text) {
   el.textContent = text;
   PU.composer.messagesEl.appendChild(el);
   return el;
+}
+
+// Read from the element each time rather than cached, because content grows under the
+// reader: a stored answer goes stale the moment a bubble is appended and the reader has
+// not moved, and a stale "not at the bottom" then stops the reply following for good.
+function isAtBottom() {
+  const el = PU.composer.messagesEl;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+}
+
+function scrollToBottom() {
+  const el = PU.composer.messagesEl;
+  el.scrollTop = el.scrollHeight;
 }

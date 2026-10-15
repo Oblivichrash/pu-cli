@@ -25,17 +25,11 @@ PU.composer.inputEl.addEventListener("keydown", (e) => {
 });
 PU.composer.inputEl.addEventListener("input", () => { PU.composer.inputEl.style.height = "auto"; });
 
-const messagesEl = PU.composer.messagesEl;
-messagesEl.addEventListener("scroll", () => {
-  const distance = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
-  PU.isAtBottom = distance < 10;
-});
-
 connectWebSocket();
 
 (async () => {
   await loadAgents();
   await loadSession();
   await loadHistory();
-  PU.composer.messagesEl.scrollTop = PU.composer.messagesEl.scrollHeight;
+  scrollToBottom();
 })();
