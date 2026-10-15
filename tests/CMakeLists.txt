@@ -50,7 +50,7 @@ target_compile_definitions(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_app pu_agent pu_lib
+    pu_core
     Catch2::Catch2WithMain
 )
 

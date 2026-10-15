@@ -12,8 +12,8 @@
 #include "pu/config/agents.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/command_router.hpp"
-#include "pu/llm/model_lister.hpp"
-#include "pu/llm/model_verifier.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/model_listing.hpp"
 #include "pu/runtime.hpp"
 
 namespace pu::cli {

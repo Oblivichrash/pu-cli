@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-#include "pu/llm/model_lister.hpp"
+#include "pu/llm/model_listing.hpp"
 
 namespace pu {
 

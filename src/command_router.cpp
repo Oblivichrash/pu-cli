@@ -5,7 +5,7 @@
 #include "pu/core/text.hpp"
 #include "pu/runtime.hpp"
 #include "pu/config/backend.hpp"
-#include "pu/llm/model_lister.hpp"
+#include "pu/llm/model_listing.hpp"
 
 #include <sstream>
 

@@ -2,7 +2,7 @@
 #include "pu/config/backend.hpp"
 
 #include "pu/config/gateway.hpp"
-#include "pu/llm/capabilities.hpp"
+#include "pu/llm/model_listing.hpp"
 #include "pu/core/base.hpp"
 
 #include <memory>

@@ -2,8 +2,8 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
-#include "pu/llm/codebuddy_catalog.hpp"
-#include "pu/llm/model_lister.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/model_listing.hpp"
 
 #include <boost/json.hpp>
 

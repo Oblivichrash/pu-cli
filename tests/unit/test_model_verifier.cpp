@@ -5,8 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "pu/llm/model_lister.hpp"
-#include "pu/llm/model_verifier.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 

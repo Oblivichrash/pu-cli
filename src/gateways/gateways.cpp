@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "gateways.hpp"
+#include "pu/config/gateway.hpp"
 
 #include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
@@ -8,12 +8,16 @@
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
 
+#include <array>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace pu::config {
+
+OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg);
+
 namespace {
 
 template <typename Config>
@@ -130,6 +134,34 @@ const Gateway& CodeBuddyGateway() {
       .make_listing = &MakeCodeBuddyListing,
   };
   return gateway;
+}
+
+// The registry of gateways.
+
+namespace {
+
+const std::array<const Gateway*, 3> kGateways = {
+    &OllamaGateway(),
+    &OpenAIGateway(),
+    &CodeBuddyGateway(),
+};
+
+}  // namespace
+
+std::span<const Gateway* const> Gateways() { return kGateways; }
+
+const Gateway* FindGateway(std::string_view name) {
+  for (const Gateway* gateway : kGateways) {
+    if (gateway->name == name) return gateway;
+  }
+  return nullptr;
+}
+
+const Gateway& GatewayForId(GatewayId id) {
+  for (const Gateway* gateway : kGateways) {
+    if (gateway->id == id) return *gateway;
+  }
+  throw Error("No gateway answers for " + std::to_string(static_cast<int>(id)));
 }
 
 }  // namespace pu::config

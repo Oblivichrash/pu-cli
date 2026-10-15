@@ -12,7 +12,7 @@
 #include "pu/config/gateway.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
-#include "pu/llm/capabilities.hpp"
+#include "pu/llm/model_listing.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::config {
