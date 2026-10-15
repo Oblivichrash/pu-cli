@@ -37,4 +37,5 @@ connectWebSocket();
   await loadAgents();
   await loadSession();
   await loadHistory();
+  PU.composer.messagesEl.scrollTop = PU.composer.messagesEl.scrollHeight;
 })();

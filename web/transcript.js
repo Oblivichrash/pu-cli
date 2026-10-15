@@ -119,6 +119,5 @@ function handleThinking(payload) {
       BLOCK_TYPES.THINKING,
       () => ({ type: BLOCK_TYPES.THINKING, content: "", collapsed: true }));
   block.content += text;
-  // Reasoning is not the answer arriving, so it does not pull the view down.
-  updateCurrentAssistantBlocks(false);
+  updateCurrentAssistantBlocks();
 }
