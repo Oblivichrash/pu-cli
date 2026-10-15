@@ -20,11 +20,8 @@ function createBlockNode(block) {
   return node;
 }
 
-function renderBlock(block) {
-  return createBlockNode(block);
-}
-
+// A block that folds marks itself, so this names no kind and a new one folds by saying so.
 function toggleBlock(headerEl) {
   const wrapper = headerEl.parentElement;
-  if (wrapper instanceof ToolBlock || wrapper instanceof ThinkingBlock) wrapper.toggle();
+  if (wrapper && wrapper.collapsible) wrapper.toggle();
 }

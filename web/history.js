@@ -26,12 +26,21 @@ function thinkingText(msg) {
   return msg.reasoning.map((block) => block.text || "").join("");
 }
 
+// The stored order is the order it happened in, so a block joins the one it follows only
+// when that block is the same kind. A replay is then the same shape as the live stream.
+function appendAtEnd(blocks, type, make) {
+  const last = blocks[blocks.length - 1];
+  if (last && last.type === type) return last;
+  const block = make();
+  blocks.push(block);
+  return block;
+}
+
 function appendThinking(blocks, text) {
-  let thinking = blocks.find((b) => b.type === BLOCK_TYPES.THINKING);
-  if (!thinking) {
-    thinking = { type: BLOCK_TYPES.THINKING, content: "", collapsed: true };
-    blocks.unshift(thinking);
-  }
+  const thinking = appendAtEnd(
+      blocks,
+      BLOCK_TYPES.THINKING,
+      () => ({ type: BLOCK_TYPES.THINKING, content: "", collapsed: true }));
   thinking.content += text;
 }
 
@@ -93,7 +102,10 @@ function groupHistory(history) {
         bubble.blocks.push(toolCallBlock(call, callStatus(statuses, index)));
       });
 
-      if (content) bubble.blocks.push({ type: BLOCK_TYPES.TEXT, content });
+      if (content) {
+        appendAtEnd(bubble.blocks, BLOCK_TYPES.TEXT, () => ({ type: BLOCK_TYPES.TEXT, content: "" }))
+            .content += content;
+      }
     }
   }
 

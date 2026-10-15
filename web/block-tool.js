@@ -4,6 +4,33 @@
 
 "use strict";
 
+// Fields whose value says what a step is doing, tried before any other. `command` and
+// `path` cover the built-in tools; the rest are common enough that naming them costs
+// nothing, and a tool nobody listed falls through to the first string it carries.
+const SUMMARY_FIELDS = ["command", "path", "query", "pattern", "url"];
+
+const SUMMARY_MAX = 60;
+
+// A one-line gist of the arguments, never the whole JSON: a long command is cut, and an
+// argument set with no readable value is counted rather than spelled out.
+function summarizeArgs(args) {
+  if (!args || typeof args !== "object") return "";
+  for (const key of SUMMARY_FIELDS) {
+    const value = args[key];
+    if (typeof value === "string" && value) return value;
+  }
+  for (const value of Object.values(args)) {
+    if (typeof value === "string" && value) return value;
+  }
+  const count = Object.keys(args).length;
+  return count === 0 ? "" : count + " 参数";
+}
+
+function oneLine(text) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > SUMMARY_MAX ? flat.slice(0, SUMMARY_MAX) + "…" : flat;
+}
+
 function labelledPre(wrapperClass, label, text, preClass) {
   const wrapper = document.createElement("div");
   wrapper.className = wrapperClass;
@@ -21,12 +48,14 @@ class ToolBlock extends HTMLElement {
     if (this.dataset.built) return;
     this.dataset.built = "1";
     this.className = "block-tool";
+    this.collapsible = true;
 
     const header = document.createElement("div");
-    header.className = "block-header";
-    header.onclick = () => toggleBlock(header);
 
     this.nameEl = document.createElement("span");
+    this.nameEl.className = "tool-name";
+    this.summaryEl = document.createElement("span");
+    this.summaryEl.className = "tool-summary";
     this.statusEl = document.createElement("span");
     this.statusEl.className = "tool-status";
     this.stopBtn = document.createElement("button");
@@ -39,44 +68,39 @@ class ToolBlock extends HTMLElement {
       askStopNote(this, this._block.id);
     };
 
-    this.iconEl = document.createElement("span");
-    this.iconEl.className = "toggle-icon";
-    header.append(this.nameEl, this.statusEl, this.stopBtn, this.iconEl);
-
-    this.body = document.createElement("div");
-    this.body.className = "block-body";
-
-    this.append(header, this.body);
+    header.append(this.nameEl, this.summaryEl, this.statusEl, this.stopBtn);
+    buildCollapsible(this, header);
     if (this._block) this.sync(this._block);
   }
 
   sync(block) {
     this._block = block;
     this.dataset.toolId = block.id || "";
-    this.nameEl.textContent = "🔧 " + (block.name || "unknown");
+    const summary = oneLine(summarizeArgs(block.args));
+    this.nameEl.textContent = block.name || "unknown";
+    this.summaryEl.textContent = summary;
+    this.summaryEl.hidden = !summary;
     this.statusEl.textContent = this.#statusText(block);
     // The stop sits on the block it would kill, so the thing stopped is the thing on screen.
     this.stopBtn.hidden = !(block.status === "running" && block.id);
-    this.iconEl.textContent = block.collapsed ? "▶" : "▼";
-    this.body.classList.toggle("collapsed", !!block.collapsed);
+    syncCollapsible(this, block);
     this.#fillBody(block);
   }
 
   toggle() {
-    this._block.collapsed = !this._block.collapsed;
-    this.sync(this._block);
+    toggleSelf(this);
   }
 
   toggled() {
     return this._block.collapsed;
   }
 
+  // A finished call that worked says so by being finished, so only the two states a
+  // reader cannot infer are named: still running, and not what was asked for.
   #statusText(block) {
-    if (block.status === "running") return " ⏳ Running...";
-    // Stored with no result: the turn ended before one was written, so what the
-    // call did is unknown rather than successful.
-    if (block.status === "pending") return " ⚠ No result";
-    return block.error ? " ❌ Failed" : " ✅ Done";
+    if (block.status === "running") return "running…";
+    if (block.status === "pending") return "no result";
+    return block.error ? "failed" : "";
   }
 
   #fillBody(block) {

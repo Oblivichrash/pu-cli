@@ -27,8 +27,14 @@ function removeCurrentAssistantMessage() {
   PU.currentAssistantBlocks = [];
 }
 
-function lastBlockOfType(type) {
-  return PU.currentAssistantBlocks.findLast((b) => b.type === type) || null;
+// A block list is a timeline, so an increment joins the block it follows only when that
+// block is the same kind. Anything else starts a new block at the end: reasoning that
+// arrives after a tool call belongs after it, not folded into the reasoning above.
+function blockAtEnd(type, make) {
+  const blocks = PU.currentAssistantBlocks;
+  const last = blocks[blocks.length - 1];
+  if (last && last.type === type) return last;
+  return pushBlock(make());
 }
 
 function pushBlock(block) {
@@ -53,7 +59,7 @@ function updateCurrentAssistantBlocks(stickToBottom) {
 function syncBlockNode(block, container, index) {
   // A node already in the container is patched; a new one is inserted, and its own
   // connectedCallback draws it from the block it was handed.
-  if (!block.node) block.node = renderBlock(block);
+  if (!block.node) block.node = createBlockNode(block);
   if (container.childNodes[index] !== block.node) {
     container.insertBefore(block.node, container.childNodes[index] || null);
   } else {
@@ -101,23 +107,18 @@ function handleToolEnd(payload) {
 }
 
 function handleChunk(payload) {
-  let block = lastBlockOfType(BLOCK_TYPES.TEXT);
-  if (!block) {
-    block = pushBlock({ type: BLOCK_TYPES.TEXT, content: "" });
-  }
+  const block = blockAtEnd(BLOCK_TYPES.TEXT, () => ({ type: BLOCK_TYPES.TEXT, content: "" }));
   block.content += payload.text || "";
   updateCurrentAssistantBlocks();
 }
 
-// Reasoning reads above the answer, in the order the history renderer puts it in.
 function handleThinking(payload) {
   const text = payload.text || "";
   if (!text) return;
-  let block = lastBlockOfType(BLOCK_TYPES.THINKING);
-  if (!block) {
-    block = { type: BLOCK_TYPES.THINKING, content: "", collapsed: false };
-    PU.currentAssistantBlocks.unshift(block);
-  }
+  const block = blockAtEnd(
+      BLOCK_TYPES.THINKING,
+      () => ({ type: BLOCK_TYPES.THINKING, content: "", collapsed: true }));
   block.content += text;
+  // Reasoning is not the answer arriving, so it does not pull the view down.
   updateCurrentAssistantBlocks(false);
 }

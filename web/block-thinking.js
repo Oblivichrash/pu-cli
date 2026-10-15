@@ -13,6 +13,7 @@ class ThinkingBlock extends HTMLElement {
     if (this.dataset.built) return;
     this.dataset.built = "1";
     this.className = "block-thinking";
+    this.collapsible = true;
 
     const header = document.createElement("div");
     header.className = "block-header";
