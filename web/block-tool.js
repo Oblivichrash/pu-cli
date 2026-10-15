@@ -48,7 +48,6 @@ class ToolBlock extends HTMLElement {
     if (this.dataset.built) return;
     this.dataset.built = "1";
     this.className = "block-tool";
-    this.collapsible = true;
 
     const header = document.createElement("div");
 

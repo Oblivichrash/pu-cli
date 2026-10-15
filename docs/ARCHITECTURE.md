@@ -394,7 +394,7 @@ home and no module has to be told about another's.
 | :--- | :--- |
 | `web/state.js` | The `PU` object, the frame-coalesced render queue, the connection dot's state |
 | `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
-| `web/block-node.js` | Picking the element a block type becomes, and the shared toggle |
+| `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
 | `web/panel.js` | The sidebar: backend label, context bar, tool list |
@@ -410,6 +410,16 @@ A transcript block and its element are separate things: the block is plain data 
 on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
+
+The block list is a timeline, in the order the turn happened: a reasoning chunk, a tool
+call and a further reasoning chunk are three blocks, not one merged by kind. A new chunk
+joins the block it follows only when that block is the same kind, which is the rule both
+`transcript.js` and `history.js` apply, so a replayed history and a live stream are the
+same shape.
+
+A block that folds says so by setting `collapsible`, and `block-node.js` builds and
+re-reads the header, the body and the arrow for it; an element that folds is not named
+anywhere else.
 
 ## Provider Differences
 

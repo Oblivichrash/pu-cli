@@ -13,37 +13,22 @@ class ThinkingBlock extends HTMLElement {
     if (this.dataset.built) return;
     this.dataset.built = "1";
     this.className = "block-thinking";
-    this.collapsible = true;
 
     const header = document.createElement("div");
-    header.className = "block-header";
     header.textContent = "💭 Thinking";
-    header.onclick = () => toggleBlock(header);
+    buildCollapsible(this, header);
 
-    const icon = document.createElement("span");
-    icon.className = "toggle-icon";
-    header.appendChild(icon);
-
-    const body = document.createElement("div");
-    body.className = "block-body";
-
-    this.append(header, body);
     if (this._block) this.sync(this._block);
   }
 
   sync(block) {
     this._block = block;
-    const body = this.querySelector(".block-body");
-    const icon = this.querySelector(".toggle-icon");
-    if (!body) return;
-    body.textContent = block.content;
-    body.classList.toggle("collapsed", !!block.collapsed);
-    icon.textContent = block.collapsed ? "▶" : "▼";
+    this.body.textContent = block.content;
+    syncCollapsible(this, block);
   }
 
   toggle() {
-    this._block.collapsed = !this._block.collapsed;
-    this.sync(this._block);
+    toggleSelf(this);
   }
 
   toggled() {

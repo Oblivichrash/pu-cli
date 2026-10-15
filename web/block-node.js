@@ -25,3 +25,32 @@ function toggleBlock(headerEl) {
   const wrapper = headerEl.parentElement;
   if (wrapper && wrapper.collapsible) wrapper.toggle();
 }
+
+// A folding block is a header, a body and the same two halves in every element, so the
+// parts and the folded state are built and re-read here rather than in each one.
+function buildCollapsible(wrapper, header) {
+  header.className = "block-header";
+  header.onclick = () => toggleBlock(header);
+
+  const icon = document.createElement("span");
+  icon.className = "toggle-icon";
+  header.appendChild(icon);
+
+  const body = document.createElement("div");
+  body.className = "block-body";
+
+  wrapper.append(header, body);
+  wrapper.body = body;
+  wrapper.iconEl = icon;
+  wrapper.collapsible = true;
+}
+
+function syncCollapsible(wrapper, block) {
+  wrapper.body.classList.toggle("collapsed", !!block.collapsed);
+  wrapper.iconEl.textContent = block.collapsed ? "▶" : "▼";
+}
+
+function toggleSelf(wrapper) {
+  wrapper._block.collapsed = !wrapper._block.collapsed;
+  syncCollapsible(wrapper, wrapper._block);
+}

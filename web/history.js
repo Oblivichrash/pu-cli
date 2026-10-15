@@ -54,7 +54,7 @@ function toolCallBlock(call, status) {
     output: "",
     error: "",
     status,
-    collapsed: true,
+    collapsed: false,
   };
 }
 

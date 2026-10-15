@@ -92,7 +92,7 @@ function handleToolStart(payload) {
     output: "",
     error: "",
     status: "running",
-    collapsed: true,
+    collapsed: false,
   });
 }
 

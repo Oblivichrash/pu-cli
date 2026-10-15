@@ -223,7 +223,7 @@ main {
 }
 .block-tool .stop-command { margin-left: auto; }
 .block-tool .toggle-icon { margin-left: auto; }
-.block-tool .stop-command + .toggle-icon { margin-left: 0; }
+.block-tool .stop-command:not([hidden]) + .toggle-icon { margin-left: 0; }
 .block-thinking .block-header:hover,
 .block-tool .block-header:hover {
   background: rgba(0, 0, 0, 0.03);
