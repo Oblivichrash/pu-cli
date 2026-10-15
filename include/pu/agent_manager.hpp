@@ -16,7 +16,7 @@ class AgentManager {
     agent_configs_ = configs;
   }
 
-  const config::AgentEntry* GetAgentConfig(const std::string& name) const {
+  const config::AgentEntry* AgentConfig(const std::string& name) const {
     for (const auto& entry : agent_configs_) {
       if (entry.name == name) return &entry;
     }
@@ -37,7 +37,7 @@ class AgentManager {
     return transient_agents_.back();
   }
 
-  std::vector<std::string> GetAgentNames() const {
+  std::vector<std::string> AgentNames() const {
     std::vector<std::string> names;
     names.reserve(agent_configs_.size() + transient_agents_.size());
     for (const auto& entry : agent_configs_) names.push_back(entry.name);
@@ -46,7 +46,7 @@ class AgentManager {
   }
 
   void SetActiveAgent(const std::string& name) { active_agent_ = name; }
-  std::string GetActiveAgent() const { return active_agent_; }
+  std::string ActiveAgentName() const { return active_agent_; }
 
  private:
   std::string active_agent_;

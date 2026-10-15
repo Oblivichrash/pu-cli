@@ -46,18 +46,12 @@ class Executor {
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  // The user's words typed while a turn runs. The tool loop drains it: into the
-  // stop result when a command is killed, beside a tool result otherwise.
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
-  // A command matching the policy's approval patterns parks in AskApproval until
-  // ResolveApproval answers it.
   void EnableApprovalGate() { approval_asks_ = true; }
   void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
     on_approval_ask = std::move(cb);
   }
-  // Answers the pending ask; without one, a harmless no-op the waiting thread
-  // alone reads.
   void ResolveApproval(bool allow, std::string note) {
     {
       std::lock_guard<std::mutex> lock(approval_mtx_);
@@ -79,22 +73,34 @@ class Executor {
   std::string BuildStaticSystemContext() const;
 
  private:
-  ExecutionResult RunToolLoop(Conversation& conversation, LLMProvider* provider, Toolbox& toolbox,
-                              CancelToken cancel_token,
-                              TokenCallback content_callback,
-                              ToolCallbacks tool_callbacks,
-                              TokenCallback reasoning_callback,
-                              CancelToken command_stop_token = nullptr);
+  struct Turn {
+    LLMProvider* provider;
+    Toolbox* toolbox;
+    TokenCallback content_callback;
+    ToolCallbacks tool_callbacks;
+    TokenCallback reasoning_callback;
+    CancelToken cancel_token;
+    CancelToken command_stop_token;
+  };
+
+  ExecutionResult RunToolLoop(Conversation& conversation, const Turn& turn);
+
+  ChatResult CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result,
+                          bool& failed, bool& stopped);
+
+  void RunToolCalls(Conversation& conversation, const Turn& turn,
+                    const std::vector<ToolCall>& calls, ExecutionResult& result);
+
+  void AppendAssistantTurn(Conversation& conversation, const ChatResult& chat_result) const;
+
+  ToolContext BuildToolContext(const Turn& turn);
 
   void ProbeStaticEnvironment();
 
-  // Parks the tool thread until ResolveApproval answers; the answer's note rides
-  // back beside the command.
   bool AskApproval(const std::string& command, std::string& note);
 
   std::string user_note_;
 
-  // One pending ask, answered from the serve thread.
   bool approval_asks_ = false;
   std::function<void(const std::string&)> on_approval_ask;
   std::mutex approval_mtx_;
@@ -106,6 +112,11 @@ class Executor {
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
+
+  inline static constexpr int kMaxToolIterations = 20;
+
+  ToolContext::Control control_;
+  ToolContext::Approval approval_;
 
   struct StaticEnvInfo {
     std::string os_name;

@@ -138,7 +138,12 @@ std::string Executor::BuildStaticSystemContext() const {
   return oss.str();
 }
 
-Executor::Executor() { ProbeStaticEnvironment(); }
+Executor::Executor() {
+  approval_.ask = [this](const std::string& command, std::string& note) {
+    return AskApproval(command, note);
+  };
+  ProbeStaticEnvironment();
+}
 
 void Executor::SetSecurityPolicy(const config::SecurityPolicy& policy) {
   security_policy_ = policy;
@@ -167,202 +172,208 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   CancelToken command_stop_token) {
   conversation.Append("user", input);
 
-  ExecutionResult result =
-      RunToolLoop(conversation, provider, toolbox, cancel_token, content_callback,
-                  tool_callbacks, reasoning_callback, command_stop_token);
+  const Turn turn{provider,          &toolbox,          std::move(content_callback),
+                  std::move(tool_callbacks), std::move(reasoning_callback), cancel_token,
+                  command_stop_token};
+
+  ExecutionResult result = RunToolLoop(conversation, turn);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
   return result;
 }
 
-ExecutionResult Executor::RunToolLoop(Conversation& conversation, LLMProvider* provider,
-                                      Toolbox& toolbox, CancelToken cancel_token,
-                                      TokenCallback content_callback,
-                                      ToolCallbacks tool_callbacks,
-                                      TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token) {
-  ExecutionResult result;
+ToolContext Executor::BuildToolContext(const Turn& turn) {
+  ToolContext tool_ctx;
+  if (security_policy_.has_value()) {
+    tool_ctx.security = &security_policy_.value();
+  } else {
+    static const config::SecurityPolicy empty_policy;
+    tool_ctx.security = &empty_policy;
+    spdlog::warn("No security policy set for Executor. Using empty policy.");
+  }
 
-  auto tools = toolbox.GetToolDefinitions();
-  const int max_iterations = 20;
-  int iteration = 0;
-  bool hit_max_iterations = false;
-  bool tool_was_called = false;
+  control_.stop_token = turn.command_stop_token;
+  control_.note = user_note_;
+  user_note_.clear();
 
-  do {
-    tool_was_called = false;
-    if (iteration >= max_iterations) {
-      hit_max_iterations = true;
-      spdlog::warn("Tool loop reached max_iterations ({}), breaking", max_iterations);
-      break;
-    }
-    ++iteration;
+  if (turn.command_stop_token) tool_ctx.control = &control_;
 
-    session::RequestInputs inputs;
-    inputs.system_prompt = system_prompt_;
-    inputs.environment = BuildStaticSystemContext();
+  tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
+  return tool_ctx;
+}
 
-    std::vector<ChatMessage> chat_history =
-        session::BuildRequestPath(conversation.GetGraph(), inputs);
+void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult& chat_result) const {
+  boost::json::array calls;
+  for (const ToolCall& call : chat_result.tool_calls) {
+    calls.push_back(context::ToolCallToJson(context::ToolCallRecord{call.id, call.name,
+                                                                   call.arguments}));
+  }
 
-    ChatResult chat_result;
+  ChatMessage assistant_msg;
+  assistant_msg.role = context::kAssistantRole;
+  assistant_msg.content = chat_result.content;
+  assistant_msg.reasoning = chat_result.reasoning;
+  assistant_msg.tool_calls = std::move(calls);
+  conversation.Append(assistant_msg);
+}
 
-    try {
-      ChatRequest request;
-      request.history = chat_history;
-      request.tools = tools;
-      request.cancel_token = cancel_token;
-      if (reasoning_callback) request.on_reasoning = reasoning_callback;
-      request.on_content = [&](std::string_view token) {
-        if (token.empty()) return;
-        result.was_streamed = true;
-        if (content_callback) {
-          content_callback(token);
-        } else {
-          std::cout << token << std::flush;
-        }
-      };
+ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
+                                  ExecutionResult& result, bool& failed, bool& stopped) {
+  session::RequestInputs inputs;
+  inputs.system_prompt = system_prompt_;
+  inputs.environment = BuildStaticSystemContext();
 
-      chat_result = provider->Chat(request);
+  std::vector<ChatMessage> history = session::BuildRequestPath(conversation.Graph(), inputs);
+  std::vector<ToolDefinition> tools = turn.toolbox->ToolDefinitions();
 
-      if (chat_result.usage) {
-        result.usage = chat_result.usage;
-        spdlog::debug("tokens: prompt={}, completion={}, total={}, cached={}, credit={}",
-                      chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
-                      chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
-                      chat_result.usage->credit);
-      }
-      if (!chat_result.raw_usage.is_null()) {
-        spdlog::debug("usage as the provider reported it: {}",
-                      json::serialize(chat_result.raw_usage));
-      }
-      if (!chat_result.unread_fields.empty()) {
-        // Not a failure: a gateway may add a field at will. It is the one signal that says
-        // a field the backend should have read reached us and nothing named it.
-        spdlog::debug("fields on the reply nothing reads: {}",
-                      boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
-                                                                chat_result.unread_fields.end())));
-      }
-
-      tool_was_called = !chat_result.tool_calls.empty();
-      if (!tool_was_called) {
-        std::string response = chat_result.content;
-        const std::string reasoning = llm::ProjectReasoningText(chat_result.reasoning);
-        if (response.empty() && !reasoning.empty()) {
-          response = reasoning;
-          spdlog::debug("Using reasoning as final response (thinking mode)");
-        }
-        result.content = response;
-        result.notice = StopNotice(chat_result.finish_reason);
-        if (!chat_result.model.empty()) {
-          result.model = chat_result.model;
-          spdlog::debug("Answered by {}", chat_result.model);
-        }
-        break;
-      }
-    } catch (const std::exception& e) {
-      if ((cancel_token && cancel_token->load(std::memory_order_acquire)) ||
-          platform::IsInterrupted()) {
-        spdlog::debug("Request stopped by the caller: {}", e.what());
-        return result;
-      }
-      result.has_error = true;
-      result.error_message = "Request failed: " + std::string(e.what());
-      spdlog::error("{}", result.error_message);
-      break;
-    }
-
-    for (auto& tc : chat_result.tool_calls) {
-      if (tc.id.empty()) {
-        tc.id = "call_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_" +
-                std::to_string(++next_tool_call_id_);
-      }
-    }
-
-    ChatMessage assistant_msg;
-    assistant_msg.role = context::kAssistantRole;
-    assistant_msg.content = chat_result.content;
-    assistant_msg.reasoning = chat_result.reasoning;
-
-    boost::json::array j_calls;
-    for (const auto& tc : chat_result.tool_calls) {
-      j_calls.push_back(
-          context::ToolCallToJson(context::ToolCallRecord{tc.id, tc.name, tc.arguments}));
-    }
-    assistant_msg.tool_calls = std::move(j_calls);
-    conversation.Append(assistant_msg);
-
-    ToolContext tool_ctx;
-    if (security_policy_.has_value()) {
-      tool_ctx.security = &security_policy_.value();
+  ChatRequest request;
+  request.history = history;
+  request.tools = tools;
+  request.cancel_token = turn.cancel_token;
+  request.on_reasoning = turn.reasoning_callback;
+  request.on_content = [&](std::string_view token) {
+    if (token.empty()) return;
+    result.was_streamed = true;
+    if (turn.content_callback) {
+      turn.content_callback(token);
     } else {
-      static const config::SecurityPolicy empty_policy;
-      tool_ctx.security = &empty_policy;
-      spdlog::warn("No security policy set for Executor. Using empty policy.");
+      std::cout << token << std::flush;
     }
-    ToolContext::Control control;
-    control.stop_token = command_stop_token;
-    control.note = user_note_;
-    user_note_.clear();  // one note stops one command; a fresh one needs a new word
-    tool_ctx.control = command_stop_token ? &control : nullptr;
-    ToolContext::Approval approval;
-    approval.ask = [this](const std::string& command, std::string& note) {
-      return AskApproval(command, note);
-    };
-    tool_ctx.approval = approval_asks_ ? &approval : nullptr;
-    for (const auto& call : chat_result.tool_calls) {
-      ++result.tool_call_count;
+  };
 
-      if (tool_callbacks.on_start) {
-        tool_callbacks.on_start(call.id, call.name, call.arguments);
-      }
+  try {
+    ChatResult chat_result = turn.provider->Chat(request);
+    if (chat_result.usage) {
+      result.usage = chat_result.usage;
+      spdlog::debug("tokens: prompt={}, completion={}, total={}, cached={}, credit={}",
+                    chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
+                    chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
+                    chat_result.usage->credit);
+    }
+    if (!chat_result.raw_usage.is_null()) {
+      spdlog::debug("usage as the provider reported it: {}", json::serialize(chat_result.raw_usage));
+    }
+    if (!chat_result.unread_fields.empty()) {
+      spdlog::debug("fields on the reply nothing reads: {}",
+                    boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
+                                                              chat_result.unread_fields.end())));
+    }
+    return chat_result;
+  } catch (const std::exception& e) {
+    if ((turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) ||
+        platform::IsInterrupted()) {
+      spdlog::debug("Request stopped by the caller: {}", e.what());
+      stopped = true;
+      return {};
+    }
+    failed = true;
+    result.has_error = true;
+    result.error_message = "Request failed: " + std::string(e.what());
+    spdlog::error("{}", result.error_message);
+    return {};
+  }
+}
 
-      std::string tool_result;
-      SetLogToolName(call.name);
-      auto tool_start = std::chrono::steady_clock::now();
-      try {
-        tool_result = toolbox.ExecuteTool(call.name, call.arguments, tool_ctx);
-      } catch (const std::exception& e) {
-        tool_result = tools::MakeToolResultJson(
-            false, "", std::string("Tool execution error: ") + e.what(), -1);
-      }
-      auto tool_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::steady_clock::now() - tool_start)
-                         .count();
-      SetLogDurationMs(tool_ms);
-      spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
-      ClearLogToolName();
-      ClearLogDurationMs();
+void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
+                            const std::vector<ToolCall>& calls, ExecutionResult& result) {
+  ToolContext tool_ctx = BuildToolContext(turn);
 
-      if (tool_callbacks.on_end) {
-        auto parsed = tools::ParseToolResult(tool_result);
-        if (parsed.valid) {
-          tool_callbacks.on_end(call.id, parsed.output, parsed.error);
-        } else {
-          tool_callbacks.on_end(call.id, tool_result, "");
-        }
-      }
+  for (const ToolCall& call : calls) {
+    ++result.tool_call_count;
 
-      // A note typed while the command ran reaches the model beside its result.
-      if (!user_note_.empty() && cancel_token) {
-        ChatMessage note_msg;
-        note_msg.role = "user";
-        note_msg.content = "[user note during the turn] " + user_note_;
-        conversation.Append(note_msg);
-        user_note_.clear();
-      }
-
-      ChatMessage tool_msg;
-      tool_msg.role = "tool";
-      tool_msg.content = tool_result;
-      tool_msg.tool_name = call.name;
-      tool_msg.tool_call_id = call.id;
-      conversation.Append(tool_msg);
+    if (turn.tool_callbacks.on_start) {
+      turn.tool_callbacks.on_start(call.id, call.name, call.arguments);
     }
 
-  } while (tool_was_called);
+    std::string tool_result;
+    SetLogToolName(call.name);
+    const auto tool_start = std::chrono::steady_clock::now();
+    try {
+      tool_result = turn.toolbox->ExecuteTool(call.name, call.arguments, tool_ctx);
+    } catch (const std::exception& e) {
+      tool_result = tools::MakeToolResultJson(false, "",
+                                              std::string("Tool execution error: ") + e.what(), -1);
+    }
+    const auto tool_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                              tool_start)
+            .count();
+    SetLogDurationMs(tool_ms);
+    spdlog::info("Tool '{}' completed in {} ms", call.name, tool_ms);
+    ClearLogToolName();
+    ClearLogDurationMs();
+
+    if (turn.tool_callbacks.on_end) {
+      const auto parsed = tools::ParseToolResult(tool_result);
+      if (parsed.valid) {
+        turn.tool_callbacks.on_end(call.id, parsed.output, parsed.error);
+      } else {
+        turn.tool_callbacks.on_end(call.id, tool_result, "");
+      }
+    }
+
+    if (!user_note_.empty() && turn.cancel_token) {
+      ChatMessage note_msg;
+      note_msg.role = "user";
+      note_msg.content = "[user note during the turn] " + user_note_;
+      conversation.Append(note_msg);
+      user_note_.clear();
+    }
+
+    ChatMessage tool_msg;
+    tool_msg.role = "tool";
+    tool_msg.content = tool_result;
+    tool_msg.tool_name = call.name;
+    tool_msg.tool_call_id = call.id;
+    conversation.Append(tool_msg);
+  }
+}
+
+ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
+  ExecutionResult result;
+  bool hit_max_iterations = false;
+
+  for (int iteration = 0;; ++iteration) {
+    if (iteration >= kMaxToolIterations) {
+      hit_max_iterations = true;
+      spdlog::warn("Tool loop reached max_iterations ({}), breaking", kMaxToolIterations);
+      break;
+    }
+
+    bool failed = false;
+    bool stopped = false;
+    ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped);
+    if (failed) break;
+    if (stopped) return result;
+
+    if (chat_result.tool_calls.empty()) {
+      std::string response = chat_result.content;
+      const std::string reasoning = llm::ProjectReasoningText(chat_result.reasoning);
+      if (response.empty() && !reasoning.empty()) {
+        response = reasoning;
+        spdlog::debug("Using reasoning as final response (thinking mode)");
+      }
+      result.content = response;
+      result.notice = StopNotice(chat_result.finish_reason);
+      if (!chat_result.model.empty()) {
+        result.model = chat_result.model;
+        spdlog::debug("Answered by {}", chat_result.model);
+      }
+      break;
+    }
+
+    for (ToolCall& call : chat_result.tool_calls) {
+      if (call.id.empty()) {
+        call.id = "call_" +
+                  std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                  "_" + std::to_string(++next_tool_call_id_);
+      }
+    }
+
+    AppendAssistantTurn(conversation, chat_result);
+    RunToolCalls(conversation, turn, chat_result.tool_calls, result);
+  }
 
   if (hit_max_iterations && result.content.empty()) {
     result.content =

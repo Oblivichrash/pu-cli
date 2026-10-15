@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The panel's own half: which way it opens, and remembering that choice. The content
-// it shows is filled by app.js as the session reports it.
+// it shows is filled by panel.js as the session reports it.
 
 const shellEl = document.getElementById("shell");
 const scrimEl = document.getElementById("scrim");

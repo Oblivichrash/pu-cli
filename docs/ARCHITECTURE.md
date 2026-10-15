@@ -90,6 +90,13 @@ returns an empty string and `FindServeOptions` returns `std::nullopt`. Only
 where the file goes. A function reports that it cannot answer rather than picking one
 caller's condition to raise.
 
+`Runtime::Initialize` resolves the configuration in one order: an explicit path argument,
+then `PU_AGENTS_CONFIG`, then `./.pu/agents.json`, then the user configuration. The
+environment variable is checked before the conventional locations so a test or a packaged
+run can point at a fixture without a writable workspace, and it is an outright failure
+when the file it names is missing — falling back to the conventional path would silently
+run against the wrong configuration rather than the one the caller asked for.
+
 The same holds for invariants: `Runtime::ActiveAgent` and `ConfiguredBackend` do not check
 that `Initialize` ran, because every path reaching them passes through it. A test for a
 condition that cannot be false asserts that the code distrusts itself.
@@ -117,6 +124,22 @@ The tool loop holds no session state (`main()` injects its collaborators) and
 runs once per turn: read the `Conversation`, inject system context, call the
 provider, execute any tool calls through `Toolbox`, store each structured result
 verbatim, and repeat until the reply carries no call.
+
+**Shape of a turn.** `Execute` takes the caller's inputs once and packs them into a
+`Turn` — provider, toolbox, callbacks, and the two cancel tokens — so the three steps
+below each take that one argument instead of re-threading a seven-parameter signature:
+
+| Step | Does |
+| :--- | :--- |
+| `CallProvider` | Builds the request path from the `Conversation`, streams the reply, and reports usage. Owns the only `try`/`catch` around a provider call, including the distinction between a cancelled call and a failed one. |
+| `RunToolCalls` | Resolves the tool context once, then per call runs the tool, reports it to the callbacks, and stores the result verbatim. |
+| `RunToolLoop` | Iterates the two above until a reply carries no call, and is the only place the iteration cap and the "empty reply" failure are decided. |
+
+**Tool context lifetimes.** `ToolContext` holds raw pointers into values that must outlive
+the tool call, so the `Control` and `Approval` structs it points at are `Executor` members
+filled in by `BuildToolContext`, not locals. `Control` is present only when the caller
+supplied a stop token — the CLI has no channel to stop a command, so its pointer stays
+null there.
 
 **System context.** `Executor` prepends a system message built from:
 
@@ -195,6 +218,54 @@ environment, or the workspace's own `serve` block names:
    pending read and write, so no connection thread is left blocked — the runner is
    stopped, and `Runtime::Shutdown()` persists the session.
 
+### HTTP handler contract
+
+`DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler
+should not have to: it parses the body once for routes that take one, takes the `io_mutex`
+for the duration of the call, wraps whatever the handler returned in the envelope that
+route declares, and turns a thrown exception into the status that names whose fault it is
+(`RequestRefused` → `400`, `Error` → `500`).
+
+A handler therefore only computes and returns:
+
+```cpp
+boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body);
+```
+
+Refusals are thrown rather than sent, and each route declares its own success shape —
+`{"success": true, …}` merged into the handler's object, a bare array for `/api/history`,
+or a named collection for `/api/agents` and `/api/workspaces` — so the wire format is
+read off the route table instead of being reassembled by hand in every handler.
+
+The status the exception maps to is the one that names whose fault it is: `RequestRefused`
+for a request the caller can fix, `NotFound` for a name that does not exist, and `Error`
+for an operation that failed on our side.
+
+### Static page serving
+
+The UI travels with the binary, not with the workspace the session is pointed at, so
+`GetWebDir` resolves the page directory in this order and takes the first that exists:
+
+| Order | Candidate | Why |
+| :---- | :-------- | :-- |
+| 1 | `$PU_WEB_DIR` | The one explicit override, for a checkout whose layout we cannot guess |
+| 2 | `<executable>/web`, `<executable>/../web`, `<executable>/../share/pu/web` | A build tree or an install keeps the page under its own prefix, and a workspace somewhere else must not hide it |
+| 3 | `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` | Release and system installs, where the page sits beside the working directory |
+
+Only the files in `kPageFiles` are served. A target outside that list is answered with
+the `404` that ends `DispatchHttpRequest`, so the route cannot be walked to read anything
+else in the page directory.
+
+The target is joined to the page directory with `operator/`, after the leading slash is
+dropped and the bare `/` is mapped to `index.html`. Concatenating the strings instead
+would make the result depend on whether the configured directory happens to end in a
+separator, and would misreport a correctly configured but separator-less directory as a
+missing page.
+
+On macOS the executable's own path is reported by `_NSGetExecutablePath`, which fills a
+buffer whose size it also reports and may leave `..` in the result, so it is resolved
+before its directory is taken.
+
 ### Single-session auto-persistence
 
 `Runtime` maintains a single `std::shared_ptr<Session> current_session_`. On
@@ -203,6 +274,29 @@ environment, or the workspace's own `serve` block names:
 session is serialized back to the same file via `Session::Serialize`. There is no
 manual save/load/list/export; persistence is fully automatic and scoped to the
 data directory.
+
+### Tool execution
+
+A tool runs as a child process and answers with one merged stream. Its stdout and stderr are
+the same pipe, so the caller cannot tell them apart afterward and the result carries a single
+output field rather than two that would sometimes be empty for reasons the tool does not
+control.
+
+The child is put in its own process group. A stop then kills the group, which takes the shell
+and any grandchildren with it — killing the immediate pid alone would leave a `bash -c` shell's
+children running with the pipe still open, and the read that is supposed to see the token would
+keep waiting on them.
+
+The stream is read through `fdopen` on the pipe rather than `popen`, so `pclose` is not
+available: it answers for `popen`'s own pid table, and on a stream it did not open returns
+success regardless of what the child did. `fclose` closes the descriptor and `waitpid` reaps
+the child explicitly, which is the only way the exit status is known.
+
+Reading with `fgets` would park on the pipe until the child writes, so a command that stays
+quiet would keep a stop token unchecked until it finished on its own. The read instead runs on
+a poll tick: output when there is any, the token when there is not. Windows keeps the `popen`
+path and honors a stop token only between reads of the merged stream, which is no worse than
+what the stream reader does with a cancel.
 
 ### Toolbox & MCP lifecycle
 
@@ -272,8 +366,8 @@ hands each streamed chunk back through the connection, which queues it and write
 the connection's strand, producing the typewriter effect in the browser. The
 `ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
 `id`. Commands and non-streaming backends deliver their full text as a single chunk
-frame. The frame schema is owned by [README](../README.md#web-api) and implemented in
-`web/app.js`.
+frame. The frame schema is owned by [README](../README.md#web-api) and implemented by
+`web/ws.js`.
 
 The read loop is what an asynchronous stream buys: a connection parked in a synchronous
 read cannot be woken by closing its socket, so a shutdown would wait on a client that
@@ -286,6 +380,36 @@ is half an answer, and storing that would make the next request read it as the m
 finished reply. The chat is therefore never driven by nobody, and a page that reloads
 mid-answer comes back to the conversation as the store has it — the question, and no
 reply to it.
+
+### Browser modules
+
+The page is plain scripts with no build step, so the load order in `web/index.html` *is*
+the dependency order and every module's entry points are globals. `web/state.js` runs
+first and owns the one mutable object, `PU`: the socket, the streaming flags, the
+assistant message being written, the chain length, and the composer's elements. Every
+other module reads and writes `PU` rather than keeping a copy, so a fact has exactly one
+home and no module has to be told about another's.
+
+| File | Owns |
+| :--- | :--- |
+| `web/state.js` | The `PU` object, the frame-coalesced render queue, the connection dot's state |
+| `web/block-thinking.js`, `web/block-tool.js` | The two block custom elements and their own drawing |
+| `web/block-node.js` | Picking the element a block type becomes, and the shared toggle |
+| `web/message.js` | The frame around a message: role label, container, edit affordance |
+| `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
+| `web/panel.js` | The sidebar: backend label, context bar, tool list |
+| `web/notice.js` | The strip above the composer |
+| `web/history.js` | Folding stored messages back into the bubbles a reader saw |
+| `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
+| `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
+| `web/composer.js` | Turning a press into a run, and a second press into a cancel |
+| `web/app.js` | The element lookups and the start-up order, and nothing else |
+
+A transcript block and its element are separate things: the block is plain data (`type`,
+`content`, `collapsed`, …) and the element is a custom element that draws itself from it
+on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
+path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
+bear re-reading rather than how to draw them.
 
 ## Provider Differences
 
@@ -423,7 +547,7 @@ include/pu/                  src/
 ├── executor.hpp             ├── executor.cpp
 ├── app/                     ├── core/                 # logging, platform, HTTP client
 ├── config/                  ├── context/              # message graph storage
-├── core/                    ├── gateways/            # one file per gate, behind a table
+├── core/                    ├── gateways/            # every gate and its table
 ├── context/                 ├── llm/                  # protocols, providers, streaming parser
 ├── llm/                     ├── mcp/                  # transports, JSON-RPC client
 ├── mcp/                     ├── session/              # Session, Conversation
@@ -440,15 +564,24 @@ The CMake targets follow the layering: `pu_lib` is the *base* static library
 (core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
 holds `src/app/`, and the `pu` executable adds only `main.cpp`.
 
+`web/` is the page the server mounts, served from the file list in
+`kPageFiles` (`src/app/serve_http_routes.cpp`) — adding a file there means adding
+it in both places, and a target outside the list is a `404` rather than a read of
+the directory. Its module split is described under
+[Browser modules](#browser-modules).
+
 ### Gates, protocols and providers
 
 Three facts about a vendor that look alike are three different things: a **protocol** is
 *how to talk*, a **gate** is *which product*, and a connection is *where*. `config/gateway.hpp`
 holds the middle one: `GatewayId` names the gates a build carries, `Gateway` is
 `{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
-/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Each gate
-is a file beside it, stating its own name, host, provider and catalogue read; adding one is
-that file and one line of the table, and there is no registry the linker can drop.
+/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Every gate
+lives in `src/gateways/gateways.cpp` with its neighbours: a gate is mostly a table row plus
+the mapping from the backend config to its protocol's config, and those mappings are only
+readable as a set — side by side, a field one gate fills and another drops is visible, and
+in one file per gate it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
+`FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
 
 `agents.json` names a gate through `gateway`, and a missing or unknown name is refused rather
 than defaulted, so a backend never reaches a host its author did not choose. The field is what
@@ -483,7 +616,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gate**: Add `src/gateways/<name>.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then name it in the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the file and its line.
+- **New gate**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/gateways/gateways.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then add the pointer to the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

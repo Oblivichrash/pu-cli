@@ -2,6 +2,7 @@
 #pragma once
 
 #include <functional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,10 +20,10 @@ class CommandRouter {
 
   bool Route(const std::string& input, Session& session, std::string& output);
 
-  std::string GetHelpText();
+  std::string Help();
 
  private:
-  using Args = const std::vector<std::string>&;
+  using Args = std::span<const std::string>;
   using Output = std::string&;
 
   struct Command {
@@ -33,7 +34,6 @@ class CommandRouter {
   static const std::vector<std::string>& CommandOrder();
 
   bool RequireMinArgs(Args args, size_t min, const std::string& usage, Output output) const;
-
   std::string FormatUsage(const std::string& cmd, const std::string& usage) const;
 
   bool HandleBackend(Args args, Output output);

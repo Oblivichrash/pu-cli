@@ -11,8 +11,8 @@ TEST_CASE("Conversation basic operations", "[conversation]") {
   ctx.Append("user", "Hello");
   ctx.Append("assistant", "Hi there!");
 
-  REQUIRE(ctx.GetHistory().size() == 2);
-  auto history = ctx.GetHistory();
+  REQUIRE(ctx.History().size() == 2);
+  auto history = ctx.History();
   REQUIRE(history.size() == 2);
   REQUIRE(history[1].role == "assistant");
 }
@@ -25,13 +25,13 @@ TEST_CASE("Conversation serialization round-trips", "[conversation]") {
   auto restored = Conversation::Deserialize(saved);
 
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetHistory().size() == 1);
+  REQUIRE(restored->History().size() == 1);
 }
 
 TEST_CASE("Session serialization round-trips", "[conversation]") {
   Session session;
   session.SetAgent("chat");
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   const boost::json::value saved = session.Serialize();
   const std::string written = json::PrettyPrint(saved);
@@ -39,21 +39,21 @@ TEST_CASE("Session serialization round-trips", "[conversation]") {
 
   auto restored = Session::Deserialize(reparsed);
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetConversation().GetHistory().size() == 1);
-  REQUIRE(restored->GetConversation().GetHistory()[0].content == "hello");
-  REQUIRE(restored->GetSpec().agent_name == "chat");
+  REQUIRE(restored->Messages().History().size() == 1);
+  REQUIRE(restored->Messages().History()[0].content == "hello");
+  REQUIRE(restored->Spec().agent_name == "chat");
 }
 
 TEST_CASE("A message holding invalid UTF-8 survives a save and load", "[conversation]") {
   Session session;
-  session.GetConversation().Append("assistant", "Request failed: \xB2\xBB\xCA\xC7");
+  session.Messages().Append("assistant", "Request failed: \xB2\xBB\xCA\xC7");
 
   const std::string written = json::PrettyPrint(session.Serialize());
   REQUIRE(text::IsValidUtf8(written));
 
   auto restored = Session::Deserialize(boost::json::parse(written));
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetConversation().GetHistory().size() == 1);
+  REQUIRE(restored->Messages().History().size() == 1);
 }
 
 TEST_CASE("Tool calls round-trip as a JSON array", "[conversation]") {
@@ -67,7 +67,7 @@ TEST_CASE("Tool calls round-trip as a JSON array", "[conversation]") {
 
   auto restored = Conversation::Deserialize(t.Serialize());
   REQUIRE(restored != nullptr);
-  auto h = restored->GetHistory();
+  auto h = restored->History();
   REQUIRE(h.size() == 1);
   REQUIRE(h[0].HasToolCalls());
   REQUIRE(h[0].tool_calls.as_array()[0].at("id") == "call_1");
@@ -91,7 +91,7 @@ TEST_CASE("A tool result clears the pending tool call", "[conversation]") {
   t.Append(tool);
 
   REQUIRE_FALSE(t.HasPendingToolCalls());
-  auto h = t.GetHistory();
+  auto h = t.History();
   REQUIRE(h.size() == 2);
   REQUIRE(h[1].tool_name == "ls");
   REQUIRE(h[1].tool_call_id == "call_1");
@@ -153,7 +153,7 @@ TEST_CASE("Appending continues from the leaf without dropping anything", "[conve
   after.content = "after";
   t.Append(after);
 
-  auto h = t.GetHistory();
+  auto h = t.History();
   REQUIRE(h.size() == 21);
   REQUIRE(h[0].content == "msg1");
   REQUIRE(h[19].content == "msg20");

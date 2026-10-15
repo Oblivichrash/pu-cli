@@ -21,13 +21,13 @@ class Conversation {
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
   // Callers that need both the rendered text and the node-level fields must read the
-  // nodes once through here; GetHistory() renders a separate list and pairing the two
+  // nodes once through here; History() renders a separate list and pairing the two
   // by index would rely on an ordering neither one guarantees.
-  std::vector<ChatMessage> GetHistory() const;
+  std::vector<ChatMessage> History() const;
   std::vector<const context::MessageNode*> Chain() const { return graph_.Chain(); }
   bool HasPendingToolCalls() const;
 
-  const context::MessageGraph& GetGraph() const { return graph_; }
+  const context::MessageGraph& Graph() const { return graph_; }
 
   bool RewindBefore(size_t turn);
 
@@ -76,10 +76,10 @@ class Session {
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
 
-  Conversation& GetConversation() { return *conversation_; }
-  const Conversation& GetConversation() const { return *conversation_; }
-  SessionSpec& GetSpec() { return spec_; }
-  const SessionSpec& GetSpec() const { return spec_; }
+  Conversation& Messages() { return *conversation_; }
+  const Conversation& Messages() const { return *conversation_; }
+  SessionSpec& Spec() { return spec_; }
+  const SessionSpec& Spec() const { return spec_; }
 
   void SetAgent(const std::string& agent_name);
 

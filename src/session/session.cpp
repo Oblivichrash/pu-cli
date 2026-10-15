@@ -93,7 +93,7 @@ void Conversation::Append(const std::string& role, const std::string& content) {
   Append(msg);
 }
 
-std::vector<ChatMessage> Conversation::GetHistory() const {
+std::vector<ChatMessage> Conversation::History() const {
   std::vector<ChatMessage> history;
   for (const context::MessageNode* node : graph_.Chain()) {
     history.push_back(session::RenderMessage(*node, static_cast<int>(history.size()) + 1));

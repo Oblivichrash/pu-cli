@@ -302,7 +302,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(ended_errors[0].empty());
 
   bool found_paired_tool_msg = false;
-  for (const auto& msg : ws.GetHistory()) {
+  for (const auto& msg : ws.History()) {
     if (msg.role == "tool" && msg.tool_call_id == started_ids[0]) {
       found_paired_tool_msg = true;
       break;
@@ -321,7 +321,7 @@ TEST_CASE("Rebuilding the registry leaves one address the executor can keep read
   toolbox.RegisterTool(std::make_unique<NamedTool>("newer_tool"));
 
   REQUIRE(&toolbox == address);
-  const auto defs = toolbox.GetToolDefinitions();
+  const auto defs = toolbox.ToolDefinitions();
   REQUIRE(defs.size() == 1);
   REQUIRE(defs.front().name == "newer_tool");
 }
@@ -330,7 +330,7 @@ TEST_CASE("A registry rejects a tool without a name instead of throwing", "[exec
   Toolbox toolbox;
   REQUIRE(toolbox.RegisterTool(nullptr) == false);
   REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
-  REQUIRE(toolbox.GetToolDefinitions().empty());
+  REQUIRE(toolbox.ToolDefinitions().empty());
 }
 
 TEST_CASE("A rejected registration leaves the registry usable", "[executor][tool_loop]") {
@@ -339,7 +339,7 @@ TEST_CASE("A rejected registration leaves the registry usable", "[executor][tool
   REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("")) == false);
   REQUIRE(toolbox.RegisterTool(std::make_unique<NamedTool>("later")) == true);
 
-  const auto defs = toolbox.GetToolDefinitions();
+  const auto defs = toolbox.ToolDefinitions();
   REQUIRE(defs.size() == 2);
 }
 
@@ -414,7 +414,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   REQUIRE(result.has_error);
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
 
-  const std::vector<ChatMessage> history = ws.GetHistory();
+  const std::vector<ChatMessage> history = ws.History();
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[0].content == "hello");
@@ -438,8 +438,8 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
 
-  REQUIRE(ws.GetHistory().size() == 1);
-  REQUIRE(ws.GetHistory()[0].role == "user");
+  REQUIRE(ws.History().size() == 1);
+  REQUIRE(ws.History()[0].role == "user");
 }
 
 TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[executor][tool_loop]") {
@@ -456,7 +456,7 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "half a sentence");
   REQUIRE_FALSE(result.notice.empty());
-  REQUIRE(ws.GetHistory().size() == 2);
+  REQUIRE(ws.History().size() == 2);
 }
 
 TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_loop]") {
@@ -496,7 +496,7 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
 
   bool stored_call = false;
   bool stored_answer = false;
-  for (const auto& msg : ws.GetHistory()) {
+  for (const auto& msg : ws.History()) {
     if (msg.role == "assistant" && msg.HasToolCalls()) {
       for (const auto& tc : msg.tool_calls.as_array()) {
         if (tc.at("id") == "call_1") stored_call = true;

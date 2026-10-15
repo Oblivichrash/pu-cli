@@ -61,7 +61,7 @@ void WebSocketConnection::Start(http::request<http::string_body> req) {
                        self->SendPendingThenClose();
                        return;
                      }
-                     self->SetAttached(true);
+                     self->AttachToPage();
                      self->DoRead();
                    }));
 }
@@ -187,6 +187,7 @@ void WebSocketConnection::Finish() {
   if (closed_) return;
   closed_ = true;
   write_queue_.clear();
+  DetachFromPage();
   runner_.Detach(shared_from_this());
   beast::error_code ignore;
   ws_.next_layer().close(ignore);
@@ -354,7 +355,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
 
   spdlog::info("pu serve listening on http://{}:{}", host, port);
   spdlog::info("WebSocket endpoint: ws://{}:{}/ws", host, port);
-  spdlog::info("Workspace: {}", runtime.GetWorkspaceRoot().string());
+  spdlog::info("Workspace: {}", runtime.WorkspaceRoot().string());
 
   net::io_context ioc;
   const tcp::endpoint listen_endpoint(net::ip::make_address(host), port);

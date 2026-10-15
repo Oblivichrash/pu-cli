@@ -38,7 +38,7 @@ struct RouterFixture {
   }
 
   bool Route(const std::string& input, std::string& output) {
-    return router->Route(input, *runtime.GetOrCreateDefaultSession(), output);
+    return router->Route(input, *runtime.DefaultSession(), output);
   }
 
  private:
@@ -194,7 +194,7 @@ TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "
   REQUIRE(f.Route("/backend ollama llama3", output));
   REQUIRE(output.find("Switched backend to") != std::string::npos);
 
-  const auto* chat = f.runtime.GetAgentManager().GetAgentConfig("chat");
+  const auto* chat = f.runtime.Agents().AgentConfig("chat");
   REQUIRE(chat != nullptr);
   REQUIRE(chat->backend.model == "chat-model");
 

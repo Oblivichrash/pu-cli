@@ -42,8 +42,9 @@ class WebSocketConnection : public std::enable_shared_from_this<WebSocketConnect
 
   tcp::socket& mutable_socket() { return ws_.next_layer(); }
 
-  bool IsAttached() const { return attached_; }
-  void SetAttached(bool attached) { attached_ = attached; }
+  bool AttachedToPage() const { return attached_; }
+  void AttachToPage() { attached_ = true; }
+  void DetachFromPage() { attached_ = false; }
 
  private:
   void DoRead();

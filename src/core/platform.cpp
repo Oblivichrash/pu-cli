@@ -107,8 +107,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   } else {
     full_cmd = command;
   }
-  // The merged stream is the tool's whole output; the caller cannot tell stderr
-  // from stdout afterward, which is why the tool result carries one field for it.
   full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();
@@ -122,8 +120,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
     return -1;
   }
 
-  // setpgid in the child detaches it from this process's group, so a kill of the
-  // group takes the shell and any grandchildren with it.
   const pid_t pid = fork();
   if (pid < 0) {
     close(pipe_fds[0]);
@@ -144,9 +140,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   close(pipe_fds[1]);
   setpgid(pid, pid);  // raced with the child's own call; idempotent either way
 
-  // The stream is fdopen'd, not popen'd, so pclose is not an option: it answers for
-  // popen's pid table only, and on this stream returns 0 regardless of the child.
-  // fclose closes the descriptor and waitpid reaps the child explicitly.
   FILE* pipe = fdopen(pipe_fds[0], "r");
   if (pipe == nullptr) {
     close(pipe_fds[0]);
@@ -154,9 +147,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
     return -1;
   }
 
-  // fgets parks on the pipe until the child writes, so a quiet command would keep
-  // the token unchecked until it finished. The read runs on a poll tick instead:
-  // output when there is any, the token when there is not.
   bool stopped = false;
   for (;;) {
     struct pollfd pfd = {pipe_fds[0], POLLIN, 0};
@@ -173,7 +163,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   }
 
   if (stops && stop_token->load(std::memory_order_acquire)) {
-    // The group kill takes the shell and any grandchildren with it.
     kill(-pid, SIGKILL);
     stopped = true;
   }
@@ -190,8 +179,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  // The command and its byte count are the whole story at debug level; the output
-  // itself reaches the transcript, and a full copy here grows the file sink alone.
   spdlog::debug(
       "[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={} stopped={}",
       command, exit_code, elapsed_ms, output.size(), stopped);
@@ -202,8 +189,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
 
 int ExecuteCommand(const std::string& command, std::string& output,
                    const CancelToken& stop_token, const std::string& working_dir) {
-  // Windows keeps the popen path; a stop token is honored only between reads of the
-  // merged stream, which is no worse than what the stream reader does with cancel.
   std::string full_cmd;
   if (!working_dir.empty()) {
     full_cmd = "cd /d \"" + std::filesystem::path(working_dir).string() + "\" && (" + command + ")";

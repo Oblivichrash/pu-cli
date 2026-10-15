@@ -13,18 +13,18 @@ TEST_CASE("A step back is abandoned only when something replaces it", "[session]
   ws.Append("assistant", "two");
   ws.Append("user", "three");
 
-  REQUIRE(ws.GetHistory().size() == 3);
+  REQUIRE(ws.History().size() == 3);
 
   REQUIRE(ws.RewindBefore(3));
-  REQUIRE(ws.GetHistory().size() == 2);
+  REQUIRE(ws.History().size() == 2);
 
-  REQUIRE(ws.GetGraph().Size() == 3);
+  REQUIRE(ws.Graph().Size() == 3);
 
   ws.Append("user", "three again");
-  REQUIRE(ws.GetHistory().size() == 3);
-  REQUIRE(ws.GetHistory()[2].content == "three again");
-  REQUIRE(ws.GetGraph().Size() == 3);
-  REQUIRE(ws.GetGraph().Size() == ws.GetHistory().size());
+  REQUIRE(ws.History().size() == 3);
+  REQUIRE(ws.History()[2].content == "three again");
+  REQUIRE(ws.Graph().Size() == 3);
+  REQUIRE(ws.Graph().Size() == ws.History().size());
 }
 
 TEST_CASE("Rewinding before the first turn empties the view, not the store", "[session][rewind]") {
@@ -33,13 +33,13 @@ TEST_CASE("Rewinding before the first turn empties the view, not the store", "[s
   ws.Append("assistant", "two");
 
   REQUIRE(ws.RewindBefore(1));
-  REQUIRE(ws.GetHistory().size() == 0);
-  REQUIRE(ws.GetGraph().Size() == 2);
+  REQUIRE(ws.History().size() == 0);
+  REQUIRE(ws.Graph().Size() == 2);
 
   ws.Append("user", "restarted");
-  REQUIRE(ws.GetHistory().size() == 1);
-  REQUIRE(ws.GetHistory()[0].content == "restarted");
-  REQUIRE(ws.GetGraph().Size() == 1);
+  REQUIRE(ws.History().size() == 1);
+  REQUIRE(ws.History()[0].content == "restarted");
+  REQUIRE(ws.Graph().Size() == 1);
 }
 
 TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]") {
@@ -48,36 +48,36 @@ TEST_CASE("Rewinding refuses a position that is not there", "[session][rewind]")
 
   REQUIRE_FALSE(ws.RewindBefore(0));
   REQUIRE_FALSE(ws.RewindBefore(2));
-  REQUIRE(ws.GetHistory().size() == 1);
+  REQUIRE(ws.History().size() == 1);
 }
 
 TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind]") {
   Session session;
-  session.GetConversation().Append("user", "one");
+  session.Messages().Append("user", "one");
 
   ChatMessage assistant;
   assistant.role = context::kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
-  session.GetConversation().Append(assistant);
+  session.Messages().Append(assistant);
 
-  REQUIRE(session.GetConversation().HasPendingToolCalls());
-  REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), RequestRefused);
-  REQUIRE_THROWS_AS(session.GetConversation().RewindBefore(1), std::exception);
+  REQUIRE(session.Messages().HasPendingToolCalls());
+  REQUIRE_THROWS_AS(session.Messages().RewindBefore(1), RequestRefused);
+  REQUIRE_THROWS_AS(session.Messages().RewindBefore(1), std::exception);
 }
 
 TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[session][rewind]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
-  REQUIRE(session.GetConversation().RewindBefore(2));
-  session.GetConversation().Append("user", "two again");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
+  REQUIRE(session.Messages().RewindBefore(2));
+  session.Messages().Append("user", "two again");
 
   auto restored = Session::Deserialize(session.Serialize());
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
-  REQUIRE(restored->GetConversation().GetGraph().Size() == 2);
-  REQUIRE(restored->GetConversation().GetHistory()[1].content == "two again");
+  REQUIRE(restored->Messages().History().size() == 2);
+  REQUIRE(restored->Messages().Graph().Size() == 2);
+  REQUIRE(restored->Messages().History()[1].content == "two again");
 }
 
 TEST_CASE("A replaced turn stores what sending the new text from the start would",
@@ -92,10 +92,10 @@ TEST_CASE("A replaced turn stores what sending the new text from the start would
   fresh.Append("user", "one");
   fresh.Append("user", "three");
 
-  REQUIRE(edited.GetGraph().Size() == fresh.GetGraph().Size());
-  REQUIRE(edited.GetHistory().size() == fresh.GetHistory().size());
-  for (size_t i = 0; i < fresh.GetHistory().size(); ++i) {
-    REQUIRE(edited.GetHistory()[i].role == fresh.GetHistory()[i].role);
-    REQUIRE(edited.GetHistory()[i].content == fresh.GetHistory()[i].content);
+  REQUIRE(edited.Graph().Size() == fresh.Graph().Size());
+  REQUIRE(edited.History().size() == fresh.History().size());
+  for (size_t i = 0; i < fresh.History().size(); ++i) {
+    REQUIRE(edited.History()[i].role == fresh.History()[i].role);
+    REQUIRE(edited.History()[i].content == fresh.History()[i].content);
   }
 }

@@ -5,31 +5,51 @@
 #include "pu/core/base.hpp"
 
 #include "pu/llm/model_listing.hpp"
+#include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pu::config {
-
 namespace {
 
-// The gateway accepts a generated id where the real client sends an account user id.
-std::string CodeBuddyUserId() { return uuid::Generate(); }
+template <typename Config>
+void FillProtocolConfig(Config& protocol, const BackendConfig& cfg) {
+  protocol.host = cfg.host;
+  protocol.model = cfg.model;
+  protocol.temperature = cfg.temperature;
+  protocol.api_key = cfg.api_key.value_or("");
+  protocol.thinking = cfg.thinking;
+}
 
-// The header a conversation's turns are all sent under. The caller supplies it so a
-// session's turns carry one name; the per-request ids below are what vary between calls.
+std::unique_ptr<pu::LLMProvider> MakeOllamaProvider(const BackendConfig& cfg,
+                                                    std::shared_ptr<pu::http::HttpClient> http) {
+  OllamaProvider::Config protocol;
+  FillProtocolConfig(protocol, cfg);
+  return std::make_unique<OllamaProvider>(std::move(protocol), std::move(http));
+}
+
+std::unique_ptr<pu::ModelLister> MakeOllamaListing() {
+  return std::make_unique<llm::OllamaModelLister>();
+}
+
+std::unique_ptr<pu::LLMProvider> MakeOpenAIProvider(const BackendConfig& cfg,
+                                                    std::shared_ptr<pu::http::HttpClient> http) {
+  return std::make_unique<OpenAIProvider>(OpenAIConfig(cfg), std::move(http));
+}
+
+std::unique_ptr<pu::ModelLister> MakeOpenAIListing() {
+  return std::make_unique<llm::OpenAIModelLister>();
+}
+
 std::string CodeBuddyConversationId() { return uuid::Generate(); }
 
-// Headers the installed client sends, imitated rather than derived from what the server
-// checks. `conversation_id` is supplied by the caller so that every turn of a session
-// carries the same conversation name. Both a turn and a catalogue read are sent under
-// them, which is why the gate builds both and the lister is handed the result.
 std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
   constexpr const char* kClientVersion = "1.0.7";
   const std::string version = kClientVersion;
-  // A uuid with its dashes removed: the client's shape for the ids that name an event
-  // rather than a thing.
   const auto hex_id = [] {
     std::string hex;
     hex.reserve(32);
@@ -51,7 +71,7 @@ std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
       "X-Conversation-Request-ID: " + hex_id(),
       "X-Conversation-Message-ID: " + hex_id(),
       "X-Request-ID: " + hex_id(),
-      "X-User-Id: " + CodeBuddyUserId(),
+      "X-User-Id: " + uuid::Generate(),
       "x-stainless-lang: js",
       "x-stainless-package-version: 5.10.1",
       "x-stainless-runtime: node",
@@ -61,9 +81,6 @@ std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
 std::unique_ptr<pu::LLMProvider> MakeCodeBuddyProvider(const BackendConfig& cfg,
                                                        std::shared_ptr<pu::http::HttpClient> http) {
   OpenAIProvider::Config protocol = OpenAIConfig(cfg);
-
-  // One conversation id per provider, drawn here rather than at file scope: two providers
-  // are two conversations, and the turns of one provider share the name.
   const std::string conversation_id = CodeBuddyConversationId();
   protocol.extra_headers = [conversation_id] { return CodeBuddyHeaders(conversation_id); };
   return std::make_unique<OpenAIProvider>(std::move(protocol), std::move(http));
@@ -74,6 +91,35 @@ std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
 }
 
 }  // namespace
+
+OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg) {
+  OpenAIProvider::Config protocol;
+  FillProtocolConfig(protocol, cfg);
+  protocol.max_tokens = cfg.max_tokens;
+  return protocol;
+}
+
+const Gateway& OllamaGateway() {
+  static const Gateway gateway{
+      .id = GatewayId::kOllama,
+      .name = "ollama",
+      .default_host = "http://localhost:11434",
+      .make_provider = &MakeOllamaProvider,
+      .make_listing = &MakeOllamaListing,
+  };
+  return gateway;
+}
+
+const Gateway& OpenAIGateway() {
+  static const Gateway gateway{
+      .id = GatewayId::kOpenAI,
+      .name = "openai",
+      .default_host = "https://api.openai.com/v1",
+      .make_provider = &MakeOpenAIProvider,
+      .make_listing = &MakeOpenAIListing,
+  };
+  return gateway;
+}
 
 const Gateway& CodeBuddyGateway() {
   static const Gateway gateway{

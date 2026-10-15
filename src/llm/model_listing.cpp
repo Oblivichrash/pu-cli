@@ -138,34 +138,36 @@ std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const Ca
   return models;
 }
 
+boost::json::value FetchListing(std::string_view url, const std::string& api_key,
+                                const std::vector<std::string>& headers,
+                                http::HttpClient& http) {
+  std::vector<std::string> all = headers;
+  if (!api_key.empty()) all.push_back(AuthHeader(api_key));
+  return ParseListing(std::string(url), http, all);
+}
+
 }  // namespace
 
 std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
-  std::vector<std::string> headers;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
-
   static const CatalogShape kShape = {
       .path = "/api/tags",
       .container = "models",
       .id_key = "name",
   };
-  return ReadFlat(ParseListing(host + kShape.path, http, headers), kShape);
+  return ReadFlat(FetchListing(host + kShape.path, api_key, {}, http), kShape);
 }
 
 std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
-  std::vector<std::string> headers;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
-
   static const CatalogShape kShape = {
       .path = "/models",
       .container = "data",
       .id_key = "id",
   };
-  return ReadFlat(ParseListing(host + kShape.path, http, headers), kShape);
+  return ReadFlat(FetchListing(host + kShape.path, api_key, {}, http), kShape);
 }
 
 CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
@@ -174,9 +176,6 @@ CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
 std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
                                                          const std::string& api_key,
                                                          http::HttpClient& http) const {
-  std::vector<std::string> headers = headers_;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
-
   static const CatalogShape kShape = {
       .container = "agents",
       .id_key = "models",
@@ -189,7 +188,7 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .effort_field = "effort",
       .max_input_tokens = "maxInputTokens",
   };
-  return ReadCodeBuddy(ParseListing(CodeBuddyCatalogUrl(host), http, headers), kShape);
+  return ReadCodeBuddy(FetchListing(CodeBuddyCatalogUrl(host), api_key, headers_, http), kShape);
 }
 
 std::string FormatModelList(const std::vector<ModelEntry>& models,

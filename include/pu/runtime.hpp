@@ -43,9 +43,9 @@ class Runtime {
   void SwitchBackend(const config::BackendConfig& backend);
 
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
-  std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
+  std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
 
-  Toolbox& GetToolbox() {
+  Toolbox& Tools() {
     assert(is_initialized_ && "Initialize() must run before any toolbox query");
     return toolbox_;
   }
@@ -70,21 +70,21 @@ class Runtime {
     executor_->ResolveApproval(allow, std::move(note));
   }
 
-  AgentManager& GetAgentManager() {
+  AgentManager& Agents() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
   }
-  pu::http::HttpClient& GetHttpClient() {
+  pu::http::HttpClient& Http() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return *http_client_;
   }
   // For a collaborator that outlives the call and needs the client shared, which a
   // provider built per model does.
-  std::shared_ptr<pu::http::HttpClient> GetHttpClientShared() {
+  std::shared_ptr<pu::http::HttpClient> SharedHttp() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return http_client_;
   }
-  std::shared_ptr<Session> GetOrCreateDefaultSession();
+  std::shared_ptr<Session> DefaultSession();
 
   std::string HelpText();
 
@@ -96,7 +96,7 @@ class Runtime {
   config::BackendConfig CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
-  std::optional<ThinkingLevel> GetThinkingOverride() const;
+  std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:

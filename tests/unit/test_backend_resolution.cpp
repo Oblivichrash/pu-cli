@@ -175,19 +175,19 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   runtime.Initialize();
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
-  const auto names_before = runtime.GetAgentManager().GetAgentNames();
+  const auto names_before = runtime.Agents().AgentNames();
 
   config::BackendConfig replacement = runtime.CurrentBackend();
   replacement.temperature = 1.5f;
   runtime.SwitchBackend(replacement);
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
-  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
-  REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "openai");
+  REQUIRE(runtime.DefaultSession() != nullptr);
+  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "openai");
 
-  const auto names_after = runtime.GetAgentManager().GetAgentNames();
+  const auto names_after = runtime.Agents().AgentNames();
   REQUIRE(names_after.size() == names_before.size() + 1);
-  REQUIRE(runtime.GetAgentManager().GetAgentConfig("openai") != nullptr);
+  REQUIRE(runtime.Agents().AgentConfig("openai") != nullptr);
 }
 
 TEST_CASE("An agent named on the command line outranks the one a session remembers",
@@ -198,7 +198,7 @@ TEST_CASE("An agent named on the command line outranks the one a session remembe
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    const auto* coder = runtime.Agents().AgentConfig("coder");
     REQUIRE(coder != nullptr);
     runtime.SwitchAgent(*coder);
     runtime.Shutdown();
@@ -211,7 +211,7 @@ TEST_CASE("An agent named on the command line outranks the one a session remembe
     runtime.Initialize();
 
     REQUIRE(runtime.ActiveAgent().name == "chat");
-    REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "chat");
+    REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
     REQUIRE(runtime.CurrentBackend().model == "test-model");
   }
 }
@@ -223,8 +223,8 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
-    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    REQUIRE(runtime.DefaultSession() != nullptr);
+    const auto* coder = runtime.Agents().AgentConfig("coder");
     REQUIRE(coder != nullptr);
     runtime.SwitchAgent(*coder);
     runtime.Shutdown();
@@ -234,7 +234,7 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+    REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
     REQUIRE(runtime.CurrentBackend().model == "coder-model");
   }
 }
@@ -245,12 +245,12 @@ TEST_CASE("A turn after an agent switch reaches an initialized registry", "[back
   ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
   runtime.Initialize();
-  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
+  REQUIRE(runtime.DefaultSession() != nullptr);
 
-  const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+  const auto* coder = runtime.Agents().AgentConfig("coder");
   REQUIRE(coder != nullptr);
   runtime.SwitchAgent(*coder);
-  REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+  REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
 
   bool is_command = false;
   const ExecutionResult result = runtime.ProcessInput("hello", is_command);
