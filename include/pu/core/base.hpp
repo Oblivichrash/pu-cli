@@ -23,6 +23,11 @@ class RequestRefused : public RuntimeError {
   using RuntimeError::RuntimeError;
 };
 
+class NotFound : public RuntimeError {
+ public:
+  using RuntimeError::RuntimeError;
+};
+
 class Error : public RuntimeError {
  public:
   using RuntimeError::RuntimeError;

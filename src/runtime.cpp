@@ -95,7 +95,13 @@ void Runtime::Initialize(const std::string& config_path) {
   std::string cfg_path =
       config_path.empty() ? (workspace_root_ / ".pu" / "agents.json").string() : config_path;
 
-  if (!std::filesystem::exists(cfg_path)) {
+  const char* explicit_config = std::getenv("PU_AGENTS_CONFIG");
+  if (explicit_config && *explicit_config) {
+    if (!std::filesystem::exists(explicit_config)) {
+      throw Error(std::string("PU_AGENTS_CONFIG points at a missing file: ") + explicit_config);
+    }
+    cfg_path = explicit_config;
+  } else if (!std::filesystem::exists(cfg_path)) {
     cfg_path = config::FindConfigPath();
   }
   if (cfg_path.empty()) {
@@ -133,10 +139,10 @@ void Runtime::Initialize(const std::string& config_path) {
   }
 
   if (current_session_) {
-    auto& spec = current_session_->GetSpec();
+    auto& spec = current_session_->Spec();
     const bool agent_chosen_here = !default_agent_override_.empty();
     const std::string remembered = agent_chosen_here ? active_agent : spec.agent_name;
-    const auto* stored = agent_manager_->GetAgentConfig(remembered);
+    const auto* stored = agent_manager_->AgentConfig(remembered);
     if (stored == nullptr) {
       spdlog::warn("Session names an agent that is not configured: {}", remembered);
       spec.agent_name = active_agent;
@@ -170,39 +176,39 @@ void Runtime::SaveCurrentSession() {
 }
 
 bool Runtime::RewindBefore(size_t turn) {
-  if (!GetOrCreateDefaultSession()->GetConversation().RewindBefore(turn)) return false;
+  if (!DefaultSession()->Messages().RewindBefore(turn)) return false;
   SaveCurrentSession();
   return true;
 }
 
 void Runtime::ClearConversation() {
-  GetOrCreateDefaultSession()->GetConversation().ClearHistory();
+  DefaultSession()->Messages().ClearHistory();
   SaveCurrentSession();
 }
 
-std::shared_ptr<Session> Runtime::GetOrCreateDefaultSession() {
+std::shared_ptr<Session> Runtime::DefaultSession() {
   if (current_session_) return current_session_;
 
   auto session = std::make_shared<Session>();
-  session->SetAgent(agent_manager_->GetActiveAgent());
+  session->SetAgent(agent_manager_->ActiveAgentName());
 
   current_session_ = session;
   return current_session_;
 }
 
 const config::AgentEntry& Runtime::ActiveAgent() const {
-  return *agent_manager_->GetAgentConfig(agent_manager_->GetActiveAgent());
+  return *agent_manager_->AgentConfig(agent_manager_->ActiveAgentName());
 }
 
 std::string Runtime::HelpText() {
   assert(command_router_ && "Initialize() must run before any help query");
-  return command_router_->GetHelpText();
+  return command_router_->Help();
 }
 
 config::BackendConfig Runtime::ConfiguredBackend() const {
   if (current_session_) {
-    const auto& spec = current_session_->GetSpec();
-    if (const auto* configured = agent_manager_->GetAgentConfig(spec.agent_name)) {
+    const auto& spec = current_session_->Spec();
+    if (const auto* configured = agent_manager_->AgentConfig(spec.agent_name)) {
       return configured->backend;
     }
   }
@@ -213,7 +219,7 @@ config::BackendConfig Runtime::ConfiguredBackend() const {
 config::BackendConfig Runtime::CurrentBackend() const {
   config::BackendConfig backend = ConfiguredBackend();
   if (current_session_) {
-    const auto& spec = current_session_->GetSpec();
+    const auto& spec = current_session_->Spec();
     if (spec.thinking_override) backend.thinking = *spec.thinking_override;
   }
   return backend;
@@ -221,13 +227,13 @@ config::BackendConfig Runtime::CurrentBackend() const {
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
 
-std::optional<ThinkingLevel> Runtime::GetThinkingOverride() const {
+std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;
-  return current_session_->GetSpec().thinking_override;
+  return current_session_->Spec().thinking_override;
 }
 
 void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
-  GetOrCreateDefaultSession()->GetSpec().thinking_override = level;
+  DefaultSession()->Spec().thinking_override = level;
   SaveCurrentSession();
 }
 
@@ -241,7 +247,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   try {
     BeginRequest();
 
-    auto session = GetOrCreateDefaultSession();
+    auto session = DefaultSession();
 
     if (!input.empty() && input[0] == '/') {
       is_command = true;
@@ -259,7 +265,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     auto provider = session->CreateProvider(CurrentBackend(), http_client_);
     auto exec_result =
-        executor_->Execute(input, session->GetConversation(), provider.get(), toolbox_,
+        executor_->Execute(input, session->Messages(), provider.get(), toolbox_,
                            cancel_token, content_callback, tool_callbacks, reasoning_callback,
                            command_stop_token);
     result = std::move(exec_result);
@@ -355,7 +361,7 @@ void Runtime::Activate(const config::AgentEntry& agent) {
 }
 
 void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
-  if (agent_manager_->GetActiveAgent() == new_agent.name) return;
+  if (agent_manager_->ActiveAgentName() == new_agent.name) return;
   Activate(new_agent);
 }
 
