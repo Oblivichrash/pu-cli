@@ -52,16 +52,13 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
 
 BackendConfig ParseBackendConfig(const json::value& j) {
   BackendConfig cfg;
-  cfg.gateway = ReadGateway(j);
-  cfg.host = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "host", ""));
-  cfg.model = ExpandEnvVars(json::ValueOrDefault<std::string>(j, "model", ""));
-  if (json::HasKey(j, "api_key"))
-    cfg.api_key = ExpandEnvVars(boost::json::value_to<std::string>(j.at("api_key")));
-  cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
+  ReadBackendFields(cfg, j);
+  // A stored backend keeps what the file resolved to, so it must not expand twice.
+  cfg.host = ExpandEnvVars(cfg.host);
+  cfg.model = ExpandEnvVars(cfg.model);
+  if (cfg.api_key) cfg.api_key = ExpandEnvVars(*cfg.api_key);
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
-  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
-  cfg.thinking = ReadThinkingLevel(j);
   return cfg;
 }
 

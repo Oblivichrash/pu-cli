@@ -42,6 +42,28 @@ inline GatewayId ReadGateway(const boost::json::value& j) {
 }
 
 
+// The fields a stored backend shares with an agents.json entry, read the one way both go
+// through so their defaults cannot drift apart.
+inline void ReadBackendFields(BackendConfig& cfg, const boost::json::value& j) {
+  cfg.gateway = ReadGateway(j);
+  cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
+  cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
+  if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {
+    std::string key = boost::json::value_to<std::string>(j.at("api_key"));
+    cfg.api_key = key.empty() ? std::optional<std::string>{} : std::move(key);
+  }
+  cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
+  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
+  cfg.thinking = ReadThinkingLevel(j);
+}
+
+inline BackendConfig ReadBackend(const boost::json::value& j) {
+  BackendConfig cfg;
+  ReadBackendFields(cfg, j);
+  return cfg;
+}
+
+
 inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
                        const BackendConfig& cfg) {
   j = {
@@ -57,19 +79,7 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
 
 inline BackendConfig tag_invoke(boost::json::value_to_tag<BackendConfig>,
                                 const boost::json::value& j) {
-  BackendConfig cfg;
-  cfg.gateway = ReadGateway(j);
-  cfg.host = json::ValueOrDefault<std::string>(j, "host", "");
-  cfg.model = json::ValueOrDefault<std::string>(j, "model", "");
-  if (json::HasKey(j, "api_key") && j.at("api_key").is_string()) {
-    auto key = boost::json::value_to<std::string>(j.at("api_key"));
-    cfg.api_key = key.empty() ? std::optional<std::string>{} : key;
-  }
-  cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
-  cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
-  cfg.system_prompt = std::nullopt;
-  cfg.thinking = ReadThinkingLevel(j);
-  return cfg;
+  return ReadBackend(j);
 }
 
 std::unique_ptr<pu::LLMProvider> CreateBackend(const BackendConfig& cfg,
