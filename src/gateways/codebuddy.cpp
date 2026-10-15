@@ -60,13 +60,7 @@ std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
 
 std::unique_ptr<pu::LLMProvider> MakeCodeBuddyProvider(const BackendConfig& cfg,
                                                        std::shared_ptr<pu::http::HttpClient> http) {
-  OpenAIProvider::Config protocol;
-  protocol.model = cfg.model;
-  protocol.temperature = cfg.temperature;
-  protocol.host = cfg.host;
-  protocol.api_key = cfg.api_key.value_or("");
-  protocol.max_tokens = cfg.max_tokens;
-  protocol.thinking = cfg.thinking;
+  OpenAIProvider::Config protocol = OpenAIConfig(cfg);
 
   // One conversation id per provider, drawn here rather than at file scope: two providers
   // are two conversations, and the turns of one provider share the name.

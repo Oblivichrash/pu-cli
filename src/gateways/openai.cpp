@@ -8,8 +8,6 @@
 
 namespace pu::config {
 
-namespace {
-
 OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg) {
   OpenAIProvider::Config protocol;
   protocol.model = cfg.model;
@@ -20,6 +18,8 @@ OpenAIProvider::Config OpenAIConfig(const BackendConfig& cfg) {
   protocol.thinking = cfg.thinking;
   return protocol;
 }
+
+namespace {
 
 std::unique_ptr<pu::LLMProvider> MakeOpenAIProvider(const BackendConfig& cfg,
                                                     std::shared_ptr<pu::http::HttpClient> http) {
