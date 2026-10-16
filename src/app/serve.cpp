@@ -47,7 +47,15 @@ WebSocketConnection::WebSocketConnection(tcp::socket socket,
 
 void WebSocketConnection::Start(http::request<http::string_body> req) {
   auto self = shared_from_this();
-  ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+  // The suggested server timeouts ping after 300 idle seconds, which is longer than the
+  // NAT and proxy idle windows a browser page routinely sits through between turns. The
+  // page answers pings itself, so the interval can be short; a connection the page gave
+  // up on without a close frame is read error and reaped either way.
+  websocket::stream_base::timeout timeouts;
+  timeouts.handshake_timeout = std::chrono::seconds(30);
+  timeouts.idle_timeout = std::chrono::seconds(30);
+  timeouts.keep_alive_pings = true;
+  ws_.set_option(timeouts);
   ws_.async_accept(req, net::bind_executor(strand_, [self](beast::error_code ec) {
                      if (ec) {
                        spdlog::warn("WebSocket accept error: {}", ec.message());

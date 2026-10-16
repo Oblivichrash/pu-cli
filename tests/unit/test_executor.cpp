@@ -502,6 +502,11 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
 }
 
 TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
+  // The global token decides whether a throw reads as abandoned rather than failed;
+  // another test may have left it set, so the case pins it before it runs.
+  const bool was_set = platform::ShutdownRequested();
+  platform::ShutdownToken()->store(false, std::memory_order_release);
+
   Toolbox toolbox;
   Executor executor;
   config::SecurityPolicy policy;
@@ -519,6 +524,8 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[0].content == "hello");
+
+  platform::ShutdownToken()->store(was_set, std::memory_order_release);
 }
 
 TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor][tool_loop]") {
@@ -556,10 +563,14 @@ TEST_CASE("A shutdown abandons the turn without calling it a cancel", "[executor
 
   Conversation ws;
   platform::ShutdownToken()->store(true, std::memory_order_release);
+  // A failed REQUIRE unwinds past the reset below; restore on the way out either way,
+  // or every later test in this binary runs inside a shutdown that never happened.
+  struct Reset {
+    ~Reset() { platform::ShutdownToken()->store(false, std::memory_order_release); }
+  } reset;
+  (void)reset;
 
   const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
-
-  platform::ShutdownToken()->store(false, std::memory_order_release);
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.outcome == TurnOutcome::kCompleted);

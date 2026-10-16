@@ -80,10 +80,16 @@ TEST_CASE("A command that never returns is killed by its stop token", "[platform
 
 TEST_CASE("A shutdown request is a one-way trap the token and the flag agree on",
           "[platform][signal]") {
+  // The token is process-wide: a test before this one may have left it set, and a test
+  // after this one inherits whatever is left. Both ends are restored, so the flag's
+  // one-way behavior is asserted inside that window alone.
+  const bool was_set = ShutdownRequested();
+  ShutdownToken()->store(false, std::memory_order_release);
   REQUIRE_FALSE(ShutdownRequested());
 
   ShutdownToken()->store(true, std::memory_order_release);
 
   REQUIRE(ShutdownRequested());
   REQUIRE(ShutdownToken()->load());
+  ShutdownToken()->store(was_set, std::memory_order_release);
 }

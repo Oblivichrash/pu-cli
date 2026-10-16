@@ -178,20 +178,48 @@ class FakeHttpServer {
       ioc_->stop();
       server_thread_.join();
     }
+    // The per-connection threads are joined, not detached: one still running when the
+    // process leaves main would call std::terminate on exit.
+    for (std::thread& t : TakeConnections()) if (t.joinable()) t.join();
   }
 
  private:
+  std::vector<std::thread> TakeConnections() {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    return std::move(connections_);
+  }
+
   void Accept() {
     acceptor_->async_accept([this](boost::system::error_code ec, tcp::socket socket) {
       if (!ec) {
-        std::thread([s = std::move(socket), responder = responder_, delay = response_delay_ms_,
-                     requests = requests_]() mutable {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        // A finished connection erases its own entry by id; the thread object moves
+        // with the lambda and joins itself at the end.
+        connections_.emplace_back([s = std::move(socket), responder = responder_,
+                                   delay = response_delay_ms_, requests = requests_,
+                                   this]() mutable {
           Serve(std::move(s), responder, delay, requests);
-        }).detach();
+          std::thread::id mine = std::this_thread::get_id();
+          std::thread self;
+          {
+            std::lock_guard<std::mutex> lock(connections_mutex_);
+            for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+              if (it->get_id() == mine) {
+                self = std::move(*it);
+                connections_.erase(it);
+                break;
+              }
+            }
+          }
+          if (self.joinable()) self.detach();
+        });
       }
       if (!stop_requested_) Accept();
     });
   }
+
+  std::mutex connections_mutex_;
+  std::vector<std::thread> connections_;
 
   static void Serve(tcp::socket socket, const std::shared_ptr<Responder>& responder,
                     int response_delay_ms, const std::shared_ptr<std::atomic<int>>& requests) {
@@ -416,13 +444,21 @@ class ServeHarness {
       runtime_->Initialize();
     }
 
-    port_ = FindFreePort();
-    REQUIRE(port_ > 0);
+    // FindFreePort closes the socket it bound, so the port can be taken back before
+    // RunServe binds it. On a loss the thread is joined before the REQUIRE fires:
+    // an exception out of a constructor skips the destructor, and a detached thread
+    // still running RunServe would then abort the whole test binary at exit.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      port_ = FindFreePort();
+      REQUIRE(port_ > 0);
 
-    server_thread_ =
-        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
+      server_thread_ =
+          std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
 
-    REQUIRE(WaitForPort(kServeHost, port_, 15000));
+      if (WaitForPort(kServeHost, port_, 15000)) return;
+      Stop();
+    }
+    FAIL("the server never took the port FindFreePort named");
   }
 
   ~ServeHarness() {

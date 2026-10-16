@@ -100,6 +100,7 @@ function dispatchFrame(data) {
 
 // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing.
 function handleSocketClose() {
+  discardPendingApproval();
   const refused = PU.busyRefusals > 0;
   if (PU.isStreaming) {
     removeCurrentAssistantMessage();

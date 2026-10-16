@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <condition_variable>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -125,13 +126,17 @@ std::filesystem::path ExecutableDir() {
 }
 
 const std::string& GetWebDir() {
+  // Re-read per call rather than cached under call_once: the answer names a directory
+  // the caller may have just pointed PU_WEB_DIR at, and a value frozen at the first
+  // request outlives the environment it was read from.
   static std::string dir;
-  static std::once_flag flag;
-  std::call_once(flag, []() {
+  static std::mutex dir_mutex;
+  std::lock_guard<std::mutex> lock(dir_mutex);
+  {
     const char* env = std::getenv("PU_WEB_DIR");
     if (env && *env) {
       dir = env;
-      return;
+      return dir;
     }
     std::vector<std::filesystem::path> candidates;
     if (const std::filesystem::path exe_dir = ExecutableDir(); !exe_dir.empty()) {
@@ -146,11 +151,11 @@ const std::string& GetWebDir() {
     for (const auto& d : candidates) {
       if (std::filesystem::exists(d) && std::filesystem::is_directory(d)) {
         dir = d.string();
-        return;
+        return dir;
       }
     }
     dir = "./web";
-  });
+  }
   return dir;
 }
 

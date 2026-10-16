@@ -26,6 +26,13 @@ function hideApprovalBar() {
   document.getElementById("approval-bar").hidden = true;
 }
 
+// A dropped socket takes the pending ask with it: the turn is cancelled and the bar
+// would otherwise sit there answering a turn that no longer exists.
+function discardPendingApproval() {
+  approvalPending = null;
+  hideApprovalBar();
+}
+
 function approvalVisible() {
   return approvalPending !== null;
 }
@@ -33,10 +40,13 @@ function approvalVisible() {
 function resolveApproval(allow) {
   if (approvalPending === null) return;
   const note = document.getElementById("approval-note").value.trim();
-  ws.send(JSON.stringify(
-    { type: "resolve_approval", payload: { allow, text: note } }));
-  approvalPending = null;
-  hideApprovalBar();
+  // sendFrame, not the socket directly: the page's socket is PU.ws, and a bare send
+  // here threw before the answer left, leaving the turn thread waiting on an ask the
+  // page had already answered.
+  if (sendFrame("resolve_approval", { allow, text: note })) {
+    approvalPending = null;
+    hideApprovalBar();
+  }
 }
 
 document.addEventListener("keydown", (e) => {
