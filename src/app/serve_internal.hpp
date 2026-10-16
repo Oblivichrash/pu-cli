@@ -9,6 +9,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -28,6 +29,14 @@ using tcp = net::ip::tcp;
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res);
+
+// The directory the running executable lives in, or empty when it cannot be determined. Kept
+// beside the request dispatch so the web/ lookup above it and its tests agree on one answer.
+std::filesystem::path ExecutableDir();
+
+// Where the web assets live. Honours PU_WEB_DIR, then searches beside the executable, then the
+// usual install locations, and finally falls back to ./web.
+const std::string& GetWebDir();
 
 class SessionRunner;
 

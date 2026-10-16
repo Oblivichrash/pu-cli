@@ -53,6 +53,18 @@ unsigned ErrorStatus(const std::exception& e) {
   return 500;
 }
 
+const char* ViewStatus(session::ToolCallStatus status) {
+  switch (status) {
+    case session::ToolCallStatus::kCompleted:
+      return "done";
+    case session::ToolCallStatus::kInterrupted:
+      return "interrupted";
+    case session::ToolCallStatus::kPending:
+      return "pending";
+  }
+  return "pending";
+}
+
 boost::json::value ParseBody(const http::request<http::string_body>& req) {
   if (req.body().empty()) return boost::json::object{};
   try {
@@ -83,6 +95,8 @@ bool IsPageFile(std::string_view target) {
   return false;
 }
 
+}  // namespace
+
 std::filesystem::path ExecutableDir() {
 #if defined(_WIN32)
   std::vector<wchar_t> buffer(MAX_PATH);
@@ -90,10 +104,11 @@ std::filesystem::path ExecutableDir() {
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
                                             static_cast<DWORD>(buffer.size()));
     if (length == 0) return {};
-    if (length < buffer.size()) break;
+    if (length < buffer.size()) {
+      return std::filesystem::path(std::wstring(buffer.data(), length)).parent_path();
+    }
     buffer.resize(buffer.size() * 2);
   }
-  return std::filesystem::path(std::wstring(buffer.data(), buffer.size())).parent_path();
 #elif defined(__APPLE__)
   uint32_t size = 0;
   _NSGetExecutablePath(nullptr, &size);
@@ -109,7 +124,7 @@ std::filesystem::path ExecutableDir() {
 #endif
 }
 
-std::string GetWebDir() {
+const std::string& GetWebDir() {
   static std::string dir;
   static std::once_flag flag;
   std::call_once(flag, []() {
@@ -138,6 +153,8 @@ std::string GetWebDir() {
   });
   return dir;
 }
+
+namespace {
 
 void ServeFile(const std::string& target, http::response<http::string_body>& res) {
   const std::filesystem::path base = GetWebDir();
@@ -209,8 +226,7 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
       if (const auto* assistant = std::get_if<session::AssistantPayload>(&node.payload)) {
         boost::json::array statuses;
         for (const session::ToolCallRecord& record : assistant->tool_calls) {
-          statuses.push_back(record.status == session::ToolCallStatus::kCompleted ? "done"
-                                                                                 : "pending");
+          statuses.push_back(ViewStatus(record.status));
         }
         item.as_object()["tool_call_status"] = std::move(statuses);
       }

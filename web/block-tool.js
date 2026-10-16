@@ -94,11 +94,12 @@ class ToolBlock extends HTMLElement {
     return this._block.collapsed;
   }
 
-  // A finished call that worked says so by being finished, so only the two states a
-  // reader cannot infer are named: still running, and not what was asked for.
+  // A finished call that worked says so by being finished, so only the states a reader
+  // cannot infer are named: still running, not answered, and stopped before it ran.
   #statusText(block) {
     if (block.status === "running") return "running…";
     if (block.status === "pending") return "no result";
+    if (block.status === "interrupted") return "interrupted";
     return block.error ? "failed" : "";
   }
 
@@ -107,7 +108,7 @@ class ToolBlock extends HTMLElement {
     // Tool output is a command's raw product, so it is set as text: its markup is data.
     this.body.appendChild(
         labelledPre("tool-args", "Arguments", JSON.stringify(block.args ?? null, null, 2), ""));
-    if (block.status !== "done") return;
+    if (block.status === "running" || block.status === "pending") return;
     this.body.appendChild(labelledPre(
         "tool-result",
         block.error ? "Error" : "Output",

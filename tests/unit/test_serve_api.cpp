@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/serve_internal.hpp"
 #include "pu/app/cli.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/core/platform.hpp"
@@ -108,6 +109,34 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   const boost::json::value& result_turn = j.as_array()[2];
   REQUIRE(result_turn.at("output") == "hi\n");
   REQUIRE(result_turn.at("error") == "");
+}
+
+TEST_CASE("serve API /api/history names a call the turn never ran", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->Messages();
+  conversation.Append("user", "run it");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{
+      boost::json::object{
+          {"id", "call_1"},
+          {"type", "function"},
+          {"function",
+           boost::json::object{{"name", "execute_bash"},
+                               {"arguments", boost::json::object{{"command", "echo hi"}}}}}},
+  };
+  conversation.Append(assistant);
+
+  conversation.SealInterruptedToolCalls();
+
+  auto j = ParseJson(client.Get("/api/history"));
+  REQUIRE(j.as_array().size() == 2);
+  REQUIRE(j.as_array()[1].at("tool_call_status") == boost::json::array{"interrupted"});
 }
 
 TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]") {
@@ -382,6 +411,40 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
 
   const HttpResponse unmounted = client.GetRaw("/secret.txt");
   CHECK(unmounted.status == 404);
+
+  fs::remove_all(web, ec);
+}
+
+// The other page test points PU_WEB_DIR at its fixtures, which means it never reaches the lookup
+// the shipped binary actually uses. That lookup derives a path from the module handle, and a wrong
+// answer there is silent: the assets simply 404 and the page comes up blank.
+TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
+  const fs::path exe_dir = pu::cli::detail::ExecutableDir();
+  REQUIRE_FALSE(exe_dir.empty());
+  REQUIRE(fs::is_directory(exe_dir));
+
+  const fs::path web = exe_dir / "web";
+  std::error_code ec;
+  const bool preexisting = fs::exists(web, ec);
+  REQUIRE_FALSE(preexisting);
+  fs::create_directories(web, ec);
+  REQUIRE_FALSE(ec);
+
+  {
+    std::ofstream file(web / "index.html", std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << "<!doctype html>beside the executable";
+    REQUIRE(file.good());
+  }
+
+  const ScopedEnvVar unset_web_dir("PU_WEB_DIR", "");
+
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const HttpResponse root = client.GetRaw("/");
+  CHECK(root.status == 200);
+  CHECK(root.body == "<!doctype html>beside the executable");
 
   fs::remove_all(web, ec);
 }

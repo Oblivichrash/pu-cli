@@ -7,21 +7,9 @@ namespace pu::session {
 
 namespace {
 
-constexpr const char* kStatusPending = "pending";
-constexpr const char* kStatusCompleted = "completed";
-constexpr const char* kStatusInterrupted = "interrupted";
-
-std::string StatusName(ToolCallStatus status) {
-  switch (status) {
-    case ToolCallStatus::kPending:
-      return kStatusPending;
-    case ToolCallStatus::kCompleted:
-      return kStatusCompleted;
-    case ToolCallStatus::kInterrupted:
-      return kStatusInterrupted;
-  }
-  return kStatusPending;
-}
+constexpr const char* kStatusPending = kPendingStatusName;
+constexpr const char* kStatusCompleted = kCompletedStatusName;
+constexpr const char* kStatusInterrupted = kInterruptedStatusName;
 
 ToolCallStatus StatusFrom(const std::string& name) {
   if (name == kStatusCompleted) return ToolCallStatus::kCompleted;
@@ -56,7 +44,7 @@ boost::json::value SerializeNode(const MessageNode& node) {
             {"id", record.id},
             {"name", record.name},
             {"arguments", record.arguments},
-            {"status", StatusName(record.status)},
+            {"status", ToolCallStatusName(record.status)},
         });
       }
       out["tool_calls"] = std::move(calls);

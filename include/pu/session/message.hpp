@@ -55,6 +55,22 @@ enum class ToolCallStatus {
   kInterrupted,
 };
 
+inline constexpr const char* kPendingStatusName = "pending";
+inline constexpr const char* kCompletedStatusName = "completed";
+inline constexpr const char* kInterruptedStatusName = "interrupted";
+
+inline std::string ToolCallStatusName(ToolCallStatus status) {
+  switch (status) {
+    case ToolCallStatus::kPending:
+      return kPendingStatusName;
+    case ToolCallStatus::kCompleted:
+      return kCompletedStatusName;
+    case ToolCallStatus::kInterrupted:
+      return kInterruptedStatusName;
+  }
+  return kPendingStatusName;
+}
+
 struct ToolCallRecord {
   std::string id;
   std::string name;

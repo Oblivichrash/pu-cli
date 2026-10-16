@@ -16,9 +16,12 @@ function parseToolArguments(raw) {
   return raw === undefined ? null : raw;
 }
 
-// "running" is the stream's word and is never stored; the store holds answered or not.
+// "running" is the stream's word and is never stored; the store holds answered, not
+// answered yet, or interrupted before it could run.
 function callStatus(statuses, index) {
-  return statuses[index] === "pending" ? "pending" : "done";
+  const stored = statuses[index];
+  if (stored === "pending" || stored === "interrupted") return stored;
+  return "done";
 }
 
 function thinkingText(msg) {
