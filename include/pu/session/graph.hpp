@@ -55,8 +55,7 @@ class MessageGraph {
   }
 
   void SealInterruptedToolCalls() {
-    const MessageId interrupted_at = leaf_;
-    auto it = nodes_.find(interrupted_at);
+    auto it = nodes_.find(leaf_);
     if (it == nodes_.end()) return;
 
     auto* assistant = std::get_if<AssistantPayload>(&it->second.payload);
@@ -72,9 +71,8 @@ class MessageGraph {
     if (unrun.empty()) return;
 
     for (const ToolCallRecord& call : unrun) {
-      AppendAfterLeaf(ToolPayload{call.id, call.name, kInterruptedReceipt});
+      AppendAfterLeaf(ToolPayload{call.id, call.name, kCancelledReceipt});
     }
-    leaf_ = interrupted_at;
   }
 
   boost::json::value Serialize() const;

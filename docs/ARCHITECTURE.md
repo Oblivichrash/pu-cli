@@ -229,6 +229,18 @@ cannot stop each other.
 | `stop_command` | one running command | The command's process tree is killed and the turn continues with a note from the user |
 | shutdown | the process | Every turn in flight is abandoned, and its partial reply is not persisted |
 
+Both channels reach the model, and they must not read alike. A sealed call appends a
+`tool` node carrying `kCancelledReceipt`, which tells the model the turn is over and that
+it should wait for the user rather than resume on its own. A stopped command returns
+`kCommandStoppedReceipt`, which tells the model the turn is still going and that the rest
+of its plan is unaffected. The distinction is the point: if a stop read like a cancel, a
+model would learn to abandon a plan the user only wanted to redirect.
+
+The sealed receipts belong to the turn's chain, so the next request carries them. They are
+appended after the interrupted assistant node and become the leaf, which is what puts them
+in `Chain()`. This does not block a rewind — `HasUnfinishedToolCalls()` counts only
+`kPending`, and a sealed call is `kInterrupted`.
+
 `platform::ShutdownRequested()` answers "has this process been asked to exit", and it is
 the one signal that is **not** a turn's cancel token. It is set by the signal handler and
 by the Web UI's stop, and it is never cleared while the process lives — a process on its
@@ -568,11 +580,20 @@ ends up holding exactly the chain the view shows.
 A tool call has three states: `pending` while it has not been answered, `completed`
 once a receipt answers it, and `interrupted` when the turn that requested it was
 cancelled before the call ran. Cancelling seals the leaf: every call still `pending`
-becomes `interrupted` and gains a receipt recording that it never ran. Only a
-`pending` call counts as unfinished, so a sealed turn stops blocking `/rewind` and a
-switch of agent while a call that may still be running goes on blocking both. Whether
-a receipt records a result or an interruption, its presence is what keeps each tool
-call paired with an answer, which is what the request path is rebuilt from.
+becomes `interrupted` and gains a receipt recording that it never ran. Those receipts
+are chain nodes like any other, so the next request renders them to the model as
+`role: "tool"` messages. Only a `pending` call counts as unfinished, so a sealed turn
+stops blocking `/rewind` and a switch of agent while a call that may still be running
+goes on blocking both. Whether a receipt records a result or an interruption, its
+presence is what keeps each tool call paired with an answer, which is what the request
+path is rebuilt from.
+
+Three vocabularies name these states, and they are not interchangeable. Storage and the
+session file use `pending` / `completed` / `interrupted`
+([`message.hpp`](../include/pu/session/message.hpp), [`graph.cpp`](../src/session/graph.cpp)).
+`/api/history` renames `completed` to `done` for the Web UI, so a client sees `pending` /
+`done` / `interrupted`. The transcript additionally shows `running`, which is live-only
+state and is never written to a session.
 
 A file without the version, with another one, or whose history is not node storage is
 refused rather than guessed at: `pu` reports the reason and starts a fresh

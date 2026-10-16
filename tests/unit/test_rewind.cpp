@@ -86,6 +86,36 @@ TEST_CASE("Sealing an interrupted turn lets a rewind through again", "[session][
   REQUIRE(session.Messages().RewindBefore(1));
 }
 
+TEST_CASE("Sealing an interrupted turn hands the model a receipt for every call it never ran",
+          "[session][rewind]") {
+  Session session;
+  session.Messages().Append("user", "one");
+
+  ChatMessage assistant;
+  assistant.role = session::kAssistantRole;
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}},)"
+      R"({"id":"call_2","type":"function","function":{"name":"write_file","arguments":{}}}])");
+  session.Messages().Append(assistant);
+
+  session.Messages().SealInterruptedToolCalls();
+
+  const std::vector<ChatMessage> history = session.Messages().History();
+  REQUIRE(history.size() == 4);
+
+  size_t receipts = 0;
+  for (const ChatMessage& message : history) {
+    if (message.role == session::kToolRole) {
+      REQUIRE(message.content == session::kCancelledReceipt);
+      ++receipts;
+    }
+  }
+  REQUIRE(receipts == 2);
+  REQUIRE(history[1].tool_calls.as_array().size() == 2);
+  REQUIRE(history[2].role == session::kToolRole);
+  REQUIRE(history[3].role == session::kToolRole);
+}
+
 TEST_CASE("An interrupted turn survives a save and a load as interrupted",
           "[session][rewind][schema]") {
   Session session;

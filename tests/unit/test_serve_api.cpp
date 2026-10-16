@@ -135,8 +135,9 @@ TEST_CASE("serve API /api/history names a call the turn never ran", "[serve][api
   conversation.SealInterruptedToolCalls();
 
   auto j = ParseJson(client.Get("/api/history"));
-  REQUIRE(j.as_array().size() == 2);
+  REQUIRE(j.as_array().size() == 3);
   REQUIRE(j.as_array()[1].at("tool_call_status") == boost::json::array{"interrupted"});
+  REQUIRE(j.as_array()[2].at("role") == "tool");
 }
 
 TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]") {
