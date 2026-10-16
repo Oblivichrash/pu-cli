@@ -36,10 +36,6 @@
 #include "pu/runtime/runtime.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
-namespace pu::platform {
-extern std::atomic<bool> interrupted;
-}
-
 namespace pu::tests {
 
 namespace beast = boost::beast;
@@ -438,12 +434,12 @@ class ServeHarness {
   void Stop() {
     if (stopped_) return;
     stopped_ = true;
-    platform::interrupted = true;
+    platform::ShutdownToken()->store(true, std::memory_order_release);
     if (server_thread_.joinable()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       server_thread_.join();
     }
-    platform::interrupted = false;
+    platform::ShutdownToken()->store(false, std::memory_order_release);
     if (runtime_) runtime_->Shutdown();
   }
 

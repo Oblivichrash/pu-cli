@@ -426,7 +426,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   acceptor.async_accept(ioc, do_accept);
   std::thread ioc_thread([&] { ioc.run(); });
 
-  while (!pu::platform::IsInterrupted()) {
+  while (!pu::platform::ShutdownRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 

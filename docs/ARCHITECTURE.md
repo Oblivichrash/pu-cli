@@ -218,6 +218,28 @@ environment, or the workspace's own `serve` block names:
    pending read and write, so no connection thread is left blocked — the runner is
    stopped, and `Runtime::Shutdown()` persists the session.
 
+### Cancellation contract
+
+A turn is steered by tokens, never by a process-wide flag, so two turns in one process
+cannot stop each other.
+
+| Channel | Scope | Effect |
+| :------ | :---- | :----- |
+| `cancel` | the turn | The turn ends, the reply keeps what already arrived, and every tool call it never ran is sealed as interrupted |
+| `stop_command` | one running command | The command's process tree is killed and the turn continues with a note from the user |
+| shutdown | the process | Every turn in flight is abandoned, and its partial reply is not persisted |
+
+`platform::ShutdownRequested()` answers "has this process been asked to exit", and it is
+the one signal that is **not** a turn's cancel token. It is set by the signal handler and
+by the Web UI's stop, and it is never cleared while the process lives — a process on its
+way out does not start another turn. `platform::ShutdownToken()` exposes the same fact as
+a `CancelToken` for the call sites that take one, and the two cannot disagree because the
+token is the storage and the accessor only reads it.
+
+Treating shutdown as a cancel is what a caller must not do: a cancelled turn keeps its
+partial reply and seals its unrun tool calls, because the session goes on; a shutdown
+persists neither, because it does not.
+
 ### HTTP handler contract
 
 `DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler

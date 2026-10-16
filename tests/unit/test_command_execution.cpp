@@ -78,14 +78,12 @@ TEST_CASE("A command that never returns is killed by its stop token", "[platform
   REQUIRE(elapsed_ms < 5000);
 }
 
-TEST_CASE("The shutdown token is shared and cleared with the interrupt flag",
+TEST_CASE("A shutdown request is a one-way trap the token and the flag agree on",
           "[platform][signal]") {
-  ClearInterruptFlag();
-  REQUIRE_FALSE(ShutdownToken()->load());
+  REQUIRE_FALSE(ShutdownRequested());
 
-  ShutdownToken()->store(true);
+  ShutdownToken()->store(true, std::memory_order_release);
+
+  REQUIRE(ShutdownRequested());
   REQUIRE(ShutdownToken()->load());
-
-  ClearInterruptFlag();
-  REQUIRE_FALSE(ShutdownToken()->load());
 }

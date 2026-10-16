@@ -70,7 +70,6 @@ void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
 
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ChatResult result;
-  platform::ClearInterruptFlag();
   ResetAccumulators();
 
   const std::string body = BuildRequest(request.history, request.tools);
@@ -84,7 +83,6 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
-    if (platform::IsInterrupted()) return 0;
     if (request.cancel_token && request.cancel_token->load(std::memory_order_acquire)) return 0;
     return total;
   };

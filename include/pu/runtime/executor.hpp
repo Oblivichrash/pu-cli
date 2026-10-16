@@ -98,7 +98,7 @@ class Executor {
   ExecutionResult RunToolLoop(Conversation& conversation, const Turn& turn);
 
   ChatResult CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result,
-                          bool& failed, bool& stopped);
+                          bool& failed, bool& stopped, bool& abandoned);
 
   void RunToolCalls(Conversation& conversation, const Turn& turn,
                     const std::vector<ToolCall>& calls, ExecutionResult& result);

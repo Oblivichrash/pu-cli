@@ -21,7 +21,7 @@ bool HttpTransport::Start(MessageCallback on_message) {
   stopping_ = false;
 
   http_.SetInterruptChecker([this] {
-    return stopping_.load(std::memory_order_acquire) || pu::platform::IsInterrupted();
+    return stopping_.load(std::memory_order_acquire) || pu::platform::ShutdownRequested();
   });
 
   running_ = true;

@@ -2,6 +2,7 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/session/message.hpp"
 #include "pu/tools/builtin_tools.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -521,7 +522,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
 }
 
 TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor][tool_loop]") {
-  platform::ClearInterruptFlag();
+  platform::ShutdownToken()->store(false, std::memory_order_release);
 
   Toolbox toolbox;
   Executor executor;
@@ -538,6 +539,30 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
 
+  REQUIRE(ws.History().size() == 1);
+  REQUIRE(ws.History()[0].role == "user");
+}
+
+TEST_CASE("A shutdown abandons the turn without calling it a cancel", "[executor][tool_loop]") {
+  platform::ShutdownToken()->store(false, std::memory_order_release);
+
+  Toolbox toolbox;
+  Executor executor;
+  config::SecurityPolicy policy;
+  policy.sandbox_root = ".";
+  executor.SetSecurityPolicy(policy);
+
+  FailingLLM provider;
+
+  Conversation ws;
+  platform::ShutdownToken()->store(true, std::memory_order_release);
+
+  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
+
+  platform::ShutdownToken()->store(false, std::memory_order_release);
+
+  REQUIRE(result.has_error == false);
+  REQUIRE(result.outcome == TurnOutcome::kCompleted);
   REQUIRE(ws.History().size() == 1);
   REQUIRE(ws.History()[0].role == "user");
 }

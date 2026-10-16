@@ -219,7 +219,8 @@ void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult&
 }
 
 ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
-                                  ExecutionResult& result, bool& failed, bool& stopped) {
+                                  ExecutionResult& result, bool& failed, bool& stopped,
+                                  bool& abandoned) {
   session::RequestInputs inputs;
   inputs.system_prompt = system_prompt_;
   inputs.environment = BuildStaticSystemContext();
@@ -271,10 +272,16 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
     }
     return chat_result;
   } catch (const std::exception& e) {
-    if ((turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) ||
-        platform::IsInterrupted()) {
+    const bool cancelled =
+        turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire);
+    if (cancelled) {
       spdlog::debug("Request stopped by the caller: {}", e.what());
       stopped = true;
+      return {};
+    }
+    if (platform::ShutdownRequested()) {
+      spdlog::debug("Request abandoned as the process shut down: {}", e.what());
+      abandoned = true;
       return {};
     }
     failed = true;
@@ -356,6 +363,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   ExecutionResult result;
   bool budget_reached = false;
   bool wrap_up_asked = false;
+  bool abandoned = false;
 
   for (;;) {
     // The budget counts tool calls, not replies: one reply can carry several calls.
@@ -383,12 +391,13 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     bool failed = false;
     bool stopped = false;
-    ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped);
+    ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
     if (failed) break;
     if (stopped) {
       conversation.SealInterruptedToolCalls();
       return result;
     }
+    if (abandoned) return result;
 
     if (chat_result.tool_calls.empty()) {
       std::string response = chat_result.content;

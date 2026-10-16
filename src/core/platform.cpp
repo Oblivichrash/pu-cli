@@ -23,8 +23,6 @@
 
 namespace pu::platform {
 
-std::atomic<bool> interrupted{false};  // extern-declared in tests/mocks/serve_harness.hpp
-
 CancelToken& ShutdownToken() {
   static CancelToken token = std::make_shared<std::atomic<bool>>(false);
   return token;
@@ -35,7 +33,6 @@ void SetupSignalHandler() {
   if (!SetConsoleCtrlHandler(
           [](unsigned long type) {
             if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT) {
-              interrupted = true;
               ShutdownToken()->store(true, std::memory_order_release);
               return TRUE;
             }
@@ -47,7 +44,6 @@ void SetupSignalHandler() {
 #else
   struct sigaction sa {};
   sa.sa_handler = [](int) {
-    interrupted = true;
     static std::atomic<bool>* raw = ShutdownToken().get();
     raw->store(true, std::memory_order_release);
   };
@@ -56,11 +52,7 @@ void SetupSignalHandler() {
 #endif
 }
 
-bool IsInterrupted() { return interrupted; }
-void ClearInterruptFlag() {
-  interrupted = false;
-  ShutdownToken()->store(false, std::memory_order_release);
-}
+bool ShutdownRequested() { return ShutdownToken()->load(std::memory_order_acquire); }
 
 std::string FromConsoleOutput(std::string_view text) {
 #ifdef _WIN32
