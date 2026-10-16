@@ -79,7 +79,7 @@ gateway that writes `data:{...}` with no space reads the same as one that writes
 ### Usage
 
 Field names are not hardcoded in the reader: `ResponseShape`
-(`include/pu/llm/response_shape.hpp`) names every comparison a reply is read with, and a
+(`include/pu/llm/openai_protocol.hpp`) names every comparison a reply is read with, and a
 provider config carries the shape its gateway speaks. The default is the OpenAI-compatible
 spelling, so a gateway that renames nothing states nothing. `ProviderCapabilities` is the
 counterpart for a request.

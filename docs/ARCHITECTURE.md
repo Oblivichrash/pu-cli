@@ -39,7 +39,7 @@ What each dependency is for:
 | `CommandRouter` | Routes `/` commands to handlers |
 | `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
-| `mcp_session` | Free functions that connect a server set and disconnect it again — the whole connect/disconnect sequence, so `Runtime` holds the result rather than driving the loop |
+| `ConnectMcpServers` / `DisconnectMcpServers` | Free functions that connect a server set and disconnect it again — the whole connect/disconnect sequence, so `Runtime` holds the result rather than driving the loop |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
 | `StdioTransport` | stdio subprocess transport |
