@@ -117,6 +117,18 @@ asked when the backend sends none, since that request cannot succeed:
 Your conversation is saved to `<workspace>/.pu/session.json` after every
 interaction and restored on restart, so each directory keeps its own session.
 
+`pu probe` sends one single-token prompt to the agent's backend, keeps every byte
+of the raw stream under `--out` (default `./provider-probes/`), and prints the
+field names each level of the reply actually carried. A `ResponseShape` for a
+gateway is written from this capture rather than from a specification; the fields
+it lists as absent are the ones an adapter for that gateway names differently or
+drops:
+
+```bash
+./build/pu probe --agent local-assistant
+./build/pu probe --no-save   # summary only, nothing written
+```
+
 ---
 
 ## Core Commands

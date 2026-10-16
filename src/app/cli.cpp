@@ -3,7 +3,9 @@
 
 #include <exception>
 #include <functional>
+#include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/runtime/command_router.hpp"
 #include "pu/llm/model_listing.hpp"
+#include "pu/llm/probe.hpp"
 #include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {
@@ -48,7 +51,7 @@ CommandLine BuildCommandLine() {
   boost::program_options::options_description global("Global options");
   global.add_options()("help,h", "show help message")("version", "show version and exit")(
       "command", boost::program_options::value<std::string>(),
-      "command to execute (ask/chat/models/serve)");
+      "command to execute (ask/chat/models/probe/serve)");
 
   boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
@@ -58,6 +61,11 @@ CommandLine BuildCommandLine() {
 
   boost::program_options::options_description models("models options");
   models.add_options()("verify", "ask each listed model for one token and report what answered");
+
+  boost::program_options::options_description probe("probe options");
+  probe.add_options()("out", boost::program_options::value<std::string>(),
+                      "directory the raw stream is written to (default ./provider-probes)")(
+      "no-save", "print the summary without writing the raw stream");
 
   boost::program_options::options_description serve("serve options");
   serve.add_options()("host", boost::program_options::value<std::string>(),
@@ -69,7 +77,7 @@ CommandLine BuildCommandLine() {
   positional.add("prompt", 1);
 
   CommandLine line;
-  line.all.add(global).add(session).add(ask).add(models).add(serve);
+  line.all.add(global).add(session).add(ask).add(models).add(probe).add(serve);
   line.positional = std::move(positional);
   return line;
 }
@@ -137,7 +145,31 @@ int RunChat(const std::string& agent, Runtime& runtime) {
   });
 }
 
+// SPDX-License-Identifier: GPL-3.0-only
+// One probe run: a single-token prompt to the agent's backend, the raw stream kept,
+// and the field names the gateway actually sent read back out of it. A ResponseShape
+// for a new gateway is written from this capture rather than from a specification.
+int RunProbe(const std::string& agent, const std::string& prompt, const std::string& out_dir,
+             bool save, Runtime& runtime) {
+  return WithInitializedRuntime(agent, runtime, [&] {
+    const config::Backend backend = runtime.CurrentBackend();
+
+    std::optional<std::string> raw_path;
+    if (save) {
+      std::filesystem::create_directories(out_dir);
+      raw_path = (std::filesystem::path(out_dir) /
+                  (std::string(config::GatewayName(backend.gateway)) + ".raw"))
+                     .string();
+      std::cout << "raw stream: " << *raw_path << "\n";
+    }
+
+    const llm::ProbeReport report = llm::ProbeStream(backend, runtime.Http(), prompt, raw_path);
+    std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
+  });
+}
+
 int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
+
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = runtime.CurrentBackend();
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());

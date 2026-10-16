@@ -42,6 +42,7 @@ add_library(pu_core STATIC
     src/llm/openai_protocol.cpp
     src/llm/projection.cpp
     src/llm/model_listing.cpp
+    src/llm/probe.cpp
     src/llm/model_verifier.cpp
     src/llm/streaming_provider.cpp
     src/gateways/gateways.cpp
