@@ -25,12 +25,18 @@ namespace pu::platform {
 
 std::atomic<bool> interrupted{false};  // extern-declared in tests/mocks/serve_harness.hpp
 
+CancelToken& ShutdownToken() {
+  static CancelToken token = std::make_shared<std::atomic<bool>>(false);
+  return token;
+}
+
 void SetupSignalHandler() {
 #ifdef _WIN32
   if (!SetConsoleCtrlHandler(
           [](unsigned long type) {
             if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT) {
               interrupted = true;
+              ShutdownToken()->store(true, std::memory_order_release);
               return TRUE;
             }
             return FALSE;
@@ -40,14 +46,21 @@ void SetupSignalHandler() {
   }
 #else
   struct sigaction sa {};
-  sa.sa_handler = [](int) { interrupted = true; };
+  sa.sa_handler = [](int) {
+    interrupted = true;
+    static std::atomic<bool>* raw = ShutdownToken().get();
+    raw->store(true, std::memory_order_release);
+  };
   sigemptyset(&sa.sa_mask);
   sigaction(SIGINT, &sa, nullptr);
 #endif
 }
 
 bool IsInterrupted() { return interrupted; }
-void ClearInterruptFlag() { interrupted = false; }
+void ClearInterruptFlag() {
+  interrupted = false;
+  ShutdownToken()->store(false, std::memory_order_release);
+}
 
 std::string FromConsoleOutput(std::string_view text) {
 #ifdef _WIN32
@@ -195,33 +208,120 @@ int ExecuteCommand(const std::string& command, std::string& output,
   } else {
     full_cmd = command;
   }
-  full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();
 
-  FILE* pipe = _popen(full_cmd.c_str(), "r");
-  if (!pipe) {
-    output = "popen failed";
-    spdlog::debug("[ExecuteCommand] popen failed for command: {}", command);
+  SECURITY_ATTRIBUTES inherit_read;
+  inherit_read.nLength = sizeof(SECURITY_ATTRIBUTES);
+  inherit_read.lpSecurityDescriptor = nullptr;
+  inherit_read.bInheritHandle = TRUE;
+
+  HANDLE read_pipe = nullptr;
+  HANDLE write_pipe = nullptr;
+  if (!CreatePipe(&read_pipe, &write_pipe, &inherit_read, 0)) {
+    output = "pipe failed";
+    spdlog::debug("[ExecuteCommand] CreatePipe failed for command: {}", command);
+    return -1;
+  }
+  SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+
+  STARTUPINFOA startup{};
+  startup.cb = sizeof(STARTUPINFOA);
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.hStdOutput = write_pipe;
+  startup.hStdError = write_pipe;
+  startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+  PROCESS_INFORMATION process{};
+  std::string shell_cmd = "cmd.exe /c " + full_cmd;
+  std::vector<char> shell_buffer(shell_cmd.begin(), shell_cmd.end());
+  shell_buffer.push_back('\0');
+
+  HANDLE job = CreateJobObjectA(nullptr, nullptr);
+  if (job) {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+  }
+
+  const BOOL started = CreateProcessA(nullptr, shell_buffer.data(), nullptr, nullptr, TRUE,
+                                      CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
+                                      &startup, &process);
+  CloseHandle(write_pipe);
+
+  if (!started) {
+    CloseHandle(read_pipe);
+    if (job) CloseHandle(job);
+    output = "spawn failed";
+    spdlog::debug("[ExecuteCommand] CreateProcess failed for command: {}", command);
     return -1;
   }
 
-  std::array<char, 256> buffer{};
-  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-    output += buffer.data();
-    if (stop_token && stop_token->load(std::memory_order_acquire)) break;
+  if (job) AssignProcessToJobObject(job, process.hProcess);
+  ResumeThread(process.hThread);
+
+  const bool stops = static_cast<bool>(stop_token);
+  bool stopped = false;
+  for (;;) {
+    DWORD available = 0;
+    if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr)) break;
+
+    if (available > 0) {
+      std::array<char, 256> buffer{};
+      DWORD read = 0;
+      if (!ReadFile(read_pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) ||
+          read == 0) {
+        break;
+      }
+      output.append(buffer.data(), read);
+      continue;
+    }
+
+    if (WaitForSingleObject(process.hProcess, 50) == WAIT_OBJECT_0) {
+      DWORD remaining = 0;
+      while (PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &remaining, nullptr) && remaining > 0) {
+        std::array<char, 256> buffer{};
+        DWORD read = 0;
+        if (!ReadFile(read_pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) ||
+            read == 0) {
+          break;
+        }
+        output.append(buffer.data(), read);
+      }
+      break;
+    }
+
+    if (stops && stop_token->load(std::memory_order_acquire)) {
+      if (job) {
+        TerminateJobObject(job, 1);
+      } else {
+        TerminateProcess(process.hProcess, 1);
+      }
+      WaitForSingleObject(process.hProcess, 2000);
+      stopped = true;
+      break;
+    }
   }
 
+  DWORD exit_code = 0;
+  if (!GetExitCodeProcess(process.hProcess, &exit_code)) exit_code = 0;
+
+  if (job) TerminateJobObject(job, exit_code);
+  CloseHandle(read_pipe);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  if (job) CloseHandle(job);
+
   output = FromConsoleOutput(output);
-  int status = _pclose(pipe);
-  int exit_code = (status == -1) ? -1 : status;
+  const int code = stopped ? -1 : static_cast<int>(exit_code);
 
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}", command,
-                exit_code, elapsed_ms, output.size());
-  return exit_code;
+  spdlog::debug(
+      "[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={} stopped={}", command,
+      code, elapsed_ms, output.size(), stopped);
+  return code;
 }
 
 #endif

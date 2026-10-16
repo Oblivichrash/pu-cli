@@ -11,8 +11,8 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/runtime/command_router.hpp"
-#include "pu/llm/model_listing.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/runtime/runtime.hpp"
 
@@ -77,7 +77,9 @@ CommandLine BuildCommandLine() {
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     bool is_command = false;
-    ExecutionResult result = runtime.ProcessInput(prompt, is_command);
+    ExecutionResult result =
+        runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {}, nullptr,
+                             platform::ShutdownToken());
     if (result.has_error) {
       spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     } else if (result.was_streamed) {
@@ -107,7 +109,9 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 
       try {
         bool is_command = false;
-        ExecutionResult result = runtime.ProcessInput(input, is_command);
+        ExecutionResult result =
+            runtime.ProcessInput(input, is_command, platform::ShutdownToken(), nullptr, {},
+                                 nullptr, platform::ShutdownToken());
         if (result.has_error) {
           if (is_command && result.error_message.empty()) {
             std::cout << "Unknown command. ";

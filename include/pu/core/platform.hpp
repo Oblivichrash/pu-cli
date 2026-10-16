@@ -27,6 +27,7 @@ std::string FromPipedOutput(std::string_view text);
 
 void SetupSignalHandler();
 bool IsInterrupted();
+CancelToken& ShutdownToken();
 void ClearInterruptFlag();
 
 }  // namespace pu::platform
