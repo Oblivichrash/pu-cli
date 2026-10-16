@@ -9,6 +9,7 @@ namespace {
 
 constexpr const char* kStatusPending = "pending";
 constexpr const char* kStatusCompleted = "completed";
+constexpr const char* kStatusInterrupted = "interrupted";
 
 std::string StatusName(ToolCallStatus status) {
   switch (status) {
@@ -16,12 +17,15 @@ std::string StatusName(ToolCallStatus status) {
       return kStatusPending;
     case ToolCallStatus::kCompleted:
       return kStatusCompleted;
+    case ToolCallStatus::kInterrupted:
+      return kStatusInterrupted;
   }
   return kStatusPending;
 }
 
 ToolCallStatus StatusFrom(const std::string& name) {
   if (name == kStatusCompleted) return ToolCallStatus::kCompleted;
+  if (name == kStatusInterrupted) return ToolCallStatus::kInterrupted;
   return ToolCallStatus::kPending;
 }
 

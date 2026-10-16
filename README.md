@@ -74,6 +74,14 @@ Every field is listed under [Configuration](#agentsjson).
 > configuration, and a path that does not exist is an error rather than a silent
 > fallback.
 
+> **Upgrading from 0.5.1?** A turn that is cancelled now stores every tool call it
+> never ran as `interrupted` rather than leaving it `pending`, and no longer blocks
+> `/rewind` or a switch of agent. Sessions saved by 0.5.1 that still hold a `pending`
+> tool call from a cancelled turn are read as they were written: they stay `pending`
+> and keep refusing a rewind, because a `pending` record means a call may still be
+> running. `pu chat` offers no repair; start a new session, or ask for one after that
+> call has been answered.
+
 ### Usage
 
 | Command | Description |

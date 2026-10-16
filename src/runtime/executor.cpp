@@ -235,6 +235,7 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
   request.on_content = [&](std::string_view token) {
     if (token.empty()) return;
     result.was_streamed = true;
+    result.content.append(token);
     if (turn.content_callback) {
       turn.content_callback(token);
     } else {
@@ -289,6 +290,11 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
   ToolContext tool_ctx = BuildToolContext(turn);
 
   for (const ToolCall& call : calls) {
+    if (turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) {
+      spdlog::debug("Turn cancelled before tool '{}' ran", call.name);
+      break;
+    }
+
     ++result.tool_call_count;
 
     if (turn.tool_callbacks.on_start) {
@@ -340,6 +346,10 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     conversation.Append(note_msg);
     user_note_.clear();
   }
+
+  if (turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) {
+    conversation.SealInterruptedToolCalls();
+  }
 }
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
@@ -375,7 +385,10 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
     bool stopped = false;
     ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped);
     if (failed) break;
-    if (stopped) return result;
+    if (stopped) {
+      conversation.SealInterruptedToolCalls();
+      return result;
+    }
 
     if (chat_result.tool_calls.empty()) {
       std::string response = chat_result.content;

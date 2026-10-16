@@ -185,7 +185,7 @@ TEST_CASE("A page that goes away ends the turn and stores no reply", "[serve][ws
   RequireOnlyTheQuestion(StoredConversation(harness), "hello");
 }
 
-TEST_CASE("A cancel ends the turn with done and stores no reply", "[serve][ws]") {
+TEST_CASE("A cancel ends the turn with done and keeps what already arrived", "[serve][ws]") {
   pu::tests::ServeHarness harness("ollama", 600);
   Page page(harness.Port());
 
@@ -200,5 +200,11 @@ TEST_CASE("A cancel ends the turn with done and stores no reply", "[serve][ws]")
     REQUIRE(FrameType(frame) != "error");
   }
 
-  RequireOnlyTheQuestion(StoredConversation(harness), "hello");
+  const auto history = StoredConversation(harness);
+  REQUIRE(history.is_array());
+  REQUIRE(history.as_array().size() == 2);
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[0].at("role")) == "user");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[0].at("content")) == "hello");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[1].at("role")) == "assistant");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[1].at("content")) == "OK");
 }

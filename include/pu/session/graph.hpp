@@ -54,6 +54,29 @@ class MessageGraph {
     return node != nullptr && HasUnfinishedToolCalls(*node);
   }
 
+  void SealInterruptedToolCalls() {
+    const MessageId interrupted_at = leaf_;
+    auto it = nodes_.find(interrupted_at);
+    if (it == nodes_.end()) return;
+
+    auto* assistant = std::get_if<AssistantPayload>(&it->second.payload);
+    if (assistant == nullptr) return;
+
+    std::vector<ToolCallRecord> unrun;
+    for (ToolCallRecord& call : assistant->tool_calls) {
+      if (call.status == ToolCallStatus::kPending) {
+        call.status = ToolCallStatus::kInterrupted;
+        unrun.push_back(call);
+      }
+    }
+    if (unrun.empty()) return;
+
+    for (const ToolCallRecord& call : unrun) {
+      AppendAfterLeaf(ToolPayload{call.id, call.name, kInterruptedReceipt});
+    }
+    leaf_ = interrupted_at;
+  }
+
   boost::json::value Serialize() const;
 
   static bool Deserialize(const boost::json::value& value, MessageGraph& out);
@@ -118,7 +141,9 @@ class MessageGraph {
       if (auto* assistant = std::get_if<AssistantPayload>(&it->second.payload)) {
         for (ToolCallRecord& record : assistant->tool_calls) {
           if (record.id == tool_call_id) {
-            record.status = ToolCallStatus::kCompleted;
+            if (record.status == ToolCallStatus::kPending) {
+              record.status = ToolCallStatus::kCompleted;
+            }
             return;
           }
         }

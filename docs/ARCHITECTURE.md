@@ -543,6 +543,15 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
+A tool call has three states: `pending` while it has not been answered, `completed`
+once a receipt answers it, and `interrupted` when the turn that requested it was
+cancelled before the call ran. Cancelling seals the leaf: every call still `pending`
+becomes `interrupted` and gains a receipt recording that it never ran. Only a
+`pending` call counts as unfinished, so a sealed turn stops blocking `/rewind` and a
+switch of agent while a call that may still be running goes on blocking both. Whether
+a receipt records a result or an interruption, its presence is what keeps each tool
+call paired with an answer, which is what the request path is rebuilt from.
+
 A file without the version, with another one, or whose history is not node storage is
 refused rather than guessed at: `pu` reports the reason and starts a fresh
 conversation, and the next save replaces the file.

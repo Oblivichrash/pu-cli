@@ -115,6 +115,8 @@ bool Conversation::RewindBefore(size_t turn) {
 
 bool Conversation::HasPendingToolCalls() const { return graph_.LeafHasUnfinishedToolCalls(); }
 
+void Conversation::SealInterruptedToolCalls() { graph_.SealInterruptedToolCalls(); }
+
 void Conversation::ClearHistory() { graph_ = session::MessageGraph{}; }
 
 boost::json::value Conversation::Serialize() const {

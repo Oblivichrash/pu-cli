@@ -27,6 +27,8 @@ class Conversation {
   std::vector<const session::MessageNode*> Chain() const { return graph_.Chain(); }
   bool HasPendingToolCalls() const;
 
+  void SealInterruptedToolCalls();
+
   const session::MessageGraph& Graph() const { return graph_; }
 
   bool RewindBefore(size_t turn);
@@ -65,7 +67,7 @@ struct SessionSpec {
   }
 };
 
-inline constexpr int kSessionSchemaVersion = 7;
+inline constexpr int kSessionSchemaVersion = 8;
 
 class Session {
  public:

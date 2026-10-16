@@ -52,6 +52,7 @@ inline Reasoning ReasoningFromJson(const boost::json::value& value) {
 enum class ToolCallStatus {
   kPending,
   kCompleted,
+  kInterrupted,
 };
 
 struct ToolCallRecord {
@@ -118,9 +119,22 @@ inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
   if (assistant == nullptr) return false;
   for (const ToolCallRecord& call : assistant->tool_calls) {
-    if (call.status != ToolCallStatus::kCompleted) return true;
+    if (call.status == ToolCallStatus::kPending) return true;
   }
   return false;
 }
+
+inline bool HasToolCallsInterrupted(const MessageNode& node) {
+  const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
+  if (assistant == nullptr) return false;
+  for (const ToolCallRecord& call : assistant->tool_calls) {
+    if (call.status == ToolCallStatus::kInterrupted) return true;
+  }
+  return false;
+}
+
+inline constexpr const char* kInterruptedReceipt =
+    "Interrupted by the user before this call ran; no result exists. "
+    "Continue only when the user asks";
 
 }  // namespace pu::session

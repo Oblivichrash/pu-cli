@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <string>
 
 #include "pu/session/session.hpp"
@@ -64,6 +65,63 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   REQUIRE(session.Messages().HasPendingToolCalls());
   REQUIRE_THROWS_AS(session.Messages().RewindBefore(1), RequestRefused);
   REQUIRE_THROWS_AS(session.Messages().RewindBefore(1), std::exception);
+}
+
+TEST_CASE("Sealing an interrupted turn lets a rewind through again", "[session][rewind]") {
+  Session session;
+  session.Messages().Append("user", "one");
+
+  ChatMessage assistant;
+  assistant.role = session::kAssistantRole;
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}},)"
+      R"({"id":"call_2","type":"function","function":{"name":"write_file","arguments":{}}}])");
+  session.Messages().Append(assistant);
+
+  REQUIRE(session.Messages().HasPendingToolCalls());
+
+  session.Messages().SealInterruptedToolCalls();
+
+  REQUIRE_FALSE(session.Messages().HasPendingToolCalls());
+  REQUIRE(session.Messages().RewindBefore(1));
+}
+
+TEST_CASE("An interrupted turn survives a save and a load as interrupted",
+          "[session][rewind][schema]") {
+  Session session;
+  session.Messages().Append("user", "one");
+
+  ChatMessage assistant;
+  assistant.role = session::kAssistantRole;
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
+  session.Messages().Append(assistant);
+  session.Messages().SealInterruptedToolCalls();
+
+  const boost::json::value saved = session.Serialize();
+  std::unique_ptr<Session> loaded = Session::Deserialize(saved);
+  REQUIRE(loaded != nullptr);
+
+  REQUIRE_FALSE(loaded->Messages().HasPendingToolCalls());
+  REQUIRE(loaded->Messages().RewindBefore(1));
+}
+
+TEST_CASE("An untouched pending call still reads as pending after a save and a load",
+          "[session][rewind][schema]") {
+  Session session;
+  session.Messages().Append("user", "one");
+
+  ChatMessage assistant;
+  assistant.role = session::kAssistantRole;
+  assistant.tool_calls = boost::json::parse(
+      R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
+  session.Messages().Append(assistant);
+
+  const boost::json::value saved = session.Serialize();
+  std::unique_ptr<Session> loaded = Session::Deserialize(saved);
+  REQUIRE(loaded != nullptr);
+
+  REQUIRE(loaded->Messages().HasPendingToolCalls());
 }
 
 TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[session][rewind]") {
