@@ -6,7 +6,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/context/graph.hpp"
+#include "pu/session/graph.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::session {
@@ -16,33 +16,33 @@ struct RequestInputs {
   std::string environment;    // generated context: OS, policy, guidelines
 };
 
-inline ChatMessage RenderMessage(const context::MessageNode& node, int position) {
+inline ChatMessage RenderMessage(const session::MessageNode& node, int position) {
   ChatMessage msg;
   msg.id = position;
   msg.timestamp = node.timestamp;
 
-  if (const auto* user = std::get_if<context::UserPayload>(&node.payload)) {
-    msg.role = context::kUserRole;
+  if (const auto* user = std::get_if<session::UserPayload>(&node.payload)) {
+    msg.role = session::kUserRole;
     msg.content = user->content;
-  } else if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
-    msg.role = context::kAssistantRole;
+  } else if (const auto* assistant = std::get_if<session::AssistantPayload>(&node.payload)) {
+    msg.role = session::kAssistantRole;
     msg.content = assistant->content;
-    for (const context::Reasoning& block : assistant->reasoning) {
+    for (const session::Reasoning& block : assistant->reasoning) {
       msg.reasoning.push_back(ReasoningBlock{block.text, block.signature, block.raw});
     }
     if (!assistant->tool_calls.empty()) {
       boost::json::array calls;
-      for (const context::ToolCallRecord& record : assistant->tool_calls) {
-        calls.push_back(context::ToolCallToJson(record));
+      for (const session::ToolCallRecord& record : assistant->tool_calls) {
+        calls.push_back(session::ToolCallToJson(record));
       }
       msg.tool_calls = std::move(calls);
     }
-  } else if (const auto* system = std::get_if<context::SystemPayload>(&node.payload)) {
-    msg.role = context::kSystemRole;
+  } else if (const auto* system = std::get_if<session::SystemPayload>(&node.payload)) {
+    msg.role = session::kSystemRole;
     msg.content = system->content;
   } else {
-    const context::ToolPayload& receipt = std::get<context::ToolPayload>(node.payload);
-    msg.role = context::kToolRole;
+    const session::ToolPayload& receipt = std::get<session::ToolPayload>(node.payload);
+    msg.role = session::kToolRole;
     msg.content = receipt.content;
     msg.tool_name = receipt.tool_name;
     msg.tool_call_id = receipt.tool_call_id;
@@ -51,7 +51,7 @@ inline ChatMessage RenderMessage(const context::MessageNode& node, int position)
   return msg;
 }
 
-inline std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& graph,
+inline std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
                                                  const RequestInputs& inputs) {
   std::vector<ChatMessage> messages;
 
@@ -62,13 +62,13 @@ inline std::vector<ChatMessage> BuildRequestPath(const context::MessageGraph& gr
   }
   if (!system_text.empty()) {
     ChatMessage system;
-    system.role = context::kSystemRole;
+    system.role = session::kSystemRole;
     system.content = std::move(system_text);
     messages.push_back(std::move(system));
   }
 
   int position = static_cast<int>(messages.size()) + 1;
-  for (const context::MessageNode* node : graph.Chain()) {
+  for (const session::MessageNode* node : graph.Chain()) {
     messages.push_back(RenderMessage(*node, position++));
   }
   return messages;

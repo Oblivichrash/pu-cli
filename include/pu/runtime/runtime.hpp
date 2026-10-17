@@ -2,23 +2,72 @@
 #pragma once
 
 #include <cassert>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
-#include <filesystem>
 
-#include "pu/agent_manager.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/http_client.hpp"
-#include "pu/executor.hpp"
-#include "pu/mcp/mcp_session.hpp"
-#include "pu/command_router.hpp"
+#include "pu/runtime/executor.hpp"
+#include "pu/mcp/client.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {
+
+
+class AgentManager {
+ public:
+  AgentManager() = default;
+
+  void LoadAgentConfigs(const std::vector<config::AgentEntry>& configs) {
+    agent_configs_ = configs;
+  }
+
+  const config::AgentEntry* AgentConfig(const std::string& name) const {
+    for (const auto& entry : agent_configs_) {
+      if (entry.name == name) return &entry;
+    }
+    for (const auto& entry : transient_agents_) {
+      if (entry.name == name) return &entry;
+    }
+    return nullptr;
+  }
+
+  const config::AgentEntry& Adopt(const config::AgentEntry& entry) {
+    for (auto& existing : transient_agents_) {
+      if (existing.name == entry.name) {
+        existing = entry;
+        return existing;
+      }
+    }
+    transient_agents_.push_back(entry);
+    return transient_agents_.back();
+  }
+
+  std::vector<std::string> AgentNames() const {
+    std::vector<std::string> names;
+    names.reserve(agent_configs_.size() + transient_agents_.size());
+    for (const auto& entry : agent_configs_) names.push_back(entry.name);
+    for (const auto& entry : transient_agents_) names.push_back(entry.name);
+    return names;
+  }
+
+  void SetActiveAgent(const std::string& name) { active_agent_ = name; }
+  std::string ActiveAgentName() const { return active_agent_; }
+
+ private:
+  std::string active_agent_;
+  std::vector<config::AgentEntry> agent_configs_;
+  std::vector<config::AgentEntry> transient_agents_;
+};
+
 
 class Runtime {
  public:
@@ -40,12 +89,14 @@ class Runtime {
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
-  void SwitchBackend(const config::BackendConfig& backend);
+  void SwitchBackend(const config::Backend& backend);
 
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
-  std::filesystem::path GetWorkspaceRoot() const { return workspace_root_; }
+  std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
+  // The file Initialize() loaded.
+  const std::string& ConfigPath() const { return config_path_; }
 
-  Toolbox& GetToolbox() {
+  Toolbox& Tools() {
     assert(is_initialized_ && "Initialize() must run before any toolbox query");
     return toolbox_;
   }
@@ -60,7 +111,7 @@ class Runtime {
   // The approval gate. Ask fires on the turn thread when a command matches the
   // policy's approval patterns; Resolve answers it from the serve thread.
   void EnableApprovalGate() {
-    assert(is_initialized_ && "Initialize() must run before any gate");
+    assert(is_initialized_ && "Initialize() must run before any gateway");
     executor_->EnableApprovalGate();
   }
   void SetOnApprovalAsk(std::function<void(const std::string&)> cb) {
@@ -70,21 +121,21 @@ class Runtime {
     executor_->ResolveApproval(allow, std::move(note));
   }
 
-  AgentManager& GetAgentManager() {
+  AgentManager& Agents() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
   }
-  pu::http::HttpClient& GetHttpClient() {
+  pu::http::HttpClient& Http() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return *http_client_;
   }
   // For a collaborator that outlives the call and needs the client shared, which a
   // provider built per model does.
-  std::shared_ptr<pu::http::HttpClient> GetHttpClientShared() {
+  std::shared_ptr<pu::http::HttpClient> SharedHttp() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return http_client_;
   }
-  std::shared_ptr<Session> GetOrCreateDefaultSession();
+  std::shared_ptr<Session> DefaultSession();
 
   std::string HelpText();
 
@@ -93,14 +144,14 @@ class Runtime {
   bool RewindBefore(size_t turn);
   void ClearConversation();
 
-  config::BackendConfig CurrentBackend() const;
+  config::Backend CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
-  std::optional<ThinkingLevel> GetThinkingOverride() const;
+  std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
  private:
-  config::BackendConfig ConfiguredBackend() const;
+  config::Backend ConfiguredBackend() const;
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
@@ -118,6 +169,7 @@ class Runtime {
   std::shared_ptr<Session> current_session_;
 
   std::string default_agent_override_;
+  std::string config_path_;
 
   std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;
 };

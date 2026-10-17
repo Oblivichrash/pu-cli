@@ -1,5 +1,5 @@
 :root {
-  --column: 720px;
+  --column: 900px;
   --sidebar: 280px;
   --paper: #fdfbf7;
   --ink: #2c2c2c;
@@ -177,25 +177,51 @@ main {
 
 .blocks-container { width: 100%; }
 
+/* These are custom elements, which the browser lays out inline until told otherwise; an
+   inline box draws its own rule beside a near-zero height and pushes the header to the
+   next line, which is what puts a stray line above every step. */
 .block-thinking,
+.block-tool,
+.block-text {
+  display: block;
+}
+
+/* A tool call reads as one line of a log rather than a card: a rule down the left marks
+   how far the step reaches, and nothing else takes weight away from the answer. */
 .block-tool {
-  margin: 6px 0;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: rgba(255, 252, 245, 0.4);
+  margin: 2px 0;
+  border: none;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: none;
 }
 .block-thinking .block-header,
 .block-tool .block-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
+  justify-content: flex-start;
+  padding: 3px 10px;
   cursor: pointer;
   font-size: 13px;
+  line-height: 1.3;
   color: var(--ink-light);
   user-select: none;
-  gap: 8px;
+  gap: 6px;
 }
+.block-tool .block-header {
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.block-tool .tool-name {
+  color: var(--ink);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.block-tool .tool-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-tool .toggle-icon { margin-left: auto; }
 .block-thinking .block-header:hover,
 .block-tool .block-header:hover {
   background: rgba(0, 0, 0, 0.03);
@@ -217,10 +243,11 @@ main {
   flex-shrink: 0;
 }
 .tool-status {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink-light);
   flex-shrink: 0;
 }
+.tool-status:empty { display: none; }
 
 .tool-args,
 .tool-result { margin: 4px 0; }
@@ -234,7 +261,7 @@ main {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 70vh;
+  max-height: 40vh;
   overflow: auto;
 }
 .tool-error {
@@ -319,60 +346,6 @@ main {
 }
 #send:hover { background: var(--accent); }
 #send:disabled { opacity: 0.5; cursor: not-allowed; }
-/* The stop sits on the command it would kill, so the thing stopped is the thing on
-   screen rather than a button that names it from far away. */
-.stop-command {
-  background: transparent;
-  border: 1px solid var(--error-border);
-  color: var(--error-text);
-  border-radius: 2px;
-  padding: 1px 8px;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.stop-command:hover { background: rgba(181, 49, 42, 0.08); }
-
-/* The note is written beside the command it explains: shown before the stop lands, and
-   left in place so the reason can be read afterwards. */
-.stop-note {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dotted var(--border);
-}
-.stop-note input {
-  flex: 1;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 6px 10px;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--ink);
-  outline: none;
-}
-.stop-note input:focus { border-color: var(--accent); }
-.stop-note button {
-  background: var(--error-border);
-  color: var(--paper);
-  border: 1px solid var(--error-border);
-  border-radius: 2px;
-  padding: 6px 14px;
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.stop-note button.stop-note-cancel {
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--border);
-}
-
 /* The approval gate is parked above the composer, not floating over the page: a
    decision waited on is the one thing that must not be scrolled past or missed. */
 #approval-bar {

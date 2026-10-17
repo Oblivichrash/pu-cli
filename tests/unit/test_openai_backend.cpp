@@ -482,7 +482,7 @@ TEST_CASE("OpenAIProvider rejects a tool call the token cap cut short", "[openai
   OpenAIProvider provider(config, std::move(mock_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "write"}};
-  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::Error);
+  REQUIRE_THROWS_AS(provider.Chat(ChatRequest(history, {})), pu::GenericError);
 }
 
 TEST_CASE("OpenAIProvider keeps a tool call whose arguments are not JSON", "[openai][tools]") {
@@ -847,4 +847,54 @@ TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][s
 
   REQUIRE(result.content == "asked");
   REQUIRE(result.finish_reason == "stop");
+}
+
+TEST_CASE("[openai] a reply that never carries finish_reason is reported, not assumed complete",
+          "[openai]") {
+  // A renamed field would leave a truncated reply looking finished.
+  OpenAIProvider::Config config;
+  config.model = "m";
+  config.api_key = "k";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+  mock_ptr->simulate_response = [](const std::string&, const std::string&,
+                                   const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string frame =
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"stop_reason\":\"length\"}]}\n\n"
+        "data: [DONE]\n\n";
+    cb(const_cast<char*>(frame.data()), frame.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  const ChatResult result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.content == "hi");
+  REQUIRE(result.finish_reason.empty());
+  REQUIRE(std::find(result.missing_fields.begin(), result.missing_fields.end(),
+                    std::string{"finish_reason"}) != result.missing_fields.end());
+}
+
+TEST_CASE("[openai] a reply carrying every field the shape reads reports nothing missing",
+          "[openai]") {
+  OpenAIProvider::Config config;
+  config.model = "m";
+  config.api_key = "k";
+
+  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+  mock_ptr->simulate_response = [](const std::string&, const std::string&,
+                                   const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string frame =
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}],"
+        "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2,"
+        "\"prompt_tokens_details\":{\"cached_tokens\":0}}}\n\n"
+        "data: [DONE]\n\n";
+    cb(const_cast<char*>(frame.data()), frame.size());
+  };
+
+  OpenAIProvider provider(config, std::move(mock_http));
+  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  const ChatResult result = provider.Chat(ChatRequest(history, {}));
+
+  REQUIRE(result.missing_fields.empty());
 }

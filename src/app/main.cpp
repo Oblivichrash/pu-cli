@@ -4,7 +4,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 
 #include <boost/program_options.hpp>
 
@@ -12,8 +12,28 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace po = boost::program_options;
+
+namespace {
+
+std::string OptionOr(const po::variables_map& vm, const char* name, const std::string& fallback) {
+  return vm.count(name) ? vm[name].as<std::string>() : fallback;
+}
+
+std::optional<std::string> OptionalOption(const po::variables_map& vm, const char* name) {
+  if (!vm.count(name)) return std::nullopt;
+  return vm[name].as<std::string>();
+}
+
+std::optional<std::string> EnvOr(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || *value == '\0') return std::nullopt;
+  return std::string(value);
+}
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
   pu::platform::SetupSignalHandler();
@@ -49,30 +69,31 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: prompt required for ask command\n\n" << all << "\n";
         return 1;
       }
-      std::string agent = vm.count("agent") ? vm["agent"].as<std::string>() : "";
-      return pu::cli::RunAsk(agent, vm["prompt"].as<std::string>(), runtime);
+      return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime);
     }
 
     if (cmd == "chat") {
-      std::string agent = vm.count("agent") ? vm["agent"].as<std::string>() : "";
-      return pu::cli::RunChat(agent, runtime);
+      return pu::cli::RunChat(OptionOr(vm, "agent", ""), runtime);
     }
 
     if (cmd == "models") {
-      std::string agent = vm.count("agent") ? vm["agent"].as<std::string>() : "";
-      return pu::cli::RunModels(agent, vm.count("verify") > 0, runtime);
+      return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
+                               OptionOr(vm, "model", ""), vm.count("verify") > 0,
+                               OptionOr(vm, "entry", ""), runtime);
+    }
+
+    if (cmd == "probe") {
+      return pu::cli::RunProbe(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
+                               OptionOr(vm, "model", ""),
+                               OptionOr(vm, "prompt", "Say the single word: pong"),
+                               OptionOr(vm, "out", "./provider-probes"), vm.count("no-save") == 0,
+                               vm.count("listing") > 0, runtime);
     }
 
     if (cmd == "serve") {
-      const auto named = [](const char* name) -> std::optional<std::string> {
-        const char* value = std::getenv(name);
-        if (value == nullptr || *value == '\0') return std::nullopt;
-        return std::string(value);
-      };
       const auto listen = pu::config::ResolveListenOptions(
-          vm.count("host") ? std::optional(vm["host"].as<std::string>()) : std::nullopt,
-          vm.count("port") ? std::optional(vm["port"].as<std::string>()) : std::nullopt,
-          named("PU_SERVE_HOST"), named("PU_SERVE_PORT"), pu::config::FindServeOptions());
+          OptionalOption(vm, "host"), OptionalOption(vm, "port"), EnvOr("PU_SERVE_HOST"),
+          EnvOr("PU_SERVE_PORT"), pu::config::FindServeOptions());
       return pu::cli::RunServe(listen.host, listen.port, runtime);
     }
 

@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <condition_variable>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,13 +20,12 @@
 #include <mach-o/dyld.h>
 #endif
 
-#include "pu/agent_manager.hpp"
 #include "pu/config/agents.hpp"
-#include "pu/context/message.hpp"
+#include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/projection.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/tool.hpp"
 
@@ -43,52 +43,50 @@ void SendJson(http::response<http::string_body>& res, unsigned status,
   res.prepare_payload();
 }
 
-void SendOk(http::response<http::string_body>& res, boost::json::object fields = {}) {
-  fields["success"] = true;
-  SendJson(res, 200, fields);
-}
-
 void SendError(http::response<http::string_body>& res, unsigned status, std::string_view message) {
   SendJson(res, status, boost::json::object{{"success", false}, {"error", std::string(message)}});
 }
 
 unsigned ErrorStatus(const std::exception& e) {
-  if (dynamic_cast<const Error*>(&e) != nullptr) return 500;
+  if (dynamic_cast<const NotFound*>(&e) != nullptr) return 404;
+  if (dynamic_cast<const GenericError*>(&e) != nullptr) return 500;
   if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;
   return 500;
 }
 
-// Parses a request body, answering a malformed one for the caller. A handler that
-// takes no body never calls this.
-bool ParseBody(const http::request<http::string_body>& req, http::response<http::string_body>& res,
-               boost::json::value& out) {
+const char* ViewStatus(session::ToolCallStatus status) {
+  switch (status) {
+    case session::ToolCallStatus::kCompleted:
+      return "done";
+    case session::ToolCallStatus::kInterrupted:
+      return "interrupted";
+    case session::ToolCallStatus::kPending:
+      return "pending";
+  }
+  return "pending";
+}
+
+boost::json::value ParseBody(const http::request<http::string_body>& req) {
+  if (req.body().empty()) return boost::json::object{};
   try {
-    out = boost::json::parse(req.body());
-    return true;
+    return boost::json::parse(req.body());
   } catch (const boost::system::system_error&) {
-    SendError(res, 400, "Invalid JSON");
-    return false;
+    throw RequestRefused("Invalid JSON");
   }
 }
 
-// Runs `body` under the io lock and answers an exception with the status it names. The
-// body sends every refusal it has to send; the caller sends its own Ok on a true return,
-// since a body that answered for itself never reaches the body's end.
-bool Guard(std::mutex& io_mutex, http::response<http::string_body>& res,
-           const std::function<bool()>& body) {
-  try {
-    std::lock_guard<std::mutex> lock(io_mutex);
-    return body();
-  } catch (const std::exception& e) {
-    SendError(res, ErrorStatus(e), e.what());
-    return false;
+void RequireString(const boost::json::value& body, std::string_view key) {
+  if (!json::HasKey(body, key) || !body.at(key).is_string()) {
+    throw RequestRefused("Missing or invalid '" + std::string(key) + "'");
   }
 }
 
-// The page files the server mounts. A target outside this list is not served, so the
-// directory cannot be walked through the route.
 constexpr std::string_view kPageFiles[] = {
-    "/", "/index.html", "/style.css", "/app.js", "/approval.js", "/layout.js",
+    "/",            "/index.html",    "/style.css",       "/app.js",
+    "/state.js",    "/approval.js",   "/layout.js",       "/block-thinking.js",
+    "/block-tool.js", "/block-node.js", "/message.js",    "/transcript.js",
+    "/panel.js",    "/notice.js",     "/history.js",      "/ws.js",
+    "/session.js",  "/composer.js",
 };
 
 bool IsPageFile(std::string_view target) {
@@ -98,8 +96,8 @@ bool IsPageFile(std::string_view target) {
   return false;
 }
 
-// The directory this executable was launched from, or empty when the platform will not
-// say. The page files travel with the binary, not with the workspace it is pointed at.
+}  // namespace
+
 std::filesystem::path ExecutableDir() {
 #if defined(_WIN32)
   std::vector<wchar_t> buffer(MAX_PATH);
@@ -107,13 +105,12 @@ std::filesystem::path ExecutableDir() {
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
                                             static_cast<DWORD>(buffer.size()));
     if (length == 0) return {};
-    if (length < buffer.size()) break;
+    if (length < buffer.size()) {
+      return std::filesystem::path(std::wstring(buffer.data(), length)).parent_path();
+    }
     buffer.resize(buffer.size() * 2);
   }
-  return std::filesystem::path(std::wstring(buffer.data(), buffer.size())).parent_path();
 #elif defined(__APPLE__)
-  // _NSGetExecutablePath fills a buffer whose size it also reports; the result may hold
-  // .., so it is resolved before its directory is taken.
   uint32_t size = 0;
   _NSGetExecutablePath(nullptr, &size);
   std::vector<char> buffer(size);
@@ -128,18 +125,20 @@ std::filesystem::path ExecutableDir() {
 #endif
 }
 
-std::string GetWebDir() {
+const std::string& GetWebDir() {
+  // Re-read per call rather than cached under call_once: the answer names a directory
+  // the caller may have just pointed PU_WEB_DIR at, and a value frozen at the first
+  // request outlives the environment it was read from.
   static std::string dir;
-  static std::once_flag flag;
-  std::call_once(flag, []() {
+  static std::mutex dir_mutex;
+  std::lock_guard<std::mutex> lock(dir_mutex);
+  {
     const char* env = std::getenv("PU_WEB_DIR");
     if (env && *env) {
       dir = env;
-      return;
+      return dir;
     }
     std::vector<std::filesystem::path> candidates;
-    // Beside the binary first: a build tree or an install keeps the page under its own
-    // prefix, and a workspace somewhere else must not hide it.
     if (const std::filesystem::path exe_dir = ExecutableDir(); !exe_dir.empty()) {
       candidates.push_back(exe_dir / "web");
       candidates.push_back(exe_dir / ".." / "web");
@@ -152,18 +151,19 @@ std::string GetWebDir() {
     for (const auto& d : candidates) {
       if (std::filesystem::exists(d) && std::filesystem::is_directory(d)) {
         dir = d.string();
-        return;
+        return dir;
       }
     }
     dir = "./web";
-  });
+  }
   return dir;
 }
 
+namespace {
+
 void ServeFile(const std::string& target, http::response<http::string_body>& res) {
-  std::string base = GetWebDir();
-  std::string path = base + target;
-  if (target == "/") path = base + "/index.html";
+  const std::filesystem::path base = GetWebDir();
+  const std::filesystem::path path = base / (target == "/" ? "index.html" : target.substr(1));
 
   std::ifstream file(path, std::ios::binary);
   if (!file.is_open()) {
@@ -174,11 +174,16 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
   std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   res.result(http::status::ok);
   res.body() = std::move(content);
-  if (path.ends_with(".html"))
+  // The page's own files are small and local: revalidated on every load rather than
+  // cached, so a rebuilt binary never runs against a browser's stale copy of the
+  // script that drives it. The CDN libraries keep their own caching.
+  res.set(http::field::cache_control, "no-cache");
+  const std::string extension = path.extension().string();
+  if (extension == ".html")
     res.set(http::field::content_type, "text/html");
-  else if (path.ends_with(".css"))
+  else if (extension == ".css")
     res.set(http::field::content_type, "text/css");
-  else if (path.ends_with(".js"))
+  else if (extension == ".js")
     res.set(http::field::content_type, "application/javascript");
   else
     res.set(http::field::content_type, "application/octet-stream");
@@ -186,224 +191,169 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
   res.prepare_payload();
 }
 
-void HandleApiSession(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
-                      http::response<http::string_body>& res) {
+boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&) {
+  auto session = runtime.DefaultSession();
+  if (!session) throw GenericError("No active session");
+
+  const config::Backend backend = runtime.CurrentBackend();
   boost::json::object body;
-  if (!Guard(io_mutex, res, [&] {
-        auto session = runtime.GetOrCreateDefaultSession();
-        if (!session) {
-          SendError(res, 500, "No active session");
-          return false;
-        }
-        const config::BackendConfig backend = runtime.CurrentBackend();
-        body["agent_name"] = session->GetSpec().agent_name;
-        body["backend_type"] = config::GatewayName(backend.gateway);
-        body["backend_model"] = backend.model;
-        body["backend_host"] = backend.host;
-        body["thinking"] = ThinkingLevelName(backend.thinking);
-        if (const auto override_level = runtime.GetThinkingOverride()) {
-          body["thinking_override"] = ThinkingLevelName(*override_level);
-        }
-        boost::json::array tools;
-        for (const std::string& name : runtime.GetToolbox().Names()) {
-          tools.emplace_back(name);
-        }
-        body["tools"] = std::move(tools);
-        return true;
-      })) {
-    return;
+  body["agent_name"] = session->Spec().agent_name;
+  body["backend_type"] = config::GatewayName(backend.gateway);
+  body["backend_model"] = backend.model;
+  body["backend_host"] = backend.host;
+  body["thinking"] = ThinkingLevelName(backend.thinking);
+  if (const auto override_level = runtime.ThinkingOverride()) {
+    body["thinking_override"] = ThinkingLevelName(*override_level);
   }
-  SendOk(res, std::move(body));
+  boost::json::array tools;
+  for (const std::string& name : runtime.Tools().ToolNames()) {
+    tools.emplace_back(name);
+  }
+  body["tools"] = std::move(tools);
+  return body;
 }
 
-void HandleApiHistory(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
-                      http::response<http::string_body>& res) {
+boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&) {
   boost::json::array turns;
-  if (!Guard(io_mutex, res, [&] {
-    auto session = runtime.GetOrCreateDefaultSession();
-    if (session) {
-      Conversation& conversation = session->GetConversation();
-      const std::vector<const context::MessageNode*> chain = conversation.Chain();
-      for (size_t i = 0; i < chain.size(); ++i) {
-        const context::MessageNode& node = *chain[i];
-        const ChatMessage msg = session::RenderMessage(node, static_cast<int>(i) + 1);
-        boost::json::value item = {
-            {"id", msg.id},
-            {"role", msg.role},
-            {"content", msg.content},
-            {"timestamp", msg.timestamp},
-        };
-        if (msg.HasToolCalls()) {
-          item.as_object()["tool_calls"] = msg.tool_calls;
+  auto session = runtime.DefaultSession();
+  if (!session) return turns;
 
-          if (const auto* assistant = std::get_if<context::AssistantPayload>(&node.payload)) {
-            boost::json::array statuses;
-            for (const context::ToolCallRecord& record : assistant->tool_calls) {
-              statuses.push_back(
-                  record.status == context::ToolCallStatus::kCompleted ? "done" : "pending");
-            }
-            item.as_object()["tool_call_status"] = std::move(statuses);
-          }
-        }
-        if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;
-        if (!msg.tool_name.empty()) item.as_object()["tool_name"] = msg.tool_name;
-        if (!msg.reasoning.empty()) {
-          item.as_object()["reasoning"] = llm::ProjectReasoning(msg.reasoning);
-        }
+  Conversation& conversation = session->Messages();
+  const std::vector<const session::MessageNode*> chain = conversation.Chain();
+  for (size_t i = 0; i < chain.size(); ++i) {
+    const session::MessageNode& node = *chain[i];
+    const ChatMessage msg = session::RenderMessage(node, static_cast<int>(i) + 1);
+    boost::json::value item = {
+        {"id", msg.id},
+        {"role", msg.role},
+        {"content", msg.content},
+        {"timestamp", msg.timestamp},
+    };
+    if (msg.HasToolCalls()) {
+      item.as_object()["tool_calls"] = msg.tool_calls;
 
-        if (msg.role == context::kToolRole) {
-          const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
-          item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
-          item.as_object()["error"] = parsed.error;
+      if (const auto* assistant = std::get_if<session::AssistantPayload>(&node.payload)) {
+        boost::json::array statuses;
+        for (const session::ToolCallRecord& record : assistant->tool_calls) {
+          statuses.push_back(ViewStatus(record.status));
         }
-
-        turns.push_back(std::move(item));
+        item.as_object()["tool_call_status"] = std::move(statuses);
       }
     }
-    return true;
-  })) {
-    return;
+    if (!msg.tool_call_id.empty()) item.as_object()["tool_call_id"] = msg.tool_call_id;
+    if (!msg.tool_name.empty()) item.as_object()["tool_name"] = msg.tool_name;
+    if (!msg.reasoning.empty()) {
+      item.as_object()["reasoning"] = llm::ProjectReasoning(msg.reasoning);
+    }
+
+    if (msg.role == session::kToolRole) {
+      const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
+      item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
+      item.as_object()["error"] = parsed.error;
+    }
+
+    turns.push_back(std::move(item));
   }
-  SendJson(res, 200, turns);
+  return turns;
 }
 
-void HandleApiAgents(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
-                     http::response<http::string_body>& res) {
+boost::json::value HandleApiAgents(Runtime& runtime, const boost::json::value&) {
   boost::json::array agents;
-  if (!Guard(io_mutex, res, [&] {
-        for (const auto& name : runtime.GetAgentManager().GetAgentNames()) {
-          const auto* cfg = runtime.GetAgentManager().GetAgentConfig(name);
-          agents.push_back(boost::json::value{
-              {"name", name}, {"description", cfg ? cfg->description : std::string{}}});
-        }
-        return true;
-      })) {
-    return;
+  for (const auto& name : runtime.Agents().AgentNames()) {
+    const auto* cfg = runtime.Agents().AgentConfig(name);
+    agents.push_back(
+        boost::json::value{{"name", name}, {"description", cfg ? cfg->description : std::string{}}});
   }
-  SendJson(res, 200, boost::json::object{{"agents", std::move(agents)}});
+  return agents;
 }
 
-void HandleApiAgentSwitch(Runtime& runtime, std::mutex& io_mutex,
-                          http::request<http::string_body>&& req,
-                          http::response<http::string_body>& res) {
-  boost::json::value body;
-  if (!ParseBody(req, res, body)) return;
-  if (!json::HasKey(body, "agent_name") || !body.at("agent_name").is_string()) {
-    SendError(res, 400, "Missing or invalid 'agent_name'");
-    return;
-  }
+boost::json::value HandleApiAgentSwitch(Runtime& runtime, const boost::json::value& body) {
+  RequireString(body, "agent_name");
   const std::string agent_name = boost::json::value_to<std::string>(body.at("agent_name"));
-  if (!Guard(io_mutex, res, [&] {
-        auto* cfg = runtime.GetAgentManager().GetAgentConfig(agent_name);
-        if (!cfg) {
-          SendError(res, 404, "Agent not found: " + agent_name);
-          return false;
-        }
-        runtime.SwitchAgent(*cfg);
-        return true;
-      })) {
-    return;
-  }
-  SendOk(res, boost::json::object{{"agent", agent_name}});
+  const auto* cfg = runtime.Agents().AgentConfig(agent_name);
+  if (!cfg) throw NotFound("Agent not found: " + agent_name);
+  runtime.SwitchAgent(*cfg);
+  return boost::json::object{{"agent", agent_name}};
 }
 
-void HandleApiClear(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
-                    http::response<http::string_body>& res) {
-  if (!Guard(io_mutex, res, [&] {
-        runtime.ClearConversation();
-        return true;
-      })) {
-    return;
-  }
-  SendOk(res);
+boost::json::value HandleApiClear(Runtime& runtime, const boost::json::value&) {
+  runtime.ClearConversation();
+  return boost::json::object{};
 }
 
-void HandleApiWorkspaces(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&&,
-                         http::response<http::string_body>& res) {
+boost::json::value HandleApiWorkspaces(Runtime& runtime, const boost::json::value&) {
   boost::json::array workspaces;
-  if (!Guard(io_mutex, res, [&] {
-        for (const auto& [name, path] : runtime.ListWorkspaces()) {
-          workspaces.push_back(boost::json::value{{"name", name}, {"path", path}});
-        }
-        return true;
-      })) {
-    return;
+  for (const auto& [name, path] : runtime.ListWorkspaces()) {
+    workspaces.push_back(boost::json::value{{"name", name}, {"path", path}});
   }
-  SendJson(res, 200, boost::json::object{{"workspaces", std::move(workspaces)}});
+  return workspaces;
 }
 
-void HandleApiRewind(Runtime& runtime, std::mutex& io_mutex, http::request<http::string_body>&& req,
-                     http::response<http::string_body>& res) {
-  boost::json::value body;
-  if (!ParseBody(req, res, body)) return;
+boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body) {
   const int turn = json::ValueOrDefault<int>(body, "turn", 0);
-  if (turn < 1) {
-    SendError(res, 400, "Missing or invalid 'turn'");
-    return;
-  }
-  if (!Guard(io_mutex, res, [&] {
-        if (!runtime.RewindBefore(static_cast<size_t>(turn))) {
-          SendError(res, 400, "No such turn");
-          return false;
-        }
-        return true;
-      })) {
-    return;
-  }
-  SendOk(res);
+  if (turn < 1) throw RequestRefused("Missing or invalid 'turn'");
+  if (!runtime.RewindBefore(static_cast<size_t>(turn))) throw RequestRefused("No such turn");
+  return boost::json::object{};
 }
 
-void HandleApiThinking(Runtime& runtime, std::mutex& io_mutex,
-                       http::request<http::string_body>&& req,
-                       http::response<http::string_body>& res) {
-  boost::json::value requested;
-  if (!ParseBody(req, res, requested)) return;
-  if (!json::HasKey(requested, "level") || !requested.at("level").is_string()) {
-    SendError(res, 400, "Missing or invalid 'level'");
-    return;
-  }
+boost::json::value HandleApiThinking(Runtime& runtime, const boost::json::value& requested) {
+  RequireString(requested, "level");
   const std::string level = boost::json::value_to<std::string>(requested.at("level"));
   if (level != "auto" && level != "default" &&
       ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
-    SendError(res, 400, "Unknown thinking level");
-    return;
+    throw RequestRefused("Unknown thinking level");
   }
+
+  runtime.SetThinkingLevel(
+      level == "auto" ? std::nullopt : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
 
   boost::json::object body;
-  if (!Guard(io_mutex, res, [&] {
-        runtime.SetThinkingLevel(level == "auto"
-                                     ? std::nullopt
-                                     : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
-        body["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
-        if (const auto override_level = runtime.GetThinkingOverride()) {
-          body["thinking_override"] = ThinkingLevelName(*override_level);
-        }
-        return true;
-      })) {
-    return;
+  body["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
+  if (const auto override_level = runtime.ThinkingOverride()) {
+    body["thinking_override"] = ThinkingLevelName(*override_level);
   }
-  SendOk(res, std::move(body));
+  return body;
 }
 
-using Handler = void (*)(Runtime&, std::mutex&, http::request<http::string_body>&&,
-                         http::response<http::string_body>&);
+using Handler = boost::json::value (*)(Runtime&, const boost::json::value& body);
+
+enum class Envelope { kObject, kArray, kAgents, kWorkspaces };
 
 struct Route {
   std::string_view target;
   http::verb method;
   Handler handler;
+  Envelope envelope;
+  bool has_body;
 };
 
 constexpr Route kRoutes[] = {
-    {"/api/session", http::verb::get, &HandleApiSession},
-    {"/api/history", http::verb::get, &HandleApiHistory},
-    {"/api/agents", http::verb::get, &HandleApiAgents},
-    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch},
-    {"/api/clear", http::verb::post, &HandleApiClear},
-    {"/api/rewind", http::verb::post, &HandleApiRewind},
-    {"/api/thinking", http::verb::post, &HandleApiThinking},
-    {"/api/workspaces", http::verb::get, &HandleApiWorkspaces},
+    {"/api/session", http::verb::get, &HandleApiSession, Envelope::kObject, false},
+    {"/api/history", http::verb::get, &HandleApiHistory, Envelope::kArray, false},
+    {"/api/agents", http::verb::get, &HandleApiAgents, Envelope::kAgents, false},
+    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, Envelope::kObject, true},
+    {"/api/clear", http::verb::post, &HandleApiClear, Envelope::kObject, false},
+    {"/api/rewind", http::verb::post, &HandleApiRewind, Envelope::kObject, true},
+    {"/api/thinking", http::verb::post, &HandleApiThinking, Envelope::kObject, true},
+    {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, Envelope::kWorkspaces, false},
 };
+
+boost::json::value Wrap(Envelope envelope, boost::json::value result) {
+  switch (envelope) {
+    case Envelope::kArray:
+      return result;
+    case Envelope::kAgents:
+      return boost::json::object{{"agents", std::move(result)}};
+    case Envelope::kWorkspaces:
+      return boost::json::object{{"workspaces", std::move(result)}};
+    case Envelope::kObject:
+      break;
+  }
+  boost::json::object body = result.is_object() ? std::move(result.as_object())
+                                                : boost::json::object{};
+  body["success"] = true;
+  return body;
+}
 
 }  // namespace
 
@@ -418,10 +368,16 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   }
 
   for (const Route& route : kRoutes) {
-    if (target == route.target && req.method() == route.method) {
-      route.handler(runtime, io_mutex, std::move(req), res);
-      return;
+    if (target != route.target || req.method() != route.method) continue;
+
+    try {
+      const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};
+      std::lock_guard<std::mutex> lock(io_mutex);
+      SendJson(res, 200, Wrap(route.envelope, route.handler(runtime, body)));
+    } catch (const std::exception& e) {
+      SendError(res, ErrorStatus(e), e.what());
     }
+    return;
   }
 
   res.result(http::status::not_found);

@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/config/backend.hpp"
-#include "pu/context/graph.hpp"
+#include "pu/session/graph.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
@@ -21,13 +21,15 @@ class Conversation {
   void Append(const ChatMessage& msg);
   void Append(const std::string& role, const std::string& content);
   // Callers that need both the rendered text and the node-level fields must read the
-  // nodes once through here; GetHistory() renders a separate list and pairing the two
+  // nodes once through here; History() renders a separate list and pairing the two
   // by index would rely on an ordering neither one guarantees.
-  std::vector<ChatMessage> GetHistory() const;
-  std::vector<const context::MessageNode*> Chain() const { return graph_.Chain(); }
+  std::vector<ChatMessage> History() const;
+  std::vector<const session::MessageNode*> Chain() const { return graph_.Chain(); }
   bool HasPendingToolCalls() const;
 
-  const context::MessageGraph& GetGraph() const { return graph_; }
+  void SealInterruptedToolCalls();
+
+  const session::MessageGraph& Graph() const { return graph_; }
 
   bool RewindBefore(size_t turn);
 
@@ -37,7 +39,7 @@ class Conversation {
   static std::shared_ptr<Conversation> Deserialize(const boost::json::value& j);
 
  private:
-  context::MessageGraph graph_;
+  session::MessageGraph graph_;
 };
 
 struct SessionSpec {
@@ -65,7 +67,7 @@ struct SessionSpec {
   }
 };
 
-inline constexpr int kSessionSchemaVersion = 7;
+inline constexpr int kSessionSchemaVersion = 8;
 
 class Session {
  public:
@@ -76,16 +78,16 @@ class Session {
   Session(Session&&) = default;
   Session& operator=(Session&&) = default;
 
-  Conversation& GetConversation() { return *conversation_; }
-  const Conversation& GetConversation() const { return *conversation_; }
-  SessionSpec& GetSpec() { return spec_; }
-  const SessionSpec& GetSpec() const { return spec_; }
+  Conversation& Messages() { return *conversation_; }
+  const Conversation& Messages() const { return *conversation_; }
+  SessionSpec& Spec() { return spec_; }
+  const SessionSpec& Spec() const { return spec_; }
 
   void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }
 
-  std::unique_ptr<LLMProvider> CreateProvider(const config::BackendConfig& backend,
+  std::unique_ptr<LLMProvider> CreateProvider(const config::Backend& backend,
                                               std::shared_ptr<http::HttpClient> http) const;
 
   boost::json::value Serialize() const;

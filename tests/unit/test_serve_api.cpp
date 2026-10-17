@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/serve_internal.hpp"
 #include "pu/app/cli.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/serve_harness.hpp"
@@ -17,6 +18,8 @@
 
 namespace fs = std::filesystem;
 
+using pu::tests::HttpResponse;
+using pu::tests::ScopedEnvVar;
 using pu::tests::ServeHarness;
 using pu::tests::TestHttpClient;
 
@@ -65,9 +68,9 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
@@ -108,13 +111,42 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   REQUIRE(result_turn.at("error") == "");
 }
 
+TEST_CASE("serve API /api/history names a call the turn never ran", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->Messages();
+  conversation.Append("user", "run it");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{
+      boost::json::object{
+          {"id", "call_1"},
+          {"type", "function"},
+          {"function",
+           boost::json::object{{"name", "execute_bash"},
+                               {"arguments", boost::json::object{{"command", "echo hi"}}}}}},
+  };
+  conversation.Append(assistant);
+
+  conversation.SealInterruptedToolCalls();
+
+  auto j = ParseJson(client.Get("/api/history"));
+  REQUIRE(j.as_array().size() == 3);
+  REQUIRE(j.as_array()[1].at("tool_call_status") == boost::json::array{"interrupted"});
+  REQUIRE(j.as_array()[2].at("role") == "tool");
+}
+
 TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "run it");
 
   pu::ChatMessage assistant;
@@ -221,13 +253,25 @@ TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
   REQUIRE(j.at("error") == "Invalid JSON");
 }
 
+TEST_CASE("serve API switching to an agent that does not exist returns 404", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto res = client.PostFull("/api/agent/switch", boost::json::object{{"agent_name", "ghost"}});
+
+  REQUIRE(res.status == 404);
+  auto j = ParseJson(res.body);
+  REQUIRE(j.at("success") == false);
+  REQUIRE(j.at("error") == "Agent not found: ghost");
+}
+
 TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "one");
   conversation.Append("assistant", "two");
   conversation.Append("user", "three");
@@ -245,9 +289,9 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  session->GetConversation().Append("user", "one");
+  session->Messages().Append("user", "one");
 
   auto missing = client.PostFull("/api/rewind", boost::json::object{});
   REQUIRE(missing.status == 400);
@@ -268,9 +312,9 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto session = harness.RuntimeRef().GetOrCreateDefaultSession();
+  auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::Conversation& conversation = session->GetConversation();
+  pu::Conversation& conversation = session->Messages();
   conversation.Append("user", "one");
 
   pu::ChatMessage assistant;
@@ -326,4 +370,82 @@ TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[ser
   CHECK(listed_own);
   CHECK(listed_sibling);
   CHECK_FALSE(listed_stranger);
+}
+
+TEST_CASE("serve page files are mounted and served from the web directory", "[serve][page]") {
+  const fs::path web = fs::temp_directory_path() / "pu_serve_web_fixture";
+  std::error_code ec;
+  fs::remove_all(web, ec);
+  fs::create_directories(web, ec);
+  REQUIRE_FALSE(ec);
+
+  const auto write_page = [&](const std::string& name, const std::string& body) {
+    std::ofstream file(web / name, std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << body;
+    REQUIRE(file.good());
+  };
+  write_page("index.html", "<!doctype html>fixture index");
+  write_page("style.css", ":root{--column:720px}");
+  write_page("app.js", "const APP = true;");
+
+  const ScopedEnvVar web_dir("PU_WEB_DIR", web.string());
+
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const HttpResponse root = client.GetRaw("/");
+  CHECK(root.status == 200);
+  CHECK(root.body == "<!doctype html>fixture index");
+
+  const HttpResponse explicit_index = client.GetRaw("/index.html");
+  CHECK(explicit_index.status == 200);
+  CHECK(explicit_index.body == "<!doctype html>fixture index");
+
+  const HttpResponse css = client.GetRaw("/style.css");
+  CHECK(css.status == 200);
+  CHECK(css.body == ":root{--column:720px}");
+
+  const HttpResponse script = client.GetRaw("/app.js");
+  CHECK(script.status == 200);
+  CHECK(script.body == "const APP = true;");
+
+  const HttpResponse unmounted = client.GetRaw("/secret.txt");
+  CHECK(unmounted.status == 404);
+
+  fs::remove_all(web, ec);
+}
+
+// The other page test points PU_WEB_DIR at its fixtures, which means it never reaches the lookup
+// the shipped binary actually uses. That lookup derives a path from the module handle, and a wrong
+// answer there is silent: the assets simply 404 and the page comes up blank.
+TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
+  const fs::path exe_dir = pu::cli::detail::ExecutableDir();
+  REQUIRE_FALSE(exe_dir.empty());
+  REQUIRE(fs::is_directory(exe_dir));
+
+  const fs::path web = exe_dir / "web";
+  std::error_code ec;
+  const bool preexisting = fs::exists(web, ec);
+  REQUIRE_FALSE(preexisting);
+  fs::create_directories(web, ec);
+  REQUIRE_FALSE(ec);
+
+  {
+    std::ofstream file(web / "index.html", std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << "<!doctype html>beside the executable";
+    REQUIRE(file.good());
+  }
+
+  const ScopedEnvVar unset_web_dir("PU_WEB_DIR", "");
+
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const HttpResponse root = client.GetRaw("/");
+  CHECK(root.status == 200);
+  CHECK(root.body == "<!doctype html>beside the executable");
+
+  fs::remove_all(web, ec);
 }

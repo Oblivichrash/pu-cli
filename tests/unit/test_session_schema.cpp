@@ -50,8 +50,8 @@ TEST_CASE("A version alone is not enough without node storage", "[session][schem
 
 TEST_CASE("A session written by this version loads", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
-  session.GetConversation().Append("assistant", "hi");
+  session.Messages().Append("user", "hello");
+  session.Messages().Append("assistant", "hi");
 
   const boost::json::value saved = session.Serialize();
   REQUIRE(saved.at("schema_version") == kSessionSchemaVersion);
@@ -59,21 +59,21 @@ TEST_CASE("A session written by this version loads", "[session][schema]") {
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
-  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
-  REQUIRE(restored->GetConversation().GetHistory()[1].content == "hi");
+  REQUIRE(restored->Messages().History().size() == 2);
+  REQUIRE(restored->Messages().History()[1].content == "hi");
 }
 
 TEST_CASE("A payload stores content as one string and reasoning as ordered blocks",
           "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   ChatMessage assistant;
-  assistant.role = context::kAssistantRole;
+  assistant.role = session::kAssistantRole;
   assistant.content = "checking";
   assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"raw":true})")});
   assistant.reasoning.push_back(ReasoningBlock{"plain", "sig", nullptr});
-  session.GetConversation().Append(assistant);
+  session.Messages().Append(assistant);
 
   boost::json::value saved = session.Serialize();
   const boost::json::array& nodes =
@@ -96,7 +96,7 @@ TEST_CASE("A payload stores content as one string and reasoning as ordered block
 
 TEST_CASE("Every role survives a save and load", "[session][schema]") {
   Session session;
-  Conversation& ws = session.GetConversation();
+  Conversation& ws = session.Messages();
 
   ws.Append("user", "question");
 
@@ -124,7 +124,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
       Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
-  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
+  const std::vector<ChatMessage> history = restored->Messages().History();
   REQUIRE(history.size() == 4);
   REQUIRE(history[0].role == "user");
   REQUIRE(history[1].role == "assistant");
@@ -139,7 +139,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
 
 TEST_CASE("A tool call keeps its completed status across a save", "[session][schema]") {
   Session session;
-  Conversation& ws = session.GetConversation();
+  Conversation& ws = session.Messages();
 
   ChatMessage assistant;
   assistant.role = "assistant";
@@ -157,13 +157,13 @@ TEST_CASE("A tool call keeps its completed status across a save", "[session][sch
       Session::Deserialize(boost::json::parse(boost::json::serialize(session.Serialize())));
   REQUIRE(restored != nullptr);
 
-  REQUIRE_FALSE(restored->GetConversation().HasPendingToolCalls());
-  REQUIRE(restored->GetConversation().GetHistory().size() == 2);
+  REQUIRE_FALSE(restored->Messages().HasPendingToolCalls());
+  REQUIRE(restored->Messages().History().size() == 2);
 }
 
 TEST_CASE("The parent survives a save and load", "[session][schema]") {
   Session session;
-  Conversation& ws = session.GetConversation();
+  Conversation& ws = session.Messages();
   ws.Append("user", "one");
   ws.Append("assistant", "two");
   ws.Append("user", "three");
@@ -192,7 +192,7 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
 
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
-  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
+  const std::vector<ChatMessage> history = restored->Messages().History();
   REQUIRE(history.size() == 3);
   REQUIRE(history[0].content == "one");
   REQUIRE(history[1].content == "two");
@@ -201,7 +201,7 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
 
 TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
   saved.at("conversation").at("history").as_object()["leaf"] = "not-a-node-id";
@@ -211,7 +211,7 @@ TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
 
 TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
   saved.at("conversation").at("history").as_object()["nodes"].as_array().at(0).as_object()["id"] =
@@ -222,8 +222,8 @@ TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
 
 TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
   saved.at("conversation")
@@ -238,8 +238,8 @@ TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
 
 TEST_CASE("A parent that names no node is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
   saved.at("conversation")
@@ -254,7 +254,7 @@ TEST_CASE("A parent that names no node is refused", "[session][schema]") {
 
 TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
+  session.Messages().Append("user", "one");
 
   boost::json::value saved = session.Serialize();
   auto& node = saved.at("conversation").at("history").as_object()["nodes"].as_array().at(0);
@@ -266,8 +266,8 @@ TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
 
 TEST_CASE("Two nodes pointing at each other are refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
   auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
@@ -282,8 +282,8 @@ TEST_CASE("Two nodes pointing at each other are refused", "[session][schema]") {
 
 TEST_CASE("A repeated id is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
 
   boost::json::value saved = session.Serialize();
   auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
@@ -296,9 +296,9 @@ TEST_CASE("A repeated id is refused", "[session][schema]") {
 
 TEST_CASE("The view follows the parent links, not the order of the file", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "one");
-  session.GetConversation().Append("assistant", "two");
-  session.GetConversation().Append("user", "three");
+  session.Messages().Append("user", "one");
+  session.Messages().Append("assistant", "two");
+  session.Messages().Append("user", "three");
 
   boost::json::value saved = session.Serialize();
   auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
@@ -306,7 +306,7 @@ TEST_CASE("The view follows the parent links, not the order of the file", "[sess
 
   auto restored = Session::Deserialize(saved);
   REQUIRE(restored != nullptr);
-  const std::vector<ChatMessage> history = restored->GetConversation().GetHistory();
+  const std::vector<ChatMessage> history = restored->Messages().History();
   REQUIRE(history.size() == 3);
   REQUIRE(history[0].content == "one");
   REQUIRE(history[1].content == "two");
@@ -315,7 +315,7 @@ TEST_CASE("The view follows the parent links, not the order of the file", "[sess
 
 TEST_CASE("A version that is not a number is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
   saved.as_object()["schema_version"] = std::to_string(kSessionSchemaVersion);
@@ -325,7 +325,7 @@ TEST_CASE("A version that is not a number is refused", "[session][schema]") {
 
 TEST_CASE("A session without a spec section is refused", "[session][schema]") {
   Session session;
-  session.GetConversation().Append("user", "hello");
+  session.Messages().Append("user", "hello");
 
   boost::json::value saved = session.Serialize();
   saved.as_object().erase("session_spec");

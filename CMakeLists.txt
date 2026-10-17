@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pu-cli VERSION 0.5.0 LANGUAGES CXX)
+project(pu-cli VERSION 0.5.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -31,8 +31,8 @@ function(pu_configure_target target)
     endif()
 endfunction()
 
-add_library(pu_lib STATIC
-    src/context/graph.cpp
+add_library(pu_core STATIC
+    src/session/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
     src/session/session.cpp
@@ -42,19 +42,26 @@ add_library(pu_lib STATIC
     src/llm/openai_protocol.cpp
     src/llm/projection.cpp
     src/llm/model_listing.cpp
+    src/llm/probe.cpp
     src/llm/model_verifier.cpp
     src/llm/streaming_provider.cpp
-    src/gateways/ollama.cpp
-    src/gateways/openai.cpp
-    src/gateways/codebuddy.cpp
-    src/gateways/registry.cpp
+    src/gateways/gateways.cpp
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
-    src/mcp/mcp_session.cpp
+    src/config/agents.cpp
+    src/runtime/executor.cpp
+    src/tools/toolbox.cpp
+    src/tools/builtin_tools.cpp
+    src/runtime/runtime.cpp
+    src/runtime/command_router.cpp
+    src/app/cli.cpp
+    src/app/serve.cpp
+    src/app/serve_http_routes.cpp
 )
-target_link_libraries(pu_lib PUBLIC
+target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+target_link_libraries(pu_core PUBLIC
     spdlog::spdlog
     Boost::json
     Boost::system
@@ -64,37 +71,15 @@ target_link_libraries(pu_lib PUBLIC
 )
 if(WIN32)
     # The Windows root store, read to give OpenSSL the anchors this platform has.
-    target_link_libraries(pu_lib PRIVATE crypt32)
+    target_link_libraries(pu_core PRIVATE crypt32)
 endif()
-pu_configure_target(pu_lib)
-add_library(pu::lib ALIAS pu_lib)
-
-add_library(pu_agent STATIC
-    src/config/agents.cpp
-    src/executor.cpp
-    src/tools/toolbox.cpp
-    src/tools/builtin_tools.cpp
-    src/runtime.cpp
-    src/command_router.cpp
-)
-target_link_libraries(pu_agent PUBLIC pu_lib spdlog::spdlog)
-pu_configure_target(pu_agent)
-add_library(pu::agent ALIAS pu_agent)
-
-add_library(pu_app STATIC
-    src/app/cli.cpp
-    src/app/serve.cpp
-    src/app/serve_http_routes.cpp
-)
-target_include_directories(pu_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
-target_link_libraries(pu_app PUBLIC pu_agent pu_lib spdlog::spdlog)
-pu_configure_target(pu_app)
-add_library(pu::app ALIAS pu_app)
+pu_configure_target(pu_core)
+add_library(pu::core ALIAS pu_core)
 
 add_executable(pu
     src/app/main.cpp
 )
-target_link_libraries(pu PRIVATE pu_app pu_agent pu_lib spdlog::spdlog)
+target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
 
 option(BUILD_TESTS "Build unit tests" ON)

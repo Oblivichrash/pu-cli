@@ -13,7 +13,7 @@
 #include "pu/core/json.hpp"
 #include "pu/core/base.hpp"
 
-namespace pu::context {
+namespace pu::session {
 
 using MessageId = std::string;
 
@@ -52,7 +52,24 @@ inline Reasoning ReasoningFromJson(const boost::json::value& value) {
 enum class ToolCallStatus {
   kPending,
   kCompleted,
+  kInterrupted,
 };
+
+inline constexpr const char* kPendingStatusName = "pending";
+inline constexpr const char* kCompletedStatusName = "completed";
+inline constexpr const char* kInterruptedStatusName = "interrupted";
+
+inline std::string ToolCallStatusName(ToolCallStatus status) {
+  switch (status) {
+    case ToolCallStatus::kPending:
+      return kPendingStatusName;
+    case ToolCallStatus::kCompleted:
+      return kCompletedStatusName;
+    case ToolCallStatus::kInterrupted:
+      return kInterruptedStatusName;
+  }
+  return kPendingStatusName;
+}
 
 struct ToolCallRecord {
   std::string id;
@@ -118,9 +135,27 @@ inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
   if (assistant == nullptr) return false;
   for (const ToolCallRecord& call : assistant->tool_calls) {
-    if (call.status != ToolCallStatus::kCompleted) return true;
+    if (call.status == ToolCallStatus::kPending) return true;
   }
   return false;
 }
 
-}  // namespace pu::context
+inline bool HasToolCallsInterrupted(const MessageNode& node) {
+  const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
+  if (assistant == nullptr) return false;
+  for (const ToolCallRecord& call : assistant->tool_calls) {
+    if (call.status == ToolCallStatus::kInterrupted) return true;
+  }
+  return false;
+}
+
+inline constexpr const char* kCancelledReceipt =
+    "The user cancelled the turn before this call ran, so it produced no result. Wait for the "
+    "user's next message before deciding whether this call is still worth making";
+
+inline constexpr const char* kCommandStoppedReceipt =
+    "The user stopped this command while it was running. The turn is still going, so the rest of "
+    "your plan is unaffected. Do not repeat this command unchanged; either adjust it or continue "
+    "with something else";
+
+}  // namespace pu::session

@@ -15,9 +15,11 @@ namespace pu::config {
 struct AgentEntry {
   std::string name;
   std::string description;
-  BackendConfig backend;
+  Backend backend;
   SecurityPolicy security;
   std::vector<McpServerConfig> mcp_servers;
+  // The tool-call budget for one turn. Absent: the executor's default applies.
+  std::optional<int> tool_call_budget;
 };
 
 struct AgentsConfig {
@@ -42,6 +44,15 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
                                    const std::optional<std::string>& env_host,
                                    const std::optional<std::string>& env_port,
                                    const std::optional<ServeOptions>& from_file);
+
+// Renders one agents.json entry for `model` from `source`, which is the file's text and not a
+// parsed entry: a parsed `api_key` is the expanded secret. A reasoning-only model gets the
+// catalogue's effort; a request carrying none is answered 400 `11150`.
+std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source);
+
+// The entry as the file spells it, before `${ENV}` expansion and before `host` is filled in.
+std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_path,
+                                                    const std::string& agent_name);
 
 std::string FindConfigPath();
 

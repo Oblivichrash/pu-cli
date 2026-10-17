@@ -33,6 +33,26 @@ cmake --build build -j$(nproc)
 ctest --test-dir build --parallel --output-on-failure
 ```
 
+### Develop and install
+
+The build tree's `pu` runs from the checkout and finds the page in `web/` beside it,
+so day-to-day development needs no install step:
+
+```bash
+PU_WEB_DIR=web ./build/pu serve
+```
+
+An install puts the binary and the page under one prefix, and the installed binary
+reads the page from the prefix it was installed into:
+
+```bash
+cmake --install build --prefix /path/to/pu-install   # bin/pu + share/pu/web/
+```
+
+Editing `web/` after an install means installing again — the installed copy is not
+a live link into the checkout, and a binary running against its own prefix serves
+the copy it was installed with.
+
 Each test case is its own process, so the suite parallelizes without coordination. The
 fixtures name their temporary directories after the process id for that reason; one that
 reused a fixed name would delete another test's workspace mid-run.
@@ -69,13 +89,28 @@ Every field is listed under [Configuration](#agentsjson).
 > one key per backend; nothing else changes. The agent-level `"type": "llm"` is a
 > different field and is unaffected.
 
+> **Upgrading from 0.5.0?** No configuration changes. `PU_AGENTS_CONFIG` is new: it names
+> an `agents.json` outright, taking precedence over `./.pu/agents.json` and the user
+> configuration, and a path that does not exist is an error rather than a silent
+> fallback.
+
+> **Upgrading from 0.5.1?** A turn that is cancelled now stores every tool call it
+> never ran as `interrupted` rather than leaving it `pending`, and no longer blocks
+> `/rewind` or a switch of agent. Sessions saved by 0.5.1 that still hold a `pending`
+> tool call from a cancelled turn are read as they were written: they stay `pending`
+> and keep refusing a rewind, because a `pending` record means a call may still be
+> running. `pu chat` offers no repair; start a new session, or ask for one after that
+> call has been answered.
+
 ### Usage
 
 | Command | Description |
 | :------ | :---------- |
 | `pu ask <prompt>` | Send one prompt, print the reply, and exit |
 | `pu chat` | Start an interactive session |
-| `pu models [--verify]` | List the models the agent's backend reports; `--verify` asks each one for a token first (see below) |
+| `pu models [--verify]` | List the models the agent's backend reports, with the active one and its price marked; `--verify` asks each one for a token first (see below) |
+| `pu models --entry <id>` | Print an `agents.json` entry for that model, ready to paste; nothing is written |
+| `pu models --gateway <name>` | List a gateway's own catalogue, without an `agents.json` entry |
 | `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
 
 Global options: `-h`/`--help` and `--version`. `ask`, `chat` and `models` also
@@ -89,9 +124,10 @@ positional prompt.
 ```
 
 `pu models` reads the listing endpoint the backend's type names - `/api/tags` for
-Ollama, `/models` for the OpenAI-compatible ones - and prints what it names, with
-the active model marked. A listing says a model is advertised; it does not say the
-account may run it. `--verify` settles that by asking each listed model for a
+Ollama, `/models` for the OpenAI-compatible ones, `/v3/config` for CodeBuddy - and
+prints what it names, with the active model marked and the gateway's own price
+coefficient beside a model that reports one. A listing says a model is advertised;
+it does not say the account may run it. `--verify` settles that by asking each listed model for a
 single token and reporting what answered, one line per model, so an entitlement a
 gateway would otherwise only report on first use is known up front. A model the
 catalogue says is answered only with a reasoning level is reported rather than
@@ -101,8 +137,78 @@ asked when the backend sends none, since that request cannot succeed:
 ./build/pu models --verify
 ```
 
+A gateway may report fewer models than the account may run - CodeBuddy answers with
+the subset its own agent carries - so a model the backend is configured with can sit
+outside the listing. It is named anyway, marked `(active, not listed by this
+gateway)`, since it is the one row that matters most.
+
+A listing this build cannot read is refused rather than reported as an empty one: a
+response carrying no container the shape names fails with the top-level keys it did
+carry, so "the gateway renamed something" never prints as "the account has no model".
+
+`--gateway <name>` reads a product's own catalogue from the gateway table, so listing a
+provider needs no configuration: its host and the variable its key comes from are the
+table's facts, not the file's. The session is not touched, which is what makes this safe to
+run while another agent is active. `--model` names the model beside it for a turn, since a
+gateway names a host rather than a model.
+
+```bash
+./build/pu models --gateway nim
+./build/pu models --gateway deepseek
+./build/pu probe  --gateway nim --listing
+./build/pu probe  --gateway deepseek --model deepseek-flash
+```
+
+The gateways a build carries are `ollama`, `ollama-cloud`, `openai`, `deepseek`, `nim` and
+`codebuddy`. Two products on one protocol are still two entries: `deepseek` and `openai`
+both speak OpenAI's wire format and answer at different hosts, which is why naming the
+product is enough and naming the protocol is not.
+
+`--entry <id>` renders the configuration for one model and prints it, so a new agent
+is pasted rather than typed. It copies the running agent's own surroundings -
+`gateway`, `host`, `api_key`, `temperature`, `max_tokens`, `security`,
+`tool_call_budget`, `mcp_servers` - as the file spells them, so a `${VAR}` stays a
+`${VAR}` and a file keeps one security policy rather than gaining a second. Two
+fields are decided rather than copied: the entry is named `codebuddy-<model>` for a
+gateway that proxies other vendors and `<model>` for a vendor's own API, and
+`thinking` is filled from the catalogue when a model is answered only with a
+reasoning level and the source names none. Nothing is written to disk.
+
+```bash
+./build/pu models --entry glm-5.3-flash
+```
+
 Your conversation is saved to `<workspace>/.pu/session.json` after every
 interaction and restored on restart, so each directory keeps its own session.
+
+A field this build reads but the reply never carried is reported after the answer,
+not folded into a silent default: a gateway that renames `finish_reason` would
+otherwise leave a truncated reply looking complete. A field the gateway *added* is
+logged at warning rather than shown, since the standard stream metadata is unread on
+every turn and a note that always appears is a note nobody reads.
+
+`pu probe` sends one single-token prompt to the agent's backend, keeps every byte
+of the raw stream under `--out` (default `./provider-probes/`), and prints the
+field names each level of the reply actually carried. A `ResponseShape` for a
+gateway is written from this capture rather than from a specification; the fields
+it lists as absent are the ones an adapter for that gateway names differently or
+drops:
+
+```bash
+./build/pu probe --agent local-assistant
+./build/pu probe --no-save   # summary only, nothing written
+```
+
+`--listing` asks the same questions of the model catalogue instead of the stream: the keys
+the answer carried at each level, and which of the names the catalogue shape reads it never
+sent. A stream is read frame by frame and a listing is one object, so the two reports are
+kept apart. Both read the endpoint the gateway's own lister reads, with the gateway's own
+headers, so a listing that `pu models` can read is a listing `pu probe --listing` can
+describe:
+
+```bash
+./build/pu probe --listing
+```
 
 ---
 
@@ -188,8 +294,10 @@ directory, the workspace can name its own (`--host`/`--port` first, then
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` below.
 
-The front-end lives in `web/`. History is folded into one bubble per turn, with
-each tool result keeping the output the stream showed. Under the composer it shows
+The front-end lives in `web/` as plain scripts with no build step, so the load order in
+`index.html` is the dependency order and each file has one job — see
+[ARCHITECTURE](docs/ARCHITECTURE.md#browser-modules). History is folded into one bubble per
+turn, with each tool result keeping the output the stream showed. Under the composer it shows
 the context the last reply ran against, from the counts the provider returned. No
 window is shown beside it: none of the backends here reports one, and a guess would
 read like a fact.
@@ -197,7 +305,8 @@ read like a fact.
 ### Web API
 
 Chat is a WebSocket at `ws://<host>:<port>/ws`. Everything else is REST, for control
-and status.
+and status. The page names itself on the upgrade (`/ws?client=<tab-id>`), so a reload
+and a reconnect are recognisably the same page.
 
 **Client → server**
 
@@ -205,7 +314,6 @@ and status.
 {"type":"run","payload":{"text":"user message"}}
 {"type":"cancel"}
 {"type":"note","payload":{"text":"words for the model at the next tool boundary"}}
-{"type":"stop_command","payload":{"text":"why the command was stopped"}}
 {"type":"resolve_approval","payload":{"allow":true,"text":"optional note"}}
 ```
 
@@ -215,7 +323,7 @@ and status.
 {"type":"chunk","payload":{"text":"token part"}}
 {"type":"thinking","payload":{"text":"reasoning part"}}
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
-{"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
+{"type":"tool_end","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"},"output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
 {"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
@@ -229,10 +337,14 @@ conversation and is what a page can show against a model's window. It arrives
 before `done`, and a provider that reports no counts sends none.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
-its call. While one runs, `stop_command` kills that command's process group: the
-tool result comes back `success: false` with the note in `error`, and the turn
-continues. `note` delivers words without a kill, which the executor appends beside
-the next tool result.
+its call. The end carries the call's `name` and `args` as well, because a page
+that reconnected mid-command is replayed the end without the start: what it draws
+has to come from the end itself.
+
+`note` delivers words without stopping anything, which the executor appends beside
+the next tool result. A running command is stopped by `cancel`, which stops the turn
+it belongs to: one button on the composer rather than one per command, since a
+command is never the thing a reader wants to end on its own.
 
 When the agent's policy names `approval_patterns`, a matching command sends
 `approval_ask` before it runs and the turn thread parks until
@@ -243,14 +355,17 @@ answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
 `done` names the model that answered, which a gateway may have chosen.
 
-A turn belongs to the client watching it: `cancel`, closing the page, or losing the
-connection all end it, and what it had written is not kept, so the session is left
-holding the question and no answer. Reconnecting therefore shows the conversation
-without the reply that was in progress.
+A turn belongs to the client watching it. A `cancel` ends it with `done` and keeps what
+already arrived. Closing the page or losing the connection ends it too, and what it had
+written is not kept, so the session is left holding the question and no answer;
+reconnecting then shows the conversation without the reply that was in progress.
 
 A session has one page. While a page is attached, a second connection is answered with
 `busy` and closed rather than taking over, since taking over would mean ending the
-reply the page already there is reading.
+reply the page already there is reading. The comparison is the `client` name from the
+upgrade: the same tab reconnecting takes the session back and the socket it left behind
+is closed, while a different tab is refused. A client that names nothing is a page of
+its own, so every connection from it is a second page.
 
 **REST endpoints**
 
@@ -298,6 +413,7 @@ default). See [Quick Start](#configure) for a full example.
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
+| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). When the budget is reached the model is asked to wrap up and answer from what it has gathered, rather than the turn ending in an error |
 
 **Backend fields**
 
@@ -360,10 +476,11 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 
 | Variable | Purpose |
 |----------|---------|
+| `PU_AGENTS_CONFIG` | Names the `agents.json` to load, ahead of `./.pu/agents.json` and `~/.pu/agents.json`. A path that does not exist is an error rather than a fallback |
 | `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
-| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Defaults to the first existing of `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` |
+| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
 | `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
 

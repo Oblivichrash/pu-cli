@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/core/http_client.hpp"
-#include "pu/llm/response_shape.hpp"
+#include "pu/llm/openai_protocol.hpp"
 #include "pu/llm/streaming_provider.hpp"
 
 #include <functional>
@@ -14,13 +14,46 @@
 
 #include <boost/json.hpp>
 
+namespace pu::llm {
+
+// The names a provider gives the fields on a reply, as a counterpart to the names it
+// gives them on a request. An empty name means the field does not exist on that gateway.
+struct ResponseShape {
+  std::string_view content_field = "content";
+  std::string_view reasoning_field = "reasoning_content";
+  std::string_view refusal_field = "refusal";
+
+  std::string_view usage_field = "usage";
+  std::string_view prompt_tokens_field = "prompt_tokens";
+  std::string_view completion_tokens_field = "completion_tokens";
+  std::string_view total_tokens_field = "total_tokens";
+  std::string_view credit_field = "credit";
+
+  // One gateway nests the cached prompt, another puts it at the top level; both carry the
+  // same count. The nested name is tried first.
+  std::string_view cached_tokens_parent = "prompt_tokens_details";
+  std::string_view cached_tokens_nested_field = "cached_tokens";
+  std::string_view cached_tokens_top_level_field = "prompt_cache_hit_tokens";
+
+  std::string_view finish_reason_field = "finish_reason";
+};
+
+// The shape's field names a reply never carried. `required_only` is what the runtime can act
+// on, since `content` and `reasoning_content` are legitimately absent from a tool-call reply
+// and from a model that does not reason; a capture asks about those too.
+std::vector<std::string> AbsentShapeFields(
+    const ResponseShape& shape, const std::function<bool(std::string_view)>& seen,
+    bool required_only);
+
+}  // namespace pu::llm
+
 namespace pu {
 
 // The OpenAI wire format: the path a turn is posted to, the body it is asked in, and the
 // SSE stream it is answered with. It is a layer of the provider rather than a thing beside
 // it because it reads the stream through the pipeline's own virtuals and writes into the
 // pipeline's accumulators; what it does not hold is a host or a set of headers, which is
-// what a gate states and what OpenAIProvider adds.
+// what a gateway states and what OpenAIProvider adds.
 class OpenAIProtocol : public StreamingProvider {
  public:
   struct Config {
@@ -72,6 +105,7 @@ class OpenAIProtocol : public StreamingProvider {
   // reply can arrive with both, and folding one into the other mid-stream would make
   // the two indistinguishable.
   std::string refusal_;
+
 };
 
 }  // namespace pu

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/command_router.hpp"
+#include "pu/runtime/command_router.hpp"
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/config/backend.hpp"
-#include "pu/llm/model_lister.hpp"
+#include "pu/llm/model_listing.hpp"
 
 #include <sstream>
 
@@ -44,7 +44,7 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
       {"/help",
        {"  /help                  Show this help message\n",
         [this](Args, Session&, Output output) {
-          output = GetHelpText();
+          output = Help();
           return true;
         }}},
       {"/backend",
@@ -62,7 +62,7 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
       {"/clear",
        {"  /clear                 Clear conversation history\n",
         [](Args, Session& session, Output output) {
-          session.GetConversation().ClearHistory();
+          session.Messages().ClearHistory();
           output = "Conversation history cleared.";
           return true;
         }}},
@@ -109,7 +109,7 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   return false;
 }
 
-std::string CommandRouter::GetHelpText() {
+std::string CommandRouter::Help() {
   std::ostringstream oss;
   oss << "Available commands:\n";
   for (const auto& cmd : CommandOrder()) {
@@ -121,13 +121,13 @@ std::string CommandRouter::GetHelpText() {
 
 bool CommandRouter::HandleBackend(Args args, Output output) {
   if (args.empty()) {
-    const config::BackendConfig cfg = runtime_.CurrentBackend();
+    const config::Backend cfg = runtime_.CurrentBackend();
     output = "Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
              " (model: " + cfg.model + ", host: " + cfg.host + ")";
     return true;
   }
 
-  const config::AgentEntry* agent_config = runtime_.GetAgentManager().GetAgentConfig(args[0]);
+  const config::AgentEntry* agent_config = runtime_.Agents().AgentConfig(args[0]);
   if (agent_config) {
     try {
       runtime_.SwitchAgent(*agent_config);
@@ -149,7 +149,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     return true;
   }
 
-  config::BackendConfig new_cfg;
+  config::Backend new_cfg;
   new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
@@ -173,7 +173,7 @@ bool CommandRouter::HandleModels(Args args, Output output) {
   if (args.empty()) {
     return ReportModels(runtime_.CurrentBackend(), output);
   }
-  const config::AgentEntry* agent_config = runtime_.GetAgentManager().GetAgentConfig(args[0]);
+  const config::AgentEntry* agent_config = runtime_.Agents().AgentConfig(args[0]);
   if (!agent_config) {
     output = "Unknown agent: " + args[0];
     return true;
@@ -181,10 +181,10 @@ bool CommandRouter::HandleModels(Args args, Output output) {
   return ReportModels(agent_config->backend, output);
 }
 
-bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output) {
+bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
   try {
     const std::vector<llm::ModelEntry> models =
-        config::ListModels(cfg, runtime_.GetHttpClient());
+        config::ListModels(cfg, runtime_.Http());
     output = llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model);
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
@@ -193,13 +193,13 @@ bool CommandRouter::ReportModels(const config::BackendConfig& cfg, Output output
 }
 
 bool CommandRouter::HandleAgents(Args, Session& session, Output output) {
-  const std::string current = session.GetSpec().agent_name;
+  const std::string current = session.Spec().agent_name;
   std::ostringstream oss;
   oss << "Available agents:\n";
-  for (const auto& name : runtime_.GetAgentManager().GetAgentNames()) {
+  for (const auto& name : runtime_.Agents().AgentNames()) {
     oss << "  " << name;
     if (name == current) oss << " (active)";
-    const auto* cfg = runtime_.GetAgentManager().GetAgentConfig(name);
+    const auto* cfg = runtime_.Agents().AgentConfig(name);
     if (cfg && !cfg->description.empty()) {
       oss << " - " << cfg->description;
     }
@@ -221,7 +221,7 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
   }
 
   try {
-    if (!session.GetConversation().RewindBefore(turn)) {
+    if (!session.Messages().RewindBefore(turn)) {
       output = "There is no turn " + args[0] + " in this conversation.";
       return true;
     }
@@ -236,7 +236,7 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
 bool CommandRouter::HandleThinking(Args args, Output output) {
   if (args.empty()) {
     output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
-    output += runtime_.GetThinkingOverride() ? " (set for this session)"
+    output += runtime_.ThinkingOverride() ? " (set for this session)"
                                              : " (from the agent's configuration)";
     return true;
   }

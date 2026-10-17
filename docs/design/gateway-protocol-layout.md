@@ -1,16 +1,16 @@
 # Gateway, protocol, and entry layout
 
-This records the design behind the gate layout, the routes it did not take, and the one
+This records the design behind the gateway layout, the routes it did not take, and the one
 layer it deferred. What is built is described in
-[ARCHITECTURE.md](../ARCHITECTURE.md#gates-protocols-and-providers); what is not is here,
+[ARCHITECTURE.md](../ARCHITECTURE.md#gateways-protocols-and-providers); what is not is here,
 so this document carries only the reasoning rather than the state.
 
-**Built:** `src/gateways/` holds one file per gate behind the explicit table, `Gateway`
+**Built:** `src/gateways/` holds one file per gateway behind the explicit table, `Gateway`
 carries the id, the name, the default host and the two factories, and `agents.json` names a
 `gateway` — required, with an unknown or missing name refused.
 
-**Deferred:** the `entry` layer — a gate offering more than one protocol, bound by a config
-field of that name. Every gate measured so far speaks exactly one protocol, so the layer
+**Deferred:** the `entry` layer — a gateway offering more than one protocol, bound by a config
+field of that name. Every gateway measured so far speaks exactly one protocol, so the layer
 would be unused state. Sections 3 and 5 describe the shape it would take; they are not
 current behaviour, and nothing in them should be read as built.
 
@@ -22,20 +22,20 @@ current behaviour, and nothing in them should be read as built.
 
 ```
 ollama    → the ollama protocol, the Ollama product, and the provider to build
-openai    → the OpenAI protocol, a family of compatible gates, and the provider
+openai    → the OpenAI protocol, a family of compatible gateways, and the provider
 codebuddy → the OpenAI protocol, the CodeBuddy product, and the same provider as openai
 ```
 
 `codebuddy` is the proof that this does not hold: it speaks the OpenAI protocol
 (`CreateBackend` builds an `OpenAIProvider` for it) but is listed as a third type
-beside `openai`. Adding a gate means touching seven places — the enum, `DefaultHostFor`,
+beside `openai`. Adding a gateway means touching seven places — the enum, `DefaultHostFor`,
 `BackendTypeName`, `ParseBackendType`, `BackendTypeNames`, the `tag_invoke` pair,
 `CreateBackend`, and `ListModels`.
 
 Two facts about vendors that look alike are not alike, and the refactor separates them:
 a protocol is *how to talk*, a gateway is *which product*, and a connection is *where*.
 That problem is solved for the OpenAI protocol: the seven places are the table plus a file
-per gate, and §2 records the layout that replaced them. The rest of this section is kept as
+per gateway, and §2 records the layout that replaced them. The rest of this section is kept as
 the problem the layout was written against.
 
 ## 2. The layout
@@ -52,25 +52,25 @@ Entry      a binding: one gateway × one protocol × one default host
 
 What is built of this today: the `openai` protocol is `include/pu/llm/openai_protocol.hpp`
 and `src/llm/openai_protocol.cpp`, and `OpenAIProvider` (`openai_provider.{hpp,cpp}`) is the
-shell a gate builds — the protocol at that gate's host and with that gate's headers. The
+shell a gateway builds — the protocol at that gateway's host and with that gateway's headers. The
 protocol layer is a step of the pipeline rather than a thing beside it, because it reads
 the stream through `StreamingProvider`'s virtuals and writes into the pipeline's
-accumulators; what it does not hold is a host or a set of headers, which is the gate's.
+accumulators; what it does not hold is a host or a set of headers, which is the gateway's.
 
 `ollama` is not split this way: its protocol and its provider are still one class
 (`ollama_provider.{hpp,cpp}`). The listing parse is not part of either protocol class — it
 is `CatalogShape` data read by `src/llm/model_listing.cpp`, which is where it belongs,
 since a catalogue is read once and not over a stream.
 
-`provider` is what the code makes it — the implementation of a protocol, not the gate: one
+`provider` is what the code makes it — the implementation of a protocol, not the gateway: one
 `OpenAIProvider` serves OpenAI, DeepSeek, NVIDIA and CodeBuddy.
 
-Had a gate needed to offer more than one protocol — one product may publish an
+Had a gateway needed to offer more than one protocol — one product may publish an
 OpenAI-compatible and an Anthropic-compatible endpoint — configuring it would name the
 gateway and, since it offers more than one, which entry. That is the deferred layer, and
 the rest of this section is its shape.
 
-## 3. What a gateway file would hold, once a gate offers more than one protocol
+## 3. What a gateway file would hold, once a gateway offers more than one protocol
 
 ```
 Gateway {
@@ -86,7 +86,7 @@ own catalogue URL rather than a path appended to the chat base. This is not a
 hypothetical: `/v3/config` is a sibling of the chat route's `/v2`, and appending the path
 answered 404 (see [codebuddy-cloud-api.md](codebuddy-cloud-api.md#2-model-listing)).
 
-## 4. Adding and removing a gate
+## 4. Adding and removing a gateway
 
 Adding one is a new file plus one line in the table. Removing one is the same in reverse.
 No `Register` call, no static initialisation, no global registry: a file nobody names is
@@ -106,8 +106,8 @@ The table is explicit, so the linker always sees it.
 ```
 
 - `gateway` is required and names a file in the table. An unknown name is refused rather
-  than defaulting, and so is a missing one; a backend that named no gate would otherwise
-  be answered by whichever gate happened to be the default.
+  than defaulting, and so is a missing one; a backend that named no gateway would otherwise
+  be answered by whichever gateway happened to be the default.
 - `entry` is optional and defaults to the gateway's first.
 - `model` is required: no default is honest about a choice only the account can make.
 - `host` is optional and overrides the entry's default. It stays overridable because a
@@ -158,7 +158,7 @@ resolution belongs in one function so that a new entry point — a Web selector,
 
 ## 8. Routes not taken
 
-- **An `entry` layer between a gate and a protocol.** Deferred, not dropped: no gate
+- **An `entry` layer between a gateway and a protocol.** Deferred, not dropped: no gateway
   measured so far speaks more than one protocol, so the field would be state a user can set
   wrong with nothing to gain. It comes back when a product is found that publishes two
   protocols worth choosing between — DeepSeek's OpenAI- and Anthropic-compatible endpoints

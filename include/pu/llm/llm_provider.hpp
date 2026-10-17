@@ -100,7 +100,10 @@ struct TokenUsage {
   int completion_tokens = 0;
   int total_tokens = 0;
   int cached_tokens = 0;  // the prompt the provider answered from its cache
-  double credit = 0.0;    // what the call cost, where the gateway prices one
+  // What the call cost, in the gateway's own unit, where the gateway prices one — and
+  // not an account balance: one gateway's `credit` read 0 for a one-token answer and
+  // 0.05 for a 203-token one. Zero where the gateway prices nothing.
+  double credit = 0.0;
 };
 
 using TokenCallback = std::function<void(std::string_view)>;
@@ -117,6 +120,10 @@ struct ChatResult {
   // signal rather than an error: it is what says a field the backend should have read
   // went unnoticed, and it is asserted by the tests that pin a captured stream.
   std::vector<std::string> unread_fields;
+  std::vector<std::string> seen_fields;
+  // Shape fields the reply never carried: a name this build reads that the gateway no
+  // longer sends.
+  std::vector<std::string> missing_fields;
   std::string finish_reason;
   std::string model;
 };

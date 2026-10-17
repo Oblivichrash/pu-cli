@@ -2,20 +2,17 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
-#include "pu/llm/codebuddy_catalog.hpp"
-#include "pu/llm/model_lister.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/model_listing.hpp"
 
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <sstream>
 
 namespace pu::llm {
 
 namespace {
-
-std::string AuthHeader(const std::string& api_key) {
-  return api_key.empty() ? std::string{} : "Authorization: Bearer " + api_key;
-}
 
 const boost::json::value* Field(const boost::json::object& object, const std::string& name) {
   if (name.empty()) return nullptr;
@@ -46,6 +43,7 @@ Capabilities ReadCapabilities(const boost::json::object& entry, const CatalogSha
   caps.supports_reasoning = BoolField(entry, shape.supports_reasoning);
   caps.only_reasoning = BoolField(entry, shape.only_reasoning);
   caps.max_input_tokens = IntField(entry, shape.max_input_tokens);
+  caps.credits = StringField(entry, shape.credits);
 
   if (const boost::json::value* parent = Field(entry, shape.effort_parent);
       parent != nullptr && parent->is_object()) {
@@ -70,8 +68,21 @@ boost::json::value ParseListing(const std::string& url, http::HttpClient& http,
   try {
     return boost::json::parse(body);
   } catch (const boost::system::system_error&) {
-    throw Error("Model listing from " + url + " does not parse as JSON");
+    throw GenericError("Model listing from " + url + " does not parse as JSON");
   }
+}
+
+// So a shape that no longer matches never prints as "the account offers no model".
+std::string TopLevelKeys(const boost::json::value& parsed) {
+  const boost::json::object* obj = parsed.if_object();
+  if (obj == nullptr) return "(not a JSON object)";
+
+  std::string keys;
+  for (const auto& member : *obj) {
+    if (!keys.empty()) keys += ", ";
+    keys += std::string(member.key());
+  }
+  return keys.empty() ? "(an empty object)" : keys;
 }
 
 const boost::json::array* ArrayAt(const boost::json::value& parsed, const std::string& key) {
@@ -81,9 +92,25 @@ const boost::json::array* ArrayAt(const boost::json::value& parsed, const std::s
   return &it->value().as_array();
 }
 
-std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape) {
-  const boost::json::array* container = ArrayAt(parsed, shape.container);
-  if (container == nullptr) return {};
+// An absent key is a gateway this build cannot read and is refused; a key holding null is
+// the gateway saying it has nothing, which is an answer.
+std::optional<boost::json::array> ContainerOr(const boost::json::value& parsed,
+                                             const std::string& key, const char* url) {
+  const boost::json::object* obj = parsed.if_object();
+  if (obj != nullptr) {
+    if (const auto it = obj->find(key); it != obj->end()) {
+      if (it->value().is_array()) return it->value().as_array();
+      if (it->value().is_null()) return boost::json::array{};
+    }
+  }
+  throw GenericError("Model listing from " + std::string(url) + " carries no \"" + key +
+                     "\" array; its top-level keys were: " + TopLevelKeys(parsed));
+}
+
+std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape,
+                                 const std::string& url) {
+  const std::optional<boost::json::array> container =
+      ContainerOr(parsed, shape.container, url.c_str());
 
   std::vector<ModelEntry> models;
   for (const auto& entry : *container) {
@@ -96,15 +123,19 @@ std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const Catalog
   return models;
 }
 
-std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape) {
-  if (!parsed.is_object()) return {};
-  const auto top = parsed.as_object();
-
+std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape,
+                                     const std::string& url) {
+  const boost::json::object* top = parsed.if_object();
   const boost::json::value* payload = nullptr;
-  if (const auto it = top.find("data"); it != top.end() && it->value().is_object()) {
-    payload = &it->value();
+  if (top != nullptr) {
+    if (const auto it = top->find("data"); it != top->end() && it->value().is_object()) {
+      payload = &it->value();
+    }
   }
-  if (payload == nullptr) return {};
+  if (payload == nullptr) {
+    throw GenericError("Model listing from " + url + " carries no \"data\" object; its top-level "
+                       "keys were: " + TopLevelKeys(parsed));
+  }
 
   std::vector<std::string> ids;
   if (const boost::json::array* agents = ArrayAt(*payload, shape.container); agents != nullptr) {
@@ -138,46 +169,38 @@ std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const Ca
   return models;
 }
 
+boost::json::value FetchListing(std::string_view url, const std::string& api_key,
+                                const std::vector<std::string>& headers,
+                                http::HttpClient& http) {
+  std::vector<std::string> all = headers;
+  if (!api_key.empty()) all.push_back(http::BearerHeader(api_key));
+  return ParseListing(std::string(url), http, all);
+}
+
 }  // namespace
 
-std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
-                                                      const std::string& api_key,
-                                                      http::HttpClient& http) const {
-  std::vector<std::string> headers;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
+namespace {
 
-  static const CatalogShape kShape = {
+const CatalogShape& OllamaShape() {
+  static const CatalogShape shape = {
       .path = "/api/tags",
       .container = "models",
       .id_key = "name",
   };
-  return ReadFlat(ParseListing(host + kShape.path, http, headers), kShape);
+  return shape;
 }
 
-std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
-                                                      const std::string& api_key,
-                                                      http::HttpClient& http) const {
-  std::vector<std::string> headers;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
-
-  static const CatalogShape kShape = {
+const CatalogShape& OpenAIShape() {
+  static const CatalogShape shape = {
       .path = "/models",
       .container = "data",
       .id_key = "id",
   };
-  return ReadFlat(ParseListing(host + kShape.path, http, headers), kShape);
+  return shape;
 }
 
-CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
-    : headers_(std::move(headers)) {}
-
-std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
-                                                         const std::string& api_key,
-                                                         http::HttpClient& http) const {
-  std::vector<std::string> headers = headers_;
-  if (!api_key.empty()) headers.push_back(AuthHeader(api_key));
-
-  static const CatalogShape kShape = {
+const CatalogShape& CodeBuddyShape() {
+  static const CatalogShape shape = {
       .container = "agents",
       .id_key = "models",
       .nested = "models",
@@ -188,14 +211,57 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .effort_parent = "reasoning",
       .effort_field = "effort",
       .max_input_tokens = "maxInputTokens",
+      .credits = "credits",
   };
-  return ReadCodeBuddy(ParseListing(CodeBuddyCatalogUrl(host), http, headers), kShape);
+  return shape;
+}
+
+}  // namespace
+
+std::optional<ListingTarget> ListingTargetFor(std::string_view protocol, std::string_view gateway,
+                                              const std::string& host) {
+  if (protocol == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
+  if (protocol != "openai") return std::nullopt;
+  // One OpenAI-format product keeps its catalogue off the chat base's origin and describes a
+  // model with more than an id; the rest read `/models` and name what they can.
+  if (gateway == "codebuddy") return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+  return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+}
+
+std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
+                                                      const std::string& api_key,
+                                                      http::HttpClient& http) const {
+  const std::string url = host + OllamaShape().path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), OllamaShape(), url);
+}
+
+std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
+                                                      const std::string& api_key,
+                                                      http::HttpClient& http) const {
+  const std::string url = host + OpenAIShape().path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), OpenAIShape(), url);
+}
+
+CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
+    : headers_(std::move(headers)) {}
+
+std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
+                                                         const std::string& api_key,
+                                                         http::HttpClient& http) const {
+  const std::string url = CodeBuddyCatalogUrl(host);
+  return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), CodeBuddyShape(), url);
 }
 
 std::string FormatModelList(const std::vector<ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
                             std::string_view active_model) {
+  // A listing is the subset its agent may run, which the backend's own model can sit outside;
+  // the running model is named rather than dropped from the one row that matters.
+  const bool active_listed =
+      std::any_of(models.begin(), models.end(),
+                  [&](const ModelEntry& model) { return model.id == active_model; });
+
   if (models.empty())
     return "No models reported by " + std::string(gateway) + " at " + std::string(host);
 
@@ -204,7 +270,11 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   for (const ModelEntry& model : models) {
     oss << "  " << model.id;
     if (model.id == active_model) oss << " (active)";
+    if (!model.caps.credits.empty()) oss << "  " << model.caps.credits;
     oss << "\n";
+  }
+  if (!active_model.empty() && !active_listed) {
+    oss << "  " << active_model << " (active, not listed by this gateway)\n";
   }
   return oss.str();
 }

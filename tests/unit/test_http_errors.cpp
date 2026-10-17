@@ -12,7 +12,7 @@
 namespace {
 
 unsigned StatusFor(const std::exception& e) {
-  if (dynamic_cast<const pu::Error*>(&e) != nullptr) return 500;
+  if (dynamic_cast<const pu::GenericError*>(&e) != nullptr) return 500;
   if (dynamic_cast<const pu::RuntimeError*>(&e) != nullptr) return 400;
   return 500;
 }
@@ -177,9 +177,9 @@ TEST_CASE("A GET that fails reports what the server said", "[http][errors]") {
 TEST_CASE("The error a request is refused with decides its status", "[http][errors]") {
   const pu::RequestRefused refused("tool calls are pending");
   REQUIRE(StatusFor(refused) == 400);
-  static_assert(!std::is_base_of_v<pu::Error, pu::RequestRefused>);
+  static_assert(!std::is_base_of_v<pu::GenericError, pu::RequestRefused>);
 
-  REQUIRE(StatusFor(pu::Error("unknown backend type")) == 500);
+  REQUIRE(StatusFor(pu::GenericError("unknown backend type")) == 500);
   REQUIRE(StatusFor(pu::HttpError("HTTP read error")) == 500);
   REQUIRE(StatusFor(pu::RuntimeError("no more specific answer")) == 400);
 }

@@ -11,6 +11,12 @@ namespace pu::http {
 
 using WriteCallback = std::function<size_t(char*, size_t)>;
 
+// The one way an API key becomes a header. Empty stays empty: a gateway told nothing is
+// asked in the clear rather than with a bearer of nothing.
+inline std::string BearerHeader(const std::string& api_key) {
+  return api_key.empty() ? std::string{} : "Authorization: Bearer " + api_key;
+}
+
 struct Response {
   unsigned status = 0;
   std::string body;

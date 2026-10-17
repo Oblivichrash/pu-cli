@@ -86,7 +86,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
 
   if (json::HasKey(j, "error")) {
     const std::string detail = json::ErrorMessage(j);
-    if (!detail.empty()) throw Error("provider error: " + detail);
+    if (!detail.empty()) throw GenericError("provider error: " + detail);
   }
 
   if (json::HasKey(j, "message")) {

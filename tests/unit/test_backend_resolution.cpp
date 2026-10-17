@@ -10,7 +10,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -76,14 +76,14 @@ class BackendSourceFixture {
 }  // namespace
 
 TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
   cfg.thinking = ThinkingLevel::kHigh;
 
-  const config::BackendConfig read =
-      boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
+  const config::Backend read =
+      boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
 
   REQUIRE(read.thinking == ThinkingLevel::kHigh);
   REQUIRE(read.model == "test-model");
@@ -92,34 +92,34 @@ TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") 
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
   for (const config::GatewayId type : {config::GatewayId::kOllama, config::GatewayId::kOpenAI,
                                          config::GatewayId::kCodeBuddy}) {
-    config::BackendConfig cfg;
+    config::Backend cfg;
     cfg.gateway = type;
     cfg.host = "https://example.invalid/v1";
     cfg.model = "test-model";
 
-    const config::BackendConfig read =
-        boost::json::value_to<config::BackendConfig>(boost::json::value_from(cfg));
+    const config::Backend read =
+        boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
 
     REQUIRE(read.gateway == type);
   }
 }
 
-TEST_CASE("A stored backend naming a gate this build has not got is refused", "[backend]") {
+TEST_CASE("A stored backend naming a gateway this build has not got is refused", "[backend]") {
   const boost::json::value stored = {
-      {"gateway", "some-gate"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
+      {"gateway", "some-gateway"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
 
-  REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+  REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
 }
 
-TEST_CASE("A stored backend naming no gate is refused rather than defaulted", "[backend]") {
-  // The field was named `type` before the gate table; a file still carrying it names no
-  // gate, and reading it as ollama would send its turns to a host nobody chose.
+TEST_CASE("A stored backend naming no gateway is refused rather than defaulted", "[backend]") {
+  // The field was named `type` before the gateway table; a file still carrying it names no
+  // gateway, and reading it as ollama would send its turns to a host nobody chose.
   for (const boost::json::value stored :
        {boost::json::value{{"host", "https://example.invalid/v1"}, {"model", "test-model"}},
         boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
                            {"model", "test-model"}},
         boost::json::value{{"gateway", ""}, {"model", "test-model"}}}) {
-    REQUIRE_THROWS_AS(boost::json::value_to<config::BackendConfig>(stored), pu::Error);
+    REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
   }
 }
 
@@ -175,19 +175,19 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   runtime.Initialize();
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
-  const auto names_before = runtime.GetAgentManager().GetAgentNames();
+  const auto names_before = runtime.Agents().AgentNames();
 
-  config::BackendConfig replacement = runtime.CurrentBackend();
+  config::Backend replacement = runtime.CurrentBackend();
   replacement.temperature = 1.5f;
   runtime.SwitchBackend(replacement);
 
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
-  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
-  REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "openai");
+  REQUIRE(runtime.DefaultSession() != nullptr);
+  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "openai");
 
-  const auto names_after = runtime.GetAgentManager().GetAgentNames();
+  const auto names_after = runtime.Agents().AgentNames();
   REQUIRE(names_after.size() == names_before.size() + 1);
-  REQUIRE(runtime.GetAgentManager().GetAgentConfig("openai") != nullptr);
+  REQUIRE(runtime.Agents().AgentConfig("openai") != nullptr);
 }
 
 TEST_CASE("An agent named on the command line outranks the one a session remembers",
@@ -198,7 +198,7 @@ TEST_CASE("An agent named on the command line outranks the one a session remembe
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    const auto* coder = runtime.Agents().AgentConfig("coder");
     REQUIRE(coder != nullptr);
     runtime.SwitchAgent(*coder);
     runtime.Shutdown();
@@ -211,7 +211,7 @@ TEST_CASE("An agent named on the command line outranks the one a session remembe
     runtime.Initialize();
 
     REQUIRE(runtime.ActiveAgent().name == "chat");
-    REQUIRE(runtime.GetOrCreateDefaultSession()->GetSpec().agent_name == "chat");
+    REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
     REQUIRE(runtime.CurrentBackend().model == "test-model");
   }
 }
@@ -223,8 +223,8 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
-    const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+    REQUIRE(runtime.DefaultSession() != nullptr);
+    const auto* coder = runtime.Agents().AgentConfig("coder");
     REQUIRE(coder != nullptr);
     runtime.SwitchAgent(*coder);
     runtime.Shutdown();
@@ -234,7 +234,7 @@ TEST_CASE("A restart keeps talking to the agent the session names", "[backend]")
     ScopedWorkingDir in_workspace(fixture.root());
     Runtime runtime;
     runtime.Initialize();
-    REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+    REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
     REQUIRE(runtime.CurrentBackend().model == "coder-model");
   }
 }
@@ -245,12 +245,12 @@ TEST_CASE("A turn after an agent switch reaches an initialized registry", "[back
   ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
   runtime.Initialize();
-  REQUIRE(runtime.GetOrCreateDefaultSession() != nullptr);
+  REQUIRE(runtime.DefaultSession() != nullptr);
 
-  const auto* coder = runtime.GetAgentManager().GetAgentConfig("coder");
+  const auto* coder = runtime.Agents().AgentConfig("coder");
   REQUIRE(coder != nullptr);
   runtime.SwitchAgent(*coder);
-  REQUIRE(runtime.GetAgentManager().GetActiveAgent() == "coder");
+  REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
 
   bool is_command = false;
   const ExecutionResult result = runtime.ProcessInput("hello", is_command);
@@ -295,4 +295,37 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
     return text == unreadable;
   }();
   REQUIRE_FALSE(holds_unreadable);
+}
+
+TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
+  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nim", "codebuddy"}) {
+    const std::optional<config::GatewayId> id = config::ParseGatewayId(name);
+    REQUIRE(id.has_value());
+    REQUIRE(std::string(config::GatewayName(*id)) == name);
+    REQUIRE_FALSE(config::DefaultHostFor(*id).empty());
+  }
+}
+
+TEST_CASE("Naming a gateway reaches it without an agents.json entry", "[backend]") {
+  const config::Backend nim = config::BackendForGateway("nim");
+  REQUIRE(nim.gateway == config::GatewayId::kNim);
+  REQUIRE(nim.host == "https://integrate.api.nvidia.com/v1");
+
+  // Two products on one protocol keep their own hosts, which is why the gateway names the
+  // product and not the wire format.
+  REQUIRE(config::BackendForGateway("deepseek").host == "https://api.deepseek.com/v1");
+  REQUIRE(config::BackendForGateway("openai").host == "https://api.openai.com/v1");
+}
+
+TEST_CASE("Naming a gateway this build has not got says which it has", "[backend]") {
+  try {
+    (void)config::BackendForGateway("frobnicate");
+    FAIL("a gateway this build has not got was accepted");
+  } catch (const pu::GenericError& e) {
+    const std::string message = e.what();
+    REQUIRE(message.find("Unknown gateway") != std::string::npos);
+    // The candidates, since a name typed from memory is the case this guards.
+    REQUIRE(message.find("nim") != std::string::npos);
+    REQUIRE(message.find("codebuddy") != std::string::npos);
+  }
 }

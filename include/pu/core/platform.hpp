@@ -26,7 +26,12 @@ std::string FromConsoleOutput(std::string_view text);
 std::string FromPipedOutput(std::string_view text);
 
 void SetupSignalHandler();
-bool IsInterrupted();
-void ClearInterruptFlag();
+
+// True once the process has been asked to exit, by a signal or by the UI. It is
+// never cleared: a process that is shutting down does not start another turn.
+bool ShutdownRequested();
+
+// The same request as a token, for the call sites that take a CancelToken.
+CancelToken& ShutdownToken();
 
 }  // namespace pu::platform

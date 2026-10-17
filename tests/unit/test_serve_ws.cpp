@@ -29,11 +29,14 @@ std::string FrameType(const boost::json::value& frame) {
 
 class Page {
  public:
-  explicit Page(int port) : ws_(ioc_) {
+  // `client` is the tab's name for itself: two Page objects with the same one are the same
+  // page reconnecting, and an empty one is a client that names nothing.
+  explicit Page(int port, const std::string& client = {}) : ws_(ioc_) {
     tcp::resolver resolver(ioc_);
     const auto endpoints = resolver.resolve(pu::tests::kServeHost, std::to_string(port));
     beast::get_lowest_layer(ws_).connect(endpoints);
-    ws_.handshake(std::string(pu::tests::kServeHost) + ":" + std::to_string(port), "/ws");
+    const std::string target = client.empty() ? "/ws" : "/ws?client=" + client;
+    ws_.handshake(std::string(pu::tests::kServeHost) + ":" + std::to_string(port), target);
   }
 
   Page(const Page&) = delete;
@@ -174,6 +177,66 @@ TEST_CASE("A second page is told the session is busy", "[serve][ws]") {
   REQUIRE(FrameType(frames.back()) == "done");
 }
 
+TEST_CASE("A second page is told the session is busy even when both name a tab",
+          "[serve][ws]") {
+  pu::tests::ServeHarness harness;
+  Page first(harness.Port(), "tab-a");
+
+  first.Run("mine");
+  REQUIRE(FrameType(first.ReadUntilEnd(10000).back()) == "done");
+
+  Page second(harness.Port(), "tab-b");
+  const auto refusal = second.Read(5000);
+  REQUIRE(refusal.has_value());
+  REQUIRE(FrameType(*refusal) == "busy");
+
+  first.Run("still mine");
+  const auto frames = first.ReadUntilEnd(10000);
+  REQUIRE_FALSE(frames.empty());
+  REQUIRE(FrameType(frames.back()) == "done");
+}
+
+// The watchdog on the page reopens a socket it believes is hung. The page is still the
+// session's only client, so the new socket takes the session back instead of being refused.
+TEST_CASE("The same page reconnecting takes the session back", "[serve][ws]") {
+  pu::tests::ServeHarness harness;
+  Page first(harness.Port(), "tab-a");
+
+  first.Run("mine");
+  REQUIRE(FrameType(first.ReadUntilEnd(10000).back()) == "done");
+
+  // The page reopens its socket without closing the one it gave up on, which is what a
+  // watchdog does when the close has not reached the server yet.
+  Page reconnected(harness.Port(), "tab-a");
+  reconnected.Run("mine again");
+  const auto frames = reconnected.ReadUntilEnd(10000);
+  REQUIRE_FALSE(frames.empty());
+  REQUIRE(FrameType(frames.front()) != "busy");
+  REQUIRE(FrameType(frames.back()) == "done");
+  REQUIRE(ChunkText(frames) == "OK");
+}
+
+// The page's watchdog gives up on a socket that went silent and opens another. The turn is
+// still the same page's, so the replacement joins it rather than being refused, and the
+// reply finishes on the new socket.
+TEST_CASE("A page that reopens its socket mid-turn keeps reading the turn", "[serve][ws]") {
+  pu::tests::ServeHarness harness("ollama", 600);
+  Page first(harness.Port(), "tab-a");
+
+  first.Run("hello");
+  WaitForTheTurnToReachTheBackend(harness);  // the answer is being held back
+
+  // The old socket is left open, the way a page that muted it would: the server closes it
+  // when the replacement takes the session.
+  Page reconnected(harness.Port(), "tab-a");
+  const auto frames = reconnected.ReadUntilEnd(15000);
+
+  REQUIRE_FALSE(frames.empty());
+  REQUIRE(FrameType(frames.front()) != "busy");
+  REQUIRE(FrameType(frames.back()) == "done");
+  REQUIRE(ChunkText(frames) == "OK");
+}
+
 TEST_CASE("A page that goes away ends the turn and stores no reply", "[serve][ws]") {
   pu::tests::ServeHarness harness("ollama", 600);
   Page page(harness.Port());
@@ -185,7 +248,7 @@ TEST_CASE("A page that goes away ends the turn and stores no reply", "[serve][ws
   RequireOnlyTheQuestion(StoredConversation(harness), "hello");
 }
 
-TEST_CASE("A cancel ends the turn with done and stores no reply", "[serve][ws]") {
+TEST_CASE("A cancel ends the turn with done and keeps what already arrived", "[serve][ws]") {
   pu::tests::ServeHarness harness("ollama", 600);
   Page page(harness.Port());
 
@@ -200,5 +263,11 @@ TEST_CASE("A cancel ends the turn with done and stores no reply", "[serve][ws]")
     REQUIRE(FrameType(frame) != "error");
   }
 
-  RequireOnlyTheQuestion(StoredConversation(harness), "hello");
+  const auto history = StoredConversation(harness);
+  REQUIRE(history.is_array());
+  REQUIRE(history.as_array().size() == 2);
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[0].at("role")) == "user");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[0].at("content")) == "hello");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[1].at("role")) == "assistant");
+  REQUIRE(boost::json::value_to<std::string>(history.as_array()[1].at("content")) == "OK");
 }

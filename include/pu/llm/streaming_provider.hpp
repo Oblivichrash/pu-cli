@@ -47,6 +47,10 @@ class StreamingProvider : public LLMProvider {
   // A gateway names a field once per stream, so a stream's frames are not walked twice.
   void NoteUnreadFields(const boost::json::value& j, std::span<const std::string_view> read_keys);
 
+  // The other half of NoteUnreadFields: a gateway that renamed `content` would otherwise
+  // answer with an empty reply and no complaint.
+  void NoteSeenField(std::string_view key);
+
   std::string content_;
   std::vector<ReasoningBlock> reasoning_;
   std::vector<ToolCall> tool_calls_;
@@ -55,6 +59,8 @@ class StreamingProvider : public LLMProvider {
   std::optional<TokenUsage> usage_;
   boost::json::value raw_usage_;
   std::vector<std::string> unread_fields_;
+  std::vector<std::string> seen_fields_;
+  std::vector<std::string> missing_fields_;
   bool inspected_frame_ = false;
 
  private:

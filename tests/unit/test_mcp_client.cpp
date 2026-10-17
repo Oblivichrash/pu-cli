@@ -271,7 +271,7 @@ TEST_CASE("A connected server that answers without tools is reported, not read a
   REQUIRE(client.Connect());
   REQUIRE(client.IsConnected());
 
-  REQUIRE_THROWS_AS(client.ListTools(), pu::Error);
+  REQUIRE_THROWS_AS(client.ListTools(), pu::GenericError);
 }
 
 TEST_CASE("A handshake answered in an SSE frame is read the same way", "[mcp][http]") {

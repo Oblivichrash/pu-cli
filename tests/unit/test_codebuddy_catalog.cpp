@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "pu/llm/codebuddy_catalog.hpp"
+#include "pu/llm/model_listing.hpp"
 
 using namespace pu;
 

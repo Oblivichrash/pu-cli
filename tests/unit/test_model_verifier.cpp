@@ -5,25 +5,17 @@
 #include <string>
 #include <vector>
 
-#include "pu/llm/model_lister.hpp"
-#include "pu/llm/model_verifier.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace {
-
-config::BackendConfig BackendOfType(config::GatewayId type, const std::string& host,
-                                    const std::string& key = "") {
-  config::BackendConfig cfg;
-  cfg.gateway = type;
-  cfg.host = host;
-  cfg.model = "the-active-model";
-  if (!key.empty()) cfg.api_key = key;
-  return cfg;
-}
 
 void AnswerWithContent(MockHttpClient& mock, const std::string& content) {
   mock.simulate_response = [content](const std::string&, const std::string&,
@@ -128,7 +120,7 @@ TEST_CASE("[model_verifier] a model the catalogue needs a level for is not asked
   // Both values a backend can hold that put no level on the wire: unset, and disabled.
   for (const ThinkingLevel level : {ThinkingLevel::kServerDefault, ThinkingLevel::kNone}) {
     calls = 0;
-    config::BackendConfig cfg =
+    config::Backend cfg =
         BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
     cfg.thinking = level;
 
@@ -149,7 +141,7 @@ TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
-  config::BackendConfig cfg =
+  config::Backend cfg =
       BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
   cfg.thinking = ThinkingLevel::kMedium;
 
@@ -173,6 +165,29 @@ TEST_CASE("[model_verifier] the listing is rendered the one way, whichever comma
           std::string::npos);
   REQUIRE(rendered.find("the-active-model (active)") != std::string::npos);
   REQUIRE(rendered.find("alpha (active)") == std::string::npos);
+}
+
+TEST_CASE("[model_verifier] a model outside the listing is still named as the active one",
+          "[model_verifier]") {
+  // CodeBuddy answers with the subset its agent may run, and a backend may name a model
+  // outside it. Dropping the marker would leave the running model as the one row missing.
+  const std::string rendered =
+      llm::FormatModelList(EntriesOf({"alpha", "beta"}), "codebuddy", "https://x.invalid/v2",
+                           "not-listed");
+
+  REQUIRE(rendered.find("2 model(s) reported by codebuddy") != std::string::npos);
+  REQUIRE(rendered.find("not-listed (active, not listed by this gateway)") != std::string::npos);
+  REQUIRE(rendered.find("alpha (active)") == std::string::npos);
+}
+
+TEST_CASE("[model_verifier] a listing carrying a price says so beside the model", "[model_verifier]") {
+  std::vector<llm::ModelEntry> models = EntriesOf({"cheap"});
+  models[0].caps.credits = "x0.06 credits";
+
+  const std::string rendered =
+      llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "cheap");
+
+  REQUIRE(rendered.find("cheap (active)  x0.06 credits") != std::string::npos);
 }
 
 TEST_CASE("[model_verifier] a listing that names no model says so rather than heading nothing",

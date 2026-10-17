@@ -2,7 +2,10 @@
 #include "pu/app/cli.hpp"
 
 #include <exception>
+#include <functional>
+#include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -10,10 +13,11 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend.hpp"
-#include "pu/command_router.hpp"
-#include "pu/llm/model_lister.hpp"
-#include "pu/llm/model_verifier.hpp"
-#include "pu/runtime.hpp"
+#include "pu/core/platform.hpp"
+#include "pu/runtime/command_router.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/probe.hpp"
+#include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {
 
@@ -27,22 +31,63 @@ void PrintNotice(const ExecutionResult& result) {
   std::cout << result.notice << "\n";
 }
 
+int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
+                           const std::function<void()>& body) {
+  try {
+    if (!agent.empty()) runtime.SetDefaultAgent(agent);
+    runtime.Initialize();
+    body();
+    runtime.Shutdown();
+  } catch (const std::exception& e) {
+    spdlog::error("{}", e.what());
+    return 1;
+  }
+  return 0;
+}
+
+// The backend a read-only command reads. Naming a gateway builds one from the table and
+// never adopts it, so `pu models --gateway nim` leaves the session where it was.
+config::Backend BackendFor(const std::string& gateway, const std::string& model,
+                           Runtime& runtime) {
+  if (gateway.empty()) return runtime.CurrentBackend();
+  config::Backend backend = config::BackendForGateway(gateway);
+  if (!model.empty()) backend.model = model;
+  return backend;
+}
+
 }  // namespace
 
 CommandLine BuildCommandLine() {
   boost::program_options::options_description global("Global options");
   global.add_options()("help,h", "show help message")("version", "show version and exit")(
       "command", boost::program_options::value<std::string>(),
-      "command to execute (ask/chat/models/serve)");
+      "command to execute (ask/chat/models/probe/serve)");
 
   boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
+
+  // A gateway named here is probed as itself: its host and key come from the gateway table,
+  // so no agents.json entry is needed and the session is left alone.
+  boost::program_options::options_description target("models and probe options");
+  target.add_options()(
+      "gateway", boost::program_options::value<std::string>(),
+      "read this gateway's own host and key instead of the active agent's backend")(
+      "model", boost::program_options::value<std::string>(),
+      "model to use with --gateway; a gateway names a host, not a model");
 
   boost::program_options::options_description ask("ask options");
   ask.add_options()("prompt", boost::program_options::value<std::string>(), "prompt to send");
 
   boost::program_options::options_description models("models options");
-  models.add_options()("verify", "ask each listed model for one token and report what answered");
+  models.add_options()("verify", "ask each listed model for one token and report what answered")(
+      "entry", boost::program_options::value<std::string>(),
+      "print an agents.json entry for this model id, ready to paste; nothing is written");
+
+  boost::program_options::options_description probe("probe options");
+  probe.add_options()("out", boost::program_options::value<std::string>(),
+                      "directory the raw stream is written to (default ./provider-probes)")(
+      "no-save", "print the summary without writing the raw stream")(
+      "listing", "probe the model listing instead of the stream");
 
   boost::program_options::options_description serve("serve options");
   serve.add_options()("host", boost::program_options::value<std::string>(),
@@ -54,18 +99,17 @@ CommandLine BuildCommandLine() {
   positional.add("prompt", 1);
 
   CommandLine line;
-  line.all.add(global).add(session).add(ask).add(models).add(serve);
+  line.all.add(global).add(session).add(target).add(ask).add(models).add(probe).add(serve);
   line.positional = std::move(positional);
   return line;
 }
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
-  try {
-    if (!agent.empty()) runtime.SetDefaultAgent(agent);
-    runtime.Initialize();
-
+  return WithInitializedRuntime(agent, runtime, [&] {
     bool is_command = false;
-    ExecutionResult result = runtime.ProcessInput(prompt, is_command);
+    ExecutionResult result =
+        runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {}, nullptr,
+                             platform::ShutdownToken());
     if (result.has_error) {
       spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
     } else if (result.was_streamed) {
@@ -76,102 +120,135 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
       std::cout << "\n";
     }
     PrintNotice(result);
-
-    runtime.Shutdown();
-  } catch (const std::exception& e) {
-    spdlog::error("{}", e.what());
-    return 1;
-  }
-  return 0;
+  });
 }
 
 int RunChat(const std::string& agent, Runtime& runtime) {
-  try {
-    if (!agent.empty()) runtime.SetDefaultAgent(agent);
-    runtime.Initialize();
-  } catch (const std::exception& e) {
-    spdlog::error("{}", e.what());
-    return 1;
-  }
+  return WithInitializedRuntime(agent, runtime, [&] {
+    const config::AgentEntry& active = runtime.ActiveAgent();
+    std::string agent_info = "Connected to agent: " + active.name;
+    if (!active.description.empty()) agent_info += " (" + active.description + ")";
+    spdlog::info("{}", agent_info);
+    spdlog::info("Type /help for available commands.");
 
-  const config::AgentEntry& active = runtime.ActiveAgent();
-  std::string agent_info = "Connected to agent: " + active.name;
-  if (!active.description.empty()) agent_info += " (" + active.description + ")";
-  spdlog::info("{}", agent_info);
-  spdlog::info("Type /help for available commands.");
+    std::string input;
+    while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
+      if (input.empty()) continue;
 
-  std::string input;
-  while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
-    if (input.empty()) continue;
+      if (input == "/exit" || input == "/quit") break;
 
-    if (input == "/exit" || input == "/quit") break;
-
-    try {
-      bool is_command = false;
-      ExecutionResult result = runtime.ProcessInput(input, is_command);
-      if (result.has_error) {
-        if (is_command && result.error_message.empty()) {
-          std::cout << "Unknown command. ";
-          PrintChatHelp(runtime);
-        } else {
-          spdlog::error("{}\n",
-                        result.error_message.empty() ? "Processing failed" : result.error_message);
+      try {
+        bool is_command = false;
+        ExecutionResult result =
+            runtime.ProcessInput(input, is_command, platform::ShutdownToken(), nullptr, {},
+                                 nullptr, platform::ShutdownToken());
+        if (result.has_error) {
+          if (is_command && result.error_message.empty()) {
+            std::cout << "Unknown command. ";
+            PrintChatHelp(runtime);
+          } else {
+            spdlog::error("{}\n", result.error_message.empty() ? "Processing failed"
+                                                               : result.error_message);
+          }
+        } else if (!result.was_streamed) {
+          if (!result.content.empty()) {
+            std::cout << result.content << "\n";
+          } else if (!is_command) {
+            std::cout << "\n";
+          }
         }
-      } else if (!result.was_streamed) {
-        if (!result.content.empty()) {
-          std::cout << result.content << "\n";
-        } else if (!is_command) {
-          std::cout << "\n";
-        }
+
+        PrintNotice(result);
+      } catch (const std::exception& e) {
+        spdlog::error("{}", e.what());
       }
-
-      PrintNotice(result);
-    } catch (const std::exception& e) {
-      spdlog::error("{}", e.what());
     }
-  }
-
-  runtime.Shutdown();
-  std::cout << "\nGoodbye!\n";
-  return 0;
+    std::cout << "\nGoodbye!\n";
+  });
 }
 
-int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
-  try {
-    if (!agent.empty()) runtime.SetDefaultAgent(agent);
-    runtime.Initialize();
+// SPDX-License-Identifier: GPL-3.0-only
+// One probe run: a single-token prompt to the agent's backend, the raw stream kept,
+// and the field names the gateway actually sent read back out of it. A ResponseShape
+// for a new gateway is written from this capture rather than from a specification.
+int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
+             const std::string& prompt, const std::string& out_dir, bool save, bool listing,
+             Runtime& runtime) {
+  return WithInitializedRuntime(agent, runtime, [&] {
+    const config::Backend backend = BackendFor(gateway, model, runtime);
+    // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
+    if (!listing && backend.model.empty()) {
+      throw GenericError("--gateway names a host, not a model: pass --model, or --listing to "
+                         "read the catalogue it offers");
+    }
 
-    const config::BackendConfig backend = runtime.CurrentBackend();
-    const std::vector<llm::ModelEntry> models =
-        config::ListModels(backend, runtime.GetHttpClient());
+    if (listing) {
+      // A listing is one answer rather than a stream, so there is nothing to keep as raw
+      // bytes beyond the body the client already returned.
+      std::cout << "\n" << llm::FormatListingReport(llm::ProbeListing(backend, runtime.Http()))
+                << "\n";
+      return;
+    }
+
+    std::optional<std::string> raw_path;
+    if (save) {
+      std::filesystem::create_directories(out_dir);
+      raw_path = (std::filesystem::path(out_dir) /
+                  (std::string(config::GatewayName(backend.gateway)) + ".raw"))
+                     .string();
+      std::cout << "raw stream: " << *raw_path << "\n";
+    }
+
+    const llm::ProbeReport report = llm::ProbeStream(backend, runtime.Http(), prompt, raw_path);
+    std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
+  });
+}
+
+int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
+              bool verify, const std::string& entry_id, Runtime& runtime) {
+  return WithInitializedRuntime(agent, runtime, [&] {
+    const config::Backend backend = BackendFor(gateway, model, runtime);
+    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
+
+    if (!entry_id.empty()) {
+      // A model outside the listing is exactly the one being written for.
+      llm::ModelEntry wanted{entry_id, {}};
+      for (const llm::ModelEntry& model : models) {
+        if (model.id == entry_id) {
+          wanted = model;
+          break;
+        }
+      }
+      const std::optional<boost::json::value> source =
+          config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
+      if (!source)
+        throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
+      std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
+      return;
+    }
 
     if (!verify) {
       std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway),
                                         backend.host, backend.model)
                 << "\n";
-    } else {
-      const std::vector<llm::ModelCheck> checks =
-          llm::VerifyModels(backend, models, runtime.GetHttpClientShared());
-      int answered = 0;
-      for (const llm::ModelCheck& check : checks) {
-        std::cout << check.model << "  ";
-        if (check.answered) {
-          std::cout << "ok";
-          ++answered;
-        } else {
-          std::cout << "unavailable: " << check.detail;
-        }
-        std::cout << "\n";
-      }
-      std::cout << answered << " of " << checks.size() << " model(s) answered\n";
+      return;
     }
 
-    runtime.Shutdown();
-  } catch (const std::exception& e) {
-    spdlog::error("{}", e.what());
-    return 1;
-  }
-  return 0;
+    const std::vector<llm::ModelCheck> checks =
+        llm::VerifyModels(backend, models, runtime.SharedHttp());
+    int answered = 0;
+    for (const llm::ModelCheck& check : checks) {
+      std::cout << check.model << "  ";
+      if (check.answered) {
+        std::cout << "ok";
+        ++answered;
+      } else {
+        std::cout << "unavailable: " << check.detail;
+      }
+      std::cout << "\n";
+    }
+    std::cout << answered << " of " << checks.size() << " model(s) answered\n";
+  });
 }
 
 }  // namespace pu::cli

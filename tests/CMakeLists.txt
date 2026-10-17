@@ -31,6 +31,7 @@ add_executable(pu_tests
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
     unit/test_list_models.cpp
+    unit/test_probe.cpp
     unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
     unit/test_approval_gate.cpp
@@ -50,7 +51,7 @@ target_compile_definitions(pu_tests PRIVATE
 )
 
 target_link_libraries(pu_tests PRIVATE
-    pu_app pu_agent pu_lib
+    pu_core
     Catch2::Catch2WithMain
 )
 
