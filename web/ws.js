@@ -117,6 +117,18 @@ function handleSocketClose() {
   scheduleReconnect();
 }
 
+// Re-draw what the server knows after a reconnect. The transcript is cleared and
+// replayed from the store, so a turn that completed while the socket was down appears
+// instead of a half-drawn reply.
+async function resyncAfterReconnect() {
+  try {
+    PU.composer.messagesEl.replaceChildren();
+    await loadSession();
+    await loadHistory();
+    scrollToBottom();
+  } catch (_) {}
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   PU.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
@@ -124,6 +136,9 @@ function connectWebSocket() {
   PU.ws.onopen = () => {
     PU.reconnectAttempts = 0;
     setConnectionState("online");
+    // A reconnect may have missed turns the server processed while the socket was
+    // down: the transcript and the chain length are re-read rather than trusted.
+    resyncAfterReconnect();
   };
 
   PU.ws.onmessage = (event) => {
