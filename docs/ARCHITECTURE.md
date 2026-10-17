@@ -545,6 +545,97 @@ lists tools.
 
 ---
 
+## Peer Messaging
+
+Two `pu serve` instances can talk to each other, each driven by its own agent and
+its own model. A declares B in its peer list and vice versa; either side can then
+start a conversation with the other and receive an answer.
+
+```
+     ┌─────────────────────────┐                ┌─────────────────────────┐
+     │  pu serve (A, :8911)    │                │  pu serve (B, :8912)    │
+     │                         │  POST          │                         │
+     │  agent calls            │  /api/peer/    │  SessionRunner          │
+     │  send_to_peer ──────────┼──message──────►│  ::SubmitFromPeer       │
+     │                         │                │         │               │
+     │  (returns at once)      │                │         ▼               │
+     │                         │                │  a normal turn, run     │
+     │                         │                │  on the worker thread   │
+     │                         │                │         │               │
+     │                         │                │         ▼               │
+     │                         │                │  send_to_peer back      │
+     │  a new turn             │◄───────────────┼─────────────────────────┘
+     │  is queued              │                │
+     └─────────────────────────┘                └─────────────────────────┘
+```
+
+### Delivery is asynchronous
+
+`send_to_peer` does not wait for the peer to think. It posts the message, checks
+that the peer accepted it, and returns; the asking agent is told plainly that an
+answer will arrive later. The peer's reply is injected as a **new turn**, so a
+slow or busy peer cannot hold up the sender, and the two agents can work at
+different speeds.
+
+This is why the tool reports "*has the message. It will answer in a later turn*"
+rather than a reply: if it returned the peer's words, the call would block for as
+long as the peer's model takes, and a long answer would look like a hang.
+
+### A peer turn may answer only the agent that asked
+
+The gate that stops an endless A→B→A→B chain is that a turn which arrived from a
+peer may reach **only its sender**. `send_to_peer` therefore compares the
+requested peer against `ToolContext::peer_origin`:
+
+- a turn started by a human has no origin, so every configured peer is reachable;
+- a turn started by a peer may reply to that peer, and to nobody else.
+
+Replying to the sender must stay allowed, or a peer could never answer and the
+conversation could never close. Relaying onward is refused with a reason the
+model can read, so it learns the rule and answers directly instead of retrying.
+The chain therefore ends by construction at the second hop: A can ask B, B can
+answer A, and that answer cannot be forwarded to a third agent.
+
+Hop counting is deliberately **not** the guard. It is carried for logging only,
+because a counter can only guess at intent and a low ceiling would cut off a
+legitimate long exchange between the same two agents. Structure, not a number,
+decides when the conversation stops.
+
+### Trust boundary
+
+The peer endpoint is the one surface that lets a remote conversation drive a
+local model, so it is authenticated while the rest of the HTTP API is not.
+
+| Control | Effect |
+| --- | --- |
+| `Authorization: Bearer <token>` | Required; compared in constant time |
+| Peer allowlist (`peers[]`) | An undeclared `from` is refused before any turn starts |
+| Loopback binding | The listener is not exposed beyond the host by default |
+
+`PU_PEER_TOKEN` overrides the token in `peers.json`, so the secret can stay out of
+the file. A server with no `peers.json` does not mount the endpoint at all — the
+route reports that peer messaging is not configured, and the tool is never
+registered.
+
+Configuration lives in `.pu/peers.json`:
+
+```json
+{
+  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
+  "token": "shared-secret",
+  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
+}
+```
+
+Both sides must agree on the token and on each other's names. A peer entry
+without a name and a url is skipped with a warning rather than trusted.
+
+**Known gap:** `/api/*` and `/ws` remain unauthenticated, so any local process can
+already drive a turn. That is a separate concern from peer messaging and is not
+addressed here; it is tracked on its own.
+
+---
+
 ## Persistence
 
 ```
@@ -700,6 +791,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
+- **New peer (no C++)**: Add an entry to `.pu/peers.json` naming the peer and its URL, and agree on the shared token; the other side needs no restart.
 
 ---
 

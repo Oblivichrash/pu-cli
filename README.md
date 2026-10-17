@@ -379,6 +379,7 @@ its own, so every connection from it is a second page.
 | `POST` | `/api/clear` | Clear the conversation history |
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
+| `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
 
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
@@ -472,6 +473,37 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 | `command` / `args` | Executable and arguments to launch (stdio only) |
 | `url` / `headers` | Remote streamable-HTTP endpoint and optional headers (e.g. `Authorization`) |
 
+### `peers.json`
+
+Two `pu serve` instances can message each other: one agent calls `send_to_peer`, the
+other answers in a later turn. A server with no `.pu/peers.json` does not mount the
+endpoint and never registers the tool, so a single-server workspace needs nothing.
+
+```json
+{
+  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
+  "token": "shared-secret",
+  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `self.name` | This server's name, which the other side must list in its `peers` |
+| `self.host` / `self.port` | Informational; the listener's own flags still decide where it binds |
+| `token` | Shared secret every inbound message must present as `Authorization: Bearer` |
+| `peers[].name` | The name this server knows a peer by, matched against the sender's `from` |
+| `peers[].url` | Where that peer's `/api/peer/message` is posted |
+
+Both sides must agree on the token and on each other's names. A peer entry without a
+name and a `url` is skipped with a warning rather than trusted, and an undeclared
+`from` is refused before any turn starts.
+
+`send_to_peer` returns as soon as the peer accepts the message rather than waiting for
+an answer, which arrives as a new turn. A turn that arrived from a peer may reply to
+that peer and to nobody else, so an A→B→A→B chain ends at the second hop by
+construction rather than by a counter.
+
 ### Environment Variables
 
 | Variable | Purpose |
@@ -483,6 +515,7 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
 | `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
+| `PU_PEER_TOKEN` | Overrides `token` in `peers.json`, so the secret can stay out of the file |
 
 ### Logging
 
