@@ -14,7 +14,6 @@
   <header>
     <div class="brand">· 朴 ·</div>
     <div class="header-right">
-      <span id="conn-dot" class="conn-dot" title="Connection"></span>
       <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
     </div>
   </header>
@@ -40,7 +39,7 @@
 
       <div id="composer">
         <!-- The field and the button, nothing else: what is chosen between messages lives in
-             the panel. -->
+             the panel, and what is merely read lives on the status bar below. -->
         <div id="composer-row">
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
           <button id="send">Send</button>
@@ -88,6 +87,23 @@
       </div>
     </aside>
 
+  </div>
+
+  <!-- A read-out, not a control: what the session is, so a folded panel costs no state.
+       It spans the shell rather than sitting in the column, so the panel opening and
+       closing does not move it. -->
+  <div id="status-bar">
+    <span class="status-item">
+      <span id="conn-dot" class="conn-dot" title="Connection"></span>
+      <span id="conn-text">connecting</span>
+    </span>
+    <span class="status-item" id="status-agent" title="The agent that answers">—</span>
+    <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
+    <span class="status-right">
+      <span class="status-item" id="status-backend" title="The gateway and model">—</span>
+      <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
+      <span class="status-item" id="status-context" title="Context the last reply ran against">—</span>
+    </span>
   </div>
 
   <div id="scrim" hidden></div>

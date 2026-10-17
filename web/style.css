@@ -434,6 +434,46 @@ main {
   line-height: 1;
 }
 
+/* ---------- status bar: what the session is, at the shell's own width ---------- */
+#status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 252, 245, 0.85);
+  font-size: 11px;
+  color: var(--ink-light);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A bound is what makes the ellipsis above mean anything: without one the item grows to its
+   content and pushes its neighbours out of the bar instead. */
+#status-agent { max-width: 220px; }
+#status-backend { max-width: 300px; }
+#status-tools { max-width: 120px; }
+/* The panel has a bar for this; the status bar has room for the number and its colour. */
+#status-context.warn { color: var(--warn); }
+#status-context.high { color: var(--accent); }
+/* The right-hand group is the gateway and the count: the two a reader checks rather than
+   acts on, so they sit at the far edge the way a status bar's are. */
+.status-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+}
+
 /* ---------- sidebar ---------- */
 #sidebar {
   width: var(--sidebar);
@@ -469,6 +509,8 @@ main {
   font-family: inherit;
   letter-spacing: normal;
   text-transform: none;
+  /* A long name is cut rather than allowed to widen the panel; the title carries the rest. */
+  text-overflow: ellipsis;
 }
 .field select:disabled { opacity: 0.55; cursor: not-allowed; }
 .field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
@@ -612,14 +654,20 @@ main {
   }
   #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
   #shell.sidebar-hidden #sidebar { display: flex; }
+  /* The drawer reaches the bottom, covering the bar: what it shows is what the bar says. */
 }
 @media (max-width: 640px) {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
   .msg { font-size: 14px; }
+  /* The field takes the row, and the choices share the line under it. */
   #composer-row { flex-wrap: wrap; }
   #input { flex-basis: 100%; }
   #send { flex: 1; height: 40px; min-width: 0; }
+  /* The readings a narrow screen can live without, dropped in the order they matter least;
+     the connection, the agent and the thinking level stay. */
+  #status-context { display: none; }
+  #status-tools { display: none; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -636,7 +684,7 @@ main {
     --ok: #6fa07d;
     --warn: #c9a24a;
   }
-  header, #composer, #sidebar { background: rgba(28, 26, 23, 0.7); }
+  header, #composer, #sidebar, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }

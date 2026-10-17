@@ -34,7 +34,13 @@ const PU = {
   chainLength: 0,
   currentAssistantBlocks: [],
   currentAssistantEl: null,
+  // name -> description, so the closed control can carry the chosen agent's tooltip.
+  agentDescriptions: {},
   backendTypeShown: "",
+  backendModelShown: "",
+  backendHostShown: "",
+  // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
+  contextShown: "",
 
   composer: {
     composing: false,
@@ -50,11 +56,14 @@ const PU = {
 function setConnectionState(state) {
   if (state === PU.connState) return;
   const dot = document.getElementById("conn-dot");
+  const text = state === "online" ? "Connected"
+    : (state === "offline" ? "Disconnected" : "Reconnecting…");
   if (dot) {
     dot.className = "conn-dot " + state;
-    dot.title = state === "online" ? "Connected"
-      : (state === "offline" ? "Disconnected" : "Reconnecting…");
+    dot.title = text;
   }
+  const label = document.getElementById("conn-text");
+  if (label) label.textContent = text;
   if (state === "offline" && PU.connState === "online" && PU.replyLostToDisconnect) {
     showNotice("Disconnected; the reply in progress was stopped and is not kept.");
   }

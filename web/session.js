@@ -38,6 +38,7 @@ function renderThinkingControl(level, override) {
   select.value = sessionLevel || "auto";
   select.title = "Thinking: " + level +
     (sessionLevel ? " (set for this session)" : " (from the agent's configuration)");
+  renderStatusBar();
 }
 
 async function loadSession() {
@@ -48,6 +49,8 @@ async function loadSession() {
     renderThinkingControl(data.thinking || "default", data.thinking_override || null);
     if (data.agent_name) PU.composer.agentSelect.value = data.agent_name;
     renderToolList(data.tools);
+    // The tooltip follows the agent the server reports, not the one the list last drew.
+    showAgentDescription();
   } catch (_) {}
 }
 
@@ -64,22 +67,42 @@ async function setThinkingLevel(level) {
   }
 }
 
+// The option holds the name alone: a description beside it is longer than the column and
+// pushed the name itself out of view. The description is kept as a title, which the browser
+// shows on hover, and copied onto the closed control so it reads without opening the list.
 function renderAgentOptions(agents) {
   const select = PU.composer.agentSelect;
   select.replaceChildren();
+  PU.agentDescriptions = {};
   if (agents && agents.length > 0) {
     for (const agent of agents) {
       const opt = document.createElement("option");
       opt.value = agent.name;
-      opt.textContent = agent.name + (agent.description ? " (" + agent.description + ")" : "");
+      opt.textContent = agent.name;
+      if (agent.description) {
+        opt.title = agent.description;
+        PU.agentDescriptions[agent.name] = agent.description;
+      }
       select.appendChild(opt);
     }
+    showAgentDescription();
     return;
   }
   const opt = document.createElement("option");
   opt.value = "";
   opt.textContent = "No agents available";
   select.appendChild(opt);
+  showAgentDescription();
+}
+
+// The closed control carries the chosen agent's description, since a tooltip on an option
+// is shown only while the list is open and not by every browser.
+function showAgentDescription() {
+  const select = PU.composer.agentSelect;
+  if (!select) return;
+  const description = (PU.agentDescriptions || {})[select.value];
+  select.title = description || select.value || "";
+  renderStatusBar();
 }
 
 async function switchAgent(name) {
@@ -107,6 +130,7 @@ async function loadAgents() {
     }
     renderAgentOptions(data.agents);
     PU.composer.agentChangeHandler = () => {
+      showAgentDescription();
       if (select.value) switchAgent(select.value);
     };
     select.addEventListener("change", PU.composer.agentChangeHandler);
