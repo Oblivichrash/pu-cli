@@ -108,6 +108,16 @@ class OpenAIModelLister final : public pu::ModelLister {
                                           http::HttpClient& http) const override;
 };
 
+// The URL a gateway's listing lives at, and the shape its answer is read with. Exposed so a
+// probe can fetch the same endpoint the lister does and diff the bytes against the same
+// names, rather than restating either.
+struct ListingTarget {
+  std::string url;
+  CatalogShape shape;
+};
+
+std::optional<ListingTarget> ListingTargetFor(std::string_view gateway, const std::string& host);
+
 // Read from `{origin}/v3/config`; `/models` is not a route there. The headers are the
 // gateway's, which is why they are handed in rather than named here.
 class CodeBuddyModelLister final : public pu::ModelLister {

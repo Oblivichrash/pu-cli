@@ -179,37 +179,28 @@ boost::json::value FetchListing(std::string_view url, const std::string& api_key
 
 }  // namespace
 
-std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
-                                                      const std::string& api_key,
-                                                      http::HttpClient& http) const {
-  static const CatalogShape kShape = {
+namespace {
+
+const CatalogShape& OllamaShape() {
+  static const CatalogShape shape = {
       .path = "/api/tags",
       .container = "models",
       .id_key = "name",
   };
-  const std::string url = host + kShape.path;
-  return ReadFlat(FetchListing(url, api_key, {}, http), kShape, url);
+  return shape;
 }
 
-std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
-                                                      const std::string& api_key,
-                                                      http::HttpClient& http) const {
-  static const CatalogShape kShape = {
+const CatalogShape& OpenAIShape() {
+  static const CatalogShape shape = {
       .path = "/models",
       .container = "data",
       .id_key = "id",
   };
-  const std::string url = host + kShape.path;
-  return ReadFlat(FetchListing(url, api_key, {}, http), kShape, url);
+  return shape;
 }
 
-CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
-    : headers_(std::move(headers)) {}
-
-std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
-                                                         const std::string& api_key,
-                                                         http::HttpClient& http) const {
-  static const CatalogShape kShape = {
+const CatalogShape& CodeBuddyShape() {
+  static const CatalogShape shape = {
       .container = "agents",
       .id_key = "models",
       .nested = "models",
@@ -222,8 +213,40 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .max_input_tokens = "maxInputTokens",
       .credits = "credits",
   };
+  return shape;
+}
+
+}  // namespace
+
+std::optional<ListingTarget> ListingTargetFor(std::string_view gateway, const std::string& host) {
+  if (gateway == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
+  if (gateway == "openai") return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+  if (gateway == "codebuddy") return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+  return std::nullopt;
+}
+
+std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
+                                                      const std::string& api_key,
+                                                      http::HttpClient& http) const {
+  const std::string url = host + OllamaShape().path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), OllamaShape(), url);
+}
+
+std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
+                                                      const std::string& api_key,
+                                                      http::HttpClient& http) const {
+  const std::string url = host + OpenAIShape().path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), OpenAIShape(), url);
+}
+
+CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
+    : headers_(std::move(headers)) {}
+
+std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
+                                                         const std::string& api_key,
+                                                         http::HttpClient& http) const {
   const std::string url = CodeBuddyCatalogUrl(host);
-  return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), kShape, url);
+  return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), CodeBuddyShape(), url);
 }
 
 std::string FormatModelList(const std::vector<ModelEntry>& models,

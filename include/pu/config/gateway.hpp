@@ -51,6 +51,10 @@ struct Gateway {
   std::unique_ptr<pu::LLMProvider> (*make_provider)(const Backend&,
                                                     std::shared_ptr<pu::http::HttpClient>);
   std::unique_ptr<pu::ModelLister> (*make_listing)();
+  // The headers a listing read carries beyond the bearer token, empty for a gateway that
+  // needs none. A probe reads the same endpoint as the lister, so it reads them here rather
+  // than restating them.
+  std::vector<std::string> (*listing_headers)();
 };
 
 // Adding a gateway is a file beside the others plus a line in the gateway table in gateways.cpp.

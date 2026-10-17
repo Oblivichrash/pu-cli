@@ -82,9 +82,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "probe") {
-      return pu::cli::RunProbe(OptionOr(vm, "agent", ""), OptionOr(vm, "prompt", "Say the single word: pong"),
+      return pu::cli::RunProbe(OptionOr(vm, "agent", ""),
+                               OptionOr(vm, "prompt", "Say the single word: pong"),
                                OptionOr(vm, "out", "./provider-probes"), vm.count("no-save") == 0,
-                               runtime);
+                               vm.count("listing") > 0, runtime);
     }
 
     if (cmd == "serve") {

@@ -148,3 +148,55 @@ TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {
   REQUIRE(std::filesystem::file_size(path) == std::string(kOpenAIStream).size());
   std::filesystem::remove(path);
 }
+
+TEST_CASE("[probe] a listing is walked the way its shape reads it", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{
+        200, R"({"object":"list","data":[
+          {"id":"m-one","owned_by":"vendor","context_window":4096,"effort":{"default_level":"high"}},
+          {"id":"m-two","owned_by":"vendor"}
+        ]})"};
+  };
+
+  const llm::ListingReport report = llm::ProbeListing(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE(report.parsed);
+  REQUIRE(report.http_status == 200);
+  REQUIRE(report.entries == 2);
+  REQUIRE(report.url == "https://x.example/v1/models");
+  REQUIRE(report.keys.at("top-level").count("data") == 1);
+  // Both entries are walked: a field one of them carries is a field this gateway sends.
+  REQUIRE(report.keys.at("entry").count("context_window") == 1);
+  REQUIRE(report.keys.at("entry.effort").count("default_level") == 1);
+}
+
+TEST_CASE("[probe] a listing is asked for the names its shape reads", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"data":[{"id":"m"}]})"};
+  };
+
+  const llm::ListingReport report = llm::ProbeListing(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  // The OpenAI shape names no capability field, so nothing is reported absent: a shape that
+  // does not ask is not a gateway that dropped anything.
+  REQUIRE(report.shape_fields_absent.empty());
+}
+
+TEST_CASE("[probe] a listing that is not JSON says so rather than reporting an empty shape",
+          "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, "<html>not json</html>"};
+  };
+
+  const llm::ListingReport report = llm::ProbeListing(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE_FALSE(report.parsed);
+  REQUIRE(report.error.find("does not parse as JSON") != std::string::npos);
+  REQUIRE(report.shape_fields_absent.empty());
+}

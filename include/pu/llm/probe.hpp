@@ -44,4 +44,32 @@ ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& ht
 // expected but did not see.
 std::string FormatProbeReport(const ProbeReport& report);
 
+// The same questions asked of a model listing rather than of a stream: the keys the answer
+// carried at each level, and which of the names the catalogue shape reads it never sent.
+// Kept apart from ProbeReport because a listing is one object, not a stream of frames.
+struct ListingReport {
+  std::string gateway;
+  std::string url;
+  unsigned http_status = 0;
+  size_t bytes = 0;
+  size_t entries = 0;
+  bool parsed = false;
+
+  // Level -> the distinct key names that level carried, sorted.
+  std::map<std::string, std::set<std::string>> keys;
+
+  // Names the shape reads that the answer never carried. Empty names in the shape are not
+  // asked about: a gateway that has no such concept is not a gateway that dropped it.
+  std::vector<std::string> shape_fields_absent;
+
+  std::string error;
+};
+
+// Reads the listing the gateway's own catalogue endpoint answers and collects what it named.
+// Uses the backend's host and key, so nothing is retyped for a probe.
+ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http,
+                           const std::vector<std::string>& headers = {});
+
+std::string FormatListingReport(const ListingReport& report);
+
 }  // namespace pu::llm

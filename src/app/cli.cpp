@@ -67,7 +67,8 @@ CommandLine BuildCommandLine() {
   boost::program_options::options_description probe("probe options");
   probe.add_options()("out", boost::program_options::value<std::string>(),
                       "directory the raw stream is written to (default ./provider-probes)")(
-      "no-save", "print the summary without writing the raw stream");
+      "no-save", "print the summary without writing the raw stream")(
+      "listing", "probe the model listing instead of the stream");
 
   boost::program_options::options_description serve("serve options");
   serve.add_options()("host", boost::program_options::value<std::string>(),
@@ -152,9 +153,17 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 // and the field names the gateway actually sent read back out of it. A ResponseShape
 // for a new gateway is written from this capture rather than from a specification.
 int RunProbe(const std::string& agent, const std::string& prompt, const std::string& out_dir,
-             bool save, Runtime& runtime) {
+             bool save, bool listing, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = runtime.CurrentBackend();
+
+    if (listing) {
+      // A listing is one answer rather than a stream, so there is nothing to keep as raw
+      // bytes beyond the body the client already returned.
+      std::cout << "\n" << llm::FormatListingReport(llm::ProbeListing(backend, runtime.Http()))
+                << "\n";
+      return;
+    }
 
     std::optional<std::string> raw_path;
     if (save) {

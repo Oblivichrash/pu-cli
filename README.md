@@ -180,6 +180,17 @@ drops:
 ./build/pu probe --no-save   # summary only, nothing written
 ```
 
+`--listing` asks the same questions of the model catalogue instead of the stream: the keys
+the answer carried at each level, and which of the names the catalogue shape reads it never
+sent. A stream is read frame by frame and a listing is one object, so the two reports are
+kept apart. Both read the endpoint the gateway's own lister reads, with the gateway's own
+headers, so a listing that `pu models` can read is a listing `pu probe --listing` can
+describe:
+
+```bash
+./build/pu probe --listing
+```
+
 ---
 
 ## Core Commands

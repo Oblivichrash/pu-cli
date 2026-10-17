@@ -94,6 +94,12 @@ std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
   return std::make_unique<llm::CodeBuddyModelLister>(CodeBuddyHeaders(CodeBuddyConversationId()));
 }
 
+std::vector<std::string> CodeBuddyListingHeaders() {
+  return CodeBuddyHeaders(CodeBuddyConversationId());
+}
+
+std::vector<std::string> NoListingHeaders() { return {}; }
+
 }  // namespace
 
 OpenAIProvider::Config OpenAIConfig(const Backend& cfg) {
@@ -111,6 +117,7 @@ const Gateway& OllamaGateway() {
       .endpoint_path = "/api/chat",
       .make_provider = &MakeOllamaProvider,
       .make_listing = &MakeOllamaListing,
+      .listing_headers = &NoListingHeaders,
   };
   return gateway;
 }
@@ -123,6 +130,7 @@ const Gateway& OpenAIGateway() {
       .endpoint_path = "/chat/completions",
       .make_provider = &MakeOpenAIProvider,
       .make_listing = &MakeOpenAIListing,
+      .listing_headers = &NoListingHeaders,
   };
   return gateway;
 }
@@ -135,6 +143,7 @@ const Gateway& CodeBuddyGateway() {
       .endpoint_path = "/chat/completions",
       .make_provider = &MakeCodeBuddyProvider,
       .make_listing = &MakeCodeBuddyListing,
+      .listing_headers = &CodeBuddyListingHeaders,
   };
   return gateway;
 }
