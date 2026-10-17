@@ -169,35 +169,21 @@ ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& ht
   });
   report.stream_parsed = report.frames > 0;
 
-  // An empty capture says the request failed before any shape was sent; diffing it
-  // against the defaults would report every field absent and say nothing useful.
+  // An empty capture says the request failed before any shape was sent; diffing it against
+  // the defaults would report every field absent and say nothing useful.
   if (report.stream_parsed) {
     if (const std::optional<llm::ResponseShape> shape = ShapeFor(backend.gateway)) {
-    const auto present = [&report](std::string_view field) {
-      for (const auto& [level, names] : report.keys) {
-        if (std::any_of(names.begin(), names.end(),
-                        [field](const std::string& name) { return name == field; })) {
-          return true;
+      const auto present = [&report](std::string_view field) {
+        for (const auto& [level, names] : report.keys) {
+          if (std::any_of(names.begin(), names.end(),
+                          [field](const std::string& name) { return name == field; })) {
+            return true;
+          }
         }
-      }
-      return false;
-    };
-    const auto absent = [&](std::string_view field) {
-      if (!present(field)) report.shape_fields_absent.emplace_back(field);
-    };
-    absent(shape->reasoning_field);
-    absent(shape->refusal_field);
-    absent(shape->usage_field);
-    absent(shape->prompt_tokens_field);
-    absent(shape->completion_tokens_field);
-    absent(shape->total_tokens_field);
-    absent(shape->finish_reason_field);
-    // The cached count nests on one gateway and sits at the top level on another; either
-    // name satisfies the shape, so only a stream carrying neither is reported.
-    if (!present(shape->cached_tokens_nested_field) && !present(shape->cached_tokens_top_level_field)) {
-      report.shape_fields_absent.emplace_back(shape->cached_tokens_nested_field);
+        return false;
+      };
+      report.shape_fields_absent = llm::AbsentShapeFields(*shape, present, /*required_only=*/false);
     }
-  }
   }
 
   return report;

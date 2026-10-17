@@ -120,6 +120,10 @@ struct ChatResult {
   // signal rather than an error: it is what says a field the backend should have read
   // went unnoticed, and it is asserted by the tests that pin a captured stream.
   std::vector<std::string> unread_fields;
+  std::vector<std::string> seen_fields;
+  // Shape fields the reply never carried: a name this build reads that the gateway no
+  // longer sends.
+  std::vector<std::string> missing_fields;
   std::string finish_reason;
   std::string model;
 };

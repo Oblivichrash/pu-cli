@@ -124,3 +124,37 @@ TEST_CASE("[list_models] a codebuddy key rides the config read too", "[list_mode
       *mock);
   REQUIRE(HasHeader(mock->last_headers, "Authorization"));
 }
+
+TEST_CASE("[list_models] a container the answer does not carry is a refusal naming what it had",
+          "[list_models]") {
+  // A shape this build no longer matches must not read as an account offering nothing.
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"models_here":[{"name":"x"}]})"};
+  };
+
+  REQUIRE_THROWS_AS(
+      config::ListModels(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock),
+      pu::GenericError);
+
+  try {
+    (void)config::ListModels(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
+                             *mock);
+  } catch (const pu::GenericError& e) {
+    const std::string message = e.what();
+    REQUIRE(message.find("\"data\"") != std::string::npos);
+    REQUIRE(message.find("models_here") != std::string::npos);
+  }
+}
+
+TEST_CASE("[list_models] a container holding null is an empty listing, not a mismatch",
+          "[list_models]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"data":null})"};
+  };
+
+  const auto models = config::ListModels(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+  REQUIRE(models.empty());
+}

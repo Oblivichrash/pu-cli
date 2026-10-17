@@ -44,10 +44,41 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
+namespace llm {
+
+std::vector<std::string> AbsentShapeFields(
+    const ResponseShape& shape, const std::function<bool(std::string_view)>& seen,
+    bool required_only) {
+  std::vector<std::string> absent;
+  const auto expect = [&](std::string_view field) {
+    if (!field.empty() && !seen(field)) absent.emplace_back(std::string(field));
+  };
+
+  if (!required_only) expect(shape.content_field);
+  if (!required_only) expect(shape.reasoning_field);
+  if (!required_only) expect(shape.refusal_field);
+  expect(shape.usage_field);
+  expect(shape.prompt_tokens_field);
+  expect(shape.completion_tokens_field);
+  expect(shape.total_tokens_field);
+
+  // One gateway nests the cached count, another puts it at the top level; either satisfies.
+  if (!shape.cached_tokens_nested_field.empty() &&
+      !seen(shape.cached_tokens_nested_field) && !seen(shape.cached_tokens_top_level_field)) {
+    absent.emplace_back(std::string(shape.cached_tokens_nested_field) + " (nor " +
+                        std::string(shape.cached_tokens_top_level_field) + ")");
+  }
+  expect(shape.finish_reason_field);
+  return absent;
+}
+
+}  // namespace llm
+
 OpenAIProtocol::OpenAIProtocol(const Config& config, std::shared_ptr<pu::http::HttpClient> http)
     : StreamingProvider(config.host, config.api_key, std::move(http)), config_(config) {}
 
 void OpenAIProtocol::ResetAccumulators() {
+  missing_fields_.clear();
   pending_tools_.clear();
   content_.clear();
   reasoning_.clear();
@@ -104,6 +135,31 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
       "error", "choices", "usage", "model", "done",
   };
   NoteUnreadFields(j, kReadKeys);
+
+  const boost::json::object* frame = j.if_object();
+  if (frame != nullptr) {
+    for (const auto& member : *frame) NoteSeenField(member.key());
+    if (const auto it = frame->find("choices");
+        it != frame->end() && it->value().is_array() && !it->value().as_array().empty()) {
+      const boost::json::value& first = it->value().as_array().at(0);
+      if (const boost::json::object* choice = first.if_object()) {
+        for (const auto& member : *choice) NoteSeenField(member.key());
+        if (const auto delta = choice->find("delta");
+            delta != choice->end() && delta->value().is_object()) {
+          for (const auto& member : delta->value().as_object()) NoteSeenField(member.key());
+        }
+      }
+    }
+    if (const auto usage = frame->find("usage");
+        usage != frame->end() && usage->value().is_object()) {
+      for (const auto& member : usage->value().as_object()) {
+        NoteSeenField(member.key());
+        if (member.value().is_object()) {
+          for (const auto& nested : member.value().as_object()) NoteSeenField(nested.key());
+        }
+      }
+    }
+  }
 
   if (json::HasKey(j, "error")) {
     throw GenericError("provider error: " + StreamErrorDetail(j.at("error")));
@@ -277,6 +333,12 @@ void OpenAIProtocol::FlushPendingData(const ChatRequest& request) {
 void OpenAIProtocol::FinishStream(const ChatRequest& request) {
   FlushPendingData(request);
   FlushPendingToolCalls(request);
+
+  const auto seen = [this](std::string_view field) {
+    return std::find(seen_fields_.begin(), seen_fields_.end(), field) != seen_fields_.end();
+  };
+  missing_fields_ = AbsentShapeFields(config_.shape, seen, /*required_only=*/true);
+
   // A refusal that arrived beside content is still the provider's own report on the
   // turn, so it follows the reply rather than being dropped with the empty-content case.
   if (!refusal_.empty()) {

@@ -141,6 +141,10 @@ the subset its own agent carries - so a model the backend is configured with can
 outside the listing. It is named anyway, marked `(active, not listed by this
 gateway)`, since it is the one row that matters most.
 
+A listing this build cannot read is refused rather than reported as an empty one: a
+response carrying no container the shape names fails with the top-level keys it did
+carry, so "the gateway renamed something" never prints as "the account has no model".
+
 `--entry <id>` renders the configuration for one model and prints it, so a new agent
 is pasted rather than typed. It copies the running agent's own surroundings -
 `gateway`, `host`, `api_key`, `temperature`, `max_tokens`, `security`,
@@ -157,6 +161,12 @@ reasoning level and the source names none. Nothing is written to disk.
 
 Your conversation is saved to `<workspace>/.pu/session.json` after every
 interaction and restored on restart, so each directory keeps its own session.
+
+A field this build reads but the reply never carried is reported after the answer,
+not folded into a silent default: a gateway that renames `finish_reason` would
+otherwise leave a truncated reply looking complete. A field the gateway *added* is
+logged at warning rather than shown, since the standard stream metadata is unread on
+every turn and a note that always appears is a note nobody reads.
 
 `pu probe` sends one single-token prompt to the agent's backend, keeps every byte
 of the raw stream under `--out` (default `./provider-probes/`), and prints the

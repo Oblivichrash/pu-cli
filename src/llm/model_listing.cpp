@@ -72,6 +72,19 @@ boost::json::value ParseListing(const std::string& url, http::HttpClient& http,
   }
 }
 
+// So a shape that no longer matches never prints as "the account offers no model".
+std::string TopLevelKeys(const boost::json::value& parsed) {
+  const boost::json::object* obj = parsed.if_object();
+  if (obj == nullptr) return "(not a JSON object)";
+
+  std::string keys;
+  for (const auto& member : *obj) {
+    if (!keys.empty()) keys += ", ";
+    keys += std::string(member.key());
+  }
+  return keys.empty() ? "(an empty object)" : keys;
+}
+
 const boost::json::array* ArrayAt(const boost::json::value& parsed, const std::string& key) {
   if (!parsed.is_object()) return nullptr;
   const auto it = parsed.as_object().find(key);
@@ -79,9 +92,25 @@ const boost::json::array* ArrayAt(const boost::json::value& parsed, const std::s
   return &it->value().as_array();
 }
 
-std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape) {
-  const boost::json::array* container = ArrayAt(parsed, shape.container);
-  if (container == nullptr) return {};
+// An absent key is a gateway this build cannot read and is refused; a key holding null is
+// the gateway saying it has nothing, which is an answer.
+std::optional<boost::json::array> ContainerOr(const boost::json::value& parsed,
+                                             const std::string& key, const char* url) {
+  const boost::json::object* obj = parsed.if_object();
+  if (obj != nullptr) {
+    if (const auto it = obj->find(key); it != obj->end()) {
+      if (it->value().is_array()) return it->value().as_array();
+      if (it->value().is_null()) return boost::json::array{};
+    }
+  }
+  throw GenericError("Model listing from " + std::string(url) + " carries no \"" + key +
+                     "\" array; its top-level keys were: " + TopLevelKeys(parsed));
+}
+
+std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape,
+                                 const std::string& url) {
+  const std::optional<boost::json::array> container =
+      ContainerOr(parsed, shape.container, url.c_str());
 
   std::vector<ModelEntry> models;
   for (const auto& entry : *container) {
@@ -94,15 +123,19 @@ std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const Catalog
   return models;
 }
 
-std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape) {
-  if (!parsed.is_object()) return {};
-  const auto top = parsed.as_object();
-
+std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape,
+                                     const std::string& url) {
+  const boost::json::object* top = parsed.if_object();
   const boost::json::value* payload = nullptr;
-  if (const auto it = top.find("data"); it != top.end() && it->value().is_object()) {
-    payload = &it->value();
+  if (top != nullptr) {
+    if (const auto it = top->find("data"); it != top->end() && it->value().is_object()) {
+      payload = &it->value();
+    }
   }
-  if (payload == nullptr) return {};
+  if (payload == nullptr) {
+    throw GenericError("Model listing from " + url + " carries no \"data\" object; its top-level "
+                       "keys were: " + TopLevelKeys(parsed));
+  }
 
   std::vector<std::string> ids;
   if (const boost::json::array* agents = ArrayAt(*payload, shape.container); agents != nullptr) {
@@ -154,7 +187,8 @@ std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
       .container = "models",
       .id_key = "name",
   };
-  return ReadFlat(FetchListing(host + kShape.path, api_key, {}, http), kShape);
+  const std::string url = host + kShape.path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), kShape, url);
 }
 
 std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
@@ -165,7 +199,8 @@ std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
       .container = "data",
       .id_key = "id",
   };
-  return ReadFlat(FetchListing(host + kShape.path, api_key, {}, http), kShape);
+  const std::string url = host + kShape.path;
+  return ReadFlat(FetchListing(url, api_key, {}, http), kShape, url);
 }
 
 CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
@@ -187,7 +222,8 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .max_input_tokens = "maxInputTokens",
       .credits = "credits",
   };
-  return ReadCodeBuddy(FetchListing(CodeBuddyCatalogUrl(host), api_key, headers_, http), kShape);
+  const std::string url = CodeBuddyCatalogUrl(host);
+  return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), kShape, url);
 }
 
 std::string FormatModelList(const std::vector<ModelEntry>& models,

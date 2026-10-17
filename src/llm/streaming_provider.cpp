@@ -69,6 +69,12 @@ void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
   }
 }
 
+void StreamingProvider::NoteSeenField(std::string_view key) {
+  if (std::find(seen_fields_.begin(), seen_fields_.end(), key) == seen_fields_.end()) {
+    seen_fields_.emplace_back(key);
+  }
+}
+
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ChatResult result;
   ResetAccumulators();
@@ -98,6 +104,8 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   result.usage = usage_;
   result.raw_usage = std::move(raw_usage_);
   result.unread_fields = std::move(unread_fields_);
+  result.seen_fields = std::move(seen_fields_);
+  result.missing_fields = std::move(missing_fields_);
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);
   return result;
