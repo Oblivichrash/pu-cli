@@ -114,6 +114,8 @@ const Gateway& OllamaGateway() {
       .id = GatewayId::kOllama,
       .name = "ollama",
       .default_host = "http://localhost:11434",
+      .api_key_env = "",
+      .protocol = "ollama",
       .endpoint_path = "/api/chat",
       .make_provider = &MakeOllamaProvider,
       .make_listing = &MakeOllamaListing,
@@ -127,6 +129,58 @@ const Gateway& OpenAIGateway() {
       .id = GatewayId::kOpenAI,
       .name = "openai",
       .default_host = "https://api.openai.com/v1",
+      .api_key_env = "OPENAI_API_KEY",
+      .protocol = "openai",
+      .endpoint_path = "/chat/completions",
+      .make_provider = &MakeOpenAIProvider,
+      .make_listing = &MakeOpenAIListing,
+      .listing_headers = &NoListingHeaders,
+  };
+  return gateway;
+}
+
+// Two products, one protocol: each names its own host and key variable and borrows the
+// OpenAI factories, since a wire format is what the factories encode and a host is not.
+const Gateway& DeepSeekGateway() {
+  static const Gateway gateway{
+      .id = GatewayId::kDeepSeek,
+      .name = "deepseek",
+      .default_host = "https://api.deepseek.com/v1",
+      .api_key_env = "DEEPSEEK_API_KEY",
+      .protocol = "openai",
+      .endpoint_path = "/chat/completions",
+      .make_provider = &MakeOpenAIProvider,
+      .make_listing = &MakeOpenAIListing,
+      .listing_headers = &NoListingHeaders,
+  };
+  return gateway;
+}
+
+const Gateway& NimGateway() {
+  static const Gateway gateway{
+      .id = GatewayId::kNim,
+      .name = "nim",
+      .default_host = "https://integrate.api.nvidia.com/v1",
+      .api_key_env = "NVIDIA_API_KEY",
+      .protocol = "openai",
+      .endpoint_path = "/chat/completions",
+      .make_provider = &MakeOpenAIProvider,
+      .make_listing = &MakeOpenAIListing,
+      .listing_headers = &NoListingHeaders,
+  };
+  return gateway;
+}
+
+// The cloud service speaks both wires: `/api/tags` carries more about each model, and
+// `/v1/models` is the OpenAI route. This entry is the OpenAI one; `ollama-cloud` is the
+// other, so a caller picks by naming the gateway it wants.
+const Gateway& OllamaCloudGateway() {
+  static const Gateway gateway{
+      .id = GatewayId::kOllamaCloud,
+      .name = "ollama-cloud",
+      .default_host = "https://ollama.com/v1",
+      .api_key_env = "OLLAMA_API_KEY",
+      .protocol = "openai",
       .endpoint_path = "/chat/completions",
       .make_provider = &MakeOpenAIProvider,
       .make_listing = &MakeOpenAIListing,
@@ -140,6 +194,8 @@ const Gateway& CodeBuddyGateway() {
       .id = GatewayId::kCodeBuddy,
       .name = "codebuddy",
       .default_host = "https://copilot.tencent.com/v2",
+      .api_key_env = "CODEBUDDY_API_KEY",
+      .protocol = "openai",
       .endpoint_path = "/chat/completions",
       .make_provider = &MakeCodeBuddyProvider,
       .make_listing = &MakeCodeBuddyListing,
@@ -152,10 +208,9 @@ const Gateway& CodeBuddyGateway() {
 
 namespace {
 
-const std::array<const Gateway*, 3> kGateways = {
-    &OllamaGateway(),
-    &OpenAIGateway(),
-    &CodeBuddyGateway(),
+const std::array<const Gateway*, 6> kGateways = {
+    &OllamaGateway(),  &OllamaCloudGateway(), &OpenAIGateway(),
+    &DeepSeekGateway(), &NimGateway(),        &CodeBuddyGateway(),
 };
 
 }  // namespace

@@ -218,11 +218,14 @@ const CatalogShape& CodeBuddyShape() {
 
 }  // namespace
 
-std::optional<ListingTarget> ListingTargetFor(std::string_view gateway, const std::string& host) {
-  if (gateway == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
-  if (gateway == "openai") return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+std::optional<ListingTarget> ListingTargetFor(std::string_view protocol, std::string_view gateway,
+                                              const std::string& host) {
+  if (protocol == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
+  if (protocol != "openai") return std::nullopt;
+  // One OpenAI-format product keeps its catalogue off the chat base's origin and describes a
+  // model with more than an id; the rest read `/models` and name what they can.
   if (gateway == "codebuddy") return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
-  return std::nullopt;
+  return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
 }
 
 std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,

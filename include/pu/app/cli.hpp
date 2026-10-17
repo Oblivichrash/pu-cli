@@ -23,9 +23,13 @@ CommandLine BuildCommandLine();
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime);
 int RunChat(const std::string& agent, Runtime& runtime);
-int RunProbe(const std::string& agent, const std::string& prompt, const std::string& out_dir,
-             bool save, bool listing, Runtime& runtime);
-int RunModels(const std::string& agent, bool verify, const std::string& entry_id, Runtime& runtime);
+// `gateway` names a product to read without an agents.json entry: its host and key come from
+// the gateway table, and neither the config nor the session is touched.
+int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
+             const std::string& prompt, const std::string& out_dir, bool save, bool listing,
+             Runtime& runtime);
+int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
+              bool verify, const std::string& entry_id, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 
 }  // namespace cli

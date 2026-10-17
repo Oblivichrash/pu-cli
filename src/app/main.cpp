@@ -77,12 +77,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "models") {
-      return pu::cli::RunModels(OptionOr(vm, "agent", ""), vm.count("verify") > 0,
+      return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
+                               OptionOr(vm, "model", ""), vm.count("verify") > 0,
                                OptionOr(vm, "entry", ""), runtime);
     }
 
     if (cmd == "probe") {
-      return pu::cli::RunProbe(OptionOr(vm, "agent", ""),
+      return pu::cli::RunProbe(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
+                               OptionOr(vm, "model", ""),
                                OptionOr(vm, "prompt", "Say the single word: pong"),
                                OptionOr(vm, "out", "./provider-probes"), vm.count("no-save") == 0,
                                vm.count("listing") > 0, runtime);

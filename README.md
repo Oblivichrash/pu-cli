@@ -110,6 +110,7 @@ Every field is listed under [Configuration](#agentsjson).
 | `pu chat` | Start an interactive session |
 | `pu models [--verify]` | List the models the agent's backend reports, with the active one and its price marked; `--verify` asks each one for a token first (see below) |
 | `pu models --entry <id>` | Print an `agents.json` entry for that model, ready to paste; nothing is written |
+| `pu models --gateway <name>` | List a gateway's own catalogue, without an `agents.json` entry |
 | `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
 
 Global options: `-h`/`--help` and `--version`. `ask`, `chat` and `models` also
@@ -144,6 +145,24 @@ gateway)`, since it is the one row that matters most.
 A listing this build cannot read is refused rather than reported as an empty one: a
 response carrying no container the shape names fails with the top-level keys it did
 carry, so "the gateway renamed something" never prints as "the account has no model".
+
+`--gateway <name>` reads a product's own catalogue from the gateway table, so listing a
+provider needs no configuration: its host and the variable its key comes from are the
+table's facts, not the file's. The session is not touched, which is what makes this safe to
+run while another agent is active. `--model` names the model beside it for a turn, since a
+gateway names a host rather than a model.
+
+```bash
+./build/pu models --gateway nim
+./build/pu models --gateway deepseek
+./build/pu probe  --gateway nim --listing
+./build/pu probe  --gateway deepseek --model deepseek-flash
+```
+
+The gateways a build carries are `ollama`, `ollama-cloud`, `openai`, `deepseek`, `nim` and
+`codebuddy`. Two products on one protocol are still two entries: `deepseek` and `openai`
+both speak OpenAI's wire format and answer at different hosts, which is why naming the
+product is enough and naming the protocol is not.
 
 `--entry <id>` renders the configuration for one model and prints it, so a new agent
 is pasted rather than typed. It copies the running agent's own surroundings -

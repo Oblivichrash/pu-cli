@@ -116,7 +116,8 @@ struct ListingTarget {
   CatalogShape shape;
 };
 
-std::optional<ListingTarget> ListingTargetFor(std::string_view gateway, const std::string& host);
+std::optional<ListingTarget> ListingTargetFor(std::string_view protocol, std::string_view gateway,
+                                              const std::string& host);
 
 // Read from `{origin}/v3/config`; `/models` is not a route there. The headers are the
 // gateway's, which is why they are handed in rather than named here.

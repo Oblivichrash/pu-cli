@@ -45,6 +45,16 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
   return 0;
 }
 
+// The backend a read-only command reads. Naming a gateway builds one from the table and
+// never adopts it, so `pu models --gateway nim` leaves the session where it was.
+config::Backend BackendFor(const std::string& gateway, const std::string& model,
+                           Runtime& runtime) {
+  if (gateway.empty()) return runtime.CurrentBackend();
+  config::Backend backend = config::BackendForGateway(gateway);
+  if (!model.empty()) backend.model = model;
+  return backend;
+}
+
 }  // namespace
 
 CommandLine BuildCommandLine() {
@@ -55,6 +65,15 @@ CommandLine BuildCommandLine() {
 
   boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
+
+  // A gateway named here is probed as itself: its host and key come from the gateway table,
+  // so no agents.json entry is needed and the session is left alone.
+  boost::program_options::options_description target("models and probe options");
+  target.add_options()(
+      "gateway", boost::program_options::value<std::string>(),
+      "read this gateway's own host and key instead of the active agent's backend")(
+      "model", boost::program_options::value<std::string>(),
+      "model to use with --gateway; a gateway names a host, not a model");
 
   boost::program_options::options_description ask("ask options");
   ask.add_options()("prompt", boost::program_options::value<std::string>(), "prompt to send");
@@ -80,7 +99,7 @@ CommandLine BuildCommandLine() {
   positional.add("prompt", 1);
 
   CommandLine line;
-  line.all.add(global).add(session).add(ask).add(models).add(probe).add(serve);
+  line.all.add(global).add(session).add(target).add(ask).add(models).add(probe).add(serve);
   line.positional = std::move(positional);
   return line;
 }
@@ -152,10 +171,16 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 // One probe run: a single-token prompt to the agent's backend, the raw stream kept,
 // and the field names the gateway actually sent read back out of it. A ResponseShape
 // for a new gateway is written from this capture rather than from a specification.
-int RunProbe(const std::string& agent, const std::string& prompt, const std::string& out_dir,
-             bool save, bool listing, Runtime& runtime) {
+int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
+             const std::string& prompt, const std::string& out_dir, bool save, bool listing,
+             Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = runtime.CurrentBackend();
+    const config::Backend backend = BackendFor(gateway, model, runtime);
+    // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
+    if (!listing && backend.model.empty()) {
+      throw GenericError("--gateway names a host, not a model: pass --model, or --listing to "
+                         "read the catalogue it offers");
+    }
 
     if (listing) {
       // A listing is one answer rather than a stream, so there is nothing to keep as raw
@@ -179,10 +204,10 @@ int RunProbe(const std::string& agent, const std::string& prompt, const std::str
   });
 }
 
-int RunModels(const std::string& agent, bool verify, const std::string& entry_id,
-              Runtime& runtime) {
+int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
+              bool verify, const std::string& entry_id, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = runtime.CurrentBackend();
+    const config::Backend backend = BackendFor(gateway, model, runtime);
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
 
     if (!entry_id.empty()) {

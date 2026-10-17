@@ -214,8 +214,8 @@ ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient&
   ListingReport report;
   report.gateway = config::GatewayName(backend.gateway);
 
-  const std::optional<ListingTarget> target =
-      ListingTargetFor(report.gateway, backend.host);
+  const std::optional<ListingTarget> target = ListingTargetFor(
+      config::GatewayForId(backend.gateway).protocol, report.gateway, backend.host);
   if (!target) {
     report.error = "no listing is known for gateway " + report.gateway;
     return report;

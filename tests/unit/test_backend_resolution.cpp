@@ -296,3 +296,36 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
   }();
   REQUIRE_FALSE(holds_unreadable);
 }
+
+TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
+  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nim", "codebuddy"}) {
+    const std::optional<config::GatewayId> id = config::ParseGatewayId(name);
+    REQUIRE(id.has_value());
+    REQUIRE(std::string(config::GatewayName(*id)) == name);
+    REQUIRE_FALSE(config::DefaultHostFor(*id).empty());
+  }
+}
+
+TEST_CASE("Naming a gateway reaches it without an agents.json entry", "[backend]") {
+  const config::Backend nim = config::BackendForGateway("nim");
+  REQUIRE(nim.gateway == config::GatewayId::kNim);
+  REQUIRE(nim.host == "https://integrate.api.nvidia.com/v1");
+
+  // Two products on one protocol keep their own hosts, which is why the gateway names the
+  // product and not the wire format.
+  REQUIRE(config::BackendForGateway("deepseek").host == "https://api.deepseek.com/v1");
+  REQUIRE(config::BackendForGateway("openai").host == "https://api.openai.com/v1");
+}
+
+TEST_CASE("Naming a gateway this build has not got says which it has", "[backend]") {
+  try {
+    (void)config::BackendForGateway("frobnicate");
+    FAIL("a gateway this build has not got was accepted");
+  } catch (const pu::GenericError& e) {
+    const std::string message = e.what();
+    REQUIRE(message.find("Unknown gateway") != std::string::npos);
+    // The candidates, since a name typed from memory is the case this guards.
+    REQUIRE(message.find("nim") != std::string::npos);
+    REQUIRE(message.find("codebuddy") != std::string::npos);
+  }
+}

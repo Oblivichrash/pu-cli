@@ -5,6 +5,7 @@
 #include "pu/llm/model_listing.hpp"
 #include "pu/core/base.hpp"
 
+#include <cstdlib>
 #include <memory>
 #include <utility>
 
@@ -42,6 +43,8 @@ std::string GatewayNames() {
   return names;
 }
 
+std::string_view ApiKeyEnvFor(GatewayId id) { return GatewayForId(id).api_key_env; }
+
 std::optional<GatewayId> ParseGatewayId(std::string_view name) {
   if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->id;
   return std::nullopt;
@@ -50,6 +53,25 @@ std::optional<GatewayId> ParseGatewayId(std::string_view name) {
 std::unique_ptr<pu::LLMProvider> CreateBackend(const Backend& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http) {
   return GateFor(cfg).make_provider(cfg, std::move(http));
+}
+
+Backend BackendForGateway(std::string_view gateway) {
+  const std::optional<GatewayId> id = ParseGatewayId(gateway);
+  if (!id) {
+    throw pu::GenericError("Unknown gateway: " + std::string(gateway) + "; name one of " +
+                           GatewayNames());
+  }
+  Backend cfg;
+  cfg.gateway = *id;
+  cfg.host = DefaultHostFor(*id);
+  const std::string_view env = ApiKeyEnvFor(*id);
+  if (!env.empty()) {
+    const std::string name(env);
+    if (const char* value = std::getenv(name.c_str()); value != nullptr && *value != '\0') {
+      cfg.api_key = std::string(value);
+    }
+  }
+  return cfg;
 }
 
 std::vector<llm::ModelEntry> ListModels(const Backend& cfg, pu::http::HttpClient& http) {

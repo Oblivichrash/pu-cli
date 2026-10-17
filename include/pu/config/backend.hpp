@@ -85,6 +85,11 @@ inline Backend tag_invoke(boost::json::value_to_tag<Backend>,
 std::unique_ptr<pu::LLMProvider> CreateBackend(const Backend& cfg,
                                                std::shared_ptr<pu::http::HttpClient> http);
 
+// A backend built from a gateway name alone: its host and its key come from the table and
+// the environment the table names, so one word on the command line reaches a product. A
+// gateway whose key variable is unset is reached without a key rather than with a literal.
+Backend BackendForGateway(std::string_view gateway);
+
 // Reads the model listing the backend's host reports, with what the host says about each
 // model. The gateway answers where that listing lives. A listing that names no model is an
 // empty vector, not an error. Throws HttpError on a failed read.
