@@ -290,7 +290,9 @@ class TwoCallLLM : public LLMProvider {
   std::vector<ChatMessage> second_round_;
 };
 
-// Stands in for the web page's stop-command note, which arrives while a tool runs.
+// Stands in for a note raised while a tool runs. The page no longer raises one from a
+// per-command button -- a cancel covers the whole turn -- but the store still carries a note
+// to the model, and this is what pins the order it lands in.
 class NotingTool : public Tool {
  public:
   NotingTool(Executor* executor, std::string note)
@@ -689,8 +691,8 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
 
   TwoCallLLM provider;
   Conversation ws;
-  // The note rides into the store only when the turn is cancellable, which the
-  // served turn always is; the CLI passes one too.
+  // The note rides into the store only when the turn is cancellable, which the served turn
+  // always is; the CLI passes one too.
   const CancelToken live = std::make_shared<std::atomic<bool>>(false);
   const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox, live);
 

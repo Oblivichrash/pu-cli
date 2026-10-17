@@ -314,7 +314,6 @@ and a reconnect are recognisably the same page.
 {"type":"run","payload":{"text":"user message"}}
 {"type":"cancel"}
 {"type":"note","payload":{"text":"words for the model at the next tool boundary"}}
-{"type":"stop_command","payload":{"text":"why the command was stopped"}}
 {"type":"resolve_approval","payload":{"allow":true,"text":"optional note"}}
 ```
 
@@ -338,10 +337,10 @@ conversation and is what a page can show against a model's window. It arrives
 before `done`, and a provider that reports no counts sends none.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
-its call. While one runs, `stop_command` kills that command's process group: the
-tool result comes back `success: false` with the note in `error`, and the turn
-continues. `note` delivers words without a kill, which the executor appends beside
-the next tool result.
+its call. `note` delivers words without stopping anything, which the executor
+appends beside the next tool result. A running command is stopped by `cancel`,
+which stops the turn it belongs to: one button on the composer rather than one per
+command, since a command is never the thing a reader wants to end on its own.
 
 When the agent's policy names `approval_patterns`, a matching command sends
 `approval_ask` before it runs and the turn thread parks until

@@ -175,11 +175,6 @@ void WebSocketConnection::HandleMessage(const boost::json::value& jv) {
     if (!note.empty()) runtime_.SetUserNote(note);
     return;
   }
-  if (type == "stop_command") {
-    const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
-    runner_.StopCommand(note);
-    return;
-  }
   if (type == "resolve_approval") {
     const bool allow = json::ValueOrDefault<bool>(payload, "allow", false);
     const std::string note = json::ValueOrDefault<std::string>(payload, "text", "");
@@ -300,7 +295,6 @@ void SessionRunner::Stop() {
   {
     std::lock_guard<std::mutex> lock(turn_mutex_);
     if (cancel_token_) cancel_token_->store(true);
-    if (command_stop_) command_stop_->store(true);
   }
   cv_.notify_all();
   if (worker_.joinable()) worker_.join();
@@ -308,7 +302,7 @@ void SessionRunner::Stop() {
 
 SessionRunner::Tokens SessionRunner::CurrentTokens() const {
   std::lock_guard<std::mutex> lock(turn_mutex_);
-  return Tokens{cancel_token_, command_stop_};
+  return Tokens{cancel_token_};
 }
 
 void SessionRunner::CancelTurn() { RequestCancel(true); }
@@ -322,11 +316,6 @@ void SessionRunner::RequestCancel(bool by_page) {
   // going away is silent, since there is nobody left to tell.
   if (by_page) cancel_requested_.store(true, std::memory_order_release);
   cancel_token_->store(true);
-}
-
-void SessionRunner::StopCommand(const std::string& note) {
-  if (!note.empty()) runtime_.SetUserNote(note);
-  if (CancelToken stop = CurrentTokens().command_stop) stop->store(true);
 }
 
 void SessionRunner::Deliver(const std::shared_ptr<WebSocketConnection>& conn,
@@ -386,7 +375,6 @@ void SessionRunner::WorkerMain() {
     {
       std::lock_guard<std::mutex> lock(turn_mutex_);
       cancel_token_ = std::make_shared<std::atomic<bool>>(false);
-      command_stop_ = std::make_shared<std::atomic<bool>>(false);
       cancel_requested_.store(false, std::memory_order_release);
     }
 
@@ -407,11 +395,9 @@ void SessionRunner::WorkerMain() {
     });
 
     CancelToken cancel;
-    CancelToken command_stop;
     {
       std::lock_guard<std::mutex> lock(turn_mutex_);
       cancel = cancel_token_;
-      command_stop = command_stop_;
     }
 
     ExecutionResult result = runtime_.ProcessInput(
@@ -425,13 +411,12 @@ void SessionRunner::WorkerMain() {
           if (thought.empty()) return;
           say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
         },
-        command_stop);
+        cancel);
 
     const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
     {
       std::lock_guard<std::mutex> lock(turn_mutex_);
       cancel_token_.reset();
-      command_stop_.reset();
     }
 
     // A turn the page cancelled still answers with `done`, so the page can stop waiting. A

@@ -215,11 +215,10 @@ environment, or the workspace's own `serve` block names:
    socket it left behind is closed from its own strand, while another tab is refused.
    Without a name, every connection is a page of its own.
 5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
-   posts each frame back through the connection. The runner holds only the tokens that
-   steer the turn; the worker reads them by value, so a `cancel` or `stop_command` on
-   the strand reaches a turn in flight without waiting for it. The message schema, the
-   REST route table, and the status each refusal carries are in
-   [README](../README.md#web-api).
+   posts each frame back through the connection. The runner holds only the token that
+   steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
+   turn in flight without waiting for it. The message schema, the REST route table, and
+   the status each refusal carries are in [README](../README.md#web-api).
 6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
    stopped, and `Runtime::Shutdown()` persists the session.
@@ -231,16 +230,14 @@ cannot stop each other.
 
 | Channel | Scope | Effect |
 | :------ | :---- | :----- |
-| `cancel` | the turn | The turn ends, the reply keeps what already arrived, and every tool call it never ran is sealed as interrupted |
-| `stop_command` | one running command | The command's process tree is killed and the turn continues with a note from the user |
+| `cancel` | the turn, a running command included | The turn ends, the reply keeps what already arrived, and every tool call it never ran is sealed as interrupted |
 | shutdown | the process | Every turn in flight is abandoned, and its partial reply is not persisted |
 
-Both channels reach the model, and they must not read alike. A sealed call appends a
-`tool` node carrying `kCancelledReceipt`, which tells the model the turn is over and that
-it should wait for the user rather than resume on its own. A stopped command returns
-`kCommandStoppedReceipt`, which tells the model the turn is still going and that the rest
-of its plan is unaffected. The distinction is the point: if a stop read like a cancel, a
-model would learn to abandon a plan the user only wanted to redirect.
+A command is not stopped on its own: the composer has one button, and it ends the turn the
+command belongs to. A sealed call appends a `tool` node carrying `kCancelledReceipt`, which
+tells the model the turn is over and that it should wait for the user rather than resume on
+its own. A command killed by the turn's own token still reports `kCommandStoppedReceipt`,
+which tells the model the process died rather than answered.
 
 The sealed receipts belong to the turn's chain, so the next request carries them. They are
 appended after the interrupted assistant node and become the leaf, which is what puts them

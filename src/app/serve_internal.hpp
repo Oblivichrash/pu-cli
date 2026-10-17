@@ -99,7 +99,7 @@ class SessionRunner {
   void Stop();
 
   void CancelTurn();
-  void StopCommand(const std::string& note);
+
 
   bool Attach(const std::shared_ptr<WebSocketConnection>& conn);
   void Detach(const std::shared_ptr<WebSocketConnection>& conn);
@@ -117,7 +117,7 @@ class SessionRunner {
   // that reconnects can still cancel or stop what its previous socket started.
   struct Tokens {
     CancelToken cancel;
-    CancelToken command_stop;
+
   };
   Tokens CurrentTokens() const;
 
@@ -142,7 +142,7 @@ class SessionRunner {
 
   mutable std::mutex turn_mutex_;
   CancelToken cancel_token_;
-  CancelToken command_stop_;
+
   // A `cancel` frame is the page asking for its turn to stop, which still ends with `done`.
   // A turn cancelled because its page went away reports nothing at all.
   std::atomic<bool> cancel_requested_{false};

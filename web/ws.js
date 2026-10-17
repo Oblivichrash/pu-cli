@@ -48,11 +48,6 @@ function sendFrame(type, payload) {
   return true;
 }
 
-// The id names which command and the note is why; the frame already carries both.
-function stopRunningCommand(toolId, note) {
-  sendFrame("stop_command", { text: note || "", id: toolId });
-}
-
 function scheduleReconnect() {
   if (PU.reconnectTimer) return;
   const delay = Math.min(500 * 2 ** PU.reconnectAttempts, 8000);

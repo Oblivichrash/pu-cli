@@ -57,17 +57,8 @@ class ToolBlock extends HTMLElement {
     this.summaryEl.className = "tool-summary";
     this.statusEl = document.createElement("span");
     this.statusEl.className = "tool-status";
-    this.stopBtn = document.createElement("button");
-    this.stopBtn.type = "button";
-    this.stopBtn.className = "stop-command";
-    this.stopBtn.textContent = "■ Stop";
-    this.stopBtn.title = "Stop this command";
-    this.stopBtn.onclick = (e) => {
-      e.stopPropagation();
-      askStopNote(this, this._block.id);
-    };
 
-    header.append(this.nameEl, this.summaryEl, this.statusEl, this.stopBtn);
+    header.append(this.nameEl, this.summaryEl, this.statusEl);
     buildCollapsible(this, header);
     if (this._block) this.sync(this._block);
   }
@@ -80,8 +71,6 @@ class ToolBlock extends HTMLElement {
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
     this.statusEl.textContent = this.#statusText(block);
-    // The stop sits on the block it would kill, so the thing stopped is the thing on screen.
-    this.stopBtn.hidden = !(block.status === "running" && block.id);
     syncCollapsible(this, block);
     this.#fillBody(block);
   }
@@ -115,44 +104,6 @@ class ToolBlock extends HTMLElement {
         block.error || block.output || "(no output)",
         block.error ? "tool-error" : ""));
   }
-}
-
-// The note is written against the command it explains, not in a modal. Enter stops, Esc does not.
-function askStopNote(wrapper, toolId) {
-  if (wrapper.querySelector(".stop-note")) return;
-  const body = wrapper.querySelector(".block-body");
-  if (!body) return;
-  body.classList.remove("collapsed");
-  const row = document.createElement("div");
-  row.className = "stop-note";
-  const input = document.createElement("input");
-  input.type = "text";
-  input.placeholder = "Why stop it? (Enter to stop, Esc to keep running)";
-  const confirm = document.createElement("button");
-  confirm.type = "button";
-  confirm.textContent = "Stop";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.className = "stop-note-cancel";
-  cancel.textContent = "Cancel";
-
-  const commit = () => {
-    const note = input.value.trim();
-    row.remove();
-    stopRunningCommand(toolId, note);
-  };
-  const dismiss = () => row.remove();
-
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); commit(); }
-    else if (e.key === "Escape") { e.preventDefault(); dismiss(); }
-  });
-  confirm.addEventListener("click", commit);
-  cancel.addEventListener("click", dismiss);
-
-  row.append(input, confirm, cancel);
-  body.appendChild(row);
-  input.focus();
 }
 
 customElements.define("pu-tool", ToolBlock);
