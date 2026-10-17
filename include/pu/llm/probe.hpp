@@ -67,8 +67,7 @@ struct ListingReport {
 
 // Reads the listing the gateway's own catalogue endpoint answers and collects what it named.
 // Uses the backend's host and key, so nothing is retyped for a probe.
-ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http,
-                           const std::vector<std::string>& headers = {});
+ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http);
 
 std::string FormatListingReport(const ListingReport& report);
 

@@ -36,9 +36,9 @@ const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data();
 
 std::string GatewayNames() {
   std::string names;
-  for (const Gateway* gateway : Gateways()) {
+  for (const Gateway& gateway : Gateways()) {
     if (!names.empty()) names += ", ";
-    names += gateway->name;
+    names += gateway.name;
   }
   return names;
 }

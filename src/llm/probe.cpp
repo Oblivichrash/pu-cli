@@ -14,24 +14,36 @@ namespace pu::llm {
 
 namespace {
 
-// A shape worth checking against only exists on the OpenAI-format gateways; Ollama's
-// reply is a different wire format with no ResponseShape to diff.
+// A shape worth checking against only exists on the OpenAI-format gateways; Ollama's reply
+// is a different wire format with no ResponseShape to diff. Asked of the protocol rather
+// than of a list of ids, so a product added to the table is covered by being one.
 std::optional<llm::ResponseShape> ShapeFor(config::GatewayId id) {
-  if (id == config::GatewayId::kOpenAI || id == config::GatewayId::kCodeBuddy) {
-    return llm::ResponseShape{};
-  }
+  if (config::GatewayForId(id).protocol == "openai") return llm::ResponseShape{};
   return std::nullopt;
 }
 
-std::vector<std::string> ProbeHeaders(const config::Backend& backend) {
-  std::vector<std::string> headers = {"Content-Type: application/json"};
+bool SpeaksOllama(config::GatewayId id) {
+  return config::GatewayForId(id).protocol == "ollama";
+}
+
+// The gateway's own headers plus the bearer, which is what both probes send. A gateway that
+// names none still gets the content type a POST needs.
+std::vector<std::string> ProbeHeaders(const config::Backend& backend,
+                                     const std::vector<std::string>& extra = {}) {
+  std::vector<std::string> headers = extra;
+  if (headers.empty()) headers = config::GatewayForId(backend.gateway).listing_headers();
+  if (std::none_of(headers.begin(), headers.end(), [](const std::string& h) {
+        return h.rfind("Content-Type:", 0) == 0;
+      })) {
+    headers.push_back("Content-Type: application/json");
+  }
   const std::string bearer = http::BearerHeader(backend.api_key.value_or(""));
   if (!bearer.empty()) headers.push_back(bearer);
   return headers;
 }
 
 std::string ProbeBody(const config::Backend& backend, const std::string& prompt) {
-  if (backend.gateway == config::GatewayId::kOllama) {
+  if (SpeaksOllama(backend.gateway)) {
     boost::json::value req = {
         {"model", backend.model},
         {"stream", true},
@@ -154,7 +166,7 @@ ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& ht
 
   ForEachFrame(raw, [&](const boost::json::value& frame) {
     ++report.frames;
-    if (backend.gateway == config::GatewayId::kOllama) {
+    if (SpeaksOllama(backend.gateway)) {
       CollectKeys(frame, "top-level", report.keys);
       if (const boost::json::object* obj = frame.if_object()) {
         if (const auto msg = obj->find("message"); msg != obj->end() && msg->value().is_object()) {
@@ -209,8 +221,7 @@ void CollectListingKeys(const boost::json::value& entry, std::map<std::string, s
 
 }  // namespace
 
-ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http,
-                           const std::vector<std::string>& headers) {
+ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http) {
   ListingReport report;
   report.gateway = config::GatewayName(backend.gateway);
 
@@ -222,16 +233,7 @@ ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient&
   }
   report.url = target->url;
 
-  std::vector<std::string> all = headers;
-  if (all.empty()) {
-    // The gateway's own set: CodeBuddy's catalogue answers 200 with a bare key but sends a
-    // different shape without them, which is exactly what a probe exists to notice.
-    all = config::GatewayForId(backend.gateway).listing_headers();
-  }
-  const std::string bearer = http::BearerHeader(backend.api_key.value_or(""));
-  if (!bearer.empty()) all.push_back(bearer);
-
-  const http::Response response = http.Get(target->url, all);
+  const http::Response response = http.Get(target->url, ProbeHeaders(backend));
   report.http_status = response.status;
   report.bytes = response.body.size();
 

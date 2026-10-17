@@ -70,7 +70,7 @@ struct Gateway {
 };
 
 // Adding a gateway is a file beside the others plus a line in the gateway table in gateways.cpp.
-std::span<const Gateway* const> Gateways();
+std::span<const Gateway> Gateways();
 
 const Gateway* FindGateway(std::string_view name);
 

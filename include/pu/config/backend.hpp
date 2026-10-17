@@ -19,6 +19,8 @@ namespace pu::config {
 
 struct Backend {
   GatewayId gateway = GatewayId::kOllama;
+  // Empty until a gateway's own host fills it, which ReadBackendFields does and so does every
+  // caller that builds a backend from a name.
   std::string host;
   std::string model;
   std::optional<std::string> api_key;

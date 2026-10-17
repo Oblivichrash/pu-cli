@@ -109,124 +109,83 @@ OpenAIProvider::Config OpenAIConfig(const Backend& cfg) {
   return protocol;
 }
 
-const Gateway& OllamaGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kOllama,
-      .name = "ollama",
-      .default_host = "http://localhost:11434",
-      .api_key_env = "",
-      .protocol = "ollama",
-      .endpoint_path = "/api/chat",
-      .make_provider = &MakeOllamaProvider,
-      .make_listing = &MakeOllamaListing,
-      .listing_headers = &NoListingHeaders,
-  };
-  return gateway;
-}
-
-const Gateway& OpenAIGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kOpenAI,
-      .name = "openai",
-      .default_host = "https://api.openai.com/v1",
-      .api_key_env = "OPENAI_API_KEY",
-      .protocol = "openai",
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeOpenAIProvider,
-      .make_listing = &MakeOpenAIListing,
-      .listing_headers = &NoListingHeaders,
-  };
-  return gateway;
-}
-
-// Two products, one protocol: each names its own host and key variable and borrows the
-// OpenAI factories, since a wire format is what the factories encode and a host is not.
-const Gateway& DeepSeekGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kDeepSeek,
-      .name = "deepseek",
-      .default_host = "https://api.deepseek.com/v1",
-      .api_key_env = "DEEPSEEK_API_KEY",
-      .protocol = "openai",
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeOpenAIProvider,
-      .make_listing = &MakeOpenAIListing,
-      .listing_headers = &NoListingHeaders,
-  };
-  return gateway;
-}
-
-const Gateway& NimGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kNim,
-      .name = "nim",
-      .default_host = "https://integrate.api.nvidia.com/v1",
-      .api_key_env = "NVIDIA_API_KEY",
-      .protocol = "openai",
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeOpenAIProvider,
-      .make_listing = &MakeOpenAIListing,
-      .listing_headers = &NoListingHeaders,
-  };
-  return gateway;
-}
-
-// The cloud service speaks both wires: `/api/tags` carries more about each model, and
-// `/v1/models` is the OpenAI route. This entry is the OpenAI one; `ollama-cloud` is the
-// other, so a caller picks by naming the gateway it wants.
-const Gateway& OllamaCloudGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kOllamaCloud,
-      .name = "ollama-cloud",
-      .default_host = "https://ollama.com/v1",
-      .api_key_env = "OLLAMA_API_KEY",
-      .protocol = "openai",
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeOpenAIProvider,
-      .make_listing = &MakeOpenAIListing,
-      .listing_headers = &NoListingHeaders,
-  };
-  return gateway;
-}
-
-const Gateway& CodeBuddyGateway() {
-  static const Gateway gateway{
-      .id = GatewayId::kCodeBuddy,
-      .name = "codebuddy",
-      .default_host = "https://copilot.tencent.com/v2",
-      .api_key_env = "CODEBUDDY_API_KEY",
-      .protocol = "openai",
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeCodeBuddyProvider,
-      .make_listing = &MakeCodeBuddyListing,
-      .listing_headers = &CodeBuddyListingHeaders,
-  };
-  return gateway;
-}
-
-// The registry of gateways.
-
 namespace {
 
-const std::array<const Gateway*, 6> kGateways = {
-    &OllamaGateway(),  &OllamaCloudGateway(), &OpenAIGateway(),
-    &DeepSeekGateway(), &NimGateway(),        &CodeBuddyGateway(),
+// A product that speaks the OpenAI wire format and needs nothing of its own: the three
+// factories are the protocol's, and the entry differs from its siblings in the id, the name,
+// the host and the key variable only.
+Gateway OpenAiProduct(GatewayId id, std::string_view name, std::string_view host,
+                      std::string_view key_env) {
+  return Gateway{
+      .id = id,
+      .name = name,
+      .default_host = host,
+      .api_key_env = key_env,
+      .protocol = "openai",
+      .endpoint_path = "/chat/completions",
+      .make_provider = &MakeOpenAIProvider,
+      .make_listing = &MakeOpenAIListing,
+      .listing_headers = &NoListingHeaders,
+  };
+}
+
+// The table, one row per product. A row that needs its own factories or headers is written
+// out in full below rather than forced through the helper above.
+const std::array<Gateway, 6> kGateways = {
+    Gateway{
+        .id = GatewayId::kOllama,
+        .name = "ollama",
+        .default_host = "http://localhost:11434",
+        .api_key_env = "",
+        .protocol = "ollama",
+        .endpoint_path = "/api/chat",
+        .make_provider = &MakeOllamaProvider,
+        .make_listing = &MakeOllamaListing,
+        .listing_headers = &NoListingHeaders,
+    },
+    // The cloud service speaks both wires: `/api/tags` carries more about each model, and
+    // `/v1/models` is the OpenAI route. This row is the OpenAI one, so a caller picks the
+    // other by naming `ollama-cloud-native` in an agents.json entry.
+    OpenAiProduct(GatewayId::kOllamaCloud, "ollama-cloud", "https://ollama.com/v1",
+                  "OLLAMA_API_KEY"),
+    OpenAiProduct(GatewayId::kOpenAI, "openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),
+    OpenAiProduct(GatewayId::kDeepSeek, "deepseek", "https://api.deepseek.com/v1",
+                  "DEEPSEEK_API_KEY"),
+    OpenAiProduct(GatewayId::kNim, "nim", "https://integrate.api.nvidia.com/v1",
+                  "NVIDIA_API_KEY"),
+    Gateway{
+        .id = GatewayId::kCodeBuddy,
+        .name = "codebuddy",
+        .default_host = "https://copilot.tencent.com/v2",
+        .api_key_env = "CODEBUDDY_API_KEY",
+        .protocol = "openai",
+        .endpoint_path = "/chat/completions",
+        .make_provider = &MakeCodeBuddyProvider,
+        .make_listing = &MakeCodeBuddyListing,
+        .listing_headers = &CodeBuddyListingHeaders,
+    },
 };
 
 }  // namespace
 
-std::span<const Gateway* const> Gateways() { return kGateways; }
+namespace {
+
+std::span<const Gateway> Table() { return kGateways; }
+
+}  // namespace
+
+std::span<const Gateway> Gateways() { return Table(); }
 
 const Gateway* FindGateway(std::string_view name) {
-  for (const Gateway* gateway : kGateways) {
-    if (gateway->name == name) return gateway;
+  for (const Gateway& gateway : Table()) {
+    if (gateway.name == name) return &gateway;
   }
   return nullptr;
 }
 
 const Gateway& GatewayForId(GatewayId id) {
-  for (const Gateway* gateway : kGateways) {
-    if (gateway->id == id) return *gateway;
+  for (const Gateway& gateway : Table()) {
+    if (gateway.id == id) return gateway;
   }
   throw GenericError("No gateway answers for " + std::to_string(static_cast<int>(id)));
 }
