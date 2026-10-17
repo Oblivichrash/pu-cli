@@ -39,23 +39,8 @@
       </div>
 
       <div id="composer">
-        <!-- Two choices, each shown by its own control: what the agent name is and what
-             was picked are the same fact, so a separate label would repeat the select.
-             Everything that is read rather than chosen lives in the panel. -->
-        <div id="session-bar">
-          <label class="session-field">Agent
-            <select id="agent-select"></select>
-          </label>
-          <label class="session-field">Thinking
-            <select id="thinking-select" title="How much reasoning to ask for">
-              <option value="auto" title="Follow the agent's configuration">Auto</option>
-              <option value="none" title="Ask the backend not to think">Off</option>
-              <option value="low" title="A little reasoning">Low</option>
-              <option value="medium" title="Balanced reasoning">Medium</option>
-              <option value="high" title="As much reasoning as the backend allows">High</option>
-            </select>
-          </label>
-        </div>
+        <!-- The field and the button, nothing else: what is chosen between messages lives in
+             the panel. -->
         <div id="composer-row">
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
           <button id="send">Send</button>
@@ -64,6 +49,24 @@
     </main>
 
     <aside id="sidebar">
+      <div class="panel">
+        <div class="panel-title">Session</div>
+        <label class="field">
+          <span>Agent</span>
+          <select id="agent-select"></select>
+        </label>
+        <label class="field">
+          <span>Thinking</span>
+          <select id="thinking-select" title="How much reasoning to ask for">
+            <option value="auto" title="Follow the agent's configuration">Auto</option>
+            <option value="none" title="Ask the backend not to think">Off</option>
+            <option value="low" title="A little reasoning">Low</option>
+            <option value="medium" title="Balanced reasoning">Medium</option>
+            <option value="high" title="As much reasoning as the backend allows">High</option>
+          </select>
+        </label>
+      </div>
+
       <div class="panel">
         <div class="panel-title">Context</div>
         <div id="context-usage" title="How much context the last reply ran against"></div>

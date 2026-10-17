@@ -281,33 +281,6 @@ main {
   flex: 0 0 auto;
 }
 
-/* The two choices that change between messages, kept with the input they affect. Each is
-   shown by its own control, so no read-only text repeats what the select already says. */
-#session-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-.session-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--ink-light);
-}
-#agent-select,
-#thinking-select {
-  background: transparent;
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 4px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  min-width: 120px;
-  max-width: 220px;
-}
 #composer-row {
   display: flex;
   gap: 12px;
@@ -474,6 +447,31 @@ main {
   gap: 20px;
 }
 #shell.sidebar-hidden #sidebar { display: none; }
+/* A choice in the panel has room, so it keeps the control's own shape: the label above,
+   the select filling the column. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+.field select {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.field select:disabled { opacity: 0.55; cursor: not-allowed; }
+.field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;
@@ -622,8 +620,6 @@ main {
   #composer-row { flex-wrap: wrap; }
   #input { flex-basis: 100%; }
   #send { flex: 1; height: 40px; min-width: 0; }
-  #session-bar { gap: 10px; }
-  #agent-select, #thinking-select { max-width: 140px; }
 }
 
 @media (prefers-color-scheme: dark) {
