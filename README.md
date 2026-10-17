@@ -108,7 +108,8 @@ Every field is listed under [Configuration](#agentsjson).
 | :------ | :---------- |
 | `pu ask <prompt>` | Send one prompt, print the reply, and exit |
 | `pu chat` | Start an interactive session |
-| `pu models [--verify]` | List the models the agent's backend reports; `--verify` asks each one for a token first (see below) |
+| `pu models [--verify]` | List the models the agent's backend reports, with the active one and its price marked; `--verify` asks each one for a token first (see below) |
+| `pu models --entry <id>` | Print an `agents.json` entry for that model, ready to paste; nothing is written |
 | `pu serve [--host H] [--port P]` | Start the Web UI (see [Web Server](#web-server-pu-serve)) |
 
 Global options: `-h`/`--help` and `--version`. `ask`, `chat` and `models` also
@@ -122,9 +123,10 @@ positional prompt.
 ```
 
 `pu models` reads the listing endpoint the backend's type names - `/api/tags` for
-Ollama, `/models` for the OpenAI-compatible ones - and prints what it names, with
-the active model marked. A listing says a model is advertised; it does not say the
-account may run it. `--verify` settles that by asking each listed model for a
+Ollama, `/models` for the OpenAI-compatible ones, `/v3/config` for CodeBuddy - and
+prints what it names, with the active model marked and the gateway's own price
+coefficient beside a model that reports one. A listing says a model is advertised;
+it does not say the account may run it. `--verify` settles that by asking each listed model for a
 single token and reporting what answered, one line per model, so an entitlement a
 gateway would otherwise only report on first use is known up front. A model the
 catalogue says is answered only with a reasoning level is reported rather than
@@ -132,6 +134,25 @@ asked when the backend sends none, since that request cannot succeed:
 
 ```bash
 ./build/pu models --verify
+```
+
+A gateway may report fewer models than the account may run - CodeBuddy answers with
+the subset its own agent carries - so a model the backend is configured with can sit
+outside the listing. It is named anyway, marked `(active, not listed by this
+gateway)`, since it is the one row that matters most.
+
+`--entry <id>` renders the configuration for one model and prints it, so a new agent
+is pasted rather than typed. It copies the running agent's own surroundings -
+`gateway`, `host`, `api_key`, `temperature`, `max_tokens`, `security`,
+`tool_call_budget`, `mcp_servers` - as the file spells them, so a `${VAR}` stays a
+`${VAR}` and a file keeps one security policy rather than gaining a second. Two
+fields are decided rather than copied: the entry is named `codebuddy-<model>` for a
+gateway that proxies other vendors and `<model>` for a vendor's own API, and
+`thinking` is filled from the catalogue when a model is answered only with a
+reasoning level and the source names none. Nothing is written to disk.
+
+```bash
+./build/pu models --entry glm-5.3-flash
 ```
 
 Your conversation is saved to `<workspace>/.pu/session.json` after every

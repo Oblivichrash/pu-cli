@@ -26,6 +26,8 @@ struct Capabilities {
   bool only_reasoning = false;
   std::string default_effort;
   int max_input_tokens = 0;
+  // The gateway's own price coefficient, the one number deciding between two models that work.
+  std::string credits;
 };
 
 struct ModelEntry {
@@ -91,6 +93,7 @@ struct CatalogShape {
   std::string effort_parent{};
   std::string effort_field{};
   std::string max_input_tokens{};
+  std::string credits{};
 };
 
 class OllamaModelLister final : public pu::ModelLister {

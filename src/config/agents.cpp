@@ -113,6 +113,87 @@ AgentEntry ParseAgentEntry(const json::value& j) {
 
 }  // unnamed namespace
 
+namespace {
+
+// A proxy gateway's name belongs in the identifier; a vendor's own API leaves the model id.
+std::string AgentNameFor(const llm::ModelEntry& model, const std::string& gateway) {
+  if (gateway == "codebuddy") return gateway + "-" + model.id;
+  return model.id;
+}
+
+std::string StringMember(const boost::json::object& object, const char* key) {
+  const auto it = object.find(key);
+  if (it == object.end() || !it->value().is_string()) return {};
+  return boost::json::value_to<std::string>(it->value());
+}
+
+}  // unnamed namespace
+
+std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source) {
+  const boost::json::object* src = source.if_object();
+  if (src == nullptr) throw GenericError("Cannot render an entry from something that is not an object");
+
+  const boost::json::object* backend = nullptr;
+  if (const auto it = src->find("backend"); it != src->end()) backend = it->value().if_object();
+  if (backend == nullptr)
+    throw GenericError("The agent this command runs as carries no backend to copy");
+
+  const std::string gateway = StringMember(*backend, "gateway");
+
+  boost::json::object entry;
+  entry["name"] = AgentNameFor(model, gateway);
+
+  std::string description = model.id + " via " + gateway;
+  if (!model.caps.credits.empty()) description += ", " + model.caps.credits;
+  entry["description"] = std::move(description);
+
+  boost::json::object copied = *backend;
+  copied["model"] = model.id;
+  // A reasoning-only model rejects a request carrying no effort; a named level is kept.
+  if (model.caps.only_reasoning && !model.caps.default_effort.empty()) {
+    const std::string named = StringMember(copied, "thinking");
+    if (named.empty() || named == "default") copied["thinking"] = model.caps.default_effort;
+  }
+  entry["backend"] = std::move(copied);
+
+  for (const char* key : {"security", "mcp_servers", "tool_call_budget"}) {
+    if (const auto it = src->find(key); it != src->end()) entry[key] = it->value();
+  }
+
+  return json::PrettyPrint(boost::json::value(std::move(entry)));
+}
+
+std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_path,
+                                                    const std::string& agent_name) {
+  std::ifstream file(config_path);
+  if (!file.is_open()) return std::nullopt;
+
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+
+  json::value parsed;
+  try {
+    parsed = json::parse(buffer.str());
+  } catch (const boost::system::system_error&) {
+    return std::nullopt;
+  }
+
+  const boost::json::array* agents = nullptr;
+  if (const boost::json::object* top = parsed.if_object()) {
+    if (const auto it = top->find("agents"); it != top->end()) agents = it->value().if_array();
+  }
+  if (agents == nullptr) return std::nullopt;
+
+  for (const auto& entry : *agents) {
+    const boost::json::object* fields = entry.if_object();
+    if (fields == nullptr) continue;
+    const auto it = fields->find("name");
+    if (it == fields->end() || !it->value().is_string()) continue;
+    if (boost::json::value_to<std::string>(it->value()) == agent_name) return entry;
+  }
+  return std::nullopt;
+}
+
 std::string FindConfigPath() {
   const std::filesystem::path project = "./.pu/agents.json";
   if (std::filesystem::exists(project)) return project.string();

@@ -107,6 +107,8 @@ void Runtime::Initialize(const std::string& config_path) {
     throw GenericError("Configuration file not found. Place agents.json in ./.pu/ or ~/.pu/.");
   }
 
+  config_path_ = cfg_path;
+
   auto agents_cfg = config::LoadAgentsConfig(cfg_path);
 
   const std::string active_agent =

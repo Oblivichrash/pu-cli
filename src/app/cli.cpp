@@ -60,7 +60,9 @@ CommandLine BuildCommandLine() {
   ask.add_options()("prompt", boost::program_options::value<std::string>(), "prompt to send");
 
   boost::program_options::options_description models("models options");
-  models.add_options()("verify", "ask each listed model for one token and report what answered");
+  models.add_options()("verify", "ask each listed model for one token and report what answered")(
+      "entry", boost::program_options::value<std::string>(),
+      "print an agents.json entry for this model id, ready to paste; nothing is written");
 
   boost::program_options::options_description probe("probe options");
   probe.add_options()("out", boost::program_options::value<std::string>(),
@@ -168,11 +170,28 @@ int RunProbe(const std::string& agent, const std::string& prompt, const std::str
   });
 }
 
-int RunModels(const std::string& agent, bool verify, Runtime& runtime) {
-
+int RunModels(const std::string& agent, bool verify, const std::string& entry_id,
+              Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = runtime.CurrentBackend();
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
+
+    if (!entry_id.empty()) {
+      // A model outside the listing is exactly the one being written for.
+      llm::ModelEntry wanted{entry_id, {}};
+      for (const llm::ModelEntry& model : models) {
+        if (model.id == entry_id) {
+          wanted = model;
+          break;
+        }
+      }
+      const std::optional<boost::json::value> source =
+          config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
+      if (!source)
+        throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
+      std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
+      return;
+    }
 
     if (!verify) {
       std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway),

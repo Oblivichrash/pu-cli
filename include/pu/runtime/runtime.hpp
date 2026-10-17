@@ -91,6 +91,8 @@ class Runtime {
 
   std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
+  // The file Initialize() loaded.
+  const std::string& ConfigPath() const { return config_path_; }
 
   Toolbox& Tools() {
     assert(is_initialized_ && "Initialize() must run before any toolbox query");
@@ -165,6 +167,7 @@ class Runtime {
   std::shared_ptr<Session> current_session_;
 
   std::string default_agent_override_;
+  std::string config_path_;
 
   std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;
 };

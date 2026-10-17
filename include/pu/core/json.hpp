@@ -3,6 +3,8 @@
 
 #include <boost/json.hpp>
 
+#include <array>
+#include <charconv>
 #include <cstddef>
 #include <exception>
 #include <optional>
@@ -131,6 +133,12 @@ inline void AppendPretty(const value& jv, std::string& out, int depth, int inden
       AppendPretty(item, out, depth + 1, indent);
     }
     out += "\n" + pad + "]";
+  } else if (jv.is_double()) {
+    // boost::json writes a double as `3E-1`; a file a person edits spells it `0.3`.
+    std::array<char, 64> buffer{};
+    const auto written =
+        std::to_chars(buffer.data(), buffer.data() + buffer.size(), jv.as_double());
+    out.append(buffer.data(), written.ptr);
   } else {
     out += boost::json::serialize(jv);
   }

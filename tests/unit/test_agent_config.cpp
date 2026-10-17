@@ -485,3 +485,84 @@ TEST_CASE("Agents config writer round-trips a thinking level", "[agent_config]")
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].backend.thinking == ThinkingLevel::kMedium);
 }
+
+TEST_CASE("A rendered entry copies the file's own surroundings and expands nothing",
+          "[agent_config]") {
+  // The raw entry, as the file spells it: `api_key` is a `${VAR}`, not the secret.
+  const boost::json::value source = json::parse(R"({
+    "name": "source-agent",
+    "description": "whatever it says",
+    "backend": {
+      "gateway": "codebuddy",
+      "model": "some-model",
+      "api_key": "${SOME_KEY}",
+      "temperature": 0.3,
+      "max_tokens": 4096,
+      "thinking": "high"
+    },
+    "security": {"sandbox_root": ".", "forbidden_patterns": ["the-change-directory-word"]},
+    "tool_call_budget": 100
+  })");
+
+  llm::ModelEntry model{"glm-5.3-flash", {}};
+  model.caps.credits = "x0.06 credits";
+
+  const std::string rendered = config::FormatAgentEntry(model, source);
+
+  REQUIRE(rendered.find("\"name\": \"codebuddy-glm-5.3-flash\"") != std::string::npos);
+  REQUIRE(rendered.find("\"model\": \"glm-5.3-flash\"") != std::string::npos);
+  // Copied, not resolved: a snippet goes into a file that may be committed.
+  REQUIRE(rendered.find("${SOME_KEY}") != std::string::npos);
+  REQUIRE(rendered.find("\"max_tokens\": 4096") != std::string::npos);
+  REQUIRE(rendered.find("\"tool_call_budget\": 100") != std::string::npos);
+  REQUIRE(rendered.find("x0.06 credits") != std::string::npos);
+  // A double is written plainly, not in the exponent form boost::json picks.
+  REQUIRE(rendered.find("\"temperature\": 0.3") != std::string::npos);
+  REQUIRE(rendered.find("3E-1") == std::string::npos);
+}
+
+TEST_CASE("A rendered entry names a level a reasoning-only model cannot run without",
+          "[agent_config]") {
+  const boost::json::value source = json::parse(R"({
+    "name": "source-agent",
+    "backend": {"gateway": "codebuddy", "model": "some-model", "api_key": "${K}"}
+  })");
+
+  llm::ModelEntry model{"glm-5.1", {}};
+  model.caps.only_reasoning = true;
+  model.caps.default_effort = "medium";
+
+  const std::string rendered = config::FormatAgentEntry(model, source);
+  REQUIRE(rendered.find("\"thinking\": \"medium\"") != std::string::npos);
+}
+
+TEST_CASE("A rendered entry leaves a model that does not require a level alone",
+          "[agent_config]") {
+  const boost::json::value source = json::parse(R"({
+    "name": "source-agent",
+    "backend": {"gateway": "openai", "host": "https://api.deepseek.com/v1", "model": "m"}
+  })");
+
+  const std::string rendered = config::FormatAgentEntry(llm::ModelEntry{"plain", {}}, source);
+  REQUIRE(rendered.find("thinking") == std::string::npos);
+  // The vendor's own gateway leaves the model id as the name.
+  REQUIRE(rendered.find("\"name\": \"plain\"") != std::string::npos);
+}
+
+TEST_CASE("FindRawAgentEntry reads the file as written, not as resolved", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "a",
+    "agents": [
+      {"name": "a", "backend": {"gateway": "codebuddy", "model": "m1", "api_key": "${KEY_A}"}},
+      {"name": "b", "backend": {"gateway": "openai", "model": "m2"}}
+    ]
+  })");
+
+  const std::optional<boost::json::value> found =
+      config::FindRawAgentEntry(tmp.path.string(), "a");
+  REQUIRE(found.has_value());
+  REQUIRE(boost::json::serialize(*found).find("${KEY_A}") != std::string::npos);
+
+  REQUIRE_FALSE(config::FindRawAgentEntry(tmp.path.string(), "absent").has_value());
+}

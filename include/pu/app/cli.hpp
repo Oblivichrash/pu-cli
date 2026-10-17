@@ -25,7 +25,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
 int RunChat(const std::string& agent, Runtime& runtime);
 int RunProbe(const std::string& agent, const std::string& prompt, const std::string& out_dir,
           bool save, Runtime& runtime);
-int RunModels(const std::string& agent, bool verify, Runtime& runtime);
+int RunModels(const std::string& agent, bool verify, const std::string& entry_id, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 
 }  // namespace cli

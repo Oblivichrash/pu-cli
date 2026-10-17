@@ -167,6 +167,29 @@ TEST_CASE("[model_verifier] the listing is rendered the one way, whichever comma
   REQUIRE(rendered.find("alpha (active)") == std::string::npos);
 }
 
+TEST_CASE("[model_verifier] a model outside the listing is still named as the active one",
+          "[model_verifier]") {
+  // CodeBuddy answers with the subset its agent may run, and a backend may name a model
+  // outside it. Dropping the marker would leave the running model as the one row missing.
+  const std::string rendered =
+      llm::FormatModelList(EntriesOf({"alpha", "beta"}), "codebuddy", "https://x.invalid/v2",
+                           "not-listed");
+
+  REQUIRE(rendered.find("2 model(s) reported by codebuddy") != std::string::npos);
+  REQUIRE(rendered.find("not-listed (active, not listed by this gateway)") != std::string::npos);
+  REQUIRE(rendered.find("alpha (active)") == std::string::npos);
+}
+
+TEST_CASE("[model_verifier] a listing carrying a price says so beside the model", "[model_verifier]") {
+  std::vector<llm::ModelEntry> models = EntriesOf({"cheap"});
+  models[0].caps.credits = "x0.06 credits";
+
+  const std::string rendered =
+      llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "cheap");
+
+  REQUIRE(rendered.find("cheap (active)  x0.06 credits") != std::string::npos);
+}
+
 TEST_CASE("[model_verifier] a listing that names no model says so rather than heading nothing",
           "[model_verifier]") {
   const std::string rendered =

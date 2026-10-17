@@ -7,6 +7,7 @@
 
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <sstream>
 
 namespace pu::llm {
@@ -42,6 +43,7 @@ Capabilities ReadCapabilities(const boost::json::object& entry, const CatalogSha
   caps.supports_reasoning = BoolField(entry, shape.supports_reasoning);
   caps.only_reasoning = BoolField(entry, shape.only_reasoning);
   caps.max_input_tokens = IntField(entry, shape.max_input_tokens);
+  caps.credits = StringField(entry, shape.credits);
 
   if (const boost::json::value* parent = Field(entry, shape.effort_parent);
       parent != nullptr && parent->is_object()) {
@@ -183,6 +185,7 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
       .effort_parent = "reasoning",
       .effort_field = "effort",
       .max_input_tokens = "maxInputTokens",
+      .credits = "credits",
   };
   return ReadCodeBuddy(FetchListing(CodeBuddyCatalogUrl(host), api_key, headers_, http), kShape);
 }
@@ -191,6 +194,12 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
                             std::string_view active_model) {
+  // A listing is the subset its agent may run, which the backend's own model can sit outside;
+  // the running model is named rather than dropped from the one row that matters.
+  const bool active_listed =
+      std::any_of(models.begin(), models.end(),
+                  [&](const ModelEntry& model) { return model.id == active_model; });
+
   if (models.empty())
     return "No models reported by " + std::string(gateway) + " at " + std::string(host);
 
@@ -199,7 +208,11 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   for (const ModelEntry& model : models) {
     oss << "  " << model.id;
     if (model.id == active_model) oss << " (active)";
+    if (!model.caps.credits.empty()) oss << "  " << model.caps.credits;
     oss << "\n";
+  }
+  if (!active_model.empty() && !active_listed) {
+    oss << "  " << active_model << " (active, not listed by this gateway)\n";
   }
   return oss.str();
 }
