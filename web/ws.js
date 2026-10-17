@@ -49,6 +49,12 @@ function handleBusy(payload) {
 }
 
 function handleDone(payload) {
+  // A turn that ends with nothing drawn leaves a blank bubble that reads as a hang;
+  // name it instead of leaving the box empty.
+  if (PU.currentAssistantEl && PU.currentAssistantBlocks.length === 0) {
+    removeCurrentAssistantMessage();
+    createSystemMessage("The reply came back empty. Try rephrasing, or check the backend.");
+  }
   finishAssistantMessage();
   setSendButtonState(false);
   refreshChainLength();
