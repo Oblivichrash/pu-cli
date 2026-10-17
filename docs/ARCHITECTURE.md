@@ -200,14 +200,20 @@ environment, or the workspace's own `serve` block names:
    `reuse_address` set before the bind so a restart can take a port a just-closed
    server left connections in `TIME_WAIT` on.
 3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
-   is read and dispatched to the static/REST routes on that strand — a short request
-   and response, so its I/O stays synchronous and the connection ends with it. A
-   WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O is
-   asynchronous from there on.
+   is read, dispatched to the static/REST routes, and answered on that strand, and the
+   connection ends with the response. Both the read and the write are asynchronous: a
+   socket parked in a blocking read would hold the one thread the whole server runs on,
+   so a browser's idle preconnect would stall every other page until it gave up. The
+   request line and headers get a 30s deadline, and a connection that sends none is
+   dropped. A WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O
+   is asynchronous from there on.
 4. A second upgrade while a page is attached is answered with a `busy` frame and
    closed: one session, one page. Claiming the session happens when the upgrade is
    accepted, not when the first run arrives, so the refusal reaches the peer before its
-   socket goes.
+   socket goes. The page names itself with `?client=` on the upgrade, and the claim is
+   compared by that name: the same tab reconnecting takes the session back and the
+   socket it left behind is closed from its own strand, while another tab is refused.
+   Without a name, every connection is a page of its own.
 5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
    posts each frame back through the connection. The runner holds only the tokens that
    steer the turn; the worker reads them by value, so a `cancel` or `stop_command` on
@@ -408,12 +414,15 @@ read cannot be woken by closing its socket, so a shutdown would wait on a client
 will never speak again. Here the run happens on the runner's own thread and the stream
 belongs to the strand, so shutdown stops the `io_context` and every read returns at once.
 
-A turn belongs to the client watching it. Closing the page, losing the socket, or a
-second client taking over all end it, and nothing of it is kept: what it had written
-is half an answer, and storing that would make the next request read it as the model's
-finished reply. The chat is therefore never driven by nobody, and a page that reloads
-mid-answer comes back to the conversation as the store has it — the question, and no
-reply to it.
+A turn belongs to the client watching it. Closing the page or losing the socket ends it,
+and nothing of it is kept: what it had written is half an answer, and storing that would
+make the next request read it as the model's finished reply. The chat is therefore never
+driven by nobody, and a page that reloads mid-answer comes back to the conversation as the
+store has it — the question, and no reply to it. A `cancel` the page asked for is the one
+case that still answers: the turn stops, keeps what already arrived, and ends with `done`
+so the page can stop waiting. A socket the same page replaces — a reload, or the watchdog
+giving up on a socket that went silent — is not the page leaving, so the turn runs on and
+the frames produced while the swap happens are held for the socket that attaches next.
 
 ### Browser modules
 

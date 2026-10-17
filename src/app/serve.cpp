@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -36,6 +37,24 @@ using detail::DispatchHttpRequest;
 using detail::SessionRunner;
 using detail::WebSocketConnection;
 
+// The `client` query parameter names the tab that opened the socket. A reload and a
+// reconnect keep the name; a second tab has one of its own. The value is only ever compared
+// with another client's, so it is read as an opaque string.
+std::string ClientIdFromTarget(std::string_view target) {
+  const auto query = target.find('?');
+  if (query == std::string_view::npos) return {};
+  std::string_view rest = target.substr(query + 1);
+  constexpr std::string_view kKey = "client=";
+  while (!rest.empty()) {
+    const auto end = rest.find('&');
+    const std::string_view pair = rest.substr(0, end);
+    if (pair.substr(0, kKey.size()) == kKey) return std::string(pair.substr(kKey.size()));
+    if (end == std::string_view::npos) break;
+    rest = rest.substr(end + 1);
+  }
+  return {};
+}
+
 }  // namespace
 
 namespace detail {
@@ -47,6 +66,7 @@ WebSocketConnection::WebSocketConnection(tcp::socket socket,
 
 void WebSocketConnection::Start(http::request<http::string_body> req) {
   auto self = shared_from_this();
+  client_id_ = ClientIdFromTarget(req.target());
   // The suggested server timeouts ping after 300 idle seconds, which is longer than the
   // NAT and proxy idle windows a browser page routinely sits through between turns. The
   // page answers pings itself, so the interval can be short; a connection the page gave
@@ -72,6 +92,11 @@ void WebSocketConnection::Start(http::request<http::string_body> req) {
                      self->AttachToPage();
                      self->DoRead();
                    }));
+}
+
+void WebSocketConnection::Close() {
+  auto self = shared_from_this();
+  net::post(strand_, [self] { self->Finish(); });
 }
 
 void WebSocketConnection::SendPendingThenClose() {
@@ -192,12 +217,13 @@ void WebSocketConnection::OnWrite(beast::error_code ec, std::size_t) {
 }
 
 void WebSocketConnection::Finish() {
-  if (closed_) return;
-  closed_ = true;
+  if (closed_.exchange(true, std::memory_order_acq_rel)) return;
   write_queue_.clear();
   DetachFromPage();
   runner_.Detach(shared_from_this());
   beast::error_code ignore;
+  // Valid whether or not the upgrade happened: a connection closed before its handshake
+  // still owns the socket this shuts down.
   ws_.next_layer().close(ignore);
 }
 
@@ -208,19 +234,52 @@ SessionRunner::SessionRunner(Runtime& runtime) : runtime_(runtime) {
 SessionRunner::~SessionRunner() { Stop(); }
 
 bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
-  std::lock_guard<std::mutex> lock(attach_mutex_);
-  auto current = attached_.lock();
-  if (current && current != conn) return false;
-  attached_ = conn;
+  std::shared_ptr<WebSocketConnection> replaced;
+  std::deque<std::shared_ptr<const std::string>> pending;
+  {
+    std::lock_guard<std::mutex> lock(attach_mutex_);
+    auto current = attached_.lock();
+    if (current && current != conn && !current->Closed() && current->AttachedToPage()) {
+      // A live page keeps the session, and a second tab is refused rather than taking it
+      // over. The same tab is not a second page: a reload, or the page reopening a socket
+      // its watchdog gave up on, carries the name it already had, so it takes the session
+      // back instead of being told another page holds it.
+      if (conn->ClientId().empty() || conn->ClientId() != current->ClientId()) return false;
+      spdlog::info("Replacing this page's earlier socket");
+      replaced = current;
+    }
+    if (current && current != conn) current->DetachFromPage();
+    attached_ = conn;
+    // The turn may still be running for the socket that went away: the frames it produced
+    // while nobody was attached are replayed here, so the new page sees the turn join in
+    // rather than a stream that stopped.
+    pending.swap(replay_);
+  }
+  // Outside the lock: the old socket's teardown posts to its own strand and takes this mutex
+  // again on the way out.
+  if (replaced) replaced->Close();
+  for (const auto& frame : pending) conn->Send(boost::json::parse(*frame));
   return true;
 }
 
 void SessionRunner::Detach(const std::shared_ptr<WebSocketConnection>& conn) {
-  std::lock_guard<std::mutex> lock(attach_mutex_);
-  if (auto current = attached_.lock(); current == conn) {
-    CancelTurn();
-    attached_.reset();
+  bool left_alone = false;
+  {
+    std::lock_guard<std::mutex> lock(attach_mutex_);
+    if (auto current = attached_.lock(); current == conn) {
+      attached_.reset();
+      left_alone = true;
+    }
   }
+  // The page went away with nobody taking its place, so the turn it started has no reader:
+  // it is cancelled and keeps nothing. A socket that a reconnect replaced is not that case,
+  // which is why the check is for the connection still being the attached one.
+  if (left_alone) RequestCancel(false);
+}
+
+void SessionRunner::ClearReplay() {
+  std::lock_guard<std::mutex> lock(attach_mutex_);
+  replay_.clear();
 }
 
 void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
@@ -232,8 +291,6 @@ void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection
 }
 
 void SessionRunner::Stop() {
-  CancelToken cancel;
-  CancelToken command_stop;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) return;
@@ -242,29 +299,62 @@ void SessionRunner::Stop() {
   }
   {
     std::lock_guard<std::mutex> lock(turn_mutex_);
-    cancel = cancel_token_;
-    command_stop = command_stop_;
+    if (cancel_token_) cancel_token_->store(true);
+    if (command_stop_) command_stop_->store(true);
   }
-  if (cancel) cancel->store(true);
-  if (command_stop) command_stop->store(true);
   cv_.notify_all();
   if (worker_.joinable()) worker_.join();
 }
 
-void SessionRunner::CancelTurn() {
+SessionRunner::Tokens SessionRunner::CurrentTokens() const {
   std::lock_guard<std::mutex> lock(turn_mutex_);
-  if (cancel_token_) cancel_token_->store(true);
+  return Tokens{cancel_token_, command_stop_};
+}
+
+void SessionRunner::CancelTurn() { RequestCancel(true); }
+
+void SessionRunner::RequestCancel(bool by_page) {
+  std::lock_guard<std::mutex> lock(turn_mutex_);
+  // Cancelling with no turn in flight asks for nothing: the flag would otherwise be read by
+  // the next turn, which nobody asked to stop.
+  if (!cancel_token_) return;
+  // Only a cancel the page asked for is answered with `done`; one that follows a page
+  // going away is silent, since there is nobody left to tell.
+  if (by_page) cancel_requested_.store(true, std::memory_order_release);
+  cancel_token_->store(true);
 }
 
 void SessionRunner::StopCommand(const std::string& note) {
   if (!note.empty()) runtime_.SetUserNote(note);
-  std::lock_guard<std::mutex> lock(turn_mutex_);
-  if (command_stop_) command_stop_->store(true);
+  if (CancelToken stop = CurrentTokens().command_stop) stop->store(true);
 }
 
 void SessionRunner::Deliver(const std::shared_ptr<WebSocketConnection>& conn,
                             boost::json::value frame) {
-  if (conn) conn->Send(std::move(frame));
+  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
+  bool was_running = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    was_running = running_;
+  }
+  if (conn && conn->AttachedToPage()) {
+    conn->Send(boost::json::parse(*text));
+    return;
+  }
+  // The turn outlives the page that started it. While no page is attached its frames are
+  // kept for the next one, which is what makes a reconnect rejoin the turn instead of
+  // watching a reply stop half-written.
+  auto current = [&] {
+    std::lock_guard<std::mutex> lock(attach_mutex_);
+    return attached_.lock();
+  }();
+  if (current) {
+    current->Send(boost::json::parse(*text));
+    return;
+  }
+  if (!was_running) return;
+  std::lock_guard<std::mutex> lock(attach_mutex_);
+  replay_.push_back(std::move(text));
 }
 
 void SessionRunner::WorkerMain() {
@@ -276,10 +366,20 @@ void SessionRunner::WorkerMain() {
       if (stopping_ && jobs_.empty()) return;
       job = std::move(jobs_.front());
       jobs_.pop_front();
+      running_ = true;
     }
+    // Guarded by the attach mutex, which is the one `Attach` swaps it under.
+    ClearReplay();
 
     auto conn = job.conn;
-    if (!conn) continue;
+    if (!conn) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        running_ = false;
+      }
+      ClearReplay();
+      continue;
+    }
 
     const auto say = [&](boost::json::value frame) { Deliver(conn, std::move(frame)); };
 
@@ -287,6 +387,7 @@ void SessionRunner::WorkerMain() {
       std::lock_guard<std::mutex> lock(turn_mutex_);
       cancel_token_ = std::make_shared<std::atomic<bool>>(false);
       command_stop_ = std::make_shared<std::atomic<bool>>(false);
+      cancel_requested_.store(false, std::memory_order_release);
     }
 
     bool is_command = false;
@@ -326,10 +427,26 @@ void SessionRunner::WorkerMain() {
         },
         command_stop);
 
+    const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
     {
       std::lock_guard<std::mutex> lock(turn_mutex_);
       cancel_token_.reset();
       command_stop_.reset();
+    }
+
+    // A turn the page cancelled still answers with `done`, so the page can stop waiting. A
+    // turn whose page went away keeps nothing: the store holds only the question, so a
+    // replay of chunks and a done would draw a reply the next load then takes away.
+    if (cancel && cancel->load(std::memory_order_acquire)) {
+      const bool page_is_here = conn->AttachedToPage();
+      if (!page_asked || !page_is_here) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          running_ = false;
+        }
+        ClearReplay();
+        continue;
+      }
     }
 
     if (!result.notice.empty()) {
@@ -354,6 +471,12 @@ void SessionRunner::WorkerMain() {
     } else {
       say({{"type", "done"}, {"payload", {{"model", result.model}}}});
     }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      running_ = false;
+    }
+    ClearReplay();
   }
 }
 
@@ -407,26 +530,44 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
 
     auto strand = net::make_strand(ioc);
     auto conn = std::make_shared<WebSocketConnection>(std::move(socket), strand, runtime, *runner);
-    net::post(strand, [&, conn] {
-      auto buffer = std::make_shared<beast::flat_buffer>();
-      auto req = std::make_shared<http::request<http::string_body>>();
-      tcp::socket& sock = conn->mutable_socket();
-      beast::error_code read_ec;
-      http::read(sock, *buffer, *req, read_ec);
-      if (read_ec) {
-        spdlog::warn("HTTP read error: {}", read_ec.message());
-        return;
-      }
-      if (websocket::is_upgrade(*req)) {
-        conn->Start(std::move(*req));
-      } else {
-        auto res = std::make_shared<http::response<http::string_body>>();
-        DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res);
-        beast::error_code write_ec;
-        http::write(sock, *res, write_ec);
-        if (write_ec) spdlog::warn("HTTP write error: {}", write_ec.message());
-      }
-    });
+    auto buffer = std::make_shared<beast::flat_buffer>();
+    auto req = std::make_shared<http::request<http::string_body>>();
+    // The request line and headers are read asynchronously: a socket parked in a blocking
+    // read would hold the one thread the whole server runs on, and a browser's idle
+    // preconnect would stall every other page until it gave up.
+    auto header_timer =
+        std::make_shared<net::steady_timer>(strand, std::chrono::seconds(30));
+    header_timer->async_wait(net::bind_executor(strand, [conn, header_timer](beast::error_code ec) {
+      if (ec) return;  // cancelled once the headers arrived
+      spdlog::warn("HTTP header timed out");
+      conn->Close();
+    }));
+    // `strand` is captured by value: the accept handler has returned by the time this runs,
+    // and its locals are gone.
+    http::async_read(
+        conn->mutable_socket(), *buffer, *req,
+        net::bind_executor(strand, [&runtime, &io_mutex, strand, conn, buffer, req,
+                                    header_timer](beast::error_code ec, std::size_t) {
+          header_timer->cancel();
+          if (ec) {
+            spdlog::warn("HTTP read error: {}", ec.message());
+            conn->Close();
+            return;
+          }
+          if (websocket::is_upgrade(*req)) {
+            conn->Start(std::move(*req));
+            return;
+          }
+          auto res = std::make_shared<http::response<http::string_body>>();
+          DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res);
+          http::async_write(
+              conn->mutable_socket(), *res,
+              net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {
+                if (write_ec) spdlog::warn("HTTP write error: {}", write_ec.message());
+                // The request is answered, so the connection ends with it.
+                conn->Close();
+              }));
+        }));
 
     acceptor.async_accept(ioc, do_accept);
   };

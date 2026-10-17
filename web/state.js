@@ -24,6 +24,11 @@ const PU = {
   replyLostToDisconnect: false,
   busyRefusals: 0,
   watchdogTimer: null,
+  // Set once the watchdog has already given a running command its longer wait.
+  watchdogToolGrace: false,
+  // The socket a reopened one replaces. It keeps delivering the turn until the server
+  // closes it, and its close is the handover rather than the page going away.
+  supersededSocket: null,
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,

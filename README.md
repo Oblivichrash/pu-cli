@@ -244,7 +244,8 @@ read like a fact.
 ### Web API
 
 Chat is a WebSocket at `ws://<host>:<port>/ws`. Everything else is REST, for control
-and status.
+and status. The page names itself on the upgrade (`/ws?client=<tab-id>`), so a reload
+and a reconnect are recognisably the same page.
 
 **Client → server**
 
@@ -290,14 +291,17 @@ answer; a backend that reports no reasoning sends none. `notice` is a reply that
 is known to be incomplete (token limit or content filter) and is not an error.
 `done` names the model that answered, which a gateway may have chosen.
 
-A turn belongs to the client watching it: `cancel`, closing the page, or losing the
-connection all end it, and what it had written is not kept, so the session is left
-holding the question and no answer. Reconnecting therefore shows the conversation
-without the reply that was in progress.
+A turn belongs to the client watching it. A `cancel` ends it with `done` and keeps what
+already arrived. Closing the page or losing the connection ends it too, and what it had
+written is not kept, so the session is left holding the question and no answer;
+reconnecting then shows the conversation without the reply that was in progress.
 
 A session has one page. While a page is attached, a second connection is answered with
 `busy` and closed rather than taking over, since taking over would mean ending the
-reply the page already there is reading.
+reply the page already there is reading. The comparison is the `client` name from the
+upgrade: the same tab reconnecting takes the session back and the socket it left behind
+is closed, while a different tab is refused. A client that names nothing is a page of
+its own, so every connection from it is a second page.
 
 **REST endpoints**
 

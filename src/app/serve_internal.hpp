@@ -49,11 +49,21 @@ class WebSocketConnection : public std::enable_shared_from_this<WebSocketConnect
   void Start(http::request<http::string_body> req);
   void Send(boost::json::value frame);
 
+  // Close from any thread: the stream belongs to its strand, so the teardown is posted there.
+  void Close();
+
   tcp::socket& mutable_socket() { return ws_.next_layer(); }
 
-  bool AttachedToPage() const { return attached_; }
-  void AttachToPage() { attached_ = true; }
-  void DetachFromPage() { attached_ = false; }
+  // The tab's own name for itself, read from `?client=` on the upgrade. Empty when the client
+  // did not name one, which makes every such connection a page of its own.
+  const std::string& ClientId() const { return client_id_; }
+
+  // Both flags are read from another connection's strand when a page takes the session over,
+  // so they are atomic rather than plain.
+  bool AttachedToPage() const { return attached_.load(std::memory_order_acquire); }
+  void AttachToPage() { attached_.store(true, std::memory_order_release); }
+  void DetachFromPage() { attached_.store(false, std::memory_order_release); }
+  bool Closed() const { return closed_.load(std::memory_order_acquire); }
 
  private:
   void DoRead();
@@ -70,9 +80,10 @@ class WebSocketConnection : public std::enable_shared_from_this<WebSocketConnect
   SessionRunner& runner_;
   beast::flat_buffer read_buffer_;
   std::deque<std::shared_ptr<const std::string>> write_queue_;
+  std::string client_id_;
   bool writing_ = false;
-  bool closed_ = false;
-  bool attached_ = false;
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> attached_{false};
   bool close_after_write_ = false;
 };
 
@@ -95,7 +106,20 @@ class SessionRunner {
 
  private:
   void WorkerMain();
+  // `by_page` is whether the page asked for this, which decides if the turn still answers.
+  void RequestCancel(bool by_page);
   void Deliver(const std::shared_ptr<WebSocketConnection>& conn, boost::json::value frame);
+  // Frames held for the next page are swapped out by `Attach`, so they share its mutex.
+  void ClearReplay();
+
+  // The one token pair a turn runs under, swapped in when the job starts and out when it
+  // ends. A socket that attaches mid-turn takes a copy and flips the same flags, so a page
+  // that reconnects can still cancel or stop what its previous socket started.
+  struct Tokens {
+    CancelToken cancel;
+    CancelToken command_stop;
+  };
+  Tokens CurrentTokens() const;
 
   Runtime& runtime_;
 
@@ -107,14 +131,21 @@ class SessionRunner {
   std::condition_variable cv_;
   std::deque<Job> jobs_;
   bool stopping_ = false;
+  bool running_ = false;
   std::thread worker_;
 
   std::mutex attach_mutex_;
   std::weak_ptr<WebSocketConnection> attached_;
+  // Frames the worker asked to send while no page was attached, replayed to whoever
+  // attaches next. Without this a reconnect mid-turn loses the socket the turn reports to.
+  std::deque<std::shared_ptr<const std::string>> replay_;
 
-  std::mutex turn_mutex_;
+  mutable std::mutex turn_mutex_;
   CancelToken cancel_token_;
   CancelToken command_stop_;
+  // A `cancel` frame is the page asking for its turn to stop, which still ends with `done`.
+  // A turn cancelled because its page went away reports nothing at all.
+  std::atomic<bool> cancel_requested_{false};
 };
 
 }  // namespace pu::cli::detail
