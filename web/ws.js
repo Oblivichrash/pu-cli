@@ -48,6 +48,18 @@ function handleBusy(payload) {
       : reason + " Trying again…");
 }
 
+// A turn that stops speaking without a close is indistinguishable from a hung socket:
+// the watchdog reopens it, and the resync on open replays whatever the server finished.
+function armWatchdog() {
+  clearTimeout(PU.watchdogTimer);
+  PU.watchdogTimer = setTimeout(() => {
+    if (!PU.isStreaming) return;
+    PU.watchdogTimer = null;
+    if (PU.ws && PU.ws.readyState === WebSocket.OPEN) PU.ws.close();
+    connectWebSocket();
+  }, 60000);
+}
+
 function handleDone(payload) {
   // A turn that ends with nothing drawn leaves a blank bubble that reads as a hang;
   // name it instead of leaving the box empty.
@@ -56,6 +68,8 @@ function handleDone(payload) {
     createSystemMessage("The reply came back empty. Try rephrasing, or check the backend.");
   }
   finishAssistantMessage();
+  clearTimeout(PU.watchdogTimer);
+  PU.watchdogTimer = null;
   setSendButtonState(false);
   refreshChainLength();
   if (PU.stopRequested) {
@@ -106,6 +120,8 @@ function dispatchFrame(data) {
 
 // A dropped socket takes the reply with it: the turn is cancelled and keeps nothing.
 function handleSocketClose() {
+  clearTimeout(PU.watchdogTimer);
+  PU.watchdogTimer = null;
   discardPendingApproval();
   const refused = PU.busyRefusals > 0;
   if (PU.isStreaming) {
@@ -156,6 +172,10 @@ function connectWebSocket() {
     }
     // Anything but a refusal means this page is the session's client.
     if (data.type !== "busy") PU.busyRefusals = 0;
+    if (data.type === "chunk" || data.type === "tool_start" || data.type === "tool_end" ||
+        data.type === "thinking") {
+      armWatchdog();
+    }
     dispatchFrame(data);
   };
 

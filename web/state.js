@@ -23,6 +23,7 @@ const PU = {
   connState: "connecting",
   replyLostToDisconnect: false,
   busyRefusals: 0,
+  watchdogTimer: null,
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,
