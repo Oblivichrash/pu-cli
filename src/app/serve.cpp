@@ -384,9 +384,12 @@ void SessionRunner::WorkerMain() {
                            const boost::json::value& args) {
       say({{"type", "tool_start"}, {"payload", {{"id", id}, {"name", name}, {"args", args}}}});
     };
-    tool_cb.on_end = [&](const std::string& id, const std::string& output,
+    tool_cb.on_end = [&](const std::string& id, const std::string& name,
+                         const boost::json::value& args, const std::string& output,
                          const std::string& error) {
-      say({{"type", "tool_end"}, {"payload", {{"id", id}, {"output", output}, {"error", error}}}});
+      say({{"type", "tool_end"},
+           {"payload",
+            {{"id", id}, {"name", name}, {"args", args}, {"output", output}, {"error", error}}}});
     };
 
     runtime_.EnableApprovalGate();

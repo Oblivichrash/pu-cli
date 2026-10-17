@@ -99,7 +99,22 @@ function handleToolStart(payload) {
 function handleToolEnd(payload) {
   const block = PU.currentAssistantBlocks.find(
       (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id);
-  if (!block) return;
+  if (!block) {
+    // A page that reconnected mid-command is replayed the end without the start: the frames
+    // before the reconnect were drawn and dropped. The result carries the call's own name and
+    // arguments for that reason, so the block is drawn from the end rather than lost.
+    pushBlock({
+      type: BLOCK_TYPES.TOOL_CALL,
+      id: payload.id,
+      name: payload.name || "",
+      args: payload.args ?? null,
+      output: payload.output || "",
+      error: payload.error || "",
+      status: "done",
+      collapsed: true,
+    });
+    return;
+  }
   block.output = payload.output || "";
   block.error = payload.error || "";
   block.status = "done";

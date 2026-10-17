@@ -349,9 +349,9 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     if (turn.tool_callbacks.on_end) {
       const auto parsed = tools::ParseToolResult(tool_result);
       if (parsed.valid) {
-        turn.tool_callbacks.on_end(call.id, parsed.output, parsed.error);
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error);
       } else {
-        turn.tool_callbacks.on_end(call.id, tool_result, "");
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, tool_result, "");
       }
     }
 

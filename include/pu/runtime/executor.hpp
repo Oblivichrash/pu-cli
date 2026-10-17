@@ -23,7 +23,12 @@ struct ToolCallbacks {
   std::function<void(const std::string& id, const std::string& name,
                      const boost::json::value& args)>
       on_start;
-  std::function<void(const std::string& id, const std::string& output, const std::string& error)>
+  // The name and arguments ride with the result as well as with the call: a page that
+  // reconnected mid-command receives the end without the start, and what it draws has to
+  // come from the end itself.
+  std::function<void(const std::string& id, const std::string& name,
+                     const boost::json::value& args, const std::string& output,
+                     const std::string& error)>
       on_end;
 };
 

@@ -323,7 +323,7 @@ and a reconnect are recognisably the same page.
 {"type":"chunk","payload":{"text":"token part"}}
 {"type":"thinking","payload":{"text":"reasoning part"}}
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
-{"type":"tool_end","payload":{"id":"call_1","output":"...","error":""}}
+{"type":"tool_end","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"},"output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
 {"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
@@ -337,10 +337,14 @@ conversation and is what a page can show against a model's window. It arrives
 before `done`, and a provider that reports no counts sends none.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
-its call. `note` delivers words without stopping anything, which the executor
-appends beside the next tool result. A running command is stopped by `cancel`,
-which stops the turn it belongs to: one button on the composer rather than one per
-command, since a command is never the thing a reader wants to end on its own.
+its call. The end carries the call's `name` and `args` as well, because a page
+that reconnected mid-command is replayed the end without the start: what it draws
+has to come from the end itself.
+
+`note` delivers words without stopping anything, which the executor appends beside
+the next tool result. A running command is stopped by `cancel`, which stops the turn
+it belongs to: one button on the composer rather than one per command, since a
+command is never the thing a reader wants to end on its own.
 
 When the agent's policy names `approval_patterns`, a matching command sends
 `approval_ask` before it runs and the turn thread parks until

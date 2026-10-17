@@ -337,6 +337,8 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   std::vector<std::string> started_names;
   std::vector<boost::json::value> started_args;
   std::vector<std::string> ended_ids;
+  std::vector<std::string> ended_names;
+  std::vector<boost::json::value> ended_args;
   std::vector<std::string> ended_outputs;
   std::vector<std::string> ended_errors;
 
@@ -347,8 +349,12 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
     started_names.push_back(name);
     started_args.push_back(args);
   };
-  cb.on_end = [&](const std::string& id, const std::string& output, const std::string& error) {
+  cb.on_end = [&](const std::string& id, const std::string& name,
+                  const boost::json::value& args, const std::string& output,
+                  const std::string& error) {
     ended_ids.push_back(id);
+    ended_names.push_back(name);
+    ended_args.push_back(args);
     ended_outputs.push_back(output);
     ended_errors.push_back(error);
   };
@@ -369,6 +375,12 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   REQUIRE(started_names[0] == "tracking_tool");
   REQUIRE(started_args[0].is_object());
   REQUIRE(started_args[0].as_object().at("flag") == true);
+
+  // The result carries the call's own name and arguments: a page that reconnected mid-command
+  // is replayed the end without the start, and what it draws has to come from the end.
+  REQUIRE(ended_names[0] == "tracking_tool");
+  REQUIRE(ended_args[0].is_object());
+  REQUIRE(ended_args[0].as_object().at("flag") == true);
 
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
