@@ -28,6 +28,9 @@ enum class GatewayId { kOllama, kOpenAI, kCodeBuddy };
 
 std::string DefaultHostFor(GatewayId id);
 
+// The path a chat turn is posted to, from the gateway table.
+std::string_view GatewayEndpointPath(GatewayId id);
+
 const char* GatewayName(GatewayId id);
 std::string GatewayNames();
 
@@ -42,6 +45,9 @@ struct Gateway {
   GatewayId id;
   std::string_view name;
   std::string_view default_host;
+  // The path a chat turn is posted to. One fact per gateway, so a caller that posts
+  // without a provider (the probe) reads it here rather than restating the providers'.
+  std::string_view endpoint_path;
   std::unique_ptr<pu::LLMProvider> (*make_provider)(const Backend&,
                                                     std::shared_ptr<pu::http::HttpClient>);
   std::unique_ptr<pu::ModelLister> (*make_listing)();

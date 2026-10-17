@@ -10,19 +10,12 @@
 #include "pu/config/backend.hpp"
 #include "pu/llm/probe.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace {
-
-config::Backend BackendOfType(config::GatewayId type, const std::string& host) {
-  config::Backend cfg;
-  cfg.gateway = type;
-  cfg.host = host;
-  cfg.model = "the-model";
-  return cfg;
-}
 
 // An OpenAI-format stream whose usage frame arrives split over two `data:` lines, so the
 // summary can only be right if the join the reader itself does is repeated here.

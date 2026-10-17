@@ -33,6 +33,26 @@ cmake --build build -j$(nproc)
 ctest --test-dir build --parallel --output-on-failure
 ```
 
+### Develop and install
+
+The build tree's `pu` runs from the checkout and finds the page in `web/` beside it,
+so day-to-day development needs no install step:
+
+```bash
+PU_WEB_DIR=web ./build/pu serve
+```
+
+An install puts the binary and the page under one prefix, and the installed binary
+reads the page from the prefix it was installed into:
+
+```bash
+cmake --install build --prefix /path/to/pu-install   # bin/pu + share/pu/web/
+```
+
+Editing `web/` after an install means installing again — the installed copy is not
+a live link into the checkout, and a binary running against its own prefix serves
+the copy it was installed with.
+
 Each test case is its own process, so the suite parallelizes without coordination. The
 fixtures name their temporary directories after the process id for that reason; one that
 reused a fixed name would delete another test's workspace mid-run.

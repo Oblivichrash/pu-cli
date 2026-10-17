@@ -25,9 +25,8 @@ std::optional<llm::ResponseShape> ShapeFor(config::GatewayId id) {
 
 std::vector<std::string> ProbeHeaders(const config::Backend& backend) {
   std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (backend.api_key && !backend.api_key->empty()) {
-    headers.push_back("Authorization: Bearer " + *backend.api_key);
-  }
+  const std::string bearer = http::BearerHeader(backend.api_key.value_or(""));
+  if (!bearer.empty()) headers.push_back(bearer);
   return headers;
 }
 
@@ -48,10 +47,6 @@ std::string ProbeBody(const config::Backend& backend, const std::string& prompt)
        boost::json::array{boost::json::value{{"role", "user"}, {"content", prompt}}}},
   };
   return boost::json::serialize(req);
-}
-
-std::string EndpointPath(config::GatewayId id) {
-  return id == config::GatewayId::kOllama ? "/api/chat" : "/chat/completions";
 }
 
 // Frames the way the reader itself reassembles them. An SSE event runs from one blank
@@ -143,7 +138,8 @@ ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& ht
   report.model = backend.model;
 
   std::string raw;
-  http.PostStream(backend.host + EndpointPath(backend.gateway), ProbeBody(backend, prompt),
+  http.PostStream(backend.host + std::string(config::GatewayEndpointPath(backend.gateway)),
+                  ProbeBody(backend, prompt),
                   ProbeHeaders(backend),
                   [&](char* ptr, size_t total) -> size_t {
                     raw.append(ptr, total);

@@ -13,10 +13,6 @@ namespace pu::llm {
 
 namespace {
 
-std::string AuthHeader(const std::string& api_key) {
-  return api_key.empty() ? std::string{} : "Authorization: Bearer " + api_key;
-}
-
 const boost::json::value* Field(const boost::json::object& object, const std::string& name) {
   if (name.empty()) return nullptr;
   const auto it = object.find(name);
@@ -142,7 +138,7 @@ boost::json::value FetchListing(std::string_view url, const std::string& api_key
                                 const std::vector<std::string>& headers,
                                 http::HttpClient& http) {
   std::vector<std::string> all = headers;
-  if (!api_key.empty()) all.push_back(AuthHeader(api_key));
+  if (!api_key.empty()) all.push_back(http::BearerHeader(api_key));
   return ParseListing(std::string(url), http, all);
 }
 

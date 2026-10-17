@@ -7,21 +7,12 @@
 
 #include "pu/config/backend.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace {
-
-config::Backend BackendOfType(config::GatewayId type, const std::string& host,
-                                    const std::string& key = "") {
-  config::Backend cfg;
-  cfg.gateway = type;
-  cfg.host = host;
-  cfg.model = "the-active-model";
-  if (!key.empty()) cfg.api_key = key;
-  return cfg;
-}
 
 bool HasHeader(const std::vector<std::string>& headers, const std::string& name) {
   return std::any_of(headers.begin(), headers.end(), [&name](const std::string& header) {

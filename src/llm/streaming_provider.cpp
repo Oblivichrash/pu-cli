@@ -16,7 +16,8 @@ StreamingProvider::StreamingProvider(std::string host, std::string api_key,
 
 std::vector<std::string> StreamingProvider::Headers() const {
   std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
+  const std::string bearer = http::BearerHeader(api_key_);
+  if (!bearer.empty()) headers.push_back(bearer);
   return headers;
 }
 

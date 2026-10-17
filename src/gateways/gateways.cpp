@@ -108,6 +108,7 @@ const Gateway& OllamaGateway() {
       .id = GatewayId::kOllama,
       .name = "ollama",
       .default_host = "http://localhost:11434",
+      .endpoint_path = "/api/chat",
       .make_provider = &MakeOllamaProvider,
       .make_listing = &MakeOllamaListing,
   };
@@ -119,6 +120,7 @@ const Gateway& OpenAIGateway() {
       .id = GatewayId::kOpenAI,
       .name = "openai",
       .default_host = "https://api.openai.com/v1",
+      .endpoint_path = "/chat/completions",
       .make_provider = &MakeOpenAIProvider,
       .make_listing = &MakeOpenAIListing,
   };
@@ -130,6 +132,7 @@ const Gateway& CodeBuddyGateway() {
       .id = GatewayId::kCodeBuddy,
       .name = "codebuddy",
       .default_host = "https://copilot.tencent.com/v2",
+      .endpoint_path = "/chat/completions",
       .make_provider = &MakeCodeBuddyProvider,
       .make_listing = &MakeCodeBuddyListing,
   };

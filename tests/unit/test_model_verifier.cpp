@@ -10,21 +10,12 @@
 #include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/test_helpers.hpp"
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace {
-
-config::Backend BackendOfType(config::GatewayId type, const std::string& host,
-                                    const std::string& key = "") {
-  config::Backend cfg;
-  cfg.gateway = type;
-  cfg.host = host;
-  cfg.model = "the-active-model";
-  if (!key.empty()) cfg.api_key = key;
-  return cfg;
-}
 
 void AnswerWithContent(MockHttpClient& mock, const std::string& content) {
   mock.simulate_response = [content](const std::string&, const std::string&,

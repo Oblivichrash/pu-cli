@@ -51,11 +51,11 @@ void WebSocketConnection::Start(http::request<http::string_body> req) {
   // NAT and proxy idle windows a browser page routinely sits through between turns. The
   // page answers pings itself, so the interval can be short; a connection the page gave
   // up on without a close frame is read error and reaped either way.
-  websocket::stream_base::timeout timeouts;
-  timeouts.handshake_timeout = std::chrono::seconds(30);
-  timeouts.idle_timeout = std::chrono::seconds(30);
-  timeouts.keep_alive_pings = true;
-  ws_.set_option(timeouts);
+  ws_.set_option(websocket::stream_base::timeout{
+      .handshake_timeout = std::chrono::seconds(30),
+      .idle_timeout = std::chrono::seconds(30),
+      .keep_alive_pings = true,
+  });
   ws_.async_accept(req, net::bind_executor(strand_, [self](beast::error_code ec) {
                      if (ec) {
                        spdlog::warn("WebSocket accept error: {}", ec.message());

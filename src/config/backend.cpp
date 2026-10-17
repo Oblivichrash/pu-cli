@@ -27,6 +27,10 @@ std::string DefaultHostFor(GatewayId type) {
   return std::string(GatewayForId(type).default_host);
 }
 
+std::string_view GatewayEndpointPath(GatewayId type) {
+  return GatewayForId(type).endpoint_path;
+}
+
 const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data(); }
 
 std::string GatewayNames() {
