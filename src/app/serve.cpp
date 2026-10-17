@@ -280,7 +280,15 @@ void SessionRunner::ClearReplay() {
 void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    jobs_.push_back(Job{std::move(text), std::move(conn)});
+    jobs_.push_back(Job{std::move(text), std::move(conn), {}});
+  }
+  cv_.notify_one();
+}
+
+void SessionRunner::SubmitFromPeer(std::string sender, std::string text) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    jobs_.push_back(Job{std::move(text), nullptr, std::move(sender)});
   }
   cv_.notify_one();
 }
@@ -361,7 +369,7 @@ void SessionRunner::WorkerMain() {
     ClearReplay();
 
     auto conn = job.conn;
-    if (!conn) {
+    if (!conn && job.peer_origin.empty()) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
         running_ = false;
@@ -414,7 +422,7 @@ void SessionRunner::WorkerMain() {
           if (thought.empty()) return;
           say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
         },
-        cancel);
+        cancel, job.peer_origin);
 
     const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
     {
@@ -534,7 +542,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     // and its locals are gone.
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
-        net::bind_executor(strand, [&runtime, &io_mutex, strand, conn, buffer, req,
+        net::bind_executor(strand, [&runtime, &io_mutex, runner, strand, conn, buffer, req,
                                     header_timer](beast::error_code ec, std::size_t) {
           header_timer->cancel();
           if (ec) {
@@ -547,7 +555,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             return;
           }
           auto res = std::make_shared<http::response<http::string_body>>();
-          DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res);
+          DispatchHttpRequest(runtime, io_mutex, runner.get(), std::move(*req), *res);
           http::async_write(
               conn->mutable_socket(), *res,
               net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

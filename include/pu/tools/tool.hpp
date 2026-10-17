@@ -36,6 +36,11 @@ struct ToolContext {
     std::function<bool(const std::string& command, std::string& note)> ask;
   };
   const Approval* approval = nullptr;
+
+  // The peer this turn arrived from, empty for a turn the user started. A turn that came
+  // from a peer must not reach another one, which is what keeps two servers that know each
+  // other from answering each other forever.
+  std::string peer_origin;
 };
 
 class Tool {

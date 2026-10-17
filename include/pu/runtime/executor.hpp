@@ -63,6 +63,7 @@ class Executor {
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
+  void SetPeerOrigin(std::string origin) { peer_origin_ = std::move(origin); }
 
   void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
@@ -120,6 +121,7 @@ class Executor {
   bool AskApproval(const std::string& command, std::string& note);
 
   std::string user_note_;
+  std::string peer_origin_;
 
   bool approval_asks_ = false;
   std::function<void(const std::string&)> on_approval_ask;

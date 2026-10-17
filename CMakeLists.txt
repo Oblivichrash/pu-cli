@@ -51,9 +51,11 @@ add_library(pu_core STATIC
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
     src/config/agents.cpp
+    src/config/peer.cpp
     src/runtime/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp
+    src/tools/peer_tool.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp
     src/app/cli.cpp

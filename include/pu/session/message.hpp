@@ -153,6 +153,11 @@ inline constexpr const char* kCancelledReceipt =
     "The user cancelled the turn before this call ran, so it produced no result. Wait for the "
     "user's next message before deciding whether this call is still worth making";
 
+inline constexpr const char* kPeerOriginNote =
+    "This turn arrived from another agent. If the message needs an answer, send it straight back "
+    "to the agent that asked, then stop. Do not relay the request onward to anyone else, and do "
+    "not open with a tool call when you can answer in words";
+
 inline constexpr const char* kCommandStoppedReceipt =
     "The user stopped this command while it was running. The turn is still going, so the rest of "
     "your plan is unaffected. Do not repeat this command unchanged; either adjust it or continue "

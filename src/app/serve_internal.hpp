@@ -26,7 +26,9 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
-void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
+class SessionRunner;
+
+void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res);
 
@@ -96,6 +98,9 @@ class SessionRunner {
   SessionRunner& operator=(const SessionRunner&) = delete;
 
   void Submit(std::string text, std::shared_ptr<WebSocketConnection> conn);
+  // A turn that arrived from a peer has no page to answer: its reply goes back through the
+  // send_to_peer tool, so the runner runs it without a connection.
+  void SubmitFromPeer(std::string sender, std::string text);
   void Stop();
 
   void CancelTurn();
@@ -126,6 +131,7 @@ class SessionRunner {
   struct Job {
     std::string text;
     std::shared_ptr<WebSocketConnection> conn;
+    std::string peer_origin;
   };
   std::mutex mutex_;
   std::condition_variable cv_;

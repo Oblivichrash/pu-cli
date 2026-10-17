@@ -21,6 +21,7 @@
 #endif
 
 #include "pu/config/agents.hpp"
+#include "pu/config/peer.hpp"
 #include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -357,13 +358,59 @@ boost::json::value Wrap(Envelope envelope, boost::json::value result) {
 
 }  // namespace
 
-void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
+namespace {
+
+// The bearer a peer presents, or empty when the header is absent or another scheme.
+std::string BearerToken(const http::request<http::string_body>& req) {
+  const auto it = req.find(http::field::authorization);
+  if (it == req.end()) return {};
+  const std::string_view value = it->value();
+  constexpr std::string_view kPrefix = "Bearer ";
+  if (value.size() <= kPrefix.size() || value.substr(0, kPrefix.size()) != kPrefix) return {};
+  return std::string(value.substr(kPrefix.size()));
+}
+
+// An inbound message becomes a turn of its own: it is queued and answered 202, since the
+// reply travels back through the sender's send_to_peer tool rather than this response.
+boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner,
+                                     const http::request<http::string_body>& req) {
+  const auto& peers = runtime.Peers();
+  if (!peers.has_value()) throw NotFound("Peer messaging is not configured");
+  if (!peers->Accepts(BearerToken(req))) throw RequestRefused("Invalid peer token");
+  if (runner == nullptr) throw RuntimeError("This server cannot accept a peer turn");
+
+  const boost::json::value body = ParseBody(req);
+  const std::string sender = json::ValueOrDefault<std::string>(body, "from", "");
+  const std::string message = json::ValueOrDefault<std::string>(body, "message", "");
+  if (!peers->Knows(sender)) throw RequestRefused("Unknown peer: " + sender);
+  if (message.empty()) throw RequestRefused("Missing or invalid 'message'");
+
+  const int hop = json::ValueOrDefault<int>(body, "hop", 0);
+  spdlog::info("Peer '{}' sent a message at hop {}: {}", sender, hop, message.substr(0, 120));
+
+  runner->SubmitFromPeer(sender, message);
+  return boost::json::object{{"success", true}, {"accepted", true}};
+}
+
+}  // namespace
+
+void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res) {
   const std::string_view target = req.target();
 
   if (IsPageFile(target)) {
     ServeFile(std::string(target), res);
+    return;
+  }
+
+  if (target == "/api/peer/message" && req.method() == http::verb::post) {
+    try {
+      std::lock_guard<std::mutex> lock(io_mutex);
+      SendJson(res, 202, HandlePeerMessage(runtime, runner, req));
+    } catch (const std::exception& e) {
+      SendError(res, ErrorStatus(e), e.what());
+    }
     return;
   }
 

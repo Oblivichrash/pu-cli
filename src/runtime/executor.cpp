@@ -210,6 +210,12 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
+
+  // Read here and cleared: a turn from a peer reaches the tool set once, and a later turn in
+  // the same session is the user's own.
+  tool_ctx.peer_origin = peer_origin_;
+  peer_origin_.clear();
+
   return tool_ctx;
 }
 

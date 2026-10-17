@@ -11,6 +11,8 @@
 #include "pu/core/json.hpp"
 
 #include "pu/config/agents.hpp"
+#include "pu/config/peer.hpp"
+#include "pu/tools/peer_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
@@ -132,6 +134,13 @@ void Runtime::Initialize(const std::string& config_path) {
   executor_ = std::make_unique<Executor>();
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
+  peer_config_ = config::FindPeerConfig();
+  if (peer_config_.has_value()) {
+    spdlog::info("Peer '{}' knows {} peer(s)",
+                 peer_config_->self_name.empty() ? "<unnamed>" : peer_config_->self_name,
+                 peer_config_->peers.size());
+  }
+
   RebuildToolbox(*default_entry);
 
   const auto session_path = workspace_root_ / ".pu" / "session.json";
@@ -243,10 +252,12 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token) {
+                                      CancelToken command_stop_token,
+                                      const std::string& peer_origin) {
   ExecutionResult result;
   try {
     BeginRequest();
+    executor_->SetPeerOrigin(peer_origin);
 
     auto session = DefaultSession();
 
@@ -307,6 +318,9 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+  if (peer_config_.has_value() && !peer_config_->peers.empty()) {
+    toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
+  }
 }
 
 void Runtime::RegisterMcpTools() {
