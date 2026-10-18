@@ -4,6 +4,7 @@
 #include <boost/program_options.hpp>
 
 #include <cstdint>
+#include <map>
 #include <string>
 
 namespace pu {
@@ -33,9 +34,23 @@ enum ExitCode : int {
 
 // The whole command line, assembled in one place so that a name registered twice
 // is caught where a test can drive it rather than at the process boundary.
+//
+// `all` is what the parser is given: every option of every subcommand, because which one was
+// named is only known after parsing. `for_command` is what `pu <cmd> --help` prints, and what
+// a wrong flag is judged against once the command is known.
 struct CommandLine {
-  boost::program_options::options_description all;
+  // options_description holds const members and is not assignable, so both are constructed
+  // with the title they print and filled where the line is assembled.
+  boost::program_options::options_description all{"pu options"};
+  boost::program_options::options_description global{"Global options"};
+  // One page per subcommand, keyed by the name that selects it. Empty for a name this build
+  // does not have.
+  std::map<std::string, boost::program_options::options_description> per_command;
   boost::program_options::positional_options_description positional;
+
+  // The page a subcommand's flags belong to, or the whole line for a name this build does not
+  // know. Never empty, so a caller can always print something.
+  const boost::program_options::options_description& HelpFor(const std::string& command) const;
 };
 
 CommandLine BuildCommandLine();

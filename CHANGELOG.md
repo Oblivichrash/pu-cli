@@ -31,6 +31,10 @@ the commit that made it, and its current behaviour is in the relevant document
 - A failed turn is printed once. The executor records `error_message` and the front end
   prints it; both were printing the same line.
 - `--prompt ""` is refused as a usage error instead of being sent as a turn.
+- `pu <cmd> --help` prints that command's page instead of one page for all of them, and a flag
+  another command owns is refused as unrecognised before anything runs. The whole line was
+  what the parser saw, since which command was typed is only known after parsing; the flags
+  are now held against the command's own page once it is.
 - `pu ask` answers 3 when the sandbox refused every tool call the turn made and no answer
   came back, and 4 when a person interrupted it. A turn that a refusal did not stop keeps
   answering 0: the model read the refusal and ran something else.

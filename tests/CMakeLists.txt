@@ -49,6 +49,7 @@ add_executable(pu_tests
     unit/test_cli_exit.cpp
     unit/test_approval_refusal.cpp
     unit/test_cli_check.cpp
+    unit/test_cli_help.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

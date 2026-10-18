@@ -42,11 +42,34 @@ int main(int argc, char* argv[]) {
   const po::options_description& all = line.all;
 
   po::variables_map vm;
+  // Where the subcommand's name is, so a failure can show that command's page: a flag that
+  // belongs to `models` is not a mistake on the `ask` page, and printing the whole line for
+  // every error is how a reader learns nothing about the command they typed.
+  std::string named_command;
   try {
-    po::store(po::command_line_parser(argc, argv).options(all).positional(line.positional).run(), vm);
+    const po::parsed_options parsed =
+        po::command_line_parser(argc, argv).options(all).positional(line.positional).run();
+    po::store(parsed, vm);
     po::notify(vm);
+
+    for (const po::option& option : parsed.options) {
+      if (option.string_key == "command" && !option.value.empty()) {
+        named_command = option.value.front();
+        break;
+      }
+    }
+    // The positional was never matched, so the parser reported it as an argument with no
+    // name. Its value is still the command the rest of the line is about.
+    if (named_command.empty()) {
+      for (const po::option& option : parsed.options) {
+        if (option.string_key.empty() && !option.value.empty()) {
+          named_command = option.value.front();
+          break;
+        }
+      }
+    }
   } catch (const po::error& e) {
-    std::cerr << "Error: " << e.what() << "\n\n" << all << "\n";
+    std::cerr << "Error: " << e.what() << "\n\n" << line.HelpFor(named_command) << "\n";
     return 1;
   }
 
@@ -55,12 +78,45 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  if (vm.count("help") || !vm.count("command")) {
+  if (vm.count("help")) {
+    // `pu models --help` is a question about models, and `pu --help` about the line.
+    std::cout << line.HelpFor(vm.count("command") ? vm["command"].as<std::string>() : "") << "\n";
+    return 0;
+  }
+
+  if (!vm.count("command")) {
     std::cout << all << "\n";
     return 0;
   }
 
   std::string cmd = vm["command"].as<std::string>();
+
+  // The parser had to accept every name to learn which command was typed; now that it is
+  // known, each flag in it is held against the page for it. A flag that belongs to another
+  // command is what it always was — an option this one does not have — and a typo is caught
+  // before a turn runs rather than silently ignored.
+  //
+  // Only flags are checked, and only the ones `all` accepted: a positional value is not an
+  // option, and asking boost to judge the whole line again would call the prompt one.
+  {
+    std::vector<std::string> rejected;
+    for (int i = 1; i < argc; ++i) {
+      const std::string token = argv[i];
+      if (token.size() < 2 || token[0] != '-' || token == "--") continue;
+      if (token.rfind("-h", 0) == 0 || token.rfind("--help", 0) == 0) continue;
+      // `--name` or `--name=value`, and the page knows the name it abbreviates.
+      const std::string name = token.substr(0, token.find('='));
+      if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr) continue;
+      if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/true) != nullptr) continue;
+      rejected.push_back(name);
+    }
+    if (!rejected.empty()) {
+      std::cerr << "Error: " << rejected.front() << " is not an option of '" << cmd << "'\n\n"
+                << line.HelpFor(cmd) << "\n";
+      return pu::cli::kUsage;
+    }
+  }
+
   pu::Runtime runtime;
 
   try {
