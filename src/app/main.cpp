@@ -65,9 +65,11 @@ int main(int argc, char* argv[]) {
 
   try {
     if (cmd == "ask") {
-      if (!vm.count("prompt")) {
+      // An empty prompt is a mistake in the invocation, not a turn to send: the store would
+      // gain a question with no words and the provider a request for nothing.
+      if (!vm.count("prompt") || vm["prompt"].as<std::string>().empty()) {
         std::cerr << "Error: prompt required for ask command\n\n" << all << "\n";
-        return 1;
+        return pu::cli::kUsage;
       }
       return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime);
     }

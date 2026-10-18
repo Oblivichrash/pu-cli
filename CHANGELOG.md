@@ -14,6 +14,28 @@ the commit that made it, and its current behaviour is in the relevant document
 - A status bar reading the session at the shell's width.
 - The Web panel's Session block holds the agent and thinking selects.
 
+### Changed
+
+- **The CLI has exit codes** (`docs/design/cli-agent-workflow.md` §3.1). `0` did what it
+  was asked, `1` the invocation or configuration is wrong, `2` the provider refused or
+  could not be reached, `3` the sandbox refused, `4` was interrupted. `pu ask` used to
+  return 0 for a failed turn; it now returns 2, and `pu models --verify` returns 2 when a
+  model it asked did not answer.
+- **Diagnostics moved to stderr.** A notice, a usage line and an error are printed on
+  stderr; stdout carries only what the command was asked for, so `pu ask "..." | ...` reads
+  the reply and nothing else.
+- A failed turn is printed once. The executor records `error_message` and the front end
+  prints it; both were printing the same line.
+- `--prompt ""` is refused as a usage error instead of being sent as a turn.
+
+### Fixed
+
+- A refresh no longer draws the last turn twice: the page has one loader for the transcript
+  and holds the arriving frames until the rebuild finishes.
+- The page no longer stops mid-answer. The hold on arriving frames is raised in one place and
+  released on every path, including a timeout, so a rebuild that failed can no longer leave
+  the transcript frozen until a reload.
+
 ## 0.5.1
 
 ### Changed

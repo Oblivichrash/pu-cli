@@ -313,7 +313,6 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
     failed = true;
     result.has_error = true;
     result.error_message = "Request failed: " + std::string(e.what());
-    spdlog::error("{}", result.error_message);
     return {};
   }
 }
@@ -460,7 +459,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
         "Please rephrase your request or narrow the scope, or raise the budget with "
         "the tool_call_budget agent setting.";
     result.has_error = true;
-    spdlog::error("{}", result.content);
     return result;
   }
 
@@ -469,7 +467,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
     result.error_message =
         "Model returned an empty response without any tool calls. "
         "Please check the backend service or try again.";
-    spdlog::error("{}", result.error_message);
     return result;
   }
 

@@ -12,6 +12,25 @@ class Runtime;
 
 namespace cli {
 
+// The exit status of a run, as one contract for every subcommand (docs/design/
+// cli-agent-workflow.md §3.1). They are separated by what a caller should do next:
+//
+//   kOk            nothing to do
+//   kUsage         the invocation or the configuration is wrong — fix it, retrying cannot
+//   kProvider      the provider refused or could not be reached — retry may work
+//   kSandbox       the sandbox refused — ask a human, or change the policy
+//   kInterrupted   a person stopped it — neither retry nor fix
+//
+// Anything else the process returns (a `serve` that cannot bind, say) keeps its old
+// meaning until it is given one of these.
+enum ExitCode : int {
+  kOk = 0,
+  kUsage = 1,
+  kProvider = 2,
+  kSandbox = 3,
+  kInterrupted = 4,
+};
+
 // The whole command line, assembled in one place so that a name registered twice
 // is caught where a test can drive it rather than at the process boundary.
 struct CommandLine {

@@ -2,8 +2,8 @@
 #include "pu/app/cli.hpp"
 
 #include <exception>
-#include <functional>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -25,24 +25,41 @@ namespace {
 
 void PrintChatHelp(Runtime& runtime) { std::cout << runtime.HelpText() << "\n"; }
 
+// Notices are diagnostics, so they go to stderr: stdout carries what was asked for and
+// nothing else, which is what keeps `pu ask "..." | ...` usable.
 void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
-  if (result.was_streamed) std::cout << "\n";
-  std::cout << result.notice << "\n";
+  if (result.was_streamed) std::cerr << "\n";
+  std::cerr << result.notice << "\n";
+}
+
+// The failed turn's message, printed once. The executor records it rather than logging it,
+// so the front end decides whether it is a line here or a field somewhere else.
+void PrintFailure(const ExecutionResult& result) {
+  if (!result.has_error) return;
+  std::cerr << (result.error_message.empty() ? "Request failed" : result.error_message) << "\n";
+}
+
+// The exit status a finished turn answers with. A command the router answered is not a
+// provider failure: `pu ask "/help"` did what it was asked.
+int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
+  if (!result.has_error) return kOk;
+  if (is_command) return kOk;
+  return kProvider;
 }
 
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
-                           const std::function<void()>& body) {
+                           const std::function<int()>& body) {
   try {
     if (!agent.empty()) runtime.SetDefaultAgent(agent);
     runtime.Initialize();
-    body();
+    const int status = body();
     runtime.Shutdown();
+    return status;
   } catch (const std::exception& e) {
-    spdlog::error("{}", e.what());
-    return 1;
+    std::cerr << e.what() << "\n";
+    return kUsage;
   }
-  return 0;
 }
 
 // The backend a read-only command reads. Naming a gateway builds one from the table and
@@ -110,16 +127,18 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
     ExecutionResult result =
         runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {}, nullptr,
                              platform::ShutdownToken());
-    if (result.has_error) {
-      spdlog::error("{}", result.error_message.empty() ? "Request failed" : result.error_message);
-    } else if (result.was_streamed) {
-      std::cout << "\n";
-    } else if (!result.content.empty()) {
-      std::cout << result.content << "\n";
-    } else if (!is_command) {
-      std::cout << "\n";
+    PrintFailure(result);
+    if (!result.has_error) {
+      if (result.was_streamed) {
+        std::cout << "\n";
+      } else if (!result.content.empty()) {
+        std::cout << result.content << "\n";
+      } else if (!is_command) {
+        std::cout << "\n";
+      }
     }
     PrintNotice(result);
+    return ExitCodeForAsk(result, is_command);
   });
 }
 
@@ -147,8 +166,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
             std::cout << "Unknown command. ";
             PrintChatHelp(runtime);
           } else {
-            spdlog::error("{}\n", result.error_message.empty() ? "Processing failed"
-                                                               : result.error_message);
+            PrintFailure(result);
           }
         } else if (!result.was_streamed) {
           if (!result.content.empty()) {
@@ -160,14 +178,14 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 
         PrintNotice(result);
       } catch (const std::exception& e) {
-        spdlog::error("{}", e.what());
+        std::cerr << e.what() << "\n";
       }
     }
     std::cout << "\nGoodbye!\n";
+    return kOk;
   });
 }
 
-// SPDX-License-Identifier: GPL-3.0-only
 // One probe run: a single-token prompt to the agent's backend, the raw stream kept,
 // and the field names the gateway actually sent read back out of it. A ResponseShape
 // for a new gateway is written from this capture rather than from a specification.
@@ -185,9 +203,9 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
     if (listing) {
       // A listing is one answer rather than a stream, so there is nothing to keep as raw
       // bytes beyond the body the client already returned.
-      std::cout << "\n" << llm::FormatListingReport(llm::ProbeListing(backend, runtime.Http()))
-                << "\n";
-      return;
+      const llm::ListingReport report = llm::ProbeListing(backend, runtime.Http());
+      std::cout << "\n" << llm::FormatListingReport(report) << "\n";
+      return report.error.empty() ? kOk : kProvider;
     }
 
     std::optional<std::string> raw_path;
@@ -201,6 +219,9 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 
     const llm::ProbeReport report = llm::ProbeStream(backend, runtime.Http(), prompt, raw_path);
     std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
+    // A capture that never parsed is a provider failure; one that parsed and merely lacks
+    // fields is the finding the probe was run for, so it succeeded.
+    return report.stream_parsed ? kOk : kProvider;
   });
 }
 
@@ -224,14 +245,14 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
       if (!source)
         throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
       std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
-      return;
+      return kOk;
     }
 
     if (!verify) {
       std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway),
                                         backend.host, backend.model)
                 << "\n";
-      return;
+      return kOk;
     }
 
     const std::vector<llm::ModelCheck> checks =
@@ -248,6 +269,9 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
       std::cout << "\n";
     }
     std::cout << answered << " of " << checks.size() << " model(s) answered\n";
+    // A verification that found a model down is the answer the caller asked for, and a
+    // script needs to read it without parsing the text.
+    return answered == static_cast<int>(checks.size()) ? kOk : kProvider;
   });
 }
 
