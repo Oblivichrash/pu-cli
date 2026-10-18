@@ -20,6 +20,7 @@
 #include <mach-o/dyld.h>
 #endif
 
+#include "pu/config/agent_summary.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/config/peer.hpp"
 #include "pu/session/message.hpp"
@@ -259,13 +260,11 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
 }
 
 boost::json::value HandleApiAgents(Runtime& runtime, const boost::json::value&) {
-  boost::json::array agents;
-  for (const auto& name : runtime.Agents().AgentNames()) {
-    const auto* cfg = runtime.Agents().AgentConfig(name);
-    agents.push_back(
-        boost::json::value{{"name", name}, {"description", cfg ? cfg->description : std::string{}}});
-  }
-  return agents;
+  // The same summary `pu agents` prints, so the page and the CLI cannot disagree about what
+  // is configured. The active agent is the session's, which is what the selector shows.
+  const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
+                                                      : std::string();
+  return config::AgentsAsJson(config::SummarizeAgents(runtime, active));
 }
 
 boost::json::value HandleApiAgentSwitch(Runtime& runtime, const boost::json::value& body) {

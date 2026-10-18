@@ -106,8 +106,13 @@ int main(int argc, char* argv[]) {
       if (token.rfind("-h", 0) == 0 || token.rfind("--help", 0) == 0) continue;
       // `--name` or `--name=value`, and the page knows the name it abbreviates.
       const std::string name = token.substr(0, token.find('='));
+      // boost's own lookup wants the bare name; --json is what was typed, json is the key.
+      const std::string bare = name.substr(name.rfind('-') == std::string::npos
+                                               ? 0
+                                               : name.rfind('-') + 1);
+      if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/false) != nullptr) continue;
       if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr) continue;
-      if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/true) != nullptr) continue;
+      if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/true) != nullptr) continue;
       rejected.push_back(name);
     }
     if (!rejected.empty()) {
@@ -138,6 +143,12 @@ int main(int argc, char* argv[]) {
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
                                OptionOr(vm, "model", ""), vm.count("verify") > 0,
                                OptionOr(vm, "entry", ""), runtime);
+    }
+
+    if (cmd == "agents") {
+      return pu::cli::WithInitializedRuntime(OptionOr(vm, "agent", ""), runtime, [&] {
+        return pu::cli::RunAgents(runtime, vm.count("json") > 0);
+      });
     }
 
     if (cmd == "check") {

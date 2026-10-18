@@ -50,6 +50,7 @@ add_executable(pu_tests
     unit/test_approval_refusal.cpp
     unit/test_cli_check.cpp
     unit/test_cli_help.cpp
+    unit/test_agents_summary.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

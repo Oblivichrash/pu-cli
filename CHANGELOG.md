@@ -8,6 +8,9 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- `pu agents [--json]` lists the configured agents and marks the one the session names. The
+  chat's `/agents`, `GET /api/agents` and this now build their answer in one place, so the
+  three cannot describe the same configuration differently.
 - `pu check [--config PATH]` prints what an `agents.json` resolves to without contacting a
   provider: the host a gateway supplied, the length an `${ENV}` reference expanded to, the
   directory a relative `sandbox_root` becomes, and every field this build does not read. A

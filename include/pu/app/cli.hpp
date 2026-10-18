@@ -4,6 +4,7 @@
 #include <boost/program_options.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -55,6 +56,12 @@ struct CommandLine {
 
 CommandLine BuildCommandLine();
 
+// Loads the configuration, runs `body`, and saves the session — the frame every command that
+// needs a Runtime runs inside. A failure to initialize is `kUsage`: the configuration is what
+// is wrong. `agent` names one for this run only when it is not empty.
+int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
+                           const std::function<int()>& body);
+
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime);
 int RunChat(const std::string& agent, Runtime& runtime);
 // `gateway` names a product to read without an agents.json entry: its host and key come from
@@ -70,6 +77,9 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 // file cannot be loaded, 0 otherwise: a warning about a field this build ignores is not a
 // failure, since a build may be older than the file.
 int RunCheck(const std::string& config_path, Runtime& runtime);
+// The agents a workspace configures, with the one the session names marked. `--json` prints
+// the shape `GET /api/agents` answers with, from the same function.
+int RunAgents(Runtime& runtime, bool as_json);
 
 }  // namespace cli
 }  // namespace pu

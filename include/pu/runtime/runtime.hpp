@@ -132,6 +132,12 @@ class Runtime {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
   }
+  // Reading who is configured does not change anything, so it is answered from a const
+  // Runtime as well: the summary a surface prints is a read.
+  const AgentManager& Agents() const {
+    assert(agent_manager_ && "Initialize() must run before any agent query");
+    return *agent_manager_;
+  }
   pu::http::HttpClient& Http() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return *http_client_;

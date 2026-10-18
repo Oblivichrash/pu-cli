@@ -57,6 +57,18 @@ int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
   return kProvider;
 }
 
+// The backend a read-only command reads. Naming a gateway builds one from the table and
+// never adopts it, so `pu models --gateway nim` leaves the session where it was.
+config::Backend BackendFor(const std::string& gateway, const std::string& model,
+                           Runtime& runtime) {
+  if (gateway.empty()) return runtime.CurrentBackend();
+  config::Backend backend = config::BackendForGateway(gateway);
+  if (!model.empty()) backend.model = model;
+  return backend;
+}
+
+}  // namespace
+
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
                            const std::function<int()>& body) {
   try {
@@ -71,18 +83,6 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
   }
 }
 
-// The backend a read-only command reads. Naming a gateway builds one from the table and
-// never adopts it, so `pu models --gateway nim` leaves the session where it was.
-config::Backend BackendFor(const std::string& gateway, const std::string& model,
-                           Runtime& runtime) {
-  if (gateway.empty()) return runtime.CurrentBackend();
-  config::Backend backend = config::BackendForGateway(gateway);
-  if (!model.empty()) backend.model = model;
-  return backend;
-}
-
-}  // namespace
-
 CommandLine BuildCommandLine() {
   // The names, declared once. A description cannot hold a name twice — boost refuses the
   // whole line with "option '--help' is ambiguous" — so `all` is the one description that
@@ -96,7 +96,7 @@ CommandLine BuildCommandLine() {
   const std::vector<OptionSpec> global_options = {
       {"help,h", "show help message", false},
       {"version", "show version and exit", false},
-      {"command", "command to execute (ask/chat/models/probe/check/serve)", true},
+      {"command", "command to execute (agents/ask/chat/models/probe/check/serve)", true},
   };
 
   const OptionSpec agent_option{"agent", "agent to use", true};
@@ -106,6 +106,7 @@ CommandLine BuildCommandLine() {
       "model", "model to use with --gateway; a gateway names a host, not a model", true};
 
   const std::map<std::string, std::vector<OptionSpec>> option_table = {
+      {"agents", {{"json", "print the shape GET /api/agents answers with", false}}},
       {"ask", {{"prompt", "prompt to send", true}, agent_option}},
       {"chat", {agent_option}},
       {"models",
@@ -175,6 +176,7 @@ CommandLine BuildCommandLine() {
     return description;
   };
 
+  line.per_command.emplace("agents", page("agents", option_table.at("agents")));
   line.per_command.emplace("ask", page("ask", option_table.at("ask")));
   line.per_command.emplace("chat", page("chat", option_table.at("chat")));
   line.per_command.emplace("models", page("models", option_table.at("models")));

@@ -3,6 +3,7 @@
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
+#include "pu/config/agent_summary.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/llm/model_listing.hpp"
@@ -193,19 +194,10 @@ bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
 }
 
 bool CommandRouter::HandleAgents(Args, Session& session, Output output) {
-  const std::string current = session.Spec().agent_name;
-  std::ostringstream oss;
-  oss << "Available agents:\n";
-  for (const auto& name : runtime_.Agents().AgentNames()) {
-    oss << "  " << name;
-    if (name == current) oss << " (active)";
-    const auto* cfg = runtime_.Agents().AgentConfig(name);
-    if (cfg && !cfg->description.empty()) {
-      oss << " - " << cfg->description;
-    }
-    oss << "\n";
-  }
-  output = oss.str();
+  // The same table `pu agents` prints: the chat is not a second place to learn who is
+  // configured, and two renderings of one list drift.
+  output = config::FormatAgentTable(
+      config::SummarizeAgents(runtime_, session.Spec().agent_name));
   return true;
 }
 

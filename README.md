@@ -64,6 +64,7 @@ the copy it was installed with.
 | --- | --- |
 | `pu ask [--agent NAME] "..."` | One turn in the workspace's conversation, printed to stdout |
 | `pu chat [--agent NAME]` | The same conversation, kept open, with `/commands` |
+| `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
 | `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |

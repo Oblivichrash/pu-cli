@@ -60,6 +60,8 @@ add_library(pu_core STATIC
     src/runtime/command_router.cpp
     src/app/cli.cpp
     src/app/cli_check.cpp
+    src/app/cli_agents.cpp
+    src/config/agent_summary.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
 )
