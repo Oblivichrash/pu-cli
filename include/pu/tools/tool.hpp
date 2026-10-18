@@ -61,10 +61,20 @@ class Tool {
 
 namespace tools {
 
+// Why the policy refused a call. `kNobodyToAsk` is separate from the rest because it is not
+// the command's fault: the agent asks for approval and the front end has no way to put the
+// question, which is a configuration to fix rather than a command to rework.
+enum class Refusal {
+  kNone,
+  kPolicy,      // a forbidden pattern, a dangerous command, or a user who said no
+  kNobodyToAsk, // approval required, and no channel to ask on
+};
+
 struct ToolResult {
   bool valid = false;
   bool success = false;
   bool blocked = false;  // refused by policy before the command ran; error says why
+  Refusal refusal = Refusal::kNone;
   std::string output;    // everything the command itself printed, merged stream
   std::string error;     // the tool layer's verdict: why it failed or was refused
   int exit_code = 0;     // the command's own exit code, or -1 when it never ran
@@ -72,7 +82,8 @@ struct ToolResult {
 
 inline std::string MakeToolResultJson(bool success, const std::string& output,
                                       const std::string& error, int exit_code,
-                                      bool blocked = false) {
+                                      bool blocked = false,
+                                      Refusal refusal = Refusal::kNone) {
   boost::json::value j = {
       {"success", success},
       {"blocked", blocked},
@@ -80,6 +91,9 @@ inline std::string MakeToolResultJson(bool success, const std::string& output,
       {"error", text::SanitizeUtf8(error)},
       {"exit_code", exit_code},
   };
+  // Named only when there is a reason: a result that ran, or was refused by its command,
+  // carries no refusal field and reads as it always did.
+  if (refusal == Refusal::kNobodyToAsk) j.as_object()["refusal"] = "nobody_to_ask";
   return boost::json::serialize(j);
 }
 
@@ -101,6 +115,10 @@ inline ToolResult ParseToolResult(const std::string& raw) {
       r.valid = true;
       r.success = boost::json::value_to<bool>(j.at("success"));
       r.blocked = json::ValueOrDefault<bool>(j, "blocked", false);
+      const std::string refusal = json::ValueOrDefault<std::string>(j, "refusal", "");
+      r.refusal = refusal == "nobody_to_ask" ? Refusal::kNobodyToAsk
+                  : r.blocked                  ? Refusal::kPolicy
+                                               : Refusal::kNone;
       r.output = json::ValueOrDefault<std::string>(j, "output", "");
       r.error = json::ValueOrDefault<std::string>(j, "error", "");
       r.exit_code = json::ValueOrDefault<int>(j, "exit_code", 0);

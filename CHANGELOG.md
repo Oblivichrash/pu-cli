@@ -30,6 +30,10 @@ the commit that made it, and its current behaviour is in the relevant document
 - `pu ask` answers 3 when the sandbox refused every tool call the turn made and no answer
   came back, and 4 when a person interrupted it. A turn that a refusal did not stop keeps
   answering 0: the model read the refusal and ran something else.
+- A turn that could not run because nothing could ask for the approval its commands need
+  answers 1, not 3: the command is fine and the front end is what has to change. A tool
+  result now names that refusal (`refusal: "nobody_to_ask"`) beside the `blocked` flag it
+  already carried.
 
 ### Fixed
 

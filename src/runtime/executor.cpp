@@ -353,7 +353,10 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     ClearLogDurationMs();
 
     const auto parsed = tools::ParseToolResult(tool_result);
-    if (parsed.valid && parsed.blocked) ++result.blocked_tool_calls;
+    if (parsed.valid && parsed.blocked) {
+      ++result.blocked_tool_calls;
+      if (parsed.refusal == tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
+    }
 
     if (turn.tool_callbacks.on_end) {
       if (parsed.valid) {
@@ -470,10 +473,14 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
     // Nothing ran and nothing was said: the sandbox is why, and telling the caller to retry
     // would be wrong. The refusals themselves are in the conversation for the model.
     result.only_blocked_calls = true;
+    result.only_unaskable_calls = result.unaskable_tool_calls == result.blocked_tool_calls;
     if (!result.has_error) {
       result.has_error = true;
       result.error_message =
-          "Every tool call this turn made was refused by the sandbox; nothing ran.";
+          result.only_unaskable_calls
+              ? "Every tool call this turn made needed approval, and nothing here can ask: "
+                "give the agent a command that needs none, or take it off approval_patterns."
+              : "Every tool call this turn made was refused by the sandbox; nothing ran.";
     }
     return result;
   }

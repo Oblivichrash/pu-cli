@@ -47,8 +47,10 @@ int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
   // token is global, so it is asked rather than threaded through every result.
   if (platform::ShutdownRequested()) return kInterrupted;
   if (is_command) return kOk;
-  // The sandbox refused everything the turn tried. Retrying cannot help: the policy or the
-  // command is what has to change.
+  // The sandbox refused everything the turn tried. Retrying cannot help, but what has to
+  // change differs: a command or a policy for one, a front end that cannot ask for the
+  // other.
+  if (result.only_unaskable_calls) return kUsage;
   if (result.only_blocked_calls) return kSandbox;
   if (!result.has_error) return kOk;
   return kProvider;

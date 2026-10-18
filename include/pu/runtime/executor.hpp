@@ -59,10 +59,15 @@ struct ExecutionResult {
   // sandbox is the one refusal a caller may not retry, and only this count tells it apart
   // from a provider that failed.
   int blocked_tool_calls = 0;
+  // Of those, the ones refused because the front end had no way to ask for approval. That
+  // is a configuration to fix, not a command to rework, so the caller's remedy differs.
+  int unaskable_tool_calls = 0;
   // Every tool call this turn made was refused by the sandbox, and no answer came back.
   // A turn that recovered by running something else is not this: its refusal is advice the
   // model already acted on, not the turn's outcome.
   bool only_blocked_calls = false;
+  // Those refusals were all of the unaskable kind: nothing is wrong with the command.
+  bool only_unaskable_calls = false;
 };
 
 class Executor {
