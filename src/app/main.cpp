@@ -106,10 +106,11 @@ int main(int argc, char* argv[]) {
       if (token.rfind("-h", 0) == 0 || token.rfind("--help", 0) == 0) continue;
       // `--name` or `--name=value`, and the page knows the name it abbreviates.
       const std::string name = token.substr(0, token.find('='));
-      // boost's own lookup wants the bare name; --json is what was typed, json is the key.
-      const std::string bare = name.substr(name.rfind('-') == std::string::npos
-                                               ? 0
-                                               : name.rfind('-') + 1);
+      // What an option calls itself is its name without the leading dashes: `--show-usage`
+      // is declared `show-usage`, `-h` as `help`. Stopping at a hyphen inside the name would
+      // refuse every flag that has one, so only the leading run is removed.
+      const std::size_t first = name.find_first_not_of('-');
+      const std::string bare = first == std::string::npos ? std::string() : name.substr(first);
       if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/false) != nullptr) continue;
       if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr) continue;
       if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/true) != nullptr) continue;
@@ -132,7 +133,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: prompt required for ask command\n\n" << all << "\n";
         return pu::cli::kUsage;
       }
-      return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime);
+      return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime,
+                             vm.count("show-usage") > 0);
     }
 
     if (cmd == "chat") {

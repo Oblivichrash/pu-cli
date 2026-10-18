@@ -6,6 +6,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -32,6 +33,28 @@ void PrintNotice(const ExecutionResult& result) {
   if (result.notice.empty()) return;
   if (result.was_streamed) std::cerr << "\n";
   std::cerr << result.notice << "\n";
+}
+
+// What the turn cost, for a caller that asked. Written on stderr with the other diagnostics:
+// stdout is the answer, and a number beside it would make the answer the second field of a
+// record nobody agreed to.
+void PrintUsage(const ExecutionResult& result) {
+  if (!result.usage) return;
+  const TokenUsage& usage = *result.usage;
+
+  std::ostringstream line;
+  line << "usage: " << usage.prompt_tokens << " prompt, " << usage.completion_tokens
+       << " completion";
+  if (usage.cached_tokens > 0) line << ", " << usage.cached_tokens << " cached";
+  if (usage.total_tokens > 0) line << ", " << usage.total_tokens << " total";
+  // A price only where the product reported one, and named in that product's unit: two
+  // products' units are not comparable, so the unit is printed rather than assumed.
+  if (usage.cost) {
+    line << ", " << usage.cost->amount;
+    if (!usage.cost->unit.empty()) line << " " << usage.cost->unit;
+  }
+  if (result.rounds > 1) line << " over " << result.rounds << " provider calls";
+  std::cerr << line.str() << "\n";
 }
 
 // The failed turn's message, printed once. The executor records it rather than logging it,
@@ -107,7 +130,10 @@ CommandLine BuildCommandLine() {
 
   const std::map<std::string, std::vector<OptionSpec>> option_table = {
       {"agents", {{"json", "print the shape GET /api/agents answers with", false}}},
-      {"ask", {{"prompt", "prompt to send", true}, agent_option}},
+      {"ask",
+       {{"prompt", "prompt to send", true},
+        agent_option,
+        {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"chat", {agent_option}},
       {"models",
        {agent_option, gateway_option, model_option,
@@ -197,7 +223,8 @@ const boost::program_options::options_description& CommandLine::HelpFor(
   return it == per_command.end() ? all : it->second;
 }
 
-int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime) {
+int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
+           bool show_usage) {
   return WithInitializedRuntime(agent, runtime, [&] {
     bool is_command = false;
     ExecutionResult result =
@@ -214,6 +241,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
       }
     }
     PrintNotice(result);
+    if (show_usage) PrintUsage(result);
     return ExitCodeForAsk(result, is_command);
   });
 }

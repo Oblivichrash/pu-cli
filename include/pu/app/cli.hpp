@@ -62,7 +62,10 @@ CommandLine BuildCommandLine();
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
                            const std::function<int()>& body);
 
-int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime);
+// `show_usage` prints what the turn cost on stderr, after the answer. Off by default: stdout
+// is the answer, and this is a diagnostic like a notice.
+int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
+           bool show_usage = false);
 int RunChat(const std::string& agent, Runtime& runtime);
 // `gateway` names a product to read without an agents.json entry: its host and key come from
 // the gateway table, and neither the config nor the session is touched.
