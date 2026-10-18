@@ -86,7 +86,7 @@ CommandLine BuildCommandLine() {
   boost::program_options::options_description global("Global options");
   global.add_options()("help,h", "show help message")("version", "show version and exit")(
       "command", boost::program_options::value<std::string>(),
-      "command to execute (ask/chat/models/probe/serve)");
+      "command to execute (ask/chat/models/probe/check/serve)");
 
   boost::program_options::options_description session("ask, chat and models options");
   session.add_options()("agent", boost::program_options::value<std::string>(), "agent to use");
@@ -114,6 +114,12 @@ CommandLine BuildCommandLine() {
       "no-save", "print the summary without writing the raw stream")(
       "listing", "probe the model listing instead of the stream");
 
+  // `check` reads a file and prints what it resolves to; the path is the only thing it
+  // takes, and empty means "find it the way every other command does".
+  boost::program_options::options_description check("check options");
+  check.add_options()("config", boost::program_options::value<std::string>(),
+                      "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)");
+
   boost::program_options::options_description serve("serve options");
   serve.add_options()("host", boost::program_options::value<std::string>(),
                       "bind address (default 127.0.0.1)")(
@@ -124,7 +130,14 @@ CommandLine BuildCommandLine() {
   positional.add("prompt", 1);
 
   CommandLine line;
-  line.all.add(global).add(session).add(target).add(ask).add(models).add(probe).add(serve);
+  line.all.add(global)
+      .add(session)
+      .add(target)
+      .add(ask)
+      .add(models)
+      .add(probe)
+      .add(check)
+      .add(serve);
   line.positional = std::move(positional);
   return line;
 }

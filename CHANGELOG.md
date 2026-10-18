@@ -8,6 +8,10 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- `pu check [--config PATH]` prints what an `agents.json` resolves to without contacting a
+  provider: the host a gateway supplied, the length an `${ENV}` reference expanded to, the
+  directory a relative `sandbox_root` becomes, and every field this build does not read. A
+  file it cannot load exits 1; a warning is not a failure.
 - Peer messaging: a `send_to_peer` tool, `POST /api/peer/message`, and
   `.pu/peers.json` with `PU_PEER_TOKEN` overriding the shared secret
   ([docs/configuration.md](docs/configuration.md#peersjson), [docs/web-api.md](docs/web-api.md)).

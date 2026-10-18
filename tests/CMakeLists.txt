@@ -48,6 +48,7 @@ add_executable(pu_tests
     unit/test_mcp_stdio_client.cpp
     unit/test_cli_exit.cpp
     unit/test_approval_refusal.cpp
+    unit/test_cli_check.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

@@ -50,6 +50,11 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               bool verify, const std::string& entry_id, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
+// What a config file resolves to, printed without asking anything of a provider. `--config`
+// names a file outright; empty finds it the way every other command does. Exits 1 when the
+// file cannot be loaded, 0 otherwise: a warning about a field this build ignores is not a
+// failure, since a build may be older than the file.
+int RunCheck(const std::string& config_path, Runtime& runtime);
 
 }  // namespace cli
 }  // namespace pu
