@@ -57,6 +57,7 @@ add_executable(pu_tests
     unit/test_cli_usage.cpp
     unit/test_model_caps.cpp
     unit/test_sse.cpp
+    unit/test_cli_sse.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

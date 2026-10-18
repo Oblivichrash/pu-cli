@@ -69,6 +69,7 @@ the copy it was installed with.
 | `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
 | `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
 | `pu serve` | The Web UI and its WebSocket |
+| `pu sse URL` | Read a `text/event-stream` from any endpoint and print its events |
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).

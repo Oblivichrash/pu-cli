@@ -119,7 +119,7 @@ CommandLine BuildCommandLine() {
   const std::vector<OptionSpec> global_options = {
       {"help,h", "show help message", false},
       {"version", "show version and exit", false},
-      {"command", "command to execute (agents/ask/chat/models/probe/check/serve)", true},
+      {"command", "command to execute (agents/ask/chat/check/models/probe/serve/sse)", true},
   };
 
   const OptionSpec agent_option{"agent", "agent to use", true};
@@ -129,7 +129,11 @@ CommandLine BuildCommandLine() {
       "model", "model to use with --gateway; a gateway names a host, not a model", true};
 
   const std::map<std::string, std::vector<OptionSpec>> option_table = {
-      {"agents", {{"json", "print the shape GET /api/agents answers with", false}}},
+      // `--json` is shared: one JSON object per event for `sse`, the API's shape for
+      // `agents`. The help text names both, since the flag is declared once.
+      {"agents", {{"json", "one JSON object per line: an event, or the shape GET /api/agents "
+                           "answers with",
+                   false}}},
       {"ask",
        {{"prompt", "prompt to send", true},
         agent_option,
@@ -147,6 +151,14 @@ CommandLine BuildCommandLine() {
         {"listing", "probe the model listing instead of the stream", false}}},
       {"check",
        {{"config", "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)", true}}},
+      {"sse",
+       {{"url", "the endpoint to read (positional as well)", true},
+        {"header", "a request header, repeatable: --header 'Authorization: Bearer ...'", true},
+        {"post", "ask with POST instead of GET", false},
+        {"body", "request body to send; '-' reads it from stdin", true},
+        {"raw", "print the bytes as they arrive, unparsed", false},
+        {"json", "print one JSON object per event", false},
+        {"quiet", "print only the data, without the event and id line", false}}},
       {"serve",
        {{"host", "bind address (default 127.0.0.1)", true},
         {"port", "port to listen on (default 8080)", true}}},
@@ -156,6 +168,13 @@ CommandLine BuildCommandLine() {
 
   auto declare = [](boost::program_options::options_description& into,
                     const OptionSpec& option) {
+    // `--header` is given once per header, so it is a vector; every other value is one word.
+    if (std::string(option.name) == "header") {
+      into.add_options()(option.name,
+                         boost::program_options::value<std::vector<std::string>>(),
+                         option.help);
+      return;
+    }
     if (option.takes_value) {
       into.add_options()(option.name, boost::program_options::value<std::string>(), option.help);
     } else {
@@ -209,6 +228,7 @@ CommandLine BuildCommandLine() {
   line.per_command.emplace("models", page("models", option_table.at("models")));
   line.per_command.emplace("probe", page("probe", option_table.at("probe")));
   line.per_command.emplace("check", page("check", option_table.at("check")));
+  line.per_command.emplace("sse", page("sse", option_table.at("sse")));
   line.per_command.emplace("serve", page("serve", option_table.at("serve")));
 
   boost::program_options::positional_options_description positional;

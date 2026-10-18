@@ -3,10 +3,15 @@
 
 #include <boost/program_options.hpp>
 
+#include "pu/core/http_client.hpp"
+#include "pu/core/sse.hpp"
+
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace pu {
 
@@ -85,6 +90,28 @@ int RunCheck(const std::string& config_path, Runtime& runtime);
 // The agents a workspace configures, with the one the session names marked. `--json` prints
 // the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
+
+// What `pu sse` reads from the command line. The URL, the method and the headers are the
+// caller's: a feed is not a chat turn, and nothing here is read from agents.json.
+struct SseOptions {
+  std::string url;
+  pu::http::HttpMethod method = pu::http::HttpMethod::kGet;
+  std::vector<std::string> headers;
+  std::optional<std::string> body;
+  // One JSON object per event rather than the human-readable framing.
+  bool as_json = false;
+  // The `data:` alone, without the `event:`/`id:` line above it.
+  bool quiet = false;
+  // The bytes as they arrived, unparsed.
+  bool raw = false;
+};
+
+int RunSse(const SseOptions& options, Runtime& runtime);
+
+// One event as text: the framing above the payload, the payload alone, or one JSON object on
+// one line. Exposed because it is what a caller's pipe reads, and a pipe is easy to test where
+// a socket is not.
+std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options);
 
 }  // namespace cli
 }  // namespace pu

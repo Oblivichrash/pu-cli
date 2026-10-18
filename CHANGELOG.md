@@ -17,6 +17,10 @@ the commit that made it, and its current behaviour is in the relevant document
   field it arrives in is declared on the gateway that prices calls. A product that reports no
   price now leaves the cost absent instead of zero, so a summed total no longer silently
   undercounts. Only CodeBuddy reports one today, in `credits`.
+- `pu sse URL [--header H] [--post] [--body B] [--json|--quiet|--raw]` reads any
+  `text/event-stream` and prints what arrives. A header repeats, `--json` is one object per
+  line for a pipe, and `--raw` is the bytes as sent. It is a general client: the URL, the verb
+  and the headers are the caller's, and nothing is read from `agents.json`.
 - `pu models --caps` prints the columns that decide between two models that both work: what
   each accepts, whether an effort is mandatory (the flag that predicts a refused request),
   the context a model takes, and the price where the gateway reports one.

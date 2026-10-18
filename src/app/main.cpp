@@ -12,6 +12,8 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <vector>
+#include <sstream>
 #include <utility>
 
 namespace po = boost::program_options;
@@ -151,6 +153,38 @@ int main(int argc, char* argv[]) {
       return pu::cli::WithInitializedRuntime(OptionOr(vm, "agent", ""), runtime, [&] {
         return pu::cli::RunAgents(runtime, vm.count("json") > 0);
       });
+    }
+
+    if (cmd == "sse") {
+      pu::cli::SseOptions options;
+      // The URL is positional or named; a caller reading a feed writes it once and types the
+      // rest as flags.
+      options.url = OptionOr(vm, "url", vm.count("command") > 0 ? OptionOr(vm, "prompt", "") : "");
+      if (options.url.empty()) {
+        std::cerr << "Error: no URL to read\n\n" << line.HelpFor(cmd) << "\n";
+        return pu::cli::kUsage;
+      }
+      if (vm.count("header") > 0) {
+        options.headers = vm["header"].as<std::vector<std::string>>();
+      }
+      if (vm.count("body") > 0) {
+        const std::string given = vm["body"].as<std::string>();
+        if (given == "-") {
+          std::ostringstream body;
+          body << std::cin.rdbuf();
+          options.body = body.str();
+        } else {
+          options.body = given;
+        }
+      }
+      options.method = vm.count("post") > 0 ? pu::http::HttpMethod::kPost
+                                            : pu::http::HttpMethod::kGet;
+      options.as_json = vm.count("json") > 0;
+      options.quiet = vm.count("quiet") > 0;
+      options.raw = vm.count("raw") > 0;
+
+      return pu::cli::WithInitializedRuntime("", runtime,
+                                             [&] { return pu::cli::RunSse(options, runtime); });
     }
 
     if (cmd == "check") {
