@@ -156,21 +156,20 @@ bool StdioTransport::SpawnProcess() {
     return false;
   }
 
-  PROCESS_INFORMATION pi{};
   STARTUPINFOA si{};
   si.cb = sizeof(si);
+  si.dwFlags = STARTF_USESTDHANDLES;
   si.hStdInput = child_stdin_read;
   si.hStdOutput = child_stdout_write;
   si.hStdError = child_stderr_write;
-  si.dwFlags |= STARTF_USESTDHANDLES;
 
-  std::string cmdline = BuildCommandLine(command_, args_);
-  std::vector<char> cmdline_buf(cmdline.begin(), cmdline.end());
-  cmdline_buf.push_back('\0');
+  PROCESS_INFORMATION pi{};
+  const std::string cmdline = BuildCommandLine(command_, args_);
+  std::vector<char> mutable_cmdline(cmdline.begin(), cmdline.end());
+  mutable_cmdline.push_back('\0');
 
-  BOOL ok = CreateProcessA(nullptr, cmdline_buf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                           nullptr, nullptr, &si, &pi);
-
+  BOOL ok = CreateProcessA(nullptr, mutable_cmdline.data(), nullptr, nullptr, TRUE, 0, nullptr,
+                           nullptr, &si, &pi);
   if (!ok) {
     spdlog::error("CreateProcess failed for '{}': {}", command_, GetLastError());
     close_handles();
@@ -178,12 +177,8 @@ bool StdioTransport::SpawnProcess() {
   }
 
   CloseHandle(child_stdin_read);
-  child_stdin_read = INVALID_HANDLE_VALUE;
   CloseHandle(child_stdout_write);
-  child_stdout_write = INVALID_HANDLE_VALUE;
   CloseHandle(child_stderr_write);
-  child_stderr_write = INVALID_HANDLE_VALUE;
-
   CloseHandle(pi.hThread);
 
   stdin_write_ = child_stdin_write;
@@ -198,11 +193,12 @@ bool StdioTransport::Start(MessageCallback on_message) {
   on_message_ = std::move(on_message);
   if (!SpawnProcess()) return false;
   running_ = true;
-
+  // The reader owns the handle it polls and the flag it clears; the transport must not free
+  // either while it runs, which is why the context lives until the thread has been joined.
   auto* ctx = new ReaderContext{stdout_read_, &running_, on_message_};
   reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, ctx, 0, nullptr);
-  if (reader_thread_handle_ == INVALID_HANDLE_VALUE || !reader_thread_handle_) {
-    spdlog::error("CreateThread for reader failed: {}", GetLastError());
+  if (reader_thread_handle_ == nullptr) {
+    spdlog::error("CreateThread for the MCP reader failed: {}", GetLastError());
     delete ctx;
     running_ = false;
     return false;
@@ -219,11 +215,7 @@ void StdioTransport::Stop() {
   }
 
   if (reader_thread_handle_ != INVALID_HANDLE_VALUE) {
-    DWORD wait_result = WaitForSingleObject(reader_thread_handle_, 2000);
-    if (wait_result == WAIT_TIMEOUT) {
-      spdlog::warn("MCP reader thread did not exit within 2s; terminating");
-      TerminateThread(reader_thread_handle_, 1);
-    }
+    WaitForSingleObject(reader_thread_handle_, 3000);
     CloseHandle(reader_thread_handle_);
     reader_thread_handle_ = INVALID_HANDLE_VALUE;
   }
@@ -236,7 +228,6 @@ void StdioTransport::Stop() {
     CloseHandle(stderr_read_);
     stderr_read_ = INVALID_HANDLE_VALUE;
   }
-
   if (process_handle_ != INVALID_HANDLE_VALUE) {
     DWORD wait_result = WaitForSingleObject(process_handle_, 3000);
     if (wait_result == WAIT_TIMEOUT) {
@@ -298,7 +289,11 @@ bool StdioTransport::SpawnProcess() {
     exec_argv.push_back(nullptr);
 
     execvp(command_.c_str(), const_cast<char* const*>(exec_argv.data()));
-    spdlog::error("execvp failed: {}", strerror(errno));
+    // After a fork the process has one thread and no logger worth speaking to: the async
+    // sinks' threads do not exist here, so a spdlog call can deadlock instead of reporting.
+    // The raw fd write is the only thing safe to do on the way out.
+    const std::string message = "mcp: cannot run '" + command_ + "': " + strerror(errno) + "\n";
+    (void)!write(STDERR_FILENO, message.data(), message.size());
     _exit(127);
   }
 
@@ -319,18 +314,23 @@ bool StdioTransport::Start(MessageCallback on_message) {
 }
 
 void StdioTransport::Stop() {
+  // The reader blocks in read() on the child's stdout. Closing that end is what wakes it:
+  // the descriptor is released under it, the read returns, and the thread leaves the loop.
+  // Joining first, as this used to, waits for a line the child may never send.
+  if (stdout_fd_ != -1) {
+    ::close(stdout_fd_);
+    stdout_fd_ = -1;
+  }
   running_ = false;
   if (reader_thread_.joinable()) reader_thread_.join();
 
   if (stdin_fd_ != -1) {
-    close(stdin_fd_);
+    ::close(stdin_fd_);
     stdin_fd_ = -1;
   }
-  if (stdout_fd_ != -1) {
-    close(stdout_fd_);
-    stdout_fd_ = -1;
-  }
   if (pid_ > 0) {
+    // The child reads a closed stdin as the end of its input and leaves on its own; the
+    // signal is only for one that does not, and the wait below reaps either way.
     kill(pid_, SIGTERM);
     waitpid(pid_, nullptr, 0);
     pid_ = -1;
@@ -340,8 +340,9 @@ void StdioTransport::Stop() {
 void StdioTransport::ReaderLoop() {
   char buffer[4096];
   std::string leftover;
+  const int fd = stdout_fd_;
   while (running_) {
-    ssize_t n = read(stdout_fd_, buffer, sizeof(buffer) - 1);
+    ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
     if (n <= 0) {
       if (n == -1 && errno == EINTR) continue;
       break;
