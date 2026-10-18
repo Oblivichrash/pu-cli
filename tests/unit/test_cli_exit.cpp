@@ -14,11 +14,9 @@
 #include <boost/json.hpp>
 
 #include <filesystem>
-#include <fstream>
 #include <string>
 
 #include "pu/app/cli.hpp"
-#include "pu/config/agents.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "tests/mocks/serve_harness.hpp"
@@ -26,12 +24,6 @@
 namespace {
 
 namespace fs = std::filesystem;
-
-// Points the agent's backend at `port`, leaving everything else the harness wrote alone.
-// Written with the harness's own writer so the file stays one the runtime can read.
-void RepointBackend(const fs::path& home, int port) {
-  pu::tests::WriteAgentsFile(home, port, "ollama");
-}
 
 // A port nothing listens on: the turn fails in the transport, which is the provider case.
 constexpr int kClosedPort = 1;
@@ -45,22 +37,28 @@ TEST_CASE("A turn that answered exits 0", "[cli][exit]") {
 
 TEST_CASE("A provider that could not be reached exits 2", "[cli][exit]") {
   pu::tests::ServeHarness harness;
-  // The harness's runtime is already initialized against its fake backend. `RunAsk` builds
-  // its own runtime for a one-shot run, so the config is what carries the unreachable port.
-  RepointBackend(harness.Home(), kClosedPort);
+  // `RunAsk` builds its own runtime, so the config on disk is what carries the port.
+  pu::tests::WriteAgentsFile(harness.Home(), kClosedPort, "ollama");
 
   pu::Runtime one_shot;
   REQUIRE(pu::cli::RunAsk("chat", "hello", one_shot) == pu::cli::kProvider);
-
-  // The failed turn is not the mistake in the invocation, so it is not kUsage.
-  REQUIRE(pu::cli::kProvider != pu::cli::kUsage);
 }
 
 TEST_CASE("A command the router answered is not a provider failure", "[cli][exit]") {
   pu::tests::ServeHarness harness;
   pu::Runtime one_shot;
-  // `/help` is answered by the command router, so nothing was asked of a provider. It did
-  // what it was asked, which is 0 even though no reply was drawn.
-  const int status = pu::cli::RunAsk("chat", "/help", one_shot);
-  REQUIRE(status == pu::cli::kOk);
+  // `/help` is answered by the command router, so nothing was asked of a provider.
+  REQUIRE(pu::cli::RunAsk("chat", "/help", one_shot) == pu::cli::kOk);
+}
+
+TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
+  pu::tests::ServeHarness harness;
+  // What SIGINT sets. The status is asked of the run rather than of a result field, because
+  // the signal reaches the process and not the turn.
+  pu::platform::ShutdownToken()->store(true, std::memory_order_release);
+  pu::Runtime one_shot;
+  const int status = pu::cli::RunAsk("chat", "hello", one_shot);
+  pu::platform::ShutdownToken()->store(false, std::memory_order_release);
+
+  REQUIRE(status == pu::cli::kInterrupted);
 }

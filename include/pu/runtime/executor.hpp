@@ -54,6 +54,15 @@ struct ExecutionResult {
   TurnOutcome outcome = TurnOutcome::kCompleted;
   bool has_error = false;
   std::string error_message;
+  // Tools this turn asked for and the sandbox refused: a forbidden pattern, a dangerous
+  // command, or an approval nobody could give. Counted rather than logged because the
+  // sandbox is the one refusal a caller may not retry, and only this count tells it apart
+  // from a provider that failed.
+  int blocked_tool_calls = 0;
+  // Every tool call this turn made was refused by the sandbox, and no answer came back.
+  // A turn that recovered by running something else is not this: its refusal is advice the
+  // model already acted on, not the turn's outcome.
+  bool only_blocked_calls = false;
 };
 
 class Executor {

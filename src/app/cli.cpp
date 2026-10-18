@@ -43,8 +43,14 @@ void PrintFailure(const ExecutionResult& result) {
 // The exit status a finished turn answers with. A command the router answered is not a
 // provider failure: `pu ask "/help"` did what it was asked.
 int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
-  if (!result.has_error) return kOk;
+  // A person stopped the process, which is neither a failure to retry nor one to fix. The
+  // token is global, so it is asked rather than threaded through every result.
+  if (platform::ShutdownRequested()) return kInterrupted;
   if (is_command) return kOk;
+  // The sandbox refused everything the turn tried. Retrying cannot help: the policy or the
+  // command is what has to change.
+  if (result.only_blocked_calls) return kSandbox;
+  if (!result.has_error) return kOk;
   return kProvider;
 }
 

@@ -8,6 +8,30 @@
 
 namespace pu::text {
 
+// A transport error's `what()` ends with where it was raised — "[system:111 at ... (line):5
+// in function '...']" — which is the implementation's business, not the reader's. What is
+// left is the reason: "connect: Connection refused". Kept verbatim when there is nothing
+// to cut, so a message this function does not understand is not silently emptied.
+inline std::string ReadableError(std::string_view what) {
+  const std::size_t opened = what.find('[');
+  if (opened == std::string_view::npos) return std::string(what);
+  const std::size_t closed = what.find(']', opened);
+  if (closed == std::string_view::npos) return std::string(what);
+
+  std::string kept(what.substr(0, opened));
+  while (!kept.empty() && (kept.back() == ' ' || kept.back() == ':')) kept.pop_back();
+
+  std::string rest(what.substr(closed + 1));
+  const std::size_t begin = rest.find_first_not_of(' ');
+  if (begin != std::string::npos) {
+    rest.erase(0, begin);
+    if (!kept.empty()) kept += ' ';
+    kept += rest;
+  }
+  return kept;
+}
+
+
 inline constexpr std::string_view kUtf8ReplacementCharacter = "\xEF\xBF\xBD";  // U+FFFD
 
 namespace detail {

@@ -2,6 +2,7 @@
 #include "pu/runtime/executor.hpp"
 
 #include "pu/core/platform.hpp"
+#include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
@@ -312,7 +313,7 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
     }
     failed = true;
     result.has_error = true;
-    result.error_message = "Request failed: " + std::string(e.what());
+    result.error_message = "Request failed: " + text::ReadableError(e.what());
     return {};
   }
 }
@@ -351,8 +352,10 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     ClearLogToolName();
     ClearLogDurationMs();
 
+    const auto parsed = tools::ParseToolResult(tool_result);
+    if (parsed.valid && parsed.blocked) ++result.blocked_tool_calls;
+
     if (turn.tool_callbacks.on_end) {
-      const auto parsed = tools::ParseToolResult(tool_result);
       if (parsed.valid) {
         turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error);
       } else {
@@ -459,6 +462,19 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
         "Please rephrase your request or narrow the scope, or raise the budget with "
         "the tool_call_budget agent setting.";
     result.has_error = true;
+    return result;
+  }
+
+  if (result.content.empty() && result.blocked_tool_calls > 0 &&
+      result.blocked_tool_calls == result.tool_call_count) {
+    // Nothing ran and nothing was said: the sandbox is why, and telling the caller to retry
+    // would be wrong. The refusals themselves are in the conversation for the model.
+    result.only_blocked_calls = true;
+    if (!result.has_error) {
+      result.has_error = true;
+      result.error_message =
+          "Every tool call this turn made was refused by the sandbox; nothing ran.";
+    }
     return result;
   }
 
