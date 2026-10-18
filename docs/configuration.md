@@ -86,6 +86,52 @@ is set. `mcp_servers` sits inside an agent, beside `backend`.
 | `command` / `args` | Executable and arguments to launch (stdio only) |
 | `url` / `headers` | Remote streamable-HTTP endpoint and optional headers (e.g. `Authorization`) |
 
+### Reading it back: `pu check`
+
+`agents.json` is not the values that run. Three steps stand between the two and none of them
+shows anywhere: `${ENV}` is expanded, a gateway supplies the host a backend did not name, and
+a relative `sandbox_root` is resolved against the workspace. Each can be wrong while the file
+looks right — an unset variable becomes an empty key that the provider answers with 401, and a
+host that came from the wrong gateway fails as a refused connection.
+
+`pu check [--config PATH]` prints the resolved values without contacting a provider:
+
+```bash
+pu check                          # ./.pu/agents.json, then ~/.pu/agents.json
+pu check --config /tmp/other.json
+```
+
+```
+config  /home/me/.pu/agents.json
+
+workspace  /home/me/work
+default    fast
+
+fast   (default_agent)
+  gateway      codebuddy
+  host         https://copilot.tencent.com/v2   (default for this gateway)
+  model        deepseek-v4.1-flash
+  api_key      (set, 59 characters)
+  thinking     default
+  sandbox      /home/me/work
+  forbids      'sudo', 'mkfs'
+  tool budget  100
+```
+
+A host marked `(default for this gateway)` is one the file never named. A key printed as
+`(empty)` is a reference that expanded to nothing, and the warning beside it names the
+variable. A field this build never reads is listed under `warnings` — a build may be older
+than the file, so that is a warning and not a failure.
+
+A session naming an agent the file no longer has is reported with the names that do exist.
+The session outranks `default_agent` by design (see
+[ARCHITECTURE.md](ARCHITECTURE.md#persistence)), so this is a fact to read rather than a file
+to fix.
+
+The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
+`backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
+table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+
 ## `peers.json`
 
 Two `pu serve` instances can message each other: one agent calls `send_to_peer`, the

@@ -60,6 +60,19 @@ the copy it was installed with.
 
 ## Core Commands
 
+| Command | What it does |
+| --- | --- |
+| `pu ask [--agent NAME] "..."` | One turn in the workspace's conversation, printed to stdout |
+| `pu chat [--agent NAME]` | The same conversation, kept open, with `/commands` |
+| `pu models [--agent NAME] [--verify]` | What the agent's gateway reports, and which model is active |
+| `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
+| `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
+| `pu serve` | The Web UI and its WebSocket |
+
+Every command exits with one of five statuses and writes only its answer to stdout; both are
+in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+`pu <command> --help` prints that command's own page.
+
 ## Docs
 
 | Document | What it holds |

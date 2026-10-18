@@ -49,6 +49,28 @@ What each dependency is for:
 
 ## Error Handling
 
+### What a command exits with, and what it prints
+
+Every subcommand answers with the same five statuses (`include/pu/app/cli.hpp`), separated by
+what a caller should do next rather than by which layer failed:
+
+| Code | Meaning | The caller's next move |
+| --- | --- | --- |
+| `0` | the command did what it was asked | nothing |
+| `1` | the invocation or the configuration is wrong | fix it; a retry cannot help |
+| `2` | the provider refused or could not be reached | retry may work |
+| `3` | the sandbox refused every tool call the turn made | change the command or the policy |
+| `4` | a person stopped it | neither retry nor fix |
+
+A turn the sandbox refused and the model recovered from is `0`: the refusal is advice the
+model read, not the turn's outcome. A refusal whose reason is that no channel could ask for
+approval is `1`, not `3`, because the command is fine and the configuration is not.
+
+stdout carries what was asked for — the reply, a model listing, a rendered config — and
+stderr carries everything else: notices, usage, the reason a turn failed. `pu ask "... | ..."`
+pipes the answer and nothing beside it.
+
+
 A condition the code can know in advance is checked, not thrown: an operation that can
 fail visibly returns `std::optional` or `nullptr`. Exceptions are for what cannot be known
 in advance — a body that does not parse, a peer that closes the socket, a provider that
@@ -153,11 +175,13 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool.hpp`, whose field set is documented in
-[README](../README.md#tool-output-format). The executor stores it verbatim so
-the model sees what the tool produced, and reads `output`/`error` out of it only
-for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
-when the named tool is absent, so callers never parse two shapes.
+`include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
+`refusal` that names why the policy refused a call when one did. The header is the field
+set's one home — `tools::Refusal` beside it says which refusal a caller can retry and which
+is a configuration to fix. The executor stores the envelope verbatim so the model sees what
+the tool produced, and reads `output`/`error` out of it only for the tool callbacks.
+`Toolbox::ExecuteTool` answers with the same envelope when the named tool is absent, so
+callers never parse two shapes.
 
 **Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
 construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
@@ -334,6 +358,18 @@ quiet would keep a stop token unchecked until it finished on its own. The read i
 a poll tick: output when there is any, the token when there is not. Windows keeps the `popen`
 path and honors a stop token only between reads of the merged stream, which is no worse than
 what the stream reader does with a cancel.
+
+### Stopping an MCP server
+
+A stdio server is a child process with three pipes, and stopping it is where a client most
+easily hangs itself. Closing the descriptor a reader is blocked on does **not** wake that
+read: the close succeeds, and the `read()` that already holds its own reference waits for a
+line the server may never send. So the reader waits on a poll with a deadline and checks its
+stop flag between waits, and `Stop()` sets that flag first, closes the child's stdin second
+(the end of its input, which most servers leave on), then joins.
+
+The child itself is given a signal and a bounded wait, then killed. A server is not obliged to
+leave on its own, and a stop that hangs is worse than a process killed earlier than it liked.
 
 ### Toolbox & MCP lifecycle
 
@@ -803,4 +839,6 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
+- **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **The transcript fold is checked by running the page's own JavaScript only where `node` exists.** Without it the same case file runs against a second implementation in Python, which catches a case that has drifted but not a page that no longer runs.
 

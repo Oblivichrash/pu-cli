@@ -8,3 +8,9 @@ repos:
         entry: scripts/check-spdx.sh
         types_or: [c++, c]
         pass_filenames: true
+      - id: doc-links
+        name: every link resolves, and every heading it names exists
+        language: script
+        entry: scripts/check-links.py
+        types_or: [markdown]
+        pass_filenames: false

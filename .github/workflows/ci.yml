@@ -48,6 +48,10 @@ jobs:
         vcpkg install catch2 spdlog boost-system boost-program-options boost-json boost-asio boost-beast openssl
         echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
+    - name: Check the docs' links
+      if: runner.os == 'Linux'
+      run: python3 scripts/check-links.py
+
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
