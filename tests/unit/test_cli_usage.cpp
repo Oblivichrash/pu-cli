@@ -39,7 +39,7 @@ class CapturedStream {
 
 }  // namespace
 
-TEST_CASE("--show-usage writes the cost to stderr and leaves stdout to the answer",
+TEST_CASE("The usage flag writes the cost to stderr and leaves stdout to the answer",
           "[cli][usage]") {
   pu::tests::ServeHarness harness;
 

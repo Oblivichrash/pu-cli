@@ -49,14 +49,15 @@ TEST_CASE("An event that names nothing prints only its payload", "[sse][format]"
   REQUIRE(text == "hello");
 }
 
-TEST_CASE("--quiet leaves the payload alone", "[sse][format]") {
+TEST_CASE("A quiet run leaves the payload alone", "[sse][format]") {
   pu::cli::SseOptions options = Options();
   options.quiet = true;
   const std::string text = pu::cli::FormatSseEvent(EventWith("tick", "42", "hello"), options);
   REQUIRE(text == "hello");
 }
 
-TEST_CASE("--json is one object per line, and omits what the server did not name", "[sse][format]") {
+TEST_CASE("The JSON printing is one object per line, and omits what the server did not name",
+          "[sse][format]") {
   pu::cli::SseOptions options = Options();
   options.as_json = true;
 
