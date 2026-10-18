@@ -296,7 +296,8 @@ inline boost::json::value JsonStr(const std::string& s) {
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
                                    const std::string& backend_type = "ollama",
                                    const std::string& mcp_name = "",
-                                   const std::string& mcp_url = "") {
+                                   const std::string& mcp_url = "",
+                                   const std::string& approval_pattern = "") {
   std::error_code ec;
   fs::create_directories(dir / ".pu", ec);
   REQUIRE_FALSE(ec);
@@ -310,6 +311,11 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   boost::json::object security;
   security["sandbox_root"] = JsonStr(".");
   security["forbidden_patterns"] = boost::json::array{};
+  // A command matching this needs approval. Empty means the policy names none, which is
+  // what every case but the approval one wants.
+  if (!approval_pattern.empty()) {
+    security["approval_patterns"] = boost::json::array{JsonStr(approval_pattern)};
+  }
 
   boost::json::object agent;
   agent["name"] = JsonStr("chat");

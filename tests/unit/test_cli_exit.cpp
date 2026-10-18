@@ -30,6 +30,10 @@ constexpr int kClosedPort = 1;
 
 }  // namespace
 
+// What a turn that nothing could approve answers is a question about the executor and the
+// tool, not about a provider: the policy refuses before a request is made. It is covered in
+// test_approval_refusal.cpp, which needs no backend and no session to say the same thing.
+
 TEST_CASE("A turn that answered exits 0", "[cli][exit]") {
   pu::tests::ServeHarness harness;
   REQUIRE(pu::cli::RunAsk("chat", "hello", harness.RuntimeRef()) == pu::cli::kOk);
@@ -62,3 +66,4 @@ TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
 
   REQUIRE(status == pu::cli::kInterrupted);
 }
+
