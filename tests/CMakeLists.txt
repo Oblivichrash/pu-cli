@@ -77,3 +77,28 @@ target_link_libraries(pu_tests PRIVATE
 
 include(Catch)
 catch_discover_tests(pu_tests)
+
+# The page's transcript fold is plain JavaScript with no DOM in it, so its cases can be
+# checked without a browser. They are one file of input/output pairs; what runs them differs.
+#
+# Where node exists the page's own history.js is loaded and run, which is the only check
+# that proves the JavaScript itself still does this. Where it does not, the Python stand-in
+# runs the same cases against a second implementation of the same fold: it catches a case
+# that no longer describes the page, but not a page that no longer runs.
+find_program(PU_NODE node)
+if(PU_NODE)
+    add_test(NAME web/groupHistory
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-group-history.cjs)
+    set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
+else()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME web/groupHistory
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/js/check_group_history.py)
+        set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
+        message(STATUS "node not found: the transcript fold's cases run against the stand-in")
+    else()
+        message(STATUS "no node and no python3: the transcript fold's cases are not run here")
+    endif()
+endif()
