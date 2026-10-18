@@ -35,6 +35,7 @@ add_library(pu_core STATIC
     src/session/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
+    src/core/sse.cpp
     src/session/session.cpp
     src/session/usage.cpp
     src/core/logging.cpp
