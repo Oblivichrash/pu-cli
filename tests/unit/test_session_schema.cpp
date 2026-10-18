@@ -220,64 +220,49 @@ TEST_CASE("A node whose id is not a name is refused", "[session][schema]") {
   REQUIRE(Session::Deserialize(saved) == nullptr);
 }
 
-TEST_CASE("A parent that is not a name is refused", "[session][schema]") {
-  Session session;
-  session.Messages().Append("user", "one");
-  session.Messages().Append("assistant", "two");
+// One rule with four ways of breaking it: every link a file names has to reach a node, and
+// the graph has to stay a single path. The setup is the same in each, so it is written once
+// and a failure still names the shape that broke it.
+TEST_CASE("A parent link has to name a node, and the graph has to be one path",
+          "[session][schema]") {
+  const auto two_nodes = [] {
+    Session session;
+    session.Messages().Append("user", "one");
+    session.Messages().Append("assistant", "two");
+    return session.Serialize();
+  };
+  const auto nodes_of = [](boost::json::value& saved) -> boost::json::array& {
+    return saved.at("conversation").at("history").as_object()["nodes"].as_array();
+  };
 
-  boost::json::value saved = session.Serialize();
-  saved.at("conversation")
-      .at("history")
-      .as_object()["nodes"]
-      .as_array()
-      .at(1)
-      .as_object()["parent"] = 123;
+  SECTION("a parent that is not a name") {
+    boost::json::value saved = two_nodes();
+    nodes_of(saved).at(1).as_object()["parent"] = 123;
+    REQUIRE(Session::Deserialize(saved) == nullptr);
+  }
 
-  REQUIRE(Session::Deserialize(saved) == nullptr);
-}
+  SECTION("a parent that names no node") {
+    boost::json::value saved = two_nodes();
+    nodes_of(saved).at(1).as_object()["parent"] = "not-a-node-id";
+    REQUIRE(Session::Deserialize(saved) == nullptr);
+  }
 
-TEST_CASE("A parent that names no node is refused", "[session][schema]") {
-  Session session;
-  session.Messages().Append("user", "one");
-  session.Messages().Append("assistant", "two");
+  SECTION("a node that is its own parent") {
+    boost::json::value saved = two_nodes();
+    const std::string id = boost::json::value_to<std::string>(nodes_of(saved).at(0).at("id"));
+    nodes_of(saved).at(0).as_object()["parent"] = id;
+    REQUIRE(Session::Deserialize(saved) == nullptr);
+  }
 
-  boost::json::value saved = session.Serialize();
-  saved.at("conversation")
-      .at("history")
-      .as_object()["nodes"]
-      .as_array()
-      .at(1)
-      .as_object()["parent"] = "not-a-node-id";
-
-  REQUIRE(Session::Deserialize(saved) == nullptr);
-}
-
-TEST_CASE("A node that is its own parent is refused", "[session][schema]") {
-  Session session;
-  session.Messages().Append("user", "one");
-
-  boost::json::value saved = session.Serialize();
-  auto& node = saved.at("conversation").at("history").as_object()["nodes"].as_array().at(0);
-  const std::string id = boost::json::value_to<std::string>(node.at("id"));
-  node.as_object()["parent"] = id;
-
-  REQUIRE(Session::Deserialize(saved) == nullptr);
-}
-
-TEST_CASE("Two nodes pointing at each other are refused", "[session][schema]") {
-  Session session;
-  session.Messages().Append("user", "one");
-  session.Messages().Append("assistant", "two");
-
-  boost::json::value saved = session.Serialize();
-  auto& nodes = saved.at("conversation").at("history").as_object()["nodes"].as_array();
-  const std::string first = boost::json::value_to<std::string>(nodes.at(0).at("id"));
-  const std::string second = boost::json::value_to<std::string>(nodes.at(1).at("id"));
-  nodes.at(0).as_object()["parent"] = second;
-  nodes.at(1).as_object()["parent"] = first;
-  saved.at("conversation").at("history").as_object()["leaf"] = second;
-
-  REQUIRE(Session::Deserialize(saved) == nullptr);
+  SECTION("two nodes pointing at each other") {
+    boost::json::value saved = two_nodes();
+    const std::string first = boost::json::value_to<std::string>(nodes_of(saved).at(0).at("id"));
+    const std::string second = boost::json::value_to<std::string>(nodes_of(saved).at(1).at("id"));
+    nodes_of(saved).at(0).as_object()["parent"] = second;
+    nodes_of(saved).at(1).as_object()["parent"] = first;
+    saved.at("conversation").at("history").as_object()["leaf"] = second;
+    REQUIRE(Session::Deserialize(saved) == nullptr);
+  }
 }
 
 TEST_CASE("A repeated id is refused", "[session][schema]") {
