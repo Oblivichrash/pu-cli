@@ -1,0 +1,136 @@
+# Configuration
+
+Every field `pu` reads. Where a value belongs to the build rather than to a file (a
+gateway's default host, the variable a key is read from), it is a fact of the gateway
+table in `src/gateways/`, not of this document.
+
+## `agents.json`
+
+The file lives in a `.pu/` directory: `./.pu/agents.json` (project) or
+`~/.pu/agents.json` (user, resolved from `HOME`, which Windows does not set by
+default). See [Configure](../README.md#configuration) for a full example.
+
+**Top-level fields**
+
+| Field | Description |
+|-------|-------------|
+| `default_agent` | Required; must name one of the entries in `agents` |
+| `agents` | Required; the entries below |
+| `serve` | Optional; `{"host": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names |
+
+**Agent fields**
+
+| Field | Description |
+|-------|-------------|
+| `name` | Identifier used by `default_agent`, `/backend <agent>`, and `--agent` |
+| `description` | Optional text shown when the agent connects |
+| `backend` | Required object; see below |
+| `security` | Optional; see below |
+| `mcp_servers` | Optional; see below |
+| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). When the budget is reached the model is asked to wrap up and answer from what it has gathered, rather than the turn ending in an error |
+
+**Backend fields**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `gateway` | — | Required. `ollama`, `openai`, or `codebuddy`; a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
+| `host` | per gateway | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
+| `model` | — | Required |
+| `api_key` | unset | Sent as `Authorization: Bearer` when set |
+| `temperature` | `0.7` | |
+| `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply. A cap reached while a tool call is being written ends the turn with an error, since half an argument would run the tool on a partial value |
+| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking`. What each level puts on the wire is in [providers.md](providers.md) |
+| `system_prompt` | unset | Merged with the injected context |
+
+`codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
+gateway's contract is in
+[design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md). Its
+supported models are the account's, so a request naming one the account may not
+use is answered by the gateway itself.
+
+```json
+"backend": {
+  "gateway": "codebuddy",
+  "host": "https://copilot.tencent.com/v2",
+  "model": "deepseek-v4-flash",
+  "api_key": "${CODEBUDDY_API_KEY}"
+}
+```
+
+`host`, `model`, `api_key`, `system_prompt`, and the MCP `url`/`headers` values
+support `${ENV_VAR}` expansion; an unset variable expands to an empty string and
+logs a warning.
+
+**`security`**
+
+| Field | Description |
+|-------|-------------|
+| `sandbox_root` | All file operations are relative to this directory. Empty by default, which means the workspace itself |
+| `forbidden_patterns` | Commands containing these substrings are blocked; include `"cd"` so the model cannot change the working directory |
+| `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
+| `approval_patterns` | Commands matching one of these wait for the user's approval before they run; the Web UI shows the command with Approve and Deny buttons and an optional note, which reaches the model beside the result. `pu serve` only: the CLI has no channel to ask on, so a matching command there is refused |
+
+**`mcp_servers`**
+
+Each entry is a stdio subprocess or an HTTP endpoint, selected by whether `url`
+is set. `mcp_servers` sits inside an agent, beside `backend`.
+
+```json
+{"name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}
+{"name": "remote-fs", "url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ${MCP_API_TOKEN}"}}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name for the MCP server |
+| `command` / `args` | Executable and arguments to launch (stdio only) |
+| `url` / `headers` | Remote streamable-HTTP endpoint and optional headers (e.g. `Authorization`) |
+
+## `peers.json`
+
+Two `pu serve` instances can message each other: one agent calls `send_to_peer`, the
+other answers in a later turn. A server with no `.pu/peers.json` does not mount the
+endpoint and never registers the tool, so a single-server workspace needs nothing.
+
+```json
+{
+  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
+  "token": "shared-secret",
+  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `self.name` | This server's name, which the other side must list in its `peers` |
+| `self.host` / `self.port` | Informational; the listener's own flags still decide where it binds |
+| `token` | Shared secret every inbound message must present as `Authorization: Bearer` |
+| `peers[].name` | The name this server knows a peer by, matched against the sender's `from` |
+| `peers[].url` | Where that peer's `/api/peer/message` is posted |
+
+Both sides must agree on the token and on each other's names. A peer entry without a
+name and a `url` is skipped with a warning rather than trusted, and an undeclared
+`from` is refused before any turn starts.
+
+`send_to_peer` returns as soon as the peer accepts the message rather than waiting for
+an answer, which arrives as a new turn. A turn that arrived from a peer may reply to
+that peer and to nobody else, so an A→B→A→B chain ends at the second hop by
+construction rather than by a counter.
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `PU_AGENTS_CONFIG` | Names the `agents.json` to load, ahead of `./.pu/agents.json` and `~/.pu/agents.json`. A path that does not exist is an error rather than a fallback |
+| `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
+| `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
+| `PU_LOG_JSON=1` | Enable structured JSON logging |
+| `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
+| `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
+| `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
+| `PU_PEER_TOKEN` | Overrides `token` in `peers.json`, so the secret can stay out of the file |
+
+## Logging
+
+The console shows only `error` and `critical`; the file gets `PU_LOG_LEVEL` (default
+`info`) and goes to `<data-dir>/logs/pu.log`, rotating at 5MB and keeping 3 files.

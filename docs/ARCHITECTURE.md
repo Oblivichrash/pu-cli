@@ -66,7 +66,7 @@ pu::RuntimeError : std::runtime_error
 `pu::RequestRefused` sits beside `Error` rather than under it: `pu serve` answers a refusal
 with `400` and an `Error` with `500`, so deriving one from the other would report a
 caller's mistake as a fault of this process. The status a route chooses, and the body that
-carries it, are in [README](../README.md#web-api).
+carries it, are in [web-api.md](web-api.md).
 
 A catch earns its place only by changing the control flow — returning a value, retrying,
 falling back, converting, or ending the process. Logging is not handling, and a catch
@@ -165,7 +165,7 @@ result. No tool-binary detection is performed.
 
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in
-[README](../README.md#agentsjson).
+[configuration.md](configuration.md#agentsjson).
 
 ---
 
@@ -218,7 +218,7 @@ environment, or the workspace's own `serve` block names:
    posts each frame back through the connection. The runner holds only the token that
    steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
    turn in flight without waiting for it. The message schema, the REST route table, and
-   the status each refusal carries are in [README](../README.md#web-api).
+   the status each refusal carries are in [web-api.md](web-api.md).
 6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
    stopped, and `Runtime::Shutdown()` persists the session.
@@ -403,7 +403,7 @@ hands each streamed chunk back through the connection, which queues it and write
 the connection's strand, producing the typewriter effect in the browser. The
 `ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
 `id`. Commands and non-streaming backends deliver their full text as a single chunk
-frame. The frame schema is owned by [README](../README.md#web-api) and implemented by
+frame. The frame schema is owned by [web-api.md](web-api.md) and implemented by
 `web/ws.js`.
 
 The read loop is what an asynchronous stream buys: a connection parked in a synchronous
@@ -644,7 +644,7 @@ addressed here; it is tracked on its own.
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing
-`PU_HOME` moves; the environment table in [README](../README.md#environment-variables)
+`PU_HOME` moves; the environment table in [configuration.md](configuration.md#environment-variables)
 owns both paths.
 
 The session file carries `schema_version` beside `conversation` and
