@@ -72,8 +72,10 @@ int RunChat(const std::string& agent, Runtime& runtime);
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime);
+// `caps` prints the columns that decide between two models that both work: what each one
+// accepts, whether an effort is mandatory, and the price where the gateway reports one.
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, const std::string& entry_id, Runtime& runtime);
+              bool verify, const std::string& entry_id, bool caps, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 // What a config file resolves to, printed without asking anything of a provider. `--config`
 // names a file outright; empty finds it the way every other command does. Exits 1 when the

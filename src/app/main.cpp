@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
     if (cmd == "models") {
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
                                OptionOr(vm, "model", ""), vm.count("verify") > 0,
-                               OptionOr(vm, "entry", ""), runtime);
+                               OptionOr(vm, "entry", ""), vm.count("caps") > 0, runtime);
     }
 
     if (cmd == "agents") {

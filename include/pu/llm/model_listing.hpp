@@ -68,12 +68,19 @@ class ModelLister {
 
 namespace llm {
 
+// How much of a listing to print. `kIds` is the default and answers "what can I pick"; `kCaps`
+// adds the columns that decide between two models that both work, which is the question a
+// listing is consulted for after the first one. It is a parameter rather than a second
+// renderer so the two answers cannot disagree about a model's price or its active marker.
+enum class ListingDetail { kIds, kCaps };
+
 // Renders a listing as both the `models` command and the `/models` command print it. An
 // empty listing says so rather than printing a heading over nothing.
 std::string FormatModelList(const std::vector<ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
-                            std::string_view active_model);
+                            std::string_view active_model,
+                            ListingDetail detail = ListingDetail::kIds);
 
 }  // namespace llm
 

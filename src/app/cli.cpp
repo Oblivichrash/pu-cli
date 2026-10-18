@@ -138,7 +138,8 @@ CommandLine BuildCommandLine() {
       {"models",
        {agent_option, gateway_option, model_option,
         {"verify", "ask each listed model for one token and report what answered", false},
-        {"entry", "print an agents.json entry for this model id, ready to paste", true}}},
+        {"entry", "print an agents.json entry for this model id, ready to paste", true},
+        {"caps", "print the capabilities and price that decide between two models", false}}},
       {"probe",
        {agent_option, gateway_option, model_option,
         {"out", "directory the raw stream is written to (default ./provider-probes)", true},
@@ -330,7 +331,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 }
 
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, const std::string& entry_id, Runtime& runtime) {
+              bool verify, const std::string& entry_id, bool caps, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = BackendFor(gateway, model, runtime);
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
@@ -353,8 +354,9 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
     }
 
     if (!verify) {
-      std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway),
-                                        backend.host, backend.model)
+      std::cout << llm::FormatModelList(
+                       models, config::GatewayName(backend.gateway), backend.host, backend.model,
+                       caps ? llm::ListingDetail::kCaps : llm::ListingDetail::kIds)
                 << "\n";
       return kOk;
     }
