@@ -4,6 +4,8 @@
 #include <functional>
 #include <string>
 
+#include <boost/json.hpp>
+
 namespace pu::core {
 
 // One event out of a `text/event-stream`.
@@ -38,6 +40,12 @@ class SseParser {
 
   explicit SseParser(EventCallback on_event);
 
+  // Some gateways answer with newline-delimited JSON instead of framed events: every line is a
+  // whole object and nothing is prefixed. A stream that carries a `data:` line is an event
+  // stream regardless, so the setting only decides what to do with a line that begins with no
+  // field name — that line is delivered as an event whose payload is the line itself.
+  void SetBareLinesAreEvents(bool enabled) { bare_lines_are_events_ = enabled; }
+
   void OnRetry(RetryCallback on_retry) { on_retry_ = std::move(on_retry); }
 
   // Any split of the stream is valid; the parser holds what is incomplete.
@@ -52,11 +60,15 @@ class SseParser {
  private:
   void HandleLine(std::string_view line);
   void Dispatch();
+  // Whether the frame under construction already holds a whole value, which is what tells a
+  // second `data:` line apart from more of the first one.
+  bool PendingIsComplete() const;
 
   EventCallback on_event_;
   RetryCallback on_retry_;
 
   std::string buffer_;
+  bool bare_lines_are_events_ = false;
   // The frame being built: a blank line is what says it is complete.
   SseEvent pending_;
   bool has_data_ = false;  // an event with no `data:` line is not one

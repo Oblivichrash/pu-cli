@@ -25,6 +25,28 @@ void SplitField(std::string_view line, std::string_view& field, std::string_view
   if (!value.empty() && value.front() == ' ') value.remove_prefix(1);
 }
 
+// Whether a line begins with a field name the format gives meaning to. A JSON object begins
+// with `{` and a JSON array with `[`, so neither is mistaken for a field.
+bool StartsAField(std::string_view line) {
+  for (std::string_view field : {"data", "event", "id", "retry"}) {
+    if (line.size() <= field.size()) continue;
+    if (line.substr(0, field.size()) != field) continue;
+    if (line[field.size()] == ':') return true;
+  }
+  return false;
+}
+
+// Whether the payload collected so far is a whole value. A JSON object, array or scalar parses
+// as one; the `[DONE]` sentinel is whole by itself. What does not parse is a value still being
+// assembled, and the next `data:` line is more of it.
+bool ParsesAsOneValue(const std::string& data) {
+  if (data.empty()) return false;
+  if (data == "[DONE]") return true;
+  boost::system::error_code ec;
+  boost::json::parse(data, ec);
+  return !ec;
+}
+
 }  // namespace
 
 SseParser::SseParser(EventCallback on_event) : on_event_(std::move(on_event)) {}
@@ -56,11 +78,26 @@ void SseParser::HandleLine(std::string_view line) {
   }
   if (line.front() == ':') return;  // a comment, which a server uses to keep the socket alive
 
+  if (bare_lines_are_events_ && !StartsAField(line)) {
+    // Newline-delimited JSON: every line is a whole object and nothing is prefixed. The test
+    // is whether the line begins with a name this format gives a field — `{"a": 1}` does not,
+    // though it contains a colon, and `data: ...` does.
+    SseEvent event;
+    event.data = line;
+    if (on_event_) on_event_(event);
+    return;
+  }
+
   std::string_view field;
   std::string_view value;
   SplitField(line, field, value);
 
   if (field == "data") {
+    // A whole payload followed by another `data:` line is a new event. Senders that put one
+    // object per line and skip the blank line between them are common enough that the two
+    // readings have to be told apart; a payload that is not yet whole — a split JSON object,
+    // or the sentinel — keeps collecting, which is the case the blank line exists for.
+    if (has_data_ && PendingIsComplete()) Dispatch();
     // Several `data:` lines are one payload whose newlines were transport: joining them with
     // the newline they were split at is what restores it.
     if (has_data_) pending_.data += '\n';
@@ -92,6 +129,8 @@ void SseParser::HandleLine(std::string_view line) {
   }
   // `unknown field` is ignored by the format rather than refused, so a server may add one.
 }
+
+bool SseParser::PendingIsComplete() const { return ParsesAsOneValue(pending_.data); }
 
 void SseParser::Dispatch() {
   // Whether or not this frame carried data, it is finished: the next one starts from nothing.

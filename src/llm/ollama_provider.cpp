@@ -2,7 +2,6 @@
 #include "pu/llm/ollama_provider.hpp"
 
 #include "pu/llm/projection.hpp"
-#include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -152,11 +151,13 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 }
 
-void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
-  if (text::Trim(line).empty()) return;  // NDJSON frames nothing, so a blank line says nothing
+void OllamaProvider::ParseData(std::string_view data, const ChatRequest& request) {
+  // NDJSON frames nothing: a blank line is a blank line, and the frame is the payload the
+  // parser handed over.
+  if (text::Trim(data).empty()) return;
   boost::json::value j;
   try {
-    j = boost::json::parse(line);
+    j = boost::json::parse(data);
   } catch (const boost::system::system_error& e) {
     spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;

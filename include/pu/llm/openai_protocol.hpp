@@ -80,13 +80,12 @@ class OpenAIProtocol : public StreamingProvider {
 
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
-  void ParseLine(std::string_view line, const ChatRequest& request) override;
+  void ParseData(std::string_view data, const ChatRequest& request) override;
   void ResetAccumulators() override;
   void FinishStream(const ChatRequest& request) override;
 
  private:
   void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);
-  void FlushPendingData(const ChatRequest& request);
   void FlushPendingToolCalls(const ChatRequest& request);
 
   Config config_;
@@ -98,7 +97,6 @@ class OpenAIProtocol : public StreamingProvider {
 
   // One SSE payload can arrive as several `data:` lines; a payload that parses is the
   // whole of it, and a blank line closes the event either way.
-  std::string pending_data_;
 
   // The request asks for one completion, so the choice the reply is read from is the
   // first index the stream names; another index is a gateway sending more than was asked

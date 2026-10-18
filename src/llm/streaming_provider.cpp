@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/streaming_provider.hpp"
 
-#include "pu/llm/streaming_json_parser.hpp"
+#include "pu/core/sse.hpp"
 #include "pu/core/platform.hpp"
 
 #include <spdlog/spdlog.h>
@@ -86,7 +86,15 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
 
   std::vector<std::string> headers = Headers();
 
-  llm::StreamingJsonParser parser([&](std::string_view line) { ParseLine(line, request); });
+  core::SseParser parser([&](const core::SseEvent& event) {
+    // A frame that carried no data is a name with nothing to deliver. The `[DONE]` sentinel is
+    // the sender's last word and nothing follows it, so it is skipped: finishing the turn is
+    // what the end of the stream does, once, below. Doing it here as well ran the flush twice
+    // and appended what it folded in twice.
+    if (event.data.empty() || event.data == "[DONE]") return;
+    ParseData(event.data, request);
+  });
+  parser.SetBareLinesAreEvents(FramesBareLines());
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
@@ -96,6 +104,9 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
 
   http_->PostStream(host_ + EndpointPath(), body, headers, write_cb, request.cancel_token);
 
+  // A frame that was never closed by a blank line is still a frame, and a `[DONE]` sent
+  // without one is still the end: the close terminates the last line.
+  parser.Finish();
   FinishStream(request);
 
   result.content = std::move(content_);
