@@ -47,6 +47,9 @@ struct ExecutionResult {
   bool was_streamed = false;
   int tool_call_count = 0;
   std::optional<TokenUsage> usage;
+  // How many provider calls this turn made. One reply that calls three tools is two rounds,
+  // and the token counts are both their sum; without this the sum has no explanation.
+  int rounds = 0;
   std::string notice;
   // A shape change worth telling the user about, attached to `notice` rather than logged.
   std::vector<std::string> shape_notes;

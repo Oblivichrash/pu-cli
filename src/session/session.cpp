@@ -179,6 +179,17 @@ boost::json::value Session::Serialize() const {
   j.as_object()["schema_version"] = kSessionSchemaVersion;
   j.as_object()["conversation"] = conversation_->Serialize();
   j.as_object()["session_spec"] = spec_.Serialize();
+
+  // A rewound turn is no longer in the chain, and a cost for a message nobody can read is a
+  // number with nothing to compare it to. The live set is what the file is written against.
+  std::map<std::string, bool> live;
+  for (const session::MessageNode* node : conversation_->Chain()) live[node->id] = true;
+  const auto kept = usage_.KeepOnly(live);
+  if (!kept.empty()) {
+    session::UsageLedger pruned;
+    for (const auto& [node_id, usage] : kept) pruned.Record(usage);
+    j.as_object()["usage"] = pruned.Serialize();
+  }
   return j;
 }
 
@@ -201,7 +212,11 @@ std::unique_ptr<Session> Session::Deserialize(const boost::json::value& j) {
   std::optional<SessionSpec> spec = SessionSpec::Deserialize(j.at("session_spec"));
   if (!spec) return nullptr;
 
-  return std::make_unique<Session>(conversation, *spec);
+  auto session = std::make_unique<Session>(conversation, *spec);
+  // Absent is not an error: a session written before usage was kept has none, and reading it
+  // the same way a session with nothing spent would be read keeps old files working.
+  if (json::HasKey(j, "usage")) session->Usage() = session::UsageLedger::Deserialize(j.at("usage"));
+  return session;
 }
 
 }  // namespace pu

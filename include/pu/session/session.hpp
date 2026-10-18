@@ -10,6 +10,7 @@
 
 #include "pu/config/backend.hpp"
 #include "pu/session/graph.hpp"
+#include "pu/session/usage.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
 #include "pu/llm/llm_provider.hpp"
@@ -83,6 +84,11 @@ class Session {
   SessionSpec& Spec() { return spec_; }
   const SessionSpec& Spec() const { return spec_; }
 
+  // What each turn cost, kept beside the conversation rather than in it: a model never reads
+  // it, and a page draws it next to the reply rather than as part of it.
+  session::UsageLedger& Usage() { return usage_; }
+  const session::UsageLedger& Usage() const { return usage_; }
+
   void SetAgent(const std::string& agent_name);
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }
@@ -96,6 +102,7 @@ class Session {
  private:
   std::shared_ptr<Conversation> conversation_;
   SessionSpec spec_;
+  session::UsageLedger usage_;
 };
 
 }  // namespace pu

@@ -36,6 +36,7 @@ add_library(pu_core STATIC
     src/core/beast_http_client.cpp
     src/core/platform.cpp
     src/session/session.cpp
+    src/session/usage.cpp
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp

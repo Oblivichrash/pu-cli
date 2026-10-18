@@ -422,6 +422,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     bool failed = false;
     bool stopped = false;
+    ++result.rounds;
     ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
     if (failed) break;
     if (stopped) {

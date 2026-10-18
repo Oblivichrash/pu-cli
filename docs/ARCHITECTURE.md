@@ -688,6 +688,20 @@ The session file carries `schema_version` beside `conversation` and
 shutdown, and restored on startup. A file stamped with a version this build does
 not accept is refused rather than read best-effort.
 
+**What each turn cost is kept beside the conversation, not inside it.** `usage` is a
+sibling of `conversation` in the file, keyed by the assistant node the turn produced: prompt,
+completion and cached tokens, the credit the gateway priced it at, how many provider calls the
+turn took, and which model and gateway answered. A model never reads it, `History()` never
+renders it, and a page draws it next to the reply rather than as part of it — which is why it
+is not a field of `AssistantPayload`. It is kept because it is the only record that an
+optimization changed anything: a prompt edited so the cache stops hitting, or a model swapped
+for one that costs three times as much, shows up here and nowhere else.
+
+The key is absent from every file written before it existed, and absent is read as "nothing
+was recorded" rather than as a version this build cannot load, so the schema version did not
+move. A turn that has left the chain — a rewound turn, `/clear` — takes its entry with it on
+the next save.
+
 `session_spec` names the agent and carries the session's own thinking level when
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
 editing the configuration takes effect without touching the session.

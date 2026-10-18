@@ -221,6 +221,7 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
   if (!session) return turns;
 
   Conversation& conversation = session->Messages();
+  const session::UsageLedger& conversation_usage = session->Usage();
   const std::vector<const session::MessageNode*> chain = conversation.Chain();
   for (size_t i = 0; i < chain.size(); ++i) {
     const session::MessageNode& node = *chain[i];
@@ -252,6 +253,20 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
       const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
       item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
       item.as_object()["error"] = parsed.error;
+    }
+
+    // What this turn cost, beside it rather than inside it. Absent for a turn that recorded
+    // nothing — a session from before usage was kept, or one whose provider reported none.
+    if (const std::optional<session::TurnUsage> usage = conversation_usage.For(node.id)) {
+      item.as_object()["usage"] = boost::json::object{
+          {"prompt_tokens", usage->prompt_tokens},
+          {"completion_tokens", usage->completion_tokens},
+          {"cached_tokens", usage->cached_tokens},
+          {"credit", usage->credit},
+          {"rounds", usage->rounds},
+          {"model", usage->model},
+          {"gateway", usage->gateway},
+      };
     }
 
     turns.push_back(std::move(item));

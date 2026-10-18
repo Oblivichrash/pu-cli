@@ -247,6 +247,37 @@ void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
   SaveCurrentSession();
 }
 
+namespace {
+
+// What this turn cost, filed against the node it produced.
+//
+// A turn that ran tools leaves several assistant nodes; the reply a reader sees is the last
+// one, so that is the node the cost is filed under, and `rounds` says how many provider calls
+// stand behind it. A turn that produced no assistant node — an error, a command — spent
+// nothing worth a line.
+void RecordTurnUsage(Session& session, const ExecutionResult& result,
+                     const config::Backend& backend) {
+  if (!result.usage) return;
+  std::string last_assistant;
+  for (const session::MessageNode* node : session.Messages().Chain()) {
+    if (std::holds_alternative<session::AssistantPayload>(node->payload)) last_assistant = node->id;
+  }
+  if (last_assistant.empty()) return;
+
+  session::TurnUsage usage;
+  usage.node_id = last_assistant;
+  usage.rounds = result.rounds;
+  usage.prompt_tokens = result.usage->prompt_tokens;
+  usage.completion_tokens = result.usage->completion_tokens;
+  usage.cached_tokens = result.usage->cached_tokens;
+  usage.credit = result.usage->credit;
+  usage.model = result.model;
+  usage.gateway = config::GatewayName(backend.gateway);
+  session.Usage().Record(usage);
+}
+
+}  // namespace
+
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
                                       TokenCallback content_callback,
@@ -275,12 +306,14 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     is_command = false;
 
-    auto provider = session->CreateProvider(CurrentBackend(), http_client_);
+    const config::Backend backend = CurrentBackend();
+    auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
         executor_->Execute(input, session->Messages(), provider.get(), toolbox_,
                            cancel_token, content_callback, tool_callbacks, reasoning_callback,
                            command_stop_token);
     result = std::move(exec_result);
+    RecordTurnUsage(*session, result, backend);
     SaveCurrentSession();
     return result;
   } catch (const std::exception& e) {
