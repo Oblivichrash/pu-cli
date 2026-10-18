@@ -53,6 +53,7 @@ add_executable(pu_tests
     unit/test_agents_summary.cpp
     unit/test_usage_ledger.cpp
     unit/test_serve_usage.cpp
+    unit/test_billing.cpp
 )
 
 target_include_directories(pu_tests PRIVATE

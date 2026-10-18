@@ -270,7 +270,7 @@ void RecordTurnUsage(Session& session, const ExecutionResult& result,
   usage.prompt_tokens = result.usage->prompt_tokens;
   usage.completion_tokens = result.usage->completion_tokens;
   usage.cached_tokens = result.usage->cached_tokens;
-  usage.credit = result.usage->credit;
+  usage.cost = result.usage->cost;
   usage.model = result.model;
   usage.gateway = config::GatewayName(backend.gateway);
   session.Usage().Record(usage);

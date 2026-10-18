@@ -14,7 +14,8 @@ constexpr const char* kRoundsKey = "rounds";
 constexpr const char* kPromptKey = "prompt_tokens";
 constexpr const char* kCompletionKey = "completion_tokens";
 constexpr const char* kCachedKey = "cached_tokens";
-constexpr const char* kCreditKey = "credit";
+constexpr const char* kCostAmountKey = "amount";
+constexpr const char* kCostUnitKey = "unit";
 constexpr const char* kModelKey = "model";
 constexpr const char* kGatewayKey = "gateway";
 
@@ -52,8 +53,15 @@ boost::json::value UsageLedger::Serialize() const {
         {kPromptKey, usage.prompt_tokens},
         {kCompletionKey, usage.completion_tokens},
         {kCachedKey, usage.cached_tokens},
-        {kCreditKey, usage.credit},
     };
+    // Absent where the product reported no price: a turn that cost nothing knows it did, and
+    // one whose product says nothing does not, and the two must not look alike.
+    if (usage.cost) {
+      entry["cost"] = boost::json::object{
+          {kCostAmountKey, usage.cost->amount},
+          {kCostUnitKey, usage.cost->unit},
+      };
+    }
     // Empty means "the provider did not say", which is not the same as a name.
     if (!usage.model.empty()) entry[kModelKey] = usage.model;
     if (!usage.gateway.empty()) entry[kGatewayKey] = usage.gateway;
@@ -75,7 +83,11 @@ UsageLedger UsageLedger::Deserialize(const boost::json::value& j) {
     usage.prompt_tokens = json::ValueOrDefault<int>(entry, kPromptKey, 0);
     usage.completion_tokens = json::ValueOrDefault<int>(entry, kCompletionKey, 0);
     usage.cached_tokens = json::ValueOrDefault<int>(entry, kCachedKey, 0);
-    usage.credit = json::ValueOrDefault<double>(entry, kCreditKey, 0.0);
+    if (json::HasKey(entry, "cost") && entry.at("cost").is_object()) {
+      const boost::json::value& cost = entry.at("cost");
+      usage.cost = Cost{json::ValueOrDefault<double>(cost, kCostAmountKey, 0.0),
+                        json::ValueOrDefault<std::string>(cost, kCostUnitKey, "")};
+    }
     usage.model = json::ValueOrDefault<std::string>(entry, kModelKey, "");
     usage.gateway = json::ValueOrDefault<std::string>(entry, kGatewayKey, "");
     ledger.entries_.emplace(usage.node_id, std::move(usage));

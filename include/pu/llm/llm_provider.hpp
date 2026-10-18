@@ -95,15 +95,24 @@ struct ToolCall {
 // What a provider counted for a turn. A field a backend does not report stays zero rather
 // than being derived: `total_tokens` is the provider's own total, and a sum of the two
 // counts beside it would read as a figure the provider gave.
+// What one call cost, in the product's own unit. The number is the one the gateway sent, and
+// the unit is the one the gateway table names: no conversion is done, because no rate exists
+// that would make two products' units comparable.
+struct Cost {
+  double amount = 0.0;
+  std::string unit;
+};
+
 struct TokenUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
   int total_tokens = 0;
   int cached_tokens = 0;  // the prompt the provider answered from its cache
-  // What the call cost, in the gateway's own unit, where the gateway prices one — and
-  // not an account balance: one gateway's `credit` read 0 for a one-token answer and
-  // 0.05 for a 203-token one. Zero where the gateway prices nothing.
-  double credit = 0.0;
+  // Absent where the gateway prices nothing — which is not the same as a call it priced at
+  // zero. One gateway's `credit` read 0 for a one-token answer and 0.17 for a 203-token one;
+  // another sends no such field at all, and only the difference between those two can be
+  // summed into a total that means anything.
+  std::optional<Cost> cost;
 };
 
 using TokenCallback = std::function<void(std::string_view)>;

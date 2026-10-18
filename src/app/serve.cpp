@@ -451,10 +451,18 @@ void SessionRunner::WorkerMain() {
       say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
     }
     if (result.usage) {
-      say({{"type", "usage"},
-           {"payload",
-            {{"prompt_tokens", result.usage->prompt_tokens},
-             {"completion_tokens", result.usage->completion_tokens}}}});
+      boost::json::object usage{
+          {"prompt_tokens", result.usage->prompt_tokens},
+          {"completion_tokens", result.usage->completion_tokens},
+      };
+      // A price only where the product reported one: absent and zero are different answers.
+      if (result.usage->cost) {
+        usage["cost"] = boost::json::object{
+            {"amount", result.usage->cost->amount},
+            {"unit", result.usage->cost->unit},
+        };
+      }
+      say({{"type", "usage"}, {"payload", std::move(usage)}});
     }
     if (result.has_error) {
       // The message a turn carries sits on `content` when the turn answered with its

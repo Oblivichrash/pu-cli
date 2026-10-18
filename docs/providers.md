@@ -89,9 +89,19 @@ counterpart for a request.
 | the two counts the turn is shown against | `prompt_tokens` / `completion_tokens`, or Ollama's `prompt_eval_count` / `eval_count` |
 | `total_tokens` | the provider's own total. A backend that reports none leaves it `0` rather than having it summed from the two counts above |
 | the cached prompt | `prompt_tokens_details.cached_tokens` where nested, else the top-level `prompt_cache_hit_tokens`; Ollama names it `prompt_eval_cached_count` |
-| `credit` | the call's cost, where the gateway prices one |
+| the call's cost | read only from the field the product's gateway names in `Gateway::billing`, and only where it prices one |
 
 A name left empty in a shape means the field does not exist on that gateway.
+
+**What a call cost is a product's answer, not a protocol's.** Two gateways share the OpenAI
+wire and only one of them reports a price, so the field it arrives in is a property of the
+product: `config::Gateway::billing` names the field and the unit, and a gateway that prices
+nothing leaves it `kNone`. CodeBuddy reports `credit`, an amount of its own credits for this
+call — not an account balance, and not comparable to another product's number. No conversion
+is done anywhere, because no rate exists in this tree that could make two products' units
+comparable. A call a product priced at zero and a product that prices nothing are different
+answers: the first has a cost of `0`, the second has none, and only that distinction makes a
+summed total worth reading.
 
 Ollama reports no usage object: the counts and durations ride on the final line, which is
 kept whole rather than filtered to a list of names.

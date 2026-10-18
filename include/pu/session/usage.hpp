@@ -3,6 +3,8 @@
 
 #include <boost/json.hpp>
 
+#include "pu/llm/llm_provider.hpp"
+
 #include <map>
 #include <optional>
 #include <string>
@@ -26,7 +28,9 @@ struct TurnUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
   int cached_tokens = 0;
-  double credit = 0.0;
+  // What the turn cost, absent where the product reports no price. `unit` is the product's
+  // own — two products' units are not comparable, and nothing here converts them.
+  std::optional<Cost> cost;
   std::string model;
   std::string gateway;
 };

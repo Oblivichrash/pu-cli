@@ -28,7 +28,7 @@ pu::session::TurnUsage UsageOf(const std::string& node_id, int rounds, int promp
   usage.prompt_tokens = prompt;
   usage.completion_tokens = completion;
   usage.cached_tokens = cached;
-  usage.credit = credit;
+  if (credit > 0.0) usage.cost = pu::Cost{credit, "credits"};
   usage.model = "test-model";
   usage.gateway = "ollama";
   return usage;
@@ -55,7 +55,9 @@ TEST_CASE("A recorded turn survives a save and a load", "[session][usage]") {
   REQUIRE(usage->completion_tokens == 204);
   // The number a prompt change is judged by: how much of the prompt was already cached.
   REQUIRE(usage->cached_tokens == 15360);
-  REQUIRE(usage->credit == 0.17);
+  REQUIRE(usage->cost.has_value());
+  REQUIRE(usage->cost->amount == 0.17);
+  REQUIRE(usage->cost->unit == "credits");
   REQUIRE(usage->model == "test-model");
   REQUIRE(usage->gateway == "ollama");
 }

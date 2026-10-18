@@ -698,6 +698,9 @@ TEST_CASE("OpenAIProvider ignores the fields that name an event", "[openai][stre
 TEST_CASE("OpenAIProvider reads the counts a cached prompt is billed with", "[openai][usage]") {
   OpenAIProvider::Config config;
   config.model = "gpt-4o-mini";
+  // What the product says a call costs, and where: the provider is told by the gateway that
+  // built it, because the wire does not say whether a price is there or what it is in.
+  config.billing = {pu::config::BillingKind::kReported, "credit", "credits"};
 
   auto [mock_http, mock_ptr] = MakeMockHttpClient();
 
@@ -720,7 +723,11 @@ TEST_CASE("OpenAIProvider reads the counts a cached prompt is billed with", "[op
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->total_tokens == 15);
   REQUIRE(result.usage->cached_tokens == 9);
-  REQUIRE(result.usage->credit == 0.05);
+  REQUIRE(result.usage->cost.has_value());
+  REQUIRE(result.usage->cost->amount == 0.05);
+  // The unit comes from the product the file names, not from the wire: the number alone does
+  // not say what it is denominated in.
+  REQUIRE(result.usage->cost->unit == "credits");
   REQUIRE(json::HasKey(result.raw_usage, "completion_tokens_details"));
 }
 

@@ -273,11 +273,29 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
       result.usage->completion_tokens += chat_result.usage->completion_tokens;
       result.usage->total_tokens += chat_result.usage->total_tokens;
       result.usage->cached_tokens += chat_result.usage->cached_tokens;
-      result.usage->credit += chat_result.usage->credit;
-      spdlog::debug("tokens this round: prompt={}, completion={}, total={}, cached={}, credit={}",
+      // A cost is summed only where every round reported one, and only within one unit: a
+      // total that mixed a priced round with an unpriced one would read as the turn's price
+      // when it is part of it.
+      if (chat_result.usage->cost) {
+        if (!result.usage->cost) {
+          result.usage->cost = chat_result.usage->cost;
+        } else if (result.usage->cost->unit == chat_result.usage->cost->unit) {
+          result.usage->cost->amount += chat_result.usage->cost->amount;
+        } else {
+          spdlog::warn("a turn priced in two units; keeping the first ('{}')",
+                       result.usage->cost->unit);
+        }
+      } else if (result.usage->cost) {
+        // One round in this turn said nothing about price. The sum would be short, so the
+        // turn keeps no total rather than a number that undercounts it.
+        result.usage->cost.reset();
+      }
+      spdlog::debug("tokens this round: prompt={}, completion={}, total={}, cached={}, cost={}",
                     chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
                     chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
-                    chat_result.usage->credit);
+                    chat_result.usage->cost ? std::to_string(chat_result.usage->cost->amount) +
+                                                  " " + chat_result.usage->cost->unit
+                                            : std::string("reported none"));
     }
     if (!chat_result.raw_usage.is_null()) {
       spdlog::debug("usage as the provider reported it: {}", json::serialize(chat_result.raw_usage));

@@ -248,7 +248,22 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
       counted.cached_tokens =
           json::ValueOrDefault<int>(usage, shape.cached_tokens_top_level_field, 0);
     }
-    counted.credit = json::ValueOrDefault<double>(usage, shape.credit_field, 0.0);
+    // The product says which field carries a price, if it carries one at all. Two products
+    // share this parser and only one reports a price; reading a name that is not there would
+    // turn "this product says nothing" into "this call was free".
+    if (config_.billing.kind == config::BillingKind::kReported &&
+        !config_.billing.field.empty()) {
+      if (json::HasKey(usage, config_.billing.field)) {
+        const boost::json::value& price = usage.at(config_.billing.field);
+        if (price.is_number()) {
+          counted.cost = Cost{price.to_number<double>(), std::string(config_.billing.unit)};
+        } else {
+          // Present but not a number is a shape change, and the shapes already report those.
+          spdlog::warn("usage.{} is not a number; the price it carries is unread",
+                       std::string(config_.billing.field));
+        }
+      }
+    }
     usage_ = counted;
     raw_usage_ = usage;
   }

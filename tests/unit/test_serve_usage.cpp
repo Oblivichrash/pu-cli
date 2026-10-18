@@ -33,7 +33,7 @@ TEST_CASE("A stored turn's cost is what the page reads back", "[serve][api][usag
   usage.prompt_tokens = 18232;
   usage.completion_tokens = 204;
   usage.cached_tokens = 15360;
-  usage.credit = 0.17;
+  usage.cost = pu::Cost{0.17, "credits"};
   usage.model = "test-model";
   usage.gateway = "ollama";
   session->Usage().Record(usage);
@@ -54,7 +54,10 @@ TEST_CASE("A stored turn's cost is what the page reads back", "[serve][api][usag
     REQUIRE(pu::json::ValueOrDefault<int>(cost, "completion_tokens", 0) == 204);
     // The number a prompt change is judged by.
     REQUIRE(pu::json::ValueOrDefault<int>(cost, "cached_tokens", 0) == 15360);
-    REQUIRE(pu::json::ValueOrDefault<double>(cost, "credit", 0.0) == 0.17);
+    REQUIRE(cost.as_object().contains("cost"));
+    const boost::json::value& price = cost.at("cost");
+    REQUIRE(pu::json::ValueOrDefault<double>(price, "amount", 0.0) == 0.17);
+    REQUIRE(pu::json::ValueOrDefault<std::string>(price, "unit", "") == "credits");
     REQUIRE(pu::json::ValueOrDefault<int>(cost, "rounds", 0) == 2);
     REQUIRE(pu::json::ValueOrDefault<std::string>(cost, "model", "") == "test-model");
     // The content the model reads is untouched by the cost beside it.

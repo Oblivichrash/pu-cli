@@ -106,6 +106,9 @@ OpenAIProvider::Config OpenAIConfig(const Backend& cfg) {
   OpenAIProvider::Config protocol;
   FillProtocolConfig(protocol, cfg);
   protocol.max_tokens = cfg.max_tokens;
+  // How this product prices a call is the product's own fact, and the provider is the one
+  // reading the answer: it is told here rather than guessing from the wire.
+  protocol.billing = GatewayForId(cfg.gateway).billing;
   return protocol;
 }
 
@@ -163,6 +166,9 @@ const std::array<Gateway, 6> kGateways = {
         .make_provider = &MakeCodeBuddyProvider,
         .make_listing = &MakeCodeBuddyListing,
         .listing_headers = &CodeBuddyListingHeaders,
+        // The one product that says what a call cost. `credit` is the amount of this call,
+        // not an account balance, and it is denominated in the product's own credits.
+        .billing = {BillingKind::kReported, "credit", "credits"},
     },
 };
 

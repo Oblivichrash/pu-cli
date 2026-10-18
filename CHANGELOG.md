@@ -9,9 +9,14 @@ the commit that made it, and its current behaviour is in the relevant document
 ### Added
 
 - What each turn cost is now stored with the session and served by `/api/history`: prompt,
-  completion and cached tokens, credit, how many provider calls the turn took, and the model
-  and gateway that answered. The key is absent from older files and read as "nothing was
-  recorded", so the schema version is unchanged.
+  completion and cached tokens, the price where the product reports one, how many provider
+  calls the turn took, and the model and gateway that answered. The key is absent from older
+  files and read as "nothing was recorded", so the schema version is unchanged.
+- **A price is a product's answer, not a protocol's.** `Usage.credit` (a bare double that
+  defaulted to zero) became `Usage.cost` — an amount and the unit the product named — and the
+  field it arrives in is declared on the gateway that prices calls. A product that reports no
+  price now leaves the cost absent instead of zero, so a summed total no longer silently
+  undercounts. Only CodeBuddy reports one today, in `credits`.
 - `pu agents [--json]` lists the configured agents and marks the one the session names. The
   chat's `/agents`, `GET /api/agents` and this now build their answer in one place, so the
   three cannot describe the same configuration differently.

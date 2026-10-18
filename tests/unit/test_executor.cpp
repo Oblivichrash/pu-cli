@@ -119,7 +119,9 @@ class MockLLM : public LLMProvider {
       TokenUsage usage;
       usage.prompt_tokens = per_round_prompt_;
       usage.total_tokens = per_round_prompt_;
-      usage.credit = per_round_credit_;
+      // A round the fake prices reports a cost in the product's own unit; one it does not
+      // leaves the cost absent, which is what a gateway that says nothing sends.
+      if (per_round_credit_ > 0.0) usage.cost = Cost{per_round_credit_, "credits"};
       r.usage = usage;
     }
     return r;
@@ -423,7 +425,10 @@ TEST_CASE("A turn's usage sums what every round of the tool loop reported", "[ex
   // last round's 100.
   REQUIRE(result.usage->prompt_tokens == 200);
   // Credit is a per-call cost, so it adds across rounds the same way.
-  REQUIRE(result.usage->credit == Approx(0.10));
+  // Two rounds that each reported 0.05 in the same unit sum to one turn at 0.10.
+  REQUIRE(result.usage->cost.has_value());
+  REQUIRE(result.usage->cost->amount == Approx(0.10));
+  REQUIRE(result.usage->cost->unit == "credits");
 }
 
 TEST_CASE("Rebuilding the registry leaves one address the executor can keep reading",

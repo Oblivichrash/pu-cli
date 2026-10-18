@@ -262,11 +262,18 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
           {"prompt_tokens", usage->prompt_tokens},
           {"completion_tokens", usage->completion_tokens},
           {"cached_tokens", usage->cached_tokens},
-          {"credit", usage->credit},
           {"rounds", usage->rounds},
           {"model", usage->model},
           {"gateway", usage->gateway},
       };
+      // A price only where the product reported one. Absent and zero are different answers:
+      // a call a product priced at nothing is not a product that prices nothing.
+      if (usage->cost) {
+        item.as_object()["usage"].as_object()["cost"] = boost::json::object{
+            {"amount", usage->cost->amount},
+            {"unit", usage->cost->unit},
+        };
+      }
     }
 
     turns.push_back(std::move(item));
