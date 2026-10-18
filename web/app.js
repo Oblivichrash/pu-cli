@@ -25,11 +25,12 @@ PU.composer.inputEl.addEventListener("keydown", (e) => {
 });
 PU.composer.inputEl.addEventListener("input", () => { PU.composer.inputEl.style.height = "auto"; });
 
+// The transcript has one loader: the socket's first open runs `resyncAfterReconnect()`,
+// which reads the store once the session is attached. Reading it here as well made the two
+// runs append the same turns to the same list, which is the turn drawn twice on every load.
 connectWebSocket();
 
 (async () => {
   await loadAgents();
   await loadSession();
-  await loadHistory();
-  scrollToBottom();
 })();

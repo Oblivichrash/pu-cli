@@ -13,6 +13,11 @@ async function refreshChainLength() {
 }
 
 async function loadHistory() {
+  // Appending a second copy of the chain into a list another run is filling is what drew
+  // every turn twice, so one run at a time. The socket's hold on incoming frames is not
+  // this function's to raise or lower: see beginLoad/endLoad in ws.js.
+  if (PU.loadHistBusy) return;
+  PU.loadHistBusy = true;
   try {
     const history = await fetchJson("/api/history");
     if (!Array.isArray(history)) return;
@@ -28,7 +33,10 @@ async function loadHistory() {
       }
     }
     PU.chainLength = history.length;
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    PU.loadHistBusy = false;
+  }
 }
 
 // Only the server tells a session level from the agent's, so the control shows what it reports.

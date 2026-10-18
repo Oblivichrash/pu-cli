@@ -29,6 +29,18 @@ const PU = {
   // The socket a reopened one replaces. It keeps delivering the turn until the server
   // closes it, and its close is the handover rather than the page going away.
   supersededSocket: null,
+  // True from a socket's open until the transcript it bought is rebuilt. Frames arriving
+  // meanwhile wait in loadingFrames instead of being drawn into boxes about to be replaced.
+  // Exactly one function raises it and two lower it: the rebuild's own end, and this timer.
+  loading: false,
+  loadingTimer: null,
+  loadingFrames: [],
+  // Bumped by each load, so a load that a later one overtook knows not to replay for it.
+  loadGen: 0,
+  // True while resyncAfterReconnect is rebuilding, so loadHistory leaves the flag to it.
+  resyncing: false,
+  // True while loadHistory is appending, so two runs cannot draw the chain twice.
+  loadHistBusy: false,
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,

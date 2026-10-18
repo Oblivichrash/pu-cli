@@ -341,16 +341,18 @@ void SessionRunner::Deliver(const std::shared_ptr<WebSocketConnection>& conn,
   // The turn outlives the page that started it. While no page is attached its frames are
   // kept for the next one, which is what makes a reconnect rejoin the turn instead of
   // watching a reply stop half-written.
-  auto current = [&] {
-    std::lock_guard<std::mutex> lock(attach_mutex_);
-    return attached_.lock();
-  }();
-  if (current) {
+  //
+  // A connection that has begun to close is not a page: a refresh leaves the old socket in
+  // `attached_` until the read that noticed the reset returns, and posting frames to it
+  // there loses them (and keeps them out of the replay beside it).
+  std::unique_lock<std::mutex> lock(attach_mutex_);
+  auto current = attached_.lock();
+  if (current && !current->Closed()) {
+    lock.unlock();
     current->Send(boost::json::parse(*text));
     return;
   }
   if (!was_running) return;
-  std::lock_guard<std::mutex> lock(attach_mutex_);
   replay_.push_back(std::move(text));
 }
 
@@ -472,6 +474,8 @@ void SessionRunner::WorkerMain() {
       std::lock_guard<std::mutex> lock(mutex_);
       running_ = false;
     }
+    // The page that attaches next draws this turn from the store. Frames kept for a page
+    // that went away would be drawn beside it, which is the same turn twice.
     ClearReplay();
   }
 }

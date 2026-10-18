@@ -37,6 +37,8 @@ add_executable(pu_tests
     unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
     unit/test_approval_gate.cpp
+    unit/test_transcript_chain.cpp
+    unit/test_cli_exit.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
