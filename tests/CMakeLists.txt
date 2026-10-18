@@ -1,5 +1,12 @@
 find_package(Catch2 3 REQUIRED)
 
+# The stdio cases start a real MCP server. It is built here rather than run out of the test
+# binary: a program with one job cannot be confused with the runner, and it needs no
+# interpreter, so the same case runs on a machine that has none.
+add_executable(pu_echo_server mocks/echo_server_main.cpp)
+target_include_directories(pu_echo_server PRIVATE ${CMAKE_SOURCE_DIR}/tests/mocks)
+target_link_libraries(pu_echo_server PRIVATE Boost::json)
+
 add_executable(pu_tests
     unit/test_ollama_backend.cpp
     unit/test_openai_backend.cpp
@@ -38,6 +45,7 @@ add_executable(pu_tests
     unit/test_model_verifier.cpp
     unit/test_approval_gate.cpp
     unit/test_transcript_chain.cpp
+    unit/test_mcp_stdio_client.cpp
     unit/test_cli_exit.cpp
 )
 
@@ -53,6 +61,13 @@ target_include_directories(pu_tests PRIVATE
 target_compile_definitions(pu_tests PRIVATE
     PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
+
+# The program a stdio case starts. A generator expression rather than a searched path, so a
+# copy of the test binary still names the server ctest built beside it.
+target_compile_definitions(pu_tests PRIVATE
+    PU_ECHO_SERVER_PATH="$<TARGET_FILE:pu_echo_server>"
+)
+add_dependencies(pu_tests pu_echo_server)
 
 target_link_libraries(pu_tests PRIVATE
     pu_core

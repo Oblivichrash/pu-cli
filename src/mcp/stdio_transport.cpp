@@ -19,9 +19,27 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <csignal>
+#include <poll.h>
 #endif
 
 namespace pu::mcp {
+
+#ifndef _WIN32
+namespace {
+
+// How long a stopped server is given to leave on its own before it is killed: enough for a
+// process to notice a closed stdin, short enough that a stop never looks like a hang.
+constexpr int kReapAttempts = 100;
+constexpr int kReapWaitMs = 20;
+
+// How long the reader waits for a line before looking at its stop flag again. A server is
+// silent between requests, so a read that waited indefinitely could only be woken by a line
+// or by its descriptor closing — and closing a descriptor does not wake a blocked read().
+// Polling is what makes the flag reachable.
+constexpr int kReadPollMs = 100;
+
+}  // namespace
+#endif
 
 #ifdef _WIN32
 
@@ -314,26 +332,45 @@ bool StdioTransport::Start(MessageCallback on_message) {
 }
 
 void StdioTransport::Stop() {
-  // The reader blocks in read() on the child's stdout. Closing that end is what wakes it:
-  // the descriptor is released under it, the read returns, and the thread leaves the loop.
-  // Joining first, as this used to, waits for a line the child may never send.
-  if (stdout_fd_ != -1) {
-    ::close(stdout_fd_);
-    stdout_fd_ = -1;
-  }
+  // The flag is what ends the reader, and it is set first so a reader that wakes for any
+  // reason sees it. The reader polls rather than blocking in read() indefinitely, because
+  // closing a descriptor does not wake a read() that is already blocked on it: the close
+  // succeeds and the joining thread waits for a line the server may never send.
   running_ = false;
-  if (reader_thread_.joinable()) reader_thread_.join();
 
+  // Closing stdin first asks the server to finish on its own: most read to end of input and
+  // leave. A server that ignores it is killed below rather than waited for.
   if (stdin_fd_ != -1) {
     ::close(stdin_fd_);
     stdin_fd_ = -1;
   }
+
+  if (reader_thread_.joinable()) reader_thread_.join();
+  // The reader owns this descriptor while it runs, so it is released only once it is gone.
+  if (stdout_fd_ != -1) {
+    ::close(stdout_fd_);
+    stdout_fd_ = -1;
+  }
+
   if (pid_ > 0) {
-    // The child reads a closed stdin as the end of its input and leaves on its own; the
-    // signal is only for one that does not, and the wait below reaps either way.
+    // The wait is bounded because a server is not obliged to leave: one that ignores SIGTERM
+    // would otherwise park the caller here for as long as it likes, and a stop that hangs is
+    // worse than a process killed earlier than it liked.
     kill(pid_, SIGTERM);
-    waitpid(pid_, nullptr, 0);
-    pid_ = -1;
+    for (int i = 0; i < kReapAttempts; ++i) {
+      const pid_t reaped = waitpid(pid_, nullptr, WNOHANG);
+      if (reaped == pid_ || (reaped == -1 && errno != EINTR)) {
+        pid_ = -1;
+        break;
+      }
+      ::usleep(kReapWaitMs * 1000);
+    }
+    if (pid_ > 0) {
+      spdlog::warn("MCP server {} ignored SIGTERM; killing it", pid_);
+      kill(pid_, SIGKILL);
+      waitpid(pid_, nullptr, 0);
+      pid_ = -1;
+    }
   }
 }
 
@@ -341,8 +378,20 @@ void StdioTransport::ReaderLoop() {
   char buffer[4096];
   std::string leftover;
   const int fd = stdout_fd_;
-  while (running_) {
-    ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
+
+  while (running_.load(std::memory_order_acquire)) {
+    // Waiting with a deadline is what makes `running_` reachable: a read() that is blocked
+    // on a silent server has nothing to wake it, since closing the descriptor under it does
+    // not return from the call.
+    struct pollfd waiting = {fd, POLLIN, 0};
+    const int ready = ::poll(&waiting, 1, kReadPollMs);
+    if (ready == -1) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    if (ready == 0) continue;  // nothing to read yet; the flag is checked at the top
+
+    const ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
     if (n <= 0) {
       if (n == -1 && errno == EINTR) continue;
       break;
