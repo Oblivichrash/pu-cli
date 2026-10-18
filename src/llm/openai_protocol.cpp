@@ -19,17 +19,6 @@ std::string StreamErrorDetail(const boost::json::value& error) {
   return message.empty() ? boost::json::serialize(error) : message;
 }
 
-// A payload carried over several `data:` lines is the gateway splitting one object, and
-// the line that closes it is the one that parses.
-bool ParsesAsJson(std::string_view text) {
-  try {
-    boost::json::parse(text);
-    return true;
-  } catch (const boost::system::system_error&) {
-    return false;
-  }
-}
-
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kAsStored,
     .echoes_reasoning = true,

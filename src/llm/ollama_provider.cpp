@@ -128,8 +128,11 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
-    usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
-                        json::ValueOrDefault<int>(j, "eval_count", 0)};
+    // Named rather than positional: `TokenUsage` carries more than the two counts a daemon
+    // reports, and a positional list would have to grow with it.
+    usage_ = TokenUsage{};
+    usage_->prompt_tokens = json::ValueOrDefault<int>(j, "prompt_eval_count", 0);
+    usage_->completion_tokens = json::ValueOrDefault<int>(j, "eval_count", 0);
     // The cached prompt rides on the same line under Ollama's own name; without it the
     // count reads as a gateway that cached nothing.
     usage_->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);

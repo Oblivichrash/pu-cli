@@ -200,7 +200,7 @@ CommandLine BuildCommandLine() {
   // A page is a copy of the option objects `all` declared, so the page and the parser cannot
   // disagree about a flag's wording. `--command` is the positional that named the command, so
   // a page leaves it out; --help and --version stay, since they are how a page is asked for.
-  auto page = [&](const std::string& command, const std::vector<OptionSpec>& own) {
+  auto page = [&](const std::vector<OptionSpec>& own) {
     boost::program_options::options_description description("Global options");
     auto copy = [&](const char* name) {
       for (const auto& option : line.all.options()) {
@@ -222,14 +222,14 @@ CommandLine BuildCommandLine() {
     return description;
   };
 
-  line.per_command.emplace("agents", page("agents", option_table.at("agents")));
-  line.per_command.emplace("ask", page("ask", option_table.at("ask")));
-  line.per_command.emplace("chat", page("chat", option_table.at("chat")));
-  line.per_command.emplace("models", page("models", option_table.at("models")));
-  line.per_command.emplace("probe", page("probe", option_table.at("probe")));
-  line.per_command.emplace("check", page("check", option_table.at("check")));
-  line.per_command.emplace("sse", page("sse", option_table.at("sse")));
-  line.per_command.emplace("serve", page("serve", option_table.at("serve")));
+  line.per_command.emplace("agents", page(option_table.at("agents")));
+  line.per_command.emplace("ask", page(option_table.at("ask")));
+  line.per_command.emplace("chat", page(option_table.at("chat")));
+  line.per_command.emplace("models", page(option_table.at("models")));
+  line.per_command.emplace("probe", page(option_table.at("probe")));
+  line.per_command.emplace("check", page(option_table.at("check")));
+  line.per_command.emplace("sse", page(option_table.at("sse")));
+  line.per_command.emplace("serve", page(option_table.at("serve")));
 
   boost::program_options::positional_options_description positional;
   positional.add("command", 1);
