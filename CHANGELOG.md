@@ -59,7 +59,7 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
-- **The CLI has exit codes** (`docs/design/cli-agent-workflow.md` §3.1). `0` did what it
+- **The CLI has exit codes.** `0` did what it
   was asked, `1` the invocation or configuration is wrong, `2` the provider refused or
   could not be reached, `3` the sandbox refused, `4` was interrupted. `pu ask` used to
   return 0 for a failed turn; it now returns 2, and `pu models --verify` returns 2 when a
