@@ -188,10 +188,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "check") {
-      // No Runtime: the point is to read a file, and a file this build cannot load is what
-      // it is there to report rather than to fail on halfway through.
-      pu::Runtime unused;
-      return pu::cli::RunCheck(OptionOr(vm, "config", ""), unused);
+      return pu::cli::RunCheck(OptionOr(vm, "config", ""));
     }
 
     if (cmd == "probe") {

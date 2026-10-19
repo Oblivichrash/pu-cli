@@ -181,8 +181,7 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
 
 }  // namespace
 
-int RunCheck(const std::string& config_path, Runtime& runtime) {
-  (void)runtime;  // a check reads the file; it does not start a conversation about it
+int RunCheck(const std::string& config_path) {
   std::string path = config_path;
   if (path.empty()) path = config::FindConfigPath();
   if (path.empty()) {

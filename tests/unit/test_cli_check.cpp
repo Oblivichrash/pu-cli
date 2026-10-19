@@ -22,8 +22,6 @@
 #include <string>
 
 #include "pu/app/cli.hpp"
-#include "pu/core/platform.hpp"
-#include "pu/runtime/runtime.hpp"
 
 namespace {
 
@@ -69,8 +67,7 @@ class TempWorkspace {
 
 int RunCheckOf(const fs::path& config) {
   CapturedStdout capture;
-  pu::Runtime unused;
-  return pu::cli::RunCheck(config.string(), unused);
+  return pu::cli::RunCheck(config.string());
 }
 
 }  // namespace
@@ -81,8 +78,7 @@ TEST_CASE("A gateway's host is printed as the value that will be used", "[check]
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"deepseek","model":"m"}}]})");
 
   CapturedStdout capture;
-  pu::Runtime unused;
-  REQUIRE(pu::cli::RunCheck(config.string(), unused) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   // The file names no host, so the printed one came from the gateway table; saying where it
@@ -97,8 +93,7 @@ TEST_CASE("A sandbox root is printed as the directory it resolves to", "[check]"
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"},"security":{"sandbox_root":"."}}]})");
 
   CapturedStdout capture;
-  pu::Runtime unused;
-  REQUIRE(pu::cli::RunCheck(config.string(), unused) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
 
   // "." is relative to where the command runs, which is what a reader cannot see in the file.
   REQUIRE(capture.text().find("sandbox      " + fs::current_path().string()) !=
@@ -112,8 +107,7 @@ TEST_CASE("An api key that expanded to nothing is called out", "[check]") {
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m","api_key":"${PU_CHECK_UNSET_VARIABLE}"}}]})");
 
   CapturedStdout capture;
-  pu::Runtime unused;
-  REQUIRE(pu::cli::RunCheck(config.string(), unused) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("api_key      (empty)") != std::string::npos);
@@ -127,9 +121,8 @@ TEST_CASE("A field this build ignores is reported, and is not a failure", "[chec
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"},"security":{"history_compaction":true},"mystery":1}]})");
 
   CapturedStdout capture;
-  pu::Runtime unused;
   // A build may be older than the file, so an unread field is a warning: the config runs.
-  REQUIRE(pu::cli::RunCheck(config.string(), unused) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("'mystery'") != std::string::npos);
@@ -154,10 +147,9 @@ TEST_CASE("A session naming an agent the file no longer has is reported", "[chec
       << R"({"schema_version":8,"conversation":{"history":{"nodes":[],"leaf":""}},"session_spec":{"agent_name":"gone"}})";
 
   CapturedStdout capture;
-  pu::Runtime unused;
   // The session outranks default_agent by design, so a stale name is a fact to print, not a
   // file to refuse: the exit code stays 0 and the names that do exist are listed.
-  REQUIRE(pu::cli::RunCheck(config.string(), unused) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("names  gone, which this file does not configure") != std::string::npos);

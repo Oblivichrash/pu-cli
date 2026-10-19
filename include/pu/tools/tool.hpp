@@ -51,12 +51,6 @@ class Tool {
   virtual std::string Description() const = 0;
   virtual boost::json::value ParametersSchema() const = 0;
   virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
-
-  const std::string& DisplayName() const { return display_name_; }
-
- private:
-  friend class Toolbox;
-  std::string display_name_;
 };
 
 namespace tools {
