@@ -76,6 +76,21 @@ payload split over several `data:` lines is joined until what they hold parses �
 gateway that writes `data:{...}` with no space reads the same as one that writes
 `data: {...}`. Ollama's NDJSON frames nothing, so a blank line there says nothing.
 
+`core::SseParser` (`include/pu/core/sse.hpp`) is that format's implementation, and it is a
+pure function of the bytes fed to it: a caller tests it without a socket, and the same
+parser serves a chat gateway and `pu sse` because the framing belongs to the format rather
+than to whoever is sending. The details a caller has to know, none of which the format
+states:
+
+| Question | Answer |
+| --- | --- |
+| A `\n` landed mid-character because the read split the sequence | The line waits for the rest of it. Handing the half on would corrupt it, so the parser holds what is incomplete until any split of the stream is whole again |
+| The stream ended on a frame with no blank line | It is still delivered. A server that closes after its last `data:` line sent that line, so `Finish()` reports it rather than dropping it |
+| A `retry:` field arrived | It is reported, not acted on. The caller owns the reconnect policy, and a parser that slept would be one a caller could not test |
+| A gateway sends newline-delimited JSON | `SetBareLinesAreEvents` makes a line with no field name an event whose payload is the line. A stream carrying a `data:` line is an event stream regardless, so the setting only decides what to do with a bare line |
+| Two `data:` lines in one frame | Joined with a newline. A payload split over several lines is one payload, and the split is transport rather than content |
+| A frame with no `data:` line at all | Not an event. `event` and `id` name an event, they do not make one |
+
 ### Usage
 
 Field names are not hardcoded in the reader: `ResponseShape`
@@ -114,6 +129,22 @@ that prints it: it is a record, not a feature.
 not a failure, since a gateway may add a field at will. The tests pinning a captured stream
 assert the set whole, so a new field on a gateway we hold a capture of fails the build. The
 comparison is one level deep: a key nested inside `choices` or `message` is not seen.
+`seen_fields` is the complement it is diffed against, and `missing_fields` is the third
+case: a name `ResponseShape` says this build reads that the reply never carried, which is
+what says a gateway stopped sending a field rather than that a field was added.
+
+A count a backend does not report stays `0` rather than being derived. `total_tokens` in
+particular is the provider's own total: summing the two counts beside it would produce a
+figure the provider never gave, which reads as an answer where there is none. `cached_tokens`
+is the prompt the provider answered from its cache, and nothing is inferred from it either.
+
+### Reasoning blocks
+
+A reasoning-capable gateway returns its thinking beside the answer, and `ReasoningBlock`
+carries both forms: `text` is what the model thought, `raw` is the provider's own encoding
+kept replayable, and `signature` is the signed proof an API attaches to a block. A signature
+must be returned verbatim on the next request — a re-serialised block fails verification —
+which is why `raw` exists rather than a reconstruction from the parsed fields.
 
 ### Completions
 

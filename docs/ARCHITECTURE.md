@@ -70,6 +70,27 @@ stdout carries what was asked for — the reply, a model listing, a rendered con
 stderr carries everything else: notices, usage, the reason a turn failed. `pu ask "... | ..."`
 pipes the answer and nothing beside it.
 
+### The frame every command runs inside
+
+`cli::WithInitializedRuntime` loads the configuration, runs a body, and saves the session.
+Every subcommand that needs a `Runtime` goes through it, so initialization and persistence
+are stated once: a failure to initialize is `1`, because the configuration is what is wrong,
+and a command that returns without persisting is the exception, not the rule. A non-empty
+agent name overrides the configured agent for that run only.
+
+Two signatures exist for a reason rather than for symmetry:
+
+- `RunProbe` reads a product named on the command line without an `agents.json` entry — its
+  host and key come from the gateway table, and neither the configuration nor the session is
+  touched. That is what makes probing a gateway safe from inside a workspace already
+  configured for another one.
+- `RunSse` takes a URL, a method and a set of headers from the caller. A feed is not a chat
+  turn, so nothing about it is read from `agents.json`; it borrows the runtime only for the
+  `HttpClient` and the cancellation token.
+
+`FormatSseEvent` is exposed rather than private because it is what a caller's pipe reads, and
+a pipe is testable where a socket is not.
+
 
 A condition the code can know in advance is checked, not thrown: an operation that can
 fail visibly returns `std::optional` or `nullptr`. Exceptions are for what cannot be known
