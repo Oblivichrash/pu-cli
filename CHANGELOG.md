@@ -8,6 +8,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **A hand-off is a job before it is a message.** `send_to_peer` posts the job on the receiving
+  server's board, then sends the message that names it; the receiver claims the job before it
+  queues the turn, and closes it with `done` and the answer — or `failed` and the error — when
+  the turn ends. A board that refuses the job means nothing is sent at all, so a hand-off that
+  the receiver could not accept never arrives as a turn. The tool takes an `intent` naming the
+  work and an optional `due` duration, and answers with the job, the turn and the model.
 - **A task board, so work handed to a peer outlives the message that asked for it.** A job is a
   shared object with an owner and a state — `open`, `claimed`, `working`, `blocked`, `done`,
   `failed` — and only the peer it is offered to may move it, so two peers can neither work the

@@ -158,11 +158,17 @@ Both sides must agree on the token and on each other's names. A peer entry witho
 name and a `url` is skipped with a warning rather than trusted, and an undeclared
 `from` is refused before any turn starts.
 
-`send_to_peer` returns as soon as the peer accepts the message rather than waiting for
-an answer, which arrives as a new turn. A turn that arrived from a peer may reply to
-that peer and to nobody else, so an A→B→A→B chain ends at the second hop by
-construction rather than by a counter. The board is readable by a peer and by a person,
-but no tool posts to it yet: offering work and watching it is the next step.
+`send_to_peer` posts a job on the receiving server's board before it says anything, so
+the hand-off exists as an object before it exists as a message: the job names the peer it
+is for, the `intent` it was asked to do and an optional `due` duration, and the receiver
+claims it as it accepts the turn. A board that refuses the job stops the call, so work the
+receiver could not take on never arrives as a turn. When the turn ends the job closes with
+`done` and the answer, or `failed` and the error, which is how the sender's next turn — or a
+person reading `/api/jobs` — learns the outcome without polling the peer.
+
+The call returns as soon as the peer accepts rather than waiting for an answer, which
+arrives as a new turn. A turn that arrived from a peer may reply to that peer and to nobody
+else, so an A→B→A→B chain ends at the second hop by construction rather than by a counter.
 
 ## Environment Variables
 

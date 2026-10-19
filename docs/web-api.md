@@ -114,7 +114,7 @@ its own, so every connection from it is a second page.
 | `GET` | `/api/settings` | Every setting this build knows, with the value in force and whether it came from this session or the agent |
 | `POST` | `/api/settings` | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | Drop every override and go back to the agent's configuration |
-| `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
+| `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","job":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
 | `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled |
 | `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
 | `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
@@ -146,3 +146,9 @@ job name that is not on the board answers `404`. The board holds at most 32 open
 
 `POST /api/peers/heartbeat` requires `peer` and reads back the whole board, so a peer learns
 what it holds in the same round trip that says it is alive.
+
+When a peer message names a `job`, the receiver claims it before it queues the turn and
+answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this
+peer's to claim, is refused and no turn starts. The turn closes the job when it ends — `done`
+with the answer, `failed` with the error — so the sender learns the outcome from the board
+rather than by waiting on the peer.

@@ -100,8 +100,10 @@ class SessionRunner {
 
   void Submit(std::string text, std::shared_ptr<WebSocketConnection> conn);
   // A turn that arrived from a peer has no page to answer: its reply goes back through the
-  // send_to_peer tool, so the runner runs it without a connection.
-  void SubmitFromPeer(std::string sender, std::string text);
+  // send_to_peer tool, so the runner runs it without a connection. The turn id comes back so
+  // the acceptance can name the turn the sender should watch.
+  std::string SubmitFromPeer(std::string sender, std::string text, std::string job = {});
+  void AttachBoard(serve::Board* board) { board_ = board; }
   void Stop();
 
   void CancelTurn();
@@ -158,6 +160,7 @@ class SessionRunner {
   Tokens CurrentTokens() const;
 
   Runtime& runtime_;
+  serve::Board* board_ = nullptr;
 
   struct Job {
     std::string text;
@@ -165,7 +168,10 @@ class SessionRunner {
     std::string peer_origin;
     // The turn this job runs, so its record can be found while it is still being written.
     std::string turn_id;
+    // The board job this turn answers, when a peer posted one. Closing it is this turn's job.
+    std::string board_job;
   };
+  void CloseBoardJob(const std::string& job_id, const ExecutionResult& result);
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<Job> jobs_;

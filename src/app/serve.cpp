@@ -313,12 +313,15 @@ void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection
   cv_.notify_one();
 }
 
-void SessionRunner::SubmitFromPeer(std::string sender, std::string text) {
+std::string SessionRunner::SubmitFromPeer(std::string sender, std::string text,
+                                          std::string job) {
+  std::string turn_id = session::NewMessageId();
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    jobs_.push_back(Job{std::move(text), nullptr, std::move(sender), session::NewMessageId()});
+    jobs_.push_back(Job{std::move(text), nullptr, std::move(sender), turn_id, std::move(job)});
   }
   cv_.notify_one();
+  return turn_id;
 }
 
 void SessionRunner::Stop() {
@@ -481,6 +484,8 @@ void SessionRunner::WorkerMain() {
       say({{"type", "done"}, {"payload", {{"model", result.model}}}});
     }
 
+    CloseBoardJob(job.board_job, result);
+
     {
       std::lock_guard<std::mutex> lock(mutex_);
       running_ = false;
@@ -488,6 +493,25 @@ void SessionRunner::WorkerMain() {
     // The record stays, finished: a page that attaches next is handed it rather than waiting
     // for a reload, and a subscriber that was mid-stream reads the end of it.
     FinishTurn();
+  }
+}
+
+void SessionRunner::CloseBoardJob(const std::string& job_id, const ExecutionResult& result) {
+  if (job_id.empty() || board_ == nullptr) return;
+  const auto& peers = runtime_.Peers();
+  const std::string self = peers.has_value() ? peers->self_name : std::string();
+  if (self.empty()) return;
+
+  serve::JobRequest close;
+  close.job = job_id;
+  close.from = self;
+  close.state = std::string{serve::JobStateName(result.has_error ? serve::JobState::kFailed
+                                                                : serve::JobState::kDone)};
+  close.result = result.has_error
+                     ? (!result.error_message.empty() ? result.error_message : result.content)
+                     : result.content;
+  if (!board_->Update(close).outcome.has_value()) {
+    spdlog::warn("Peer job '{}' could not be closed: it is no longer this server's", job_id);
   }
 }
 
@@ -545,8 +569,12 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   }
 
   std::mutex io_mutex;
-  auto runner = std::make_shared<SessionRunner>(runtime);
   serve::Board board;
+  auto runner = std::make_shared<SessionRunner>(runtime);
+  // The runner closes the job a peer turn answers, so it needs the board the routes serve.
+  // It is handed over after both exist rather than through the constructor, which would
+  // otherwise pin the declaration order of two independent locals.
+  runner->AttachBoard(&board);
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
                                                                       tcp::socket socket) {

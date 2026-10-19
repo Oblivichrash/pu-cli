@@ -635,11 +635,18 @@ start a conversation with the other and receive an answer.
 
 ### Delivery is asynchronous
 
-`send_to_peer` does not wait for the peer to think. It posts the message, checks
-that the peer accepted it, and returns; the asking agent is told plainly that an
-answer will arrive later. The peer's reply is injected as a **new turn**, so a
-slow or busy peer cannot hold up the sender, and the two agents can work at
-different speeds.
+`send_to_peer` does not wait for the peer to think. It posts a job on the peer's
+board, messages that job to the peer, checks that the peer accepted it, and
+returns; the asking agent is told plainly that an answer will arrive later. The
+peer's reply is injected as a **new turn**, so a slow or busy peer cannot hold up
+the sender, and the two agents can work at different speeds.
+
+The job is what makes the wait legible. A reply that arrives as a turn is
+invisible until it lands, so without the board neither side could tell a hand-off
+that is running from one that was dropped. The receiver claims the job as it
+accepts the turn and closes it when the turn ends, which is why a board that
+refuses the job stops the call before the message is sent: work the receiver
+could not take on must not arrive as a turn.
 
 This is why the tool reports "*has the message. It will answer in a later turn*"
 rather than a reply: if it returned the peer's words, the call would block for as

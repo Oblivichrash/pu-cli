@@ -25,8 +25,8 @@ bool Contains(const std::string& haystack, const std::string& needle) {
 // A turn that relays once. `function.arguments` is a JSON string on the OpenAI wire: the
 // protocol appends what arrives and parses the result, so an object would arrive as nothing.
 boost::json::object RelayAnswer(const std::string& peer, const std::string& message) {
-  const std::string arguments =
-      boost::json::serialize(boost::json::object{{"peer", peer}, {"message", message}});
+  const std::string arguments = boost::json::serialize(boost::json::object{
+      {"peer", peer}, {"intent", message}, {"message", message}});
   return boost::json::object{
       {"tool_calls", boost::json::array{boost::json::object{
                          {"index", 0},
@@ -88,6 +88,42 @@ TEST_CASE("A relayed message arrives as a turn on the peer that received it") {
 
   // The turn A received records who asked, so a page names the peer rather than "You".
   CHECK(a.TranscriptContains("user: start"));
+
+  a.Stop();
+  b.Stop();
+}
+
+// The board is what makes a hand-off visible while it runs: the sender posts a job before it
+// says anything, and the receiver closes it with its answer.
+TEST_CASE("A relayed message closes as a job on the peer that received it") {
+  PeerServer a("A", [](int call) {
+    return call <= 1 ? PeerServer::Reply{RelayAnswer("B", "ping"), "tool_calls"}
+                     : PeerServer::Reply{TextAnswer("relayed"), "stop"};
+  });
+  PeerServer b("B", TextAnswer("pong"), "stop");
+  WritePeersFile(a.Home(), "A", a.Port(), "B", b.Port());
+  WritePeersFile(b.Home(), "B", b.Port(), "A", a.Port());
+
+  b.Start();
+  a.Start();
+
+  const HttpResponse accepted = a.Client().PostRaw(
+      "/api/peer/message", R"({"from":"B","message":"start","hop":0})", kPeerToken);
+  REQUIRE(accepted.status == 202);
+
+  REQUIRE(b.WaitForTranscript("ping"));
+
+  const HttpResponse listed = b.Client().GetRaw("/api/jobs");
+  REQUIRE(listed.status == 200);
+
+  const boost::json::value body = boost::json::parse(listed.body);
+  const boost::json::array& jobs = body.as_object().at("jobs").as_array();
+  REQUIRE_FALSE(jobs.empty());
+
+  const boost::json::value& job = jobs.at(0);
+  CHECK(pu::json::ValueOrDefault<std::string>(job, "intent", "") == "ping");
+  CHECK(pu::json::ValueOrDefault<std::string>(job, "state", "") == "done");
+  CHECK(pu::json::ValueOrDefault<std::string>(job, "result", "").find("pong") != std::string::npos);
 
   a.Stop();
   b.Stop();

@@ -514,8 +514,9 @@ std::string BearerToken(const http::request<http::string_body>& req) {
 }
 
 // An inbound message becomes a turn of its own: it is queued and answered 202, since the
-// reply travels back through the sender's send_to_peer tool rather than this response.
-boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner,
+// reply travels back through the sender's send_to_peer tool rather than this response. The
+// answer names the turn and who took it, so the sender can watch the board for the outcome.
+boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner, Board* board,
                                      const http::request<http::string_body>& req) {
   const auto& peers = runtime.Peers();
   if (!peers.has_value()) throw NotFound("Peer messaging is not configured");
@@ -528,11 +529,35 @@ boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner,
   if (!peers->Knows(sender)) throw RequestRefused("Unknown peer: " + sender);
   if (message.empty()) throw RequestRefused("Missing or invalid 'message'");
 
+  const std::string job_id = json::ValueOrDefault<std::string>(body, "job", "");
+  if (!job_id.empty() && board != nullptr) {
+    // Claiming before queueing is what makes a job that never runs visible as claimed rather
+    // than silently open. A job already taken by someone else is a refusal, not a duplication.
+    serve::JobRequest claim;
+    claim.job = job_id;
+    claim.from = peers->self_name;
+    claim.state = std::string{serve::JobStateName(serve::JobState::kClaimed)};
+    const serve::Board::ActionResult taken = board->Update(claim);
+    spdlog::info("Peer '{}' job '{}' claimed", sender, job_id);
+    if (taken.job.state != serve::JobState::kClaimed) {
+      throw RequestRefused("job " + job_id + " did not end up claimed");
+    }
+  }
+
   const int hop = json::ValueOrDefault<int>(body, "hop", 0);
   spdlog::info("Peer '{}' sent a message at hop {}: {}", sender, hop, message.substr(0, 120));
 
-  runner->SubmitFromPeer(sender, message);
-  return boost::json::object{{"success", true}, {"accepted", true}};
+  const std::string turn = runner->SubmitFromPeer(sender, message, job_id);
+  const config::Backend backend = runtime.CurrentBackend();
+  return boost::json::object{
+      {"success", true},
+      {"accepted", true},
+      {"from", peers->self_name},
+      {"turn", turn},
+      {"agent", runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
+                                         : std::string()},
+      {"model", backend.model},
+  };
 }
 
 }  // namespace
@@ -566,7 +591,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
   if (target == "/api/peer/message" && req.method() == http::verb::post) {
     try {
       std::lock_guard<std::mutex> lock(io_mutex);
-      SendJson(res, 202, HandlePeerMessage(runtime, runner, req));
+      SendJson(res, 202, HandlePeerMessage(runtime, runner, board, req));
     } catch (const std::exception& e) {
       SendError(res, ErrorStatus(e), e.what());
     }

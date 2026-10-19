@@ -142,3 +142,43 @@ TEST_CASE("an unreadable request is answered with the status that names whose it
       client.PostRaw("/api/peers/heartbeat", boost::json::serialize(boost::json::object{}));
   CHECK(no_peer.status == 400);
 }
+
+TEST_CASE("claiming a job reports the claim itself, not an outcome") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto client = server.Client();
+
+  const HttpResponse created =
+      client.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+
+  const HttpResponse claimed = client.Patch(
+      "/api/jobs", boost::json::object{{"job", id}, {"from", "B"}, {"state", "claimed"}});
+  CHECK(claimed.status == 200);
+
+  const boost::json::value body = boost::json::parse(claimed.body);
+  CHECK(ValueOrDefault<std::string>(body.at("job"), "state", "") == "claimed");
+  CHECK_FALSE(body.as_object().contains("outcome"));
+}
+
+TEST_CASE("a job belongs to the peer it names, so nobody else can move it") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto client = server.Client();
+
+  const HttpResponse created =
+      client.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+
+  const HttpResponse stranger = client.Patch(
+      "/api/jobs", boost::json::object{{"job", id}, {"from", "C"}, {"state", "claimed"}});
+  CHECK(stranger.status == 400);
+  CHECK(ValueOrDefault<bool>(boost::json::parse(stranger.body), "success", true) == false);
+
+  const HttpResponse listed = client.GetRaw("/api/jobs");
+  const auto* job = Job(listed, id);
+  REQUIRE(job != nullptr);
+  CHECK(ValueOrDefault<std::string>(*job, "state", "") == "open");
+}
