@@ -155,7 +155,9 @@ how a `blocked` job gets unstuck. The answer is recorded as the job's `note`, th
 cleared, and the job returns to `working` for the peer that holds it. It is a separate call
 rather than a `PATCH` because a person has no name to present as `from`, and borrowing one
 would make the audit trail say a peer answered its own question. A job that is not blocked
-answers `400`; a job that is not on the board answers `404`.
+answers `400`; a job that is not on the board answers `404`. The page's board panel is the
+caller: it polls `GET /api/jobs` and answers blocked jobs from the sidebar, which is why a
+question asked by a peer is answerable without opening another terminal.
 
 When a peer message names a `job`, the receiver claims it before it queues the turn and
 answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this
