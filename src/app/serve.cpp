@@ -308,7 +308,14 @@ void SessionRunner::FinishTurn() {
 void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    jobs_.push_back(Job{std::move(text), std::move(conn), {}, session::NewMessageId()});
+    // Built field by field rather than with a brace-init list: the list has to name every
+    // member, and the one that is forgotten is a warning on every build rather than a change
+    // a reader sees.
+    Job job;
+    job.text = std::move(text);
+    job.conn = std::move(conn);
+    job.turn_id = session::NewMessageId();
+    jobs_.push_back(std::move(job));
   }
   cv_.notify_one();
 }
