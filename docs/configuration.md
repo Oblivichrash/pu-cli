@@ -39,7 +39,7 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |
 | `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply. A cap reached while a tool call is being written ends the turn with an error, since half an argument would run the tool on a partial value |
-| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/thinking`. What each level puts on the wire is in [providers.md](providers.md) |
+| `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
 | `system_prompt` | unset | Merged with the injected context |
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the

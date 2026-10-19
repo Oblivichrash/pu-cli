@@ -473,7 +473,9 @@ home and no module has to be told about another's.
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
-| `web/panel.js` | The sidebar: backend label, context bar, tool list |
+| `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
+| `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
+| `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
