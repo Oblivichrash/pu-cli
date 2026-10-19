@@ -165,7 +165,9 @@ TEST_CASE("A peer's turn is named by its peer and cannot be rewound") {
 // A server with no peers.json is not part of a topology: the endpoint answers 404 and the tool
 // is never registered, both following from the one absent file.
 TEST_CASE("A server without peers.json does not mount the peer endpoint") {
-  PeerServer lone("L", TextAnswer("ok"), "stop");
+  // Built without the topology file this fixture otherwise writes: the point of the case is a
+  // workspace that is not part of one.
+  PeerServer lone("L", TextAnswer("ok"), "stop", /*with_peers=*/false);
   lone.Start();
 
   const HttpResponse res = lone.Client().PostRaw(

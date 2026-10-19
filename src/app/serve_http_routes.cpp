@@ -412,6 +412,10 @@ struct BoardRoute {
   http::verb method;
   BoardHandler handler;
   bool has_body;
+  // The write routes are a peer changing shared state, so they present the token. A read does
+  // too: reading is what tells a peer this one is still working, and that is not a claim worth
+  // making about a server that cannot prove it holds the secret.
+  bool authenticated;
 };
 
 constexpr std::chrono::seconds kOfflineAfter{45};
@@ -427,8 +431,17 @@ boost::json::value RenderResult(const Board::ActionResult& result) {
   return answer;
 }
 
+// A pull is the liveness signal: it carries the token, and the board records the peer it names
+// as heard from. Nothing is asked of the caller beyond the secret it already has.
 boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
   return board.Snapshot(kOfflineAfter);
+}
+
+// The name a token speaks for. A token is one peer's, so a request carrying it is that peer.
+std::string PeerForToken(Runtime& runtime, const std::string& token) {
+  const auto& peers = runtime.Peers();
+  if (!peers.has_value() || token.empty() || !peers->Accepts(token)) return {};
+  return peers->self_name;
 }
 
 boost::json::value HandleBoardPost(Board& board, const boost::json::value& body) {
@@ -462,24 +475,11 @@ boost::json::value HandleBoardAnswer(Board& board, const boost::json::value& bod
   return RenderResult(board.Answer(id, answer));
 }
 
-boost::json::value HandleHeartbeat(Board& board, const boost::json::value& body) {
-  const std::string peer = json::ValueOrDefault<std::string>(body, "peer", "");
-  if (peer.empty()) throw RequestRefused("A heartbeat needs the name it speaks as, as 'peer'");
-  board.TouchPeer(peer, json::ValueOrDefault<std::string>(body, "state", ""));
-
-  boost::json::object answer = board.Snapshot(kOfflineAfter).as_object();
-  for (const auto& entry : answer["peers"].as_array()) {
-    if (json::ValueOrDefault<std::string>(entry, "name", "") == peer) answer["self"] = entry;
-  }
-  return answer;
-}
-
 constexpr BoardRoute kBoardRoutes[] = {
-    {"/api/jobs", http::verb::get, &HandleBoardGet, false},
-    {"/api/jobs", http::verb::post, &HandleBoardPost, true},
-    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true},
-    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true},
-    {"/api/peers/heartbeat", http::verb::post, &HandleHeartbeat, true},
+    {"/api/jobs", http::verb::get, &HandleBoardGet, false, true},
+    {"/api/jobs", http::verb::post, &HandleBoardPost, true, true},
+    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, true},
+    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true, true},
 };
 
 constexpr Route kRoutes[] = {
@@ -590,6 +590,16 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
     if (board == nullptr) {
       SendError(res, 404, "This server has no board");
       return;
+    }
+
+    if (route.authenticated) {
+      const std::string holder = PeerForToken(runtime, BearerToken(req));
+      if (holder.empty()) {
+        SendError(res, 403, "A board request carries a peer token");
+        return;
+      }
+      // Reading is being heard from. Recorded before the snapshot so the answer includes it.
+      board->TouchPeer(holder);
     }
 
     try {

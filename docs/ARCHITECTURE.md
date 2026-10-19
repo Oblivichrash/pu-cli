@@ -333,7 +333,7 @@ The status the exception maps to is the one that names whose fault it is: `Reque
 for a request the caller can fix, `NotFound` for a name that does not exist, and `Error`
 for an operation that failed on our side.
 
-Routes that need no runtime — the board and the heartbeat — are dispatched before
+Routes that need no agent turn — the board — are dispatched before
 `io_mutex` is taken, because `Board` carries its own mutex. The board is the one piece of
 state peers share that is not part of the conversation, and putting it behind the session's
 lock would let a slow peer's poll stop the page's turn.
@@ -747,7 +747,7 @@ of work, posted to and read from by every peer and by the human looking at it.
    human ──┐
            ├──►  board (jobs, peers)  ◄──►  A   ──►  local model
    A ──────┤          │     ▲
-   B ──────┘          │     └── heartbeat: "B is alive, and here is where it is"
+   B ──────┘          │     └── read: "B was last heard from now, and here is what it holds"
                       └──────── read: every open job, every peer's liveness
 ```
 
@@ -820,19 +820,24 @@ because a result is what the sender was waiting for.
 
 ### Liveness is observed, not reported
 
-A peer sends a heartbeat — `POST /api/peers/heartbeat`, naming itself and what it
-is working on — and reads the whole board back in the same round trip. One poll,
-not two.
+**Reading the board is being heard from.** There is no heartbeat call. A peer
+presents its token on `GET /api/jobs`, and the read itself records that peer as
+heard from; the same answer carries what the board holds, so one round trip says
+"still here" and answers the question at once. The name comes from the token
+rather than from the request body: the earlier design took a `peer` field, and a
+field is something anyone can write, which made `online` a claim rather than an
+observation.
 
 `online` is decided by whoever is looking, from `last_seen`. A peer never says it
 is alive; it says when it was last heard from and lets the reader compare that
 with its own clock. A peer that is wedged cannot keep claiming to be well, and a
 peer whose clock is wrong cannot make itself look healthy.
 
-There is deliberately **no separate heartbeat thread**. A background thread would
-report the process as alive while the work is stuck, which is exactly the state
-that must be visible. The heartbeat is sent by the loop doing the work, so "still
-heartbeating" and "still working" mean the same thing.
+There is deliberately **no separate heartbeat thread, and no periodic read**. The
+pull is made by the turn loop, once per round, because that is the one thread that
+is doing the work: a background timer would report the process as alive while the
+work is stuck, which is exactly the state that must be visible. Time passes, the
+turn stops, the reads stop, and the peer goes dark by itself.
 
 Full visibility is the default: every peer sees every job, not only the ones
 addressed to it. A peer that can see what its siblings are holding does not need

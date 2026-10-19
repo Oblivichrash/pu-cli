@@ -24,6 +24,7 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/serve/board.hpp"
+#include "pu/serve/peer_read.hpp"
 
 namespace pu::cli {
 namespace {
@@ -582,11 +583,19 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   // It is handed over after both exist rather than through the constructor, which would
   // otherwise pin the declaration order of two independent locals.
   runner->AttachBoard(&board);
-  // The board's answer is per round and per server, so it is asked for rather than copied.
-  runtime.SetContextDigest([&board, &runtime] {
+  // The digest is the peers' own boards, pulled once per round. The pull is also what tells a
+  // peer this server is still working: it carries the token, and it is made on the thread that
+  // runs the turn, so a turn that stops being worked stops reading.
+  auto reader = std::make_shared<serve::BoardReader>(runtime.Peers().value_or(config::PeerConfig{}),
+                                                     runtime.SharedHttp().get());
+  runtime.SetContextDigest([&board, &runtime, reader] {
     const auto& peers = runtime.Peers();
     if (!peers.has_value()) return std::string();
-    return board.Digest(peers->self_name);
+    const std::string own = board.Digest(peers->self_name);
+    const std::string theirs = reader->Describe(reader->PullAll());
+    if (own.empty()) return theirs;
+    if (theirs.empty()) return own;
+    return own + "\n" + theirs;
   });
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,

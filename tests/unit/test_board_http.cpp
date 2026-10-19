@@ -107,20 +107,38 @@ TEST_CASE("a job that is only offered can be declined and reopened") {
   CHECK(ValueOrDefault<int>(body, "declines", 0) == 1);
 }
 
-TEST_CASE("a heartbeat names the peer and reports it online with the board") {
+// Reading is being heard from: the pull carries the token, so the name it records is the one the
+// token speaks for and nobody can claim a liveness they cannot prove.
+TEST_CASE("a board read records the peer that made it") {
   PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
   server.Start();
   auto client = server.Client();
 
-  const HttpResponse beat =
-      client.PostRaw("/api/peers/heartbeat", boost::json::serialize(boost::json::object{
-                                                {"peer", "B"}, {"state", "idle"}}));
-  CHECK(beat.status == 200);
+  const HttpResponse read = client.GetRaw("/api/jobs");
+  CHECK(read.status == 200);
 
-  const boost::json::value body = boost::json::parse(beat.body);
-  CHECK(ValueOrDefault<bool>(body.at("self"), "online", false));
-  CHECK(ValueOrDefault<std::string>(body.at("self"), "state", "") == "idle");
+  const boost::json::value body = boost::json::parse(read.body);
+  REQUIRE(body.as_object().contains("peers"));
+  bool seen = false;
+  for (const auto& peer : body.at("peers").as_array()) {
+    if (ValueOrDefault<std::string>(peer, "name", "") != "A") continue;
+    seen = true;
+    CHECK(ValueOrDefault<bool>(peer, "online", false));
+  }
+  CHECK(seen);
+  // A read answers with the board, so a caller learns what it holds in the same round trip.
   CHECK(body.as_object().contains("jobs"));
+}
+
+TEST_CASE("a board request without the token is refused") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto anonymous = server.AnonymousClient();
+
+  CHECK(anonymous.GetRaw("/api/jobs").status == 403);
+  CHECK(anonymous
+            .PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")))
+            .status == 403);
 }
 
 TEST_CASE("an unreadable request is answered with the status that names whose it is") {
@@ -138,9 +156,6 @@ TEST_CASE("an unreadable request is answered with the status that names whose it
       boost::json::object{{"job", "no-such-job"}, {"from", "B"}, {"state", "claimed"}});
   CHECK(unknown_job.status == 404);
 
-  const HttpResponse no_peer =
-      client.PostRaw("/api/peers/heartbeat", boost::json::serialize(boost::json::object{}));
-  CHECK(no_peer.status == 400);
 }
 
 TEST_CASE("claiming a job reports the claim itself, not an outcome") {

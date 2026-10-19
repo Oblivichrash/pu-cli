@@ -115,10 +115,10 @@ its own, so every connection from it is a second page.
 | `POST` | `/api/settings` | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | Drop every override and go back to the agent's configuration |
 | `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","job":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
-| `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled |
+| `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled. Reading it is how a peer is heard from |
 | `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
 | `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
-| `POST` | `/api/peers/heartbeat` | Say a peer is alive (`{"peer":"B","state":"working"}`) and read the board back in the same round trip |
+
 
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
@@ -128,8 +128,8 @@ reason in `error`.
 
 ## The board
 
-`GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a heartbeat adds
-`self` for the peer that asked. A job carries `id`, `from`, `to`, `intent`, `state`,
+`GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a call made with a
+peer's token adds `self` for whichever peer that token belongs to. A job carries `id`, `from`, `to`, `intent`, `state`,
 `created_at`, `updated_at`, `idle_seconds`, and — each only when it has something to say —
 `due_at`, `overdue`, `question`, `result`, `declined_by` and `declines`. A peer carries
 `name`, `state`, `last_seen`, `seen_seconds` and `online`.
@@ -144,8 +144,11 @@ with `400`: a move by a peer that does not hold it, a move on a job already sett
 `blocked` without a `question`, an unknown `state`, or a `due` that is not a duration. A
 job name that is not on the board answers `404`. The board holds at most 32 open jobs.
 
-`POST /api/peers/heartbeat` requires `peer` and reads back the whole board, so a peer learns
-what it holds in the same round trip that says it is alive.
+**Reading is being heard from.** Every board request presents `Authorization: Bearer` with
+the shared token, and the peer that token belongs to is recorded as heard from at the moment of
+the read. There is no separate heartbeat call: one request both says "still here" and answers
+with what the board holds, which is the same round trip. A request without the token is refused
+with `403`, because a liveness nobody can prove is not one.
 
 `POST /api/jobs/answer` takes `job` and `answer` and is the person's verb, not a peer's: it is
 how a `blocked` job gets unstuck. The answer is recorded as the job's `note`, the `question` is

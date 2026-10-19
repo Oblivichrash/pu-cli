@@ -353,27 +353,33 @@ class TestHttpClient {
  public:
   explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  std::string Get(const std::string& path) { return Request(http::verb::get, path, "").body; }
+  // The bearer a board request presents. Empty sends no Authorization header at all, which is
+  // what a caller that is not a peer looks like.
+  void SetBearer(std::string bearer) { bearer_ = std::move(bearer); }
 
-  HttpResponse GetRaw(const std::string& path) { return Request(http::verb::get, path, ""); }
+  std::string Get(const std::string& path) { return GetRaw(path).body; }
+
+  HttpResponse GetRaw(const std::string& path) {
+    return Request(http::verb::get, path, "", bearer_);
+  }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
     return PostFull(path, body).body;
   }
 
   HttpResponse PostFull(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::post, path, boost::json::serialize(body));
+    return Request(http::verb::post, path, boost::json::serialize(body), bearer_);
   }
 
   HttpResponse PostRaw(const std::string& path, const std::string& body) {
-    return Request(http::verb::post, path, body);
+    return Request(http::verb::post, path, body, bearer_);
   }
 
   HttpResponse Patch(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::patch, path, boost::json::serialize(body));
+    return Request(http::verb::patch, path, boost::json::serialize(body), bearer_);
   }
 
-  // For the peer endpoint, whose authorization is a peer token rather than the page's own.
+  // For a call that must present a different token from the one this client carries.
   HttpResponse PostRaw(const std::string& path, const std::string& body,
                        const std::string& bearer) {
     return Request(http::verb::post, path, body, bearer);
@@ -415,6 +421,7 @@ class TestHttpClient {
 
   std::string host_;
   int port_;
+  std::string bearer_;
 };
 
 class ServeHarness {

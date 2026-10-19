@@ -34,12 +34,13 @@ the commit that made it, and its current behaviour is in the relevant document
   stops without saying what it waits for is indistinguishable from one that was dropped.
   Declining is not a state: it records `declined_by`, counts up `declines`, and puts the job
   back to `open` for whoever is scheduling to offer elsewhere.
-- **A peer says it is alive by being heard from, and the reader decides what that means.**
-  `POST /api/peers/heartbeat` records `last_seen` and the job state the peer reports, and
-  answers with the whole board in the same round trip; `online` is derived from the age of
-  `last_seen` rather than claimed, so a wedged peer cannot report itself well and a peer with a
-  wrong clock cannot look healthy. There is no background heartbeat thread: the loop doing the
-  work sends the heartbeat, so "still heartbeating" and "still working" are the same statement.
+- **A peer is heard from by reading, and the reader decides what that means.** There is no
+  heartbeat call: every board request carries `Authorization: Bearer`, so the peer a token
+  belongs to is recorded as heard from at the moment of the read, and the same answer carries
+  what the board holds. `online` is derived from the age of `last_seen` rather than claimed, so
+  a wedged peer cannot report itself well and a peer with a wrong clock cannot look healthy.
+  The pull is made by the turn loop rather than by a timer, so "still reading" and "still
+  working" are the same statement.
 - **Two clocks on the board, both derived, neither stored.** `due` is given as a relative
   duration when a job is offered and resolved to `due_at`, because a model can say how long it
   expects to need but not reliably what time it is; `overdue` and `idle_seconds` are computed on
