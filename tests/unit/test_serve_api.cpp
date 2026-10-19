@@ -310,7 +310,10 @@ TEST_CASE("serve API /api/settings takes a budget, and reset drops every overrid
 
   const auto reset = client.PostFull("/api/settings/reset", boost::json::object{});
   REQUIRE(reset.status == 200);
-  for (const auto& setting : ParseJson(reset.body).at("settings").as_array()) {
+  // Parsed into a name first: the loop below binds a reference into the value, and a
+  // temporary from a chained call would not outlive it.
+  const auto reset_j = ParseJson(reset.body);
+  for (const auto& setting : reset_j.at("settings").as_array()) {
     CHECK(boost::json::value_to<std::string>(setting.at("source")) == "agent");
   }
 }
