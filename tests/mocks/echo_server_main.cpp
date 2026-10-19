@@ -16,6 +16,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string>
 
 namespace {
@@ -72,15 +73,14 @@ boost::json::value Answer(const boost::json::value& request) {
 int main() {
   // One line in, one line out: the client reads a line at a time, so a reply that sits in a
   // buffer while the next request arrives is read as that request's answer.
-  std::setvbuf(stdout, nullptr, _IOLBF, 0);
+  std::ios::sync_with_stdio(false);
+  std::setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
 
-  char* line = nullptr;
-  size_t capacity = 0;
-  ssize_t length = 0;
-  while ((length = ::getline(&line, &capacity, stdin)) > 0) {
+  std::string line;
+  while (std::getline(std::cin, line) && !line.empty()) {
     boost::json::value request;
     try {
-      request = boost::json::parse(std::string(line, static_cast<size_t>(length)));
+      request = boost::json::parse(line);
     } catch (const std::exception&) {
       continue;
     }
@@ -92,6 +92,5 @@ int main() {
     std::fflush(stdout);
   }
 
-  std::free(line);
   return 0;
 }

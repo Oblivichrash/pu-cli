@@ -14,9 +14,9 @@
 
 #include <cstdio>
 
-#include <unistd.h>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <iostream>
 #include <string>
@@ -45,8 +45,9 @@ class TempWorkspace {
  public:
   TempWorkspace() {
     static int counter = 0;
+    static std::mt19937 engine{std::random_device{}()};
     root_ = fs::temp_directory_path() /
-            ("pu_check_" + std::to_string(::getpid()) + "_" + std::to_string(counter++));
+            ("pu_check_" + std::to_string(engine()) + "_" + std::to_string(counter++));
     fs::create_directories(root_ / ".pu");
   }
   ~TempWorkspace() {

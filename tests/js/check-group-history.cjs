@@ -18,7 +18,7 @@ const {dirname, join} = require("node:path");
 const vm = require("node:vm");
 
 const here = __dirname;
-const web = join(here, "..", "web");
+const web = join(here, "..", "..", "web");
 const casesPath = join(here, "..", "fixtures", "group_history.json");
 
 // state.js declares the block types; history.js reads them. Both are top-level consts, so
