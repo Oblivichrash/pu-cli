@@ -190,10 +190,20 @@ null there.
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
+- Whatever `context_digest` returns, when a caller set one
 
 It is merged with the agent's configured `system_prompt`, which comes from
 `agents.json` via `Runtime::RebuildToolbox` and is not session state, so
 switching the backend does not clear it.
+
+**The digest.** The executor cannot know what the task board owes this server, so
+`Runtime::SetContextDigest` hands it a function instead of a string. It is called on
+every round of every turn, which is what makes it honest: a job claimed mid-turn
+reads as claimed on the next round. `pu serve` is the only caller, and it answers
+with `Board::Digest(self_name)` — the jobs this server holds (with any question a
+peer is asking, and whether the deadline has passed) plus the jobs it handed out
+that have since closed. An empty digest contributes nothing, so a session with no
+peers in play reads exactly as it did before the board existed.
 
 **Structured tool output.** Tools return JSON through the schema in
 `include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
@@ -840,6 +850,29 @@ The one place the two are welded is `send_to_peer`, which posts the job first an
 sends second. The ordering is the contract: a message is only ever sent about a
 job that is already visible, so the receiver is never told about work that no
 board remembers.
+
+### What the model is told, and when
+
+The board is a thing agents read, so it belongs in the context of every turn —
+but a digest copied into a prompt is stale by the second round of the tool loop.
+`Runtime::SetContextDigest` hands the executor a function rather than a string,
+and `Executor::BuildStaticSystemContext` calls it on every round. A job claimed
+mid-turn therefore reads as claimed on the next round, without the model asking.
+
+`Board::Digest(self_name)` answers with two lists and nothing else:
+
+| List | Why the model needs it |
+| --- | --- |
+| Jobs this server holds, open or closed | It is the only one who can move them; the digest is where it learns that |
+| Jobs this server handed out that have closed | The outcome it was waiting for, delivered without a message or a poll |
+
+Each held job carries the peer it came from, the intent, its state, any question
+it is being asked, and whether the deadline has passed. A closed job carries its
+result. Nothing is listed that the model cannot act on.
+
+An empty board yields an empty digest, and an empty digest adds nothing, so a
+session with no peers in play sends exactly the request it sent before the board
+existed.
 
 ### Where the authoritative copy lives
 

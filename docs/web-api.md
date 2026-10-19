@@ -152,3 +152,8 @@ answers with `from`, `turn`, `agent` and `model`; a job that is not on this boar
 peer's to claim, is refused and no turn starts. The turn closes the job when it ends — `done`
 with the answer, `failed` with the error — so the sender learns the outcome from the board
 rather than by waiting on the peer.
+
+The board is also read directly by the model. Every round of every turn carries a digest of
+what the board owes this server, refreshed in place, so a peer learns that it was handed a job
+and learns its own outcome without a request. See "What the model is told, and when" in
+[ARCHITECTURE.md](./ARCHITECTURE.md).

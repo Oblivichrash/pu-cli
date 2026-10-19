@@ -575,6 +575,12 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   // It is handed over after both exist rather than through the constructor, which would
   // otherwise pin the declaration order of two independent locals.
   runner->AttachBoard(&board);
+  // The board's answer is per round and per server, so it is asked for rather than copied.
+  runtime.SetContextDigest([&board, &runtime] {
+    const auto& peers = runtime.Peers();
+    if (!peers.has_value()) return std::string();
+    return board.Digest(peers->self_name);
+  });
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
                                                                       tcp::socket socket) {

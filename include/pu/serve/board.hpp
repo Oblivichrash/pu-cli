@@ -106,6 +106,11 @@ class Board {
   // The board as JSON: every job, and every peer with its liveness and what it holds.
   json::value Snapshot(std::chrono::seconds offline_after) const;
 
+  // What the board owes `peer`: the jobs it holds, what it is blocked on, and the jobs it
+  // handed out that have since closed. Empty when there is nothing to say, so a session with
+  // no peers in play reads no differently from one without a board.
+  std::string Digest(const std::string& peer) const;
+
   // A job as the board serves it, which is also what a caller hands back to a model.
   static json::value Render(const Job& job);
 

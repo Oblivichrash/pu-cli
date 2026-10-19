@@ -129,6 +129,13 @@ class Runtime {
     executor_->ResolveApproval(allow, std::move(note));
   }
 
+  // What the runtime knows that the executor does not: here, what the task board owes this
+  // server. Asked for on every round of every turn, so it is always current.
+  void SetContextDigest(std::function<std::string()> digest) {
+    assert(is_initialized_ && "Initialize() must run before any digest");
+    executor_->context_digest = std::move(digest);
+  }
+
   AgentManager& Agents() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;

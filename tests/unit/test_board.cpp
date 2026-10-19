@@ -230,3 +230,64 @@ TEST_CASE("a job renders with the derived fields a reader needs") {
   CHECK(rendered.contains("due_at"));
   CHECK(rendered.contains("idle_seconds"));
 }
+
+TEST_CASE("a digest says nothing when the board owes the server nothing") {
+  Board board;
+
+  CHECK(board.Digest("A").empty());
+  CHECK(board.Digest("").empty());
+
+  board.Post(Post("B", "check the build"));
+
+  CHECK(board.Digest("A").empty());
+}
+
+TEST_CASE("a digest names the jobs a server holds and what it is being asked") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+  auto asking = Move(id, "B", "blocked");
+  asking.question = "which branch?";
+  board.Update(asking);
+
+  const std::string digest = board.Digest("B");
+
+  CHECK(digest.find(id) != std::string::npos);
+  CHECK(digest.find("check the build") != std::string::npos);
+  CHECK(digest.find("from A") != std::string::npos);
+  CHECK(digest.find("blocked") != std::string::npos);
+  CHECK(digest.find("which branch?") != std::string::npos);
+}
+
+TEST_CASE("a digest reports the outcome of a job the server handed out") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+  auto answering = Move(id, "B", "done");
+  answering.result = "it is green";
+  board.Update(answering);
+
+  const std::string digest = board.Digest("A");
+
+  CHECK(digest.find(id) != std::string::npos);
+  CHECK(digest.find("to B") != std::string::npos);
+  CHECK(digest.find("done") != std::string::npos);
+  CHECK(digest.find("it is green") != std::string::npos);
+  CHECK(board.Digest("B").empty());
+}
+
+TEST_CASE("a digest marks a job as overdue only while it is still open") {
+  Board board;
+  auto request = Post("B", "check the build");
+  request.due = "1s";
+  const std::string id = board.Post(request).job.id;
+  std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+
+  CHECK(board.Digest("B").find("overdue") != std::string::npos);
+
+  board.Update(Move(id, "B", "working"));
+
+  CHECK(board.Digest("B").find("overdue") != std::string::npos);
+
+  board.Update(Move(id, "B", "done"));
+
+  CHECK(board.Digest("A").find("overdue") == std::string::npos);
+}

@@ -8,6 +8,14 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **The board is in the model's context, refreshed every round.** `Runtime::SetContextDigest`
+  hands the executor a function rather than a string, and `BuildStaticSystemContext` calls it on
+  every round of every turn, so a job claimed mid-turn reads as claimed on the next round
+  without the model asking. `Board::Digest(self_name)` lists the jobs this server holds — with
+  the peer they came from, the intent, the state, any question it is being asked, and whether
+  the deadline has passed — plus the jobs it handed out that have since closed, with their
+  results. So a peer learns it was handed work, and learns its own outcome, without a message
+  and without a poll. An empty board adds nothing to the request.
 - **A hand-off is a job before it is a message.** `send_to_peer` posts the job on the receiving
   server's board, then sends the message that names it; the receiver claims the job before it
   queues the turn, and closes it with `done` and the answer — or `failed` and the error — when

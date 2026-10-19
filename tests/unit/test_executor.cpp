@@ -29,8 +29,39 @@ TEST_CASE("BuildStaticSystemContext includes environment info", "[executor]") {
   REQUIRE(msg.find("Kernel: ") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes security policy when set", "[executor]") {
+TEST_CASE("BuildStaticSystemContext carries a digest the caller supplies", "[executor]") {
   Executor executor;
+  std::string msg = executor.BuildStaticSystemContext();
+  CHECK(msg.find("=== Peer Board ===") == std::string::npos);
+
+  executor.context_digest = [] { return std::string("=== Peer Board ===\n- j1 from B\n"); };
+  msg = executor.BuildStaticSystemContext();
+
+  CHECK(msg.find("=== Peer Board ===") != std::string::npos);
+  CHECK(msg.find("- j1 from B") != std::string::npos);
+}
+
+TEST_CASE("BuildStaticSystemContext says nothing extra when the digest is empty", "[executor]") {
+  Executor executor;
+  const std::string without = executor.BuildStaticSystemContext();
+
+  executor.context_digest = [] { return std::string(); };
+
+  CHECK(executor.BuildStaticSystemContext() == without);
+}
+
+TEST_CASE("the digest is asked for on every round, not cached", "[executor]") {
+  Executor executor;
+  int asked = 0;
+  executor.context_digest = [&asked] { return std::to_string(++asked); };
+
+  executor.BuildStaticSystemContext();
+  executor.BuildStaticSystemContext();
+
+  CHECK(asked == 2);
+}
+
+TEST_CASE("BuildStaticSystemContext includes security policy when set", "[executor]") {  Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = "/tmp/sandbox";
   policy.forbidden_patterns = {"rm -rf", "sudo"};

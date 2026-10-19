@@ -117,6 +117,10 @@ class Executor {
 
   std::string BuildStaticSystemContext() const;
 
+  // A caller that knows more than the executor does about what the turn should read. The
+  // digest is asked for on every round, so it reflects the state the turn is actually in.
+  std::function<std::string()> context_digest;
+
  private:
   struct Turn {
     LLMProvider* provider;

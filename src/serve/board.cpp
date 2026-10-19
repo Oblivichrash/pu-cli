@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cstdio>
 #include <ctime>
+#include <sstream>
 
 namespace pu::serve {
 namespace {
@@ -328,6 +329,43 @@ json::value Board::Snapshot(std::chrono::seconds offline_after) const {
   out["peers"] = std::move(peers);
   out["audit"] = std::move(audit);
   return out;
+}
+
+std::string Board::Digest(const std::string& peer) const {
+  if (peer.empty()) return {};
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  const std::string now = NowStamp();
+
+  std::vector<std::string> lines;
+  std::vector<std::string> closed;
+  for (const auto& job : jobs_) {
+    if (job.to == peer && !job.Closed()) {
+      std::string line = "- " + job.id + " from " + (job.from.empty() ? "a person" : job.from) +
+                         ": " + job.intent + " [" + JobStateName(job.state);
+      if (job.due_at && AgeSeconds(*job.due_at, now) > 0) line += ", overdue";
+      if (job.question) line += ", asking: " + *job.question;
+      lines.push_back(line + "]");
+    } else if (job.from == peer && job.Closed()) {
+      closed.push_back("- " + job.id + " to " + job.to + ": " + job.intent + " [" +
+                       JobStateName(job.state) +
+                       (job.result ? ", answered: " + *job.result : std::string()) + "]");
+    }
+  }
+
+  if (lines.empty() && closed.empty()) return {};
+
+  std::ostringstream oss;
+  oss << "=== Peer Board ===\n";
+  if (!lines.empty()) {
+    oss << "Jobs you hold, which only you can move:\n";
+    for (const auto& line : lines) oss << line << "\n";
+  }
+  if (!closed.empty()) {
+    oss << "Jobs you handed out that have since closed:\n";
+    for (const auto& line : closed) oss << line << "\n";
+  }
+  return oss.str();
 }
 
 }  // namespace pu::serve
