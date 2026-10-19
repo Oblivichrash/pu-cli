@@ -323,6 +323,11 @@ The status the exception maps to is the one that names whose fault it is: `Reque
 for a request the caller can fix, `NotFound` for a name that does not exist, and `Error`
 for an operation that failed on our side.
 
+Routes that need no runtime — the board and the heartbeat — are dispatched before
+`io_mutex` is taken, because `Board` carries its own mutex. The board is the one piece of
+state peers share that is not part of the conversation, and putting it behind the session's
+lock would let a slow peer's poll stop the page's turn.
+
 ### Static page serving
 
 The UI travels with the binary, not with the workspace the session is pointed at, so
@@ -706,6 +711,142 @@ without a name and a url is skipped with a warning rather than trusted.
 **Known gap:** `/api/*` and `/ws` remain unauthenticated, so any local process can
 already drive a turn. That is a separate concern from peer messaging and is not
 addressed here; it is tracked on its own.
+
+---
+
+
+## Task Board
+
+Peer messaging carries one message from one agent to one agent. That is enough to
+ask a question and get an answer, and not enough to hand over work: a message has
+no state, no owner and no memory of what became of it, so the sender cannot tell a
+job that is being worked from one that was dropped, and cannot see that it was
+dropped before asking.
+
+The board is the shared object that fixes this. It is a list of jobs, one per line
+of work, posted to and read from by every peer and by the human looking at it.
+
+```
+   human ──┐
+           ├──►  board (jobs, peers)  ◄──►  A   ──►  local model
+   A ──────┤          │     ▲
+   B ──────┘          │     └── heartbeat: "B is alive, and here is where it is"
+                      └──────── read: every open job, every peer's liveness
+```
+
+### One owner per job
+
+A job names the peer it is offered to (`to`) and the peer that offered it (`from`).
+Only `to` may move it. That is not a permission check bolted on top: it is what
+makes the job a responsibility rather than a message. Two peers cannot both be
+working the same job, because there is only ever one that can write to it.
+
+The human is not bound by this. They are the scheduler, and their verbs are the
+ones no peer has: offer a job, decline on B's behalf, reopen what was declined.
+
+### The lifecycle
+
+```
+  open ──claim──► claimed ──start──► working ──┬── done
+   ▲                 │                 │       └── failed
+   │                 │                 └── block ──► blocked ──unblock──► working
+   └──decline────────┘                                     │
+   └──reopen───────────────────────────────────────────────┘
+```
+
+`done` and `failed` close the job. Every move on a closed job is refused, so a
+finished job keeps its outcome instead of being reopened by a late write.
+
+`blocked` **requires a question**, because the point of the state is to leave
+something on the board that a human can answer. A job that stops without stating
+what it waits for is indistinguishable from one that was dropped, and the board
+would be lying about it being visible.
+
+Declining is not a state. It sets `declined_by` and counts up `declines`, and puts
+the job back to `open` where the scheduler can see it and offer it to someone
+else — a peer that refuses has not changed the job, only its own relation to it.
+
+### Two clocks, both derived
+
+The board answers two questions that look alike and are not:
+
+| Reading | Question | Derived from |
+| --- | --- | --- |
+| `overdue` | Has this taken longer than it was given? | `due_at`, set when it was offered |
+| `idle_seconds` | Has anything happened here recently? | now − `updated_at` |
+| `online` | Is this peer still there? | now − `last_seen` |
+
+Neither is stored. `overdue` and `online` are computed on every read, so a job
+goes overdue and a peer goes offline by the passage of time alone; nothing has to
+run to notice it, and nothing can be stale.
+
+`due` is given as a **relative duration** at the moment it is offered — `"30m"`,
+`"2h"`, `"1d"` — and resolved to an absolute `due_at` by the board. A model can
+say how long it expects to need; it cannot reliably say what the current time is.
+
+The two clocks are read differently and lead to different actions. `overdue` asks
+the scheduler to decide: chase, reassign, or let it run. `idle_seconds` asks the
+same question about a job that was never accepted at all, which is the case that
+a deadline alone would miss.
+
+`blocked` and overrunning are **not** messages. They are visible on the board, and
+the board is what everyone already reads; sending them would interrupt a peer to
+tell it something it can see, and the only replies available are "reassign" or
+"intervene", both of which are the human's to make. Results do travel as messages,
+because a result is what the sender was waiting for.
+
+### Liveness is observed, not reported
+
+A peer sends a heartbeat — `POST /api/peers/heartbeat`, naming itself and what it
+is working on — and reads the whole board back in the same round trip. One poll,
+not two.
+
+`online` is decided by whoever is looking, from `last_seen`. A peer never says it
+is alive; it says when it was last heard from and lets the reader compare that
+with its own clock. A peer that is wedged cannot keep claiming to be well, and a
+peer whose clock is wrong cannot make itself look healthy.
+
+There is deliberately **no separate heartbeat thread**. A background thread would
+report the process as alive while the work is stuck, which is exactly the state
+that must be visible. The heartbeat is sent by the loop doing the work, so "still
+heartbeating" and "still working" mean the same thing.
+
+Full visibility is the default: every peer sees every job, not only the ones
+addressed to it. A peer that can see what its siblings are holding does not need
+to ask, and the human needs the whole board anyway.
+
+### Where the board ends and messaging begins
+
+| Belongs to the board | Belongs to the message channel |
+| --- | --- |
+| Who holds a job, and what state it is in | The result of a job, once reached |
+| What a blocked peer is waiting for | A question to another agent |
+| Whether a peer is alive | The conversation that follows |
+| That a deadline has passed | Nothing — an overdue job is not urgent enough to interrupt |
+
+A message wakes a peer up; the board is what the peer finds when it looks. The
+message channel stays what it was — one exchange between two agents, bounded by
+the rule that a peer turn may answer only its sender — and the board carries
+everything that has to outlive it.
+
+The one place the two are welded is `send_to_peer`, which posts the job first and
+sends second. The ordering is the contract: a message is only ever sent about a
+job that is already visible, so the receiver is never told about work that no
+board remembers.
+
+### Where the authoritative copy lives
+
+There is no global board. The server that *posted* a job holds the copy that
+counts, and the peer working it writes back to that server's `/api/jobs`. A job
+therefore belongs to the conversation between two servers, not to a shared
+store: no coordination, no leader, and nothing to reconcile while every server is
+reachable.
+
+What this costs is a job that outlives its poster's reachability: if the poster's
+server stops, the job it holds stops with it, and the holder's updates are
+refused until it returns. That is accepted rather than papered over, because the
+alternative — replicating jobs — buys correctness for a case the human is
+already watching.
 
 ---
 

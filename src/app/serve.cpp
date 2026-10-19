@@ -23,6 +23,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/runtime/executor.hpp"
 #include "pu/runtime/runtime.hpp"
+#include "pu/serve/board.hpp"
 
 namespace pu::cli {
 namespace {
@@ -545,6 +546,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
 
   std::mutex io_mutex;
   auto runner = std::make_shared<SessionRunner>(runtime);
+  serve::Board board;
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
                                                                       tcp::socket socket) {
@@ -571,8 +573,8 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     // and its locals are gone.
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
-        net::bind_executor(strand, [&runtime, &io_mutex, runner, strand, conn, buffer, req,
-                                    header_timer](beast::error_code ec, std::size_t) {
+        net::bind_executor(strand, [&runtime, &io_mutex, runner, &board, strand, conn, buffer,
+                                    req, header_timer](beast::error_code ec, std::size_t) {
           header_timer->cancel();
           if (ec) {
             spdlog::warn("HTTP read error: {}", ec.message());
@@ -584,7 +586,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             return;
           }
           auto res = std::make_shared<http::response<http::string_body>>();
-          DispatchHttpRequest(runtime, io_mutex, runner.get(), std::move(*req), *res);
+          DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res);
           http::async_write(
               conn->mutable_socket(), *res,
               net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

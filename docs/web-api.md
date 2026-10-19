@@ -115,9 +115,34 @@ its own, so every connection from it is a second page.
 | `POST` | `/api/settings` | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | Drop every override and go back to the agent's configuration |
 | `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
+| `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled |
+| `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
+| `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
+| `POST` | `/api/peers/heartbeat` | Say a peer is alive (`{"peer":"B","state":"working"}`) and read the board back in the same round trip |
 
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
 cannot serve it, such as a step back while a tool call is pending — `404` where a name does
 not exist, and `500` where the operation failed. A refusal carries `success: false` and the
 reason in `error`.
+
+## The board
+
+`GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a heartbeat adds
+`self` for the peer that asked. A job carries `id`, `from`, `to`, `intent`, `state`,
+`created_at`, `updated_at`, `idle_seconds`, and — each only when it has something to say —
+`due_at`, `overdue`, `question`, `result`, `declined_by` and `declines`. A peer carries
+`name`, `state`, `last_seen`, `seen_seconds` and `online`.
+
+`overdue` and `online` are read from the clock each time the board is read and are never
+stored, so a job goes overdue and a peer goes offline on their own, without anyone having
+to write it down. `online` means the peer was heard from within 45 seconds.
+
+`POST /api/jobs` answers with the created job. `PATCH /api/jobs` answers with the updated
+job, plus an `outcome` when the move settled it. A move the job does not allow is refused
+with `400`: a move by a peer that does not hold it, a move on a job already settled,
+`blocked` without a `question`, an unknown `state`, or a `due` that is not a duration. A
+job name that is not on the board answers `404`. The board holds at most 32 open jobs.
+
+`POST /api/peers/heartbeat` requires `peer` and reads back the whole board, so a peer learns
+what it holds in the same round trip that says it is alive.

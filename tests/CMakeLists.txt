@@ -41,6 +41,8 @@ add_executable(pu_tests
     unit/test_peer_config.cpp
     unit/test_peer_tool.cpp
     unit/test_peer_serve.cpp
+    unit/test_board.cpp
+    unit/test_board_http.cpp
     unit/test_budget.cpp
     unit/test_usage_total.cpp
     unit/test_capabilities.cpp

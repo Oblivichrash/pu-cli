@@ -369,6 +369,10 @@ class TestHttpClient {
     return Request(http::verb::post, path, body);
   }
 
+  HttpResponse Patch(const std::string& path, const boost::json::value& body) {
+    return Request(http::verb::patch, path, boost::json::serialize(body));
+  }
+
   // For the peer endpoint, whose authorization is a peer token rather than the page's own.
   HttpResponse PostRaw(const std::string& path, const std::string& body,
                        const std::string& bearer) {

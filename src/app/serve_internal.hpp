@@ -17,6 +17,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/runtime/runtime.hpp"
+#include "pu/serve/board.hpp"
 
 namespace pu::cli::detail {
 
@@ -29,7 +30,7 @@ using tcp = net::ip::tcp;
 class SessionRunner;
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
-                         http::request<http::string_body>&& req,
+                         serve::Board* board, http::request<http::string_body>&& req,
                          http::response<http::string_body>& res);
 
 // The directory the running executable lives in, or empty when it cannot be determined. Kept

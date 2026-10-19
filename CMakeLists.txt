@@ -68,6 +68,7 @@ add_library(pu_core STATIC
     src/config/agent_summary.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
+    src/serve/board.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC

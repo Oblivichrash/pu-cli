@@ -8,6 +8,25 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **A task board, so work handed to a peer outlives the message that asked for it.** A job is a
+  shared object with an owner and a state — `open`, `claimed`, `working`, `blocked`, `done`,
+  `failed` — and only the peer it is offered to may move it, so two peers can neither work the
+  same job nor lose track of who holds it. `blocked` requires a question, because a job that
+  stops without saying what it waits for is indistinguishable from one that was dropped.
+  Declining is not a state: it records `declined_by`, counts up `declines`, and puts the job
+  back to `open` for whoever is scheduling to offer elsewhere.
+- **A peer says it is alive by being heard from, and the reader decides what that means.**
+  `POST /api/peers/heartbeat` records `last_seen` and the job state the peer reports, and
+  answers with the whole board in the same round trip; `online` is derived from the age of
+  `last_seen` rather than claimed, so a wedged peer cannot report itself well and a peer with a
+  wrong clock cannot look healthy. There is no background heartbeat thread: the loop doing the
+  work sends the heartbeat, so "still heartbeating" and "still working" are the same statement.
+- **Two clocks on the board, both derived, neither stored.** `due` is given as a relative
+  duration when a job is offered and resolved to `due_at`, because a model can say how long it
+  expects to need but not reliably what time it is; `overdue` and `idle_seconds` are computed on
+  every read, so a job goes overdue by the passage of time alone. Overrunning and blocking are
+  visible on the board rather than sent as messages — the only replies they invite are
+  reassign or intervene, and both are the human's to make.
 - **What a conversation has spent, summed and drawn.** `/api/session` carries `usage_total`
   (turns, rounds, prompt/completion/cached tokens, `priced_turns`, and a price only when every
   priced turn agreed on its unit). The page draws it under the context bar, and each reply

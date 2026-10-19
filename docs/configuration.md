@@ -161,7 +161,8 @@ name and a `url` is skipped with a warning rather than trusted, and an undeclare
 `send_to_peer` returns as soon as the peer accepts the message rather than waiting for
 an answer, which arrives as a new turn. A turn that arrived from a peer may reply to
 that peer and to nobody else, so an A→B→A→B chain ends at the second hop by
-construction rather than by a counter.
+construction rather than by a counter. The board is readable by a peer and by a person,
+but no tool posts to it yet: offering work and watching it is the next step.
 
 ## Environment Variables
 

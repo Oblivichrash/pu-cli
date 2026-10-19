@@ -28,6 +28,7 @@
 #include "pu/core/json.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/runtime/runtime.hpp"
+#include "pu/serve/board.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/tool.hpp"
 
@@ -392,6 +393,9 @@ boost::json::value HandleApiResetSettings(Runtime& runtime, const boost::json::v
 }
 
 using Handler = boost::json::value (*)(Runtime&, const boost::json::value& body);
+using serve::Board;
+using serve::JobRequest;
+using BoardHandler = boost::json::value (*)(Board&, const boost::json::value& body);
 
 enum class Envelope { kObject, kArray, kAgents, kWorkspaces };
 
@@ -401,6 +405,68 @@ struct Route {
   Handler handler;
   Envelope envelope;
   bool has_body;
+};
+
+struct BoardRoute {
+  std::string_view target;
+  http::verb method;
+  BoardHandler handler;
+  bool has_body;
+};
+
+constexpr std::chrono::seconds kOfflineAfter{45};
+
+boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
+  return board.Snapshot(kOfflineAfter);
+}
+
+boost::json::value HandleBoardPost(Board& board, const boost::json::value& body) {
+  JobRequest request;
+  request.from = json::OptionalOrDefault<std::string>(body, "from");
+  request.to = json::OptionalOrDefault<std::string>(body, "to");
+  request.intent = json::OptionalOrDefault<std::string>(body, "intent");
+  request.due = json::OptionalOrDefault<std::string>(body, "due");
+
+  const Board::ActionResult result = board.Post(request);
+  return boost::json::object{{"success", true}, {"job", Board::Render(result.job)}};
+}
+
+boost::json::value HandleBoardPatch(Board& board, const boost::json::value& body) {
+  JobRequest request;
+  request.job = json::OptionalOrDefault<std::string>(body, "job");
+  request.from = json::OptionalOrDefault<std::string>(body, "from");
+  request.state = json::OptionalOrDefault<std::string>(body, "state");
+  request.result = json::OptionalOrDefault<std::string>(body, "result");
+  request.question = json::OptionalOrDefault<std::string>(body, "question");
+  request.note = json::OptionalOrDefault<std::string>(body, "note");
+
+  const Board::ActionResult result = board.Update(request);
+  boost::json::object answer{{"success", true}, {"job", Board::Render(result.job)}};
+  if (result.outcome) {
+    boost::json::object outcome{{"id", result.outcome->id}, {"state", result.outcome->state}};
+    if (result.outcome->result) outcome["result"] = *result.outcome->result;
+    answer["outcome"] = std::move(outcome);
+  }
+  return answer;
+}
+
+boost::json::value HandleHeartbeat(Board& board, const boost::json::value& body) {
+  const std::string peer = json::ValueOrDefault<std::string>(body, "peer", "");
+  if (peer.empty()) throw RequestRefused("A heartbeat needs the name it speaks as, as 'peer'");
+  board.TouchPeer(peer, json::ValueOrDefault<std::string>(body, "state", ""));
+
+  boost::json::object answer = board.Snapshot(kOfflineAfter).as_object();
+  for (const auto& entry : answer["peers"].as_array()) {
+    if (json::ValueOrDefault<std::string>(entry, "name", "") == peer) answer["self"] = entry;
+  }
+  return answer;
+}
+
+constexpr BoardRoute kBoardRoutes[] = {
+    {"/api/jobs", http::verb::get, &HandleBoardGet, false},
+    {"/api/jobs", http::verb::post, &HandleBoardPost, true},
+    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true},
+    {"/api/peers/heartbeat", http::verb::post, &HandleHeartbeat, true},
 };
 
 constexpr Route kRoutes[] = {
@@ -472,12 +538,28 @@ boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner,
 }  // namespace
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
-                         http::request<http::string_body>&& req,
+                         serve::Board* board, http::request<http::string_body>&& req,
                          http::response<http::string_body>& res) {
   const std::string_view target = req.target();
 
   if (IsPageFile(target)) {
     ServeFile(std::string(target), res);
+    return;
+  }
+
+  for (const BoardRoute& route : kBoardRoutes) {
+    if (target != route.target || req.method() != route.method) continue;
+    if (board == nullptr) {
+      SendError(res, 404, "This server has no board");
+      return;
+    }
+
+    try {
+      const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};
+      SendJson(res, 200, route.handler(*board, body));
+    } catch (const std::exception& e) {
+      SendError(res, ErrorStatus(e), e.what());
+    }
     return;
   }
 
