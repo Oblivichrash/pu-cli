@@ -75,6 +75,13 @@ struct ExecutionResult {
 
 class Executor {
  public:
+
+  // The tool-call budget for one turn: how many tool calls the model may make before it is asked
+  // to wrap up. Counted per call, not per reply, since one reply can carry several.
+  //
+  // Public because it is the number a session shows when it has no override of its own: the
+  // runtime and the page both report it rather than restating it.
+  inline static constexpr int kDefaultToolCallBudget = 100;
   Executor();
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
@@ -151,11 +158,6 @@ class Executor {
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
   int next_tool_call_id_ = 0;
-
-  // The tool-call budget for one turn: how many tool calls the model may make
-  // before it is asked to wrap up. Counted per call, not per reply, since one
-  // reply can carry several.
-  inline static constexpr int kDefaultToolCallBudget = 100;
 
   int tool_call_budget_ = kDefaultToolCallBudget;
 

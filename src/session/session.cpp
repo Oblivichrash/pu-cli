@@ -54,6 +54,7 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
 
   session::UserPayload user;
   user.content = msg.content;
+  user.from_peer = msg.from_peer;
   return user;
 }
 
@@ -121,7 +122,19 @@ std::vector<ChatMessage> Conversation::History() const {
   return history;
 }
 
+bool Conversation::TurnCameFromPeer(size_t turn) const {
+  const std::vector<const session::MessageNode*> chain = graph_.Chain();
+  if (turn < 1 || turn > chain.size()) return false;
+  const auto* user = std::get_if<session::UserPayload>(&chain[turn - 1]->payload);
+  return user != nullptr && !user->from_peer.empty();
+}
+
 bool Conversation::RewindBefore(size_t turn) {
+  if (TurnCameFromPeer(turn)) {
+    throw RequestRefused(
+        "This turn arrived from a peer, so it is not yours to rewind. Only a turn you asked "
+        "can be taken back");
+  }
   if (HasPendingToolCalls()) {
     throw RequestRefused(
         "Cannot rewind while tool calls are pending. "
