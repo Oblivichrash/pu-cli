@@ -229,13 +229,14 @@ config::Backend Runtime::ConfiguredBackend() const {
 config::Backend Runtime::CurrentBackend() const {
   const config::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
-  return session::ApplyOverrides(backend, current_session_->Spec().overrides);
+  return session::ApplyOverrides(backend, Overrides());
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
 
 std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;
+  std::lock_guard<std::mutex> lock(overrides_mutex_);
   return current_session_->Spec().ThinkingOverride();
 }
 
@@ -244,9 +245,9 @@ void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
                                : boost::json::value());
 }
 
-const session::Overrides& Runtime::Overrides() const {
-  static const session::Overrides kEmpty;
-  if (!current_session_) return kEmpty;
+session::Overrides Runtime::Overrides() const {
+  if (!current_session_) return session::Overrides{};
+  std::lock_guard<std::mutex> lock(overrides_mutex_);
   return current_session_->Spec().overrides;
 }
 
@@ -261,18 +262,24 @@ int Runtime::ConfiguredToolBudget() const {
 void Runtime::SetSetting(const std::string& name, const boost::json::value& raw) {
   // Checked before it is stored, so a value nothing can read is never written to a session.
   const boost::json::value value = session::ParseSetting(name, raw);
-  auto& overrides = DefaultSession()->Spec().overrides;
-  if (value.is_null()) {
-    overrides.erase(name);
-  } else {
-    overrides[name] = value;
+  {
+    std::lock_guard<std::mutex> lock(overrides_mutex_);
+    auto& overrides = DefaultSession()->Spec().overrides;
+    if (value.is_null()) {
+      overrides.erase(name);
+    } else {
+      overrides[name] = value;
+    }
   }
   ApplyToolBudget();
   SaveCurrentSession();
 }
 
 void Runtime::ClearSettings() {
-  DefaultSession()->Spec().overrides.clear();
+  {
+    std::lock_guard<std::mutex> lock(overrides_mutex_);
+    DefaultSession()->Spec().overrides.clear();
+  }
   ApplyToolBudget();
   SaveCurrentSession();
 }

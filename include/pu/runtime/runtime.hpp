@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -165,7 +166,8 @@ class Runtime {
 
   // What this session overrides, and what is in force once the overrides are applied to the
   // agent's own configuration. `Settings()` renders both the value and where it came from.
-  const session::Overrides& Overrides() const;
+  // The overrides are copied because a request thread sets them while a turn reads them.
+  session::Overrides Overrides() const;
   std::vector<session::SettingView> Settings() const;
   // One setting from a request: `null` clears it, anything else is checked against its row.
   void SetSetting(const std::string& name, const boost::json::value& raw);
@@ -192,6 +194,9 @@ class Runtime {
   std::unique_ptr<Executor> executor_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
+  // Guards the session's overrides: a serve request sets them on one thread while a turn reads
+  // them on another.
+  mutable std::mutex overrides_mutex_;
 
   std::string default_agent_override_;
   std::optional<config::PeerConfig> peer_config_;
