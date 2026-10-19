@@ -119,7 +119,9 @@ class MockLLM : public LLMProvider {
       TokenUsage usage;
       usage.prompt_tokens = per_round_prompt_;
       usage.total_tokens = per_round_prompt_;
-      usage.credit = per_round_credit_;
+      // A round the fake prices reports a cost in the product's own unit; one it does not
+      // leaves the cost absent, which is what a gateway that says nothing sends.
+      if (per_round_credit_ > 0.0) usage.cost = Cost{per_round_credit_, "credits"};
       r.usage = usage;
     }
     return r;
@@ -423,7 +425,10 @@ TEST_CASE("A turn's usage sums what every round of the tool loop reported", "[ex
   // last round's 100.
   REQUIRE(result.usage->prompt_tokens == 200);
   // Credit is a per-call cost, so it adds across rounds the same way.
-  REQUIRE(result.usage->credit == Approx(0.10));
+  // Two rounds that each reported 0.05 in the same unit sum to one turn at 0.10.
+  REQUIRE(result.usage->cost.has_value());
+  REQUIRE(result.usage->cost->amount == Approx(0.10));
+  REQUIRE(result.usage->cost->unit == "credits");
 }
 
 TEST_CASE("Rebuilding the registry leaves one address the executor can keep reading",
@@ -739,4 +744,94 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
   REQUIRE(stored[4].content.find("stopped: wrong file") != std::string::npos);
   REQUIRE(stored[5].role == "assistant");
   REQUIRE(stored[5].content == "done");
+}
+
+// A tool that answers the way the sandbox does: the command never ran, and the result says
+// why. `refusal` picks which kind of refusal the turn has to tell apart.
+class RefusingTool : public Tool {
+ public:
+  explicit RefusingTool(tools::Refusal refusal) : refusal_(refusal) {}
+
+  std::string Name() const override { return "execute_bash"; }
+  std::string Description() const override { return "refuses what the policy names"; }
+  boost::json::value ParametersSchema() const override {
+    return boost::json::object{{"type", "object"}};
+  }
+  std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
+    return tools::MakeToolResultJson(false, "", "refused before it ran", -1, true, refusal_);
+  }
+
+ private:
+  tools::Refusal refusal_;
+};
+
+namespace {
+
+// One tool call, answered by the model once, then a plain reply: the shape of a turn whose
+// only work was a refused command.
+std::vector<ToolCall> OneCallTo(const std::string& name) {
+  ToolCall call;
+  call.id = "call_1";
+  call.name = name;
+  call.arguments = boost::json::object{{"command", "sudo rm -rf /"}};
+  return {call};
+}
+
+}  // namespace
+
+TEST_CASE("A turn every one of whose calls the sandbox refused says so", "[executor][refusal]") {
+  Executor executor;
+  Conversation conversation;
+  // The model asks for the tool in the first round and answers nothing in the second, so the
+  // refusal is the whole turn.
+  MockLLM provider(OneCallTo("execute_bash"), /*content=*/"", /*fire_calls_once=*/true);
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
+
+  const ExecutionResult result =
+      executor.Execute("try it", conversation, &provider, toolbox);
+
+  REQUIRE(result.blocked_tool_calls == 1);
+  REQUIRE(result.unaskable_tool_calls == 0);
+  REQUIRE(result.only_blocked_calls);
+  REQUIRE_FALSE(result.only_unaskable_calls);
+  REQUIRE(result.has_error);
+}
+
+TEST_CASE("A turn refused only for want of an approval channel is a different answer",
+          "[executor][refusal]") {
+  Executor executor;
+  Conversation conversation;
+  MockLLM provider(OneCallTo("execute_bash"), "", true);
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kNobodyToAsk));
+
+  const ExecutionResult result =
+      executor.Execute("try it", conversation, &provider, toolbox);
+
+  // Both kinds are refusals, and both stop the turn: what differs is whose problem it is.
+  REQUIRE(result.blocked_tool_calls == 1);
+  REQUIRE(result.unaskable_tool_calls == 1);
+  REQUIRE(result.only_blocked_calls);
+  REQUIRE(result.only_unaskable_calls);
+  REQUIRE(result.error_message.find("nothing here can ask") != std::string::npos);
+}
+
+TEST_CASE("A refusal the turn recovered from is not the turn's outcome",
+          "[executor][refusal]") {
+  Executor executor;
+  Conversation conversation;
+  MockLLM provider(OneCallTo("execute_bash"), "answered anyway", /*fire_calls_once=*/true);
+  Toolbox toolbox;
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
+
+  const ExecutionResult result =
+      executor.Execute("try it", conversation, &provider, toolbox);
+
+  // The refusal is counted, because it happened, and it is not the outcome: the model read
+  // it and still produced an answer.
+  REQUIRE(result.blocked_tool_calls == 1);
+  REQUIRE_FALSE(result.only_blocked_calls);
+  REQUIRE_FALSE(result.has_error);
+  REQUIRE(result.content == "answered anyway");
 }

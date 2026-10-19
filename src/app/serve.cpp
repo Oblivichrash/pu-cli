@@ -245,10 +245,11 @@ bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
     }
     if (current && current != conn) current->DetachFromPage();
     attached_ = conn;
-    // The turn may still be running for the socket that went away: the frames it produced
-    // while nobody was attached are replayed here, so the new page sees the turn join in
-    // rather than a stream that stopped.
-    pending.swap(replay_);
+    // The turn may still be running for the socket that went away, or may have run while no
+    // page was open at all (a turn a peer asked). The page is handed the frames of the turn in
+    // flight so it joins in, and of the last finished one so a reply that arrived while nobody
+    // was watching is drawn without a reload.
+    pending = FramesForNextPage();
   }
   // Outside the lock: the old socket's teardown posts to its own strand and takes this mutex
   // again on the way out.
@@ -272,15 +273,49 @@ void SessionRunner::Detach(const std::shared_ptr<WebSocketConnection>& conn) {
   if (left_alone) RequestCancel(false);
 }
 
-void SessionRunner::ClearReplay() {
-  std::lock_guard<std::mutex> lock(attach_mutex_);
-  replay_.clear();
+std::shared_ptr<SessionRunner::TurnRecord> SessionRunner::RecordOf(
+    const std::string& turn_id) const {
+  std::lock_guard<std::mutex> lock(turns_mutex_);
+  for (auto it = turns_.rbegin(); it != turns_.rend(); ++it) {
+    if ((*it)->id == turn_id) return *it;
+  }
+  return nullptr;
+}
+
+void SessionRunner::AppendFrame(boost::json::value frame) {
+  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    if (!turns_.empty()) turns_.back()->frames.push_back(text);
+  }
+  // A page that is here sees the turn as it happens. One that attaches later is handed the
+  // record instead, which is also what a subscriber reads: a turn that arrived from a peer has
+  // no page of its own, and waiting for a reload was the whole reason this record exists.
+  std::shared_ptr<WebSocketConnection> current;
+  {
+    std::lock_guard<std::mutex> lock(attach_mutex_);
+    current = attached_.lock();
+  }
+  if (current && !current->Closed()) current->Send(boost::json::parse(*text));
+}
+
+void SessionRunner::FinishTurn() {
+  std::lock_guard<std::mutex> lock(frame_mutex_);
+  if (!turns_.empty()) turns_.back()->finished = true;
 }
 
 void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    jobs_.push_back(Job{std::move(text), std::move(conn)});
+    jobs_.push_back(Job{std::move(text), std::move(conn), {}, session::NewMessageId()});
+  }
+  cv_.notify_one();
+}
+
+void SessionRunner::SubmitFromPeer(std::string sender, std::string text) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    jobs_.push_back(Job{std::move(text), nullptr, std::move(sender), session::NewMessageId()});
   }
   cv_.notify_one();
 }
@@ -318,33 +353,7 @@ void SessionRunner::RequestCancel(bool by_page) {
   cancel_token_->store(true);
 }
 
-void SessionRunner::Deliver(const std::shared_ptr<WebSocketConnection>& conn,
-                            boost::json::value frame) {
-  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
-  bool was_running = false;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    was_running = running_;
-  }
-  if (conn && conn->AttachedToPage()) {
-    conn->Send(boost::json::parse(*text));
-    return;
-  }
-  // The turn outlives the page that started it. While no page is attached its frames are
-  // kept for the next one, which is what makes a reconnect rejoin the turn instead of
-  // watching a reply stop half-written.
-  auto current = [&] {
-    std::lock_guard<std::mutex> lock(attach_mutex_);
-    return attached_.lock();
-  }();
-  if (current) {
-    current->Send(boost::json::parse(*text));
-    return;
-  }
-  if (!was_running) return;
-  std::lock_guard<std::mutex> lock(attach_mutex_);
-  replay_.push_back(std::move(text));
-}
+
 
 void SessionRunner::WorkerMain() {
   for (;;) {
@@ -357,20 +366,23 @@ void SessionRunner::WorkerMain() {
       jobs_.pop_front();
       running_ = true;
     }
-    // Guarded by the attach mutex, which is the one `Attach` swaps it under.
-    ClearReplay();
+    // A new record per turn: the frames of the one that ran before it are kept beside it, so
+    // a subscriber can still read a turn that ended while nobody was watching.
+    {
+      std::lock_guard<std::mutex> lock(turns_mutex_);
+      auto record = std::make_shared<TurnRecord>();
+      record->id = job.turn_id;
+      turns_.push_back(std::move(record));
+      while (turns_.size() > kTurnsKept) turns_.pop_front();
+    }
 
-    auto conn = job.conn;
-    if (!conn) {
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        running_ = false;
-      }
-      ClearReplay();
+    if (!job.conn && job.peer_origin.empty()) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      running_ = false;
       continue;
     }
 
-    const auto say = [&](boost::json::value frame) { Deliver(conn, std::move(frame)); };
+    const auto say = [&](boost::json::value frame) { AppendFrame(std::move(frame)); };
 
     {
       std::lock_guard<std::mutex> lock(turn_mutex_);
@@ -414,7 +426,7 @@ void SessionRunner::WorkerMain() {
           if (thought.empty()) return;
           say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
         },
-        cancel);
+        cancel, job.peer_origin);
 
     const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
     {
@@ -426,13 +438,13 @@ void SessionRunner::WorkerMain() {
     // turn whose page went away keeps nothing: the store holds only the question, so a
     // replay of chunks and a done would draw a reply the next load then takes away.
     if (cancel && cancel->load(std::memory_order_acquire)) {
-      const bool page_is_here = conn->AttachedToPage();
+      const bool page_is_here = job.conn && job.conn->AttachedToPage();
       if (!page_asked || !page_is_here) {
         {
           std::lock_guard<std::mutex> lock(mutex_);
           running_ = false;
         }
-        ClearReplay();
+        FinishTurn();
         continue;
       }
     }
@@ -441,10 +453,18 @@ void SessionRunner::WorkerMain() {
       say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
     }
     if (result.usage) {
-      say({{"type", "usage"},
-           {"payload",
-            {{"prompt_tokens", result.usage->prompt_tokens},
-             {"completion_tokens", result.usage->completion_tokens}}}});
+      boost::json::object usage{
+          {"prompt_tokens", result.usage->prompt_tokens},
+          {"completion_tokens", result.usage->completion_tokens},
+      };
+      // A price only where the product reported one: absent and zero are different answers.
+      if (result.usage->cost) {
+        usage["cost"] = boost::json::object{
+            {"amount", result.usage->cost->amount},
+            {"unit", result.usage->cost->unit},
+        };
+      }
+      say({{"type", "usage"}, {"payload", std::move(usage)}});
     }
     if (result.has_error) {
       // The message a turn carries sits on `content` when the turn answered with its
@@ -464,8 +484,25 @@ void SessionRunner::WorkerMain() {
       std::lock_guard<std::mutex> lock(mutex_);
       running_ = false;
     }
-    ClearReplay();
+    // The record stays, finished: a page that attaches next is handed it rather than waiting
+    // for a reload, and a subscriber that was mid-stream reads the end of it.
+    FinishTurn();
   }
+}
+
+std::deque<std::shared_ptr<const std::string>> SessionRunner::FramesForNextPage() const {
+  std::deque<std::shared_ptr<const std::string>> frames;
+  std::lock_guard<std::mutex> list_lock(turns_mutex_);
+  std::lock_guard<std::mutex> frame_lock(frame_mutex_);
+  if (turns_.empty()) return frames;
+  // The turn in flight (or the last one that ran) plus the one before it when it has finished:
+  // a single finished turn is the reply the page missed, and two gives an exchange a reader
+  // can follow.
+  const std::size_t from = turns_.size() >= 2 ? turns_.size() - 2 : 0;
+  for (std::size_t i = from; i < turns_.size(); ++i) {
+    for (const auto& frame : turns_[i]->frames) frames.push_back(frame);
+  }
+  return frames;
 }
 
 }  // namespace detail
@@ -534,7 +571,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     // and its locals are gone.
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
-        net::bind_executor(strand, [&runtime, &io_mutex, strand, conn, buffer, req,
+        net::bind_executor(strand, [&runtime, &io_mutex, runner, strand, conn, buffer, req,
                                     header_timer](beast::error_code ec, std::size_t) {
           header_timer->cancel();
           if (ec) {
@@ -547,7 +584,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             return;
           }
           auto res = std::make_shared<http::response<http::string_body>>();
-          DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res);
+          DispatchHttpRequest(runtime, io_mutex, runner.get(), std::move(*req), *res);
           http::async_write(
               conn->mutable_socket(), *res,
               net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

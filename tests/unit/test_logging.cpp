@@ -6,6 +6,12 @@
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
 
+#include <spdlog/spdlog.h>
+#include <spdlog/async.h>
+
+#include <atomic>
+#include <thread>
+
 using namespace pu;
 using pu::tests::ScopedEnvVar;
 
@@ -97,3 +103,32 @@ TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
   REQUIRE(pu::path::GetLogDir() == std::filesystem::current_path() / ".pu" / "logs");
   std::filesystem::remove_all(scratch);
 }
+
+// InitLogging runs again for every Runtime in the process, so every async writer it builds has
+// to share one pool. A logger holds its pool weakly: replacing the pool under a logger leaves
+// it posting to a queue that no longer exists. That is the shape of the crash a serve test hit
+// when a second Runtime started in the same process.
+TEST_CASE("InitLogging keeps the thread pool the loggers already use", "[logging]") {
+  const auto scratch = std::filesystem::temp_directory_path() / "pu_log_pool_test";
+  std::filesystem::remove_all(scratch);
+  ScopedEnvVar home("PU_HOME", scratch.string());
+
+  InitLogging("info");
+  const auto first_pool = spdlog::thread_pool();
+  REQUIRE(first_pool != nullptr);
+
+  std::atomic<bool> stop{false};
+  std::thread writer([&] {
+    while (!stop.load(std::memory_order_relaxed)) {
+      spdlog::info("a message written while another logger is built");
+    }
+  });
+  for (int i = 0; i < 8; ++i) InitLogging("info");
+  stop.store(true, std::memory_order_relaxed);
+  writer.join();
+
+  INFO("a later logger must not replace the pool an earlier logger still writes through");
+  REQUIRE(spdlog::thread_pool().get() == first_pool.get());
+  REQUIRE(std::filesystem::exists(scratch / "logs" / "pu.log"));
+}
+

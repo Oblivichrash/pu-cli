@@ -49,7 +49,6 @@ bool Toolbox::RegisterTool(std::unique_ptr<Tool> tool) {
     }
   }
 
-  tool->display_name_ = display_name;
   tools_[display_name] = std::move(tool);
   return true;
 }

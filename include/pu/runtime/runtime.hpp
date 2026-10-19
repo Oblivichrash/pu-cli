@@ -5,12 +5,14 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "pu/config/agents.hpp"
+#include "pu/config/peer.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/runtime/executor.hpp"
@@ -85,7 +87,13 @@ class Runtime {
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,
-      CancelToken command_stop_token = nullptr);
+      CancelToken command_stop_token = nullptr,
+      // The peer this turn arrived from, empty for a turn the user started. A turn from a
+      // peer must not reach another one.
+      const std::string& peer_origin = {});
+
+  // What `.pu/peers.json` named, or nothing when this server is not part of a topology.
+  const std::optional<config::PeerConfig>& Peers() const { return peer_config_; }
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -125,6 +133,12 @@ class Runtime {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
   }
+  // Reading who is configured does not change anything, so it is answered from a const
+  // Runtime as well: the summary a surface prints is a read.
+  const AgentManager& Agents() const {
+    assert(agent_manager_ && "Initialize() must run before any agent query");
+    return *agent_manager_;
+  }
   pu::http::HttpClient& Http() {
     assert(is_initialized_ && "Initialize() must run before any HTTP call");
     return *http_client_;
@@ -150,8 +164,21 @@ class Runtime {
   std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
+  // What this session overrides, and what is in force once the overrides are applied to the
+  // agent's own configuration. `Settings()` renders both the value and where it came from.
+  // The overrides are copied because a request thread sets them while a turn reads them.
+  session::Overrides Overrides() const;
+  std::vector<session::SettingView> Settings() const;
+  // One setting from a request: `null` clears it, anything else is checked against its row.
+  void SetSetting(const std::string& name, const boost::json::value& raw);
+  void ClearSettings();
+
  private:
   config::Backend ConfiguredBackend() const;
+  // The budget the agent's configuration names, which is what a cleared override returns to.
+  int ConfiguredToolBudget() const;
+  // Pushes the budget in force into the executor, after an override changed or an agent switch.
+  void ApplyToolBudget();
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
@@ -167,8 +194,12 @@ class Runtime {
   std::unique_ptr<Executor> executor_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
+  // Guards the session's overrides: a serve request sets them on one thread while a turn reads
+  // them on another.
+  mutable std::mutex overrides_mutex_;
 
   std::string default_agent_override_;
+  std::optional<config::PeerConfig> peer_config_;
   std::string config_path_;
 
   std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;

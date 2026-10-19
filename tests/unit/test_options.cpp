@@ -7,12 +7,10 @@
 #include "pu/core/platform.hpp"
 
 #include <boost/program_options.hpp>
-#include <spdlog/spdlog.h>
 
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -20,106 +18,14 @@ namespace fs = std::filesystem;
 namespace json = pu::json;
 namespace po = boost::program_options;
 
-TEST_CASE("Boost.Program_options parses ask command", "[boost][program_options]") {
-  const char* argv[] = {"pu", "ask", "--agent", "test-agent", "hello world"};
-  int argc = 5;
-
-  po::options_description desc;
-  desc.add_options()("help,h", "help")("command", po::value<std::string>(), "command")(
-      "agent", po::value<std::string>(), "agent")("prompt", po::value<std::string>(), "prompt");
-
-  po::positional_options_description pos;
-  pos.add("command", 1);
-  pos.add("prompt", 1);
-
-  po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
-  po::notify(vm);
-
-  REQUIRE(vm.count("command"));
-  REQUIRE(vm["command"].as<std::string>() == "ask");
-  REQUIRE(vm.count("agent"));
-  REQUIRE(vm["agent"].as<std::string>() == "test-agent");
-  REQUIRE(vm.count("prompt"));
-  REQUIRE(vm["prompt"].as<std::string>() == "hello world");
-}
-
-TEST_CASE("Boost.Program_options parses chat command", "[boost][program_options]") {
-  const char* argv[] = {"pu", "chat", "--agent", "coding-agent"};
-  int argc = 4;
-
-  po::options_description desc;
-  desc.add_options()("command", po::value<std::string>(), "command")(
-      "agent", po::value<std::string>(), "agent");
-
-  po::positional_options_description pos;
-  pos.add("command", 1);
-
-  po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
-  po::notify(vm);
-
-  REQUIRE(vm.count("command"));
-  REQUIRE(vm["command"].as<std::string>() == "chat");
-  REQUIRE(vm.count("agent"));
-  REQUIRE(vm["agent"].as<std::string>() == "coding-agent");
-}
-
-TEST_CASE("Boost.Program_options parses serve command", "[boost][program_options]") {
-  const char* argv[] = {"pu", "serve", "--host", "0.0.0.0", "--port", "9000"};
-  int argc = 6;
-
-  po::options_description desc;
-  desc.add_options()("command", po::value<std::string>(), "command")(
-      "host", po::value<std::string>(), "host")("port", po::value<int>(), "port");
-
-  po::positional_options_description pos;
-  pos.add("command", 1);
-
-  po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm);
-  po::notify(vm);
-
-  REQUIRE(vm.count("command"));
-  REQUIRE(vm["command"].as<std::string>() == "serve");
-  REQUIRE(vm.count("host"));
-  REQUIRE(vm["host"].as<std::string>() == "0.0.0.0");
-  REQUIRE(vm.count("port"));
-  REQUIRE(vm["port"].as<int>() == 9000);
-}
-
-TEST_CASE("Boost.Program_options shows help with -h", "[boost][program_options]") {
-  const char* argv[] = {"pu", "ask", "-h"};
-  int argc = 3;
-
-  po::options_description desc("Usage");
-  desc.add_options()("help,h", "help")("command", po::value<std::string>(), "command");
-
-  po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
-  po::notify(vm);
-
-  REQUIRE(vm.count("help") == 1);
-}
-
-TEST_CASE("Boost.Program_options rejects unknown command", "[boost][program_options]") {
-  const char* argv[] = {"pu", "unknown"};
-  int argc = 2;
-
-  po::options_description desc;
-  desc.add_options()("command", po::value<std::string>(), "command");
-
-  po::positional_options_description pos;
-  pos.add("command", 1);
-
-  po::variables_map vm;
-  REQUIRE_NOTHROW(
-      po::store(po::command_line_parser(argc, argv).options(desc).positional(pos).run(), vm));
-  po::notify(vm);
-
-  REQUIRE(vm.count("command"));
-  REQUIRE(vm["command"].as<std::string>() == "unknown");
-}
+// The parse cases that used to open this file built an options_description of their own and
+// asserted what boost::program_options does with it. Nothing about `pu` was under test: the
+// command line `pu` actually parses is the one BuildCommandLine assembles, and the case below
+// is what pins it. A parsing regression in boost belongs to boost's own tests.
+//
+// A parsed option's effect is covered where it is acted on: test_cli_exit drives RunAsk,
+// test_listen_options drives the serve options, and test_agent_config covers the file those
+// options name.
 
 TEST_CASE("The command line names every option once", "[options]") {
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();

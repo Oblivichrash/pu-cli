@@ -177,6 +177,34 @@ main {
 
 .blocks-container { width: 100%; }
 
+/* The session's running total, under the context bar: facts, not a control. */
+.usage-total {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cost of a reply, folded: a line to open when the number matters, not part of the answer. */
+.msg-usage {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-light);
+}
+.msg-usage summary {
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  list-style: none;
+}
+.msg-usage summary::-webkit-details-marker { display: none; }
+.msg-usage summary::before { content: "▸ "; }
+.msg-usage[open] summary::before { content: "▾ "; }
+.msg-usage div {
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* These are custom elements, which the browser lays out inline until told otherwise; an
    inline box draws its own rule beside a near-zero height and pushes the header to the
    next line, which is what puts a stray line above every step. */
@@ -281,33 +309,6 @@ main {
   flex: 0 0 auto;
 }
 
-/* The two choices that change between messages, kept with the input they affect. Each is
-   shown by its own control, so no read-only text repeats what the select already says. */
-#session-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-.session-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--ink-light);
-}
-#agent-select,
-#thinking-select {
-  background: transparent;
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 4px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  min-width: 120px;
-  max-width: 220px;
-}
 #composer-row {
   display: flex;
   gap: 12px;
@@ -461,6 +462,46 @@ main {
   line-height: 1;
 }
 
+/* ---------- status bar: what the session is, at the shell's own width ---------- */
+#status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 252, 245, 0.85);
+  font-size: 11px;
+  color: var(--ink-light);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A bound is what makes the ellipsis above mean anything: without one the item grows to its
+   content and pushes its neighbours out of the bar instead. */
+#status-agent { max-width: 220px; }
+#status-backend { max-width: 300px; }
+#status-tools { max-width: 120px; }
+/* The panel has a bar for this; the status bar has room for the number and its colour. */
+#status-context.warn { color: var(--warn); }
+#status-context.high { color: var(--accent); }
+/* The right-hand group is the gateway and the count: the two a reader checks rather than
+   acts on, so they sit at the far edge the way a status bar's are. */
+.status-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+}
+
 /* ---------- sidebar ---------- */
 #sidebar {
   width: var(--sidebar);
@@ -474,6 +515,64 @@ main {
   gap: 20px;
 }
 #shell.sidebar-hidden #sidebar { display: none; }
+/* A choice in the panel has room, so it keeps the control's own shape: the label above,
+   the select filling the column. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+.field select {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  /* A long name is cut rather than allowed to widen the panel; the title carries the rest. */
+  text-overflow: ellipsis;
+}
+.field select:disabled { opacity: 0.55; cursor: not-allowed; }
+.field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A number setting is an input rather than a list, and reads as the same box. */
+.field input {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.field input:disabled { opacity: 0.55; cursor: not-allowed; }
+.field input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* The way back to the agent's own numbers, offered rather than needed. */
+#settings-reset {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+#settings-reset:hover { color: var(--ink); }
+#settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;
@@ -614,16 +713,20 @@ main {
   }
   #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
   #shell.sidebar-hidden #sidebar { display: flex; }
+  /* The drawer reaches the bottom, covering the bar: what it shows is what the bar says. */
 }
 @media (max-width: 640px) {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
   .msg { font-size: 14px; }
+  /* The field takes the row, and the choices share the line under it. */
   #composer-row { flex-wrap: wrap; }
   #input { flex-basis: 100%; }
   #send { flex: 1; height: 40px; min-width: 0; }
-  #session-bar { gap: 10px; }
-  #agent-select, #thinking-select { max-width: 140px; }
+  /* The readings a narrow screen can live without, dropped in the order they matter least;
+     the connection, the agent and the thinking level stay. */
+  #status-context { display: none; }
+  #status-tools { display: none; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -640,7 +743,7 @@ main {
     --ok: #6fa07d;
     --warn: #c9a24a;
   }
-  header, #composer, #sidebar { background: rgba(28, 26, 23, 0.7); }
+  header, #composer, #sidebar, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }

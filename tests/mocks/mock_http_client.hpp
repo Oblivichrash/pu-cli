@@ -13,9 +13,11 @@ namespace pu::tests {
 
 class MockHttpClient : public pu::http::HttpClient {
  public:
-  void PostStream(const std::string& url, const std::string& body,
-                  const std::vector<std::string>& headers, pu::http::WriteCallback write_cb,
-                  pu::CancelToken cancel_token = nullptr) override {
+  void StreamRequest(pu::http::HttpMethod method, const std::string& url,
+                     const std::string& body, const std::vector<std::string>& headers,
+                     pu::http::WriteCallback write_cb,
+                     pu::CancelToken cancel_token = nullptr) override {
+    last_method = method;
     last_url = url;
     last_body = body;
     last_headers = headers;
@@ -34,6 +36,7 @@ class MockHttpClient : public pu::http::HttpClient {
     throw pu::HttpError("no Get response configured");
   }
 
+  pu::http::HttpMethod last_method = pu::http::HttpMethod::kPost;
   std::string last_url;
   std::string last_body;
   std::vector<std::string> last_headers;

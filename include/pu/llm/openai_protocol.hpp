@@ -2,6 +2,7 @@
 #pragma once
 
 #include "pu/core/http_client.hpp"
+#include "pu/config/gateway.hpp"
 #include "pu/llm/openai_protocol.hpp"
 #include "pu/llm/streaming_provider.hpp"
 
@@ -27,7 +28,8 @@ struct ResponseShape {
   std::string_view prompt_tokens_field = "prompt_tokens";
   std::string_view completion_tokens_field = "completion_tokens";
   std::string_view total_tokens_field = "total_tokens";
-  std::string_view credit_field = "credit";
+  // What a call cost is a product fact, not a protocol one: two products share this shape and
+  // only one of them reports a price. `config::Gateway::billing` says which, and where.
 
   // One gateway nests the cached prompt, another puts it at the top level; both carry the
   // same count. The nested name is tried first.
@@ -65,6 +67,9 @@ class OpenAIProtocol : public StreamingProvider {
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
     std::function<std::vector<std::string>()> extra_headers;
     llm::ResponseShape shape;
+    // How the product that built this provider prices a call. Default `kNone`: a provider
+    // built without a gateway behind it — a test, a probe — must not invent a price.
+    config::Billing billing;
   };
 
  protected:
@@ -75,13 +80,12 @@ class OpenAIProtocol : public StreamingProvider {
 
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
-  void ParseLine(std::string_view line, const ChatRequest& request) override;
+  void ParseData(std::string_view data, const ChatRequest& request) override;
   void ResetAccumulators() override;
   void FinishStream(const ChatRequest& request) override;
 
  private:
   void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);
-  void FlushPendingData(const ChatRequest& request);
   void FlushPendingToolCalls(const ChatRequest& request);
 
   Config config_;
@@ -93,7 +97,6 @@ class OpenAIProtocol : public StreamingProvider {
 
   // One SSE payload can arrive as several `data:` lines; a payload that parses is the
   // whole of it, and a blank line closes the event either way.
-  std::string pending_data_;
 
   // The request asks for one completion, so the choice the reply is read from is the
   // first index the stream names; another index is a gateway sending more than was asked

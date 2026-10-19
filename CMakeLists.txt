@@ -35,7 +35,10 @@ add_library(pu_core STATIC
     src/session/graph.cpp
     src/core/beast_http_client.cpp
     src/core/platform.cpp
+    src/core/sse.cpp
     src/session/session.cpp
+    src/session/usage.cpp
+    src/session/settings.cpp
     src/core/logging.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_provider.cpp
@@ -51,12 +54,18 @@ add_library(pu_core STATIC
     src/mcp/http_transport.cpp
     src/mcp/client.cpp
     src/config/agents.cpp
+    src/config/peer.cpp
     src/runtime/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp
+    src/tools/peer_tool.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp
     src/app/cli.cpp
+    src/app/cli_check.cpp
+    src/app/cli_agents.cpp
+    src/app/cli_sse.cpp
+    src/config/agent_summary.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
 )

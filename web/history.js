@@ -91,7 +91,7 @@ function groupHistory(history) {
       turns.push({ role: "system", text: content });
     } else if (msg.role === "user") {
       closeReply();
-      turns.push({ role: "user", text: content, turn: msg.id });
+      turns.push({ role: "user", text: content, turn: msg.id, fromPeer: msg.from_peer });
     } else if (msg.role === "tool") {
       applyToolResult(currentReply().blocks, msg);
     } else if (msg.role === "assistant") {
@@ -109,6 +109,11 @@ function groupHistory(history) {
         appendAtEnd(bubble.blocks, BLOCK_TYPES.TEXT, () => ({ type: BLOCK_TYPES.TEXT, content: "" }))
             .content += content;
       }
+
+      // What this turn cost, beside it rather than inside it. The last assistant message of a
+      // turn carries the turn's figure, so a later one replaces an earlier one rather than
+      // adding to it.
+      if (msg.usage) bubble.usage = msg.usage;
     }
   }
 

@@ -173,7 +173,7 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
               tools::QuoteJoin(ctx.security ? ctx.security->approval_patterns
                                             : std::vector<std::string>{}) +
               ".",
-          -1, true);
+          -1, true, tools::Refusal::kNobodyToAsk);
     }
     std::string note;
     if (!ctx.approval->ask(command, note)) {

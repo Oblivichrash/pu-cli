@@ -55,8 +55,8 @@ inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
 
 struct ReasoningBlock {
   std::string text;
-  std::string signature;   // Anthropic thinking blocks: must be returned verbatim
-  boost::json::value raw;  // the provider's own encoding, replayed when it round-trips
+  std::string signature;
+  boost::json::value raw;
 };
 
 struct ChatMessage {
@@ -64,10 +64,13 @@ struct ChatMessage {
   std::string timestamp;
   std::string role;
   std::string content;
-  std::string tool_name;          // tool messages: name of the tool that produced the result
-  boost::json::value tool_calls;  // assistant messages: array of OpenAI-style tool calls
+  std::string tool_name;
+  boost::json::value tool_calls;
   std::vector<ReasoningBlock> reasoning;
-  std::string tool_call_id;       // for tool messages: ID of the tool call
+  std::string tool_call_id;
+  // The peer a user turn arrived from, drawn where the page would say "You". Never part of
+  // the request; see docs/ARCHITECTURE.md#peer-messaging.
+  std::string from_peer;
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();
@@ -92,18 +95,18 @@ struct ToolCall {
   boost::json::value arguments;
 };
 
-// What a provider counted for a turn. A field a backend does not report stays zero rather
-// than being derived: `total_tokens` is the provider's own total, and a sum of the two
-// counts beside it would read as a figure the provider gave.
+struct Cost {
+  double amount = 0.0;
+  std::string unit;
+};
+
+// A field a backend does not report stays zero rather than being derived. docs/providers.md#usage
 struct TokenUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
   int total_tokens = 0;
-  int cached_tokens = 0;  // the prompt the provider answered from its cache
-  // What the call cost, in the gateway's own unit, where the gateway prices one — and
-  // not an account balance: one gateway's `credit` read 0 for a one-token answer and
-  // 0.05 for a 203-token one. Zero where the gateway prices nothing.
-  double credit = 0.0;
+  int cached_tokens = 0;
+  std::optional<Cost> cost;
 };
 
 using TokenCallback = std::function<void(std::string_view)>;
@@ -113,16 +116,9 @@ struct ChatResult {
   std::vector<ReasoningBlock> reasoning;
   std::vector<ToolCall> tool_calls;
   std::optional<TokenUsage> usage;
-  // The usage object exactly as the gateway sent it, so a field nothing reads yet is
-  // carried rather than dropped. Null where the backend reports no usage object.
   boost::json::value raw_usage;
-  // Keys a frame carried that no code names. A gateway is free to add one, so this is a
-  // signal rather than an error: it is what says a field the backend should have read
-  // went unnoticed, and it is asserted by the tests that pin a captured stream.
   std::vector<std::string> unread_fields;
   std::vector<std::string> seen_fields;
-  // Shape fields the reply never carried: a name this build reads that the gateway no
-  // longer sends.
   std::vector<std::string> missing_fields;
   std::string finish_reason;
   std::string model;

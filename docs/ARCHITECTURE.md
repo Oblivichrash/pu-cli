@@ -49,6 +49,49 @@ What each dependency is for:
 
 ## Error Handling
 
+### What a command exits with, and what it prints
+
+Every subcommand answers with the same five statuses (`include/pu/app/cli.hpp`), separated by
+what a caller should do next rather than by which layer failed:
+
+| Code | Meaning | The caller's next move |
+| --- | --- | --- |
+| `0` | the command did what it was asked | nothing |
+| `1` | the invocation or the configuration is wrong | fix it; a retry cannot help |
+| `2` | the provider refused or could not be reached | retry may work |
+| `3` | the sandbox refused every tool call the turn made | change the command or the policy |
+| `4` | a person stopped it | neither retry nor fix |
+
+A turn the sandbox refused and the model recovered from is `0`: the refusal is advice the
+model read, not the turn's outcome. A refusal whose reason is that no channel could ask for
+approval is `1`, not `3`, because the command is fine and the configuration is not.
+
+stdout carries what was asked for — the reply, a model listing, a rendered config — and
+stderr carries everything else: notices, usage, the reason a turn failed. `pu ask "... | ..."`
+pipes the answer and nothing beside it.
+
+### The frame every command runs inside
+
+`cli::WithInitializedRuntime` loads the configuration, runs a body, and saves the session.
+Every subcommand that needs a `Runtime` goes through it, so initialization and persistence
+are stated once: a failure to initialize is `1`, because the configuration is what is wrong,
+and a command that returns without persisting is the exception, not the rule. A non-empty
+agent name overrides the configured agent for that run only.
+
+Two signatures exist for a reason rather than for symmetry:
+
+- `RunProbe` reads a product named on the command line without an `agents.json` entry — its
+  host and key come from the gateway table, and neither the configuration nor the session is
+  touched. That is what makes probing a gateway safe from inside a workspace already
+  configured for another one.
+- `RunSse` takes a URL, a method and a set of headers from the caller. A feed is not a chat
+  turn, so nothing about it is read from `agents.json`; it borrows the runtime only for the
+  `HttpClient` and the cancellation token.
+
+`FormatSseEvent` is exposed rather than private because it is what a caller's pipe reads, and
+a pipe is testable where a socket is not.
+
+
 A condition the code can know in advance is checked, not thrown: an operation that can
 fail visibly returns `std::optional` or `nullptr`. Exceptions are for what cannot be known
 in advance — a body that does not parse, a peer that closes the socket, a provider that
@@ -66,7 +109,7 @@ pu::RuntimeError : std::runtime_error
 `pu::RequestRefused` sits beside `Error` rather than under it: `pu serve` answers a refusal
 with `400` and an `Error` with `500`, so deriving one from the other would report a
 caller's mistake as a fault of this process. The status a route chooses, and the body that
-carries it, are in [README](../README.md#web-api).
+carries it, are in [web-api.md](web-api.md).
 
 A catch earns its place only by changing the control flow — returning a value, retrying,
 falling back, converting, or ending the process. Logging is not handling, and a catch
@@ -153,11 +196,13 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool.hpp`, whose field set is documented in
-[README](../README.md#tool-output-format). The executor stores it verbatim so
-the model sees what the tool produced, and reads `output`/`error` out of it only
-for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
-when the named tool is absent, so callers never parse two shapes.
+`include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
+`refusal` that names why the policy refused a call when one did. The header is the field
+set's one home — `tools::Refusal` beside it says which refusal a caller can retry and which
+is a configuration to fix. The executor stores the envelope verbatim so the model sees what
+the tool produced, and reads `output`/`error` out of it only for the tool callbacks.
+`Toolbox::ExecuteTool` answers with the same envelope when the named tool is absent, so
+callers never parse two shapes.
 
 **Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
 construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
@@ -165,7 +210,7 @@ result. No tool-binary detection is performed.
 
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in
-[README](../README.md#agentsjson).
+[configuration.md](configuration.md#agentsjson).
 
 ---
 
@@ -218,7 +263,7 @@ environment, or the workspace's own `serve` block names:
    posts each frame back through the connection. The runner holds only the token that
    steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
    turn in flight without waiting for it. The message schema, the REST route table, and
-   the status each refusal carries are in [README](../README.md#web-api).
+   the status each refusal carries are in [web-api.md](web-api.md).
 6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
    stopped, and `Runtime::Shutdown()` persists the session.
@@ -335,6 +380,18 @@ a poll tick: output when there is any, the token when there is not. Windows keep
 path and honors a stop token only between reads of the merged stream, which is no worse than
 what the stream reader does with a cancel.
 
+### Stopping an MCP server
+
+A stdio server is a child process with three pipes, and stopping it is where a client most
+easily hangs itself. Closing the descriptor a reader is blocked on does **not** wake that
+read: the close succeeds, and the `read()` that already holds its own reference waits for a
+line the server may never send. So the reader waits on a poll with a deadline and checks its
+stop flag between waits, and `Stop()` sets that flag first, closes the child's stdin second
+(the end of its input, which most servers leave on), then joins.
+
+The child itself is given a signal and a bounded wait, then killed. A server is not obliged to
+leave on its own, and a stop that hangs is worse than a process killed earlier than it liked.
+
 ### Toolbox & MCP lifecycle
 
  ```
@@ -403,7 +460,7 @@ hands each streamed chunk back through the connection, which queues it and write
 the connection's strand, producing the typewriter effect in the browser. The
 `ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
 `id`. Commands and non-streaming backends deliver their full text as a single chunk
-frame. The frame schema is owned by [README](../README.md#web-api) and implemented by
+frame. The frame schema is owned by [web-api.md](web-api.md) and implemented by
 `web/ws.js`.
 
 The read loop is what an asynchronous stream buys: a connection parked in a synchronous
@@ -437,7 +494,9 @@ home and no module has to be told about another's.
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
-| `web/panel.js` | The sidebar: backend label, context bar, tool list |
+| `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
+| `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
+| `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
@@ -545,6 +604,111 @@ lists tools.
 
 ---
 
+## Peer Messaging
+
+Two `pu serve` instances can talk to each other, each driven by its own agent and
+its own model. A declares B in its peer list and vice versa; either side can then
+start a conversation with the other and receive an answer.
+
+```
+     ┌─────────────────────────┐                ┌─────────────────────────┐
+     │  pu serve (A, :8911)    │                │  pu serve (B, :8912)    │
+     │                         │  POST          │                         │
+     │  agent calls            │  /api/peer/    │  SessionRunner          │
+     │  send_to_peer ──────────┼──message──────►│  ::SubmitFromPeer       │
+     │                         │                │         │               │
+     │  (returns at once)      │                │         ▼               │
+     │                         │                │  a normal turn, run     │
+     │                         │                │  on the worker thread   │
+     │                         │                │         │               │
+     │                         │                │         ▼               │
+     │                         │                │  send_to_peer back      │
+     │  a new turn             │◄───────────────┼─────────────────────────┘
+     │  is queued              │                │
+     └─────────────────────────┘                └─────────────────────────┘
+```
+
+### Delivery is asynchronous
+
+`send_to_peer` does not wait for the peer to think. It posts the message, checks
+that the peer accepted it, and returns; the asking agent is told plainly that an
+answer will arrive later. The peer's reply is injected as a **new turn**, so a
+slow or busy peer cannot hold up the sender, and the two agents can work at
+different speeds.
+
+This is why the tool reports "*has the message. It will answer in a later turn*"
+rather than a reply: if it returned the peer's words, the call would block for as
+long as the peer's model takes, and a long answer would look like a hang.
+
+### A peer turn may answer only the agent that asked
+
+The gate that stops an endless A→B→A→B chain is that a turn which arrived from a
+peer may reach **only its sender**. `send_to_peer` therefore compares the
+requested peer against `ToolContext::peer_origin`:
+
+- a turn started by a human has no origin, so every configured peer is reachable;
+- a turn started by a peer may reply to that peer, and to nobody else.
+
+Replying to the sender must stay allowed, or a peer could never answer and the
+conversation could never close. Relaying onward is refused with a reason the
+model can read, so it learns the rule and answers directly instead of retrying.
+The chain therefore ends by construction at the second hop: A can ask B, B can
+answer A, and that answer cannot be forwarded to a third agent.
+
+Hop counting is deliberately **not** the guard. It is carried for logging only,
+because a counter can only guess at intent and a low ceiling would cut off a
+legitimate long exchange between the same two agents. Structure, not a number,
+decides when the conversation stops.
+
+### Trust boundary
+
+The peer endpoint is the one surface that lets a remote conversation drive a
+local model, so it is authenticated while the rest of the HTTP API is not.
+
+| Control | Effect |
+| --- | --- |
+| `Authorization: Bearer <token>` | Required; compared in constant time |
+| Peer allowlist (`peers[]`) | An undeclared `from` is refused before any turn starts |
+| Loopback binding | The listener is not exposed beyond the host by default |
+
+`PU_PEER_TOKEN` overrides the token in `peers.json`, so the secret can stay out of
+the file. A server with no `peers.json` does not mount the endpoint at all — the
+route reports that peer messaging is not configured, and the tool is never
+registered.
+
+**How a peer's turn reaches a page.** A turn that arrived from a peer runs with no
+page attached, since the page may not be open. Its frames are not lost to that:
+`SessionRunner` keeps a record per turn, bounded to the last `kTurnsKept` (8), and
+hands the turn in flight together with the last finished one to a page that
+attaches afterwards. A page already attached when the frames are produced receives
+them as they happen, so a reply that arrives while the page is open needs no
+reload. A turn older than the window is still readable from `/api/history`, which
+carries the result rather than the stream.
+
+The turn keeps who asked: `UserPayload::from_peer` holds the peer's name, which
+the page draws where it would otherwise say "You", and which the model never
+reads — it is not part of the request. Such a turn cannot be rewound through
+`/api/rewind`; it belongs to the conversation it arrived in.
+
+Configuration lives in `.pu/peers.json`:
+
+```json
+{
+  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
+  "token": "shared-secret",
+  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
+}
+```
+
+Both sides must agree on the token and on each other's names. A peer entry
+without a name and a url is skipped with a warning rather than trusted.
+
+**Known gap:** `/api/*` and `/ws` remain unauthenticated, so any local process can
+already drive a turn. That is a separate concern from peer messaging and is not
+addressed here; it is tracked on its own.
+
+---
+
 ## Persistence
 
 ```
@@ -553,13 +717,27 @@ lists tools.
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing
-`PU_HOME` moves; the environment table in [README](../README.md#environment-variables)
+`PU_HOME` moves; the environment table in [configuration.md](configuration.md#environment-variables)
 owns both paths.
 
 The session file carries `schema_version` beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup. A file stamped with a version this build does
 not accept is refused rather than read best-effort.
+
+**What each turn cost is kept beside the conversation, not inside it.** `usage` is a
+sibling of `conversation` in the file, keyed by the assistant node the turn produced: prompt,
+completion and cached tokens, the credit the gateway priced it at, how many provider calls the
+turn took, and which model and gateway answered. A model never reads it, `History()` never
+renders it, and a page draws it next to the reply rather than as part of it — which is why it
+is not a field of `AssistantPayload`. It is kept because it is the only record that an
+optimization changed anything: a prompt edited so the cache stops hitting, or a model swapped
+for one that costs three times as much, shows up here and nowhere else.
+
+The key is absent from every file written before it existed, and absent is read as "nothing
+was recorded" rather than as a version this build cannot load, so the schema version did not
+move. A turn that has left the chain — a rewound turn, `/clear` — takes its entry with it on
+the next save.
 
 `session_spec` names the agent and carries the session's own thinking level when
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
@@ -700,6 +878,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
+- **New peer (no C++)**: Add an entry to `.pu/peers.json` naming the peer and its URL, and agree on the shared token; the other side needs no restart.
 
 ---
 
@@ -707,8 +886,22 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
+- **The tool-call budget is the turn loop's one automatic stop.** It counts calls rather than
+  replies, since one reply can carry several, and it is checked between rounds: a budget of 2
+  lets two calls run and then appends an instruction to wrap up, so the model answers from what
+  it has instead of the turn failing. A wrap-up round that calls a tool anyway ends the turn with
+  `TurnOutcome::kToolBudgetReached` and an error naming the setting, rather than looping. The
+  number comes from the agent's `tool_call_budget`, or from the session's override when the page
+  or `/api/settings` set one.
+- **A session's cost is summed, not stored.** `UsageLedger::Total()` adds the counts of every
+  turn the conversation still holds. A price is summed only while every turn that reported one
+  used the same unit, and only if every turn was priced: one unpriced turn or two units make the
+  total carry no price at all, because a number that covers part of the session reads as the
+  whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
+- **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **The transcript fold is checked by running the page's own JavaScript only where `node` exists.** Without it the same case file runs against a second implementation in Python, which catches a case that has drifted but not a page that no longer runs.
 

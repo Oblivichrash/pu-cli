@@ -53,6 +53,37 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
+// A user message that arrived from a peer keeps the peer's name beside it, so a page says who
+// asked rather than "You". The field is absent for a turn the page itself sent.
+TEST_CASE("serve API /api/history names the peer a turn arrived from", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::ChatMessage from_peer;
+  from_peer.role = "user";
+  from_peer.content = "ping";
+  from_peer.from_peer = "B";
+  session->Messages().Append(from_peer);
+  session->Messages().Append("assistant", "pong");
+  session->Messages().Append("user", "mine");
+
+  const auto j = ParseJson(client.Get("/api/history"));
+  REQUIRE(j.as_array().size() == 3);
+  CHECK(j.as_array()[0].at("from_peer") == "B");
+  CHECK_FALSE(j.as_array()[2].as_object().contains("from_peer"));
+
+  // A peer's turn is not this page's to take back, and the refusal says why.
+  const auto rewind = client.PostFull("/api/rewind", boost::json::object{{"turn", 1}});
+  CHECK(rewind.status == 400);
+  CHECK(rewind.body.find("arrived from a peer") != std::string::npos);
+
+  // A turn the page asked is still rewindable.
+  const auto mine = client.PostFull("/api/rewind", boost::json::object{{"turn", 3}});
+  CHECK(mine.status == 200);
+}
+
 TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
@@ -198,47 +229,159 @@ TEST_CASE("serve API /api/clear", "[serve][api]") {
   REQUIRE(history_j.as_array().empty());
 }
 
-TEST_CASE("serve API /api/thinking", "[serve][api]") {
+TEST_CASE("serve API /api/settings names every setting and where it came from",
+          "[serve][api]") {
   ServeHarness harness("openai");
   auto client = harness.Client();
 
-  auto session_j = ParseJson(client.Get("/api/session"));
-  REQUIRE(session_j.at("thinking") == "default");
+  const auto j = ParseJson(client.Get("/api/settings"));
+  REQUIRE(j.at("success") == true);
+  const auto& settings = j.at("settings").as_array();
+  REQUIRE(settings.size() == 4);
 
-  auto set_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "high"}}));
-  REQUIRE(set_j.at("success") == true);
-  REQUIRE(set_j.at("thinking") == "high");
-  REQUIRE(set_j.at("thinking_override") == "high");
+  bool saw_thinking = false;
+  for (const auto& setting : settings) {
+    const std::string name = boost::json::value_to<std::string>(setting.at("name"));
+    CHECK(boost::json::value_to<std::string>(setting.at("source")) == "agent");
+    if (name == "thinking") {
+      saw_thinking = true;
+      CHECK(setting.at("value") == "auto");
+    } else if (name == "tool_budget") {
+      CHECK(setting.at("value") == 100);  // the executor's default, which the agent did not name
+    }
+  }
+  CHECK(saw_thinking);
 
-  auto after_j = ParseJson(client.Get("/api/session"));
-  REQUIRE(after_j.at("thinking") == "high");
-  REQUIRE(after_j.at("thinking_override") == "high");
-
-  auto auto_j = ParseJson(client.Post("/api/thinking", boost::json::object{{"level", "auto"}}));
-  REQUIRE(auto_j.at("success") == true);
-  REQUIRE(auto_j.at("thinking") == "default");
-  REQUIRE_FALSE(auto_j.as_object().count("thinking_override") == 1);
+  // The same answer, in the shape the transcript surface already reported.
+  const auto session_j = ParseJson(client.Get("/api/session"));
+  REQUIRE(session_j.at("settings").as_array().size() == 4);
 }
 
-TEST_CASE("serve API /api/thinking takes a level on every backend", "[serve][api]") {
-  ServeHarness harness;  // ollama, which carries the level as a top-level `think`
+TEST_CASE("serve API /api/settings accepts a value and reports it as the session's",
+          "[serve][api]") {
+  ServeHarness harness("openai");
   auto client = harness.Client();
 
-  auto accepted = client.PostFull("/api/thinking", boost::json::object{{"level", "high"}});
-  REQUIRE(accepted.status == 200);
-  REQUIRE(ParseJson(accepted.body).at("thinking") == "high");
+  auto set_j = ParseJson(client.Post("/api/settings",
+                                     boost::json::object{{"name", "thinking"}, {"value", "high"}}));
+  REQUIRE(set_j.at("success") == true);
+  bool thinking_from_session = false;
+  for (const auto& setting : set_j.at("settings").as_array()) {
+    if (setting.at("name") != "thinking") continue;
+    thinking_from_session = true;
+    CHECK(setting.at("value") == "high");
+    CHECK(setting.at("source") == "session");
+    CHECK(setting.at("agent_value") == "auto");
+  }
+  CHECK(thinking_from_session);
 
-  auto unknown = client.PostFull("/api/thinking", boost::json::object{{"level", "enormous"}});
+  const auto after = ParseJson(client.Get("/api/session"));
+  REQUIRE(after.at("thinking") == "high");
+  REQUIRE(after.at("thinking_override") == "high");
+
+  // Clearing names the agent's value again, and the override field goes away.
+  auto cleared =
+      ParseJson(client.Post("/api/settings", boost::json::object{{"name", "thinking"}}));
+  REQUIRE(cleared.at("success") == true);
+  const auto back = ParseJson(client.Get("/api/session"));
+  REQUIRE(back.at("thinking") == "default");
+  REQUIRE_FALSE(back.as_object().count("thinking_override") == 1);
+}
+
+TEST_CASE("serve API /api/settings takes a budget, and reset drops every override",
+          "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto set = client.PostFull(
+      "/api/settings", boost::json::object{{"name", "tool_budget"}, {"value", 3}});
+  REQUIRE(set.status == 200);
+  REQUIRE(ParseJson(set.body).at("settings").as_array().size() == 4);
+
+  const auto session_j = ParseJson(client.Get("/api/session"));
+  bool budget_from_session = false;
+  for (const auto& setting : session_j.at("settings").as_array()) {
+    if (setting.at("name") != "tool_budget") continue;
+    budget_from_session = true;
+    CHECK(setting.at("value") == 3);
+    CHECK(setting.at("source") == "session");
+  }
+  CHECK(budget_from_session);
+
+  const auto reset = client.PostFull("/api/settings/reset", boost::json::object{});
+  REQUIRE(reset.status == 200);
+  // Parsed into a name first: the loop below binds a reference into the value, and a
+  // temporary from a chained call would not outlive it.
+  const auto reset_j = ParseJson(reset.body);
+  for (const auto& setting : reset_j.at("settings").as_array()) {
+    CHECK(boost::json::value_to<std::string>(setting.at("source")) == "agent");
+  }
+}
+
+// The point of a session override is that the next turn runs under it, not that a number was
+// echoed back: the budget in force is read from the runtime the turn uses.
+TEST_CASE("a session's budget override is what the turn runs under", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  // The agent named no budget, so the executor's default is in force.
+  REQUIRE(harness.RuntimeRef().Settings().size() == 4);
+  int before = 0;
+  for (const auto& view : harness.RuntimeRef().Settings()) {
+    if (view.name == "tool_budget") before = static_cast<int>(view.value.as_int64());
+  }
+  REQUIRE(before == pu::Executor::kDefaultToolCallBudget);
+
+  REQUIRE(client
+              .PostFull("/api/settings",
+                        boost::json::object{{"name", "tool_budget"}, {"value", 3}})
+              .status == 200);
+
+  for (const auto& view : harness.RuntimeRef().Settings()) {
+    if (view.name != "tool_budget") continue;
+    CHECK(static_cast<int>(view.value.as_int64()) == 3);
+    CHECK(view.source == "session");
+  }
+
+  // Clearing it names the agent's number again, which is what a reset does for every row.
+  REQUIRE(client.PostFull("/api/settings/reset", boost::json::object{}).status == 200);
+  for (const auto& view : harness.RuntimeRef().Settings()) {
+    if (view.name != "tool_budget") continue;
+    CHECK(view.source == "agent");
+    CHECK(static_cast<int>(view.value.as_int64()) == pu::Executor::kDefaultToolCallBudget);
+  }
+}
+
+TEST_CASE("serve API /api/settings refuses a value the setting cannot take", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto unknown = client.PostFull(
+      "/api/settings", boost::json::object{{"name", "sandbox_root"}, {"value", "/"}});
   REQUIRE(unknown.status == 400);
-  REQUIRE(ParseJson(unknown.body).at("success") == false);
+  CHECK(unknown.body.find("Unknown setting") != std::string::npos);
 
-  auto missing = client.PostFull("/api/thinking", boost::json::object{});
+  const auto not_a_number = client.PostFull(
+      "/api/settings", boost::json::object{{"name", "temperature"}, {"value", "hot"}});
+  REQUIRE(not_a_number.status == 400);
+  CHECK(not_a_number.body.find("must be a number") != std::string::npos);
+
+  const auto out_of_range = client.PostFull(
+      "/api/settings", boost::json::object{{"name", "temperature"}, {"value", 3.0}});
+  REQUIRE(out_of_range.status == 400);
+  CHECK(out_of_range.body.find("between 0 and 2") != std::string::npos);
+
+  // Zero is not "unlimited": it would stop the turn at its first call.
+  const auto zero =
+      client.PostFull("/api/settings", boost::json::object{{"name", "tool_budget"}, {"value", 0}});
+  REQUIRE(zero.status == 400);
+
+  const auto missing = client.PostFull("/api/settings", boost::json::object{});
   REQUIRE(missing.status == 400);
-  REQUIRE(ParseJson(missing.body).at("error") == "Missing or invalid 'level'");
+  CHECK(missing.body.find("Missing or invalid 'name'") != std::string::npos);
 
-  auto malformed = client.PostRaw("/api/thinking", "not json");
+  const auto malformed = client.PostRaw("/api/settings", "not json");
   REQUIRE(malformed.status == 400);
-  REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
 }
 
 TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {

@@ -252,10 +252,42 @@ std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host
   return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), CodeBuddyShape(), url);
 }
 
+namespace {
+
+// The columns that decide between two models a reader has already narrowed to. Each says what
+// it knows and nothing where it was told nothing: a blank column is "this gateway did not say"
+// rather than "no".
+std::string CapabilityLine(const Capabilities& caps) {
+  std::ostringstream line;
+  auto flag = [&](bool set, const char* name) {
+    if (!set) return;
+    if (line.tellp() > 0) line << " ";
+    line << name;
+  };
+  flag(caps.supports_tools, "tools");
+  flag(caps.supports_images, "images");
+  flag(caps.supports_reasoning, "reasoning");
+  // The one flag that predicts a request the gateway refuses: an effort is mandatory here,
+  // and a turn that sends none is answered 400.
+  flag(caps.only_reasoning, "only-reasoning");
+  if (!caps.default_effort.empty()) {
+    if (line.tellp() > 0) line << " ";
+    line << "effort=" << caps.default_effort;
+  }
+  if (caps.max_input_tokens > 0) {
+    if (line.tellp() > 0) line << " ";
+    line << "max-in=" << caps.max_input_tokens;
+  }
+  return line.str();
+}
+
+}  // namespace
+
 std::string FormatModelList(const std::vector<ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
-                            std::string_view active_model) {
+                            std::string_view active_model,
+                            ListingDetail detail) {
   // A listing is the subset its agent may run, which the backend's own model can sit outside;
   // the running model is named rather than dropped from the one row that matters.
   const bool active_listed =
@@ -265,11 +297,24 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   if (models.empty())
     return "No models reported by " + std::string(gateway) + " at " + std::string(host);
 
+  // The id column is as wide as the longest id, so the columns beside it line up: a table
+  // whose columns move per row is one a reader has to parse twice.
+  std::size_t width = 0;
+  for (const ModelEntry& model : models) width = std::max(width, model.id.size());
+  width += std::string(" (active)").size();
+
   std::ostringstream oss;
   oss << models.size() << " model(s) reported by " << gateway << " at " << host << ":\n";
   for (const ModelEntry& model : models) {
-    oss << "  " << model.id;
-    if (model.id == active_model) oss << " (active)";
+    std::ostringstream left;
+    left << model.id;
+    if (model.id == active_model) left << " (active)";
+
+    oss << "  " << left.str();
+    if (detail == ListingDetail::kCaps) {
+      oss << std::string(width > left.str().size() ? width - left.str().size() : 0, ' ') << "  "
+          << CapabilityLine(model.caps);
+    }
     if (!model.caps.credits.empty()) oss << "  " << model.caps.credits;
     oss << "\n";
   }

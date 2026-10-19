@@ -100,6 +100,10 @@ inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
 
 struct UserPayload {
   std::string content;
+  // The peer whose message this is, empty for the person at the page. It is a fact about the
+  // turn rather than about its text: the model never reads it, and the page uses it where it
+  // would otherwise say "You".
+  std::string from_peer;
 };
 
 struct AssistantPayload {
@@ -152,6 +156,11 @@ inline bool HasToolCallsInterrupted(const MessageNode& node) {
 inline constexpr const char* kCancelledReceipt =
     "The user cancelled the turn before this call ran, so it produced no result. Wait for the "
     "user's next message before deciding whether this call is still worth making";
+
+inline constexpr const char* kPeerOriginNote =
+    "This turn arrived from another agent. If the message needs an answer, send it straight back "
+    "to the agent that asked, then stop. Do not relay the request onward to anyone else, and do "
+    "not open with a tool call when you can answer in words";
 
 inline constexpr const char* kCommandStoppedReceipt =
     "The user stopped this command while it was running. The turn is still going, so the rest of "

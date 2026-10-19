@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include "tests/mocks/peer_harness.hpp"
 #include "tests/mocks/serve_harness.hpp"
 
 #include <boost/asio.hpp>
@@ -122,6 +123,39 @@ void RequireOnlyTheQuestion(const boost::json::value& history, const std::string
 }
 
 }  // namespace
+
+// A turn a peer asked runs with no page attached. When a page attaches afterwards it is handed
+// the frames of that turn, so the reply is drawn without the page having been open while it ran
+// and without a reload being the only way to see it.
+TEST_CASE("A page that attaches after a peer's turn reads the reply", "[serve][ws]") {
+  // The endpoint exists only where peers.json does, so the workspace names one before the
+  // runtime reads it.
+  pu::tests::ServeHarness harness("ollama", 0, std::nullopt, /*with_peers=*/true);
+  auto client = harness.Client();
+
+  // The endpoint queues the turn and answers 202; the backend's reply arrives a moment later.
+  const auto accepted = client.PostRaw(
+      "/api/peer/message", R"({"from":"A","message":"ping","hop":0})",
+      pu::tests::kPeerToken);
+  REQUIRE(accepted.status == 202);
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto history = boost::json::parse(client.Get("/api/history"));
+    if (history.as_array().size() >= 2) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  // The page that was not there while the turn ran attaches now and is handed the frames.
+  Page page(harness.Port());
+  const auto frames = page.ReadUntilEnd(5000);
+  REQUIRE_FALSE(frames.empty());
+
+  const bool saw_done = std::any_of(frames.begin(), frames.end(), [](const auto& frame) {
+    return FrameType(frame) == "done";
+  });
+  CHECK(saw_done);
+}
 
 TEST_CASE("A run streams the answer and ends with done", "[serve][ws]") {
   pu::tests::ServeHarness harness;

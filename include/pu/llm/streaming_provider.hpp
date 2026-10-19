@@ -28,7 +28,13 @@ class StreamingProvider : public LLMProvider {
 
   virtual std::string EndpointPath() const = 0;
   virtual std::string LogTag() const = 0;
-  virtual void ParseLine(std::string_view line, const ChatRequest& request) = 0;
+  // One event's payload. The framing — which lines are data, where an event ends — belongs to
+  // the format, and `core::SseParser` owns it; a provider reads payloads.
+  virtual void ParseData(std::string_view data, const ChatRequest& request) = 0;
+
+  // Whether this gateway frames events or writes one JSON object per line. The parser is told,
+  // so a stream that carries no `data:` prefix is still read as the format it is.
+  virtual bool FramesBareLines() const { return false; }
   virtual std::string BuildRequest(std::span<const ChatMessage> history,
                                    std::span<const ToolDefinition> tools) const = 0;
   virtual void ResetAccumulators() {}

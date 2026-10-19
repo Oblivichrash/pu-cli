@@ -11,6 +11,8 @@
 #include "pu/core/json.hpp"
 
 #include "pu/config/agents.hpp"
+#include "pu/config/peer.hpp"
+#include "pu/tools/peer_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
@@ -132,6 +134,13 @@ void Runtime::Initialize(const std::string& config_path) {
   executor_ = std::make_unique<Executor>();
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
+  peer_config_ = config::FindPeerConfig();
+  if (peer_config_.has_value()) {
+    spdlog::info("Peer '{}' knows {} peer(s)",
+                 peer_config_->self_name.empty() ? "<unnamed>" : peer_config_->self_name,
+                 peer_config_->peers.size());
+  }
+
   RebuildToolbox(*default_entry);
 
   const auto session_path = workspace_root_ / ".pu" / "session.json";
@@ -218,35 +227,111 @@ config::Backend Runtime::ConfiguredBackend() const {
 }
 
 config::Backend Runtime::CurrentBackend() const {
-  config::Backend backend = ConfiguredBackend();
-  if (current_session_) {
-    const auto& spec = current_session_->Spec();
-    if (spec.thinking_override) backend.thinking = *spec.thinking_override;
-  }
-  return backend;
+  const config::Backend backend = ConfiguredBackend();
+  if (!current_session_) return backend;
+  return session::ApplyOverrides(backend, Overrides());
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
 
 std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;
-  return current_session_->Spec().thinking_override;
+  std::lock_guard<std::mutex> lock(overrides_mutex_);
+  return current_session_->Spec().ThinkingOverride();
 }
 
 void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
-  DefaultSession()->Spec().thinking_override = level;
+  SetSetting("thinking", level ? boost::json::value(ThinkingLevelName(*level))
+                               : boost::json::value());
+}
+
+session::Overrides Runtime::Overrides() const {
+  if (!current_session_) return session::Overrides{};
+  std::lock_guard<std::mutex> lock(overrides_mutex_);
+  return current_session_->Spec().overrides;
+}
+
+std::vector<session::SettingView> Runtime::Settings() const {
+  return session::ViewSettings(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
+}
+
+int Runtime::ConfiguredToolBudget() const {
+  return ActiveAgent().tool_call_budget.value_or(Executor::kDefaultToolCallBudget);
+}
+
+void Runtime::SetSetting(const std::string& name, const boost::json::value& raw) {
+  // Checked before it is stored, so a value nothing can read is never written to a session.
+  const boost::json::value value = session::ParseSetting(name, raw);
+  {
+    std::lock_guard<std::mutex> lock(overrides_mutex_);
+    auto& overrides = DefaultSession()->Spec().overrides;
+    if (value.is_null()) {
+      overrides.erase(name);
+    } else {
+      overrides[name] = value;
+    }
+  }
+  ApplyToolBudget();
   SaveCurrentSession();
 }
+
+void Runtime::ClearSettings() {
+  {
+    std::lock_guard<std::mutex> lock(overrides_mutex_);
+    DefaultSession()->Spec().overrides.clear();
+  }
+  ApplyToolBudget();
+  SaveCurrentSession();
+}
+
+void Runtime::ApplyToolBudget() {
+  if (!executor_) return;
+  executor_->SetToolCallBudget(
+      session::EffectiveToolBudget(ConfiguredToolBudget(), Overrides()));
+}
+
+namespace {
+
+// What this turn cost, filed against the node it produced.
+//
+// A turn that ran tools leaves several assistant nodes; the reply a reader sees is the last
+// one, so that is the node the cost is filed under, and `rounds` says how many provider calls
+// stand behind it. A turn that produced no assistant node — an error, a command — spent
+// nothing worth a line.
+void RecordTurnUsage(Session& session, const ExecutionResult& result,
+                     const config::Backend& backend) {
+  if (!result.usage) return;
+  std::string last_assistant;
+  for (const session::MessageNode* node : session.Messages().Chain()) {
+    if (std::holds_alternative<session::AssistantPayload>(node->payload)) last_assistant = node->id;
+  }
+  if (last_assistant.empty()) return;
+
+  session::TurnUsage usage;
+  usage.node_id = last_assistant;
+  usage.rounds = result.rounds;
+  usage.prompt_tokens = result.usage->prompt_tokens;
+  usage.completion_tokens = result.usage->completion_tokens;
+  usage.cached_tokens = result.usage->cached_tokens;
+  usage.cost = result.usage->cost;
+  usage.model = result.model;
+  usage.gateway = config::GatewayName(backend.gateway);
+  session.Usage().Record(usage);
+}
+
+}  // namespace
 
 ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
                                       CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token) {
+                                      CancelToken command_stop_token,
+                                      const std::string& peer_origin) {
   ExecutionResult result;
   try {
     BeginRequest();
+    executor_->SetPeerOrigin(peer_origin);
 
     auto session = DefaultSession();
 
@@ -264,12 +349,14 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
 
     is_command = false;
 
-    auto provider = session->CreateProvider(CurrentBackend(), http_client_);
+    const config::Backend backend = CurrentBackend();
+    auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
         executor_->Execute(input, session->Messages(), provider.get(), toolbox_,
                            cancel_token, content_callback, tool_callbacks, reasoning_callback,
                            command_stop_token);
     result = std::move(exec_result);
+    RecordTurnUsage(*session, result, backend);
     SaveCurrentSession();
     return result;
   } catch (const std::exception& e) {
@@ -307,6 +394,9 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+  if (peer_config_.has_value() && !peer_config_->peers.empty()) {
+    toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
+  }
 }
 
 void Runtime::RegisterMcpTools() {
@@ -346,7 +436,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
-  if (agent.tool_call_budget) executor_->SetToolCallBudget(*agent.tool_call_budget);
+  ApplyToolBudget();
   agent_manager_->SetActiveAgent(agent.name);
 }
 

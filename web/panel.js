@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The panel holds what is read rather than chosen: where the last reply ran, how much
-// context it ran against, and which tools the agent can reach.
+// What is read rather than chosen: where the last reply ran, how much context it ran
+// against, which tools the agent can reach, and the status bar that repeats the session's
+// own facts so a folded panel costs no state.
 
 "use strict";
 
@@ -16,23 +17,73 @@ function setBackendLabel(backendType, model, host) {
   setText(BACKEND_FIELDS.type, PU.backendTypeShown);
   if (model) setText(BACKEND_FIELDS.model, model);
   if (host) setText(BACKEND_FIELDS.host, host);
+  if (model) PU.backendModelShown = model;
+  if (host) PU.backendHostShown = host;
+  renderStatusBar();
 }
 
-// No window is shown beside the counts: no gateway here reports one, and a guess reads as fact.
-function handleUsage(payload) {
+// The bar repeats what the panel holds, in one line, because the panel folds and the
+// session's own facts do not change when it does.
+function renderStatusBar() {
+  const agent = PU.composer.agentSelect ? PU.composer.agentSelect.value : "";
+  setText("status-agent", agent);
+  // The bar's copy is cut at 220px, so it carries the same tooltip the panel's control does.
+  const agentEl = document.getElementById("status-agent");
+  if (agentEl) {
+    const description = (PU.agentDescriptions || {})[agent];
+    agentEl.title = description || "The agent that answers";
+  }
+
+  // What the server last said about thinking, rather than what a control holds: a setting an
+  // older page does not draw is still a fact about the session.
+  const thinking = settingValue("thinking");
+  setText("status-thinking", thinking === null ? "—" : String(thinking));
+
+  const gateway = PU.backendTypeShown;
+  const model = PU.backendModelShown;
+  setText("status-backend", gateway && model ? `${gateway} · ${model}` : (gateway || model));
+  // The host is a fact about the configuration rather than about this turn, and it is long
+  // enough to crowd the bar, so it rides where the rest of the address already does.
+  const backendEl = document.getElementById("status-backend");
+  if (backendEl) {
+    backendEl.title = PU.backendHostShown
+      ? `${gateway || "—"} · ${model || "—"}\n${PU.backendHostShown}`
+      : "The gateway and model";
+  }
+
+  setText("status-context", PU.contextShown || "—");
+}
+
+// "1,234 tok · 40% cached", or the count alone where the gateway said nothing about a cache.
+function tokenLine(prompt, cached) {
+  if (!Number.isFinite(prompt)) return "";
+  let line = `${prompt.toLocaleString()} tokens`;
+  if (Number.isFinite(cached) && prompt > 0 && cached > 0) {
+    line += `  ·  ${Math.round((cached / prompt) * 100)}% cached`;
+  }
+  return line;
+}
+
+// Draws one turn's usage in the panel and the bar. Called as a turn streams and again on a
+// reload, where the last stored turn is what the bar describes.
+function showUsage(payload) {
   const el = document.getElementById("context-usage");
   const fill = document.getElementById("context-fill");
   if (!el || !payload) return;
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
+  const cached = Number(payload.cached_tokens);
   if (!Number.isFinite(prompt)) {
     el.textContent = "";
     if (fill) fill.style.width = "0";
     return;
   }
   el.textContent =
-      `${prompt.toLocaleString()} tokens` +
+      tokenLine(prompt, cached) +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
+  PU.contextShown = prompt.toLocaleString() + " tok";
+  PU.lastTurnPrompt = prompt;
+  renderStatusBar();
   if (!fill) return;
   // The bar needs a known window; without one the number stands alone.
   const window = contextWindowFor(PU.backendTypeShown);
@@ -43,13 +94,62 @@ function handleUsage(payload) {
   const ratio = Math.min(prompt / window, 1);
   fill.style.width = (ratio * 100).toFixed(1) + "%";
   fill.className = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
+
+  // The bar has no room for a progress bar, so the number carries the same warning the
+  // panel's fill does.
+  const barEl = document.getElementById("status-context");
+  if (barEl) {
+    barEl.className = "status-item" + (ratio > 0.85 ? " high" : (ratio > 0.6 ? " warn" : ""));
+    barEl.title = `Context the last reply ran against: ${Math.round(ratio * 100)}% of ${window.toLocaleString()}`;
+  }
+}
+
+// What the conversation has spent. The counts are sums; a price is drawn only when every turn
+  // that reported one agreed on the unit, which is what the server already decided.
+function renderUsageTotal(total) {
+  const host = document.getElementById("usage-total");
+  if (!host) return;
+  if (!total || !Number.isFinite(Number(total.turns))) {
+    host.textContent = "";
+    return;
+  }
+  const sum = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+  const lines = [
+    `${sum(total.turns)} turn${sum(total.turns) === 1 ? "" : "s"}  ·  ` +
+        `${sum(total.prompt_tokens).toLocaleString()} prompt  ·  ` +
+        `${sum(total.completion_tokens).toLocaleString()} completion`,
+  ];
+  if (sum(total.cached_tokens) > 0) {
+    lines.push(`${sum(total.cached_tokens).toLocaleString()} tokens came from the cache`);
+  }
+  if (total.cost && Number.isFinite(Number(total.cost.amount))) {
+    lines.push(`${Number(total.cost.amount)} ${total.cost.unit || ""}`.trim());
+  } else if (sum(total.priced_turns) > 0) {
+    // Some turns were priced and some were not, or two units were mixed: a total would lie.
+    lines.push(`price not summed (${sum(total.priced_turns)} of ${sum(total.turns)} turns priced)`);
+  } else {
+    lines.push("no gateway here reported a price");
+  }
+  host.replaceChildren();
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.textContent = line;
+    host.appendChild(row);
+  }
 }
 
 function renderToolList(tools) {
   const list = document.getElementById("panel-tools");
   if (!list) return;
   list.replaceChildren();
-  if (!Array.isArray(tools) || tools.length === 0) {
+
+  // The count is what the bar can hold; the names are what the panel is for.
+  const count = Array.isArray(tools) ? tools.length : 0;
+  setText("status-tools", count === 0 ? "no tools" : `${count} tool${count === 1 ? "" : "s"}`);
+  const toolsEl = document.getElementById("status-tools");
+  if (toolsEl && count > 0) toolsEl.title = tools.join(", ");
+
+  if (count === 0) {
     const li = document.createElement("li");
     li.textContent = "—";
     li.style.color = "var(--ink-light)";

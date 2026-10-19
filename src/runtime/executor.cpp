@@ -2,6 +2,7 @@
 #include "pu/runtime/executor.hpp"
 
 #include "pu/core/platform.hpp"
+#include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
@@ -179,7 +180,13 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   ToolCallbacks tool_callbacks,
                                   TokenCallback reasoning_callback,
                                   CancelToken command_stop_token) {
-  conversation.Append("user", input);
+  // The turn keeps who asked. It is the one place the origin is known before the user message
+  // is written, and the page reads it back rather than inferring it from the text.
+  ChatMessage user_turn;
+  user_turn.role = session::kUserRole;
+  user_turn.content = input;
+  user_turn.from_peer = peer_origin_;
+  conversation.Append(user_turn);
 
 
   const Turn turn{provider,          &toolbox,          std::move(content_callback),
@@ -210,6 +217,12 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
+
+  // Read here and cleared: a turn from a peer reaches the tool set once, and a later turn in
+  // the same session is the user's own.
+  tool_ctx.peer_origin = peer_origin_;
+  peer_origin_.clear();
+
   return tool_ctx;
 }
 
@@ -266,11 +279,29 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
       result.usage->completion_tokens += chat_result.usage->completion_tokens;
       result.usage->total_tokens += chat_result.usage->total_tokens;
       result.usage->cached_tokens += chat_result.usage->cached_tokens;
-      result.usage->credit += chat_result.usage->credit;
-      spdlog::debug("tokens this round: prompt={}, completion={}, total={}, cached={}, credit={}",
+      // A cost is summed only where every round reported one, and only within one unit: a
+      // total that mixed a priced round with an unpriced one would read as the turn's price
+      // when it is part of it.
+      if (chat_result.usage->cost) {
+        if (!result.usage->cost) {
+          result.usage->cost = chat_result.usage->cost;
+        } else if (result.usage->cost->unit == chat_result.usage->cost->unit) {
+          result.usage->cost->amount += chat_result.usage->cost->amount;
+        } else {
+          spdlog::warn("a turn priced in two units; keeping the first ('{}')",
+                       result.usage->cost->unit);
+        }
+      } else if (result.usage->cost) {
+        // One round in this turn said nothing about price. The sum would be short, so the
+        // turn keeps no total rather than a number that undercounts it.
+        result.usage->cost.reset();
+      }
+      spdlog::debug("tokens this round: prompt={}, completion={}, total={}, cached={}, cost={}",
                     chat_result.usage->prompt_tokens, chat_result.usage->completion_tokens,
                     chat_result.usage->total_tokens, chat_result.usage->cached_tokens,
-                    chat_result.usage->credit);
+                    chat_result.usage->cost ? std::to_string(chat_result.usage->cost->amount) +
+                                                  " " + chat_result.usage->cost->unit
+                                            : std::string("reported none"));
     }
     if (!chat_result.raw_usage.is_null()) {
       spdlog::debug("usage as the provider reported it: {}", json::serialize(chat_result.raw_usage));
@@ -306,8 +337,7 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
     }
     failed = true;
     result.has_error = true;
-    result.error_message = "Request failed: " + std::string(e.what());
-    spdlog::error("{}", result.error_message);
+    result.error_message = "Request failed: " + text::ReadableError(e.what());
     return {};
   }
 }
@@ -346,8 +376,13 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     ClearLogToolName();
     ClearLogDurationMs();
 
+    const auto parsed = tools::ParseToolResult(tool_result);
+    if (parsed.valid && parsed.blocked) {
+      ++result.blocked_tool_calls;
+      if (parsed.refusal == tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
+    }
+
     if (turn.tool_callbacks.on_end) {
-      const auto parsed = tools::ParseToolResult(tool_result);
       if (parsed.valid) {
         turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error);
       } else {
@@ -386,7 +421,10 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   bool abandoned = false;
 
   for (;;) {
-    // The budget counts tool calls, not replies: one reply can carry several calls.
+    // The budget counts tool calls, not replies: one reply can carry several calls. The check
+    // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
+    // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
+    // stopping the round that made the second one.
     if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
       budget_reached = true;
       spdlog::warn("Tool-call budget of {} reached, asking the model to wrap up",
@@ -411,6 +449,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     bool failed = false;
     bool stopped = false;
+    ++result.rounds;
     ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
     if (failed) break;
     if (stopped) {
@@ -454,7 +493,23 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
         "Please rephrase your request or narrow the scope, or raise the budget with "
         "the tool_call_budget agent setting.";
     result.has_error = true;
-    spdlog::error("{}", result.content);
+    return result;
+  }
+
+  if (result.content.empty() && result.blocked_tool_calls > 0 &&
+      result.blocked_tool_calls == result.tool_call_count) {
+    // Nothing ran and nothing was said: the sandbox is why, and telling the caller to retry
+    // would be wrong. The refusals themselves are in the conversation for the model.
+    result.only_blocked_calls = true;
+    result.only_unaskable_calls = result.unaskable_tool_calls == result.blocked_tool_calls;
+    if (!result.has_error) {
+      result.has_error = true;
+      result.error_message =
+          result.only_unaskable_calls
+              ? "Every tool call this turn made needed approval, and nothing here can ask: "
+                "give the agent a command that needs none, or take it off approval_patterns."
+              : "Every tool call this turn made was refused by the sandbox; nothing ran.";
+    }
     return result;
   }
 
@@ -463,7 +518,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
     result.error_message =
         "Model returned an empty response without any tool calls. "
         "Please check the backend service or try again.";
-    spdlog::error("{}", result.error_message);
     return result;
   }
 

@@ -43,6 +43,27 @@ std::optional<GatewayId> ParseGatewayId(std::string_view name);
 // that needs no key.
 std::string_view ApiKeyEnvFor(GatewayId id);
 
+// How a product prices a call. A product fact, not a protocol fact: `deepseek` and
+// `codebuddy` speak the same wire and only one of them reports a price.
+enum class BillingKind {
+  // The product says nothing about what a call costs. Absent is not free: a gateway that
+  // prices nothing and one that prices a call at zero are different answers, and only this
+  // value can tell them apart.
+  kNone,
+  // The product reports what this call cost, in its own unit. The number is kept as sent;
+  // comparing two products' numbers would be comparing two different currencies.
+  kReported,
+};
+
+struct Billing {
+  BillingKind kind = BillingKind::kNone;
+  // The field under `usage` that carries it. Empty for a gateway that reports none.
+  std::string_view field;
+  // What the number is in, as the product names it: "credits" today. No conversion is done
+  // with it — it exists so a reader can tell one product's unit from another's.
+  std::string_view unit;
+};
+
 // One gateway is one product, not one protocol: it names the vendor's endpoint, and it
 // carries the product-level facts a protocol cannot know — the default host, the
 // catalogue's shape, and how that product bills (one reports `credit`, another reports
@@ -68,6 +89,9 @@ struct Gateway {
   // needs none. A probe reads the same endpoint as the lister, so it reads them here rather
   // than restating them.
   std::vector<std::string> (*listing_headers)();
+  // How a call's price arrives, or that none does. A gateway that prices a call fills this
+  // in; one that says nothing leaves it `kNone`.
+  Billing billing{};
 };
 
 // Adding a gateway is a file beside the others plus a line in the gateway table in gateways.cpp.

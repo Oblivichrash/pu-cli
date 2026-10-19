@@ -2,6 +2,7 @@
 #include "pu/llm/probe.hpp"
 
 #include "pu/core/base.hpp"
+#include "pu/core/sse.hpp"
 #include "pu/llm/openai_protocol.hpp"
 
 #include <boost/json.hpp>
@@ -61,44 +62,22 @@ std::string ProbeBody(const config::Backend& backend, const std::string& prompt)
   return boost::json::serialize(req);
 }
 
-// Frames the way the reader itself reassembles them. An SSE event runs from one blank
-// line to the next; its `data:` lines are fragments of one payload and join directly. A
-// line that carries no `data:` prefix is Ollama's reply, which is newline-delimited JSON
-// and is a frame in itself.
+// Reads a capture with the parser the live stream uses, so a probe reports the frames the
+// provider would have seen rather than its own third reading of the format. The bytes are
+// whole here, so everything arrives in one feed and the close terminates the last line.
 template <typename Fn>
 void ForEachFrame(const std::string& raw, Fn&& on_frame) {
-  std::string pending;
-  auto flush = [&] {
-    if (pending.empty()) return;
+  core::SseParser parser([&](const core::SseEvent& event) {
+    if (event.data.empty() || event.data == "[DONE]") return;
     boost::system::error_code ec;
-    const boost::json::value parsed = boost::json::parse(pending, ec);
+    const boost::json::value parsed = boost::json::parse(event.data, ec);
     if (!ec) on_frame(parsed);
-    pending.clear();
-  };
-
-  for (size_t start = 0; start < raw.size();) {
-    const size_t end = raw.find('\n', start);
-    const std::string_view line(raw.data() + start,
-                                end == std::string::npos ? raw.size() - start : end - start);
-    start = end == std::string::npos ? raw.size() : end + 1;
-
-    if (line.empty() || line == "data: [DONE]") {
-      flush();
-      continue;
-    }
-    if (line.rfind("data:", 0) == 0) {
-      std::string_view payload = line.substr(5);
-      if (!payload.empty() && payload.front() == ' ') payload.remove_prefix(1);
-      pending.append(payload);
-      continue;
-    }
-    // A fragment that arrives on its own line parses on its own line, or fails the same
-    // way a truncated one would.
-    boost::system::error_code ec;
-    const boost::json::value parsed = boost::json::parse(line, ec);
-    if (!ec) on_frame(parsed);
-  }
-  flush();
+  });
+  // A capture that carries no `data:` line is newline-delimited JSON, and the parser delivers
+  // each of its lines as an event of its own.
+  parser.SetBareLinesAreEvents(true);
+  parser.Feed(raw);
+  parser.Finish();
 }
 
 void CollectKeys(const boost::json::value& j, const std::string& level,

@@ -270,9 +270,12 @@ http::Response BeastHttpClient::Get(const std::string& url,
   return Response{status, std::move(res.body())};
 }
 
-void BeastHttpClient::PostStream(const std::string& url, const std::string& body,
-                                 const std::vector<std::string>& headers, WriteCallback write_cb,
-                                 CancelToken cancel_token) {
+void BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
+                                   const std::string& body,
+                                   const std::vector<std::string>& headers,
+                                   WriteCallback write_cb, CancelToken cancel_token) {
+  const beast::http::verb verb =
+      method == HttpMethod::kGet ? beast::http::verb::get : beast::http::verb::post;
   auto start = std::chrono::steady_clock::now();
 
   try {
@@ -298,7 +301,7 @@ void BeastHttpClient::PostStream(const std::string& url, const std::string& body
       ssl_stream.handshake(net::ssl::stream_base::client);
       CheckCancel(cancel_token);
 
-      beast::http::request<beast::http::string_body> req(beast::http::verb::post, parts.target, 11);
+      beast::http::request<beast::http::string_body> req(verb, parts.target, 11);
       ApplyHeaders(req, parts.host, body, headers);
 
       CheckCancel(cancel_token);
@@ -317,7 +320,7 @@ void BeastHttpClient::PostStream(const std::string& url, const std::string& body
       beast::error_code ec;
       ssl_stream.shutdown(ec);
     } else {
-      beast::http::request<beast::http::string_body> req(beast::http::verb::post, parts.target, 11);
+      beast::http::request<beast::http::string_body> req(verb, parts.target, 11);
       ApplyHeaders(req, parts.host, body, headers);
 
       CheckCancel(cancel_token);
