@@ -100,6 +100,10 @@ inline ToolCallRecord ToolCallFromJson(const boost::json::value& call) {
 
 struct UserPayload {
   std::string content;
+  // The peer whose message this is, empty for the person at the page. It is a fact about the
+  // turn rather than about its text: the model never reads it, and the page uses it where it
+  // would otherwise say "You".
+  std::string from_peer;
 };
 
 struct AssistantPayload {

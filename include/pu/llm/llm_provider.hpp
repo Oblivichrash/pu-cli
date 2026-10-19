@@ -68,6 +68,9 @@ struct ChatMessage {
   boost::json::value tool_calls;  // assistant messages: array of OpenAI-style tool calls
   std::vector<ReasoningBlock> reasoning;
   std::string tool_call_id;       // for tool messages: ID of the tool call
+  // Who asked, for a user turn that arrived from a peer. Empty for the person at the page.
+  // It is not part of the request: a model reads the text, not who typed it.
+  std::string from_peer;
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();

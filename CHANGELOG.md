@@ -8,6 +8,23 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **What a conversation has spent, summed and drawn.** `/api/session` carries `usage_total`
+  (turns, rounds, prompt/completion/cached tokens, `priced_turns`, and a price only when every
+  priced turn agreed on its unit). The page draws it under the context bar, and each reply
+  carries a folded line with its own cost — including the cached share, which the file recorded
+  but nothing displayed.
+- **One settings table instead of a field per setting.** `thinking`, `temperature`, `max_tokens`
+  and `tool_budget` are rows in `pu/session/settings.hpp`; `SessionSpec` keeps the session's
+  overrides as a map, and `/api/settings` reports every row with the value in force and whether
+  it came from this session or the agent. `/api/thinking` is gone: the page draws one row per
+  setting the server offers, so a new row appears without a page change.
+- A page is handed the frames of the turn that ran while it was not open, rather than
+  needing a reload to see it: `SessionRunner` keeps a record per turn (the last eight) and
+  gives the turn in flight together with the last finished one to whoever attaches.
+- A user turn carries `from_peer` when it arrived from another server. The page names the
+  peer where it would otherwise say "You", the field is in `/api/history`, and the model
+  never reads it.
+- `/api/rewind` refuses a turn a peer asked, since it is not this page's to take back.
 - What each turn cost is now stored with the session and served by `/api/history`: prompt,
   completion and cached tokens, the price where the product reports one, how many provider
   calls the turn took, and the model and gateway that answered. The key is absent from older

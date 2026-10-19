@@ -180,7 +180,13 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   ToolCallbacks tool_callbacks,
                                   TokenCallback reasoning_callback,
                                   CancelToken command_stop_token) {
-  conversation.Append("user", input);
+  // The turn keeps who asked. It is the one place the origin is known before the user message
+  // is written, and the page reads it back rather than inferring it from the text.
+  ChatMessage user_turn;
+  user_turn.role = session::kUserRole;
+  user_turn.content = input;
+  user_turn.from_peer = peer_origin_;
+  conversation.Append(user_turn);
 
 
   const Turn turn{provider,          &toolbox,          std::move(content_callback),
@@ -415,7 +421,10 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   bool abandoned = false;
 
   for (;;) {
-    // The budget counts tool calls, not replies: one reply can carry several calls.
+    // The budget counts tool calls, not replies: one reply can carry several calls. The check
+    // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
+    // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
+    // stopping the round that made the second one.
     if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
       budget_reached = true;
       spdlog::warn("Tool-call budget of {} reached, asking the model to wrap up",

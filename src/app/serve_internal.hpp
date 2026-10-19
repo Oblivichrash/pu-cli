@@ -109,13 +109,43 @@ class SessionRunner {
   bool Attach(const std::shared_ptr<WebSocketConnection>& conn);
   void Detach(const std::shared_ptr<WebSocketConnection>& conn);
 
+  // The frames of one turn, as they were delivered. A page that was not attached while the
+  // turn ran reads them here instead of waiting for the next reload: this is what an
+  // event-stream subscriber gets, and what a reconnecting page is handed in `Attach`.
+  //
+  // `frames` is the whole turn as it happened, and `finished` says the `done` frame is in it.
+  // A subscriber records how many it has seen and is given the rest, which is what makes a
+  // reconnect mid-turn cost nothing.
+  struct TurnRecord {
+    std::string id;
+    bool finished = false;
+    std::deque<std::shared_ptr<const std::string>> frames;
+  };
+  // The record for `turn_id`, or nullptr when it is no longer kept. The shared_ptr is the
+  // record itself: a subscriber holds it and reads `frames` under `frame_mutex_`, which is
+  // also the lock the worker appends under.
+  std::shared_ptr<TurnRecord> RecordOf(const std::string& turn_id) const;
+  std::mutex& FrameMutex() const { return frame_mutex_; }
+
  private:
   void WorkerMain();
   // `by_page` is whether the page asked for this, which decides if the turn still answers.
   void RequestCancel(bool by_page);
-  void Deliver(const std::shared_ptr<WebSocketConnection>& conn, boost::json::value frame);
-  // Frames held for the next page are swapped out by `Attach`, so they share its mutex.
-  void ClearReplay();
+  // The frames a page attaching now should be handed: the turn in flight and the last
+  // finished one, so a reply that arrived with nobody watching is drawn without a reload.
+  std::deque<std::shared_ptr<const std::string>> FramesForNextPage() const;
+  // Frames of the turn in flight and of the last few finished ones, newest last. Bounded so a
+  // long-lived server does not keep every byte it ever sent; an older turn is still readable
+  // from /api/history, which carries the result rather than the stream.
+  //
+  // `turns_mutex_` guards the list itself (which records exist). `frame_mutex_` guards the
+  // frames inside one record, since a subscriber reads them while the worker appends.
+  mutable std::mutex turns_mutex_;
+  mutable std::mutex frame_mutex_;
+  std::deque<std::shared_ptr<TurnRecord>> turns_;
+  static constexpr std::size_t kTurnsKept = 8;
+  void AppendFrame(boost::json::value frame);
+  void FinishTurn();
 
   // The one token pair a turn runs under, swapped in when the job starts and out when it
   // ends. A socket that attaches mid-turn takes a copy and flips the same flags, so a page
@@ -132,6 +162,8 @@ class SessionRunner {
     std::string text;
     std::shared_ptr<WebSocketConnection> conn;
     std::string peer_origin;
+    // The turn this job runs, so its record can be found while it is still being written.
+    std::string turn_id;
   };
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -142,9 +174,6 @@ class SessionRunner {
 
   std::mutex attach_mutex_;
   std::weak_ptr<WebSocketConnection> attached_;
-  // Frames the worker asked to send while no page was attached, replayed to whoever
-  // attaches next. Without this a reconnect mid-turn loses the socket the turn reports to.
-  std::deque<std::shared_ptr<const std::string>> replay_;
 
   mutable std::mutex turn_mutex_;
   CancelToken cancel_token_;

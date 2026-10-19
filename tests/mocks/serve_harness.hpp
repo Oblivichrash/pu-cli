@@ -369,8 +369,15 @@ class TestHttpClient {
     return Request(http::verb::post, path, body);
   }
 
+  // For the peer endpoint, whose authorization is a peer token rather than the page's own.
+  HttpResponse PostRaw(const std::string& path, const std::string& body,
+                       const std::string& bearer) {
+    return Request(http::verb::post, path, body, bearer);
+  }
+
  private:
-  HttpResponse Request(http::verb method, const std::string& path, const std::string& body) {
+  HttpResponse Request(http::verb method, const std::string& path, const std::string& body,
+                       const std::string& bearer = {}) {
     try {
       net::io_context ioc;
       tcp::resolver resolver(ioc);
@@ -383,6 +390,7 @@ class TestHttpClient {
       req.set(http::field::host, host_);
       req.set(http::field::content_type, "application/json");
       req.set(http::field::content_length, std::to_string(body.size()));
+      if (!bearer.empty()) req.set(http::field::authorization, "Bearer " + bearer);
       req.body() = body;
       req.prepare_payload();
 
@@ -413,7 +421,8 @@ class ServeHarness {
   };
 
   explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
-                        std::optional<McpServer> mcp = std::nullopt) {
+                        std::optional<McpServer> mcp = std::nullopt,
+                        bool with_peers = false) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -429,6 +438,9 @@ class ServeHarness {
 
     WriteAgentsFile(home_, backend_->Port(), backend_type, mcp ? mcp->name : "",
                     mcp ? mcp->url : "");
+    // A workspace that is part of a topology names its peer before the runtime reads the
+    // directory: the endpoint and the tool both follow from the file being there.
+    if (with_peers) WritePeersConfig("B", "A");
 
     {
       // Read back what was written, the way the runtime will. A config the harness cannot
@@ -471,6 +483,27 @@ class ServeHarness {
     Stop();
     std::error_code ec;
     fs::remove_all(home_, ec);
+  }
+
+  // Writes a peers.json into the workspace before Initialize reads it. A case that needs the
+  // peer endpoint mounted says so here rather than editing .pu/ after the runtime has started,
+  // which would be read too late.
+  void WritePeersConfig(const std::string& self_name, const std::string& peer_name) {
+    std::error_code ec;
+    std::filesystem::create_directories(home_ / ".pu", ec);
+    boost::json::object self;
+    self["name"] = JsonStr(self_name);
+    boost::json::object peer;
+    peer["name"] = JsonStr(peer_name);
+    peer["url"] = JsonStr("http://127.0.0.1:1");
+    boost::json::object root;
+    root["self"] = std::move(self);
+    root["token"] = JsonStr("shared-secret");
+    root["peers"] = boost::json::array{std::move(peer)};
+    std::ofstream file(home_ / ".pu" / "peers.json", std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << boost::json::serialize(root);
+    REQUIRE(file.good());
   }
 
   void Stop() {

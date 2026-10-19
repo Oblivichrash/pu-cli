@@ -27,6 +27,7 @@ boost::json::value SerializeNode(const MessageNode& node) {
   if (const auto* user = std::get_if<UserPayload>(&node.payload)) {
     out["role"] = kUserRole;
     out["content"] = user->content;
+    if (!user->from_peer.empty()) out["from_peer"] = user->from_peer;
   } else if (const auto* assistant = std::get_if<AssistantPayload>(&node.payload)) {
     out["role"] = kAssistantRole;
     out["content"] = assistant->content;
@@ -80,6 +81,7 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
   if (role == kUserRole) {
     UserPayload user;
     user.content = content;
+    user.from_peer = json::ValueOrDefault<std::string>(value, "from_peer", "");
     out.payload = std::move(user);
     return true;
   }

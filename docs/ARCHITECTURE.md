@@ -653,6 +653,20 @@ the file. A server with no `peers.json` does not mount the endpoint at all — t
 route reports that peer messaging is not configured, and the tool is never
 registered.
 
+**How a peer's turn reaches a page.** A turn that arrived from a peer runs with no
+page attached, since the page may not be open. Its frames are not lost to that:
+`SessionRunner` keeps a record per turn, bounded to the last `kTurnsKept` (8), and
+hands the turn in flight together with the last finished one to a page that
+attaches afterwards. A page already attached when the frames are produced receives
+them as they happen, so a reply that arrives while the page is open needs no
+reload. A turn older than the window is still readable from `/api/history`, which
+carries the result rather than the stream.
+
+The turn keeps who asked: `UserPayload::from_peer` holds the peer's name, which
+the page draws where it would otherwise say "You", and which the model never
+reads — it is not part of the request. Such a turn cannot be rewound through
+`/api/rewind`; it belongs to the conversation it arrived in.
+
 Configuration lives in `.pu/peers.json`:
 
 ```json
@@ -849,6 +863,18 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
+- **The tool-call budget is the turn loop's one automatic stop.** It counts calls rather than
+  replies, since one reply can carry several, and it is checked between rounds: a budget of 2
+  lets two calls run and then appends an instruction to wrap up, so the model answers from what
+  it has instead of the turn failing. A wrap-up round that calls a tool anyway ends the turn with
+  `TurnOutcome::kToolBudgetReached` and an error naming the setting, rather than looping. The
+  number comes from the agent's `tool_call_budget`, or from the session's override when the page
+  or `/api/settings` set one.
+- **A session's cost is summed, not stored.** `UsageLedger::Total()` adds the counts of every
+  turn the conversation still holds. A price is summed only while every turn that reported one
+  used the same unit, and only if every turn was priced: one unpriced turn or two units make the
+  total carry no price at all, because a number that covers part of the session reads as the
+  whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
