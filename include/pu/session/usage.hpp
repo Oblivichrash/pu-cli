@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace pu::session {
 
@@ -35,6 +36,23 @@ struct TurnUsage {
   std::string gateway;
 };
 
+// What a whole session spent, summed from its turns.
+//
+// The counts add up; a price does not add across units. `cost` is therefore absent as soon as
+// two turns report prices in different units, or as soon as one turn reports none — a total
+// that mixed them would read as the session's price when it is only part of it. When every turn
+// agrees, the total carries that unit.
+struct SessionUsageTotal {
+  int turns = 0;
+  int rounds = 0;
+  int prompt_tokens = 0;
+  int completion_tokens = 0;
+  int cached_tokens = 0;
+  std::optional<Cost> cost;
+  // How many turns reported a price at all, so a page can say "priced 3 of 5 turns".
+  int priced_turns = 0;
+};
+
 // The usage of every turn a session has run, by node id.
 //
 // A key that is no longer in the chain — a rewound turn, a conversation cleared and started
@@ -49,6 +67,9 @@ class UsageLedger {
 
   const std::map<std::string, TurnUsage>& Entries() const { return entries_; }
   std::optional<TurnUsage> For(const std::string& node_id) const;
+
+  // The sum, with the rule above about units.
+  SessionUsageTotal Total() const;
 
   boost::json::value Serialize() const;
   // Absent is not an error: a session written before this existed has no ledger, and one

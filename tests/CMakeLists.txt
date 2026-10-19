@@ -40,6 +40,9 @@ add_executable(pu_tests
     unit/test_probe.cpp
     unit/test_peer_config.cpp
     unit/test_peer_tool.cpp
+    unit/test_peer_serve.cpp
+    unit/test_budget.cpp
+    unit/test_usage_total.cpp
     unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
     unit/test_approval_gate.cpp

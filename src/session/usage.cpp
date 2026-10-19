@@ -45,6 +45,39 @@ std::optional<TurnUsage> UsageLedger::For(const std::string& node_id) const {
   return it->second;
 }
 
+SessionUsageTotal UsageLedger::Total() const {
+  SessionUsageTotal total;
+  bool any_cost_seen = false;
+  bool any_cost_missing = false;
+  for (const auto& [node_id, usage] : entries_) {
+    ++total.turns;
+    total.rounds += usage.rounds;
+    total.prompt_tokens += usage.prompt_tokens;
+    total.completion_tokens += usage.completion_tokens;
+    total.cached_tokens += usage.cached_tokens;
+    if (!usage.cost) {
+      // A turn whose product said nothing is not a free turn: the total stops being a total.
+      any_cost_missing = true;
+      continue;
+    }
+    ++total.priced_turns;
+    if (!any_cost_seen) {
+      total.cost = usage.cost;
+      any_cost_seen = true;
+      continue;
+    }
+    if (total.cost->unit == usage.cost->unit) {
+      total.cost->amount += usage.cost->amount;
+    } else {
+      // Two units are not comparable; keeping either would be a number in the wrong currency.
+      total.cost.reset();
+      any_cost_missing = true;
+    }
+  }
+  if (any_cost_missing) total.cost.reset();
+  return total;
+}
+
 boost::json::value UsageLedger::Serialize() const {
   boost::json::object out;
   for (const auto& [node_id, usage] : entries_) {

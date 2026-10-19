@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the transcript fold's cases without a JavaScript interpreter.
 
-This is a stand-in for ``tests/js/check-group-history.mjs`` on a machine with no node. It
+This is a stand-in for ``tests/js/check-group-history.cjs`` on a machine with no node. It
 reads the same case file and reimplements the fold exactly as ``web/history.js`` writes it,
 so the cases can be authored here and are still checked by the script on CI. What it does
 NOT prove is that the JavaScript itself parses or runs; that is the script's job, and this
@@ -92,7 +92,12 @@ def group_history(history):
             turns.append({"role": "system", "text": content})
         elif role == "user":
             close_reply()
-            turns.append({"role": "user", "text": content, "turn": msg.get("id")})
+            turn = {"role": "user", "text": content, "turn": msg.get("id")}
+            # Absent rather than null for a turn the user asked, which is the shape the page
+            # builds and the one a case file describes.
+            if msg.get("from_peer"):
+                turn["fromPeer"] = msg["from_peer"]
+            turns.append(turn)
         elif role == "tool":
             apply_tool_result(current_reply()["blocks"], msg)
         elif role == "assistant":
@@ -110,6 +115,10 @@ def group_history(history):
             for index, call in enumerate(calls):
                 bubble["blocks"].append(tool_call_block(call, call_status(statuses, index)))
 
+            # What the turn cost rides on the bubble rather than in it, and a later assistant
+            # message of the same turn replaces an earlier one's figure rather than adding.
+            if msg.get("usage"):
+                bubble["usage"] = msg["usage"]
             if content:
                 append_at_end(
                     bubble["blocks"], BLOCK["TEXT"], lambda: {"type": BLOCK["TEXT"], "content": ""}
@@ -149,7 +158,7 @@ def main():
 
     print(f"\n{len(cases)} case(s) passed")
     print("(checked by this stand-in, which does not run the JavaScript itself;")
-    print(" tests/js/check-group-history.mjs is what runs it where node exists)")
+    print(" tests/js/check-group-history.cjs is what runs it where node exists)")
     return 0
 
 

@@ -4,27 +4,61 @@
     {
       "name": "a plain exchange is two bubbles",
       "history": [
-        {"id": "a", "role": "user", "content": "hello"},
-        {"id": "b", "role": "assistant", "content": "hi there"}
+        {
+          "id": "a",
+          "role": "user",
+          "content": "hello"
+        },
+        {
+          "id": "b",
+          "role": "assistant",
+          "content": "hi there"
+        }
       ],
       "expected": [
-        {"role": "user", "text": "hello", "turn": "a"},
-        {"role": "assistant", "blocks": [{"type": "text", "content": "hi there"}]}
+        {
+          "role": "user",
+          "text": "hello",
+          "turn": "a"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "hi there"
+            }
+          ]
+        }
       ]
     },
     {
       "name": "a tool call is folded into the reply that made it",
       "history": [
-        {"id": "u1", "role": "user", "content": "list the files"},
+        {
+          "id": "u1",
+          "role": "user",
+          "content": "list the files"
+        },
         {
           "id": "a1",
           "role": "assistant",
           "content": "",
           "tool_calls": [
-            {"id": "call_1", "type": "function",
-             "function": {"name": "execute_bash", "arguments": {"command": "ls"}}}
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": {
+                  "command": "ls"
+                }
+              }
+            }
           ],
-          "tool_call_status": ["answered"]
+          "tool_call_status": [
+            "answered"
+          ]
         },
         {
           "id": "t1",
@@ -35,94 +69,323 @@
           "output": "a.txt",
           "error": ""
         },
-        {"id": "a2", "role": "assistant", "content": "one file: a.txt"}
+        {
+          "id": "a2",
+          "role": "assistant",
+          "content": "one file: a.txt"
+        }
       ],
       "expected": [
-        {"role": "user", "text": "list the files", "turn": "u1"},
-        {"role": "assistant", "blocks": [
-          {"type": "tool_call", "id": "call_1", "name": "execute_bash",
-           "args": {"command": "ls"}, "output": "a.txt", "error": "", "status": "done",
-           "collapsed": true},
-          {"type": "text", "content": "one file: a.txt"}
-        ]}
+        {
+          "role": "user",
+          "text": "list the files",
+          "turn": "u1"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "call_1",
+              "name": "execute_bash",
+              "args": {
+                "command": "ls"
+              },
+              "output": "a.txt",
+              "error": "",
+              "status": "done",
+              "collapsed": true
+            },
+            {
+              "type": "text",
+              "content": "one file: a.txt"
+            }
+          ]
+        }
       ]
     },
     {
       "name": "a tool call the turn never ran keeps its own status",
       "history": [
-        {"id": "u1", "role": "user", "content": "run it"},
+        {
+          "id": "u1",
+          "role": "user",
+          "content": "run it"
+        },
         {
           "id": "a1",
           "role": "assistant",
           "content": "",
           "tool_calls": [
-            {"id": "call_1", "type": "function",
-             "function": {"name": "execute_bash", "arguments": "not json"}}
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": "not json"
+              }
+            }
           ],
-          "tool_call_status": ["interrupted"]
+          "tool_call_status": [
+            "interrupted"
+          ]
         }
       ],
       "expected": [
-        {"role": "user", "text": "run it", "turn": "u1"},
-        {"role": "assistant", "blocks": [
-          {"type": "tool_call", "id": "call_1", "name": "execute_bash",
-           "args": "not json", "output": "", "error": "", "status": "interrupted",
-           "collapsed": true}
-        ]}
+        {
+          "role": "user",
+          "text": "run it",
+          "turn": "u1"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "call_1",
+              "name": "execute_bash",
+              "args": "not json",
+              "output": "",
+              "error": "",
+              "status": "interrupted",
+              "collapsed": true
+            }
+          ]
+        }
       ]
     },
     {
       "name": "thinking arrives before the text it reasoned about",
       "history": [
-        {"id": "u1", "role": "user", "content": "why"},
+        {
+          "id": "u1",
+          "role": "user",
+          "content": "why"
+        },
         {
           "id": "a1",
           "role": "assistant",
           "content": "because",
-          "reasoning": [{"text": "let me think"}, {"text": " about it"}]
+          "reasoning": [
+            {
+              "text": "let me think"
+            },
+            {
+              "text": " about it"
+            }
+          ]
         }
       ],
       "expected": [
-        {"role": "user", "text": "why", "turn": "u1"},
-        {"role": "assistant", "blocks": [
-          {"type": "thinking", "content": "let me think about it", "collapsed": true},
-          {"type": "text", "content": "because"}
-        ]}
+        {
+          "role": "user",
+          "text": "why",
+          "turn": "u1"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "content": "let me think about it",
+              "collapsed": true
+            },
+            {
+              "type": "text",
+              "content": "because"
+            }
+          ]
+        }
       ]
     },
     {
       "name": "two calls in one reply both land in the same bubble",
       "history": [
-        {"id": "u1", "role": "user", "content": "check both"},
+        {
+          "id": "u1",
+          "role": "user",
+          "content": "check both"
+        },
         {
           "id": "a1",
           "role": "assistant",
           "content": "",
           "tool_calls": [
-            {"id": "call_1", "type": "function",
-             "function": {"name": "execute_bash", "arguments": {"command": "ls"}}},
-            {"id": "call_2", "type": "function",
-             "function": {"name": "execute_bash", "arguments": {"command": "pwd"}}}
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": {
+                  "command": "ls"
+                }
+              }
+            },
+            {
+              "id": "call_2",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": {
+                  "command": "pwd"
+                }
+              }
+            }
           ],
-          "tool_call_status": ["answered", "answered"]
+          "tool_call_status": [
+            "answered",
+            "answered"
+          ]
         },
-        {"id": "t1", "role": "tool", "content": "{}", "tool_call_id": "call_1",
-         "output": "a.txt", "error": ""},
-        {"id": "t2", "role": "tool", "content": "{}", "tool_call_id": "call_2",
-         "output": "/tmp", "error": ""},
-        {"id": "a2", "role": "assistant", "content": "both done"}
+        {
+          "id": "t1",
+          "role": "tool",
+          "content": "{}",
+          "tool_call_id": "call_1",
+          "output": "a.txt",
+          "error": ""
+        },
+        {
+          "id": "t2",
+          "role": "tool",
+          "content": "{}",
+          "tool_call_id": "call_2",
+          "output": "/tmp",
+          "error": ""
+        },
+        {
+          "id": "a2",
+          "role": "assistant",
+          "content": "both done"
+        }
       ],
       "expected": [
-        {"role": "user", "text": "check both", "turn": "u1"},
-        {"role": "assistant", "blocks": [
-          {"type": "tool_call", "id": "call_1", "name": "execute_bash",
-           "args": {"command": "ls"}, "output": "a.txt", "error": "", "status": "done",
-           "collapsed": true},
-          {"type": "tool_call", "id": "call_2", "name": "execute_bash",
-           "args": {"command": "pwd"}, "output": "/tmp", "error": "", "status": "done",
-           "collapsed": true},
-          {"type": "text", "content": "both done"}
-        ]}
+        {
+          "role": "user",
+          "text": "check both",
+          "turn": "u1"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "call_1",
+              "name": "execute_bash",
+              "args": {
+                "command": "ls"
+              },
+              "output": "a.txt",
+              "error": "",
+              "status": "done",
+              "collapsed": true
+            },
+            {
+              "type": "tool_call",
+              "id": "call_2",
+              "name": "execute_bash",
+              "args": {
+                "command": "pwd"
+              },
+              "output": "/tmp",
+              "error": "",
+              "status": "done",
+              "collapsed": true
+            },
+            {
+              "type": "text",
+              "content": "both done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a turn a peer asked keeps the peer's name instead of You",
+      "history": [
+        {
+          "id": "a",
+          "role": "user",
+          "content": "ping",
+          "from_peer": "B"
+        },
+        {
+          "id": "b",
+          "role": "assistant",
+          "content": "pong"
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "ping",
+          "turn": "a",
+          "fromPeer": "B"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "pong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a reply keeps what the turn cost",
+      "history": [
+        {
+          "id": "a",
+          "role": "user",
+          "content": "hello"
+        },
+        {
+          "id": "b",
+          "role": "assistant",
+          "content": "hi",
+          "usage": {
+            "prompt_tokens": 18232,
+            "completion_tokens": 204,
+            "cached_tokens": 15360,
+            "rounds": 2,
+            "model": "test-model",
+            "gateway": "ollama",
+            "cost": {
+              "amount": 0.17,
+              "unit": "credits"
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "hello",
+          "turn": "a"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "content": "hi"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 18232,
+            "completion_tokens": 204,
+            "cached_tokens": 15360,
+            "rounds": 2,
+            "model": "test-model",
+            "gateway": "ollama",
+            "cost": {
+              "amount": 0.17,
+              "unit": "credits"
+            }
+          }
+        }
       ]
     }
   ]

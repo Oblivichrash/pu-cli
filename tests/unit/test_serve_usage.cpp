@@ -7,6 +7,7 @@
 // belongs to — beside it, in a field of its own, never inside the content the model reads.
 //
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <boost/json.hpp>
@@ -64,6 +65,58 @@ TEST_CASE("A stored turn's cost is what the page reads back", "[serve][api][usag
     REQUIRE(pu::json::ValueOrDefault<std::string>(item, "content", "") == "hi");
   }
   REQUIRE(found);
+}
+
+// What the page draws under the context bar. The session endpoint sums the ledger, and says so
+// with a price only where every turn that was priced agreed on the unit.
+TEST_CASE("serve API /api/session reports what the conversation has spent",
+          "[serve][api][usage]") {
+  pu::tests::ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::session::TurnUsage first;
+  first.node_id = "turn-1";
+  first.rounds = 1;
+  first.prompt_tokens = 1000;
+  first.completion_tokens = 50;
+  first.cached_tokens = 400;
+  first.cost = pu::Cost{0.05, "credits"};
+  session->Usage().Record(first);
+
+  pu::session::TurnUsage second = first;
+  second.node_id = "turn-2";
+  second.prompt_tokens = 2000;
+  second.cost = pu::Cost{0.10, "credits"};
+  session->Usage().Record(second);
+
+  const auto j = boost::json::parse(client.Get("/api/session"));
+  REQUIRE(j.at("success") == true);
+  const auto& total = j.at("usage_total");
+  CHECK(total.at("turns") == 2);
+  CHECK(total.at("prompt_tokens") == 3000);
+  CHECK(total.at("completion_tokens") == 100);
+  // Both turns were recorded with the same cached count, so the sum is twice it.
+  CHECK(total.at("cached_tokens") == 800);
+  CHECK(total.at("priced_turns") == 2);
+  REQUIRE(total.as_object().contains("cost"));
+  CHECK(total.at("cost").at("unit") == "credits");
+  CHECK(total.at("cost").at("amount").as_double() ==
+        Catch::Approx(0.15).epsilon(0.000001));
+
+  // One unpriced turn and the money stops being a total, while the counts still add.
+  pu::session::TurnUsage third;
+  third.node_id = "turn-3";
+  third.prompt_tokens = 500;
+  session->Usage().Record(third);
+
+  const auto after = boost::json::parse(client.Get("/api/session"));
+  const auto& after_total = after.at("usage_total");
+  CHECK(after_total.at("turns") == 3);
+  CHECK(after_total.at("prompt_tokens") == 3500);
+  CHECK(after_total.at("priced_turns") == 2);
+  CHECK_FALSE(after_total.as_object().contains("cost"));
 }
 
 TEST_CASE("A turn with no recorded cost carries no usage field", "[serve][api][usage]") {

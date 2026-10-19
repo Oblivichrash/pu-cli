@@ -198,7 +198,7 @@ const FRAME_HANDLERS = {
   done: handleDone,
   error: handleError,
   notice: handleNotice,
-  usage: handleUsage,
+  usage: showUsage,
   busy: handleBusy,
 };
 
