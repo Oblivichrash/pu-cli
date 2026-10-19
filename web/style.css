@@ -191,17 +191,6 @@ main {
   margin-top: 4px;
   font-size: 11px;
   color: var(--ink-light);
-}
-.msg-usage summary {
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  list-style: none;
-}
-.msg-usage summary::-webkit-details-marker { display: none; }
-.msg-usage summary::before { content: "▸ "; }
-.msg-usage[open] summary::before { content: "▾ "; }
-.msg-usage div {
-  margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
 

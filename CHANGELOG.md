@@ -49,8 +49,8 @@ the commit that made it, and its current behaviour is in the relevant document
 - **What a conversation has spent, summed and drawn.** `/api/session` carries `usage_total`
   (turns, rounds, prompt/completion/cached tokens, `priced_turns`, and a price only when every
   priced turn agreed on its unit). The page draws it under the context bar, and each reply
-  carries a folded line with its own cost — including the cached share, which the file recorded
-  but nothing displayed.
+  carries a line with its own cost — including the cached share, which the file recorded but
+  nothing displayed.
 - **One settings table instead of a field per setting.** `thinking`, `temperature`, `max_tokens`
   and `tool_budget` are rows in `pu/session/settings.hpp`; `SessionSpec` keeps the session's
   overrides as a map, and `/api/settings` reports every row with the value in force and whether
