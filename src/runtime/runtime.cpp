@@ -227,24 +227,60 @@ config::Backend Runtime::ConfiguredBackend() const {
 }
 
 config::Backend Runtime::CurrentBackend() const {
-  config::Backend backend = ConfiguredBackend();
-  if (current_session_) {
-    const auto& spec = current_session_->Spec();
-    if (spec.thinking_override) backend.thinking = *spec.thinking_override;
-  }
-  return backend;
+  const config::Backend backend = ConfiguredBackend();
+  if (!current_session_) return backend;
+  return session::ApplyOverrides(backend, current_session_->Spec().overrides);
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
 
 std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;
-  return current_session_->Spec().thinking_override;
+  return current_session_->Spec().ThinkingOverride();
 }
 
 void Runtime::SetThinkingLevel(std::optional<ThinkingLevel> level) {
-  DefaultSession()->Spec().thinking_override = level;
+  SetSetting("thinking", level ? boost::json::value(ThinkingLevelName(*level))
+                               : boost::json::value());
+}
+
+const session::Overrides& Runtime::Overrides() const {
+  static const session::Overrides kEmpty;
+  if (!current_session_) return kEmpty;
+  return current_session_->Spec().overrides;
+}
+
+std::vector<session::SettingView> Runtime::Settings() const {
+  return session::ViewSettings(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
+}
+
+int Runtime::ConfiguredToolBudget() const {
+  return ActiveAgent().tool_call_budget.value_or(Executor::kDefaultToolCallBudget);
+}
+
+void Runtime::SetSetting(const std::string& name, const boost::json::value& raw) {
+  // Checked before it is stored, so a value nothing can read is never written to a session.
+  const boost::json::value value = session::ParseSetting(name, raw);
+  auto& overrides = DefaultSession()->Spec().overrides;
+  if (value.is_null()) {
+    overrides.erase(name);
+  } else {
+    overrides[name] = value;
+  }
+  ApplyToolBudget();
   SaveCurrentSession();
+}
+
+void Runtime::ClearSettings() {
+  DefaultSession()->Spec().overrides.clear();
+  ApplyToolBudget();
+  SaveCurrentSession();
+}
+
+void Runtime::ApplyToolBudget() {
+  if (!executor_) return;
+  executor_->SetToolCallBudget(
+      session::EffectiveToolBudget(ConfiguredToolBudget(), Overrides()));
 }
 
 namespace {
@@ -393,7 +429,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
-  if (agent.tool_call_budget) executor_->SetToolCallBudget(*agent.tool_call_budget);
+  ApplyToolBudget();
   agent_manager_->SetActiveAgent(agent.name);
 }
 

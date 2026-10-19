@@ -60,8 +60,12 @@ const PU = {
     sendBtn: null,
     messagesEl: null,
     agentSelect: null,
-    thinkingSelect: null,
     agentChangeHandler: null,
+    // The settings the server offered, as it last reported them: the rows are drawn from this
+    // and the status bar reads it, so a setting added on the server needs no change here.
+    settings: [],
+    settingsRows: null,
+    settingsReset: null,
   },
 };
 

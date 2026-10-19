@@ -207,6 +207,39 @@ boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&)
   if (const auto override_level = runtime.ThinkingOverride()) {
     body["thinking_override"] = ThinkingLevelName(*override_level);
   }
+  // Every setting this build knows, with the value in force and where it came from; the two
+  // fields above are the same answer in the shape older pages read.
+  boost::json::array settings;
+  for (const session::SettingView& view : runtime.Settings()) {
+    settings.push_back(boost::json::object{
+        {"name", view.name},
+        {"type", view.type},
+        {"value", view.value},
+        {"source", view.source},
+        {"agent_value", view.agent_value},
+    });
+  }
+  body["settings"] = std::move(settings);
+
+  // What this conversation has spent so far. The counts are sums; a price is a sum only while
+  // every turn that reported one reported it in the same unit, which is why `cost` can be
+  // absent even when turns carried prices.
+  const session::SessionUsageTotal total = session->Usage().Total();
+  boost::json::object usage_total{
+      {"turns", total.turns},
+      {"rounds", total.rounds},
+      {"prompt_tokens", total.prompt_tokens},
+      {"completion_tokens", total.completion_tokens},
+      {"cached_tokens", total.cached_tokens},
+      {"priced_turns", total.priced_turns},
+  };
+  if (total.cost) {
+    usage_total["cost"] = boost::json::object{
+        {"amount", total.cost->amount},
+        {"unit", total.cost->unit},
+    };
+  }
+  body["usage_total"] = std::move(usage_total);
   boost::json::array tools;
   for (const std::string& name : runtime.Tools().ToolNames()) {
     tools.emplace_back(name);
@@ -232,6 +265,9 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
         {"content", msg.content},
         {"timestamp", msg.timestamp},
     };
+    // Who asked, when it was not the person at the page. Absent rather than empty, so a page
+    // reads "the user asked" from the field being there at all.
+    if (!msg.from_peer.empty()) item.as_object()["from_peer"] = msg.from_peer;
     if (msg.HasToolCalls()) {
       item.as_object()["tool_calls"] = msg.tool_calls;
 
@@ -314,27 +350,45 @@ boost::json::value HandleApiWorkspaces(Runtime& runtime, const boost::json::valu
 boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body) {
   const int turn = json::ValueOrDefault<int>(body, "turn", 0);
   if (turn < 1) throw RequestRefused("Missing or invalid 'turn'");
+  // A turn a peer asked is not this page's to take back; Conversation says why in its message.
   if (!runtime.RewindBefore(static_cast<size_t>(turn))) throw RequestRefused("No such turn");
   return boost::json::object{};
 }
 
-boost::json::value HandleApiThinking(Runtime& runtime, const boost::json::value& requested) {
-  RequireString(requested, "level");
-  const std::string level = boost::json::value_to<std::string>(requested.at("level"));
-  if (level != "auto" && level != "default" &&
-      ParseThinkingLevel(level) == ThinkingLevel::kServerDefault) {
-    throw RequestRefused("Unknown thinking level");
+// The settings this build knows, with the value in force and where it came from. One shape for
+// the whole table, so a page draws a new setting without a new endpoint.
+boost::json::value SettingsBody(Runtime& runtime) {
+  boost::json::array settings;
+  for (const session::SettingView& view : runtime.Settings()) {
+    settings.push_back(boost::json::object{
+        {"name", view.name},
+        {"type", view.type},
+        {"value", view.value},
+        {"source", view.source},
+        {"agent_value", view.agent_value},
+    });
   }
+  return boost::json::object{{"settings", std::move(settings)}};
+}
 
-  runtime.SetThinkingLevel(
-      level == "auto" ? std::nullopt : std::optional<ThinkingLevel>(ParseThinkingLevel(level)));
+boost::json::value HandleApiSettings(Runtime& runtime, const boost::json::value&) {
+  return SettingsBody(runtime);
+}
 
-  boost::json::object body;
-  body["thinking"] = ThinkingLevelName(runtime.CurrentThinkingLevel());
-  if (const auto override_level = runtime.ThinkingOverride()) {
-    body["thinking_override"] = ThinkingLevelName(*override_level);
-  }
-  return body;
+boost::json::value HandleApiSetSetting(Runtime& runtime, const boost::json::value& body) {
+  RequireString(body, "name");
+  const std::string name = boost::json::value_to<std::string>(body.at("name"));
+  // Absent `value` and an explicit null mean the same thing: clear this override. Only the
+  // member being there with something else in it is a value to set.
+  const boost::json::value raw =
+      json::HasKey(body, "value") ? body.at("value") : boost::json::value();
+  runtime.SetSetting(name, raw);
+  return SettingsBody(runtime);
+}
+
+boost::json::value HandleApiResetSettings(Runtime& runtime, const boost::json::value&) {
+  runtime.ClearSettings();
+  return SettingsBody(runtime);
 }
 
 using Handler = boost::json::value (*)(Runtime&, const boost::json::value& body);
@@ -356,7 +410,9 @@ constexpr Route kRoutes[] = {
     {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, Envelope::kObject, true},
     {"/api/clear", http::verb::post, &HandleApiClear, Envelope::kObject, false},
     {"/api/rewind", http::verb::post, &HandleApiRewind, Envelope::kObject, true},
-    {"/api/thinking", http::verb::post, &HandleApiThinking, Envelope::kObject, true},
+    {"/api/settings", http::verb::get, &HandleApiSettings, Envelope::kObject, false},
+    {"/api/settings", http::verb::post, &HandleApiSetSetting, Envelope::kObject, true},
+    {"/api/settings/reset", http::verb::post, &HandleApiResetSettings, Envelope::kObject, false},
     {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, Envelope::kWorkspaces, false},
 };
 

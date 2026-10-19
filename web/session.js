@@ -27,26 +27,120 @@ async function loadHistory() {
         createSystemMessage(turn.text);
       } else if (turn.role === "user") {
         createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: turn.text }], turn.turn,
-                      turn.text);
+                      turn.text, turn.fromPeer);
       } else {
-        createMessage("assistant", turn.blocks);
+        createMessage("assistant", turn.blocks, undefined, undefined, undefined, turn.usage);
       }
     }
     PU.chainLength = history.length;
+    // The bar and the panel describe the last reply, and a reload has no stream to learn it
+    // from: the stored turn carries the same figure the socket would have sent.
+    const replies = groupHistory(history).filter((turn) => turn.role === "assistant" && turn.usage);
+    if (replies.length > 0) showUsage(replies[replies.length - 1].usage);
   } catch (_) {
   } finally {
     PU.loadHistBusy = false;
   }
 }
 
-// Only the server tells a session level from the agent's, so the control shows what it reports.
-function renderThinkingControl(level, override) {
-  const select = PU.composer.thinkingSelect;
-  const sessionLevel = override && override !== "default" ? override : null;
-  select.value = sessionLevel || "auto";
-  select.title = "Thinking: " + level +
-    (sessionLevel ? " (set for this session)" : " (from the agent's configuration)");
+// --- Settings ---------------------------------------------------------------------------
+//
+// Every setting the server knows arrives in one list: `{name, type, value, source, agent_value}`.
+// `source` says whether the value in force is this session's choice or the agent's own. One
+// renderer draws all of them, so a setting added on the server needs no change here.
+
+function settingEntry(name) {
+  return (PU.composer.settings || []).find((entry) => entry.name === name) || null;
+}
+
+function settingValue(name) {
+  const entry = settingEntry(name);
+  return entry ? entry.value : null;
+}
+
+// "high (this session)" or "0.7 (from the agent)". The parenthetical is the part that says
+// whether a reset would change anything.
+function describeSetting(entry) {
+  const shown = entry.value === null || entry.value === undefined ? "—" : String(entry.value);
+  return entry.source === "session" ? `${shown} (this session)` : `${shown} (from the agent)`;
+}
+
+function settingControl(entry) {
+  let control;
+  if (entry.type === "enum" && entry.name === "thinking") {
+    // The levels are a closed set the server validates; the list is the page's copy of it.
+    control = document.createElement("select");
+    for (const level of ["auto", "none", "low", "medium", "high"]) {
+      const option = document.createElement("option");
+      option.value = level;
+      option.textContent = level;
+      control.appendChild(option);
+    }
+    control.value = entry.value === null || entry.value === undefined ? "auto" : String(entry.value);
+  } else {
+    control = document.createElement("input");
+    control.type = "number";
+    control.step = entry.type === "float" ? "0.1" : "1";
+    control.value = entry.value === null || entry.value === undefined ? "" : String(entry.value);
+    // An empty box means "the agent's number", which is what clearing the override does.
+    control.placeholder = entry.agent_value === null || entry.agent_value === undefined
+        ? "none" : String(entry.agent_value);
+  }
+  control.dataset.setting = entry.name;
+  control.title = describeSetting(entry);
+  control.disabled = PU.isStreaming;
+  control.addEventListener("change", () => setSetting(entry.name, control));
+  return control;
+}
+
+function renderSettings(settings) {
+  PU.composer.settings = Array.isArray(settings) ? settings : [];
+  const host = PU.composer.settingsRows;
+  if (!host) return;
+  host.replaceChildren();
+  for (const entry of PU.composer.settings) {
+    const row = document.createElement("label");
+    row.className = "field";
+    const label = document.createElement("span");
+    label.textContent = entry.name.replace(/_/g, " ");
+    row.appendChild(label);
+    row.appendChild(settingControl(entry));
+    host.appendChild(row);
+  }
   renderStatusBar();
+}
+
+async function setSetting(name, control) {
+  // An empty number box is a cleared override, not a zero: the server reads null that way and
+  // refuses 0 for a budget, which would stop the turn at its first call.
+  let value = control.value;
+  if (control.type === "number") {
+    value = control.value.trim() === "" ? null : Number(control.value);
+  }
+  try {
+    const data = await postJson("/api/settings", { name, value });
+    if (!data.success) {
+      createSystemMessage(`Setting ${name} was refused: ${data.error || "unknown error"}`);
+      return;
+    }
+    renderSettings(data.settings);
+    renderUsageTotal(data.usage_total);
+  } catch (e) {
+    createSystemMessage(`Setting ${name} could not be set: ${e.message}`);
+  }
+}
+
+async function resetSettings() {
+  try {
+    const data = await postJson("/api/settings/reset", {});
+    if (!data.success) {
+      createSystemMessage(`Settings could not be reset: ${data.error || "unknown error"}`);
+      return;
+    }
+    renderSettings(data.settings);
+  } catch (e) {
+    createSystemMessage(`Settings could not be reset: ${e.message}`);
+  }
 }
 
 async function loadSession() {
@@ -54,25 +148,13 @@ async function loadSession() {
     const data = await fetchJson("/api/session");
     if (!data.success) return;
     setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
-    renderThinkingControl(data.thinking || "default", data.thinking_override || null);
+    renderSettings(data.settings);
+    renderUsageTotal(data.usage_total);
     if (data.agent_name) PU.composer.agentSelect.value = data.agent_name;
     renderToolList(data.tools);
     // The tooltip follows the agent the server reports, not the one the list last drew.
     showAgentDescription();
   } catch (_) {}
-}
-
-async function setThinkingLevel(level) {
-  try {
-    const data = await postJson("/api/thinking", { level });
-    if (!data.success) {
-      createSystemMessage("Thinking could not be set: " + (data.error || "unknown error"));
-      return;
-    }
-    renderThinkingControl(data.thinking, data.thinking_override || null);
-  } catch (e) {
-    createSystemMessage("Thinking could not be set: " + e.message);
-  }
 }
 
 // The option holds the name alone: a description beside it is longer than the column and

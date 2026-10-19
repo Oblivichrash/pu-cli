@@ -163,8 +163,20 @@ class Runtime {
   std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
+  // What this session overrides, and what is in force once the overrides are applied to the
+  // agent's own configuration. `Settings()` renders both the value and where it came from.
+  const session::Overrides& Overrides() const;
+  std::vector<session::SettingView> Settings() const;
+  // One setting from a request: `null` clears it, anything else is checked against its row.
+  void SetSetting(const std::string& name, const boost::json::value& raw);
+  void ClearSettings();
+
  private:
   config::Backend ConfiguredBackend() const;
+  // The budget the agent's configuration names, which is what a cleared override returns to.
+  int ConfiguredToolBudget() const;
+  // Pushes the budget in force into the executor, after an override changed or an agent switch.
+  void ApplyToolBudget();
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();

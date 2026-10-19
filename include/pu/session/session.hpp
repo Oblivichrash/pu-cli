@@ -10,6 +10,7 @@
 
 #include "pu/config/backend.hpp"
 #include "pu/session/graph.hpp"
+#include "pu/session/settings.hpp"
 #include "pu/session/usage.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
@@ -33,6 +34,9 @@ class Conversation {
   const session::MessageGraph& Graph() const { return graph_; }
 
   bool RewindBefore(size_t turn);
+  // Whether the turn at `turn` (1-based, as /api/rewind counts) was asked by a peer. Such a
+  // turn belongs to the conversation it arrived in and cannot be taken back from this page.
+  bool TurnCameFromPeer(size_t turn) const;
 
   void ClearHistory();
 
@@ -45,12 +49,27 @@ class Conversation {
 
 struct SessionSpec {
   std::string agent_name;
-  std::optional<ThinkingLevel> thinking_override;
+
+  // What this session overrides about the agent's configuration, by setting name. The names and
+  // the values both come from the table in `pu/session/settings.hpp`: a name that is not in it
+  // is never stored, and a value is checked before it gets here.
+  //
+  // It is a map rather than a field per setting so that `tool_budget` did not have to be the
+  // second of eight copies: one row in that table is the whole of adding one.
+  session::Overrides overrides;
+
+  // The `thinking` override, for the callers that only know about that one.
+  std::optional<ThinkingLevel> ThinkingOverride() const {
+    const auto it = overrides.find("thinking");
+    if (it == overrides.end() || !it->value().is_string()) return std::nullopt;
+    return ParseThinkingLevel(boost::json::value_to<std::string>(it->value()));
+  }
 
   boost::json::value Serialize() const {
     boost::json::value jv = {{"agent_name", agent_name}};
-    if (thinking_override) {
-      jv.as_object()["thinking_override"] = ThinkingLevelName(*thinking_override);
+    for (const auto& member : overrides) {
+      if (member.value().is_null()) continue;
+      jv.as_object()[std::string(member.key()) + "_override"] = member.value();
     }
     return jv;
   }
@@ -59,11 +78,17 @@ struct SessionSpec {
     if (!jv.is_object()) return std::nullopt;
 
     SessionSpec spec;
-    if (json::HasKey(jv, "thinking_override") && jv.at("thinking_override").is_string()) {
-      spec.thinking_override =
-          ParseThinkingLevel(boost::json::value_to<std::string>(jv.at("thinking_override")));
-    }
     spec.agent_name = json::ValueOrDefault<std::string>(jv, "agent_name", "");
+    // The stored names carry `_override`, which is the file's spelling of "this session chose
+    // it"; the table's names do not.
+    for (const auto& member : jv.as_object()) {
+      const std::string key(member.key());
+      constexpr std::string_view kSuffix = "_override";
+      if (key.size() <= kSuffix.size()) continue;
+      if (key.compare(key.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) continue;
+      const std::string name = key.substr(0, key.size() - kSuffix.size());
+      spec.overrides[name] = member.value();
+    }
     return spec;
   }
 };

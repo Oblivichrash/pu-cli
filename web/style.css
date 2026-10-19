@@ -177,6 +177,34 @@ main {
 
 .blocks-container { width: 100%; }
 
+/* The session's running total, under the context bar: facts, not a control. */
+.usage-total {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cost of a reply, folded: a line to open when the number matters, not part of the answer. */
+.msg-usage {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-light);
+}
+.msg-usage summary {
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  list-style: none;
+}
+.msg-usage summary::-webkit-details-marker { display: none; }
+.msg-usage summary::before { content: "▸ "; }
+.msg-usage[open] summary::before { content: "▾ "; }
+.msg-usage div {
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* These are custom elements, which the browser lays out inline until told otherwise; an
    inline box draws its own rule beside a near-zero height and pushes the header to the
    next line, which is what puts a stray line above every step. */
@@ -514,6 +542,37 @@ main {
 }
 .field select:disabled { opacity: 0.55; cursor: not-allowed; }
 .field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A number setting is an input rather than a list, and reads as the same box. */
+.field input {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.field input:disabled { opacity: 0.55; cursor: not-allowed; }
+.field input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* The way back to the agent's own numbers, offered rather than needed. */
+#settings-reset {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+#settings-reset:hover { color: var(--ink); }
+#settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;

@@ -54,22 +54,21 @@
           <span>Agent</span>
           <select id="agent-select"></select>
         </label>
-        <label class="field">
-          <span>Thinking</span>
-          <select id="thinking-select" title="How much reasoning to ask for">
-            <option value="auto" title="Follow the agent's configuration">Auto</option>
-            <option value="none" title="Ask the backend not to think">Off</option>
-            <option value="low" title="A little reasoning">Low</option>
-            <option value="medium" title="Balanced reasoning">Medium</option>
-            <option value="high" title="As much reasoning as the backend allows">High</option>
-          </select>
-        </label>
+        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
+             there appears here without this file changing. How much reasoning to ask for is a
+             row like any other now. -->
+        <div id="settings-rows"></div>
+        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
+          Reset to the agent's configuration
+        </button>
       </div>
 
       <div class="panel">
-        <div class="panel-title">Context</div>
+        <div class="panel-title">Usage</div>
         <div id="context-usage" title="How much context the last reply ran against"></div>
         <div class="context-bar"><div id="context-fill"></div></div>
+        <!-- What the whole conversation has spent, summed by the server. -->
+        <div id="usage-total" class="usage-total" title="What this conversation has spent so far"></div>
       </div>
 
       <div class="panel">

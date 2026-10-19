@@ -6,12 +6,15 @@
 
 // Cancelling the turn and stopping a command are different acts, so neither is "Stop".
 function setSendButtonState(streaming) {
-  const { sendBtn, thinkingSelect } = PU.composer;
+  const { sendBtn } = PU.composer;
   PU.isStreaming = streaming;
   sendBtn.textContent = streaming ? "Cancel reply" : "Send";
   sendBtn.disabled = false;
-  // The level applies to the next message, so it is locked while one is in flight.
-  thinkingSelect.disabled = streaming;
+  // A setting applies to the next message, so every control is locked while one is in flight.
+  for (const control of document.querySelectorAll("[data-setting]")) {
+    control.disabled = streaming;
+  }
+  if (PU.composer.settingsReset) PU.composer.settingsReset.disabled = streaming;
 }
 
 function cancelReply() {
@@ -45,7 +48,9 @@ function sendMessage() {
   input.style.height = "auto";
 
   // The store appends this message, so its turn is the next one.
-  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], PU.chainLength + 1, text);
+  // What a page sends is its own, so it carries no peer name.
+  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], PU.chainLength + 1, text,
+                undefined);
   startAssistantMessage();
   setSendButtonState(true);
   sendFrame("run", { text });

@@ -8,10 +8,10 @@ PU.composer.messagesEl = document.getElementById("messages");
 PU.composer.inputEl = document.getElementById("input");
 PU.composer.sendBtn = document.getElementById("send");
 PU.composer.agentSelect = document.getElementById("agent-select");
-PU.composer.thinkingSelect = document.getElementById("thinking-select");
+PU.composer.settingsRows = document.getElementById("settings-rows");
+PU.composer.settingsReset = document.getElementById("settings-reset");
 
-PU.composer.thinkingSelect.addEventListener(
-    "change", () => setThinkingLevel(PU.composer.thinkingSelect.value));
+PU.composer.settingsReset.addEventListener("click", resetSettings);
 PU.composer.sendBtn.addEventListener("click", sendMessage);
 
 PU.composer.inputEl.addEventListener("compositionstart", () => { PU.composer.composing = true; });

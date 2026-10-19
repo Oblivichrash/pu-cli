@@ -27,7 +27,7 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
-| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). When the budget is reached the model is asked to wrap up and answer from what it has gathered, rather than the turn ending in an error |
+| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
 
 **Backend fields**
 

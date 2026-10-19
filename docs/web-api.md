@@ -104,14 +104,16 @@ its own, so every connection from it is a second page.
 
 | Method | Path | Description |
 | :----- | :--- | :---------- |
-| `GET` | `/api/session` | Current session info (agent, backend type/model) |
-| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages); every tool call carries `tool_call_status` and every result the parsed `output`/`error` the stream showed |
+| `GET` | `/api/session` | Current session info (agent, backend type/model), the settings in force, and `usage_total`: what the conversation has spent |
+| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
 | `POST` | `/api/clear` | Clear the conversation history |
-| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it |
-| `POST` | `/api/thinking` | Set this session's thinking level (`{"level":"auto\|none\|low\|medium\|high\|default"}`) |
+| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
+| `GET` | `/api/settings` | Every setting this build knows, with the value in force and whether it came from this session or the agent |
+| `POST` | `/api/settings` | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
+| `POST` | `/api/settings/reset` | Drop every override and go back to the agent's configuration |
 | `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
 
 A request that fails is answered with the status that names whose it is: `400` for one the
