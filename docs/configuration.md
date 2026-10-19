@@ -180,3 +180,10 @@ construction rather than by a counter.
 
 The console shows only `error` and `critical`; the file gets `PU_LOG_LEVEL` (default
 `info`) and goes to `<data-dir>/logs/pu.log`, rotating at 5MB and keeping 3 files.
+
+The writer behind the file is an async logger on a single thread pool. That pool is
+created once per process and never replaced, so a second `Runtime` — a retried server, a
+second `pu serve` in the same process — builds a new logger on the pool the first one is
+still writing through. Rebuilding the pool instead would leave the earlier logger posting
+into a queue that no longer exists.
+

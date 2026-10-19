@@ -260,8 +260,8 @@ class FakeBackend : public FakeHttpServer {
   // The answer is built by a static function, so the counts a test wants to observe
   // live where that function can read them.
   static void ReportUsage(int prompt_tokens, int completion_tokens) {
-    prompt_tokens_ = prompt_tokens;
-    completion_tokens_ = completion_tokens;
+    prompt_tokens_.store(prompt_tokens, std::memory_order_relaxed);
+    completion_tokens_.store(completion_tokens, std::memory_order_relaxed);
   }
 
  private:
@@ -271,8 +271,8 @@ class FakeBackend : public FakeHttpServer {
       res.result(http::status::ok);
       res.set(http::field::content_type, "application/json");
       res.body() = R"({"message":{"content":"OK"}}
-{"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_) +
-                   R"(,"eval_count":)" + std::to_string(completion_tokens_) + R"(}
+{"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_.load(std::memory_order_relaxed)) +
+                   R"(,"eval_count":)" + std::to_string(completion_tokens_.load(std::memory_order_relaxed)) + R"(}
 )";
     } else {
       res.result(http::status::not_found);
@@ -281,8 +281,8 @@ class FakeBackend : public FakeHttpServer {
     return res;
   }
 
-  static inline int prompt_tokens_ = 1234;
-  static inline int completion_tokens_ = 56;
+  static inline std::atomic<int> prompt_tokens_{1234};
+  static inline std::atomic<int> completion_tokens_{56};
 };
 
 // The name is a string, and this says so instead of leaving it to a conversion. A brace-init
