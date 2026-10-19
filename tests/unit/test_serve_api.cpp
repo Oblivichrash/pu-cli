@@ -298,9 +298,6 @@ TEST_CASE("serve API /api/settings takes a budget, and reset drops every overrid
   REQUIRE(set.status == 200);
   REQUIRE(ParseJson(set.body).at("settings").as_array().size() == 4);
 
-  // The budget is read back through the executor, which is what the next turn runs under.
-  const auto budget = harness.RuntimeRef().Tools().ToolNames();  // keeps the runtime alive
-  (void)budget;
   const auto session_j = ParseJson(client.Get("/api/session"));
   bool budget_from_session = false;
   for (const auto& setting : session_j.at("settings").as_array()) {
