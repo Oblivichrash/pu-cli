@@ -182,3 +182,55 @@ TEST_CASE("a job belongs to the peer it names, so nobody else can move it") {
   REQUIRE(job != nullptr);
   CHECK(ValueOrDefault<std::string>(*job, "state", "") == "open");
 }
+
+TEST_CASE("a person answers a blocked job, and it goes back to work") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto client = server.Client();
+
+  const HttpResponse created =
+      client.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+
+  client.Patch("/api/jobs",
+               boost::json::object{{"job", id},
+                                   {"from", "B"},
+                                   {"state", "blocked"},
+                                   {"question", "which branch?"}});
+
+  const HttpResponse answered = client.PostRaw(
+      "/api/jobs/answer", boost::json::serialize(boost::json::object{
+                              {"job", id}, {"answer", "the release one"}}));
+  CHECK(answered.status == 200);
+
+  const boost::json::value body = boost::json::parse(answered.body);
+  CHECK(ValueOrDefault<std::string>(body.at("job"), "state", "") == "working");
+  CHECK(ValueOrDefault<std::string>(body.at("job"), "note", "") == "the release one");
+  CHECK_FALSE(body.at("job").as_object().contains("question"));
+}
+
+TEST_CASE("an answer is refused when there is no question to answer") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto client = server.Client();
+
+  const HttpResponse created =
+      client.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+
+  const HttpResponse too_early = client.PostRaw(
+      "/api/jobs/answer", boost::json::serialize(boost::json::object{
+                              {"job", id}, {"answer", "the release one"}}));
+  CHECK(too_early.status == 400);
+
+  const HttpResponse unknown = client.PostRaw(
+      "/api/jobs/answer", boost::json::serialize(boost::json::object{
+                              {"job", "no-such-job"}, {"answer", "anything"}}));
+  CHECK(unknown.status == 404);
+
+  const HttpResponse empty = client.PostRaw(
+      "/api/jobs/answer", boost::json::serialize(boost::json::object{{"job", id}}));
+  CHECK(empty.status == 400);
+}

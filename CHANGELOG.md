@@ -8,6 +8,11 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **A person can answer a blocked job.** `POST /api/jobs/answer` takes the job and the answer,
+  records the answer as the job's `note`, clears the `question`, and returns the job to
+  `working` for the peer holding it. It is a verb of its own rather than a `PATCH`, because a
+  person has no name to present as `from` and borrowing a peer's would make the audit trail say
+  a peer answered its own question. `blocked` was a state with no way out; this is the way out.
 - **The board is in the model's context, refreshed every round.** `Runtime::SetContextDigest`
   hands the executor a function rather than a string, and `BuildStaticSystemContext` calls it on
   every round of every turn, so a job claimed mid-turn reads as claimed on the next round

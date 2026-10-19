@@ -231,6 +231,31 @@ TEST_CASE("a job renders with the derived fields a reader needs") {
   CHECK(rendered.contains("idle_seconds"));
 }
 
+TEST_CASE("an answer clears the question and puts the job back to work") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+  auto asking = Move(id, "B", "blocked");
+  asking.question = "which branch?";
+  board.Update(asking);
+
+  const Job answered = board.Answer(id, "the release one").job;
+
+  CHECK(answered.state == JobState::kWorking);
+  CHECK(answered.note == "the release one");
+  CHECK_FALSE(answered.question.has_value());
+}
+
+TEST_CASE("an answer is refused for a job that is not blocked, or already closed") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+
+  CHECK_THROWS_AS(board.Answer(id, "anything"), RequestRefused);
+  CHECK_THROWS_AS(board.Answer("no-such-job", "anything"), NotFound);
+
+  board.Update(Move(id, "B", "done"));
+  CHECK_THROWS_AS(board.Answer(id, "anything"), RequestRefused);
+}
+
 TEST_CASE("a digest says nothing when the board owes the server nothing") {
   Board board;
 

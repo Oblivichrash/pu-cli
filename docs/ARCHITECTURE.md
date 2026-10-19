@@ -761,6 +761,12 @@ working the same job, because there is only ever one that can write to it.
 The human is not bound by this. They are the scheduler, and their verbs are the
 ones no peer has: offer a job, decline on B's behalf, reopen what was declined.
 
+One of those verbs is `Board::Answer` — a person answering the question a blocked
+job is waiting on. It sets the answer as the job's `note`, clears the `question`,
+and returns the job to `working` for whoever holds it. It is deliberately not
+`Update` with a borrowed `from`: a person has no name to present, and letting them
+use a peer's would make the audit trail say a peer answered itself.
+
 ### The lifecycle
 
 ```

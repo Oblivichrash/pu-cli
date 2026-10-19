@@ -416,6 +416,17 @@ struct BoardRoute {
 
 constexpr std::chrono::seconds kOfflineAfter{45};
 
+// A board answer is always the job that resulted, plus the outcome when the move settled it.
+boost::json::value RenderResult(const Board::ActionResult& result) {
+  boost::json::object answer{{"success", true}, {"job", Board::Render(result.job)}};
+  if (result.outcome) {
+    boost::json::object outcome{{"id", result.outcome->id}, {"state", result.outcome->state}};
+    if (result.outcome->result) outcome["result"] = *result.outcome->result;
+    answer["outcome"] = std::move(outcome);
+  }
+  return answer;
+}
+
 boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
   return board.Snapshot(kOfflineAfter);
 }
@@ -427,8 +438,7 @@ boost::json::value HandleBoardPost(Board& board, const boost::json::value& body)
   request.intent = json::OptionalOrDefault<std::string>(body, "intent");
   request.due = json::OptionalOrDefault<std::string>(body, "due");
 
-  const Board::ActionResult result = board.Post(request);
-  return boost::json::object{{"success", true}, {"job", Board::Render(result.job)}};
+  return RenderResult(board.Post(request));
 }
 
 boost::json::value HandleBoardPatch(Board& board, const boost::json::value& body) {
@@ -440,14 +450,16 @@ boost::json::value HandleBoardPatch(Board& board, const boost::json::value& body
   request.question = json::OptionalOrDefault<std::string>(body, "question");
   request.note = json::OptionalOrDefault<std::string>(body, "note");
 
-  const Board::ActionResult result = board.Update(request);
-  boost::json::object answer{{"success", true}, {"job", Board::Render(result.job)}};
-  if (result.outcome) {
-    boost::json::object outcome{{"id", result.outcome->id}, {"state", result.outcome->state}};
-    if (result.outcome->result) outcome["result"] = *result.outcome->result;
-    answer["outcome"] = std::move(outcome);
-  }
-  return answer;
+  return RenderResult(board.Update(request));
+}
+
+boost::json::value HandleBoardAnswer(Board& board, const boost::json::value& body) {
+  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
+  const std::string answer = json::ValueOrDefault<std::string>(body, "answer", "");
+  if (id.empty()) throw RequestRefused("answering a job needs the job's 'id'");
+  if (answer.empty()) throw RequestRefused("an answer needs the 'answer' text to send back");
+
+  return RenderResult(board.Answer(id, answer));
 }
 
 boost::json::value HandleHeartbeat(Board& board, const boost::json::value& body) {
@@ -466,6 +478,7 @@ constexpr BoardRoute kBoardRoutes[] = {
     {"/api/jobs", http::verb::get, &HandleBoardGet, false},
     {"/api/jobs", http::verb::post, &HandleBoardPost, true},
     {"/api/jobs", http::verb::patch, &HandleBoardPatch, true},
+    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true},
     {"/api/peers/heartbeat", http::verb::post, &HandleHeartbeat, true},
 };
 

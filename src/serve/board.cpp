@@ -289,8 +289,27 @@ Board::ActionResult Board::Update(const JobRequest& request) {
   return result;
 }
 
-std::optional<Job> Board::Find(const std::string& id) {
+Board::ActionResult Board::Answer(const std::string& id, const std::string& answer) {
   std::lock_guard<std::mutex> lock(mutex_);
+  auto it = std::find_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.id == id; });
+  if (it == jobs_.end()) throw NotFound("no job with id " + id);
+  if (it->Closed()) {
+    throw RequestRefused("job " + id + " already ended as " + JobStateName(it->state));
+  }
+  if (it->state != JobState::kBlocked) {
+    throw RequestRefused("job " + id + " is not blocked, so there is no question to answer");
+  }
+
+  it->note = answer;
+  it->question = std::nullopt;
+  it->state = JobState::kWorking;
+  it->updated_at = NowStamp();
+  Record("answer", std::string(), id, answer);
+
+  return ActionResult{*it, std::nullopt};
+}
+
+std::optional<Job> Board::Find(const std::string& id) {  std::lock_guard<std::mutex> lock(mutex_);
   auto it = std::find_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.id == id; });
   if (it == jobs_.end()) return std::nullopt;
   return *it;

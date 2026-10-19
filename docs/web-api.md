@@ -147,6 +147,13 @@ job name that is not on the board answers `404`. The board holds at most 32 open
 `POST /api/peers/heartbeat` requires `peer` and reads back the whole board, so a peer learns
 what it holds in the same round trip that says it is alive.
 
+`POST /api/jobs/answer` takes `job` and `answer` and is the person's verb, not a peer's: it is
+how a `blocked` job gets unstuck. The answer is recorded as the job's `note`, the `question` is
+cleared, and the job returns to `working` for the peer that holds it. It is a separate call
+rather than a `PATCH` because a person has no name to present as `from`, and borrowing one
+would make the audit trail say a peer answered its own question. A job that is not blocked
+answers `400`; a job that is not on the board answers `404`.
+
 When a peer message names a `job`, the receiver claims it before it queues the turn and
 answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this
 peer's to claim, is refused and no turn starts. The turn closes the job when it ends — `done`

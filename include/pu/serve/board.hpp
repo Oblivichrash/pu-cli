@@ -100,6 +100,9 @@ class Board {
   ActionResult Post(const JobRequest& request);
   // A peer moving a job it holds: claimed from open, working, blocked, done or failed.
   ActionResult Update(const JobRequest& request);
+  // A person answering what a blocked job is waiting for. The person is the scheduler, not a
+  // peer, so this is not `Update` with a borrowed name: it is the one verb no peer has.
+  ActionResult Answer(const std::string& id, const std::string& answer);
 
   std::optional<Job> Find(const std::string& id);
 
