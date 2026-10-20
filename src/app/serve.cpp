@@ -22,6 +22,7 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/core/text.hpp"
 #include "pu/config/serve_registry.hpp"
 #include "pu/runtime/executor.hpp"
 #include "pu/runtime/runtime.hpp"
@@ -114,7 +115,10 @@ void WebSocketConnection::SendPendingThenClose() {
 }
 
 void WebSocketConnection::Send(boost::json::value frame) {
-  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
+  SendText(std::make_shared<const std::string>(boost::json::serialize(frame)));
+}
+
+void WebSocketConnection::SendText(std::shared_ptr<const std::string> text) {
   auto self = shared_from_this();
   net::post(strand_, [self, text] {
     if (self->closed_) return;
@@ -288,7 +292,13 @@ std::shared_ptr<SessionRunner::TurnRecord> SessionRunner::RecordOf(
 }
 
 void SessionRunner::AppendFrame(boost::json::value frame) {
-  auto text = std::make_shared<const std::string>(boost::json::serialize(frame));
+  std::string wire = boost::json::serialize(frame);
+  // A WebSocket text frame must be valid UTF-8, and a failure the transport reported carries
+  // the platform's own message, which on Windows is in the console codepage rather than UTF-8.
+  // Sending it raw used to make the frame invalid and the client drop the socket, so a turn
+  // that failed looked like a page that had gone away.
+  if (!text::IsValidUtf8(wire)) wire = text::SanitizeUtf8(wire);
+  auto text = std::make_shared<const std::string>(std::move(wire));
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);
     if (!turns_.empty()) turns_.back()->frames.push_back(text);
@@ -301,7 +311,9 @@ void SessionRunner::AppendFrame(boost::json::value frame) {
     std::lock_guard<std::mutex> lock(attach_mutex_);
     current = attached_.lock();
   }
-  if (current && !current->Closed()) current->Send(boost::json::parse(*text));
+  // The frame is already its wire form. Parsing it back only to have the connection serialise
+  // it again would put a throwing call on the worker thread for no gain.
+  if (current && !current->Closed()) current->SendText(text);
 }
 
 void SessionRunner::FinishTurn() {
@@ -379,142 +391,177 @@ void SessionRunner::WorkerMain() {
       if (stopping_ && jobs_.empty()) return;
       job = std::move(jobs_.front());
       jobs_.pop_front();
-      running_ = true;
     }
+    // A turn is the boundary an error stops at. Anything it throws is the turn's own failure,
+    // and a worker that let it out would take the whole server with it -- including every
+    // page and every peer turn that had nothing to do with it.
+    try {
+      RunJob(job);
+    } catch (const std::exception& e) {
+      spdlog::error("turn failed: {}", e.what());
+      ReportFailedTurn(job, e.what());
+    }
+  }
+}
+
+void SessionRunner::ReportFailedTurn(const Job& job, const std::string& reason) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    running_ = false;
+  }
+  try {
+    AppendFrame({{"type", "error"}, {"payload", {{"text", reason}}}});
+    AppendFrame({{"type", "done"}, {"payload", boost::json::object{}}});
+    FinishTurn();
+  } catch (const std::exception& e) {
+    spdlog::error("could not report a failed turn: {}", e.what());
+  }
+  if (!job.board_job.empty()) {
+    try {
+      CloseBoardJob(job.board_job, ExecutionResult{});
+    } catch (const std::exception& e) {
+      spdlog::error("could not close the board job of a failed turn: {}", e.what());
+    }
+  }
+}
+
+void SessionRunner::RunJob(Job& job) {
+  {
     // A new record per turn: the frames of the one that ran before it are kept beside it, so
     // a subscriber can still read a turn that ended while nobody was watching.
-    {
-      std::lock_guard<std::mutex> lock(turns_mutex_);
-      auto record = std::make_shared<TurnRecord>();
-      record->id = job.turn_id;
-      turns_.push_back(std::move(record));
-      while (turns_.size() > kTurnsKept) turns_.pop_front();
-    }
-
-    if (!job.conn && job.peer_origin.empty()) {
-      std::lock_guard<std::mutex> lock(mutex_);
-      running_ = false;
-      continue;
-    }
-
-    const auto say = [&](boost::json::value frame) { AppendFrame(std::move(frame)); };
-
-    {
-      std::lock_guard<std::mutex> lock(turn_mutex_);
-      cancel_token_ = std::make_shared<std::atomic<bool>>(false);
-      cancel_requested_.store(false, std::memory_order_release);
-    }
-
-    bool is_command = false;
-    ToolCallbacks tool_cb;
-    tool_cb.on_start = [&](const std::string& id, const std::string& name,
-                           const boost::json::value& args) {
-      say({{"type", "tool_start"}, {"payload", {{"id", id}, {"name", name}, {"args", args}}}});
-    };
-    tool_cb.on_end = [&](const std::string& id, const std::string& name,
-                         const boost::json::value& args, const std::string& output,
-                         const std::string& error) {
-      say({{"type", "tool_end"},
-           {"payload",
-            {{"id", id}, {"name", name}, {"args", args}, {"output", output}, {"error", error}}}});
-    };
-
-    runtime_.EnableApprovalGate();
-    runtime_.SetOnApprovalAsk([&](const std::string& command) {
-      say({{"type", "approval_ask"}, {"payload", {{"command", command}}}});
-    });
-
-    CancelToken cancel;
-    {
-      std::lock_guard<std::mutex> lock(turn_mutex_);
-      cancel = cancel_token_;
-    }
-
-    ExecutionResult result = runtime_.ProcessInput(
-        job.text, is_command, cancel,
-        [&](std::string_view chunk) {
-          if (chunk.empty()) return;
-          say({{"type", "chunk"}, {"payload", {{"text", std::string(chunk)}}}});
-        },
-        tool_cb,
-        [&](std::string_view thought) {
-          if (thought.empty()) return;
-          say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
-        },
-        cancel, job.peer_origin);
-
-    const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
-    {
-      std::lock_guard<std::mutex> lock(turn_mutex_);
-      cancel_token_.reset();
-    }
-
-    // A turn the page cancelled still answers with `done`, so the page can stop waiting. A
-    // turn whose page went away keeps nothing: the store holds only the question, so a
-    // replay of chunks and a done would draw a reply the next load then takes away.
-    if (cancel && cancel->load(std::memory_order_acquire)) {
-      const bool page_is_here = job.conn && job.conn->AttachedToPage();
-      if (!page_asked || !page_is_here) {
-        {
-          std::lock_guard<std::mutex> lock(mutex_);
-          running_ = false;
-        }
-        FinishTurn();
-        continue;
-      }
-    }
-
-    if (!result.notice.empty()) {
-      say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
-    }
-    if (result.usage) {
-      // The turn is already filed against the reply it produced, which is the entry
-      // `/api/history` will replay. Reading it here is what makes a live turn and a reloaded
-      // one the same object: one projection, written by the ledger, and no second assembly
-      // of the same six fields to drift out of step with it.
-      boost::json::object usage;
-      session::SessionUsageTotal total;
-      if (const auto session = runtime_.DefaultSession()) {
-        for (auto it = session->Messages().Chain().rbegin();
-             it != session->Messages().Chain().rend(); ++it) {
-          if (!std::holds_alternative<session::AssistantPayload>((*it)->payload)) continue;
-          if (const auto recorded = session->Usage().For((*it)->id)) {
-            usage = session::UsageLedger::ToJson(*recorded).as_object();
-          }
-          break;
-        }
-        // The total `/api/session` would answer with is already known. Sending it means a page
-        // that has just watched a turn cannot draw a figure that stops short of it, and does
-        // not have to ask a second time to find out.
-        total = session->Usage().Total();
-      }
-      usage["total"] = session::UsageLedger::ToJson(total);
-      say({{"type", "usage"}, {"payload", std::move(usage)}});
-    }
-    if (result.has_error) {
-      // The message a turn carries sits on `content` when the turn answered with its
-      // own refusal (the wrap-up that never answered), and on `error_message` when the
-      // failure came from below. Send whichever holds text, so the page never shows
-      // "Unknown error" over an error the server did describe.
-      const std::string& text =
-          !result.error_message.empty() ? result.error_message : result.content;
-      say({{"type", "error"}, {"payload", {{"text", text}}}});
-    } else if (result.model.empty()) {
-      say({{"type", "done"}});
-    } else {
-      say({{"type", "done"}, {"payload", {{"model", result.model}}}});
-    }
-
-    CloseBoardJob(job.board_job, result);
-
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      running_ = false;
-    }
-    // The record stays, finished: a page that attaches next is handed it rather than waiting
-    // for a reload, and a subscriber that was mid-stream reads the end of it.
-    FinishTurn();
+    std::lock_guard<std::mutex> lock(turns_mutex_);
+    auto record = std::make_shared<TurnRecord>();
+    record->id = job.turn_id;
+    turns_.push_back(std::move(record));
+    while (turns_.size() > kTurnsKept) turns_.pop_front();
   }
+
+  if (!job.conn && job.peer_origin.empty()) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    running_ = false;
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    running_ = true;
+  }
+
+  const auto say = [&](boost::json::value frame) { AppendFrame(std::move(frame)); };
+
+  {
+    std::lock_guard<std::mutex> lock(turn_mutex_);
+    cancel_token_ = std::make_shared<std::atomic<bool>>(false);
+    cancel_requested_.store(false, std::memory_order_release);
+  }
+
+  bool is_command = false;
+  ToolCallbacks tool_cb;
+  tool_cb.on_start = [&](const std::string& id, const std::string& name,
+                         const boost::json::value& args) {
+    say({{"type", "tool_start"}, {"payload", {{"id", id}, {"name", name}, {"args", args}}}});
+  };
+  tool_cb.on_end = [&](const std::string& id, const std::string& name,
+                       const boost::json::value& args, const std::string& output,
+                       const std::string& error) {
+    say({{"type", "tool_end"},
+         {"payload",
+          {{"id", id}, {"name", name}, {"args", args}, {"output", output}, {"error", error}}}});
+  };
+
+  runtime_.EnableApprovalGate();
+  runtime_.SetOnApprovalAsk([&](const std::string& command) {
+    say({{"type", "approval_ask"}, {"payload", {{"command", command}}}});
+  });
+
+  CancelToken cancel;
+  {
+    std::lock_guard<std::mutex> lock(turn_mutex_);
+    cancel = cancel_token_;
+  }
+
+  ExecutionResult result = runtime_.ProcessInput(
+      job.text, is_command, cancel,
+      [&](std::string_view chunk) {
+        if (chunk.empty()) return;
+        say({{"type", "chunk"}, {"payload", {{"text", std::string(chunk)}}}});
+      },
+      tool_cb,
+      [&](std::string_view thought) {
+        if (thought.empty()) return;
+        say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
+      },
+      cancel, job.peer_origin);
+
+  const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
+  {
+    std::lock_guard<std::mutex> lock(turn_mutex_);
+    cancel_token_.reset();
+  }
+
+  // A turn the page cancelled still answers with `done`, so the page can stop waiting. A
+  // turn whose page went away keeps nothing: the store holds only the question, so a
+  // replay of chunks and a done would draw a reply the next load then takes away.
+  if (cancel && cancel->load(std::memory_order_acquire)) {
+    const bool page_is_here = job.conn && job.conn->AttachedToPage();
+    if (!page_asked || !page_is_here) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        running_ = false;
+      }
+      FinishTurn();
+      return;
+    }
+  }
+
+  if (!result.notice.empty()) {
+    say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
+  }
+  if (result.usage) {
+    // The turn is already filed against the reply it produced, which is the entry
+    // `/api/history` will replay. Reading it here is what makes a live turn and a reloaded
+    // one the same object: one projection, written by the ledger, and no second assembly
+    // of the same six fields to drift out of step with it.
+    boost::json::object usage;
+    session::SessionUsageTotal total;
+    if (const auto session = runtime_.DefaultSession()) {
+      for (auto it = session->Messages().Chain().rbegin();
+           it != session->Messages().Chain().rend(); ++it) {
+        if (!std::holds_alternative<session::AssistantPayload>((*it)->payload)) continue;
+        if (const auto recorded = session->Usage().For((*it)->id)) {
+          usage = session::UsageLedger::ToJson(*recorded).as_object();
+        }
+        break;
+      }
+      // The total `/api/session` would answer with is already known. Sending it means a page
+      // that has just watched a turn cannot draw a figure that stops short of it, and does
+      // not have to ask a second time to find out.
+      total = session->Usage().Total();
+    }
+    usage["total"] = session::UsageLedger::ToJson(total);
+    say({{"type", "usage"}, {"payload", std::move(usage)}});
+  }
+  if (result.has_error) {
+    // The message a turn carries sits on `content` when the turn answered with its
+    // own refusal (the wrap-up that never answered), and on `error_message` when the
+    // failure came from below. Send whichever holds text, so the page never shows
+    // "Unknown error" over an error the server did describe.
+    const std::string& text = !result.error_message.empty() ? result.error_message : result.content;
+    say({{"type", "error"}, {"payload", {{"text", text}}}});
+  } else if (result.model.empty()) {
+    say({{"type", "done"}});
+  } else {
+    say({{"type", "done"}, {"payload", {{"model", result.model}}}});
+  }
+
+  CloseBoardJob(job.board_job, result);
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    running_ = false;
+  }
+  // The record stays, finished: a page that attaches next is handed it rather than waiting
+  // for a reload, and a subscriber that was mid-stream reads the end of it.
+  FinishTurn();
 }
 
 void SessionRunner::CloseBoardJob(const std::string& job_id, const ExecutionResult& result) {
@@ -657,27 +704,49 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             conn->Close();
             return;
           }
-          if (websocket::is_upgrade(*req)) {
-            conn->Start(std::move(*req));
-            return;
+          // The answer is built on this thread, so a request that cannot be answered still
+          // ends the connection rather than the process.
+          try {
+            if (websocket::is_upgrade(*req)) {
+              conn->Start(std::move(*req));
+              return;
+            }
+            auto res = std::make_shared<http::response<http::string_body>>();
+            DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res,
+                                peer);
+            http::async_write(
+                conn->mutable_socket(), *res,
+                net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {
+                  if (write_ec) spdlog::warn("HTTP write error: {}", write_ec.message());
+                  // The request is answered, so the connection ends with it.
+                  conn->Close();
+                }));
+          } catch (const std::exception& e) {
+            spdlog::error("request failed: {}", e.what());
+            conn->Close();
           }
-          auto res = std::make_shared<http::response<http::string_body>>();
-          DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res,
-                              peer);
-          http::async_write(
-              conn->mutable_socket(), *res,
-              net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {
-                if (write_ec) spdlog::warn("HTTP write error: {}", write_ec.message());
-                // The request is answered, so the connection ends with it.
-                conn->Close();
-              }));
         }));
 
     acceptor.async_accept(ioc, do_accept);
   };
 
   acceptor.async_accept(ioc, do_accept);
-  std::thread ioc_thread([&] { ioc.run(); });
+  std::thread ioc_thread([&] {
+    // Every handler a socket runs is posted here, and a handler that throws would leave
+    // through this thread's entry function, which is a terminate. A bad request would take
+    // the server down with it; instead the loop is restarted, and a fault that keeps
+    // recurring is logged rather than hidden.
+    for (;;) {
+      try {
+        ioc.run();
+        return;
+      } catch (const std::exception& e) {
+        spdlog::error("connection handler failed: {}", e.what());
+      } catch (...) {
+        spdlog::error("connection handler failed with a value that is not an exception");
+      }
+    }
+  });
 
   while (!pu::platform::ShutdownRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));

@@ -431,6 +431,81 @@ class ServeHarness {
     std::string url;
   };
 
+  struct UnreachableBackend {};
+
+  // A port that refuses connections for as long as the object lives. A port sampled and then
+  // released can be taken by another case in a parallel run, which turns this failure into a
+  // successful turn and the test into a false pass.
+  class ReservedDeadPort {
+   public:
+    ReservedDeadPort() {
+#ifdef _WIN32
+      WSADATA wsa;
+      if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
+      socket_ = socket(AF_INET, SOCK_STREAM, 0);
+      if (socket_ == INVALID_SOCKET) return;
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      addr.sin_port = 0;
+      if (bind(socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(socket_);
+        socket_ = INVALID_SOCKET;
+        return;
+      }
+      int size = sizeof(addr);
+      if (getsockname(socket_, reinterpret_cast<sockaddr*>(&addr), &size) == SOCKET_ERROR) return;
+      port_ = ntohs(addr.sin_port);
+#endif
+    }
+    ~ReservedDeadPort() {
+#ifdef _WIN32
+      if (socket_ != INVALID_SOCKET) closesocket(socket_);
+#endif
+    }
+    ReservedDeadPort(const ReservedDeadPort&) = delete;
+    ReservedDeadPort& operator=(const ReservedDeadPort&) = delete;
+
+    int Port() const { return port_; }
+
+   private:
+#ifdef _WIN32
+    SOCKET socket_ = INVALID_SOCKET;
+#endif
+    int port_ = 0;
+  };
+
+  // A harness whose backend is not listening, which is the failure the crash investigation
+  // reproduced: the turn fails where the transport does, not where a handler returns an error.
+  ServeHarness(UnreachableBackend, const std::string& backend_type = "ollama") {
+    static std::atomic<int> seq{0};
+    std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_" + std::to_string(seq.fetch_add(1));
+    home_ = UniqueTempPath("pu_serve_" + tag);
+    fs::create_directories(home_ / ".pu");
+
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
+
+    dead_port_ = std::make_unique<ReservedDeadPort>();
+    WriteAgentsFile(home_, dead_port_->Port(), backend_type, "", "");
+
+    {
+      ScopedWorkingDir in_home(home_);
+      runtime_ = std::make_unique<pu::Runtime>();
+      runtime_->Initialize();
+    }
+
+    port_ = FindFreePort();
+    server_thread_ =
+        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
+    if (WaitForPort(kServeHost, port_, 15000)) return;
+    Stop();
+    FAIL("the server never took the port FindFreePort named");
+  }
+
   explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
                         std::optional<McpServer> mcp = std::nullopt,
                         bool with_peers = false) {
@@ -539,7 +614,7 @@ class ServeHarness {
 
   int Port() const { return port_; }
 
-  int BackendRequests() const { return backend_->Requests(); }
+  int BackendRequests() const { return backend_ ? backend_->Requests() : 0; }
 
   Runtime& RuntimeRef() { return *runtime_; }
 
@@ -549,6 +624,8 @@ class ServeHarness {
   // stops being alive — including on the way out of a failed constructor.
   std::unique_ptr<ScopedEnvironment> env_;
   std::unique_ptr<FakeBackend> backend_;
+  // Held so the backend port refuses connections for the whole life of this harness.
+  std::unique_ptr<ReservedDeadPort> dead_port_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
   std::thread server_thread_;

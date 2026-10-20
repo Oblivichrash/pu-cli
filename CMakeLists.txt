@@ -94,6 +94,17 @@ add_executable(pu
 target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
 
+# The page is found relative to the executable, so a build tree without a sibling web/ serves
+# nothing. Copying it after every build keeps the binary runnable from where it was built; the
+# install rule below places the same files where a packaged layout expects them.
+add_custom_command(TARGET pu POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/web
+            $<TARGET_FILE_DIR:pu>/web
+    COMMENT "Copying web assets beside pu"
+    VERBATIM
+)
+
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
     enable_testing()

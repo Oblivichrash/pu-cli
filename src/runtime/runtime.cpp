@@ -170,6 +170,9 @@ void Runtime::Initialize(const std::string& config_path) {
 void Runtime::Shutdown() {
   SaveCurrentSession();
   mcp::DisconnectMcpServers(mcp_clients_);
+  // Async logging only writes on its own schedule, so a process that ends abruptly would leave
+  // the last lines, which are the ones that explain the ending, unwritten.
+  FlushLogging();
 }
 
 void Runtime::SaveCurrentSession() {

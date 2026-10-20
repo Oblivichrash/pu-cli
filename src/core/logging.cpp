@@ -172,4 +172,8 @@ void InitLogging(const std::string& log_level) {
   spdlog::set_default_logger(logger);
 }
 
+void FlushLogging() {
+  if (auto logger = spdlog::default_logger()) logger->flush();
+}
+
 }  // namespace pu

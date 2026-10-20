@@ -60,6 +60,8 @@ class WebSocketConnection : public std::enable_shared_from_this<WebSocketConnect
 
   void Start(http::request<http::string_body> req);
   void Send(boost::json::value frame);
+  // The same frame already serialised, for a caller that built the wire form itself.
+  void SendText(std::shared_ptr<const std::string> text);
 
   // Close from any thread: the stream belongs to its strand, so the teardown is posted there.
   void Close();
@@ -140,7 +142,21 @@ class SessionRunner {
   std::mutex& FrameMutex() const { return frame_mutex_; }
 
  private:
+  struct Job {
+    std::string text;
+    std::shared_ptr<WebSocketConnection> conn;
+    std::string peer_origin;
+    // The turn this job runs, so its record can be found while it is still being written.
+    std::string turn_id;
+    // The board job this turn answers, when a peer posted one. Closing it is this turn's job.
+    std::string board_job;
+  };
   void WorkerMain();
+  // One turn, run inside a boundary the worker puts around it: an error here ends the turn,
+  // not the server.
+  void RunJob(Job& job);
+  // Answers a turn that did not finish on its own, so a page waiting on it is not left open.
+  void ReportFailedTurn(const Job& job, const std::string& reason);
   // `by_page` is whether the page asked for this, which decides if the turn still answers.
   void RequestCancel(bool by_page);
   // The frames a page attaching now should be handed: the turn in flight and the last
@@ -171,15 +187,6 @@ class SessionRunner {
   Runtime& runtime_;
   serve::Board* board_ = nullptr;
 
-  struct Job {
-    std::string text;
-    std::shared_ptr<WebSocketConnection> conn;
-    std::string peer_origin;
-    // The turn this job runs, so its record can be found while it is still being written.
-    std::string turn_id;
-    // The board job this turn answers, when a peer posted one. Closing it is this turn's job.
-    std::string board_job;
-  };
   void CloseBoardJob(const std::string& job_id, const ExecutionResult& result);
   std::mutex mutex_;
   std::condition_variable cv_;

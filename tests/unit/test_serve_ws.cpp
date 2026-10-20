@@ -17,6 +17,7 @@
 #include <vector>
 
 namespace beast = boost::beast;
+namespace http = beast::http;
 namespace net = boost::asio;
 namespace websocket = beast::websocket;
 using tcp = net::ip::tcp;
@@ -54,6 +55,7 @@ class Page {
     beast::flat_buffer buffer;
     beast::error_code ec;
     ws_.read(buffer, ec);
+
     if (ec) return std::nullopt;
     try {
       return boost::json::parse(beast::buffers_to_string(buffer.data()));
@@ -155,6 +157,40 @@ TEST_CASE("A page that attaches after a peer's turn reads the reply", "[serve][w
     return FrameType(frame) == "done";
   });
   CHECK(saw_done);
+}
+
+// A backend that fails under a running turn is the ordinary case. A failure the turn *reports*
+// is survivable; one that unwinds out of the worker is not, because a thread that lets an
+// exception through its entry function calls terminate, and that took the server down along
+// with every page on it. A dead backend is the failure that reproduced it: the transport fails
+// where no handler is left to turn it into a returned error.
+TEST_CASE("A turn that throws ends the turn and not the server", "[serve][ws]") {
+  pu::tests::ServeHarness harness{pu::tests::ServeHarness::UnreachableBackend{}};
+
+  Page page(harness.Port());
+  page.Run("hello");
+
+  std::vector<boost::json::value> frames;
+  for (;;) {
+    const auto frame = page.Read(20000);
+    if (!frame) break;
+    frames.push_back(*frame);
+    if (FrameType(*frame) == "error") break;
+  }
+  if (frames.empty()) {
+    FAIL("no frames; backend_requests=" << harness.BackendRequests());
+    return;
+  }
+  CHECK(FrameType(frames.back()) == "error");
+
+  // The page survived the frame: a socket that took it as a malformed text frame would be gone.
+  const auto after = harness.Client().GetRaw("/api/session");
+  CHECK(after.status == 200);
+
+  // And the worker is still there to take the turn after it.
+  page.Run("hello again");
+  const auto next = page.Read(20000);
+  REQUIRE(next.has_value());
 }
 
 TEST_CASE("A run streams the answer and ends with done", "[serve][ws]") {
