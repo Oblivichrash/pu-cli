@@ -327,6 +327,7 @@ json::value Board::Snapshot(std::chrono::seconds offline_after) const {
     json::object entry;
     entry["name"] = presence.name;
     entry["last_seen"] = presence.last_seen;
+    entry["seen_seconds"] = AgeSeconds(presence.last_seen, now);
     entry["online"] = AgeSeconds(presence.last_seen, now) <= offline_after.count();
     entry["state"] = presence.state;
     if (!presence.job.empty()) entry["job"] = presence.job;
