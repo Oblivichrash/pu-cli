@@ -90,6 +90,7 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
 | [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
 | [docs/design/nim-fieldnotes.md](docs/design/nim-fieldnotes.md) | What NVIDIA's catalogue and SSE do that the OpenAI shape does not |
+| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
 
