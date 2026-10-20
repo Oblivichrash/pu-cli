@@ -512,6 +512,7 @@ home and no module has to be told about another's.
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
+| `web/board.js` | The peer board's read-out over `/api/board/local`, and the one verb the page writes: answering a blocked job |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
@@ -766,6 +767,21 @@ job is waiting on. It sets the answer as the job's `note`, clears the `question`
 and returns the job to `working` for whoever holds it. It is deliberately not
 `Update` with a borrowed `from`: a person has no name to present, and letting them
 use a peer's would make the audit trail say a peer answered itself.
+
+The page carries that verb too. The sidebar's board panel is a read-out — it
+polls `/api/board/local` on its own clock, because a peer moving a job is not
+something the session's socket reports — and the one thing it writes is this
+answer. A question with no way to answer it would leave the page showing a job
+that only another terminal could unblock. The panel draws nothing when the board
+holds nothing, so a single-server session carries no empty box.
+
+The read is a separate route rather than `/api/jobs` because of what that route
+means: reading it *is* being heard from, and the name it records comes from the
+token. A page has no token, and a page polling says nothing about a peer, so
+`/api/board/local` answers the jobs and the trail without `peers`, records no
+one, and is refused to any request that does not come from the loopback
+address. It is the one board route with no credential, and the address is the
+credential it uses instead.
 
 ### The lifecycle
 

@@ -531,6 +531,7 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
   write_page("index.html", "<!doctype html>fixture index");
   write_page("style.css", ":root{--column:720px}");
   write_page("app.js", "const APP = true;");
+  write_page("board.js", "const BOARD = true;");
 
   const ScopedEnvVar web_dir("PU_WEB_DIR", web.string());
 
@@ -552,6 +553,12 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
   const HttpResponse script = client.GetRaw("/app.js");
   CHECK(script.status == 200);
   CHECK(script.body == "const APP = true;");
+
+  // The page's script list is a whitelist, not a directory read: a module added to
+  // index.html but missed there is served as a 404 and the page silently loses it.
+  const HttpResponse board = client.GetRaw("/board.js");
+  CHECK(board.status == 200);
+  CHECK(board.body == "const BOARD = true;");
 
   const HttpResponse unmounted = client.GetRaw("/secret.txt");
   CHECK(unmounted.status == 404);

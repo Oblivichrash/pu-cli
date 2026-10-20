@@ -249,3 +249,35 @@ TEST_CASE("an answer is refused when there is no question to answer") {
       "/api/jobs/answer", boost::json::serialize(boost::json::object{{"job", id}}));
   CHECK(empty.status == 400);
 }
+
+TEST_CASE("the page reads the board without a token, and reads no peers with it") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto page = server.AnonymousClient();
+
+  const HttpResponse empty = page.GetRaw("/api/board/local");
+  CHECK(empty.status == 200);
+  CHECK(boost::json::parse(empty.body).as_object().contains("jobs"));
+
+  auto peer = server.Client();
+  const HttpResponse created =
+      peer.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  REQUIRE(created.status == 200);
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+
+  const HttpResponse read = page.GetRaw("/api/board/local");
+  CHECK(read.status == 200);
+  const boost::json::object body = boost::json::parse(read.body).as_object();
+  REQUIRE(body.at("jobs").as_array().size() == 1);
+  CHECK(ValueOrDefault<std::string>(body.at("jobs").as_array().at(0), "id", "") == id);
+  CHECK_FALSE(body.contains("peers"));
+}
+
+TEST_CASE("a peer's read of the board still presents the token") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+
+  const HttpResponse anonymous = server.AnonymousClient().GetRaw("/api/jobs");
+  CHECK(anonymous.status == 403);
+}

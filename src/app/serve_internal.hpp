@@ -29,9 +29,14 @@ using tcp = net::ip::tcp;
 
 class SessionRunner;
 
+// The address a request came from, as far as a socket can name its peer: empty when it cannot.
+std::string PeerAddress(tcp::socket& socket, beast::error_code& ec);
+
+// `peer` is the address the request came from, which is how a read that can only be made from
+// this machine is told apart from one a peer made.
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          serve::Board* board, http::request<http::string_body>&& req,
-                         http::response<http::string_body>& res);
+                         http::response<http::string_body>& res, const std::string& peer);
 
 // The directory the running executable lives in, or empty when it cannot be determined. Kept
 // beside the request dispatch so the web/ lookup above it and its tests agree on one answer.

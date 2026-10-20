@@ -36,6 +36,7 @@ namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
 using detail::DispatchHttpRequest;
+using detail::PeerAddress;
 using detail::SessionRunner;
 using detail::WebSocketConnection;
 
@@ -606,6 +607,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     }
 
     auto strand = net::make_strand(ioc);
+    const std::string peer = PeerAddress(socket, ec);
     auto conn = std::make_shared<WebSocketConnection>(std::move(socket), strand, runtime, *runner);
     auto buffer = std::make_shared<beast::flat_buffer>();
     auto req = std::make_shared<http::request<http::string_body>>();
@@ -624,7 +626,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
         net::bind_executor(strand, [&runtime, &io_mutex, runner, &board, strand, conn, buffer,
-                                    req, header_timer](beast::error_code ec, std::size_t) {
+                                    req, header_timer, peer](beast::error_code ec, std::size_t) {
           header_timer->cancel();
           if (ec) {
             spdlog::warn("HTTP read error: {}", ec.message());
@@ -636,7 +638,8 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             return;
           }
           auto res = std::make_shared<http::response<http::string_body>>();
-          DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res);
+          DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res,
+                              peer);
           http::async_write(
               conn->mutable_socket(), *res,
               net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

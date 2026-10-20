@@ -118,6 +118,8 @@ its own, so every connection from it is a second page.
 | `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled. Reading it is how a peer is heard from |
 | `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
 | `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
+| `POST` | `/api/jobs/answer` | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
+| `GET` | `/api/board/local` | The board as the page draws it: the jobs and the trail, no peers, no token, loopback only |
 
 
 A request that fails is answered with the status that names whose it is: `400` for one the
@@ -155,9 +157,14 @@ how a `blocked` job gets unstuck. The answer is recorded as the job's `note`, th
 cleared, and the job returns to `working` for the peer that holds it. It is a separate call
 rather than a `PATCH` because a person has no name to present as `from`, and borrowing one
 would make the audit trail say a peer answered its own question. A job that is not blocked
-answers `400`; a job that is not on the board answers `404`. The page's board panel is the
-caller: it polls `GET /api/jobs` and answers blocked jobs from the sidebar, which is why a
-question asked by a peer is answerable without opening another terminal.
+answers `400`; a job that is not on the board answers `404`.
+
+**The page reads a copy that is not being heard from.** `GET /api/board/local` answers the
+jobs and the audit trail without `peers`, needs no token, and is refused with `403` to any
+request that does not come from `127.0.0.1` or `::1`. A page has no secret to present, and a
+page polling says nothing about a peer, so the route records nothing about who is here. The
+board panel is its caller: it polls this route and answers blocked jobs from the sidebar,
+which is why a question asked by a peer is answerable without opening another terminal.
 
 When a peer message names a `job`, the receiver claims it before it queues the turn and
 answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this

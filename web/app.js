@@ -34,3 +34,7 @@ connectWebSocket();
   await loadAgents();
   await loadSession();
 })();
+
+// The board is read on its own clock: it changes when a peer moves a job, which is not
+// something this page's socket reports.
+startBoardPolling();

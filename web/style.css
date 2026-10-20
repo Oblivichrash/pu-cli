@@ -639,6 +639,96 @@ main {
   margin-left: 6px;
 }
 
+/* ---------- board ---------- */
+/* A job is three short lines: what state it is in and what was asked, who it is between,
+   and — only when it is late or blocked — the thing that needs a person. */
+.board-jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board-job {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.board-job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.board-state {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-state.late { color: var(--warn); }
+.board-state-blocked { color: var(--accent); }
+.board-intent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-meta {
+  font-size: 11px;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-note {
+  font-size: 12px;
+  color: var(--ink-light);
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+}
+.board-heading {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-top: 4px;
+}
+.board-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.board-asked {
+  font-size: 12px;
+  color: var(--accent);
+}
+.board-question input {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.board-question button {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-question button:disabled {
+  color: var(--ink-light);
+  cursor: default;
+}
+
 /* ---------- scrollbar ---------- */
 #messages::-webkit-scrollbar,
 #sidebar::-webkit-scrollbar { width: 6px; }

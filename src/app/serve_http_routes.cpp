@@ -88,8 +88,8 @@ constexpr std::string_view kPageFiles[] = {
     "/",            "/index.html",    "/style.css",       "/app.js",
     "/state.js",    "/approval.js",   "/layout.js",       "/block-thinking.js",
     "/block-tool.js", "/block-node.js", "/message.js",    "/transcript.js",
-    "/panel.js",    "/notice.js",     "/history.js",      "/ws.js",
-    "/session.js",  "/composer.js",
+    "/panel.js",    "/board.js",      "/notice.js",       "/history.js",
+    "/ws.js",       "/session.js",    "/composer.js",
 };
 
 bool IsPageFile(std::string_view target) {
@@ -412,10 +412,13 @@ struct BoardRoute {
   http::verb method;
   BoardHandler handler;
   bool has_body;
-  // The write routes are a peer changing shared state, so they present the token. A read does
-  // too: reading is what tells a peer this one is still working, and that is not a claim worth
-  // making about a server that cannot prove it holds the secret.
+  // A peer changes shared state when it writes, so the write routes present the token. A read
+  // does too: reading is what tells a peer this one is still working, and that is not a claim
+  // worth making about a server that cannot prove it holds the secret.
   bool authenticated;
+  // The page reads the board too, from the machine the server runs on. It holds no token, so it
+  // is served a read-only copy that says nothing about who is here and records nothing about it.
+  bool local_only;
 };
 
 constexpr std::chrono::seconds kOfflineAfter{45};
@@ -435,6 +438,15 @@ boost::json::value RenderResult(const Board::ActionResult& result) {
 // as heard from. Nothing is asked of the caller beyond the secret it already has.
 boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
   return board.Snapshot(kOfflineAfter);
+}
+
+// What the page draws: the jobs, without the peers. Liveness is the one thing a local read
+// cannot speak to, because being read by a page says nothing about a peer, and a reader told
+// otherwise would take this machine's attention for a peer's.
+boost::json::value HandleBoardPageGet(Board& board, const boost::json::value&) {
+  boost::json::object page = board.Snapshot(kOfflineAfter).as_object();
+  page.erase("peers");
+  return page;
 }
 
 // The name a token speaks for. A token is one peer's, so a request carrying it is that peer.
@@ -476,10 +488,11 @@ boost::json::value HandleBoardAnswer(Board& board, const boost::json::value& bod
 }
 
 constexpr BoardRoute kBoardRoutes[] = {
-    {"/api/jobs", http::verb::get, &HandleBoardGet, false, true},
-    {"/api/jobs", http::verb::post, &HandleBoardPost, true, true},
-    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, true},
-    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true, true},
+    {"/api/jobs", http::verb::get, &HandleBoardGet, false, true, false},
+    {"/api/jobs", http::verb::post, &HandleBoardPost, true, true, false},
+    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, true, false},
+    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true, true, false},
+    {"/api/board/local", http::verb::get, &HandleBoardPageGet, false, false, true},
 };
 
 constexpr Route kRoutes[] = {
@@ -573,11 +586,20 @@ boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner, Bo
   };
 }
 
+bool IsLoopback(const std::string& address) {
+  return address.rfind("127.", 0) == 0 || address == "::1" || address == "::ffff:127.0.0.1";
+}
+
 }  // namespace
+
+std::string PeerAddress(tcp::socket& socket, beast::error_code& ec) {
+  const tcp::endpoint endpoint = socket.remote_endpoint(ec);
+  return ec ? std::string{} : endpoint.address().to_string();
+}
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          serve::Board* board, http::request<http::string_body>&& req,
-                         http::response<http::string_body>& res) {
+                         http::response<http::string_body>& res, const std::string& peer) {
   const std::string_view target = req.target();
 
   if (IsPageFile(target)) {
@@ -600,6 +622,11 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
       }
       // Reading is being heard from. Recorded before the snapshot so the answer includes it.
       board->TouchPeer(holder);
+    }
+
+    if (route.local_only && !IsLoopback(peer)) {
+      SendError(res, 403, "The page's board is read on the machine the server runs on");
+      return;
     }
 
     try {
