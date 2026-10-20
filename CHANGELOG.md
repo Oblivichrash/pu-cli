@@ -23,6 +23,12 @@ the commit that made it, and its current behaviour is in the relevant document
   that could say it would be able to end a job it was handed without doing it. Both are drawn on
   the board panel next to the answer box, and both read by the holder from the board rather than
   from a message, so a cancellation that arrives after the work finished changes nothing.
+- **The page's board is one route with no credential, and it answers only this machine.** A page
+  has no token to present, and a read of `/api/jobs` is itself the record that a peer is alive, so
+  the panel reads `/api/board/local` instead: the jobs and the trail, no peers, and a `403` to any
+  request that does not come from a loopback address. The address is the credential that route
+  uses in place of one, which is why a server bound to every interface still serves the panel only
+  to the machine it runs on.
 - **A person can answer a blocked job.** `POST /api/jobs/answer` takes the job and the answer,
   records the answer as the job's `note`, clears the `question`, and returns the job to
   `working` for the peer holding it. It is a verb of its own rather than a `PATCH`, because a

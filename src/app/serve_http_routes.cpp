@@ -608,11 +608,14 @@ boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner, Bo
   };
 }
 
+}  // namespace
+
+// A page is the one caller with no credential to present, so the address it arrives from is the
+// credential instead. A host that binds every interface is reachable from the network, but the
+// page's board still answers only the machine the server runs on.
 bool IsLoopback(const std::string& address) {
   return address.rfind("127.", 0) == 0 || address == "::1" || address == "::ffff:127.0.0.1";
 }
-
-}  // namespace
 
 std::string PeerAddress(tcp::socket& socket, beast::error_code& ec) {
   const tcp::endpoint endpoint = socket.remote_endpoint(ec);

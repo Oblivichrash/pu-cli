@@ -794,6 +794,15 @@ one, and is refused to any request that does not come from the loopback
 address. It is the one board route with no credential, and the address is the
 credential it uses instead.
 
+**What the design does not build.** Three things a board of this kind usually
+carries are deliberately absent, and each stays absent until something needs it:
+
+| Not built | Why not |
+| --- | --- |
+| Reassign | Only a poster can offer work, and a poster that wants a job elsewhere drops it and posts again; a second route would duplicate the ownership rule |
+| Asking a peer for another job after a decline | Declining is already visible on the board as `open` with a `declined_by`, so the scheduler offers it again rather than the board doing it |
+| Replication | The poster's copy is authoritative and a holder writes back to it; replicating would buy correctness for the one case where the poster is unreachable, which the person is already watching |
+
 ### The lifecycle
 
 ```
@@ -910,8 +919,12 @@ mid-turn therefore reads as claimed on the next round, without the model asking.
 | Jobs this server handed out that have closed | The outcome it was waiting for, delivered without a message or a poll |
 
 Each held job carries the peer it came from, the intent, its state, any question
-it is being asked, and whether the deadline has passed. A closed job carries its
-result. Nothing is listed that the model cannot act on.
+it is being asked, whether the deadline has passed, how many times a person has
+asked about it, and what that person last said. The note line matters because a
+chase is how a person steers a job without moving it: the count says it was
+asked, the note says what was wanted, and the holder is the only reader that can
+act on either. A closed job carries its result. Nothing is listed that the model
+cannot act on.
 
 An empty board yields an empty digest, and an empty digest adds nothing, so a
 session with no peers in play sends exactly the request it sent before the board

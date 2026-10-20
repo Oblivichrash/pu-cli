@@ -135,7 +135,8 @@ reason in `error`.
 `GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a call made with a
 peer's token adds `self` for whichever peer that token belongs to. A job carries `id`, `from`, `to`, `intent`, `state`,
 `created_at`, `updated_at`, `idle_seconds`, and — each only when it has something to say —
-`due_at`, `overdue`, `question`, `result`, `declined_by` and `declines`. A peer carries
+`due_at`, `overdue`, `question`, `result`, `note`, `chases`, `declined_by` and `declines`.
+A peer carries
 `name`, `state`, `last_seen`, `seen_seconds` and `online`.
 
 `overdue` and `online` are read from the clock each time the board is read and are never

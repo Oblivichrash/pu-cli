@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/serve_internal.hpp"
 #include "pu/core/json.hpp"
 #include "tests/mocks/peer_harness.hpp"
 #include "tests/mocks/serve_harness.hpp"
@@ -309,6 +310,16 @@ TEST_CASE("the page reads the board without a token, and reads no peers with it"
   REQUIRE(body.at("jobs").as_array().size() == 1);
   CHECK(ValueOrDefault<std::string>(body.at("jobs").as_array().at(0), "id", "") == id);
   CHECK_FALSE(body.contains("peers"));
+}
+
+TEST_CASE("the page's board answers this machine and nothing else") {
+  CHECK(pu::cli::detail::IsLoopback("127.0.0.1"));
+  CHECK(pu::cli::detail::IsLoopback("127.1.2.3"));
+  CHECK(pu::cli::detail::IsLoopback("::1"));
+  CHECK(pu::cli::detail::IsLoopback("::ffff:127.0.0.1"));
+  CHECK_FALSE(pu::cli::detail::IsLoopback("192.168.1.10"));
+  CHECK_FALSE(pu::cli::detail::IsLoopback("10.0.0.5"));
+  CHECK_FALSE(pu::cli::detail::IsLoopback("::ffff:192.168.1.10"));
 }
 
 TEST_CASE("a peer's read of the board still presents the token") {
