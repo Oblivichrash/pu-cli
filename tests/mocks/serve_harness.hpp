@@ -440,10 +440,14 @@ class ServeHarness {
     home_ = UniqueTempPath("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
-    home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    const fs::path data_dir = UniqueTempPath("pu_test_data");
-    fs::create_directories(data_dir);
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
+    // A workspace of its own, and the environment pointing at it. Both are restored by the
+    // scoped owners, which run even when a REQUIRE below throws: a constructor that died
+    // halfway used to leave PU_HOME naming a directory this harness had already removed, and
+    // whichever case ran next failed on it.
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
@@ -541,8 +545,9 @@ class ServeHarness {
 
  private:
   fs::path home_;
-  std::unique_ptr<ScopedEnvVar> home_env_;
-  std::unique_ptr<ScopedEnvVar> data_env_;
+  // Restores HOME and PU_HOME together, in the order they were set, whenever this harness
+  // stops being alive — including on the way out of a failed constructor.
+  std::unique_ptr<ScopedEnvironment> env_;
   std::unique_ptr<FakeBackend> backend_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;

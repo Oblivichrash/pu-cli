@@ -7,8 +7,11 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #include <process.h>
@@ -70,6 +73,26 @@ class ScopedEnvVar {
   std::string name_;
   std::string prev_;
   bool had_prev_ = false;
+};
+
+// Several variables, restored together. The order is the reverse of the one they were set
+// in, which is what a reader expects of scoped state and what makes a nested scope compose.
+class ScopedEnvironment {
+ public:
+  using Entries = std::vector<std::pair<std::string, std::string>>;
+
+  explicit ScopedEnvironment(Entries entries) {
+    for (const auto& [name, value] : entries) {
+      saved_.emplace_back(name, std::make_unique<ScopedEnvVar>(name, value));
+    }
+  }
+
+  ScopedEnvironment(const ScopedEnvironment&) = delete;
+  ScopedEnvironment& operator=(const ScopedEnvironment&) = delete;
+
+ private:
+  // Declared last so it is destroyed first: the saved values go back before the setters do.
+  std::vector<std::pair<std::string, std::unique_ptr<ScopedEnvVar>>> saved_;
 };
 
 class ScopedWorkingDir {

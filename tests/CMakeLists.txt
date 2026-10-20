@@ -44,6 +44,8 @@ add_executable(pu_tests
     unit/test_board.cpp
     unit/test_board_http.cpp
     unit/test_budget.cpp
+    unit/test_peer_read.cpp
+    unit/test_board_liveness.cpp
     unit/test_usage_total.cpp
     unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
