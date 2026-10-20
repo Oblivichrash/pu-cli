@@ -109,6 +109,7 @@ function showUsage(payload) {
 function renderUsageTotal(total) {
   const host = document.getElementById("usage-total");
   if (!host) return;
+  PU.usageTotal = total || null;
   if (!total || !Number.isFinite(Number(total.turns))) {
     host.textContent = "";
     return;

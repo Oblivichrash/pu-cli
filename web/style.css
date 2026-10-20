@@ -120,10 +120,16 @@ header {
   padding: 4px 0;
   list-style: none;
   min-width: 200px;
+  /* A workspace name is a path, and a path in a column is unbounded. The panel takes the room
+     a name needs up to a share of the window, then the name ellipsises: a list wider than the
+     page cannot be read either. */
+  max-width: min(420px, 70vw);
   background: var(--assistant-bg);
   border: 1px solid var(--border);
   border-radius: 2px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  overflow-y: auto;
+  max-height: 60vh;
 }
 .server-row { margin: 0; }
 .server-name {
@@ -138,6 +144,8 @@ header {
   color: var(--ink);
   cursor: pointer;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .server-name:hover { background: rgba(0, 0, 0, 0.04); }
 .server-row.current .server-name {

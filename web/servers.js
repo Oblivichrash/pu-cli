@@ -14,7 +14,8 @@
 const SERVERS_POLL_MS = 5000;
 
 function serverOrigin(server) {
-  return `http://${server.host}:${server.port}`;
+  const scheme = window.location.protocol === "https:" ? "https" : "http";
+  return `${scheme}://${server.host}:${server.port}`;
 }
 
 // The workspace a server serves, as the page names it: the last two segments of the directory
@@ -40,28 +41,33 @@ function renderServers() {
   const name = document.getElementById("server-current");
   if (!toggle || !list || !name) return;
 
-  if (PU.server) {
-    name.textContent = serverLabel(PU.server);
-    name.title = PU.server.directory || "";
-  }
+  // The name is the workspace, and the page is always attached to one: a server that has not
+  // registered itself yet is still the server that answered, so it is named from the address
+  // the page was opened on rather than left as the placeholder.
+  const here = PU.server || { directory: "", host: window.location.hostname, port: window.location.port };
+  name.textContent = here.directory ? serverLabel(here) : serverOrigin(here);
+  name.title = here.directory || serverOrigin(here);
+  name.disabled = PU.servers.length < 2;
 
   list.replaceChildren();
-  // One server is the ordinary case, and a list of one says nothing the header's name does
-  // not. The list appears when a second server is there to switch to.
-  toggle.hidden = PU.servers.length < 2;
-  if (toggle.hidden) list.hidden = true;
+  // The caret stays: a machine that gains a second server later has one place to look, and a
+  // control that appears only once there are two is a control nobody can find. The list itself
+  // opens only when there is something in it to switch to.
+  toggle.hidden = false;
+  toggle.disabled = PU.servers.length < 2;
+  if (PU.servers.length < 2) list.hidden = true;
 
-  const here = currentServerIndex();
+  const current = currentServerIndex();
   PU.servers.forEach((server, index) => {
     const item = document.createElement("li");
-    item.className = "server-row" + (index === here ? " current" : "");
+    item.className = "server-row" + (index === current ? " current" : "");
     item.title = server.directory || "";
 
     const label = document.createElement("button");
     label.type = "button";
     label.className = "server-name";
     label.textContent = serverLabel(server);
-    label.disabled = index === here;
+    label.disabled = index === current;
     label.addEventListener("click", () => {
       list.hidden = true;
       switchToServer(server);

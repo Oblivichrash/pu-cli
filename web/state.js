@@ -64,6 +64,9 @@ const PU = {
   backendHostShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
   contextShown: "",
+  // The last total the server reported for this conversation, kept so a failed read leaves
+  // the panel as it was rather than blanking a figure that is still true.
+  usageTotal: null,
 
   composer: {
     composing: false,

@@ -114,6 +114,11 @@ if(PU_NODE)
     add_test(NAME web/groupHistory
              COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-group-history.cjs)
     set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
+    # The header strip and the panel's spend figure, loaded the same way. Both are shapes the
+    # page drew wrong without failing to load, so nothing but running the modules catches them.
+    add_test(NAME web/pagePanels
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-page-panels.cjs)
+    set_tests_properties(web/pagePanels PROPERTIES TIMEOUT 60)
 else()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)

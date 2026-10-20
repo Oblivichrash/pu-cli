@@ -4,11 +4,17 @@
 
 "use strict";
 
-// The store is the authority on the chain's length, so it is read back after every run.
+// The store is the authority on the chain's length, so it is read back after every run. The
+// same read carries what the conversation has now spent: a turn that just finished is a turn
+// the total the page drew at load does not include, and only the server sums it.
 async function refreshChainLength() {
   try {
     const history = await fetchJson("/api/history");
     if (Array.isArray(history)) PU.chainLength = history.length;
+  } catch (_) {}
+  try {
+    const session = await fetchJson("/api/session");
+    if (session && session.success) renderUsageTotal(session.usage_total);
   } catch (_) {}
 }
 
