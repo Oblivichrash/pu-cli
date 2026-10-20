@@ -302,6 +302,37 @@ TEST_CASE("the page loads every module it ships and ships every module it loads"
   CHECK(position == 0);
 }
 
+TEST_CASE("every inline code span is closed on the line that opens it", "[rules][docs]") {
+  // A code span that runs past a line break renders the following line as code, which is a
+  // defect a reader cannot attribute. It is decided here because the link test reads link
+  // targets rather than the line's markup, so it cannot see one.
+  std::vector<std::string> unclosed;
+  for (const fs::path& file : AllMarkdown()) {
+    const std::vector<std::string> lines = ReadLines(file);
+    bool in_fence = false;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+      const std::string::size_type first = lines[i].find_first_not_of(" \t");
+      if (first != std::string::npos && lines[i].compare(first, 3, "```") == 0) {
+        in_fence = !in_fence;
+        continue;
+      }
+      if (in_fence) continue;
+      const std::size_t ticks = static_cast<std::size_t>(
+          std::count(lines[i].begin(), lines[i].end(), '`'));
+      if (ticks % 2 != 0) {
+        unclosed.push_back(Relative(file).string() + ":" + std::to_string(i + 1));
+      }
+    }
+    if (in_fence) unclosed.push_back(Relative(file).string() + " (unclosed fence)");
+  }
+  INFO("unclosed inline span: " << [&] {
+    std::string joined;
+    for (const std::string& name : unclosed) joined += name + " ";
+    return joined;
+  }());
+  CHECK(unclosed.empty());
+}
+
 TEST_CASE("a CHANGELOG section names each kind of change once", "[rules][changelog]") {
   const std::vector<std::string> lines = ReadLines(kSourceDir / "CHANGELOG.md");
   std::vector<std::string> duplicates;

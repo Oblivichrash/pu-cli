@@ -179,9 +179,6 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
   std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   res.result(http::status::ok);
   res.body() = std::move(content);
-  // The page's own files are small and local: revalidated on every load rather than
-  // cached, so a rebuilt binary never runs against a browser's stale copy of the
-  // script that drives it. The CDN libraries keep their own caching.
   res.set(http::field::cache_control, "no-cache");
   const std::string extension = path.extension().string();
   if (extension == ".html")
@@ -192,7 +189,6 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
     res.set(http::field::content_type, "application/javascript");
   else
     res.set(http::field::content_type, "application/octet-stream");
-  res.set(http::field::cache_control, "no-cache");
   res.prepare_payload();
 }
 
