@@ -26,7 +26,7 @@
 namespace pu::cli {
 
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options) {
-  if (options.as_json) {
+  if (options.format == SseFormat::kJson) {
     // One object per line, so `| jq -r .data` is the whole pipeline a caller needs.
     boost::json::object out{{"data", event.data}};
     if (!event.event.empty()) out["event"] = event.event;
@@ -59,8 +59,9 @@ int RunSse(const SseOptions& options, Runtime& runtime) {
     runtime.Http().StreamRequest(
         options.method, options.url, body, options.headers,
         [&](char* data, size_t size) -> size_t {
-          // `--raw` is the bytes as sent, for a reader who wants to see the framing itself.
-          if (options.raw) {
+          // The raw shape is the bytes as sent, for a reader who wants to see the framing
+          // itself.
+          if (options.format == SseFormat::kRaw) {
             std::cout.write(data, static_cast<std::streamsize>(size));
             std::cout.flush();
           } else {
@@ -73,7 +74,7 @@ int RunSse(const SseOptions& options, Runtime& runtime) {
     // A stream a person interrupted is not the client failing: the events already delivered
     // stay on the page, and the status says a person stopped it.
     if (platform::ShutdownRequested()) {
-      if (!options.raw) {
+      if (options.format != SseFormat::kRaw) {
         parser.Finish();
         std::cout << "\n";
       }
@@ -83,7 +84,7 @@ int RunSse(const SseOptions& options, Runtime& runtime) {
     return kProvider;
   }
 
-  if (!options.raw) {
+  if (options.format != SseFormat::kRaw) {
     parser.Finish();
     std::cout << "\n";
   }

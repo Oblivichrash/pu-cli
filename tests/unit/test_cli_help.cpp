@@ -53,7 +53,12 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   // Each of these reads something the others do not; if every page were the same, the
   // command a reader typed would still not be the one the page described.
   REQUIRE(Names(line.HelpFor("models"), "verify"));
-  REQUIRE(Names(line.HelpFor("models"), "entry"));
+  // Reading one model's entries and capabilities is a check, not a listing; the flag that
+  // narrows a list is not on the page that lists.
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "entry"));
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "caps"));
+  REQUIRE(Names(line.HelpFor("check"), "entry"));
+  REQUIRE(Names(line.HelpFor("check"), "caps"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "verify"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "entry"));
 

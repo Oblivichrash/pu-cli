@@ -63,21 +63,32 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime);
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, const std::string& entry_id, bool caps, Runtime& runtime);
+              bool verify, Runtime& runtime);
 int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
 int RunCheck(const std::string& config_path);
+// The two questions answered from a gateway's listing without asking a model anything: the
+// columns that decide between two models, and an agents.json entry for one of them. They read
+// the same listing `models` prints, which is why they are named here rather than there -- but
+// they are the only two that need a runtime, so `check` keeps its no-runtime path.
+int RunModelCaps(const std::string& agent, Runtime& runtime);
+int RunModelEntry(const std::string& agent, const std::string& entry_id, Runtime& runtime);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
+
+// What `sse` prints. The three shapes are exclusive: raw bytes, one JSON object per event, or
+// the event read as text -- so they are one choice rather than three flags that could be set
+// together and contradict each other.
+enum class SseFormat { kText, kJson, kRaw };
 
 struct SseOptions {
   std::string url;
   pu::http::HttpMethod method = pu::http::HttpMethod::kGet;
   std::vector<std::string> headers;
   std::optional<std::string> body;
-  bool as_json = false;
+  SseFormat format = SseFormat::kText;
+  // Whether the `event:` and `id:` lines are printed beside the data in the text shape.
   bool quiet = false;
-  bool raw = false;
 };
 
 int RunSse(const SseOptions& options, Runtime& runtime);

@@ -126,6 +126,14 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **Breaking** — **One flag chooses `pu sse`'s shape, and `pu models` only lists.** `pu sse` took `--json`,
+  `--quiet` and `--raw` as three independent switches, two of which could be given together and
+  the third of which was not a shape at all; it takes `--format text|json|raw` instead, and
+  `--quiet` still narrows the text shape. `pu models` listed the models and also printed one
+  model's `agents.json` entry (`--entry`) or its capabilities and price (`--caps`), which are
+  questions about a model rather than about the list; both flags moved to `pu check`, the command
+  that answers what a configuration resolves to without contacting a provider. A listing is
+  read, a model is checked.
 - **The page is served from its directory, not from a list of names.** The server answered
   `/app.js` because `app.js` appeared in a hardcoded array, so a module added to `web/` and its
   `<script>` tag was still a `404` until someone remembered a second place. The route now asks

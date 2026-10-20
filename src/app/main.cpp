@@ -145,8 +145,7 @@ int main(int argc, char* argv[]) {
 
     if (cmd == "models") {
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
-                               OptionOr(vm, "model", ""), vm.count("verify") > 0,
-                               OptionOr(vm, "entry", ""), vm.count("caps") > 0, runtime);
+                               OptionOr(vm, "model", ""), vm.count("verify") > 0, runtime);
     }
 
     if (cmd == "agents") {
@@ -179,15 +178,28 @@ int main(int argc, char* argv[]) {
       }
       options.method = vm.count("post") > 0 ? pu::http::HttpMethod::kPost
                                             : pu::http::HttpMethod::kGet;
-      options.as_json = vm.count("json") > 0;
+      const std::string format = OptionOr(vm, "format", "text");
+      if (format == "json") {
+        options.format = pu::cli::SseFormat::kJson;
+      } else if (format == "raw") {
+        options.format = pu::cli::SseFormat::kRaw;
+      } else if (format != "text") {
+        std::cerr << "Error: --format is text, json or raw, not '" << format << "'\n\n"
+                  << line.HelpFor(cmd) << "\n";
+        return pu::cli::kUsage;
+      }
       options.quiet = vm.count("quiet") > 0;
-      options.raw = vm.count("raw") > 0;
 
       return pu::cli::WithInitializedRuntime("", runtime,
                                              [&] { return pu::cli::RunSse(options, runtime); });
     }
 
     if (cmd == "check") {
+      if (vm.count("caps") > 0) return pu::cli::RunModelCaps(OptionOr(vm, "agent", ""), runtime);
+      const std::string entry = OptionOr(vm, "entry", "");
+      if (!entry.empty()) {
+        return pu::cli::RunModelEntry(OptionOr(vm, "agent", ""), entry, runtime);
+      }
       return pu::cli::RunCheck(OptionOr(vm, "config", ""));
     }
 

@@ -67,9 +67,9 @@ the copy it was installed with.
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
-| `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
+| `pu check [--config PATH] [--entry MODEL] [--caps]` | What an `agents.json` resolves to, without contacting a provider |
 | `pu serve` | The Web UI and its WebSocket |
-| `pu sse URL` | Read a `text/event-stream` from any endpoint and print its events |
+| `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
@@ -125,6 +125,7 @@ version does:
 | 0.4.x | Rename `backend.type` to `backend.gateway`. The agent-level `"type": "llm"` is a different field and needs no change. |
 | 0.5.0 | No configuration change. `PU_AGENTS_CONFIG` is new and takes precedence over both files. |
 | 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
+| Unreleased | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 
