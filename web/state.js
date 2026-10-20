@@ -16,6 +16,9 @@ const CONTEXT_WINDOWS = {};
 
 const PU = {
   ws: null,
+  // A module loaded before notice.js cannot name showNotice. app.js points this at it
+  // once every module is in; a remark that arrives before then is dropped.
+  announce: () => {},
   isStreaming: false,
   stopRequested: false,
   reconnectAttempts: 0,

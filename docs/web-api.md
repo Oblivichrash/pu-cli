@@ -175,8 +175,9 @@ has closed (`400`) and a job that is not on the board (`404`).
 jobs and the audit trail without `peers`, needs no token, and is refused with `403` to any
 request that does not come from `127.0.0.1` or `::1`. A page has no secret to present, and a
 page polling says nothing about a peer, so the route records nothing about who is here. The
-board panel is its caller: it polls this route and answers blocked jobs from the sidebar,
-which is why a question asked by a peer is answerable without opening another terminal.
+board panel is its caller: it polls this route, answers blocked jobs from the sidebar,
+and takes a job back from it, which is why a peer's question is answerable without
+opening another terminal.
 
 The address is the whole of that credential, so a server bound to every interface serves the
 panel only on the machine it runs on: reach the page at `127.0.0.1` to see the board, and

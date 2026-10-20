@@ -4,6 +4,8 @@
 
 "use strict";
 
+PU.announce = showNotice;
+
 PU.composer.messagesEl = document.getElementById("messages");
 PU.composer.inputEl = document.getElementById("input");
 PU.composer.sendBtn = document.getElementById("send");

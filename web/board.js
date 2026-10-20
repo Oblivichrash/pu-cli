@@ -162,11 +162,13 @@ function renderBoard(snapshot) {
   }
 }
 
+// A board that cannot be read is not worth drawing a wrong one over. The poll runs every few
+// seconds, so a notice here would be a strip that reopens itself; the next poll tries instead.
 async function refreshBoard() {
   try {
     renderBoard(await fetchJson("/api/board/local"));
   } catch (_) {
-    // A board that cannot be read is not worth drawing a wrong one over; the next poll tries.
+    return;
   }
 }
 
@@ -180,7 +182,7 @@ async function postBoardVerb(path, body, failure) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await refreshBoard();
   } catch (_) {
-    showNotice(failure);
+    PU.announce(failure);
   }
 }
 
