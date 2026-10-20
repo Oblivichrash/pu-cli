@@ -35,7 +35,7 @@ that says why.
 ## Code Style
 - SPDX license header on every `.cpp` and `.hpp` file
   (`// SPDX-License-Identifier: GPL-3.0-only`). Generated or third-party files
-  are exempt. A test fails without it.
+  are exempt.
 - Match the surrounding code: indentation, brace placement, include order and line
   width are what the file you are editing already does. Nothing checks formatting,
   so a tree that drifts is a change to review like any other rather than a failed
@@ -67,12 +67,6 @@ fails without it. Documentation-only changes do not.
 - A test names the behavior it pins, not the function it calls: "a cancelled job cannot be
   moved again" rather than "test Update". The name is what a failure prints, and a reader who
   has never opened the file has to act on it.
-
-`tests/unit/test_project_rules.cpp` turns the rules above that a machine can decide into
-cases: an SPDX line on every source file, every test file named by the build, every document
-reachable from outside `docs/`, every relative link and anchor resolving, every `web/*.js`
-both shipped and loaded with `app.js` last, and no repeated `###` heading in a CHANGELOG
-section. A rule stated here without a case there is one a reviewer still has to catch.
 
 ## Where Things Live
 

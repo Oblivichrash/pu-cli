@@ -81,8 +81,8 @@ target_compile_definitions(pu_tests PRIVATE
     PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
 
-# The rules a machine can decide are checked by unit/test_project_rules.cpp, which reads the
-# tree this build was configured from rather than a copy of it.
+# The page rule in unit/test_project_rules.cpp reads the tree this build was configured from
+# rather than a copy of it.
 target_compile_definitions(pu_tests PRIVATE
     PU_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
