@@ -81,11 +81,19 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 |----------|---------------|
 | [docs/configuration.md](docs/configuration.md) | `agents.json`, `peers.json`, environment variables, logging |
 | [docs/web-api.md](docs/web-api.md) | `pu serve`: the WebSocket protocol and the REST endpoints |
+| [docs/web-ui.md](docs/web-ui.md) | The browser modules, and how the page is served |
+| [docs/peers-and-board.md](docs/peers-and-board.md) | Peer messaging, the task board, and their verbs |
+| [docs/security.md](docs/security.md) | The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
-| [docs/design/](docs/design/) | Contracts of outside systems, and routes considered and not taken |
+| [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
+| [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
+| [docs/design/nim-fieldnotes.md](docs/design/nim-fieldnotes.md) | What NVIDIA's catalogue and SSE do that the OpenAI shape does not |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
+
+Every document under `docs/` is named above or in a document that links to it, and a test
+fails on an orphan, so a new file is registered rather than left to be found.
 
 ## Configuration
 

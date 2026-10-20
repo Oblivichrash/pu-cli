@@ -124,14 +124,19 @@ the commit that made it, and its current behaviour is in the relevant document
 - A status bar reading the session at the shell's width.
 - The Web panel's Session block holds the agent and thinking selects.
 
-### Fixed
-
-- A peer could not move a job to `cancelled` already, because `ParseJobState` never yields
-  that state, but `Board::Move` said so only by omission and GCC reported the gap as
-  `-Wswitch`. The state is now refused by name in the same place, so the rule the board
-  documents is the rule the code states.
-
 ### Changed
+
+- **The page is served from its directory, not from a list of names.** The server answered
+  `/app.js` because `app.js` appeared in a hardcoded array, so a module added to `web/` and its
+  `<script>` tag was still a `404` until someone remembered a second place. The route now asks
+  the directory, and a name that is a path rather than a file name never reaches it. A new
+  module is a file and a tag.
+- **The rules a machine can decide are checked by the suite.** `tests/unit/test_project_rules.cpp`
+  fails on a missing SPDX line, a test file the build does not name, a document nothing links to,
+  a relative link or anchor that resolves to nothing, a `web/*.js` that is shipped but not loaded
+  (or loaded but not shipped, or listed after `app.js`), and a repeated `###` heading in a
+  CHANGELOG section. Each rule was previously a line in CONTRIBUTING that a reviewer had to
+  remember.
 
 - **The CLI has exit codes.** `0` did what it
   was asked, `1` the invocation or configuration is wrong, `2` the provider refused or
@@ -163,6 +168,10 @@ the commit that made it, and its current behaviour is in the relevant document
 - The page no longer stops mid-answer. The hold on arriving frames is raised in one place and
   released on every path, including a timeout, so a rebuild that failed can no longer leave
   the transcript frozen until a reload.
+- A peer could not move a job to `cancelled` already, because `ParseJobState` never yields
+  that state, but `Board::Move` said so only by omission and GCC reported the gap as
+  `-Wswitch`. The state is now refused by name in the same place, so the rule the board
+  documents is the rule the code states.
 
 ## 0.5.1
 

@@ -85,22 +85,23 @@ void RequireString(const boost::json::value& body, std::string_view key) {
   }
 }
 
-constexpr std::string_view kPageFiles[] = {
-    "/",            "/index.html",    "/style.css",       "/app.js",
-    "/state.js",    "/approval.js",   "/layout.js",       "/block-thinking.js",
-    "/block-tool.js", "/block-node.js", "/message.js",    "/transcript.js",
-    "/panel.js",    "/board.js",      "/notice.js",       "/history.js",
-    "/ws.js",       "/session.js",    "/composer.js",     "/servers.js",
-};
-
+// A page file is whatever the page directory holds, so a new web/*.js is served without a
+// second list to remember. The name is checked, not the existence: a name that is not in
+// the directory reaches ServeFile and takes its 404, and a name that is a path never does,
+// because a plain name has no parent.
 bool IsPageFile(std::string_view target) {
-  for (const std::string_view page : kPageFiles) {
-    if (target == page) return true;
-  }
-  return false;
+  if (target == "/") return true;
+  const std::filesystem::path relative{std::string(target.substr(1))};
+  if (relative.empty() || relative.has_parent_path() || relative.has_root_path()) return false;
+  std::error_code ec;
+  return std::filesystem::is_regular_file(std::filesystem::path(GetWebDir()) / relative, ec);
 }
 
 }  // namespace
+
+// Declared ahead of IsPageFile, which asks what the page directory holds before ServeFile
+// resolves it again for the read.
+const std::string& GetWebDir();
 
 std::filesystem::path ExecutableDir() {
 #if defined(_WIN32)

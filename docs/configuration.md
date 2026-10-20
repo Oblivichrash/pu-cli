@@ -33,8 +33,8 @@ default). See [Configure](../README.md#configuration) for a full example.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `gateway` | — | Required. `ollama`, `openai`, or `codebuddy`; a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
-| `host` | per gateway | Base URL; omitted, it falls back to `http://localhost:11434` (ollama), `https://api.openai.com/v1` (openai), or the CodeBuddy gateway |
+| `gateway` | — | Required. One of the rows in [providers.md](providers.md#which-provider-a-request-reaches); a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
+| `host` | per gateway | Base URL; omitted, it falls back to the gateway's own `default_host`, which the load error and [providers.md](providers.md) both answer |
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |

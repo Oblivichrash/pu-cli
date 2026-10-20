@@ -6,11 +6,12 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-A gateway answers for a backend type. `src/gateways/<name>.cpp` states that gateway's name,
-default host, provider and catalogue read, and `src/gateways/gateways.cpp` names the
-files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the type up in
-that table, so neither spells a gateway's endpoint or provider itself. Adding a gateway is a
-file plus a line, and removing one is the reverse.
+A gateway answers for a backend type. `src/gateways/gateways.cpp` holds the gateway table, and
+a row states that gateway's name, default host, provider and catalogue read; `CreateBackend`
+and `ListModels` (`config/backend.hpp`) only look the type up in that table, so neither spells
+a gateway's endpoint or provider itself. Adding a gateway is a row, and removing one is the
+reverse. `Gateways()` is the list a build carries, so it is the answer to "which gateways does
+this build know" rather than any sentence here.
 
 The OpenAI protocol itself is a layer below the gateway: `src/llm/openai_protocol.cpp` holds
 the endpoint, the request body and the SSE parse, and `OpenAIProvider`
@@ -18,10 +19,11 @@ the endpoint, the request body and the SSE parse, and `OpenAIProvider`
 So the `openai` and `codebuddy` gateways build the same protocol, and an agent of the `openai`
 gateway changes only the host, the headers and the response shape.
 
-The gateways a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
-today, and an entry that names none of them is refused at load time — as is one that
-names no gateway at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and
-compatible gateways, all of which are the one `openai` gateway with a different `host`.
+The gateways a build knows are the rows `Gateways()` returns, and the refusal lists them, so a
+misspelt name answers with the set rather than a pointer to this page. An entry that names
+none of them is refused at load time, as is one that names no gateway at all. "OpenAI
+compatible" covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which
+are the one `openai` gateway with a different `host`.
 
 A gateway is spelled in one place for the same reason as before — a stored session, an
 `agents.json` entry and an `/api/session` answer all name it, and answering "is it

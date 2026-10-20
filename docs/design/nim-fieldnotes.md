@@ -32,6 +32,12 @@ only time out or treat the body as text.
 
 ## The stream, from a nemotron-3-super capture
 
+The capture this section describes is kept as
+[`tests/fixtures/nim-nemotron3-super.sse`](../../tests/fixtures/nim-nemotron3-super.sse), so a
+reader can check a claim here against the bytes rather than re-probing. Nothing reads it in a
+test: the `nim` gateway speaks the `openai` protocol, so the parser is exercised by the OpenAI
+fixtures and this file is evidence rather than a fixture.
+
 Standard OpenAI-compatible SSE: `data: ` lines, blank line between them, ended by
 `data: [DONE]`. Each chunk is a `chat.completion.chunk` with a stable per-reply `id`.
 

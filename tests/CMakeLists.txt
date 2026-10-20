@@ -65,6 +65,7 @@ add_executable(pu_tests
     unit/test_model_caps.cpp
     unit/test_sse.cpp
     unit/test_cli_sse.cpp
+    unit/test_project_rules.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -78,6 +79,12 @@ target_include_directories(pu_tests PRIVATE
 # fixture a test names stays the one file it was taken from.
 target_compile_definitions(pu_tests PRIVATE
     PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+)
+
+# The rules a machine can decide are checked by unit/test_project_rules.cpp, which reads the
+# tree this build was configured from rather than a copy of it.
+target_compile_definitions(pu_tests PRIVATE
+    PU_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 # The program a stdio case starts. A generator expression rather than a searched path, so a
