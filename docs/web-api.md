@@ -178,6 +178,12 @@ page polling says nothing about a peer, so the route records nothing about who i
 board panel is its caller: it polls this route and answers blocked jobs from the sidebar,
 which is why a question asked by a peer is answerable without opening another terminal.
 
+The address is the whole of that credential, so a server bound to every interface serves the
+panel only on the machine it runs on: reach the page at `127.0.0.1` to see the board, and
+expect a page opened over the network to draw no panel at all ? the read is refused, and a
+panel that cannot read the board draws nothing rather than an empty one. Chat, history and the
+rest of the page are unaffected, and the network exposure above is what governs those.
+
 When a peer message names a `job`, the receiver claims it before it queues the turn and
 answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this
 peer's to claim, is refused and no turn starts. The turn closes the job when it ends — `done`
