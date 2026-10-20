@@ -251,10 +251,18 @@ environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
-2. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
+2. The port it bound is read back from the acceptor rather than taken from the request,
+   so a server started on port `0` still knows where to find itself, and it writes that
+   address into `$HOME/.pu/serve.json` along with the directory it serves and its pid.
+   That file is how the page names the machine's servers; a record whose process is gone
+   is dropped on the next read, and the entry is deleted when the server stops. The read
+   and the write happen under a lock file beside it, because two servers started together
+   would otherwise each read the list before the other had written and the second write
+   would erase the first.
+3. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
    `reuse_address` set before the bind so a restart can take a port a just-closed
    server left connections in `TIME_WAIT` on.
-3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
+4. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
    is read, dispatched to the static/REST routes, and answered on that strand, and the
    connection ends with the response. Both the read and the write are asynchronous: a
    socket parked in a blocking read would hold the one thread the whole server runs on,
@@ -262,21 +270,29 @@ environment, or the workspace's own `serve` block names:
    request line and headers get a 30s deadline, and a connection that sends none is
    dropped. A WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O
    is asynchronous from there on.
-4. A second upgrade while a page is attached is answered with a `busy` frame and
-   closed: one session, one page. Claiming the session happens when the upgrade is
-   accepted, not when the first run arrives, so the refusal reaches the peer before its
-   socket goes. The page names itself with `?client=` on the upgrade, and the claim is
-   compared by that name: the same tab reconnecting takes the session back and the
-   socket it left behind is closed from its own strand, while another tab is refused.
-   Without a name, every connection is a page of its own.
-5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
+5. A second upgrade while a page is attached is answered with a `busy` frame and closed:
+   one session, one page. Claiming the session happens when the upgrade is accepted, not
+   when the first run arrives, so the refusal reaches the peer before its socket goes.
+   The page names itself with `?client=` on the upgrade, and the claim is compared by that
+   name: the same tab reconnecting takes the session back and the socket it left behind is
+   closed from its own strand, while another tab is refused. Without a name, every
+   connection is a page of its own.
+6. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
    posts each frame back through the connection. The runner holds only the token that
    steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
    turn in flight without waiting for it. The message schema, the REST route table, and
    the status each refusal carries are in [web-api.md](web-api.md).
-6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
+7. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
-   stopped, and `Runtime::Shutdown()` persists the session.
+   stopped, the server removes its line from the registry, and `Runtime::Shutdown()`
+   persists the session.
+
+The registry is a file rather than a running daemon because nothing else would exist to
+own the list: each server is independent, and a process that has stopped is exactly the
+one that cannot delete its own line. `LiveServeRecords()` therefore trusts the pid and
+not the file, which also means a pid the operating system has since handed to something
+else reads as live; that costs a stale row in a list the page shows, and nothing reads a
+record to decide where to send work.
 
 ### Cancellation contract
 
@@ -497,10 +513,14 @@ the frames produced while the swap happens are held for the socket that attaches
 
 The page is plain scripts with no build step, so the load order in `web/index.html` *is*
 the dependency order and every module's entry points are globals. `web/state.js` runs
-first and owns the one mutable object, `PU`: the socket, the streaming flags, the
-assistant message being written, the chain length, and the composer's elements. Every
-other module reads and writes `PU` rather than keeping a copy, so a fact has exactly one
-home and no module has to be told about another's.
+first and owns the one mutable object, `PU`: the socket, the origin it talks to, the
+streaming flags, the assistant message being written, the chain length, and the composer's
+elements. Every other module reads and writes `PU` rather than keeping a copy, so a fact
+has exactly one home and no module has to be told about another's.
+
+`PU.origin` is the one address every request and the socket are built from, which is what
+lets the page move between servers without a second container: switching sets it and
+rebuilds, and no module below knows a switch happened.
 
 | File | Owns |
 | :--- | :--- |
@@ -513,6 +533,7 @@ home and no module has to be told about another's.
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
 | `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
+| `web/servers.js` | The machine's servers over `/api/servers`: the workspace in the header, the list behind it, and the switch to another server |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
@@ -1149,5 +1170,13 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 - **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **The serve registry names a server by its pid, not by a claim.** A server that is killed
+  rather than stopped leaves its line behind, and a pid the operating system later hands to an
+  unrelated process reads as a live server until that process exits, so the page can list a
+  workspace nothing is serving. Nothing acts on a record beyond drawing it: a wrong row costs a
+  wrong name, not a message sent to the wrong place. Two smaller limits come with it: a
+  machine with no `HOME` gets no list, since there is nowhere machine-wide to write it and
+  every workspace's file is the wrong place; and a lock that is never released costs the few
+  milliseconds the writer waits before it writes anyway rather than costs the server.
 - **The transcript fold is checked by running the page's own JavaScript only where `node` exists.** Without it the same case file runs against a second implementation in Python, which catches a case that has drifted but not a page that no longer runs.
 

@@ -56,6 +56,7 @@ add_library(pu_core STATIC
     src/mcp/client.cpp
     src/config/agents.cpp
     src/config/peer.cpp
+    src/config/serve_registry.cpp
     src/runtime/executor.cpp
     src/tools/toolbox.cpp
     src/tools/builtin_tools.cpp

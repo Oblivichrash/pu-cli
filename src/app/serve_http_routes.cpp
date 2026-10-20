@@ -23,6 +23,7 @@
 #include "pu/config/agent_summary.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/config/peer.hpp"
+#include "pu/config/serve_registry.hpp"
 #include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -89,7 +90,7 @@ constexpr std::string_view kPageFiles[] = {
     "/state.js",    "/approval.js",   "/layout.js",       "/block-thinking.js",
     "/block-tool.js", "/block-node.js", "/message.js",    "/transcript.js",
     "/panel.js",    "/board.js",      "/notice.js",       "/history.js",
-    "/ws.js",       "/session.js",    "/composer.js",
+    "/ws.js",       "/session.js",    "/composer.js",     "/servers.js",
 };
 
 bool IsPageFile(std::string_view target) {
@@ -348,6 +349,23 @@ boost::json::value HandleApiWorkspaces(Runtime& runtime, const boost::json::valu
   return workspaces;
 }
 
+// The servers running on this machine, so a page can name a workspace instead of a port. The
+// entry a page arrives from is marked, which is how it draws "this one" without comparing
+// addresses it does not know.
+boost::json::value HandleApiServers(Runtime& runtime, const boost::json::value&) {
+  const std::string here = runtime.WorkspaceRoot().string();
+  boost::json::array servers;
+  for (const config::ServeRecord& record : config::LiveServeRecords()) {
+    servers.push_back(boost::json::object{
+        {"directory", record.directory},
+        {"host", record.host},
+        {"port", record.port},
+        {"current", record.directory == here},
+    });
+  }
+  return servers;
+}
+
 boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body) {
   const int turn = json::ValueOrDefault<int>(body, "turn", 0);
   if (turn < 1) throw RequestRefused("Missing or invalid 'turn'");
@@ -397,7 +415,7 @@ using serve::Board;
 using serve::JobRequest;
 using BoardHandler = boost::json::value (*)(Board&, const boost::json::value& body);
 
-enum class Envelope { kObject, kArray, kAgents, kWorkspaces };
+enum class Envelope { kObject, kArray, kAgents, kWorkspaces, kServers };
 
 struct Route {
   std::string_view target;
@@ -519,6 +537,7 @@ constexpr Route kRoutes[] = {
     {"/api/settings", http::verb::post, &HandleApiSetSetting, Envelope::kObject, true},
     {"/api/settings/reset", http::verb::post, &HandleApiResetSettings, Envelope::kObject, false},
     {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, Envelope::kWorkspaces, false},
+    {"/api/servers", http::verb::get, &HandleApiServers, Envelope::kServers, false},
 };
 
 boost::json::value Wrap(Envelope envelope, boost::json::value result) {
@@ -529,6 +548,8 @@ boost::json::value Wrap(Envelope envelope, boost::json::value result) {
       return boost::json::object{{"agents", std::move(result)}};
     case Envelope::kWorkspaces:
       return boost::json::object{{"workspaces", std::move(result)}};
+    case Envelope::kServers:
+      return boost::json::object{{"servers", std::move(result)}};
     case Envelope::kObject:
       break;
   }
@@ -682,6 +703,11 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
 
   for (const Route& route : kRoutes) {
     if (target != route.target || req.method() != route.method) continue;
+
+    if (route.target == "/api/servers" && !IsLoopback(peer)) {
+      SendError(res, 403, "The server list carries directories, so it is read on the machine");
+      return;
+    }
 
     try {
       const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};

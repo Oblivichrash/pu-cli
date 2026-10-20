@@ -16,6 +16,14 @@ const CONTEXT_WINDOWS = {};
 
 const PU = {
   ws: null,
+  // The server this page is talking to. Everything the page asks for is asked of it: the REST
+  // calls read it, the socket is built from it. Empty until the page learns its own origin, so
+  // a page opened on any server starts out talking to the one that served it.
+  origin: "",
+  // What `GET /api/servers` reported, and the entry this page is attached to: the page draws
+  // the list from the first and calls the second the current one.
+  servers: [],
+  server: null,
   // A module loaded before notice.js cannot name showNotice. app.js points this at it
   // once every module is in; a remark that arrives before then is dropped.
   announce: () => {},

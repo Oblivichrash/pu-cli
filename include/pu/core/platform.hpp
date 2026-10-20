@@ -34,4 +34,11 @@ bool ShutdownRequested();
 // The same request as a token, for the call sites that take a CancelToken.
 CancelToken& ShutdownToken();
 
+// This process's identity, and whether a process with that identity is still running. A
+// record one process leaves behind for another to find (a server's port, say) is only worth
+// reading while its owner is: an entry whose pid is gone describes a process that has already
+// stopped, and the pid alone is enough to say so.
+int CurrentProcessId();
+bool ProcessRunning(int pid);
+
 }  // namespace pu::platform

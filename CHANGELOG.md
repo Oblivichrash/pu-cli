@@ -8,6 +8,18 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **The page names the servers on the machine, not the ports.** Each `pu serve` writes itself
+  into `$HOME/.pu/serve.json` while it runs — the directory it serves, the address it answers
+  on, and its pid — and removes the line when it stops, so a server started on port `0` is
+  still listable and a crash costs a stale line that the next reader drops. The read and the
+  write take a lock file beside it, so two servers starting at once cannot erase each other.
+  `GET /api/servers` answers that list with `current` marking the server that answered; it
+  is loopback-only, because its entries are filesystem paths. The header shows the
+  workspace this page is talking to, with the others behind it once there is more than one, so
+  remembering which port belongs to which directory is no longer the reader's job. Choosing one
+  moves the page to it and rebuilds: the socket reconnects, the transcript and the board are
+  read again, and the server left behind keeps running its turn, which is why the switcher is
+  held while a reply is in flight.
 - **The board has a panel on the page.** The sidebar gains a board that lists every open job with
   the peer it came from, its intent, its state, and — when the deadline has passed — that it is
   late. A blocked job is answered from there, since a question the page shows and cannot answer

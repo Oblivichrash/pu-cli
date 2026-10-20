@@ -378,3 +378,27 @@ TEST_CASE("a peer's read of the board still presents the token") {
   const HttpResponse anonymous = server.AnonymousClient().GetRaw("/api/jobs");
   CHECK(anonymous.status == 403);
 }
+
+TEST_CASE("the page names the server it is talking to and the others it may switch to") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto page = server.AnonymousClient();
+
+  const HttpResponse read = page.GetRaw("/api/servers");
+  CHECK(read.status == 200);
+  const boost::json::value body = boost::json::parse(read.body);
+  const boost::json::array& servers = body.at("servers").as_array();
+  REQUIRE(servers.size() >= 1);
+
+  bool saw_current = false;
+  for (const boost::json::value& entry : servers) {
+    CHECK(boost::json::value_to<std::string>(entry.at("host")) == pu::tests::kServeHost);
+    CHECK(boost::json::value_to<int>(entry.at("port")) > 0);
+    CHECK_FALSE(boost::json::value_to<std::string>(entry.at("directory")).empty());
+    if (ValueOrDefault<bool>(entry, "current", false)) {
+      saw_current = true;
+      CHECK(boost::json::value_to<int>(entry.at("port")) == server.Port());
+    }
+  }
+  CHECK(saw_current);
+}

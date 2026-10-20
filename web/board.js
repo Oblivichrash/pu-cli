@@ -169,12 +169,7 @@ async function refreshBoard() {
 
 async function postBoardVerb(path, body, failure) {
   try {
-    const res = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await postJson(path, body);
     await refreshBoard();
   } catch (_) {
     PU.announce(failure);

@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <csignal>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -317,5 +319,34 @@ int ExecuteCommand(const std::string& command, std::string& output,
 }
 
 #endif
+
+int CurrentProcessId() {
+#ifdef _WIN32
+  return static_cast<int>(GetCurrentProcessId());
+#else
+  return static_cast<int>(::getpid());
+#endif
+}
+
+bool ProcessRunning(int pid) {
+  if (pid <= 0) return false;
+#ifdef _WIN32
+  // A pid stays reserved while any handle to the process is open, so the signal is the exit
+  // code being readable rather than the handle having opened: a stopped server nobody joined
+  // still has a handle, and reads as stopped the moment it exits.
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return false;
+  DWORD exit_code = 0;
+  const bool alive = GetExitCodeProcess(process, &exit_code) != 0 && exit_code == STILL_ACTIVE;
+  CloseHandle(process);
+  return alive;
+#else
+  // A child that has exited but not been reaped is this process's own to wait for, and only
+  // its own: anyone else probing it gets ESRCH, which is the right answer for a record left
+  // by a process that is gone.
+  return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
 
 }  // namespace pu::platform

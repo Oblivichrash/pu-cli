@@ -34,16 +34,17 @@ function pageClientId() {
 }
 
 async function postJson(path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(PU.origin + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function fetchJson(path) {
-  const res = await fetch(path);
+  const res = await fetch(PU.origin + path);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -318,8 +319,11 @@ function connectWebSocket() {
   }
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  // The socket follows the server the page is attached to, which is the one that served it
+  // until the reader switches. Everything else in the page reads `PU.origin` the same way.
+  const host = PU.origin ? PU.origin.replace(/^https?:\/\//, "") : window.location.host;
   const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws?client=${encodeURIComponent(pageClientId())}`);
+      `${protocol}//${host}/ws?client=${encodeURIComponent(pageClientId())}`);
   PU.ws = ws;
   let refused = false;
 

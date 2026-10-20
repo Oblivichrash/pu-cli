@@ -19,6 +19,18 @@ directory, the workspace can name its own (`--host`/`--port` first, then
 "serve": { "host": "127.0.0.1", "port": 8087 }
 ```
 
+A port is what a reader has to remember to tell two servers apart, and the page is what
+has to do it for them. Each server writes itself into `$HOME/.pu/serve.json` while it
+runs — directory, address, port and pid — and deletes the line on the way out, so the
+page can list the machine's servers and name each one by its workspace. A record whose
+process has stopped is dropped the next time the file is read, which is what makes a
+crash cost a stale line rather than a ghost entry. Two servers starting together would
+otherwise each read the list before the other had written it and the second write would
+drop the first, so the read and the write happen under `serve.json.lock`, held for the
+few milliseconds the update takes. The file is a record of what is running, not a
+setting: `serve` in `agents.json` is still the port a workspace asks for, and the
+registry is what actually answers.
+
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
 > agent's tools. Keep the default loopback bind unless the port is protected by
@@ -109,6 +121,7 @@ its own, so every connection from it is a second page.
 | `GET` | `/api/agents` | List all available agents with descriptions |
 | `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
+| `GET` | `/api/servers` | The servers running on this machine, each with `directory`, `host`, `port` and `current`, which marks the one that answered |
 | `POST` | `/api/clear` | Clear the conversation history |
 | `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
 | `GET` | `/api/settings` | Every setting this build knows, with the value in force and whether it came from this session or the agent |
@@ -129,6 +142,23 @@ caller can fix — a body that is not JSON, a value that is missing or unknown, 
 cannot serve it, such as a step back while a tool call is pending — `404` where a name does
 not exist, and `500` where the operation failed. A refusal carries `success: false` and the
 reason in `error`.
+
+## The servers
+
+`GET /api/servers` answers `{"servers":[{...}]}`, one entry per running `pu serve` on this
+machine, read from the registry the servers write themselves into. `current` marks the entry
+whose directory is the one that answered, so the page never has to compare addresses it was
+handed from somewhere else. The entries carry a filesystem path, so the route answers loopback
+only: a server bound to another address still serves the page, the rest of the API and the
+board, but not the list of the machine's directories.
+
+The page is one server per tab by nature — one socket, one transcript — but naming them is
+not: the header shows the workspace this page is talking to, and lists the others when there
+is more than one. Choosing one moves the page to it. Switching is deliberately light: the
+socket is closed and reopened against the chosen server, the transcript and the board are
+read again from it, and the server that was left keeps running the turn it was given. That
+is why a turn in progress holds the switcher: nothing here moves a running reply between
+servers, and pretending otherwise would be the one case where a reader loses work.
 
 ## The board
 

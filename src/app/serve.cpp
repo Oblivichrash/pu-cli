@@ -21,6 +21,7 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/platform.hpp"
+#include "pu/config/serve_registry.hpp"
 #include "pu/runtime/executor.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/serve/board.hpp"
@@ -554,6 +555,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   spdlog::info("Workspace: {}", runtime.WorkspaceRoot().string());
 
   net::io_context ioc;
+  std::uint16_t bound_port = port;
   const tcp::endpoint listen_endpoint(net::ip::make_address(host), port);
   tcp::acceptor acceptor(ioc);
   {
@@ -575,12 +577,23 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
       spdlog::error("Cannot listen on {}:{}: {}", host, port, open_ec.message());
       return 1;
     }
+    bound_port = acceptor.local_endpoint(open_ec).port();
+    if (open_ec) bound_port = port;
   }
 
   std::mutex io_mutex;
   serve::Board board;
-  auto runner = std::make_shared<SessionRunner>(runtime);
-  // The runner closes the job a peer turn answers, so it needs the board the routes serve.
+  // The registry entry is written after the port is known and before the first request is
+  // accepted: a server a page can reach is a server the page can list, and a server that
+  // never got its port never claims one. The page reads the directory from here too, so the
+  // list names a workspace rather than a number to remember.
+  config::ServeRecord serve_record;
+  serve_record.directory = runtime.WorkspaceRoot().string();
+  serve_record.host = host;
+  serve_record.port = bound_port;
+  serve_record.pid = platform::CurrentProcessId();
+  config::RegisterServeRecord(serve_record);
+  auto runner = std::make_shared<SessionRunner>(runtime);  // The runner closes the job a peer turn answers, so it needs the board the routes serve.
   // It is handed over after both exist rather than through the constructor, which would
   // otherwise pin the declaration order of two independent locals.
   runner->AttachBoard(&board);
@@ -666,6 +679,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   ioc.stop();
   if (ioc_thread.joinable()) ioc_thread.join();
   runner->Stop();
+  config::UnregisterServeRecord(platform::CurrentProcessId());
 
   runtime.Shutdown();
   return 0;
