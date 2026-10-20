@@ -26,9 +26,9 @@ rebuilds, and no module below knows a switch happened.
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
-| `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
+| `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list, and the spend total a finished turn brings with it |
 | `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
-| `web/servers.js` | The machine's servers over `/api/servers`: the workspace in the header, the list behind it, and the switch to another server |
+| `web/servers.js` | The machine's servers over `/api/servers`: the workspace named in the header, the list behind it, and the switch to another server. A name it cannot fetch falls back to the page's own address, and the switcher stays visible and disabled when the server is the only one running |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |

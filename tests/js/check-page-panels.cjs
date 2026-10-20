@@ -29,6 +29,9 @@ function makeElement(id) {
     disabled: false,
     className: "",
     children: [],
+    // showUsage writes the context bar's width, so an element has to carry a style the way a
+    // real one does; a stub without it fails for a reason the page never would.
+    style: {},
     replaceChildren() {
       this.children = [];
     },
@@ -76,7 +79,7 @@ function loadPage(fetchJson) {
   // the context's global object. Reading it here is what the page does; writing it is what a
   // case has to do, so the handle is taken from inside the scope the files ran in.
   vm.runInContext(
-      "globalThis.page = {get PU() { return PU; }, renderServers, renderUsageTotal, refreshChainLength};",
+      "globalThis.page = {get PU() { return PU; }, renderServers, renderUsageTotal, showUsage, refreshChainLength, setServers};",
       context);
   return {context, document, page: context.page};
 }
@@ -159,8 +162,27 @@ check("A second server fills the list and the caret opens it", () => {
   equal(document.elements.get("server-toggle").disabled, false, "caret disabled");
 });
 
-check("The spend figure redraws from the total the server sends", () => {
-  const {page, document} = loadPage();
+// Naming a server and asking it for a transcript are one act: the header reads PU.server and
+// every REST call reads PU.origin. A page that wrote one and not the other would draw one
+// workspace's name over another's conversation, and the two bugs this file pins — a header
+// that showed the placeholder, a caret that vanished — were both that split showing through.
+// The writer is therefore the thing to test, not each caller of it.
+check("Naming a server also moves the address the page talks to", () => {
+  const {page} = loadPage();
+  page.setServers({servers: [ONE, TWO], server: TWO});
+  equal(page.PU.server, TWO, "server");
+  equal(page.PU.origin, "http://127.0.0.1:8793", "origin follows");
+  page.setServers({server: ONE});
+  equal(page.PU.origin, "http://127.0.0.1:8792", "origin follows back");
+  equal(page.PU.servers.length, 2, "the list is left alone");
+  // A server the registry has not listed yet is still the one that answered: the page names it
+  // from the address it was opened on rather than falling back to a placeholder.
+  page.setServers({server: null});
+  equal(page.PU.server, null, "no server named");
+  equal(page.PU.origin, "http://127.0.0.1:8792", "the page's own address");
+});
+
+check("The spend figure redraws from the total the server sends", () => {  const {page, document} = loadPage();
   page.renderUsageTotal({
     turns: 2, rounds: 3, prompt_tokens: 1000, completion_tokens: 50,
     cached_tokens: 0, priced_turns: 0,
@@ -172,21 +194,42 @@ check("The spend figure redraws from the total the server sends", () => {
   }
 });
 
-// The page asked once at load and never again, which is why a turn finished during the visit
-// was missing from a figure that was otherwise correct. The assertion is on the panel, not on
-// the number of requests: a page that asks and then ignores the answer is the same bug.
-check("A finished turn re-reads the total rather than keeping the one from load", async () => {
-  const stub = async (url) => {
-    if (url !== "/api/session") return [];
-    return {success: true, usage_total: {turns: 7, rounds: 7, prompt_tokens: 10, completion_tokens: 2, cached_tokens: 0, priced_turns: 0}};
-  };
-  const {page, document} = loadPage(stub);
+// The page drew the figure once at load and never again, which is why a turn finished during
+// the visit was missing from a total that was otherwise correct. The turn that ended is part
+// of the total, so the frame that reports it carries the total too. The assertion is on the
+// panel: a page that receives the total and does not draw it is the same bug.
+check("A finished turn carries the total it is part of", async () => {
+  const {page, document} = loadPage();
   page.renderUsageTotal({turns: 6, rounds: 6, prompt_tokens: 10, completion_tokens: 2, cached_tokens: 0, priced_turns: 0});
   const before = document.elements.get("usage-total").children[0].textContent;
-  await page.refreshChainLength();
+  page.showUsage({
+    prompt_tokens: 10, completion_tokens: 2, cached_tokens: 4, rounds: 1, model: "m", gateway: "g",
+    total: {turns: 7, rounds: 7, prompt_tokens: 20, completion_tokens: 4, cached_tokens: 4, priced_turns: 0},
+  });
   const after = document.elements.get("usage-total").children[0].textContent;
   if (!before.includes("6 turns")) throw new Error(`before the turn ended: ${before}`);
   if (!after.includes("7 turns")) throw new Error(`after the turn ended: ${after}`);
+  equal(document.elements.get("context-usage").textContent.length > 0, true, "this turn drawn");
+});
+
+// The frame and `/api/history` write a turn the same way, so a reload and a live turn draw the
+// same blocks. The frame's own counts are the ones the bar reads, with the cache figure the
+// panel needs already there rather than asked for separately.
+check("One frame describes a turn and its total the same way a reload does", async () => {
+  const {page, document} = loadPage();
+  page.showUsage({
+    prompt_tokens: 1000, completion_tokens: 50, cached_tokens: 400, rounds: 2,
+    model: "test-model", gateway: "ollama", cost: {amount: 0.25, unit: "credits"},
+    total: {turns: 1, rounds: 2, prompt_tokens: 1000, completion_tokens: 50, cached_tokens: 400,
+            priced_turns: 1, cost: {amount: 0.25, unit: "credits"}},
+  });
+  const bar = document.elements.get("context-usage").textContent;
+  if (!bar.includes("1,000 tokens")) throw new Error(`bar: ${bar}`);
+  if (!bar.includes("40% cached")) throw new Error(`the cache share is missing: ${bar}`);
+  const total = document.elements.get("usage-total");
+  const drawn = total.children.map((row) => row.textContent).join(" | ");
+  if (!drawn.includes("1 turn")) throw new Error(`total: ${drawn}`);
+  if (!drawn.includes("0.25 credits")) throw new Error(`price: ${drawn}`);
 });
 
 Promise.all(pending).then(() => {

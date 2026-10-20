@@ -64,12 +64,14 @@ function tokenLine(prompt, cached) {
   return line;
 }
 
-// Draws one turn's usage in the panel and the bar. Called as a turn streams and again on a
-// reload, where the last stored turn is what the bar describes.
+// Draws one turn's usage in the panel and the bar, and the conversation's total under it. The
+// socket sends both together because the turn that just ended is part of the total, so a frame
+// drawn without its total would answer a question the reader has already asked.
 function showUsage(payload) {
   const el = document.getElementById("context-usage");
   const fill = document.getElementById("context-fill");
   if (!el || !payload) return;
+  if (payload.total) renderUsageTotal(payload.total);
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
   const cached = Number(payload.cached_tokens);

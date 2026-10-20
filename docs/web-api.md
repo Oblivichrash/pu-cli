@@ -70,16 +70,25 @@ and a reconnect are recognisably the same page.
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
 {"type":"tool_end","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"},"output":"...","error":""}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
-{"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312}}
+{"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312,"cached_tokens":41000,"rounds":2,"model":"gpt-4o-mini-2024-07-18","gateway":"","total":{"turns":7,"rounds":11,"prompt_tokens":290144,"completion_tokens":2210,"cached_tokens":241000,"priced_turns":0}}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
 {"type":"done","payload":{"model":"gpt-4o-mini-2024-07-18"}}
 {"type":"error","payload":{"text":"error description"}}
 ```
 
-`usage` carries what the provider counted for the turn that just ended;
-`prompt_tokens` is the context that turn ran against, so it grows with the
-conversation and is what a page can show against a model's window. It arrives
-before `done`, and a provider that reports no counts sends none.
+`usage` carries what the turn that just ended cost; `prompt_tokens` is the context
+that turn ran against, so it grows with the conversation and is what a page can show
+against a model's window. It arrives before `done`, and a provider that reports no
+counts sends none. `rounds` counts the provider calls the turn made, since one reply
+that called three tools spent two rounds and the counts are both their sum. `cost`
+appears only where the gateway priced the call, under the gateway's own unit.
+
+The frame describes a turn with the same object `/api/history` replays beside the
+finished message, so a page parses one shape whether a turn is live or reloaded. Two
+fields differ: `gateway` is empty on the frame and names the gateway on a replayed
+turn, and `total` appears only on the frame. `total` is the same object
+`/api/session` answers as `usage_total`, sent with the turn because it is already
+known, so a page that has just watched a turn does not have to ask again to draw it.
 
 `tool_start`/`tool_end` carry the tool call `id` so the UI pairs a result with
 its call. The end carries the call's `name` and `args` as well, because a page

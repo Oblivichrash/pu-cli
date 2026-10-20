@@ -227,22 +227,7 @@ boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&)
   // What this conversation has spent so far. The counts are sums; a price is a sum only while
   // every turn that reported one reported it in the same unit, which is why `cost` can be
   // absent even when turns carried prices.
-  const session::SessionUsageTotal total = session->Usage().Total();
-  boost::json::object usage_total{
-      {"turns", total.turns},
-      {"rounds", total.rounds},
-      {"prompt_tokens", total.prompt_tokens},
-      {"completion_tokens", total.completion_tokens},
-      {"cached_tokens", total.cached_tokens},
-      {"priced_turns", total.priced_turns},
-  };
-  if (total.cost) {
-    usage_total["cost"] = boost::json::object{
-        {"amount", total.cost->amount},
-        {"unit", total.cost->unit},
-    };
-  }
-  body["usage_total"] = std::move(usage_total);
+  body["usage_total"] = session::UsageLedger::ToJson(session->Usage().Total());
   boost::json::array tools;
   for (const std::string& name : runtime.Tools().ToolNames()) {
     tools.emplace_back(name);
@@ -297,22 +282,7 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
     // What this turn cost, beside it rather than inside it. Absent for a turn that recorded
     // nothing — a session from before usage was kept, or one whose provider reported none.
     if (const std::optional<session::TurnUsage> usage = conversation_usage.For(node.id)) {
-      item.as_object()["usage"] = boost::json::object{
-          {"prompt_tokens", usage->prompt_tokens},
-          {"completion_tokens", usage->completion_tokens},
-          {"cached_tokens", usage->cached_tokens},
-          {"rounds", usage->rounds},
-          {"model", usage->model},
-          {"gateway", usage->gateway},
-      };
-      // A price only where the product reported one. Absent and zero are different answers:
-      // a call a product priced at nothing is not a product that prices nothing.
-      if (usage->cost) {
-        item.as_object()["usage"].as_object()["cost"] = boost::json::object{
-            {"amount", usage->cost->amount},
-            {"unit", usage->cost->unit},
-        };
-      }
+      item.as_object()["usage"] = session::UsageLedger::ToJson(*usage);
     }
 
     turns.push_back(std::move(item));

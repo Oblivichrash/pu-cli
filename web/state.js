@@ -21,7 +21,8 @@ const PU = {
   // a page opened on any server starts out talking to the one that served it.
   origin: "",
   // What `GET /api/servers` reported, and the entry this page is attached to: the page draws
-  // the list from the first and calls the second the current one.
+  // the list from the first and calls the second the current one. Use `setServers` to write
+  // them; a module that assigns either directly leaves the other describing a different server.
   servers: [],
   server: null,
   // A module loaded before notice.js cannot name showNotice. app.js points this at it
@@ -82,6 +83,22 @@ const PU = {
     settingsReset: null,
   },
 };
+
+// The one place `PU.servers`, `PU.server` and `PU.origin` are written. They describe one
+// fact — which server this page is talking to — and a page that wrote two of the three would
+// be drawing a header from one server and asking the other for its transcript. Naming them
+// together is what makes that impossible rather than a rule to remember.
+//
+// `server` may be null (a server the registry has not listed), which is why the origin is
+// derived here: the page is attached to the address it was opened on, and the label is the
+// only thing missing. A caller that leaves an argument out is not changing that part.
+function setServers({ servers, server }) {
+  if (servers !== undefined) PU.servers = Array.isArray(servers) ? servers : [];
+  if (server !== undefined) {
+    PU.server = server || null;
+    PU.origin = server ? serverOrigin(server) : window.location.origin;
+  }
+}
 
 function setConnectionState(state) {
   if (state === PU.connState) return;

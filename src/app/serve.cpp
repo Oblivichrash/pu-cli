@@ -18,6 +18,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 
 #include "pu/core/json.hpp"
 #include "pu/core/platform.hpp"
@@ -467,17 +468,27 @@ void SessionRunner::WorkerMain() {
       say({{"type", "notice"}, {"payload", {{"text", result.notice}}}});
     }
     if (result.usage) {
-      boost::json::object usage{
-          {"prompt_tokens", result.usage->prompt_tokens},
-          {"completion_tokens", result.usage->completion_tokens},
-      };
-      // A price only where the product reported one: absent and zero are different answers.
-      if (result.usage->cost) {
-        usage["cost"] = boost::json::object{
-            {"amount", result.usage->cost->amount},
-            {"unit", result.usage->cost->unit},
-        };
+      // The turn is already filed against the reply it produced, which is the entry
+      // `/api/history` will replay. Reading it here is what makes a live turn and a reloaded
+      // one the same object: one projection, written by the ledger, and no second assembly
+      // of the same six fields to drift out of step with it.
+      boost::json::object usage;
+      session::SessionUsageTotal total;
+      if (const auto session = runtime_.DefaultSession()) {
+        for (auto it = session->Messages().Chain().rbegin();
+             it != session->Messages().Chain().rend(); ++it) {
+          if (!std::holds_alternative<session::AssistantPayload>((*it)->payload)) continue;
+          if (const auto recorded = session->Usage().For((*it)->id)) {
+            usage = session::UsageLedger::ToJson(*recorded).as_object();
+          }
+          break;
+        }
+        // The total `/api/session` would answer with is already known. Sending it means a page
+        // that has just watched a turn cannot draw a figure that stops short of it, and does
+        // not have to ask a second time to find out.
+        total = session->Usage().Total();
       }
+      usage["total"] = session::UsageLedger::ToJson(total);
       say({{"type", "usage"}, {"payload", std::move(usage)}});
     }
     if (result.has_error) {

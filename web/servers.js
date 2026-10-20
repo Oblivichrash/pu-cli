@@ -79,16 +79,18 @@ function renderServers() {
 }
 
 async function refreshServers() {
+  let servers;
   try {
     const data = await fetchJson("/api/servers");
-    PU.servers = Array.isArray(data.servers) ? data.servers : [];
-    // The server that just answered is the one this page is attached to, whether or not it
-    // says so: a page that was opened on a server the registry has not caught up with still
-    // knows where it is, and a page that switched knows which entry it asked for.
-    if (!PU.server) PU.server = PU.servers.find((server) => server.current) || null;
+    servers = Array.isArray(data.servers) ? data.servers : [];
   } catch (_) {
     return;
   }
+  // The server that just answered is the one this page is attached to, whether or not it says
+  // so: a page that was opened on a server the registry has not caught up with still knows
+  // where it is, and a page that switched has already named the entry it asked for.
+  const server = PU.server || servers.find((entry) => entry.current) || null;
+  setServers({ servers, server });
   renderServers();
 }
 
@@ -96,8 +98,7 @@ async function refreshServers() {
 // transcript, the session and the board are read again from the one it moved to; nothing is
 // carried across, because nothing about a conversation in one workspace is true of another.
 async function adoptServer(server) {
-  PU.origin = server ? serverOrigin(server) : window.location.origin;
-  PU.server = server || null;
+  setServers({ server });
   if (PU.ws) {
     PU.ws.onmessage = null;
     PU.ws.onclose = null;
