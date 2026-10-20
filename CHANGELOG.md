@@ -6,6 +6,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Changed
+
+- `pu --help` names each command with the one line that says what it answers. The list is
+  built from the same table the `--command` flag is described from, so a command cannot be
+  added to one and forgotten in the other.
+
 ## 0.6.0
 
 ### Added

@@ -81,13 +81,18 @@ int main(int argc, char* argv[]) {
   }
 
   if (vm.count("help")) {
-    // `pu models --help` is a question about models, and `pu --help` about the line.
-    std::cout << line.HelpFor(vm.count("command") ? vm["command"].as<std::string>() : "") << "\n";
+    // `pu models --help` is a question about models, and `pu --help` about the line. The
+    // command list comes first: a reader who does not yet know which page to ask for is
+    // the one `--help` is for, and the flags below only answer a question they have not
+    // reached yet.
+    const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
+    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string())
+              << line.HelpFor(named) << "\n";
     return 0;
   }
 
   if (!vm.count("command")) {
-    std::cout << all << "\n";
+    std::cout << pu::cli::CommandList(line) << "\n\n" << all << "\n";
     return 0;
   }
 

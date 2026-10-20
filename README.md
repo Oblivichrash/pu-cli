@@ -73,6 +73,7 @@ the copy it was installed with.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+`pu --help` names every command with the one line that says what it answers.
 `pu <command> --help` prints that command's own page.
 
 ## Docs

@@ -40,9 +40,22 @@ struct CommandLine {
   std::map<std::string, boost::program_options::options_description> per_command;
   boost::program_options::positional_options_description positional;
 
+  // Every command this build has, with the one line that says what it answers. The same
+  // list writes the `--command` hint and the top-level page, so a new command is named in
+  // both or in neither.
+  struct CommandSummary {
+    std::string name;
+    std::string summary;
+  };
+  std::vector<CommandSummary> commands;
+
   // Never empty: a name this build does not have gets the whole line.
   const boost::program_options::options_description& HelpFor(const std::string& command) const;
 };
+
+CommandLine BuildCommandLine();
+
+std::string CommandList(const CommandLine& line);
 
 CommandLine BuildCommandLine();
 

@@ -116,10 +116,36 @@ CommandLine BuildCommandLine() {
     bool takes_value;
   };
 
+  // One line per command, and the only place either the `--command` hint or the top-level
+  // listing is written from. `pu --help` cannot print the pages in full — it would be the
+  // whole manual — but it can say what each command answers, which is the question a reader
+  // arriving with no command has.
+  struct CommandSpec {
+    const char* name;
+    const char* summary;
+  };
+
+  const std::vector<CommandSpec> commands = {
+      {"agents", "list the agents in agents.json and the gateway each one names"},
+      {"ask", "send one prompt to an agent and print the answer"},
+      {"chat", "hold a conversation: one turn per line, until you leave"},
+      {"check", "read agents.json and report what it resolves to, without asking a provider"},
+      {"models", "list the models a gateway offers"},
+      {"probe", "save a raw provider stream and summarise what it contained"},
+      {"serve", "host the page and the API that a browser talks to"},
+      {"sse", "read a server-sent-event stream and print each event"},
+  };
+
+  std::string command_hint = "command to execute (";
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    command_hint += (i == 0 ? "" : "/") + std::string(commands[i].name);
+  }
+  command_hint += ")";
+
   const std::vector<OptionSpec> global_options = {
       {"help,h", "show help message", false},
       {"version", "show version and exit", false},
-      {"command", "command to execute (agents/ask/chat/check/models/probe/serve/sse)", true},
+      {"command", command_hint.c_str(), true},
   };
 
   const OptionSpec agent_option{"agent", "agent to use", true};
@@ -234,6 +260,10 @@ CommandLine BuildCommandLine() {
   positional.add("command", 1);
   positional.add("prompt", 1);
   line.positional = std::move(positional);
+
+  for (const CommandSpec& command : commands) {
+    line.commands.push_back({command.name, command.summary});
+  }
   return line;
 }
 
@@ -241,6 +271,18 @@ const boost::program_options::options_description& CommandLine::HelpFor(
     const std::string& command) const {
   const auto it = per_command.find(command);
   return it == per_command.end() ? all : it->second;
+}
+
+std::string CommandList(const CommandLine& line) {
+  std::ostringstream printed;
+  printed << "commands:\n";
+  for (const CommandLine::CommandSummary& command : line.commands) {
+    printed << "  " << command.name;
+    printed << std::string(command.name.size() < 8 ? 8 - command.name.size() : 1, ' ');
+    printed << command.summary << "\n";
+  }
+  printed << "\npu <command> --help names the flags that command takes.";
+  return printed.str();
 }
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
