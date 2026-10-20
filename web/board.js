@@ -1,25 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The board the page reads: who holds what, what is late, and who is being asked something.
-// A read-out like the rest of the panel — the only write here is answering a blocked job,
-// because a question with no way to answer it is the one thing the page must not leave
-// hanging.
+// A read-out like the rest of the panel — the only writes here are answering a blocked job,
+// asking after one, and taking one back, because a question with no way to answer it is the
+// one thing the page must not leave hanging.
 //
 // Nothing is drawn when the board is empty: a session with no peers in play costs no row and
 // no request beyond the one that found it empty.
 //
-// The read is `/api/board/local`, not `/api/jobs`: a peer's read presents the shared token and
-// counts as being heard from, and a page has no token to present.
+// The read is `/api/board`, not `/api/jobs`: a peer's read presents the shared token and counts
+// as being heard from, and a page has no token to present. Which jobs are still owed and which
+// settled is the server's answer, so a fourth state never needs a second home here.
 
 "use strict";
 
 const BOARD_POLL_MS = 5000;
-// A closed job is worth reading until it is stale; the server keeps its own longer history.
-const BOARD_CLOSED_SHOWN = 3;
-const BOARD_SETTLED = ["done", "failed", "cancelled"];
 
 function boardStateLabel(job) {
-  if (Number(job.overdue)) return job.state + " · late";
-  return job.state;
+  if (job.closed) return job.state;
+  return Number(job.overdue) ? job.state + " · late" : job.state;
 }
 
 function boardQuestion(job, onAnswer) {
@@ -131,9 +129,7 @@ function boardJobRow(job, verbs) {
     item.appendChild(note);
   }
 
-  if (!BOARD_SETTLED.includes(job.state)) {
-    item.appendChild(boardActions(job, verbs.chase, verbs.drop));
-  }
+  if (!job.closed) item.appendChild(boardActions(job, verbs.chase, verbs.drop));
   return item;
 }
 
@@ -142,23 +138,22 @@ function renderBoard(snapshot) {
   const list = document.getElementById("board-jobs");
   if (!panel || !list) return;
 
-  const jobs = Array.isArray(snapshot && snapshot.jobs) ? snapshot.jobs : [];
-  const open = jobs.filter((job) => !BOARD_SETTLED.includes(job.state));
-  const closed = jobs.filter((job) => BOARD_SETTLED.includes(job.state)).slice(-BOARD_CLOSED_SHOWN);
+  const open = Array.isArray(snapshot && snapshot.open) ? snapshot.open : [];
+  const settled = Array.isArray(snapshot && snapshot.settled) ? snapshot.settled : [];
 
   // A board nobody is using is not a panel with nothing in it; it is no panel.
-  panel.hidden = open.length === 0 && closed.length === 0;
+  panel.hidden = open.length === 0 && settled.length === 0;
   list.replaceChildren();
   if (panel.hidden) return;
 
   for (const job of open) list.appendChild(boardJobRow(job, boardVerbs));
 
-  if (closed.length > 0) {
+  if (settled.length > 0) {
     const heading = document.createElement("li");
     heading.className = "board-heading";
     heading.textContent = "Settled";
     list.appendChild(heading);
-    for (const job of closed) list.appendChild(boardJobRow(job, boardVerbs));
+    for (const job of settled) list.appendChild(boardJobRow(job, boardVerbs));
   }
 }
 
@@ -166,7 +161,7 @@ function renderBoard(snapshot) {
 // seconds, so a notice here would be a strip that reopens itself; the next poll tries instead.
 async function refreshBoard() {
   try {
-    renderBoard(await fetchJson("/api/board/local"));
+    renderBoard(await fetchJson("/api/board"));
   } catch (_) {
     return;
   }

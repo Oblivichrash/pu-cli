@@ -149,6 +149,7 @@ json::value Board::Render(const Job& job, const std::string& now) {
   if (job.declined_by) out["declined_by"] = *job.declined_by;
   if (job.declines > 0) out["declines"] = job.declines;
   if (job.chases > 0) out["chases"] = job.chases;
+  out["closed"] = job.Closed();
   return out;
 }
 
@@ -208,7 +209,11 @@ Board::ActionResult Board::Post(const JobRequest& request) {
   }
 
   jobs_.push_back(job);
-  if (jobs_.size() > kMaxOpen + kMaxClosedKept) jobs_.pop_front();
+  if (jobs_.size() > kMaxOpen + kMaxClosedKept) {
+    std::stable_sort(jobs_.begin(), jobs_.end(),
+                     [](const Job& left, const Job& right) { return left.updated_at < right.updated_at; });
+    jobs_.pop_front();
+  }
   Record("post", job.from, job.id, job.intent);
 
   return {job, std::nullopt};
@@ -355,6 +360,18 @@ std::optional<Job> Board::Find(const std::string& id) {  std::lock_guard<std::mu
   return *it;
 }
 
+json::array Board::RenderAudit() const {
+  json::array audit;
+  for (const auto& entry : audit_) {
+    audit.push_back(json::object{{"at", entry.at},
+                                 {"kind", entry.kind},
+                                 {"peer", entry.peer},
+                                 {"job", entry.job},
+                                 {"text", entry.text}});
+  }
+  return audit;
+}
+
 json::value Board::Snapshot(std::chrono::seconds offline_after) const {
   std::lock_guard<std::mutex> lock(mutex_);
   const std::string now = NowStamp();
@@ -374,20 +391,41 @@ json::value Board::Snapshot(std::chrono::seconds offline_after) const {
     peers.push_back(std::move(entry));
   }
 
-  json::array audit;
-  for (const auto& entry : audit_) {
-    audit.push_back(json::object{{"at", entry.at},
-                                 {"kind", entry.kind},
-                                 {"peer", entry.peer},
-                                 {"job", entry.job},
-                                 {"text", entry.text}});
-  }
-
   json::object out;
   out["success"] = true;
   out["jobs"] = std::move(jobs);
   out["peers"] = std::move(peers);
-  out["audit"] = std::move(audit);
+  out["audit"] = RenderAudit();
+  return out;
+}
+
+json::value Board::Page() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const std::string now = NowStamp();
+
+  json::array open;
+  std::vector<const Job*> settled;
+  for (const auto& job : jobs_) {
+    if (!job.Closed()) {
+      open.push_back(Render(job, now));
+      continue;
+    }
+    settled.push_back(&job);
+  }
+
+  std::sort(settled.begin(), settled.end(), [](const Job* left, const Job* right) {
+    return left->updated_at > right->updated_at;
+  });
+  if (settled.size() > kMaxSettledShown) settled.resize(kMaxSettledShown);
+
+  json::array done;
+  for (const Job* job : settled) done.push_back(Render(*job, now));
+
+  json::object out;
+  out["success"] = true;
+  out["open"] = std::move(open);
+  out["settled"] = std::move(done);
+  out["audit"] = RenderAudit();
   return out;
 }
 

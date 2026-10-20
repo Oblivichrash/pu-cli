@@ -407,18 +407,18 @@ struct Route {
   bool has_body;
 };
 
+// What a board route accepts in place of a caller's name. A peer presents the shared token,
+// which is also how a read says it is still working. A page has no token to present, so for the
+// one route it calls the address it arrives from is the credential — and that read records
+// nothing about anyone, because being read by a page says nothing about a peer.
+enum class Credential { kPeerToken, kAddress };
+
 struct BoardRoute {
   std::string_view target;
   http::verb method;
   BoardHandler handler;
   bool has_body;
-  // A peer changes shared state when it writes, so the write routes present the token. A read
-  // does too: reading is what tells a peer this one is still working, and that is not a claim
-  // worth making about a server that cannot prove it holds the secret.
-  bool authenticated;
-  // The page reads the board too, from the machine the server runs on. It holds no token, so it
-  // is served a read-only copy that says nothing about who is here and records nothing about it.
-  bool local_only;
+  Credential credential;
 };
 
 constexpr std::chrono::seconds kOfflineAfter{45};
@@ -440,13 +440,9 @@ boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
   return board.Snapshot(kOfflineAfter);
 }
 
-// What the page draws: the jobs, without the peers. Liveness is the one thing a local read
-// cannot speak to, because being read by a page says nothing about a peer, and a reader told
-// otherwise would take this machine's attention for a peer's.
+// What the page draws: the jobs split into the ones still owed and the last few that settled.
 boost::json::value HandleBoardPageGet(Board& board, const boost::json::value&) {
-  boost::json::object page = board.Snapshot(kOfflineAfter).as_object();
-  page.erase("peers");
-  return page;
+  return board.Page();
 }
 
 // The name a token speaks for. A token is one peer's, so a request carrying it is that peer.
@@ -478,43 +474,38 @@ boost::json::value HandleBoardPatch(Board& board, const boost::json::value& body
   return RenderResult(board.Update(request));
 }
 
-boost::json::value HandleBoardAnswer(Board& board, const boost::json::value& body) {
+// The three verbs a person has over a job a peer holds, in the order the page draws them: answer
+// what a blocked job waits for, ask what is happening, and take it back. None is a peer's move,
+// so none is `PATCH`: a person has no name to present as `from`.
+struct BoardVerb {
+  std::string_view target;
+  Board::ActionResult (Board::*run)(const std::string&, const std::string&);
+  // The field carrying the text, which is `answer` for the verb that has an answer to give.
+  std::string_view field;
+  std::string_view needs;
+};
+
+constexpr BoardVerb kBoardVerbs[] = {
+    {"/api/jobs/answer", &Board::Answer, "answer", "an answer needs the 'answer' text to send back"},
+    {"/api/jobs/chase", &Board::Chase, "note", "asking about a job needs the 'note' to send"},
+    {"/api/jobs/drop", &Board::Drop, "note", "taking a job back needs the 'note' that says why"},
+};
+
+boost::json::value HandleBoardVerb(Board& board, const boost::json::value& body,
+                                   const BoardVerb& verb) {
   const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
-  const std::string answer = json::ValueOrDefault<std::string>(body, "answer", "");
-  if (id.empty()) throw RequestRefused("answering a job needs the job's 'id'");
-  if (answer.empty()) throw RequestRefused("an answer needs the 'answer' text to send back");
+  const std::string text = json::ValueOrDefault<std::string>(body, verb.field, "");
+  if (id.empty()) throw RequestRefused("a board verb needs the job's 'id'");
+  if (text.empty()) throw RequestRefused(std::string(verb.needs));
 
-  return RenderResult(board.Answer(id, answer));
-}
-
-// The two verbs a person has over a job a peer holds: ask what is happening, and take it back.
-// Neither is a peer's move, so neither is `PATCH`: a person has no name to present as `from`.
-boost::json::value HandleBoardChase(Board& board, const boost::json::value& body) {
-  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
-  const std::string note = json::ValueOrDefault<std::string>(body, "note", "");
-  if (id.empty()) throw RequestRefused("asking about a job needs the job's 'id'");
-  if (note.empty()) throw RequestRefused("asking about a job needs the 'note' to send");
-
-  return RenderResult(board.Chase(id, note));
-}
-
-boost::json::value HandleBoardDrop(Board& board, const boost::json::value& body) {
-  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
-  const std::string note = json::ValueOrDefault<std::string>(body, "note", "");
-  if (id.empty()) throw RequestRefused("taking a job back needs the job's 'id'");
-  if (note.empty()) throw RequestRefused("taking a job back needs the 'note' that says why");
-
-  return RenderResult(board.Drop(id, note));
+  return RenderResult((board.*(verb.run))(id, text));
 }
 
 constexpr BoardRoute kBoardRoutes[] = {
-    {"/api/jobs", http::verb::get, &HandleBoardGet, false, true, false},
-    {"/api/jobs", http::verb::post, &HandleBoardPost, true, true, false},
-    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, true, false},
-    {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true, true, false},
-    {"/api/jobs/chase", http::verb::post, &HandleBoardChase, true, true, false},
-    {"/api/jobs/drop", http::verb::post, &HandleBoardDrop, true, true, false},
-    {"/api/board/local", http::verb::get, &HandleBoardPageGet, false, false, true},
+    {"/api/jobs", http::verb::get, &HandleBoardGet, false, Credential::kPeerToken},
+    {"/api/jobs", http::verb::post, &HandleBoardPost, true, Credential::kPeerToken},
+    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, Credential::kPeerToken},
+    {"/api/board", http::verb::get, &HandleBoardPageGet, false, Credential::kAddress},
 };
 
 constexpr Route kRoutes[] = {
@@ -632,6 +623,24 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
     return;
   }
 
+  for (const auto& verb : kBoardVerbs) {
+    if (target != verb.target || req.method() != http::verb::post) continue;
+
+    // A peer presents the token on a verb too: answering, asking and taking back all change
+    // shared state, and a caller that cannot prove it holds the secret cannot change it.
+    if (board == nullptr || PeerForToken(runtime, BearerToken(req)).empty()) {
+      SendError(res, 403, "A board request carries a peer token");
+      return;
+    }
+
+    try {
+      SendJson(res, 200, HandleBoardVerb(*board, ParseBody(req), verb));
+    } catch (const std::exception& e) {
+      SendError(res, ErrorStatus(e), e.what());
+    }
+    return;
+  }
+
   for (const BoardRoute& route : kBoardRoutes) {
     if (target != route.target || req.method() != route.method) continue;
     if (board == nullptr) {
@@ -639,7 +648,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
       return;
     }
 
-    if (route.authenticated) {
+    if (route.credential == Credential::kPeerToken) {
       const std::string holder = PeerForToken(runtime, BearerToken(req));
       if (holder.empty()) {
         SendError(res, 403, "A board request carries a peer token");
@@ -647,9 +656,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
       }
       // Reading is being heard from. Recorded before the snapshot so the answer includes it.
       board->TouchPeer(holder);
-    }
-
-    if (route.local_only && !IsLoopback(peer)) {
+    } else if (!IsLoopback(peer)) {
       SendError(res, 403, "The page's board is read on the machine the server runs on");
       return;
     }

@@ -100,6 +100,9 @@ class Board {
   static constexpr std::size_t kMaxOpen = 32;
   static constexpr std::size_t kMaxAudit = 64;
   static constexpr std::size_t kMaxClosedKept = 128;
+  // How many closed jobs a page draws. A person reading the sidebar wants what just settled,
+  // not the history the board keeps for the digest.
+  static constexpr std::size_t kMaxSettledShown = 3;
 
   // A peer saying it is alive or doing something. `state` may be empty, which is a heartbeat.
   void TouchPeer(const std::string& peer, const std::string& state = {});
@@ -122,6 +125,11 @@ class Board {
   // The board as JSON: every job, and every peer with its liveness and what it holds.
   json::value Snapshot(std::chrono::seconds offline_after) const;
 
+  // The board as a page draws it: the jobs split into the ones still owed and the last few that
+  // settled, and no peers. Liveness is the one thing a page cannot speak to, because being read
+  // by a page says nothing about a peer.
+  json::value Page() const;
+
   // What the board owes `peer`: the jobs it holds, what it is blocked on, and the jobs it
   // handed out that have since closed. Empty when there is nothing to say, so a session with
   // no peers in play reads no differently from one without a board.
@@ -135,6 +143,7 @@ class Board {
               const std::string& text);
   static void Move(Job& job, const JobUpdate& update, const std::string& now);
   static json::value Render(const Job& job, const std::string& now);
+  json::array RenderAudit() const;
   static std::string NowStamp();
   static std::int64_t AgeSeconds(const std::string& stamp, const std::string& now);
 

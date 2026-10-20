@@ -121,7 +121,7 @@ its own, so every connection from it is a second page.
 | `POST` | `/api/jobs/answer` | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
 | `POST` | `/api/jobs/chase` | Ask a job that has not closed what is happening (`{"job":"...","note":"..."}`); the job stays where it is |
 | `POST` | `/api/jobs/drop` | Take a job back before it finishes (`{"job":"...","note":"..."}`); it closes as `cancelled` |
-| `GET` | `/api/board/local` | The board as the page draws it: the jobs and the trail, no peers, no token, loopback only |
+| `GET` | `/api/board` | The board as the page draws it: the work still owed, the last few that settled, and the trail. No peers, no token, loopback only |
 
 
 A request that fails is answered with the status that names whose it is: `400` for one the
@@ -134,7 +134,7 @@ reason in `error`.
 
 `GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a call made with a
 peer's token adds `self` for whichever peer that token belongs to. A job carries `id`, `from`, `to`, `intent`, `state`,
-`created_at`, `updated_at`, `idle_seconds`, and — each only when it has something to say —
+`created_at`, `updated_at`, `idle_seconds`, `closed`, and — each only when it has something to say —
 `due_at`, `overdue`, `question`, `result`, `note`, `chases`, `declined_by` and `declines`.
 A peer carries
 `name`, `state`, `last_seen`, `seen_seconds` and `online`.
@@ -171,17 +171,23 @@ digest. A drop closes the job as `cancelled`, the one state no peer can ask for:
 could say it would be able to end a job it was handed without doing it. Both refuse a job that
 has closed (`400`) and a job that is not on the board (`404`).
 
-**The page reads a copy that is not being heard from.** `GET /api/board/local` answers the
-jobs and the audit trail without `peers`, needs no token, and is refused with `403` to any
-request that does not come from `127.0.0.1` or `::1`. A page has no secret to present, and a
-page polling says nothing about a peer, so the route records nothing about who is here. The
-board panel is its caller: it polls this route, answers blocked jobs from the sidebar,
-and takes a job back from it, which is why a peer's question is answerable without
-opening another terminal.
+**The page is shown a board it can draw, and is not being heard from.** `GET /api/board`
+answers `{"open":[...],"settled":[...],"audit":[...]}`, needs no token, and is refused with
+`403` to any request that does not come from `127.0.0.1` or `::1`. `open` is every job that has
+not closed, in the order it was posted; `settled` is the three that closed most recently, newest
+first. Which states count as settled is the board's to say, so the page draws a job it is given
+and never decides whether one still needs anything; a job carries `closed`, and the page hands
+only the open ones their verbs.
+
+A page has no secret to present, and a page polling says nothing about a peer, so the route
+records nothing about who is here and answers no `peers` — a liveness answer from a browser
+would read as a peer that never leaves. The board panel is its caller: it polls this route,
+answers blocked jobs from the sidebar, and takes a job back from it, which is why a peer's
+question is answerable without opening another terminal.
 
 The address is the whole of that credential, so a server bound to every interface serves the
 panel only on the machine it runs on: reach the page at `127.0.0.1` to see the board, and
-expect a page opened over the network to draw no panel at all ? the read is refused, and a
+expect a page opened over the network to draw no panel at all — the read is refused, and a
 panel that cannot read the board draws nothing rather than an empty one. Chat, history and the
 rest of the page are unaffected, and the network exposure above is what governs those.
 

@@ -512,7 +512,7 @@ home and no module has to be told about another's.
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
-| `web/board.js` | The peer board's read-out over `/api/board/local`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
+| `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
@@ -779,7 +779,7 @@ does, in its digest, so a cancellation that arrives after the work finished
 changes nothing.
 
 The page carries all three. The sidebar's board panel is a read-out ? it
-polls `/api/board/local` on its own clock, because a peer moving a job is not
+polls `/api/board` on its own clock, because a peer moving a job is not
 something the session's socket reports ? and what it writes is these verbs. A
 question with no way to answer it would leave the page showing a job that only
 another terminal could unblock, and a job nobody can take back is a job a person
@@ -789,10 +789,19 @@ nothing, so a single-server session carries no empty box.
 The read is a separate route rather than `/api/jobs` because of what that route
 means: reading it *is* being heard from, and the name it records comes from the
 token. A page has no token, and a page polling says nothing about a peer, so
-`/api/board/local` answers the jobs and the trail without `peers`, records no
-one, and is refused to any request that does not come from the loopback
-address. It is the one board route with no credential, and the address is the
-credential it uses instead.
+`/api/board` answers the work still owed and the few jobs that settled most
+recently, plus the trail, without `peers`, records no one, and is refused to
+any request that does not come from the loopback address. It is the one board
+route with no credential, and the address is the credential it uses instead.
+
+The split between `open` and `settled` is the server's, not the page's. A page
+that decided which states still needed something would hold a second copy of
+the state list, and the two would drift the moment a state was added; the
+board already knows which jobs have closed, so it answers the two lists and
+marks each job `closed`. The settled list is capped at `kMaxSettledShown`,
+newest first, because the sidebar is for what is happening rather than a
+history — the trail is already the history, and a panel that grew without
+bound would push the rest of the column off screen.
 
 **What the design does not build.** Three things a board of this kind usually
 carries are deliberately absent, and each stays absent until something needs it:

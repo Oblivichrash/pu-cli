@@ -3,14 +3,17 @@
 
 #include "app/serve_internal.hpp"
 #include "pu/core/json.hpp"
+#include "pu/serve/board.hpp"
 #include "tests/mocks/peer_harness.hpp"
 #include "tests/mocks/serve_harness.hpp"
 
 #include <boost/json.hpp>
 
 #include <string>
+#include <vector>
 
 using pu::json::ValueOrDefault;
+using pu::json::parse;
 using pu::tests::HttpResponse;
 using pu::tests::PeerServer;
 using pu::tests::TestHttpClient;
@@ -19,6 +22,10 @@ namespace {
 
 boost::json::object Post(const std::string& to, const std::string& intent) {
   return boost::json::object{{"from", "A"}, {"to", to}, {"intent", intent}};
+}
+
+std::string IdOf(const HttpResponse& res) {
+  return ValueOrDefault<std::string>(boost::json::parse(res.body).at("job"), "id", "");
 }
 
 const boost::json::object* Job(const HttpResponse& res, const std::string& id) {
@@ -293,9 +300,12 @@ TEST_CASE("the page reads the board without a token, and reads no peers with it"
   server.Start();
   auto page = server.AnonymousClient();
 
-  const HttpResponse empty = page.GetRaw("/api/board/local");
+  const HttpResponse empty = page.GetRaw("/api/board");
   CHECK(empty.status == 200);
-  CHECK(boost::json::parse(empty.body).as_object().contains("jobs"));
+  const boost::json::object blank = boost::json::parse(empty.body).as_object();
+  CHECK(blank.at("open").as_array().empty());
+  CHECK(blank.at("settled").as_array().empty());
+  CHECK(blank.contains("audit"));
 
   auto peer = server.Client();
   const HttpResponse created =
@@ -304,12 +314,51 @@ TEST_CASE("the page reads the board without a token, and reads no peers with it"
   const std::string id =
       ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
 
-  const HttpResponse read = page.GetRaw("/api/board/local");
+  const HttpResponse read = page.GetRaw("/api/board");
   CHECK(read.status == 200);
   const boost::json::object body = boost::json::parse(read.body).as_object();
-  REQUIRE(body.at("jobs").as_array().size() == 1);
-  CHECK(ValueOrDefault<std::string>(body.at("jobs").as_array().at(0), "id", "") == id);
+  REQUIRE(body.at("open").as_array().size() == 1);
+  CHECK(ValueOrDefault<std::string>(body.at("open").as_array().at(0), "id", "") == id);
+  CHECK_FALSE(ValueOrDefault<bool>(body.at("open").as_array().at(0), "closed", true));
+  CHECK(body.at("settled").as_array().empty());
   CHECK_FALSE(body.contains("peers"));
+}
+
+TEST_CASE("the page sees settled work apart from work still owed") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto page = server.AnonymousClient();
+  auto peer = server.Client();
+
+  const std::string kept = IdOf(peer.PostRaw(
+      "/api/jobs", boost::json::serialize(Post("B", "the one still owed"))));
+  std::vector<std::string> dropped_at;
+  for (int i = 0; i < pu::serve::Board::kMaxSettledShown + 2; ++i) {
+    const std::string id = IdOf(peer.PostRaw(
+        "/api/jobs", boost::json::serialize(Post("B", "settles at once " + std::to_string(i)))));
+    const HttpResponse dropped = peer.PostRaw(
+        "/api/jobs/drop", boost::json::serialize(boost::json::object{{"job", id}, {"note", "gone"}}));
+    REQUIRE(dropped.status == 200);
+    dropped_at.push_back(ValueOrDefault<std::string>(parse(dropped.body).at("job"), "updated_at", ""));
+  }
+
+  const HttpResponse read = page.GetRaw("/api/board");
+  CHECK(read.status == 200);
+  const boost::json::object body = boost::json::parse(read.body).as_object();
+
+  REQUIRE(body.at("open").as_array().size() == 1);
+  CHECK(ValueOrDefault<std::string>(body.at("open").as_array().at(0), "id", "") == kept);
+  const boost::json::array& settled = body.at("settled").as_array();
+  REQUIRE(settled.size() == pu::serve::Board::kMaxSettledShown);
+  const std::string newest = dropped_at.back();
+  CHECK(ValueOrDefault<std::string>(settled.at(0), "updated_at", "") == newest);
+  std::string previous = newest;
+  for (const boost::json::value& job : settled) {
+    CHECK(ValueOrDefault<bool>(job, "closed", false));
+    const std::string at = ValueOrDefault<std::string>(job, "updated_at", "");
+    CHECK(at <= previous);
+    previous = at;
+  }
 }
 
 TEST_CASE("the page's board answers this machine and nothing else") {
