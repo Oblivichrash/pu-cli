@@ -524,8 +524,10 @@ void SessionRunner::RunJob(Job& job) {
     boost::json::object usage;
     session::SessionUsageTotal total;
     if (const auto session = runtime_.DefaultSession()) {
-      for (auto it = session->Messages().Chain().rbegin();
-           it != session->Messages().Chain().rend(); ++it) {
+      // `Chain()` hands back the vector by value. Taken twice, `rbegin()` and `rend()` would
+      // bound two different sequences -- the first already gone when the second is asked for.
+      const std::vector<const session::MessageNode*> chain = session->Messages().Chain();
+      for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
         if (!std::holds_alternative<session::AssistantPayload>((*it)->payload)) continue;
         if (const auto recorded = session->Usage().For((*it)->id)) {
           usage = session::UsageLedger::ToJson(*recorded).as_object();

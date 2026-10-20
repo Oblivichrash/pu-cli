@@ -123,6 +123,16 @@ const std::shared_ptr<spdlog::details::thread_pool>& LogThreadPool() {
   return pool;
 }
 
+// `spdlog::default_logger_raw()` hands out a bare pointer with no lock and no owning
+// reference, so replacing the default logger would destroy the old one under any thread
+// sitting between that call and `log_it_`. The process keeps every logger it installs
+// instead: they are few (one per Runtime), and a logger nobody asks for any more costs a
+// file handle, while one destroyed mid-write costs the process.
+void KeepAlive(std::shared_ptr<spdlog::logger> logger) {
+  static std::vector<std::shared_ptr<spdlog::logger>> kept;
+  if (logger) kept.push_back(std::move(logger));
+}
+
 void InitLogging(const std::string& log_level) {
   spdlog::level::level_enum level = spdlog::level::info;
   if (!log_level.empty()) {
@@ -169,7 +179,11 @@ void InitLogging(const std::string& log_level) {
   if (use_json) {
     logger->set_formatter(std::make_unique<JsonLogFormatter>());
   }
+  // The logger this replaces may still be inside `log_it_` on another thread, so the swap
+  // hands the old one to the list that outlives the process rather than dropping it here.
+  std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
   spdlog::set_default_logger(logger);
+  if (previous != logger) KeepAlive(std::move(previous));
 }
 
 void FlushLogging() {
