@@ -124,6 +124,13 @@ the commit that made it, and its current behaviour is in the relevant document
 - A status bar reading the session at the shell's width.
 - The Web panel's Session block holds the agent and thinking selects.
 
+### Fixed
+
+- A peer could not move a job to `cancelled` already, because `ParseJobState` never yields
+  that state, but `Board::Move` said so only by omission and GCC reported the gap as
+  `-Wswitch`. The state is now refused by name in the same place, so the rule the board
+  documents is the rule the code states.
+
 ### Changed
 
 - **The CLI has exit codes.** `0` did what it

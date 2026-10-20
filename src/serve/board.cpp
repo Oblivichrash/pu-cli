@@ -254,6 +254,10 @@ void Board::Move(Job& job, const JobUpdate& update, const std::string& now) {
       job.state = JobState::kFailed;
       job.result = update.result.empty() ? std::string("failed") : update.result;
       break;
+    case JobState::kCancelled:
+      // ParseJobState never yields this: `cancelled` is the person's verb and Drop sets it
+      // itself. The case exists so the type stays exhaustively handled if either changes.
+      throw RequestRefused("`cancelled` is the person's verb, so it is not an update");
   }
 
   job.updated_at = now;

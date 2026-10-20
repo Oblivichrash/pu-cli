@@ -357,6 +357,19 @@ TEST_CASE("a job taken back closes as cancelled, and a peer cannot say that stat
 
   CHECK_THROWS_AS(board.Update(Move(id, "B", "cancelled")), RequestRefused);
   CHECK_THROWS_AS(board.Drop(id, "again"), RequestRefused);
+
+  const std::string live = board.Post(Post("B", "check the tests")).job.id;
+  try {
+    board.Update(Move(live, "B", "cancelled"));
+    FAIL("a peer said `cancelled` and the board took it");
+  } catch (const RequestRefused& refused) {
+    CHECK(std::string(refused.what()).find("`state` is open") != std::string::npos);
+  }
+
+  const auto snapshot = board.Snapshot(std::chrono::seconds(45));
+  const auto* still = Find(snapshot, live);
+  REQUIRE(still != nullptr);
+  CHECK(json::ValueOrDefault<std::string>(*still, "state", "") == "open");
 }
 
 TEST_CASE("taking back a job the board does not hold says so") {
