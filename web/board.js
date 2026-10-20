@@ -15,6 +15,7 @@
 const BOARD_POLL_MS = 5000;
 // A closed job is worth reading until it is stale; the server keeps its own longer history.
 const BOARD_CLOSED_SHOWN = 3;
+const BOARD_SETTLED = ["done", "failed", "cancelled"];
 
 function boardStateLabel(job) {
   if (Number(job.overdue)) return job.state + " · late";
@@ -50,7 +51,52 @@ function boardQuestion(job, onAnswer) {
   return row;
 }
 
-function boardJobRow(job, onAnswer) {
+function boardVerb(text, disabled, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = text;
+  button.disabled = disabled;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+// A prompt the row opens in place: the page never posts a verb with text the person did not
+// write, and both verbs need that text.
+function boardPrompt(placeholder, confirm, onConfirm) {
+  const row = document.createElement("div");
+  row.className = "board-question";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = placeholder;
+  row.appendChild(input);
+
+  const send = boardVerb(confirm, true, () => onConfirm(input.value.trim()));
+  input.addEventListener("input", () => { send.disabled = input.value.trim() === ""; });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !send.disabled) send.click();
+  });
+  row.appendChild(send);
+  return row;
+}
+
+function boardActions(job, onChase, onDrop) {
+  const row = document.createElement("div");
+  row.className = "board-actions";
+
+  const chase = boardVerb("Ask", false, () => {
+    row.replaceWith(boardPrompt("Ask what is happening?", "Send", (note) => onChase(job.id, note)));
+  });
+  row.appendChild(chase);
+
+  const drop = boardVerb("Take back", false, () => {
+    row.replaceWith(boardPrompt("Why is it off?", "Take back", (note) => onDrop(job.id, note)));
+  });
+  row.appendChild(drop);
+  return row;
+}
+
+function boardJobRow(job, verbs) {
   const item = document.createElement("li");
   item.className = "board-job";
 
@@ -76,13 +122,17 @@ function boardJobRow(job, onAnswer) {
   item.appendChild(meta);
 
   // The server decides what a question is; the page does not guess from the state name.
-  if (job.state === "blocked" && job.question) item.appendChild(boardQuestion(job, onAnswer));
+  if (job.state === "blocked" && job.question) item.appendChild(boardQuestion(job, verbs.answer));
 
   if (job.note) {
     const note = document.createElement("div");
     note.className = "board-note";
     note.textContent = job.note;
     item.appendChild(note);
+  }
+
+  if (!BOARD_SETTLED.includes(job.state)) {
+    item.appendChild(boardActions(job, verbs.chase, verbs.drop));
   }
   return item;
 }
@@ -93,23 +143,22 @@ function renderBoard(snapshot) {
   if (!panel || !list) return;
 
   const jobs = Array.isArray(snapshot && snapshot.jobs) ? snapshot.jobs : [];
-  const open = jobs.filter((job) => job.state !== "done" && job.state !== "failed");
-  const closed = jobs.filter((job) => job.state === "done" || job.state === "failed").slice(-BOARD_CLOSED_SHOWN);
+  const open = jobs.filter((job) => !BOARD_SETTLED.includes(job.state));
+  const closed = jobs.filter((job) => BOARD_SETTLED.includes(job.state)).slice(-BOARD_CLOSED_SHOWN);
 
   // A board nobody is using is not a panel with nothing in it; it is no panel.
   panel.hidden = open.length === 0 && closed.length === 0;
   list.replaceChildren();
   if (panel.hidden) return;
 
-  const onAnswer = (id, answer) => answerBoardJob(id, answer);
-  for (const job of open) list.appendChild(boardJobRow(job, onAnswer));
+  for (const job of open) list.appendChild(boardJobRow(job, boardVerbs));
 
   if (closed.length > 0) {
     const heading = document.createElement("li");
     heading.className = "board-heading";
     heading.textContent = "Settled";
     list.appendChild(heading);
-    for (const job of closed) list.appendChild(boardJobRow(job, onAnswer));
+    for (const job of closed) list.appendChild(boardJobRow(job, boardVerbs));
   }
 }
 
@@ -121,19 +170,28 @@ async function refreshBoard() {
   }
 }
 
-async function answerBoardJob(id, answer) {
+async function postBoardVerb(path, body, failure) {
   try {
-    const res = await fetch("/api/jobs/answer", {
+    const res = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job: id, answer }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await refreshBoard();
   } catch (_) {
-    showNotice("That answer did not reach the board.");
+    showNotice(failure);
   }
 }
+
+const boardVerbs = {
+  answer: (id, text) => postBoardVerb("/api/jobs/answer", { job: id, answer: text },
+                                      "That answer did not reach the board."),
+  chase: (id, note) => postBoardVerb("/api/jobs/chase", { job: id, note },
+                                     "That question did not reach the board."),
+  drop: (id, note) => postBoardVerb("/api/jobs/drop", { job: id, note },
+                                    "That job is still on the board."),
+};
 
 function startBoardPolling() {
   refreshBoard();

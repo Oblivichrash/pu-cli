@@ -16,6 +16,13 @@ the commit that made it, and its current behaviour is in the relevant document
   draws nothing at all when the board is empty. That read is a route of its own: `/api/jobs`
   records the reader as heard from and takes its name from the token, and a page has neither, so
   the local route answers the jobs without the peers and is refused to anything not on loopback.
+- **A person can ask what is happening, and take a job back.** `POST /api/jobs/chase` records a
+  note the holder reads in its digest and counts the ask on the job, leaving the job exactly
+  where it is: a job that is slow is not a job that moved. `POST /api/jobs/drop` closes a job the
+  person no longer wants as `cancelled`, which is a state only a person can bring about ? a peer
+  that could say it would be able to end a job it was handed without doing it. Both are drawn on
+  the board panel next to the answer box, and both read by the holder from the board rather than
+  from a message, so a cancellation that arrives after the work finished changes nothing.
 - **A person can answer a blocked job.** `POST /api/jobs/answer` takes the job and the answer,
   records the answer as the job's `note`, clears the `question`, and returns the job to
   `working` for the peer holding it. It is a verb of its own rather than a `PATCH`, because a

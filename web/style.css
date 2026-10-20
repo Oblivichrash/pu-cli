@@ -728,6 +728,21 @@ main {
   color: var(--ink-light);
   cursor: default;
 }
+.board-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.board-actions button {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-state-cancelled { color: var(--ink-light); text-decoration: line-through; }
 
 /* ---------- scrollbar ---------- */
 #messages::-webkit-scrollbar,

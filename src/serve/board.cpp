@@ -19,6 +19,7 @@ constexpr const char* kWorking = "working";
 constexpr const char* kBlocked = "blocked";
 constexpr const char* kDone = "done";
 constexpr const char* kFailed = "failed";
+constexpr const char* kCancelled = "cancelled";
 
 std::time_t Timegm(std::tm* utc) {
 #if defined(_WIN32)
@@ -72,10 +73,14 @@ const char* JobStateName(JobState state) {
       return kDone;
     case JobState::kFailed:
       return kFailed;
+    case JobState::kCancelled:
+      return kCancelled;
   }
   return kOpen;
 }
 
+// A peer never says `cancelled`: taking a job back is the person's verb, and a peer that could
+// say it would be able to end a job it was handed without doing it.
 std::optional<JobState> ParseJobState(const std::string& name) {
   if (name == kOpen) return JobState::kOpen;
   if (name == kClaimed) return JobState::kClaimed;
@@ -143,6 +148,7 @@ json::value Board::Render(const Job& job, const std::string& now) {
   if (!job.note.empty()) out["note"] = job.note;
   if (job.declined_by) out["declined_by"] = *job.declined_by;
   if (job.declines > 0) out["declines"] = job.declines;
+  if (job.chases > 0) out["chases"] = job.chases;
   return out;
 }
 
@@ -309,6 +315,40 @@ Board::ActionResult Board::Answer(const std::string& id, const std::string& answ
   return ActionResult{*it, std::nullopt};
 }
 
+Board::ActionResult Board::Chase(const std::string& id, const std::string& note) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = std::find_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.id == id; });
+  if (it == jobs_.end()) throw NotFound("no job with id " + id);
+  if (it->Closed()) {
+    throw RequestRefused("job " + id + " already ended as " + JobStateName(it->state));
+  }
+
+  it->note = note;
+  it->question = std::nullopt;
+  it->chases++;
+  it->updated_at = NowStamp();
+  Record("chase", std::string(), id, note);
+
+  return ActionResult{*it, std::nullopt};
+}
+
+Board::ActionResult Board::Drop(const std::string& id, const std::string& note) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = std::find_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.id == id; });
+  if (it == jobs_.end()) throw NotFound("no job with id " + id);
+  if (it->Closed()) {
+    throw RequestRefused("job " + id + " already ended as " + JobStateName(it->state));
+  }
+
+  it->state = JobState::kCancelled;
+  it->note = note;
+  it->question = std::nullopt;
+  it->updated_at = NowStamp();
+  Record("drop", std::string(), id, note);
+
+  return ActionResult{*it, JobOutcome{it->id, JobStateName(it->state), std::nullopt}};
+}
+
 std::optional<Job> Board::Find(const std::string& id) {  std::lock_guard<std::mutex> lock(mutex_);
   auto it = std::find_if(jobs_.begin(), jobs_.end(), [&](const Job& job) { return job.id == id; });
   if (it == jobs_.end()) return std::nullopt;
@@ -365,7 +405,9 @@ std::string Board::Digest(const std::string& peer) const {
                          ": " + job.intent + " [" + JobStateName(job.state);
       if (job.due_at && AgeSeconds(*job.due_at, now) > 0) line += ", overdue";
       if (job.question) line += ", asking: " + *job.question;
+      if (job.chases > 0) line += ", re-asked " + std::to_string(job.chases) + "x";
       lines.push_back(line + "]");
+      if (!job.note.empty()) lines.push_back("  what the poster last said: " + job.note);
     } else if (job.from == peer && job.Closed()) {
       closed.push_back("- " + job.id + " to " + job.to + ": " + job.intent + " [" +
                        JobStateName(job.state) +

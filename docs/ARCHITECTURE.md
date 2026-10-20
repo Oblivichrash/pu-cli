@@ -512,7 +512,7 @@ home and no module has to be told about another's.
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
-| `web/board.js` | The peer board's read-out over `/api/board/local`, and the one verb the page writes: answering a blocked job |
+| `web/board.js` | The peer board's read-out over `/api/board/local`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
@@ -768,12 +768,23 @@ and returns the job to `working` for whoever holds it. It is deliberately not
 `Update` with a borrowed `from`: a person has no name to present, and letting them
 use a peer's would make the audit trail say a peer answered itself.
 
-The page carries that verb too. The sidebar's board panel is a read-out — it
+The other two are `Board::Chase` and `Board::Drop`. A chase is the person asking
+a job that has not closed what is happening: it records the note, clears any
+`question` (the holder was just asked directly), and counts a `chases`, leaving
+the state alone ? a job that is slow is not a job that moved, and a state change
+would claim it did. A drop closes the job as `cancelled`, the one state no peer
+can name: a peer that could say it would be able to end a job it was handed
+without doing it. Both reach the holder the same way every other board fact
+does, in its digest, so a cancellation that arrives after the work finished
+changes nothing.
+
+The page carries all three. The sidebar's board panel is a read-out ? it
 polls `/api/board/local` on its own clock, because a peer moving a job is not
-something the session's socket reports — and the one thing it writes is this
-answer. A question with no way to answer it would leave the page showing a job
-that only another terminal could unblock. The panel draws nothing when the board
-holds nothing, so a single-server session carries no empty box.
+something the session's socket reports ? and what it writes is these verbs. A
+question with no way to answer it would leave the page showing a job that only
+another terminal could unblock, and a job nobody can take back is a job a person
+watches run past its deadline. The panel draws nothing when the board holds
+nothing, so a single-server session carries no empty box.
 
 The read is a separate route rather than `/api/jobs` because of what that route
 means: reading it *is* being heard from, and the name it records comes from the
@@ -787,14 +798,19 @@ credential it uses instead.
 
 ```
   open ──claim──► claimed ──start──► working ──┬── done
-   ▲                 │                 │       └── failed
+   │                 │                 │       ├── failed
+   │                 │                 │       └── cancelled
    │                 │                 └── block ──► blocked ──unblock──► working
    └──decline────────┘                                     │
    └──reopen───────────────────────────────────────────────┘
 ```
 
-`done` and `failed` close the job. Every move on a closed job is refused, so a
-finished job keeps its outcome instead of being reopened by a late write.
+`done`, `failed` and `cancelled` close the job. Every move on a closed job is
+refused, so a finished job keeps its outcome instead of being reopened by a late
+write. A chase is drawn beside the moves but is not one: it changes no state, so
+a job can be asked about as often as a person likes without the board reading it
+as progress. Only a person can bring about `cancelled`; a peer naming that state
+is refused as an unknown one.
 
 `blocked` **requires a question**, because the point of the state is to leave
 something on the board that a human can answer. A job that stops without stating

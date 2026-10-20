@@ -16,8 +16,9 @@ namespace pu::serve {
 // Where a job stands. `open` is a job nobody has taken; `claimed` is a peer saying it has the
 // job in hand; `blocked` is a peer saying it cannot finish without an answer; `done` and
 // `failed` are the two that close a job. A declined job is `open` again, carrying who declined
-// it, so a decline costs no state of its own.
-enum class JobState { kOpen, kClaimed, kWorking, kBlocked, kDone, kFailed };
+// it, so a decline costs no state of its own. `cancelled` is a job the person took back before
+// anyone finished it, which closes it like `done` and `failed` do.
+enum class JobState { kOpen, kClaimed, kWorking, kBlocked, kDone, kFailed, kCancelled };
 
 const char* JobStateName(JobState state);
 std::optional<JobState> ParseJobState(const std::string& name);
@@ -45,7 +46,13 @@ struct Job {
   std::optional<std::string> declined_by;
   std::uint32_t declines = 0;
 
-  bool Closed() const { return state == JobState::kDone || state == JobState::kFailed; }
+  // How many times a person asked the holder what is happening, which leaves the job where it
+  // is and only says so.
+  std::uint32_t chases = 0;
+
+  bool Closed() const {
+    return state == JobState::kDone || state == JobState::kFailed || state == JobState::kCancelled;
+  }
 };
 
 // What a peer says about a job it holds, or what a person says to post one.
@@ -103,6 +110,12 @@ class Board {
   // A person answering what a blocked job is waiting for. The person is the scheduler, not a
   // peer, so this is not `Update` with a borrowed name: it is the one verb no peer has.
   ActionResult Answer(const std::string& id, const std::string& answer);
+  // A person asking a job that has not closed what is happening. The job stays where it is, so
+  // this is not a state change: it is a note a peer reads in its digest, and a count on the job.
+  ActionResult Chase(const std::string& id, const std::string& note);
+  // A person taking a job back before it finishes. It closes as `cancelled` so the holder learns
+  // from the board rather than from a message that may arrive after it has already finished.
+  ActionResult Drop(const std::string& id, const std::string& note);
 
   std::optional<Job> Find(const std::string& id);
 

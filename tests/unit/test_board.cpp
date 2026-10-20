@@ -316,3 +316,51 @@ TEST_CASE("a digest marks a job as overdue only while it is still open") {
 
   CHECK(board.Digest("A").find("overdue") == std::string::npos);
 }
+
+TEST_CASE("a chase says what is wanted and leaves the job where it is") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+  board.Update(Move(id, "B", "working"));
+
+  const auto chased = board.Chase(id, "which branch is it on?");
+  CHECK(chased.job.state == JobState::kWorking);
+  CHECK(chased.job.chases == 1);
+  CHECK(chased.job.note == "which branch is it on?");
+  CHECK_FALSE(chased.outcome.has_value());
+
+  const boost::json::value snapshot = board.Snapshot(std::chrono::seconds(45));
+  const boost::json::object* job = Find(snapshot, id);
+  REQUIRE(job != nullptr);
+  CHECK(json::ValueOrDefault<std::string>(*job, "state", "") == "working");
+  CHECK(json::ValueOrDefault<int>(*job, "chases", 0) == 1);
+
+  const std::string digest = board.Digest("B");
+  CHECK(digest.find("re-asked 1x") != std::string::npos);
+  CHECK(digest.find("which branch is it on?") != std::string::npos);
+}
+
+TEST_CASE("a job taken back closes as cancelled, and a peer cannot say that state itself") {
+  Board board;
+  const std::string id = board.Post(Post("B", "check the build")).job.id;
+  board.Update(Move(id, "B", "working"));
+
+  const auto dropped = board.Drop(id, "the branch is gone");
+  CHECK(dropped.job.state == JobState::kCancelled);
+  CHECK(dropped.job.Closed());
+  REQUIRE(dropped.outcome.has_value());
+  CHECK(dropped.outcome->state == "cancelled");
+
+  const std::string digest = board.Digest("A");
+  CHECK(digest.find(id) != std::string::npos);
+  CHECK(digest.find("cancelled") != std::string::npos);
+  CHECK(board.Digest("B").empty());
+
+  CHECK_THROWS_AS(board.Update(Move(id, "B", "cancelled")), RequestRefused);
+  CHECK_THROWS_AS(board.Drop(id, "again"), RequestRefused);
+}
+
+TEST_CASE("taking back a job the board does not hold says so") {
+  Board board;
+  CHECK_THROWS_AS(board.Drop("nobody", "why not"), NotFound);
+  CHECK_THROWS_AS(board.Chase("nobody", "how is it going"), NotFound);
+}

@@ -487,11 +487,33 @@ boost::json::value HandleBoardAnswer(Board& board, const boost::json::value& bod
   return RenderResult(board.Answer(id, answer));
 }
 
+// The two verbs a person has over a job a peer holds: ask what is happening, and take it back.
+// Neither is a peer's move, so neither is `PATCH`: a person has no name to present as `from`.
+boost::json::value HandleBoardChase(Board& board, const boost::json::value& body) {
+  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
+  const std::string note = json::ValueOrDefault<std::string>(body, "note", "");
+  if (id.empty()) throw RequestRefused("asking about a job needs the job's 'id'");
+  if (note.empty()) throw RequestRefused("asking about a job needs the 'note' to send");
+
+  return RenderResult(board.Chase(id, note));
+}
+
+boost::json::value HandleBoardDrop(Board& board, const boost::json::value& body) {
+  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
+  const std::string note = json::ValueOrDefault<std::string>(body, "note", "");
+  if (id.empty()) throw RequestRefused("taking a job back needs the job's 'id'");
+  if (note.empty()) throw RequestRefused("taking a job back needs the 'note' that says why");
+
+  return RenderResult(board.Drop(id, note));
+}
+
 constexpr BoardRoute kBoardRoutes[] = {
     {"/api/jobs", http::verb::get, &HandleBoardGet, false, true, false},
     {"/api/jobs", http::verb::post, &HandleBoardPost, true, true, false},
     {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, true, false},
     {"/api/jobs/answer", http::verb::post, &HandleBoardAnswer, true, true, false},
+    {"/api/jobs/chase", http::verb::post, &HandleBoardChase, true, true, false},
+    {"/api/jobs/drop", http::verb::post, &HandleBoardDrop, true, true, false},
     {"/api/board/local", http::verb::get, &HandleBoardPageGet, false, false, true},
 };
 

@@ -250,6 +250,43 @@ TEST_CASE("an answer is refused when there is no question to answer") {
   CHECK(empty.status == 400);
 }
 
+TEST_CASE("a person asks what is happening and takes the job back, both without naming a peer") {
+  PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
+  server.Start();
+  auto client = server.Client();
+
+  const HttpResponse created =
+      client.PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")));
+  const std::string id =
+      ValueOrDefault<std::string>(boost::json::parse(created.body).at("job"), "id", "");
+  client.Patch("/api/jobs", boost::json::object{{"job", id}, {"from", "B"}, {"state", "working"}});
+
+  const HttpResponse chased = client.PostRaw(
+      "/api/jobs/chase", boost::json::serialize(boost::json::object{
+                             {"job", id}, {"note", "which branch is it on?"}}));
+  CHECK(chased.status == 200);
+  const boost::json::value asked = boost::json::parse(chased.body);
+  CHECK(ValueOrDefault<std::string>(asked.at("job"), "state", "") == "working");
+  CHECK(ValueOrDefault<int>(asked.at("job"), "chases", 0) == 1);
+
+  const HttpResponse dropped = client.PostRaw(
+      "/api/jobs/drop", boost::json::serialize(boost::json::object{
+                            {"job", id}, {"note", "the branch is gone"}}));
+  CHECK(dropped.status == 200);
+  const boost::json::value closed = boost::json::parse(dropped.body);
+  CHECK(ValueOrDefault<std::string>(closed.at("job"), "state", "") == "cancelled");
+  CHECK(ValueOrDefault<std::string>(closed.at("outcome"), "state", "") == "cancelled");
+
+  const HttpResponse unknown = client.PostRaw(
+      "/api/jobs/drop", boost::json::serialize(boost::json::object{
+                            {"job", "no-such-job"}, {"note", "why not"}}));
+  CHECK(unknown.status == 404);
+
+  const HttpResponse blank = client.PostRaw(
+      "/api/jobs/chase", boost::json::serialize(boost::json::object{{"job", id}}));
+  CHECK(blank.status == 400);
+}
+
 TEST_CASE("the page reads the board without a token, and reads no peers with it") {
   PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
   server.Start();

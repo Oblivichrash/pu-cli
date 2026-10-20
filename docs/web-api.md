@@ -119,6 +119,8 @@ its own, so every connection from it is a second page.
 | `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
 | `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
 | `POST` | `/api/jobs/answer` | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
+| `POST` | `/api/jobs/chase` | Ask a job that has not closed what is happening (`{"job":"...","note":"..."}`); the job stays where it is |
+| `POST` | `/api/jobs/drop` | Take a job back before it finishes (`{"job":"...","note":"..."}`); it closes as `cancelled` |
 | `GET` | `/api/board/local` | The board as the page draws it: the jobs and the trail, no peers, no token, loopback only |
 
 
@@ -158,6 +160,15 @@ cleared, and the job returns to `working` for the peer that holds it. It is a se
 rather than a `PATCH` because a person has no name to present as `from`, and borrowing one
 would make the audit trail say a peer answered its own question. A job that is not blocked
 answers `400`; a job that is not on the board answers `404`.
+
+`POST /api/jobs/chase` and `POST /api/jobs/drop` are the person's other two verbs, and they are
+separate calls for the reason `answer` is: a person has no name to present as `from`. A chase
+records the note, clears any `question` (the holder was just asked directly, so the job is
+no longer blocked on silence) and counts a `chases`, leaving the state alone, because a job
+that is slow is not a job that moved. The holder reads both the count and the note in its
+digest. A drop closes the job as `cancelled`, the one state no peer can ask for: a peer that
+could say it would be able to end a job it was handed without doing it. Both refuse a job that
+has closed (`400`) and a job that is not on the board (`404`).
 
 **The page reads a copy that is not being heard from.** `GET /api/board/local` answers the
 jobs and the audit trail without `peers`, needs no token, and is refused with `403` to any
