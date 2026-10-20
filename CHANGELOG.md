@@ -6,6 +6,8 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+## 0.6.0
+
 ### Added
 
 - **The page names the servers on the machine, not the ports.** Each `pu serve` writes itself
@@ -101,11 +103,11 @@ the commit that made it, and its current behaviour is in the relevant document
   field it arrives in is declared on the gateway that prices calls. A product that reports no
   price now leaves the cost absent instead of zero, so a summed total no longer silently
   undercounts. Only CodeBuddy reports one today, in `credits`.
-- `pu sse URL [--header H] [--post] [--body B] [--json|--quiet|--raw]` reads any
-  `text/event-stream` and prints what arrives. A header repeats, `--json` is one object per
-  line for a pipe, and `--raw` is the bytes as sent. It is a general client: the URL, the verb
-  and the headers are the caller's, and nothing is read from `agents.json`.
-- `pu models --caps` prints the columns that decide between two models that both work: what
+- `pu sse URL [--header H] [--post] [--body B] [--format text|json|raw]` reads any
+  `text/event-stream` and prints what arrives. A header repeats, `--format json` is one object
+  per line for a pipe, and `--format raw` is the bytes as sent. It is a general client: the URL,
+  the verb and the headers are the caller's, and nothing is read from `agents.json`.
+- `pu check --caps` prints the columns that decide between two models that both work: what
   each accepts, whether an effort is mandatory (the flag that predicts a refused request),
   the context a model takes, and the price where the gateway reports one.
 - `pu ask --show-usage` prints what the turn cost — prompt, completion and cached tokens, the
@@ -204,5 +206,6 @@ the commit that made it, and its current behaviour is in the relevant document
 - A gateway is a named product rather than a protocol: `deepseek`, `nim` and
   `ollama-cloud` join `ollama`, `openai` and `codebuddy` in the gateway table, and
   `pu models --gateway <name>` reads a product's own catalogue.
-- `pu models --entry <id>` prints an `agents.json` entry ready to paste.
+- `pu models --entry <id>` prints an `agents.json` entry ready to paste. It answers about a
+  model rather than about the list, so from 0.6.0 it is `pu check --entry`.
 - Token usage and the context a turn ran against are carried to the Web UI.
