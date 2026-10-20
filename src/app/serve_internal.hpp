@@ -31,7 +31,6 @@ class SessionRunner;
 
 // The address a request came from, as far as a socket can name its peer: empty when it cannot.
 std::string PeerAddress(tcp::socket& socket, beast::error_code& ec);
-
 // Whether an address is this machine's. A page is the one caller with no credential to present,
 // so the address it arrives from is the credential instead.
 bool IsLoopback(const std::string& address);
@@ -49,8 +48,6 @@ std::filesystem::path ExecutableDir();
 // Where the web assets live. Honours PU_WEB_DIR, then searches beside the executable, then the
 // usual install locations, and finally falls back to ./web.
 const std::string& GetWebDir();
-
-class SessionRunner;
 
 class WebSocketConnection : public std::enable_shared_from_this<WebSocketConnection> {
  public:
@@ -118,7 +115,6 @@ class SessionRunner {
   void Stop();
 
   void CancelTurn();
-
 
   bool Attach(const std::shared_ptr<WebSocketConnection>& conn);
   void Detach(const std::shared_ptr<WebSocketConnection>& conn);

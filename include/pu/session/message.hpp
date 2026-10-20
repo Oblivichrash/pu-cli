@@ -144,15 +144,6 @@ inline bool HasUnfinishedToolCalls(const MessageNode& node) {
   return false;
 }
 
-inline bool HasToolCallsInterrupted(const MessageNode& node) {
-  const AssistantPayload* assistant = std::get_if<AssistantPayload>(&node.payload);
-  if (assistant == nullptr) return false;
-  for (const ToolCallRecord& call : assistant->tool_calls) {
-    if (call.status == ToolCallStatus::kInterrupted) return true;
-  }
-  return false;
-}
-
 inline constexpr const char* kCancelledReceipt =
     "The user cancelled the turn before this call ran, so it produced no result. Wait for the "
     "user's next message before deciding whether this call is still worth making";

@@ -46,33 +46,49 @@ using tcp = net::ip::tcp;
 
 inline constexpr const char* kServeHost = "127.0.0.1";
 
+// Winsock counts its starts and its stops. A harness that stops as many times as it starts drops
+// the count to zero the moment two of these calls are in flight at once, and takes every other
+// socket in the process down with it -- so the process starts Winsock once, here, and every call
+// below only borrows it.
+class WinsockSession {
+ public:
+  static bool Ready() {
+    static const WinsockSession session;
+    return session.ok_;
+  }
+
+ private:
+  WinsockSession() {
+#ifdef _WIN32
+    WSADATA wsa;
+    ok_ = WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+#endif
+  }
+  ~WinsockSession() = default;
+
+  bool ok_ = true;
+};
+
 inline int FindFreePort() {
 #ifdef _WIN32
-  WSADATA wsa;
-  if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+  if (!WinsockSession::Ready()) return 0;
   SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s == INVALID_SOCKET) {
-    WSACleanup();
-    return 0;
-  }
+  if (s == INVALID_SOCKET) return 0;
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = 0;
   if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int len = sizeof(addr);
   if (getsockname(s, reinterpret_cast<sockaddr*>(&addr), &len) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int port = ntohs(addr.sin_port);
   closesocket(s);
-  WSACleanup();
   return port;
 #else
   int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -98,22 +114,17 @@ inline int FindFreePort() {
 
 inline bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  if (!WinsockSession::Ready()) return false;
   while (std::chrono::steady_clock::now() < deadline) {
 #ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s == INVALID_SOCKET) {
-      WSACleanup();
-      return false;
-    }
+    if (s == INVALID_SOCKET) return false;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<u_short>(port));
     inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
     int result = connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
     closesocket(s);
-    WSACleanup();
     if (result == 0) return true;
 #else
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -440,8 +451,7 @@ class ServeHarness {
    public:
     ReservedDeadPort() {
 #ifdef _WIN32
-      WSADATA wsa;
-      if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
+      if (!WinsockSession::Ready()) return;
       socket_ = socket(AF_INET, SOCK_STREAM, 0);
       if (socket_ == INVALID_SOCKET) return;
       sockaddr_in addr{};
