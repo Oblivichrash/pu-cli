@@ -99,6 +99,7 @@ async function adoptServer(server) {
     PU.ws = null;
   }
   releaseSupersededSocket();
+  discardAssistantRender();
   PU.composer.messagesEl.replaceChildren();
   PU.isStreaming = false;
   setSendButtonState(false);

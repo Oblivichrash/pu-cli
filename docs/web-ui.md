@@ -26,7 +26,7 @@ own name.
 
 | File | Owns |
 | :--- | :--- |
-| `web/state.js` | The `PU` object, the page's own identity and the list of siblings, the writers for both (`setSelf`, `setOthers`, `siblingOrigin`), the frame-coalesced render queue, the connection dot's state |
+| `web/state.js` | The `PU` object, the page's own identity and the list of siblings, the writers for both (`setSelf`, `setOthers`, `siblingOrigin`), the connection dot's state |
 | `web/api.js` | The page's one way out: `fetchJson`/`postJson` over `PU.self.origin`, and `ApiError`, which keeps the status a refusal arrived with. A caller that cannot tell `403` from a dropped connection cannot say which happened |
 | `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
@@ -49,6 +49,21 @@ A transcript block and its element are separate things: the block is plain data 
 on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
+
+That re-render is deferred to the next animation frame, so a fast stream costs one paint
+rather than one per chunk — which makes the frame a thing that can be *owed*. Two rules
+follow from it, and both are load-bearing:
+
+- **Anything that stops the bubble being the live one draws first.** `done` arrives in the
+  same tick as the last chunk, so a turn ended without a flush leaves its final text in the
+  block list and nothing on the page: what a reader sees is a prefix of the answer the store
+  holds, which is why a reload shows the rest and nothing looks wrong from the server's side.
+  `finishAssistantMessage()` therefore flushes, and the paths that discard the bubble
+  (`removeCurrentAssistantMessage`, an error frame, a server switch) cancel it instead.
+- **A hidden tab is not painted**, so a redraw it is holding is delivered only when the reader
+  comes back, and the reply stops at the point they left it until then. The page flushes on
+  `visibilitychange` as it goes out of sight, so the DOM is current at the moment painting stops
+  rather than at the moment it resumes.
 
 The block list is a timeline, in the order the turn happened: a reasoning chunk, a tool
 call and a further reasoning chunk are three blocks, not one merged by kind. A new chunk

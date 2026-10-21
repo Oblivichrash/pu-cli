@@ -37,6 +37,13 @@ the commit that made it, and its current behaviour is in the relevant document
   running now: once its owner exits the number is handed to the next program, so the record read
   as alive and the page offered a switch to a server nobody could reach. Each record now carries
   the process's start time and is kept only while both match.
+- **A reply no longer stops short of its last words.** A redraw waits for the next animation frame
+  so a fast stream costs one paint rather than one per chunk, and ending the turn threw the bubble
+  away before that frame ran: the queued text was dropped and the answer stayed on screen as a
+  prefix of what the store held, which is why reloading showed the rest. Ending a turn now draws
+  what is owed first. A tab in the background has the same hole from the other side: a hidden tab
+  is not painted, so a redraw it is holding waits for the reader to come back, and the reply stops
+  where they left it until then. The page now draws its pending frame as it goes out of sight.
 
 ### Changed
 

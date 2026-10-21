@@ -154,6 +154,7 @@ function handleDone(payload) {
 function handleError(payload) {
   const errMsg = payload.text || "Unknown error";
   if (PU.currentAssistantEl) {
+    discardAssistantRender();
     PU.currentAssistantEl.classList.remove("typing");
     PU.currentAssistantEl.className = "msg error";
     PU.currentAssistantEl.innerHTML = errMsg;

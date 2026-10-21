@@ -119,6 +119,12 @@ if(PU_NODE)
     add_test(NAME web/pagePanels
              COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-page-panels.cjs)
     set_tests_properties(web/pagePanels PROPERTIES TIMEOUT 60)
+    # The live bubble: a redraw is deferred to the next frame, so ending a turn before that frame
+    # runs used to leave the answer on screen as a prefix of what the store held. Nothing on the
+    # server side was wrong, which is why only running the page catches it.
+    add_test(NAME web/transcriptFlush
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-transcript-flush.cjs)
+    set_tests_properties(web/transcriptFlush PROPERTIES TIMEOUT 60)
 else()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
