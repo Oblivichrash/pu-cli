@@ -6,6 +6,23 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Breaking
+
+- **Breaking** — **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
+  names a backend's upstream address in this program, and `0.0.0.0` is a legal bind and never a
+  destination; the two are not the same question. A script or unit file that passes `--host`
+  stops with an unrecognised option rather than binding somewhere unexpected, and one that sets
+  `PU_SERVE_HOST` falls back to `127.0.0.1`. `serve` in `agents.json` takes `bind` for the same
+  reason.
+- **Breaking** — **`GET /api/history` answers an object, not an array.** Every route now answers
+  one envelope with the payload under the key its row names, so the listing is
+  `{"messages": [...], "success": true}`. A client that read the body as an array has to read
+  `.messages`.
+- **Breaking** — **`GET /api/servers` describes other servers, not this one.** An entry is
+  `{"name", "port"}`: a label rather than a filesystem path, and no `current` mark, because the
+  server that answered is the page's own and is no longer in its own list. A client that read
+  `directory`, `host` or `current` has to take the name from `/api/session` instead.
+
 ### Fixed
 
 - **A page opened over the network no longer loses its own name.** The header learned which
@@ -15,6 +32,11 @@ the commit that made it, and its current behaviour is in the relevant document
   page's own name now comes from `/api/session`, which every caller may read, and the list is a
   separate fact that can be empty. A refused list still draws the header, with a tooltip saying
   why the switcher is unavailable.
+- **A server whose process exited no longer lingers in the list when its pid is reused.** The
+  registry decided liveness from the pid alone, and a pid is unique only among the processes
+  running now: once its owner exits the number is handed to the next program, so the record read
+  as alive and the page offered a switch to a server nobody could reach. Each record now carries
+  the process's start time and is kept only while both match.
 
 ### Changed
 
@@ -25,23 +47,21 @@ the commit that made it, and its current behaviour is in the relevant document
   was previously readable by any caller that reached the port. `handle` signatures take a `Call`
   that carries the runtime, the board, the runner, and the three facts only the connection knows
   (the caller's address, the peer its token speaks for, and the port this server answers on).
-- **One envelope for every answer.** `Route::key` names the member a payload is filed under, so
-  `/api/history` answers `{"messages": [...], "success": true}` rather than a bare array, and the
-  `Envelope` enum is gone. A listing cannot invent a fifth shape.
+- **One envelope for every answer.** `Route::key` names the member a payload is filed under, and
+  the `Envelope` enum is gone, so a listing cannot invent a fifth shape. The shape `/api/history`
+  answers is in **Breaking** above, since a client has to change for it.
 - **The three audience refusals are three statuses.** `403` is a route that does not answer this
   address, `401` (with `WWW-Authenticate: Bearer`) is a peer route with no token or the wrong one,
   and `404` is a peer route on a server with no topology. A refused peer token was `400`.
-- **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already means a backend's
-  upstream address in this program; the interface a listener sits on is the one place `pu` answers
-  rather than reaches, and `0.0.0.0` is a legal bind and never a legal destination. The start-up
-  banner no longer prints `http://0.0.0.0:9000`, which reached the reader's own loopback; it names
-  the port and leaves the address to whoever opened it.
-- **`GET /api/servers` lists the other servers and not the one that answered**, and each entry is
-  `{"name", "port"}`: a label rather than a filesystem path, and no `current` mark, because the
-  page's own server is the one that answered `/api/session`. Filtering is by process, so two
-  servers serving the same workspace do not list each other's switch as a move to nowhere. A
+- **The start-up banner names the port, not a URL built from the bind address.**
+  `http://0.0.0.0:9000` was printed for a server bound to every interface, and that address reaches
+  the reader's own loopback rather than the server. The port is the one fact the server knows; the
+  address is whoever opened it.
+- **`GET /api/servers` lists the other servers and leaves this one out.** The server that answered
+  is the page's own, so a switch to it would be a control that does nothing. Filtering is by
+  process rather than by directory, so two servers on one workspace do not offer each other. A
   sibling's address is that port on the host the page already reached, since a registry `bind` is
-  not a destination.
+  not a destination. The entry's shape is in **Breaking** above.
 - The registry's temp file is named after the writer (`serve.json.<pid>.tmp`), so a writer that
   gave up waiting on the lock cannot rename over one that finished.
 

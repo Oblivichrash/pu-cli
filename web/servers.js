@@ -23,10 +23,6 @@ function serverLabel(server) {
   return server.name || `:${server.port}`;
 }
 
-function currentServerPort() {
-  return PU.self.port;
-}
-
 function renderServers() {
   const toggle = document.getElementById("server-toggle");
   const list = document.getElementById("server-list");
