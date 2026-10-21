@@ -18,7 +18,10 @@ namespace fs = std::filesystem;
 namespace {
 
 config::ServeRecord Record(int pid, std::uint16_t port, const std::string& directory) {
-  return config::ServeRecord{directory, "127.0.0.1", port, pid};
+  // The stamp of this process, which is the only one a case can write honestly: a made-up stamp
+  // would be dropped by the rule that a record is worth reading only while its own holder runs.
+  return config::ServeRecord{directory, "127.0.0.1", port, pid,
+                             platform::ProcessStartToken(pid)};
 }
 
 // The registry is written under the user's home, so a case that registers servers would
@@ -50,6 +53,7 @@ TEST_CASE("a server registered from one directory is readable from another") {
   CHECK(records.front().directory == "/work/one");
   CHECK(records.front().bind == "127.0.0.1");
   CHECK(records.front().pid == pid);
+  CHECK(records.front().started == platform::ProcessStartToken(pid));
 
   config::UnregisterServeRecord(pid);
   CHECK(config::LiveServeRecords().empty());
@@ -124,6 +128,38 @@ TEST_CASE("the list of other servers leaves this process's own record out") {
 
   CHECK(config::OthersAmong(all, 999).size() == 3);
   CHECK(config::OthersAmong({}, 100).empty());
+}
+
+// A pid is unique only among the processes running now. Once its owner exits the number is
+// handed to the next program, so a record that stored a pid and asked later whether "the
+// process" was alive would get a true answer about something else and the page would list a
+// server nobody can reach. The stamp is the discriminator, and it is the one a record has to
+// carry.
+TEST_CASE("a record whose pid now belongs to another program is not a running server") {
+  HomeScope scoped;
+  const int pid = platform::CurrentProcessId();
+  const std::string real = platform::ProcessStartToken(pid);
+
+  config::ServeRecord record = Record(pid, 8816, "/work/one");
+  REQUIRE(record.started == real);
+
+  // Only meaningful where the platform reports a start time; where it does not, the pid is all
+  // there is to go on and the record is kept, which is the answer given before stamps existed.
+  if (!real.empty()) {
+    config::ServeRecord stale = record;
+    stale.started = real + "0";
+    CHECK_FALSE(config::StillRunning(stale));
+
+    config::ServeRecord unstamped = record;
+    unstamped.started.clear();
+    CHECK(config::StillRunning(unstamped));
+  }
+
+  CHECK(config::StillRunning(record));
+
+  // A pid no process holds is not running whatever the stamp says.
+  config::ServeRecord gone = Record(-1, 8817, "/work/gone");
+  CHECK_FALSE(config::StillRunning(gone));
 }
 
 TEST_CASE("a process is running when this one is") {

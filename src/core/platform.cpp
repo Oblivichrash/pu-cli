@@ -9,6 +9,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "pu/core/text.hpp"
 
@@ -325,6 +328,49 @@ int CurrentProcessId() {
   return static_cast<int>(GetCurrentProcessId());
 #else
   return static_cast<int>(::getpid());
+#endif
+}
+
+std::string ProcessStartToken(int pid) {
+  if (pid <= 0) return {};
+#if defined(_WIN32)
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return {};
+  FILETIME created{}, exited{}, kernel{}, user{};
+  std::string stamp;
+  if (GetProcessTimes(process, &created, &exited, &kernel, &user) != 0) {
+    ULARGE_INTEGER ticks{};
+    ticks.LowPart = created.dwLowDateTime;
+    ticks.HighPart = created.dwHighDateTime;
+    stamp = std::to_string(ticks.QuadPart);
+  }
+  CloseHandle(process);
+  return stamp;
+#elif defined(__APPLE__)
+  // No /proc: `proc_pidinfo` would answer, and it is not linked on every build here. An empty
+  // stamp is the documented answer when the platform cannot say, and the reader falls back to
+  // the pid, which is what it did before this existed.
+  return {};
+#else
+  const std::string path = "/proc/" + std::to_string(pid) + "/stat";
+  std::ifstream file(path);
+  if (!file.is_open()) return {};
+  std::string line;
+  std::getline(file, line);
+  // The second field is the executable's name in parentheses and may contain spaces and both
+  // kinds of bracket, so the fields are counted from the last ')' rather than from the start.
+  const std::size_t close = line.rfind(')');
+  if (close == std::string::npos) return {};
+  std::istringstream rest(line.substr(close + 1));
+  // From here the fields are 3 (state) onward, so `starttime`, which is 22, is the twentieth.
+  std::string field;
+  for (int index = 3; index <= 22; ++index) {
+    if (!(rest >> field)) return {};
+  }
+  // Boot-relative ticks, which is exactly the discriminator: two processes that share a pid
+  // number were started at different times.
+  return field;
 #endif
 }
 

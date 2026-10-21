@@ -147,6 +147,7 @@ ServeRecord RecordFromJson(const json::value& item) {
   record.bind = json::ValueOrDefault<std::string>(item, "bind", "");
   record.port = static_cast<std::uint16_t>(json::ValueOrDefault<int>(item, "port", 0));
   record.pid = json::ValueOrDefault<int>(item, "pid", 0);
+  record.started = json::ValueOrDefault<std::string>(item, "started", "");
   return record;
 }
 
@@ -156,6 +157,7 @@ json::value RecordToJson(const ServeRecord& record) {
       {"bind", record.bind},
       {"port", record.port},
       {"pid", record.pid},
+      {"started", record.started},
   };
 }
 
@@ -194,6 +196,15 @@ std::string ServeRegistryPath() {
   return (std::filesystem::path(home) / ".pu" / kRegistryFileName).string();
 }
 
+bool StillRunning(const ServeRecord& record) {
+  if (!platform::ProcessRunning(record.pid)) return false;
+  // A platform that cannot report a start time gives an empty stamp, and an empty stamp is not
+  // evidence of anything: the pid is then the whole answer, which is what it was before.
+  const std::string now = platform::ProcessStartToken(record.pid);
+  if (record.started.empty() || now.empty()) return true;
+  return record.started == now;
+}
+
 std::vector<ServeRecord> LiveServeRecords() {
   const std::string path = ServeRegistryPath();
   if (path.empty()) return {};
@@ -204,7 +215,7 @@ std::vector<ServeRecord> LiveServeRecords() {
   json::array kept;
   for (const json::value& item : stored) {
     ServeRecord record = RecordFromJson(item);
-    if (!platform::ProcessRunning(record.pid)) {
+    if (!StillRunning(record)) {
       spdlog::debug("Dropping the serve record left by process {}", record.pid);
       continue;
     }

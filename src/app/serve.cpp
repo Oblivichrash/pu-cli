@@ -670,6 +670,7 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
   serve_record.bind = bind_address;
   serve_record.port = bound_port;
   serve_record.pid = platform::CurrentProcessId();
+  serve_record.started = platform::ProcessStartToken(serve_record.pid);
   config::RegisterServeRecord(serve_record);
   auto runner = std::make_shared<SessionRunner>(runtime);  // The runner closes the job a peer turn answers, so it needs the board the routes serve.
   // It is handed over after both exist rather than through the constructor, which would

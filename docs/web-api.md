@@ -26,16 +26,19 @@ directory, the workspace can name its own (`--bind`/`--port` first, then
 
 A port is what a reader has to remember to tell two servers apart, and the page is what
 has to do it for them. Each server writes itself into `$HOME/.pu/serve.json` while it
-runs — directory, bind, port and pid — and deletes the line on the way out, so the page
-can list the machine's servers and name each one by its workspace. A record whose process
-has stopped is dropped the next time the file is read, which is what makes a crash cost a
-stale line rather than a ghost entry. Two servers starting together would otherwise each
-read the list before the other had written it and the second write would drop the first,
-so the read and the write happen under `serve.json.lock`, held for the few milliseconds
-the update takes; the temp file each writer renames is named after its own process, so a
-writer that gave up waiting on the lock cannot publish over one that finished. The file is
-a record of what is running, not a setting: `serve` in `agents.json` is still the port a
-workspace asks for, and the registry is what actually answers.
+runs — directory, bind, port, pid and the process's start time — and deletes the line on the
+way out, so the page can list the machine's servers and name each one by its workspace. A
+record whose process has stopped is dropped the next time the file is read, which is what
+makes a crash cost a stale line rather than a ghost entry. The start time is there because a
+pid outlives the program that held it: once its owner exits the number is handed to the next
+program, so a reader that asked only whether the pid was alive would get a true answer about
+something else and list a server nobody can reach. Two servers starting together would
+otherwise each read the list before the other had written it and the second write would
+drop the first, so the read and the write happen under `serve.json.lock`, held for the few
+milliseconds the update takes; the temp file each writer renames is named after its own
+process, so a writer that gave up waiting on the lock cannot publish over one that finished.
+The file is a record of what is running, not a setting: `serve` in `agents.json` is still the
+port a workspace asks for, and the registry is what actually answers.
 
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active

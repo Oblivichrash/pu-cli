@@ -34,11 +34,14 @@ bool ShutdownRequested();
 // The same request as a token, for the call sites that take a CancelToken.
 CancelToken& ShutdownToken();
 
-// This process's identity, and whether a process with that identity is still running. A
-// record one process leaves behind for another to find (a server's port, say) is only worth
-// reading while its owner is: an entry whose pid is gone describes a process that has already
-// stopped, and the pid alone is enough to say so.
+// This process's identity, and whether a process with that identity is still running.
 int CurrentProcessId();
 bool ProcessRunning(int pid);
+
+// A stamp that names this particular holder of `pid`, not merely the number. A pid is reused once
+// its owner exits, so a record that stores one and asks later whether "the process" is alive gets
+// a true answer about a different program. The stamp is the process's start time, and it is
+// stable for the life of one process, empty when the platform cannot say.
+std::string ProcessStartToken(int pid);
 
 }  // namespace pu::platform
