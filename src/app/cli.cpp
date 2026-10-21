@@ -185,7 +185,7 @@ CommandLine BuildCommandLine() {
          true},
         {"quiet", "in the text shape, print only the data without the event and id line", false}}},
       {"serve",
-       {{"host", "bind address (default 127.0.0.1)", true},
+       {{"bind", "interface to listen on (default 127.0.0.1)", true},
         {"port", "port to listen on (default 8080)", true}}},
   };
 

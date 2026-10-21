@@ -329,30 +329,46 @@ persists neither, because it does not.
 ### HTTP handler contract
 
 `DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler
-should not have to: it parses the body once for routes that take one, takes the `io_mutex`
-for the duration of the call, wraps whatever the handler returned in the envelope that
-route declares, and turns a thrown exception into the status that names whose fault it is
-(`RequestRefused` → `400`, `Error` → `500`).
+should not have to: it finds the row for the request, asks `Admit` whether this caller may
+read it, parses the body once for routes that take one, takes the `io_mutex` for the
+duration of the call, wraps whatever the handler returned in the envelope that row names,
+and turns a thrown exception into the status that names whose fault it is
+(`RequestRefused` → `400`, `NotFound` → `404`, `Error` → `500`).
 
-A handler therefore only computes and returns:
+A handler therefore only computes and returns, against a `Call` rather than a `Runtime`:
 
 ```cpp
-boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body);
+boost::json::value HandleApiRewind(Call& call, const boost::json::value& body);
 ```
 
-Refusals are thrown rather than sent, and each route declares its own success shape —
-`{"success": true, …}` merged into the handler's object, a bare array for `/api/history`,
-or a named collection for `/api/agents` and `/api/workspaces` — so the wire format is
-read off the route table instead of being reassembled by hand in every handler.
+`Call` carries the runtime, the board and the runner a handler might need, plus the facts
+that belong to the connection rather than to the session: the address the request arrived
+from, the peer name its token speaks for, whether that address is this machine's, and the
+port this server answers on. A handler that had to reach for the socket to learn any of
+those would be a second place for the audience rule to live.
+
+One envelope, declared per row. `Route::key` names the member a payload is filed under
+(`messages`, `agents`, `servers`, `workspaces`), and an empty key means the handler's own
+object is the answer; either way `success` is added by the dispatcher. The wire format is
+read off the route table instead of being reassembled by hand in every handler, and a new
+listing cannot invent a fifth shape.
+
+`Route::audience` is the other column that matters, and it has no default: adding a route
+means answering who may read it. That is what makes `/api/workspaces` — which answers this
+machine's directories — impossible to add as a route that answers the network by omission,
+which is how it was added.
 
 The status the exception maps to is the one that names whose fault it is: `RequestRefused`
-for a request the caller can fix, `NotFound` for a name that does not exist, and `Error`
-for an operation that failed on our side.
+for a request the caller can fix, `NotFound` for a name or route that does not exist, and
+`Error` for an operation that failed on our side. The audience refusals are separate and are
+answered before the handler runs: `403` for an address the route does not answer, `401` for a
+peer route with no token or the wrong one, and `404` for a peer route on a server with no
+topology at all.
 
-Routes that need no agent turn — the board — are dispatched before
-`io_mutex` is taken, because `Board` carries its own mutex. The board is the one piece of
-state peers share that is not part of the conversation, and putting it behind the session's
-lock would let a slow peer's poll stop the page's turn.
+Routes that read the board are marked `needs_board` and take their own mutex inside, so the
+dispatch does not hold `io_mutex` around them. The board is the one piece of state peers
+share that is not part of the conversation, and putting it behind the session's lock would
+let a slow peer's poll stop the page's turn.
 
 ### Static page serving
 

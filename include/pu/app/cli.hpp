@@ -77,7 +77,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
              Runtime& runtime);
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               bool verify, Runtime& runtime);
-int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime);
+int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
 int RunCheck(const std::string& config_path);
 // The two questions answered from a gateway's listing without asking a model anything: the

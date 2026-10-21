@@ -48,7 +48,7 @@ TEST_CASE("a server registered from one directory is readable from another") {
   const auto records = config::LiveServeRecords();
   REQUIRE(records.size() == 1);
   CHECK(records.front().directory == "/work/one");
-  CHECK(records.front().host == "127.0.0.1");
+  CHECK(records.front().bind == "127.0.0.1");
   CHECK(records.front().pid == pid);
 
   config::UnregisterServeRecord(pid);
@@ -87,6 +87,43 @@ TEST_CASE("registering again replaces what this process said before") {
   CHECK(records.front().directory == "/work/after");
 
   config::UnregisterServeRecord(pid);
+}
+
+// The page names a workspace rather than a port, and it does so from a label the server
+// computes. Two segments is the rule: the last one is the project, and the one before it is what
+// tells two projects with the same name apart. The whole path never crosses the wire.
+TEST_CASE("a workspace is named by its last two segments") {
+  CHECK(config::WorkspaceLabel("/home/a/pu-cli") == "a/pu-cli");
+  CHECK(config::WorkspaceLabel("/home/a/pu-cli/") == "a/pu-cli");
+  CHECK(config::WorkspaceLabel("pu-cli") == "pu-cli");
+  CHECK(config::WorkspaceLabel("/srv/work/one/two/three") == "two/three");
+  CHECK(config::WorkspaceLabel("") == "");
+
+  // A server started from a relative path serves a real directory under a name that says nothing
+  // about it, so the label resolves the markers before it counts segments: without that, `..`
+  // would be the parent's name and `.` would be the whole label.
+  CHECK(config::WorkspaceLabel("/home/a/pu-cli/.") == "a/pu-cli");
+  CHECK(config::WorkspaceLabel("/home/a/pu-cli/../other") == "a/other");
+  CHECK(config::WorkspaceLabel("/home/a/work/./pu-cli") == "work/pu-cli");
+}
+
+// The list a page draws is what it may switch to, so the server that answered is not in it: it is
+// the page's own. Filtering by pid and not by directory is what makes that true when two servers
+// serve the same workspace, which is legal and would otherwise list a switch to itself.
+TEST_CASE("the list of other servers leaves this process's own record out") {
+  const std::vector<config::ServeRecord> all{
+      {"/work/one", "127.0.0.1", 8811, 100},
+      {"/work/two", "127.0.0.1", 8812, 200},
+      {"/work/three", "0.0.0.0", 8813, 300},
+  };
+
+  const auto others = config::OthersAmong(all, 200);
+  REQUIRE(others.size() == 2);
+  CHECK(others[0].directory == "/work/one");
+  CHECK(others[1].directory == "/work/three");
+
+  CHECK(config::OthersAmong(all, 999).size() == 3);
+  CHECK(config::OthersAmong({}, 100).empty());
 }
 
 TEST_CASE("a process is running when this one is") {

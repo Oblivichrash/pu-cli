@@ -105,7 +105,7 @@ std::string ChunkText(const std::vector<boost::json::value>& frames) {
 }
 
 boost::json::value StoredConversation(pu::tests::ServeHarness& harness) {
-  return boost::json::parse(harness.Client().Get("/api/history"));
+  return boost::json::parse(harness.Client().Get("/api/history")).at("messages");
 }
 
 void WaitForTheTurnToReachTheBackend(pu::tests::ServeHarness& harness) {
@@ -143,7 +143,7 @@ TEST_CASE("A page that attaches after a peer's turn reads the reply", "[serve][w
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
-    const auto history = boost::json::parse(client.Get("/api/history"));
+    const auto history = boost::json::parse(client.Get("/api/history")).at("messages");
     if (history.as_array().size() >= 2) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
@@ -282,7 +282,7 @@ TEST_CASE("A turn is written the same way whether it just ended or is replayed",
   REQUIRE(usage != frames.end());
   const boost::json::object& live = usage->at("payload").as_object();
 
-  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history"));
+  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history")).at("messages");
   REQUIRE(history.is_array());
   const boost::json::object* replayed = nullptr;
   for (const boost::json::value& item : history.as_array()) {

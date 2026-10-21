@@ -8,13 +8,18 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 
+#include "pu/config/peer.hpp"
 #include "pu/core/base.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/serve/board.hpp"
@@ -35,11 +40,71 @@ std::string PeerAddress(tcp::socket& socket, beast::error_code& ec);
 // so the address it arrives from is the credential instead.
 bool IsLoopback(const std::string& address);
 
-// `peer` is the address the request came from, which is how a read that can only be made from
-// this machine is told apart from one a peer made.
+// Who a route answers. A page presents no credential, so the address it arrived from is the one
+// it has; a peer presents the shared token. The route states which, so adding one answers the
+// question instead of leaving it to a comparison of path strings in the dispatcher.
+enum class Audience { kAnyone, kLoopback, kPeerToken };
+
+// What an audience made of a caller. Three refusals rather than a bool, because they are not the
+// same problem and the caller is told which one it hit: this server does not answer this route
+// from that address, this server has no peer topology at all, or the token was not the one.
+enum class Admission { kAllowed, kNotFromHere, kNoTopology, kWrongToken };
+
+// Whether this audience admits a caller. The peer table is handed in rather than reached for, so
+// a case can ask about any audience without a server, a socket or a configuration file.
+Admission Admit(Audience audience, const std::string& address, const std::string& token,
+                const std::optional<config::PeerConfig>& peers);
+
+// What a handler computes against. Who called is a parameter like everything else, so a route
+// that only answers this machine cannot be written by forgetting to check.
+struct Call {
+  Runtime& runtime;
+  // The board this server keeps, or nullptr when it keeps none.
+  serve::Board* board = nullptr;
+  // Null until this server can run a turn; only the peer endpoint needs one.
+  SessionRunner* runner = nullptr;
+  // The address the request arrived from, empty when the socket could not name its peer.
+  std::string address;
+  // The peer name the presented token speaks for, empty for a page.
+  std::string peer;
+  bool loopback = false;
+  // The port this server answers on, which is how it names itself to the page that reached it.
+  std::uint16_t port = 0;
+};
+
+using Handler = boost::json::value (*)(Call& call, const boost::json::value& body);
+
+// One REST route. Every answer is an object carrying `success`; `key` names the member the
+// handler's payload is filed under, and an empty key means the payload is already that object.
+struct Route {
+  std::string_view target;
+  http::verb method;
+  Handler handler;
+  std::string_view key;
+  Audience audience;
+  // The status a success answers with: `202` for a turn that was accepted rather than answered.
+  unsigned status;
+  bool has_body;
+  // A route that reads or moves the board is answered `404` by a server that keeps none.
+  bool needs_board;
+  // A route that touches only the board. The board carries its own mutex and shares nothing with
+  // the conversation, so these are answered without the session's lock: a peer's poll behind that
+  // lock would be able to stop the page's turn.
+  bool board_only;
+};
+
+// The REST routes as the table that answers them: read by the dispatcher, and by the case that
+// holds every row's audience and shape. A route that quietly becomes readable from the network
+// is then a failing test rather than a sentence in a document nobody re-reads.
+std::span<const Route> HttpRoutes();
+
+// `peer` is the address the request came from, and `port` the one this server answers on: the two
+// facts a handler cannot read off the runtime, because they belong to the connection rather than
+// to the session. They are given here so no handler has to reach for the socket.
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          serve::Board* board, http::request<http::string_body>&& req,
-                         http::response<http::string_body>& res, const std::string& peer);
+                         http::response<http::string_body>& res, const std::string& peer,
+                         std::uint16_t port);
 
 // The directory the running executable lives in, or empty when it cannot be determined. Kept
 // beside the request dispatch so the web/ lookup above it and its tests agree on one answer.

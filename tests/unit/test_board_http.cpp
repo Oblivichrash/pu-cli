@@ -9,6 +9,7 @@
 
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -138,15 +139,21 @@ TEST_CASE("a board read records the peer that made it") {
   CHECK(body.as_object().contains("jobs"));
 }
 
-TEST_CASE("a board request without the token is refused") {
+// Reading the board with a token is being heard from; reading it without one is a request that
+// never said who it was. The answer is `401` on every verb, because a refusal that named `403`
+// would describe a caller that was identified and turned away.
+TEST_CASE("a board request without the token is refused as unauthenticated") {
   PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
   server.Start();
   auto anonymous = server.AnonymousClient();
 
-  CHECK(anonymous.GetRaw("/api/jobs").status == 403);
+  CHECK(anonymous.GetRaw("/api/jobs").status == 401);
   CHECK(anonymous
             .PostRaw("/api/jobs", boost::json::serialize(Post("B", "check the build")))
-            .status == 403);
+            .status == 401);
+  CHECK(anonymous.PostRaw("/api/jobs/answer",
+                          boost::json::serialize(boost::json::object{{"job", "x"}, {"answer", "y"}}))
+            .status == 401);
 }
 
 TEST_CASE("an unreadable request is answered with the status that names whose it is") {
@@ -376,10 +383,10 @@ TEST_CASE("a peer's read of the board still presents the token") {
   server.Start();
 
   const HttpResponse anonymous = server.AnonymousClient().GetRaw("/api/jobs");
-  CHECK(anonymous.status == 403);
+  CHECK(anonymous.status == 401);
 }
 
-TEST_CASE("the page names the server it is talking to and the others it may switch to") {
+TEST_CASE("the list names the other servers and never the one that answered") {
   PeerServer server("A", boost::json::object{{"content", "hi"}}, "stop");
   server.Start();
   auto page = server.AnonymousClient();
@@ -388,17 +395,22 @@ TEST_CASE("the page names the server it is talking to and the others it may swit
   CHECK(read.status == 200);
   const boost::json::value body = boost::json::parse(read.body);
   const boost::json::array& servers = body.at("servers").as_array();
-  REQUIRE(servers.size() >= 1);
 
-  bool saw_current = false;
+  // The server that answered is the page's own, so offering it as a switch would offer a move to
+  // where the reader already is. Every entry that is left is named by its workspace and its port,
+  // and carries neither a directory nor a bind address: what crosses the wire is what a project is
+  // called, not where it lives on this machine or which interface this one listens on.
   for (const boost::json::value& entry : servers) {
-    CHECK(boost::json::value_to<std::string>(entry.at("host")) == pu::tests::kServeHost);
-    CHECK(boost::json::value_to<int>(entry.at("port")) > 0);
-    CHECK_FALSE(boost::json::value_to<std::string>(entry.at("directory")).empty());
-    if (ValueOrDefault<bool>(entry, "current", false)) {
-      saw_current = true;
-      CHECK(boost::json::value_to<int>(entry.at("port")) == server.Port());
-    }
+    const boost::json::object& row = entry.as_object();
+    CHECK_FALSE(boost::json::value_to<std::string>(row.at("name")).empty());
+    CHECK(boost::json::value_to<int>(row.at("port")) > 0);
+    CHECK(boost::json::value_to<int>(row.at("port")) != server.Port());
+    CHECK_FALSE(row.contains("directory"));
+    CHECK_FALSE(row.contains("host"));
+    CHECK_FALSE(row.contains("current"));
+    // The label is `parent/name` at most: two segments, so a reader knows which project it is
+    // without being told where on this disk it sits.
+    const std::string name = boost::json::value_to<std::string>(row.at("name"));
+    CHECK(std::count(name.begin(), name.end(), '/') <= 1);
   }
-  CHECK(saw_current);
 }

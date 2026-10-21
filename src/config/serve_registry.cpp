@@ -97,12 +97,20 @@ class RegistryLock {
 #endif
 };
 
+// The temp file is named after the process that is writing it. The lock is a courtesy and not a
+// guarantee — a caller that gave up waiting writes anyway — so two writers can be renaming at
+// once, and a single shared `serve.json.tmp` would let the slower one publish a half-written file
+// over the faster one's finished list.
+std::string TempPathFor(const std::string& path) {
+  return path + "." + std::to_string(platform::CurrentProcessId()) + ".tmp";
+}
+
 void WriteRecords(const std::string& path, const json::array& records) {
   if (path.empty()) return;
   const std::string text = json::serialize(json::value{json::object{{kRecordsKey, records}}});
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
-  const std::string temp = path + ".tmp";
+  const std::string temp = TempPathFor(path);
   {
     std::ofstream file(temp, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) {
@@ -136,7 +144,7 @@ json::array ReadRecords(const std::string& path) {
 ServeRecord RecordFromJson(const json::value& item) {
   ServeRecord record;
   record.directory = json::ValueOrDefault<std::string>(item, "directory", "");
-  record.host = json::ValueOrDefault<std::string>(item, "host", "");
+  record.bind = json::ValueOrDefault<std::string>(item, "bind", "");
   record.port = static_cast<std::uint16_t>(json::ValueOrDefault<int>(item, "port", 0));
   record.pid = json::ValueOrDefault<int>(item, "pid", 0);
   return record;
@@ -145,13 +153,35 @@ ServeRecord RecordFromJson(const json::value& item) {
 json::value RecordToJson(const ServeRecord& record) {
   return json::object{
       {"directory", record.directory},
-      {"host", record.host},
+      {"bind", record.bind},
       {"port", record.port},
       {"pid", record.pid},
   };
 }
 
+// The directory as a list of segments, with `.` and `..` resolved away. A server started from
+// `..\pu-cli` or `./` serves a real directory under a name that says nothing about it, and taking
+// the last two segments of the unnormalized text would label the workspace `.` or `..`.
+std::vector<std::string> Segments(const std::string& directory) {
+  std::vector<std::string> parts;
+  for (const auto& part : std::filesystem::path(directory).lexically_normal()) {
+    const std::string text = part.string();
+    if (text.empty() || text == "/" || text == "." || text == "..") continue;
+    // A root name such as `C:` is a segment on Windows and a workspace can be driven from it, so
+    // it stays; only the separators and the two relative markers are dropped.
+    parts.push_back(text);
+  }
+  return parts;
+}
+
 }  // namespace
+
+std::string WorkspaceLabel(const std::string& directory) {
+  const std::vector<std::string> parts = Segments(directory);
+  if (parts.empty()) return directory;
+  if (parts.size() == 1) return parts.front();
+  return parts[parts.size() - 2] + "/" + parts.back();
+}
 
 std::string ServeRegistryPath() {
   // HOME is what the rest of the configuration layer reads, so it is read first; USERPROFILE is
@@ -186,6 +216,14 @@ std::vector<ServeRecord> LiveServeRecords() {
     return a.port > b.port;
   });
   return live;
+}
+
+std::vector<ServeRecord> OthersAmong(const std::vector<ServeRecord>& records, int pid) {
+  std::vector<ServeRecord> others;
+  for (const ServeRecord& record : records) {
+    if (record.pid != pid) others.push_back(record);
+  }
+  return others;
 }
 
 std::string RegisterServeRecord(const ServeRecord& record) {

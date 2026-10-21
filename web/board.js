@@ -157,14 +157,19 @@ function renderBoard(snapshot) {
   }
 }
 
-// A board that cannot be read is not worth drawing a wrong one over. The poll runs every few
-// seconds, so a notice here would be a strip that reopens itself; the next poll tries instead.
+// A board that cannot be read is not worth drawing a wrong one over, and the poll runs every few
+// seconds, so a notice here would be a strip that reopens itself. A refusal leaves the panel as it
+// was and the next poll tries again: the route answers on the machine the server runs on, so a
+// remote page gets nothing here for the same reason it gets no server list, and neither is a bug
+// the page should announce every five seconds.
 async function refreshBoard() {
+  let snapshot;
   try {
-    renderBoard(await fetchJson("/api/board"));
+    snapshot = await fetchJson("/api/board");
   } catch (_) {
     return;
   }
+  renderBoard(snapshot);
 }
 
 async function postBoardVerb(path, body, failure) {

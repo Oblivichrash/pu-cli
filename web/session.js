@@ -9,7 +9,7 @@
 // updates it without a second ask.
 async function refreshChainLength() {
   try {
-    const history = await fetchJson("/api/history");
+    const history = (await fetchJson("/api/history")).messages;
     if (Array.isArray(history)) PU.chainLength = history.length;
   } catch (_) {}
 }
@@ -21,7 +21,7 @@ async function loadHistory() {
   if (PU.loadHistBusy) return;
   PU.loadHistBusy = true;
   try {
-    const history = await fetchJson("/api/history");
+    const history = (await fetchJson("/api/history")).messages;
     if (!Array.isArray(history)) return;
     // A tool-using turn is several messages; drawing each alone would show another chat.
     for (const turn of groupHistory(history)) {
@@ -149,6 +149,11 @@ async function loadSession() {
   try {
     const data = await fetchJson("/api/session");
     if (!data.success) return;
+    // The server that answered says what it is called and which port it answered on. That is the
+    // page's own identity, so a switch ends here: the label is corrected from the server the page
+    // actually reached rather than from the entry it asked for.
+    if (data.server) setSelf({ name: data.server.name, port: data.server.port });
+    renderServers();
     setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
     renderSettings(data.settings);
     renderUsageTotal(data.usage_total);

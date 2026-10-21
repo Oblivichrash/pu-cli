@@ -39,9 +39,18 @@ namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
 using detail::DispatchHttpRequest;
+using detail::IsLoopback;
 using detail::PeerAddress;
 using detail::SessionRunner;
 using detail::WebSocketConnection;
+
+// The address the banner may print. A listener bound to every interface answers on whatever
+// address the machine has, which this side cannot know, so the bind itself is not a destination:
+// printing `http://0.0.0.0:9000` hands the reader a URL that reaches their own loopback.
+bool NamesADestination(const std::string& bind_address) {
+  return !bind_address.empty() && bind_address != "0.0.0.0" && bind_address != "::" &&
+         bind_address != "[::]";
+}
 
 // The `client` query parameter names the tab that opened the socket. A reload and a
 // reconnect keep the name; a second tab has one of its own. The value is only ever compared
@@ -602,7 +611,7 @@ std::deque<std::shared_ptr<const std::string>> SessionRunner::FramesForNextPage(
 
 }  // namespace detail
 
-int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
+int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime) {
   try {
     runtime.Initialize();
   } catch (const std::exception& e) {
@@ -610,36 +619,45 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     return 1;
   }
 
-  spdlog::info("pu serve listening on http://{}:{}", host, port);
-  spdlog::info("WebSocket endpoint: ws://{}:{}/ws", host, port);
-  spdlog::info("Workspace: {}", runtime.WorkspaceRoot().string());
-
   net::io_context ioc;
   std::uint16_t bound_port = port;
-  const tcp::endpoint listen_endpoint(net::ip::make_address(host), port);
+  const tcp::endpoint listen_endpoint(net::ip::make_address(bind_address), port);
   tcp::acceptor acceptor(ioc);
   {
     beast::error_code open_ec;
     acceptor.open(listen_endpoint.protocol(), open_ec);
     if (open_ec) {
-      spdlog::error("Cannot open {}:{}: {}", host, port, open_ec.message());
+      spdlog::error("Cannot open {}:{}: {}", bind_address, port, open_ec.message());
       return 1;
     }
     acceptor.set_option(net::socket_base::reuse_address(true), open_ec);
     if (open_ec) spdlog::warn("Cannot set reuse_address: {}", open_ec.message());
     acceptor.bind(listen_endpoint, open_ec);
     if (open_ec) {
-      spdlog::error("Cannot bind {}:{}: {}", host, port, open_ec.message());
+      spdlog::error("Cannot bind {}:{}: {}", bind_address, port, open_ec.message());
       return 1;
     }
     acceptor.listen(net::socket_base::max_listen_connections, open_ec);
     if (open_ec) {
-      spdlog::error("Cannot listen on {}:{}: {}", host, port, open_ec.message());
+      spdlog::error("Cannot listen on {}:{}: {}", bind_address, port, open_ec.message());
       return 1;
     }
     bound_port = acceptor.local_endpoint(open_ec).port();
     if (open_ec) bound_port = port;
   }
+
+  // Printed once the port is known, because a port of `0` is a request for any of them and the
+  // number the reader needs is the one the kernel chose.
+  if (NamesADestination(bind_address)) {
+    spdlog::info("pu serve listening on http://{}:{}", bind_address, bound_port);
+    spdlog::info("WebSocket endpoint: ws://{}:{}/ws", bind_address, bound_port);
+  } else {
+    spdlog::info("pu serve listening on port {} on every interface", bound_port);
+    spdlog::info("Open http://<this machine's address>:{}/ in a browser", bound_port);
+    spdlog::info("The page names this server by the address you reached it on, not by {}",
+                 bind_address);
+  }
+  spdlog::info("Workspace: {}", runtime.WorkspaceRoot().string());
 
   std::mutex io_mutex;
   serve::Board board;
@@ -649,7 +667,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
   // list names a workspace rather than a number to remember.
   config::ServeRecord serve_record;
   serve_record.directory = runtime.WorkspaceRoot().string();
-  serve_record.host = host;
+  serve_record.bind = bind_address;
   serve_record.port = bound_port;
   serve_record.pid = platform::CurrentProcessId();
   config::RegisterServeRecord(serve_record);
@@ -699,7 +717,8 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
         net::bind_executor(strand, [&runtime, &io_mutex, runner, &board, strand, conn, buffer,
-                                    req, header_timer, peer](beast::error_code ec, std::size_t) {
+                                    req, header_timer, peer, bound_port](beast::error_code ec,
+                                                                         std::size_t) {
           header_timer->cancel();
           if (ec) {
             spdlog::warn("HTTP read error: {}", ec.message());
@@ -715,7 +734,7 @@ int RunServe(const std::string& host, std::uint16_t port, Runtime& runtime) {
             }
             auto res = std::make_shared<http::response<http::string_body>>();
             DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res,
-                                peer);
+                                peer, bound_port);
             http::async_write(
                 conn->mutable_socket(), *res,
                 net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

@@ -30,11 +30,13 @@ PU.composer.inputEl.addEventListener("input", () => { PU.composer.inputEl.style.
 // The transcript has one loader: the socket's first open runs `resyncAfterReconnect()`,
 // which reads the store once the session is attached. Reading it here as well made the two
 // runs append the same turns to the same list, which is the turn drawn twice on every load.
-setServers({ server: null });
+//
+// The page's own identity is already set: `state.js` reads it from the address that served this
+// document, so nothing has to be fetched before the socket opens. The label a reader sees arrives
+// with `/api/session`, and the list of other servers arrives on its own clock.
 connectWebSocket();
 
 (async () => {
-  await refreshServers();
   await loadAgents();
   await loadSession();
 })();

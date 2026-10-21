@@ -146,7 +146,7 @@ TEST_CASE("A peer's turn is named by its peer and cannot be rewound") {
               .status == 202);
   REQUIRE(a.WaitForTranscript("ok"));
 
-  const boost::json::value history = boost::json::parse(a.Client().Get("/api/history"));
+  const boost::json::value history = boost::json::parse(a.Client().Get("/api/history")).at("messages");
   REQUIRE(history.is_array());
   REQUIRE(history.as_array().size() >= 2);
   CHECK(history.as_array()[0].at("role") == "user");
@@ -190,13 +190,13 @@ TEST_CASE("The peer endpoint refuses a wrong token and an undeclared sender") {
   b.Start();
   a.Start();
 
-  // Both refusals are `RequestRefused`, which the HTTP layer answers with 400 rather than 401
-  // or 403: the endpoint is the one authenticated surface, so a 401 would describe it more
-  // precisely. The case asserts what it does today and the reason it gives.
+  // The two refusals are different problems and answer with different statuses: a token that is
+  // not the one is `401`, because the caller never said who it was, while a sender the topology
+  // does not list is `400`, because the caller named itself and the name is wrong.
   const HttpResponse wrong_token = a.Client().PostRaw(
       "/api/peer/message", R"({"from":"B","message":"hello","hop":0})", "not-the-token");
-  CHECK(wrong_token.status == 400);
-  CHECK(Contains(wrong_token.body, "Invalid peer token"));
+  CHECK(wrong_token.status == 401);
+  CHECK(Contains(wrong_token.body, "requires the peer token"));
 
   const HttpResponse undeclared = a.Client().PostRaw(
       "/api/peer/message", R"({"from":"stranger","message":"hi","hop":0})", kPeerToken);

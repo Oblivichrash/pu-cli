@@ -140,7 +140,7 @@ The ones a normal run touches:
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Name an `agents.json` outright, ahead of both default locations |
 | `PU_WEB_DIR` | The page directory `pu serve` serves (defaults beside the binary, then `./web`) |
-| `PU_SERVE_HOST` / `PU_SERVE_PORT` | Bind address and port for `pu serve` |
+| `PU_SERVE_BIND` / `PU_SERVE_PORT` | Bind interface and port for `pu serve` |
 | `PU_LOG_LEVEL` | File log level, default `info` |
 
 ## Web Server (`pu serve`)
@@ -149,7 +149,7 @@ The ones a normal run touches:
 
 ```bash
 ./build/pu serve                       # listen on 127.0.0.1:8080
-./build/pu serve --host 0.0.0.0 --port 9000
+./build/pu serve --bind 0.0.0.0 --port 9000
 ```
 
 A server serves the directory it was started in and stays there; each directory is a

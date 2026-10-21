@@ -16,7 +16,7 @@ default). See [Configure](../README.md#configuration) for a full example.
 |-------|-------------|
 | `default_agent` | Required; must name one of the entries in `agents` |
 | `agents` | Required; the entries below |
-| `serve` | Optional; `{"host": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names |
+| `serve` | Optional; `{"bind": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names. `bind` is the interface the listener sits on, not an address to dial |
 
 **Agent fields**
 
@@ -179,7 +179,7 @@ else, so an A→B→A→B chain ends at the second hop by construction rather th
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
-| `PU_SERVE_HOST` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
+| `PU_SERVE_BIND` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
 | `PU_PEER_TOKEN` | Overrides `token` in `peers.json`, so the secret can stay out of the file |
 

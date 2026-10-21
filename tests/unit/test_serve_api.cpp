@@ -14,6 +14,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <optional>
+#include <set>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -26,6 +29,13 @@ using pu::tests::TestHttpClient;
 namespace {
 
 boost::json::value ParseJson(const std::string& s) { return boost::json::parse(s); }
+
+// `/api/history` answers the envelope every route uses: the payload under the key its row names,
+// with `success` beside it. A case says which member it is reading, which is the point of the
+// envelope — the shape is declared once, in the route table, rather than guessed per route.
+boost::json::value HistoryOf(TestHttpClient& client) {
+  return ParseJson(client.Get("/api/history")).at("messages");
+}
 
 }  // namespace
 
@@ -69,7 +79,7 @@ TEST_CASE("serve API /api/history names the peer a turn arrived from", "[serve][
   session->Messages().Append("assistant", "pong");
   session->Messages().Append("user", "mine");
 
-  const auto j = ParseJson(client.Get("/api/history"));
+  const auto j = HistoryOf(client);
   REQUIRE(j.as_array().size() == 3);
   CHECK(j.as_array()[0].at("from_peer") == "B");
   CHECK_FALSE(j.as_array()[2].as_object().contains("from_peer"));
@@ -88,8 +98,7 @@ TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  std::string body = client.Get("/api/history");
-  auto j = ParseJson(body);
+  auto j = HistoryOf(client);
 
   REQUIRE(j.is_array());
   REQUIRE(j.as_array().empty());
@@ -130,7 +139,7 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
       {"success", true}, {"blocked", false}, {"output", "hi\n"}, {"error", ""}, {"exit_code", 0}});
   conversation.Append(receipt);
 
-  auto j = ParseJson(client.Get("/api/history"));
+  auto j = HistoryOf(client);
   REQUIRE(j.as_array().size() == 3);
 
   const boost::json::value& call_turn = j.as_array()[1];
@@ -165,7 +174,7 @@ TEST_CASE("serve API /api/history names a call the turn never ran", "[serve][api
 
   conversation.SealInterruptedToolCalls();
 
-  auto j = ParseJson(client.Get("/api/history"));
+  auto j = HistoryOf(client);
   REQUIRE(j.as_array().size() == 3);
   REQUIRE(j.as_array()[1].at("tool_call_status") == boost::json::array{"interrupted"});
   REQUIRE(j.as_array()[2].at("role") == "tool");
@@ -196,7 +205,7 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   receipt.content = "plain text from a tool";
   conversation.Append(receipt);
 
-  auto j = ParseJson(client.Get("/api/history"));
+  auto j = HistoryOf(client);
   REQUIRE(j.as_array().size() == 3);
   REQUIRE(j.as_array()[2].at("output") == "plain text from a tool");
   REQUIRE(j.as_array()[2].at("error") == "");
@@ -223,8 +232,7 @@ TEST_CASE("serve API /api/clear", "[serve][api]") {
   auto clear_j = ParseJson(clear_body);
   REQUIRE(clear_j.at("success") == true);
 
-  std::string history_body = client.Get("/api/history");
-  auto history_j = ParseJson(history_body);
+  auto history_j = HistoryOf(client);
   REQUIRE(history_j.is_array());
   REQUIRE(history_j.as_array().empty());
 }
@@ -423,7 +431,7 @@ TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
   REQUIRE(stepped.status == 200);
   REQUIRE(ParseJson(stepped.body).at("success") == true);
 
-  auto history = ParseJson(client.Get("/api/history"));
+  auto history = HistoryOf(client);
   REQUIRE(history.as_array().size() == 2);
   REQUIRE(history.as_array()[1].at("content") == "two");
 }
@@ -448,7 +456,7 @@ TEST_CASE("serve API /api/rewind refuses a turn that is not there", "[serve][api
   REQUIRE(malformed.status == 400);
   REQUIRE(ParseJson(malformed.body).at("error") == "Invalid JSON");
 
-  REQUIRE(ParseJson(client.Get("/api/history")).as_array().size() == 1);
+  REQUIRE(HistoryOf(client).as_array().size() == 1);
 }
 
 TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve][api]") {
@@ -471,6 +479,105 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
 
   REQUIRE(refused.status == 400);
   REQUIRE(ParseJson(refused.body).at("success") == false);
+}
+
+// Every route states who may read it, and the dispatcher has no path names of its own. Asking
+// the table is therefore asking the whole rule: a row added without an audience does not compile,
+// and a row whose audience changed shows up here as a different answer rather than as a sentence
+// in a document nobody re-reads.
+TEST_CASE("every route states the audience it answers, and none of them silently widened",
+          "[serve][api][rules]") {
+  const auto routes = pu::cli::detail::HttpRoutes();
+  REQUIRE_FALSE(routes.empty());
+
+  // The routes whose answer is a fact about this machine rather than about the session: a
+  // filesystem path per workspace, a path per server, and the trail of who asked whom for what.
+  const std::map<std::string, pu::cli::detail::Audience> kLoopbackOnly{
+      {"/api/workspaces", pu::cli::detail::Audience::kLoopback},
+      {"/api/servers", pu::cli::detail::Audience::kLoopback},
+      {"/api/board", pu::cli::detail::Audience::kLoopback},
+  };
+  // The peer endpoint and the board verbs are the only surface that lets a remote caller change
+  // something, and every one of them takes the shared token.
+  const std::set<std::string> kPeerOnly{
+      "/api/jobs", "/api/jobs/answer", "/api/jobs/chase", "/api/jobs/drop", "/api/peer/message",
+  };
+
+  for (const pu::cli::detail::Route& route : routes) {
+    const std::string target{route.target};
+    if (const auto it = kLoopbackOnly.find(target); it != kLoopbackOnly.end()) {
+      INFO(target);
+      CHECK(route.audience == it->second);
+      continue;
+    }
+    if (kPeerOnly.count(target) > 0) {
+      INFO(target);
+      CHECK(route.audience == pu::cli::detail::Audience::kPeerToken);
+      continue;
+    }
+    // Everything else is a route that changes or reads the session the page is attached to, and
+    // it answers whoever reaches the port. The bind address is the control there, not a route.
+    INFO(target);
+    CHECK(route.audience == pu::cli::detail::Audience::kAnyone);
+  }
+}
+
+TEST_CASE("an audience admits a caller by the three questions it can fail", "[serve][api][rules]") {
+  using pu::cli::detail::Admission;
+  using pu::cli::detail::Admit;
+  using pu::cli::detail::Audience;
+
+  pu::config::PeerConfig peers;
+  peers.self_name = "A";
+  peers.token = "shared-secret";
+  const std::optional<pu::config::PeerConfig> configured = peers;
+
+  // Anyone: the address and the token are both irrelevant.
+  CHECK(Admit(Audience::kAnyone, "192.168.1.10", "", configured) == Admission::kAllowed);
+  CHECK(Admit(Audience::kAnyone, "", "", std::nullopt) == Admission::kAllowed);
+
+  // Loopback: only this machine's own addresses, and an address the socket could not name is not
+  // one of them — refusing it is what keeps the rule true when the peer is unknown.
+  CHECK(Admit(Audience::kLoopback, "127.0.0.1", "", std::nullopt) == Admission::kAllowed);
+  CHECK(Admit(Audience::kLoopback, "::1", "", std::nullopt) == Admission::kAllowed);
+  CHECK(Admit(Audience::kLoopback, "192.168.1.10", "", std::nullopt) ==
+        Admission::kNotFromHere);
+  CHECK(Admit(Audience::kLoopback, "", "", std::nullopt) == Admission::kNotFromHere);
+
+  // The token: a server with no topology cannot accept a peer at all, which is a different answer
+  // from a caller that presented the wrong secret.
+  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "shared-secret", std::nullopt) ==
+        Admission::kNoTopology);
+  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "", configured) == Admission::kWrongToken);
+  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "not-the-token", configured) ==
+        Admission::kWrongToken);
+  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "shared-secret", configured) ==
+        Admission::kAllowed);
+  // A peer may arrive from anywhere; the token is the whole credential, so the address is not
+  // consulted. Pinned because a loopback check added here would look like a tightening and would
+  // break every topology spread across two machines.
+  CHECK(Admit(Audience::kPeerToken, "127.0.0.1", "shared-secret", configured) ==
+        Admission::kAllowed);
+}
+
+TEST_CASE("serve API /api/servers lists the others and not this one", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto body = ParseJson(client.Get("/api/servers"));
+  REQUIRE(body.at("success") == true);
+  const auto& servers = body.at("servers").as_array();
+
+  // The server that answered is the page's own; the list is what it may switch to, so this one is
+  // not in it. A case that asserted otherwise would pin a control that offers a move to nowhere.
+  for (const boost::json::value& entry : servers) {
+    const boost::json::object& row = entry.as_object();
+    CHECK(boost::json::value_to<int>(row.at("port")) != harness.Port());
+    CHECK(row.contains("name"));
+    // A path would tell a remote reader where this machine keeps its projects, which is why the
+    // route is loopback-only and why the entry carries a label instead.
+    CHECK_FALSE(row.contains("directory"));
+  }
 }
 
 TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[serve][api]") {

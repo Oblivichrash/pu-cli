@@ -13,13 +13,21 @@ streaming flags, the assistant message being written, the chain length, and the 
 elements. Every other module reads and writes `PU` rather than keeping a copy, so a fact
 has exactly one home and no module has to be told about another's.
 
-`PU.origin` is the one address every request and the socket are built from, which is what
-lets the page move between servers without a second container: switching sets it and
-rebuilds, and no module below knows a switch happened.
+`PU.self` is the one address every request and the socket are built from, and it is never
+unknown: a page was served by a server, so `origin` starts as the address that served this
+document. It also carries the `name` and `port` the server reports for itself, which is what
+the header draws. Switching servers writes all three together through `setSelf`, so the page
+cannot label one server's transcript with another's name.
+
+`PU.others` is the separate fact the switcher needs: the other servers on this machine, and
+`PU.othersRestricted` says why it is empty when it is. Keeping the two apart is what stops a
+page whose server list is unavailable — every page reached over the network — from losing its
+own name.
 
 | File | Owns |
 | :--- | :--- |
-| `web/state.js` | The `PU` object, the frame-coalesced render queue, the connection dot's state |
+| `web/state.js` | The `PU` object, the page's own identity and the list of siblings, the writers for both (`setSelf`, `setOthers`, `siblingOrigin`), the frame-coalesced render queue, the connection dot's state |
+| `web/api.js` | The page's one way out: `fetchJson`/`postJson` over `PU.self.origin`, and `ApiError`, which keeps the status a refusal arrived with. A caller that cannot tell `403` from a dropped connection cannot say which happened |
 | `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
@@ -28,10 +36,10 @@ rebuilds, and no module below knows a switch happened.
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list, and the spend total a finished turn brings with it |
 | `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
-| `web/servers.js` | The machine's servers over `/api/servers`: the workspace named in the header, the list behind it, and the switch to another server. A name it cannot fetch falls back to the page's own address, and the switcher stays visible and disabled when the server is the only one running |
+| `web/servers.js` | The header's server strip: the workspace this page is attached to, the other servers over `/api/servers`, and the switch to one of them. The name comes from `/api/session`, never from the list, so a refused list leaves the name intact and the caret explains why it cannot be used |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
-| `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
+| `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
 | `web/composer.js` | Turning a press into a run, and a second press into a cancel |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |

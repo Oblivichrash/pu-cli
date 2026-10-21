@@ -14,17 +14,30 @@ const MAX_BUSY_RETRIES = 2;
 
 const CONTEXT_WINDOWS = {};
 
+// The server this page is attached to. There is always exactly one, because a page was served by
+// one: `origin` is the address that answered, `name` is the label it gave itself, and `port` is
+// the one it answered on. None of the three is derived from the server list, which describes the
+// others — a page that learned its own identity from a list would be blank whenever the list is
+// unavailable, and the list is unavailable on every remote page by design.
+const SELF = {
+  origin: window.location.origin,
+  name: "",
+  port: null,
+};
+
 const PU = {
   ws: null,
-  // The server this page is talking to. Everything the page asks for is asked of it: the REST
-  // calls read it, the socket is built from it. Empty until the page learns its own origin, so
-  // a page opened on any server starts out talking to the one that served it.
-  origin: "",
-  // What `GET /api/servers` reported, and the entry this page is attached to: the page draws
-  // the list from the first and calls the second the current one. Use `setServers` to write
-  // them; a module that assigns either directly leaves the other describing a different server.
-  servers: [],
-  server: null,
+  self: SELF,
+  // The other servers on this machine, as `GET /api/servers` reports them: `{name, port}`. Empty is
+  // an ordinary state, so the header draws the page's own name and offers no switch. Use
+  // `setOthers`; a module that assigns the array directly leaves the header describing a list it
+  // no longer has.
+  others: [],
+  // Why `others` is empty, when it is: `null` for "there are none", `"loopback"` for "this route is
+  // answered on the machine the server runs on", and `"unreachable"` for a network failure. The
+  // header says which, because a reader on another machine deserves to know the switcher is not
+  // hidden by a bug.
+  othersRestricted: null,
   // A module loaded before notice.js cannot name showNotice. app.js points this at it
   // once every module is in; a remark that arrives before then is dropped.
   announce: () => {},
@@ -84,20 +97,28 @@ const PU = {
   },
 };
 
-// The one place `PU.servers`, `PU.server` and `PU.origin` are written. They describe one
-// fact — which server this page is talking to — and a page that wrote two of the three would
-// be drawing a header from one server and asking the other for its transcript. Naming them
-// together is what makes that impossible rather than a rule to remember.
-//
-// `server` may be null (a server the registry has not listed), which is why the origin is
-// derived here: the page is attached to the address it was opened on, and the label is the
-// only thing missing. A caller that leaves an argument out is not changing that part.
-function setServers({ servers, server }) {
-  if (servers !== undefined) PU.servers = Array.isArray(servers) ? servers : [];
-  if (server !== undefined) {
-    PU.server = server || null;
-    PU.origin = server ? serverOrigin(server) : window.location.origin;
-  }
+// The origin of another server on this machine. It is not built from that server's bind address:
+// `0.0.0.0` is a legal place to listen and never an address to dial, and a server behind a proxy
+// or another interface would give one this page cannot reach. A sibling is the port on the same
+// host this page already reached, which is the one fact the two are guaranteed to share.
+function siblingOrigin(port) {
+  const scheme = window.location.protocol === "https:" ? "https" : "http";
+  return `${scheme}://${window.location.hostname}:${port}`;
+}
+
+// The one place `PU.others` is written. The label a reader sees for this page is not here: it is
+// `PU.self.name`, which the server that answered supplied.
+function setOthers({ servers, restricted }) {
+  if (servers !== undefined) PU.others = Array.isArray(servers) ? servers : [];
+  if (restricted !== undefined) PU.othersRestricted = restricted || null;
+}
+
+// The one place `PU.self` is written. Switching servers replaces all three fields together, so a
+// page cannot end up asking one server for a transcript it labels with another's name.
+function setSelf({ origin, name, port }) {
+  if (origin !== undefined) PU.self.origin = origin || window.location.origin;
+  if (name !== undefined) PU.self.name = name || "";
+  if (port !== undefined) PU.self.port = port === null ? null : Number(port);
 }
 
 function setConnectionState(state) {

@@ -62,9 +62,12 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "verify"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "entry"));
 
-  REQUIRE(Names(line.HelpFor("serve"), "host"));
+  REQUIRE(Names(line.HelpFor("serve"), "bind"));
   REQUIRE(Names(line.HelpFor("serve"), "port"));
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "host"));
+  // `host` is a backend's to name; a listener has a `bind`, and the two are not the same word
+  // because only one of them is an address a browser can be pointed at.
+  REQUIRE_FALSE(Names(line.HelpFor("serve"), "host"));
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "bind"));
 
   REQUIRE(Names(line.HelpFor("check"), "config"));
   REQUIRE_FALSE(Names(line.HelpFor("chat"), "config"));

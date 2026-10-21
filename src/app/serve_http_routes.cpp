@@ -4,6 +4,8 @@
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -24,6 +26,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/config/peer.hpp"
 #include "pu/config/serve_registry.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -56,6 +59,30 @@ unsigned ErrorStatus(const std::exception& e) {
   if (dynamic_cast<const GenericError*>(&e) != nullptr) return 500;
   if (dynamic_cast<const RuntimeError*>(&e) != nullptr) return 400;
   return 500;
+}
+
+// The refusal a caller reads names which of the three questions it failed, because they are not
+// the same problem: a route this server does not answer from that address, a server that has no
+// peer topology to speak of, and a caller holding the wrong secret.
+void SendRefusal(http::response<http::string_body>& res, Admission admission,
+                 std::string_view target) {
+  switch (admission) {
+    case Admission::kAllowed:
+      return;
+    case Admission::kNotFromHere:
+      SendError(res, 403, std::string(target) + " is answered on the machine the server runs on");
+      return;
+    case Admission::kNoTopology:
+      SendError(res, 404, "Peer messaging is not configured");
+      return;
+    case Admission::kWrongToken:
+      // `401` rather than `403`: the caller did not say who it was, which is a different thing
+      // from saying who it was and being refused. `WWW-Authenticate` names the scheme so a
+      // client can retry without reading this source.
+      res.set(http::field::www_authenticate, "Bearer");
+      SendError(res, 401, std::string(target) + " requires the peer token");
+      return;
+  }
 }
 
 const char* ViewStatus(session::ToolCallStatus status) {
@@ -192,7 +219,10 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
   res.prepare_payload();
 }
 
-boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&) {
+// --- Session and conversation --------------------------------------------------------------
+
+boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
+  Runtime& runtime = call.runtime;
   auto session = runtime.DefaultSession();
   if (!session) throw GenericError("No active session");
 
@@ -206,6 +236,14 @@ boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&)
   if (const auto override_level = runtime.ThinkingOverride()) {
     body["thinking_override"] = ThinkingLevelName(*override_level);
   }
+  // The server answers with the name it goes by, because the page cannot derive it: the directory
+  // it serves is a fact of this machine, and a path is not something a remote reader is handed.
+  // The page that reached this port is the server that answers here, so `port` is what the page
+  // already dialled and `name` is the label to draw over it.
+  body["server"] = boost::json::object{
+      {"name", config::WorkspaceLabel(runtime.WorkspaceRoot().string())},
+      {"port", call.port},
+  };
   // Every setting this build knows, with the value in force and where it came from; the two
   // fields above are the same answer in the shape older pages read.
   boost::json::array settings;
@@ -232,9 +270,9 @@ boost::json::value HandleApiSession(Runtime& runtime, const boost::json::value&)
   return body;
 }
 
-boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&) {
+boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
   boost::json::array turns;
-  auto session = runtime.DefaultSession();
+  auto session = call.runtime.DefaultSession();
   if (!session) return turns;
 
   Conversation& conversation = session->Messages();
@@ -286,15 +324,17 @@ boost::json::value HandleApiHistory(Runtime& runtime, const boost::json::value&)
   return turns;
 }
 
-boost::json::value HandleApiAgents(Runtime& runtime, const boost::json::value&) {
+boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
   // The same summary `pu agents` prints, so the page and the CLI cannot disagree about what
   // is configured. The active agent is the session's, which is what the selector shows.
+  Runtime& runtime = call.runtime;
   const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
                                                       : std::string();
   return config::AgentsAsJson(config::SummarizeAgents(runtime, active));
 }
 
-boost::json::value HandleApiAgentSwitch(Runtime& runtime, const boost::json::value& body) {
+boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& body) {
+  Runtime& runtime = call.runtime;
   RequireString(body, "agent_name");
   const std::string agent_name = boost::json::value_to<std::string>(body.at("agent_name"));
   const auto* cfg = runtime.Agents().AgentConfig(agent_name);
@@ -303,41 +343,43 @@ boost::json::value HandleApiAgentSwitch(Runtime& runtime, const boost::json::val
   return boost::json::object{{"agent", agent_name}};
 }
 
-boost::json::value HandleApiClear(Runtime& runtime, const boost::json::value&) {
-  runtime.ClearConversation();
+boost::json::value HandleApiClear(Call& call, const boost::json::value&) {
+  call.runtime.ClearConversation();
   return boost::json::object{};
 }
 
-boost::json::value HandleApiWorkspaces(Runtime& runtime, const boost::json::value&) {
+// The sibling workspaces this machine could serve. A workspace is a directory, so the route is
+// answered on the machine the server runs on: the entries are this computer's filesystem, and a
+// reader on another one has no way to tell a project name from a path it should not have.
+boost::json::value HandleApiWorkspaces(Call& call, const boost::json::value&) {
   boost::json::array workspaces;
-  for (const auto& [name, path] : runtime.ListWorkspaces()) {
+  for (const auto& [name, path] : call.runtime.ListWorkspaces()) {
     workspaces.push_back(boost::json::value{{"name", name}, {"path", path}});
   }
   return workspaces;
 }
 
-// The servers running on this machine, so a page can name a workspace instead of a port. The
-// entry a page arrives from is marked, which is how it draws "this one" without comparing
-// addresses it does not know.
-boost::json::value HandleApiServers(Runtime& runtime, const boost::json::value&) {
-  const std::string here = runtime.WorkspaceRoot().string();
+// The other servers on this machine, so the page can name a workspace instead of a port. The one
+// that answered is not in the list: it is the page's own, and offering a switch to where the
+// reader already is is a control that does nothing. The entry carries a label and a port, never a
+// directory, so what crosses the wire is the name a project goes by rather than where it lives.
+boost::json::value HandleApiServers(Call&, const boost::json::value&) {
   boost::json::array servers;
-  for (const config::ServeRecord& record : config::LiveServeRecords()) {
+  for (const config::ServeRecord& record :
+       config::OthersAmong(config::LiveServeRecords(), platform::CurrentProcessId())) {
     servers.push_back(boost::json::object{
-        {"directory", record.directory},
-        {"host", record.host},
+        {"name", config::WorkspaceLabel(record.directory)},
         {"port", record.port},
-        {"current", record.directory == here},
     });
   }
   return servers;
 }
 
-boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body) {
+boost::json::value HandleApiRewind(Call& call, const boost::json::value& body) {
   const int turn = json::ValueOrDefault<int>(body, "turn", 0);
   if (turn < 1) throw RequestRefused("Missing or invalid 'turn'");
   // A turn a peer asked is not this page's to take back; Conversation says why in its message.
-  if (!runtime.RewindBefore(static_cast<size_t>(turn))) throw RequestRefused("No such turn");
+  if (!call.runtime.RewindBefore(static_cast<size_t>(turn))) throw RequestRefused("No such turn");
   return boost::json::object{};
 }
 
@@ -357,60 +399,40 @@ boost::json::value SettingsBody(Runtime& runtime) {
   return boost::json::object{{"settings", std::move(settings)}};
 }
 
-boost::json::value HandleApiSettings(Runtime& runtime, const boost::json::value&) {
-  return SettingsBody(runtime);
+boost::json::value HandleApiSettings(Call& call, const boost::json::value&) {
+  return SettingsBody(call.runtime);
 }
 
-boost::json::value HandleApiSetSetting(Runtime& runtime, const boost::json::value& body) {
+boost::json::value HandleApiSetSetting(Call& call, const boost::json::value& body) {
   RequireString(body, "name");
   const std::string name = boost::json::value_to<std::string>(body.at("name"));
   // Absent `value` and an explicit null mean the same thing: clear this override. Only the
   // member being there with something else in it is a value to set.
   const boost::json::value raw =
       json::HasKey(body, "value") ? body.at("value") : boost::json::value();
-  runtime.SetSetting(name, raw);
-  return SettingsBody(runtime);
+  call.runtime.SetSetting(name, raw);
+  return SettingsBody(call.runtime);
 }
 
-boost::json::value HandleApiResetSettings(Runtime& runtime, const boost::json::value&) {
-  runtime.ClearSettings();
-  return SettingsBody(runtime);
+boost::json::value HandleApiResetSettings(Call& call, const boost::json::value&) {
+  call.runtime.ClearSettings();
+  return SettingsBody(call.runtime);
 }
 
-using Handler = boost::json::value (*)(Runtime&, const boost::json::value& body);
-using serve::Board;
-using serve::JobRequest;
-using BoardHandler = boost::json::value (*)(Board&, const boost::json::value& body);
-
-enum class Envelope { kObject, kArray, kAgents, kWorkspaces, kServers };
-
-struct Route {
-  std::string_view target;
-  http::verb method;
-  Handler handler;
-  Envelope envelope;
-  bool has_body;
-};
-
-// What a board route accepts in place of a caller's name. A peer presents the shared token,
-// which is also how a read says it is still working. A page has no token to present, so for the
-// one route it calls the address it arrives from is the credential — and that read records
-// nothing about anyone, because being read by a page says nothing about a peer.
-enum class Credential { kPeerToken, kAddress };
-
-struct BoardRoute {
-  std::string_view target;
-  http::verb method;
-  BoardHandler handler;
-  bool has_body;
-  Credential credential;
-};
+// --- The board -----------------------------------------------------------------------------
 
 constexpr std::chrono::seconds kOfflineAfter{45};
 
+serve::Board& BoardOf(const Call& call) {
+  // The route table marks the rows that need one, so a null here is a row that forgot its flag
+  // rather than a server without a board.
+  if (call.board == nullptr) throw NotFound("This server has no board");
+  return *call.board;
+}
+
 // A board answer is always the job that resulted, plus the outcome when the move settled it.
-boost::json::value RenderResult(const Board::ActionResult& result) {
-  boost::json::object answer{{"success", true}, {"job", Board::Render(result.job)}};
+boost::json::value RenderResult(const serve::Board::ActionResult& result) {
+  boost::json::object answer{{"success", true}, {"job", serve::Board::Render(result.job)}};
   if (result.outcome) {
     boost::json::object outcome{{"id", result.outcome->id}, {"state", result.outcome->state}};
     if (result.outcome->result) outcome["result"] = *result.outcome->result;
@@ -421,114 +443,140 @@ boost::json::value RenderResult(const Board::ActionResult& result) {
 
 // A pull is the liveness signal: it carries the token, and the board records the peer it names
 // as heard from. Nothing is asked of the caller beyond the secret it already has.
-boost::json::value HandleBoardGet(Board& board, const boost::json::value&) {
-  return board.Snapshot(kOfflineAfter);
+boost::json::value HandleApiJobsGet(Call& call, const boost::json::value&) {
+  return BoardOf(call).Snapshot(kOfflineAfter);
 }
 
 // What the page draws: the jobs split into the ones still owed and the last few that settled.
-boost::json::value HandleBoardPageGet(Board& board, const boost::json::value&) {
-  return board.Page();
+boost::json::value HandleApiBoard(Call& call, const boost::json::value&) {
+  return BoardOf(call).Page();
 }
 
-// The name a token speaks for. A token is one peer's, so a request carrying it is that peer.
-std::string PeerForToken(Runtime& runtime, const std::string& token) {
-  const auto& peers = runtime.Peers();
-  if (!peers.has_value() || token.empty() || !peers->Accepts(token)) return {};
-  return peers->self_name;
-}
-
-boost::json::value HandleBoardPost(Board& board, const boost::json::value& body) {
-  JobRequest request;
+serve::JobRequest JobFrom(const boost::json::value& body, bool full) {
+  serve::JobRequest request;
   request.from = json::OptionalOrDefault<std::string>(body, "from");
-  request.to = json::OptionalOrDefault<std::string>(body, "to");
-  request.intent = json::OptionalOrDefault<std::string>(body, "intent");
-  request.due = json::OptionalOrDefault<std::string>(body, "due");
-
-  return RenderResult(board.Post(request));
-}
-
-boost::json::value HandleBoardPatch(Board& board, const boost::json::value& body) {
-  JobRequest request;
+  if (!full) {
+    request.to = json::OptionalOrDefault<std::string>(body, "to");
+    request.intent = json::OptionalOrDefault<std::string>(body, "intent");
+    request.due = json::OptionalOrDefault<std::string>(body, "due");
+    return request;
+  }
   request.job = json::OptionalOrDefault<std::string>(body, "job");
-  request.from = json::OptionalOrDefault<std::string>(body, "from");
   request.state = json::OptionalOrDefault<std::string>(body, "state");
   request.result = json::OptionalOrDefault<std::string>(body, "result");
   request.question = json::OptionalOrDefault<std::string>(body, "question");
   request.note = json::OptionalOrDefault<std::string>(body, "note");
+  return request;
+}
 
-  return RenderResult(board.Update(request));
+boost::json::value HandleApiJobsPost(Call& call, const boost::json::value& body) {
+  return RenderResult(BoardOf(call).Post(JobFrom(body, false)));
+}
+
+boost::json::value HandleApiJobsPatch(Call& call, const boost::json::value& body) {
+  return RenderResult(BoardOf(call).Update(JobFrom(body, true)));
 }
 
 // The three verbs a person has over a job a peer holds, in the order the page draws them: answer
 // what a blocked job waits for, ask what is happening, and take it back. None is a peer's move,
 // so none is `PATCH`: a person has no name to present as `from`.
-struct BoardVerb {
-  std::string_view target;
-  Board::ActionResult (Board::*run)(const std::string&, const std::string&);
-  // The field carrying the text, which is `answer` for the verb that has an answer to give.
-  std::string_view field;
-  std::string_view needs;
-};
-
-constexpr BoardVerb kBoardVerbs[] = {
-    {"/api/jobs/answer", &Board::Answer, "answer", "an answer needs the 'answer' text to send back"},
-    {"/api/jobs/chase", &Board::Chase, "note", "asking about a job needs the 'note' to send"},
-    {"/api/jobs/drop", &Board::Drop, "note", "taking a job back needs the 'note' that says why"},
-};
-
-boost::json::value HandleBoardVerb(Board& board, const boost::json::value& body,
-                                   const BoardVerb& verb) {
+boost::json::value HandleApiJobsAnswer(Call& call, const boost::json::value& body) {
   const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
-  const std::string text = json::ValueOrDefault<std::string>(body, verb.field, "");
+  const std::string text = json::ValueOrDefault<std::string>(body, "answer", "");
   if (id.empty()) throw RequestRefused("a board verb needs the job's 'id'");
-  if (text.empty()) throw RequestRefused(std::string(verb.needs));
-
-  return RenderResult((board.*(verb.run))(id, text));
+  if (text.empty()) throw RequestRefused("an answer needs the 'answer' text to send back");
+  return RenderResult(BoardOf(call).Answer(id, text));
 }
 
-constexpr BoardRoute kBoardRoutes[] = {
-    {"/api/jobs", http::verb::get, &HandleBoardGet, false, Credential::kPeerToken},
-    {"/api/jobs", http::verb::post, &HandleBoardPost, true, Credential::kPeerToken},
-    {"/api/jobs", http::verb::patch, &HandleBoardPatch, true, Credential::kPeerToken},
-    {"/api/board", http::verb::get, &HandleBoardPageGet, false, Credential::kAddress},
-};
+boost::json::value HandleApiJobsChase(Call& call, const boost::json::value& body) {
+  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
+  const std::string text = json::ValueOrDefault<std::string>(body, "note", "");
+  if (id.empty()) throw RequestRefused("a board verb needs the job's 'id'");
+  if (text.empty()) throw RequestRefused("asking about a job needs the 'note' to send");
+  return RenderResult(BoardOf(call).Chase(id, text));
+}
 
-constexpr Route kRoutes[] = {
-    {"/api/session", http::verb::get, &HandleApiSession, Envelope::kObject, false},
-    {"/api/history", http::verb::get, &HandleApiHistory, Envelope::kArray, false},
-    {"/api/agents", http::verb::get, &HandleApiAgents, Envelope::kAgents, false},
-    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, Envelope::kObject, true},
-    {"/api/clear", http::verb::post, &HandleApiClear, Envelope::kObject, false},
-    {"/api/rewind", http::verb::post, &HandleApiRewind, Envelope::kObject, true},
-    {"/api/settings", http::verb::get, &HandleApiSettings, Envelope::kObject, false},
-    {"/api/settings", http::verb::post, &HandleApiSetSetting, Envelope::kObject, true},
-    {"/api/settings/reset", http::verb::post, &HandleApiResetSettings, Envelope::kObject, false},
-    {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, Envelope::kWorkspaces, false},
-    {"/api/servers", http::verb::get, &HandleApiServers, Envelope::kServers, false},
-};
+boost::json::value HandleApiJobsDrop(Call& call, const boost::json::value& body) {
+  const std::string id = json::ValueOrDefault<std::string>(body, "job", "");
+  const std::string text = json::ValueOrDefault<std::string>(body, "note", "");
+  if (id.empty()) throw RequestRefused("a board verb needs the job's 'id'");
+  if (text.empty()) throw RequestRefused("taking a job back needs the 'note' that says why");
+  return RenderResult(BoardOf(call).Drop(id, text));
+}
 
-boost::json::value Wrap(Envelope envelope, boost::json::value result) {
-  switch (envelope) {
-    case Envelope::kArray:
-      return result;
-    case Envelope::kAgents:
-      return boost::json::object{{"agents", std::move(result)}};
-    case Envelope::kWorkspaces:
-      return boost::json::object{{"workspaces", std::move(result)}};
-    case Envelope::kServers:
-      return boost::json::object{{"servers", std::move(result)}};
-    case Envelope::kObject:
-      break;
+// An inbound message becomes a turn of its own: it is queued and answered 202, since the
+// reply travels back through the sender's send_to_peer tool rather than this response. The
+// answer names the turn and who took it, so the sender can watch the board for the outcome.
+boost::json::value HandlePeerMessage(Call& call, const boost::json::value& body) {
+  if (call.runner == nullptr) throw RuntimeError("This server cannot accept a peer turn");
+
+  const std::string sender = json::ValueOrDefault<std::string>(body, "from", "");
+  const std::string message = json::ValueOrDefault<std::string>(body, "message", "");
+  // The token says the caller holds the secret;  says which peer it is. A name the topology
+  // does not list is refused before a turn is queued, because a turn is what runs tools.
+  const auto& peers = call.runtime.Peers();
+  if (peers.has_value() && !sender.empty() && !peers->Knows(sender)) {
+    throw RequestRefused("Unknown peer: " + sender);
   }
-  boost::json::object body = result.is_object() ? std::move(result.as_object())
-                                                : boost::json::object{};
-  body["success"] = true;
-  return body;
+  if (sender.empty()) throw RequestRefused("Missing or invalid 'from'");
+  if (message.empty()) throw RequestRefused("Missing or invalid 'message'");
+
+  const std::string job_id = json::ValueOrDefault<std::string>(body, "job", "");
+  if (!job_id.empty() && call.board != nullptr) {
+    // Claiming before queueing is what makes a job that never runs visible as claimed rather
+    // than silently open. A job already taken by someone else is a refusal, not a duplication.
+    serve::JobRequest claim;
+    claim.job = job_id;
+    claim.from = call.runtime.Peers()->self_name;
+    claim.state = std::string{serve::JobStateName(serve::JobState::kClaimed)};
+    const serve::Board::ActionResult taken = call.board->Update(claim);
+    spdlog::info("Peer '{}' job '{}' claimed", sender, job_id);
+    if (taken.job.state != serve::JobState::kClaimed) {
+      throw RequestRefused("job " + job_id + " did not end up claimed");
+    }
+  }
+
+  const int hop = json::ValueOrDefault<int>(body, "hop", 0);
+  spdlog::info("Peer '{}' sent a message at hop {}: {}", sender, hop, message.substr(0, 120));
+
+  const std::string turn = call.runner->SubmitFromPeer(sender, message, job_id);
+  const config::Backend backend = call.runtime.CurrentBackend();
+  return boost::json::object{
+      {"accepted", true},
+      {"from", call.runtime.Peers()->self_name},
+      {"turn", turn},
+      {"agent", call.runtime.DefaultSession() ? call.runtime.DefaultSession()->Spec().agent_name
+                                              : std::string()},
+      {"model", backend.model},
+  };
 }
 
-}  // namespace
-
-namespace {
+// Every route this server answers, with the two things a row cannot leave implicit: who may read
+// it, and the shape of what it returns. `key` names the member a listing is filed under, so
+// `/api/history` answers `{"messages": [...]}` the way `/api/agents` answers `{"agents": [...]}`:
+// one envelope, read from this table, instead of a rule each handler restates.
+constexpr Route kRoutes[] = {
+    //   target,              method,          handler,              key,          audience,                 status, body,  board, board_only
+    {"/api/session", http::verb::get, &HandleApiSession, "", Audience::kAnyone, 200, false, false, false},
+    {"/api/history", http::verb::get, &HandleApiHistory, "messages", Audience::kAnyone, 200, false, false, false},
+    {"/api/agents", http::verb::get, &HandleApiAgents, "agents", Audience::kAnyone, 200, false, false, false},
+    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, "", Audience::kAnyone, 200, true, false, false},
+    {"/api/clear", http::verb::post, &HandleApiClear, "", Audience::kAnyone, 200, false, false, false},
+    {"/api/rewind", http::verb::post, &HandleApiRewind, "", Audience::kAnyone, 200, true, false, false},
+    {"/api/settings", http::verb::get, &HandleApiSettings, "", Audience::kAnyone, 200, false, false, false},
+    {"/api/settings", http::verb::post, &HandleApiSetSetting, "", Audience::kAnyone, 200, true, false, false},
+    {"/api/settings/reset", http::verb::post, &HandleApiResetSettings, "", Audience::kAnyone, 200, false, false, false},
+    {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, "workspaces", Audience::kLoopback, 200, false, false, false},
+    {"/api/servers", http::verb::get, &HandleApiServers, "servers", Audience::kLoopback, 200, false, false, false},
+    {"/api/board", http::verb::get, &HandleApiBoard, "", Audience::kLoopback, 200, false, true, true},
+    {"/api/jobs", http::verb::get, &HandleApiJobsGet, "", Audience::kPeerToken, 200, false, true, true},
+    {"/api/jobs", http::verb::post, &HandleApiJobsPost, "", Audience::kPeerToken, 200, true, true, true},
+    {"/api/jobs", http::verb::patch, &HandleApiJobsPatch, "", Audience::kPeerToken, 200, true, true, true},
+    {"/api/jobs/answer", http::verb::post, &HandleApiJobsAnswer, "", Audience::kPeerToken, 200, true, true, true},
+    {"/api/jobs/chase", http::verb::post, &HandleApiJobsChase, "", Audience::kPeerToken, 200, true, true, true},
+    {"/api/jobs/drop", http::verb::post, &HandleApiJobsDrop, "", Audience::kPeerToken, 200, true, true, true},
+    {"/api/peer/message", http::verb::post, &HandlePeerMessage, "", Audience::kPeerToken, 202, true, false, false},
+};
 
 // The bearer a peer presents, or empty when the header is absent or another scheme.
 std::string BearerToken(const http::request<http::string_body>& req) {
@@ -540,61 +588,49 @@ std::string BearerToken(const http::request<http::string_body>& req) {
   return std::string(value.substr(kPrefix.size()));
 }
 
-// An inbound message becomes a turn of its own: it is queued and answered 202, since the
-// reply travels back through the sender's send_to_peer tool rather than this response. The
-// answer names the turn and who took it, so the sender can watch the board for the outcome.
-boost::json::value HandlePeerMessage(Runtime& runtime, SessionRunner* runner, Board* board,
-                                     const http::request<http::string_body>& req) {
+// The name a token speaks for. A token is one peer's, so a request carrying it is that peer.
+std::string PeerForToken(Runtime& runtime, const std::string& token) {
   const auto& peers = runtime.Peers();
-  if (!peers.has_value()) throw NotFound("Peer messaging is not configured");
-  if (!peers->Accepts(BearerToken(req))) throw RequestRefused("Invalid peer token");
-  if (runner == nullptr) throw RuntimeError("This server cannot accept a peer turn");
+  if (!peers.has_value() || token.empty() || !peers->Accepts(token)) return {};
+  return peers->self_name;
+}
 
-  const boost::json::value body = ParseBody(req);
-  const std::string sender = json::ValueOrDefault<std::string>(body, "from", "");
-  const std::string message = json::ValueOrDefault<std::string>(body, "message", "");
-  if (!peers->Knows(sender)) throw RequestRefused("Unknown peer: " + sender);
-  if (message.empty()) throw RequestRefused("Missing or invalid 'message'");
-
-  const std::string job_id = json::ValueOrDefault<std::string>(body, "job", "");
-  if (!job_id.empty() && board != nullptr) {
-    // Claiming before queueing is what makes a job that never runs visible as claimed rather
-    // than silently open. A job already taken by someone else is a refusal, not a duplication.
-    serve::JobRequest claim;
-    claim.job = job_id;
-    claim.from = peers->self_name;
-    claim.state = std::string{serve::JobStateName(serve::JobState::kClaimed)};
-    const serve::Board::ActionResult taken = board->Update(claim);
-    spdlog::info("Peer '{}' job '{}' claimed", sender, job_id);
-    if (taken.job.state != serve::JobState::kClaimed) {
-      throw RequestRefused("job " + job_id + " did not end up claimed");
-    }
+// The one envelope every route answers in: the handler's payload under the key its row names, or
+// the handler's own object when the row names none.
+boost::json::value Wrap(std::string_view key, boost::json::value result) {
+  if (!key.empty()) {
+    return boost::json::object{{std::string(key), std::move(result)}, {"success", true}};
   }
-
-  const int hop = json::ValueOrDefault<int>(body, "hop", 0);
-  spdlog::info("Peer '{}' sent a message at hop {}: {}", sender, hop, message.substr(0, 120));
-
-  const std::string turn = runner->SubmitFromPeer(sender, message, job_id);
-  const config::Backend backend = runtime.CurrentBackend();
-  return boost::json::object{
-      {"success", true},
-      {"accepted", true},
-      {"from", peers->self_name},
-      {"turn", turn},
-      {"agent", runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
-                                         : std::string()},
-      {"model", backend.model},
-  };
+  boost::json::object body = result.is_object() ? std::move(result.as_object())
+                                                : boost::json::object{};
+  body["success"] = true;
+  return body;
 }
 
 }  // namespace
 
-// A page is the one caller with no credential to present, so the address it arrives from is the
-// credential instead. A host that binds every interface is reachable from the network, but the
-// page's board still answers only the machine the server runs on.
 bool IsLoopback(const std::string& address) {
   return address.rfind("127.", 0) == 0 || address == "::1" || address == "::ffff:127.0.0.1";
 }
+
+Admission Admit(Audience audience, const std::string& address, const std::string& token,
+                const std::optional<config::PeerConfig>& peers) {
+  switch (audience) {
+    case Audience::kAnyone:
+      return Admission::kAllowed;
+    case Audience::kLoopback:
+      // An address a socket could not name is not this machine: refusing it is the only answer
+      // that keeps the rule true when the peer is unknown.
+      return IsLoopback(address) ? Admission::kAllowed : Admission::kNotFromHere;
+    case Audience::kPeerToken:
+      if (!peers.has_value()) return Admission::kNoTopology;
+      if (token.empty() || !peers->Accepts(token)) return Admission::kWrongToken;
+      return Admission::kAllowed;
+  }
+  return Admission::kAllowed;
+}
+
+std::span<const Route> HttpRoutes() { return kRoutes; }
 
 std::string PeerAddress(tcp::socket& socket, beast::error_code& ec) {
   const tcp::endpoint endpoint = socket.remote_endpoint(ec);
@@ -603,7 +639,8 @@ std::string PeerAddress(tcp::socket& socket, beast::error_code& ec) {
 
 void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
                          serve::Board* board, http::request<http::string_body>&& req,
-                         http::response<http::string_body>& res, const std::string& peer) {
+                         http::response<http::string_body>& res, const std::string& peer,
+                         std::uint16_t port) {
   const std::string_view target = req.target();
 
   if (IsPageFile(target)) {
@@ -611,75 +648,38 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* 
     return;
   }
 
-  for (const auto& verb : kBoardVerbs) {
-    if (target != verb.target || req.method() != http::verb::post) continue;
+  for (const Route& route : HttpRoutes()) {
+    if (target != route.target || req.method() != route.method) continue;
 
-    // A peer presents the token on a verb too: answering, asking and taking back all change
-    // shared state, and a caller that cannot prove it holds the secret cannot change it.
-    if (board == nullptr || PeerForToken(runtime, BearerToken(req)).empty()) {
-      SendError(res, 403, "A board request carries a peer token");
+    const std::string token = BearerToken(req);
+    const Admission admission = Admit(route.audience, peer, token, runtime.Peers());
+    if (admission != Admission::kAllowed) {
+      SendRefusal(res, admission, route.target);
       return;
     }
-
-    try {
-      SendJson(res, 200, HandleBoardVerb(*board, ParseBody(req), verb));
-    } catch (const std::exception& e) {
-      SendError(res, ErrorStatus(e), e.what());
-    }
-    return;
-  }
-
-  for (const BoardRoute& route : kBoardRoutes) {
-    if (target != route.target || req.method() != route.method) continue;
-    if (board == nullptr) {
+    if (route.needs_board && board == nullptr) {
       SendError(res, 404, "This server has no board");
       return;
     }
 
-    if (route.credential == Credential::kPeerToken) {
-      const std::string holder = PeerForToken(runtime, BearerToken(req));
-      if (holder.empty()) {
-        SendError(res, 403, "A board request carries a peer token");
-        return;
-      }
-      // Reading is being heard from. Recorded before the snapshot so the answer includes it.
-      board->TouchPeer(holder);
-    } else if (!IsLoopback(peer)) {
-      SendError(res, 403, "The page's board is read on the machine the server runs on");
-      return;
+    Call call{runtime, board, runner, peer, PeerForToken(runtime, token), IsLoopback(peer), port};
+
+    // A peer's read of the board is how it is heard from, recorded before the snapshot so the
+    // answer includes it. It is the one place a read changes anything, and it changes only the
+    // record of who is still there — a page's read says nothing about anyone.
+    if (route.audience == Audience::kPeerToken && route.needs_board && !call.peer.empty()) {
+      board->TouchPeer(call.peer);
     }
 
     try {
       const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};
-      SendJson(res, 200, route.handler(*board, body));
-    } catch (const std::exception& e) {
-      SendError(res, ErrorStatus(e), e.what());
-    }
-    return;
-  }
-
-  if (target == "/api/peer/message" && req.method() == http::verb::post) {
-    try {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      SendJson(res, 202, HandlePeerMessage(runtime, runner, board, req));
-    } catch (const std::exception& e) {
-      SendError(res, ErrorStatus(e), e.what());
-    }
-    return;
-  }
-
-  for (const Route& route : kRoutes) {
-    if (target != route.target || req.method() != route.method) continue;
-
-    if (route.target == "/api/servers" && !IsLoopback(peer)) {
-      SendError(res, 403, "The server list carries directories, so it is read on the machine");
-      return;
-    }
-
-    try {
-      const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};
-      std::lock_guard<std::mutex> lock(io_mutex);
-      SendJson(res, 200, Wrap(route.envelope, route.handler(runtime, body)));
+      // The board carries its own mutex and shares nothing with the conversation, so a route that
+      // only reads or moves it stays off the session's lock. Holding that lock around a peer's
+      // poll would let one slow peer stop the page's turn, which is the one thing the split is
+      // for. Every other route touches the session and takes it.
+      std::optional<std::lock_guard<std::mutex>> session_lock;
+      if (!route.board_only) session_lock.emplace(io_mutex);
+      SendJson(res, route.status, Wrap(route.key, route.handler(call, body)));
     } catch (const std::exception& e) {
       SendError(res, ErrorStatus(e), e.what());
     }

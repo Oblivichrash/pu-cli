@@ -218,9 +218,9 @@ int main(int argc, char* argv[]) {
 
     if (cmd == "serve") {
       const auto listen = pu::config::ResolveListenOptions(
-          OptionalOption(vm, "host"), OptionalOption(vm, "port"), EnvOr("PU_SERVE_HOST"),
+          OptionalOption(vm, "bind"), OptionalOption(vm, "port"), EnvOr("PU_SERVE_BIND"),
           EnvOr("PU_SERVE_PORT"), pu::config::FindServeOptions());
-      return pu::cli::RunServe(listen.host, listen.port, runtime);
+      return pu::cli::RunServe(listen.bind, listen.port, runtime);
     }
 
     std::cerr << "Unknown command: " << cmd << "\n\n" << all << "\n";

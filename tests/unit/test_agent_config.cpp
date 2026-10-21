@@ -161,7 +161,7 @@ TEST_CASE("FindConfigPath reports no configuration when neither location exists"
   fs::remove_all(home, ec);
 }
 
-TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
+TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_config]") {
   auto dir = UniqueTempPath("pu_serve_options");
   auto home = UniqueTempPath("pu_serve_options_home");
   std::error_code ec;
@@ -183,15 +183,15 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
     REQUIRE_FALSE(config::FindServeOptions().has_value());
 
     {
-      ScopedEnvVar bind("PU_TEST_SERVE_HOST", "127.0.0.2");
+      ScopedEnvVar bind_env("PU_TEST_SERVE_BIND", "127.0.0.2");
       {
         std::ofstream f(dir / ".pu" / "agents.json");
-        f << R"({"serve":{"host":"${PU_TEST_SERVE_HOST}","port":8087}})";
+        f << R"({"serve":{"bind":"${PU_TEST_SERVE_BIND}","port":8087}})";
       }
       const auto options = config::FindServeOptions();
       REQUIRE(options.has_value());
       REQUIRE(options->port == 8087);
-      REQUIRE(options->host == "127.0.0.2");
+      REQUIRE(options->bind == "127.0.0.2");
     }
 
     {

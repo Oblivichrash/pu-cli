@@ -10,18 +10,27 @@ trust boundary; the field names live in
 `pu serve` has no authentication on `/api/*` and `/ws`, and no origin check. A process that
 reaches the port can drive a turn, and a turn runs the agent's tools. The default bind is
 `127.0.0.1` for that reason: the boundary is the network interface, not a credential.
-`PU_SERVE_HOST` and `--host` move it, and moving it to a routable address hands the tools to
+`PU_SERVE_BIND` and `--bind` move it, and moving it to a routable address hands the tools to
 whatever can reach the port.
 
-Two things narrow what is reachable over that listener:
+Three audiences narrow what is reachable over that listener, and every route names the one
+it answers in the route table — a row without an audience does not compile:
 
-| Route | Narrowed by |
-| --- | --- |
-| `/api/servers`, `/api/board` | Loopback only. Both carry facts the machine knows — a filesystem path per server, and the trail of who asked whom for what — so a non-loopback peer gets `403` |
-| `/api/peer/message` | A bearer token compared in constant time, and a `from` that must be in `peers[]` |
+| Audience | Routes | Narrowed by |
+| --- | --- | --- |
+| `loopback` | `/api/workspaces`, `/api/servers`, `/api/board` | The address the request arrived from. Each answer is a fact about this machine — a path per workspace, a list of what it serves, and the trail of who asked whom for what — so a caller from anywhere else gets `403` |
+| `peer` | `/api/jobs`, its three verbs, `/api/peer/message` | A bearer token compared in constant time. No token, or the wrong one, is `401` with `WWW-Authenticate: Bearer`; a server with no `peers.json` answers `404`, because it has no topology at all. `/api/peer/message` additionally refuses a `from` that is not in `peers[]` |
+| `anyone` | The rest | Nothing beyond the bind address |
 
-Everything else answers any caller that reaches it. That is a known gap rather than an
-oversight, and it is why the bind address is the control that matters.
+The reason this is a column rather than a check inside the dispatcher is that a check in the
+dispatcher has to name a path, and a path it does not name is a route that answers the
+network. `/api/workspaces` was exactly that: it answers this machine's directories and the
+table said nothing about it.
+
+`anyone` is a known gap rather than an oversight, and it is why the bind address is the
+control that matters: a caller that reaches the port can read the conversation, drive a turn,
+and run the agent's tools. The audience column narrows the routes whose answers are facts
+about this machine; it does not authenticate the page.
 
 ## The peer endpoint
 

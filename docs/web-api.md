@@ -5,31 +5,37 @@
 
 ```bash
 ./build/pu serve                       # listen on 127.0.0.1:8080
-./build/pu serve --host 0.0.0.0 --port 9000
+./build/pu serve --bind 0.0.0.0 --port 9000
 ```
+
+`--bind` names the interface the listener sits on, not an address to open. `0.0.0.0` is a
+legal bind and never a destination a browser can dial, so the start-up banner says which
+port it took and leaves the address to the reader: the page names this server by the
+address you reached it on.
 
 A server serves the directory it was started in and stays there: nothing moves it to
 another one. Each directory is a session with its own configuration, conversation and
 tools, so serving several of them at once means one server per directory — which is
 also what keeps them from sharing a conversation or a turn. Since that needs a port per
-directory, the workspace can name its own (`--host`/`--port` first, then
-`PU_SERVE_HOST`/`PU_SERVE_PORT`, then the file):
+directory, the workspace can name its own (`--bind`/`--port` first, then
+`PU_SERVE_BIND`/`PU_SERVE_PORT`, then the file):
 
 ```json
-"serve": { "host": "127.0.0.1", "port": 8087 }
+"serve": { "bind": "127.0.0.1", "port": 8087 }
 ```
 
 A port is what a reader has to remember to tell two servers apart, and the page is what
 has to do it for them. Each server writes itself into `$HOME/.pu/serve.json` while it
-runs — directory, address, port and pid — and deletes the line on the way out, so the
-page can list the machine's servers and name each one by its workspace. A record whose
-process has stopped is dropped the next time the file is read, which is what makes a
-crash cost a stale line rather than a ghost entry. Two servers starting together would
-otherwise each read the list before the other had written it and the second write would
-drop the first, so the read and the write happen under `serve.json.lock`, held for the
-few milliseconds the update takes. The file is a record of what is running, not a
-setting: `serve` in `agents.json` is still the port a workspace asks for, and the
-registry is what actually answers.
+runs — directory, bind, port and pid — and deletes the line on the way out, so the page
+can list the machine's servers and name each one by its workspace. A record whose process
+has stopped is dropped the next time the file is read, which is what makes a crash cost a
+stale line rather than a ghost entry. Two servers starting together would otherwise each
+read the list before the other had written it and the second write would drop the first,
+so the read and the write happen under `serve.json.lock`, held for the few milliseconds
+the update takes; the temp file each writer renames is named after its own process, so a
+writer that gave up waiting on the lock cannot publish over one that finished. The file is
+a record of what is running, not a setting: `serve` in `agents.json` is still the port a
+workspace asks for, and the registry is what actually answers.
 
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
@@ -123,51 +129,89 @@ its own, so every connection from it is a second page.
 
 ## REST endpoints
 
-| Method | Path | Description |
-| :----- | :--- | :---------- |
-| `GET` | `/api/session` | Current session info (agent, backend type/model), the settings in force, and `usage_total`: what the conversation has spent |
-| `GET` | `/api/history` | Full conversation history (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
-| `GET` | `/api/agents` | List all available agents with descriptions |
-| `POST` | `/api/agent/switch` | Switch to a different agent (`{"agent_name":"..."}`) |
-| `GET` | `/api/workspaces` | List all workspaces (directories containing `.pu/agents.json`) |
-| `GET` | `/api/servers` | The servers running on this machine, each with `directory`, `host`, `port` and `current`, which marks the one that answered |
-| `POST` | `/api/clear` | Clear the conversation history |
-| `POST` | `/api/rewind` | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
-| `GET` | `/api/settings` | Every setting this build knows, with the value in force and whether it came from this session or the agent |
-| `POST` | `/api/settings` | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
-| `POST` | `/api/settings/reset` | Drop every override and go back to the agent's configuration |
-| `POST` | `/api/peer/message` | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","job":"...","hop":0}`); requires `Authorization: Bearer`, answers `202` rather than a reply |
-| `GET` | `/api/jobs` | The board: every open job, every peer with its derived `online`, and the trail of what was settled. Reading it is how a peer is heard from |
-| `POST` | `/api/jobs` | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
-| `PATCH` | `/api/jobs` | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
-| `POST` | `/api/jobs/answer` | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
-| `POST` | `/api/jobs/chase` | Ask a job that has not closed what is happening (`{"job":"...","note":"..."}`); the job stays where it is |
-| `POST` | `/api/jobs/drop` | Take a job back before it finishes (`{"job":"...","note":"..."}`); it closes as `cancelled` |
-| `GET` | `/api/board` | The board as the page draws it: the work still owed, the last few that settled, and the trail. No peers, no token, loopback only |
+Every answer is one object carrying `success`, with the payload under the key the route names:
+`{"messages": [...], "success": true}` for a listing, and the handler's own members merged
+in for everything else. The key is part of the route rather than something each handler
+decides, so two listings cannot drift into two shapes.
+
+**Who may read a route is a column of this table, not a comparison of paths in the
+dispatcher.** A row that does not state its audience does not compile. `anyone` means the
+bind address is the control, which is why the bind is the setting that matters;
+`loopback` means the answer is a fact about this machine and the route refuses a caller
+from anywhere else with `403`; `peer` means the shared token, and a caller without it is
+refused with `401`.
+
+| Method | Path | Audience | Description |
+| :----- | :--- | :------- | :---------- |
+| `GET` | `/api/session` | anyone | Current session info (agent, backend type/model), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
+| `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
+| `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
+| `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |
+| `GET` | `/api/workspaces` | loopback | `workspaces`: every sibling directory this machine could serve (each containing `.pu/agents.json`), with its name and its path |
+| `GET` | `/api/servers` | loopback | `servers`: the **other** servers on this machine, each with a `name` and a `port`. The one that answered is not in the list |
+| `POST` | `/api/clear` | anyone | Clear the conversation history |
+| `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
+| `GET` | `/api/settings` | anyone | Every setting this build knows, with the value in force and whether it came from this session or the agent |
+| `POST` | `/api/settings` | anyone | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
+| `POST` | `/api/settings/reset` | anyone | Drop every override and go back to the agent's configuration |
+| `GET` | `/api/board` | loopback | The board as the page draws it: the work still owed, the last few that settled, and the trail. No peers, no token |
+| `GET` | `/api/jobs` | peer | The board: every open job, every peer with its derived `online`, and the trail of what was settled. Reading it is how a peer is heard from |
+| `POST` | `/api/jobs` | peer | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
+| `PATCH` | `/api/jobs` | peer | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
+| `POST` | `/api/jobs/answer` | peer | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
+| `POST` | `/api/jobs/chase` | peer | Ask a job that has not closed what is happening (`{"job":"...","note":"..."}`); the job stays where it is |
+| `POST` | `/api/jobs/drop` | peer | Take a job back before it finishes (`{"job":"...","note":"..."}`); it closes as `cancelled` |
+| `POST` | `/api/peer/message` | peer | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","job":"...","hop":0}`); answers `202` rather than a reply |
 
 
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
-cannot serve it, such as a step back while a tool call is pending — `404` where a name does
-not exist, and `500` where the operation failed. A refusal carries `success: false` and the
-reason in `error`.
+cannot serve it, such as a step back while a tool call is pending — `404` where a name or a
+route does not exist (including a peer route on a server with no `peers.json`), `401` for a
+peer route with no token or the wrong one, `403` for a route whose audience excludes the
+caller's address, and `500` where the operation failed. A refusal carries `success: false`
+and the reason in `error`.
+
+The three audience refusals are three different problems and are not interchangeable. `403`
+says the caller was identified and the route does not answer it from there. `401` says the
+caller never said who it was, and carries `WWW-Authenticate: Bearer`. A `404` from a peer
+route says the server has no topology at all, which is a fact about this build rather than
+about the request.
 
 ## The servers
 
-`GET /api/servers` answers `{"servers":[{...}]}`, one entry per running `pu serve` on this
-machine, read from the registry the servers write themselves into. `current` marks the entry
-whose directory is the one that answered, so the page never has to compare addresses it was
-handed from somewhere else. The entries carry a filesystem path, so the route answers loopback
-only: a server bound to another address still serves the page, the rest of the API and the
-board, but not the list of the machine's directories.
+The page names the server it is attached to, and lists the others. The two facts have two
+homes, which is what keeps either one from being blank when the other is unavailable.
+
+**Its own name comes from the server that answered.** `GET /api/session` carries
+`server: {"name", "port"}`, and the name is the last two segments of the directory that
+server serves — `a/pu-cli` rather than `/home/a/pu-cli`. That is the label the header draws.
+
+**The others come from `GET /api/servers`**, which answers `{"servers":[{"name","port"}]}`,
+one entry per other running `pu serve` on this machine, read from the registry the servers
+write themselves into. The server that answered is not in its own list: it is the page's own,
+and a switch to where the reader already is is a control that does nothing. Filtering by
+process rather than by directory is what makes that true when two servers serve the same
+workspace, which is legal.
+
+Entries carry a label rather than a path, but the route is still loopback only. What it
+answers is the shape of this machine — which projects it serves, and on which ports — and a
+list of that is a map of somebody's disk. So a server bound to another address still serves
+the page, the rest of the API and the board, but not the list. A page that reached one over
+the network gets `403`, keeps its own name from `/api/session`, and says in the header why it
+has nothing to offer.
+
+A sibling's address is that port on the host the page already reached, because the registry's
+`bind` is where a listener sits and not a destination: `0.0.0.0` is a legal bind and never a
+legal address to dial, and a server behind a proxy would name one this page cannot reach.
 
 The page is one server per tab by nature — one socket, one transcript — but naming them is
 not: the header shows the workspace this page is talking to, and lists the others when there
-is more than one. Choosing one moves the page to it. Switching is deliberately light: the
-socket is closed and reopened against the chosen server, the transcript and the board are
-read again from it, and the server that was left keeps running the turn it was given. That
-is why a turn in progress holds the switcher: nothing here moves a running reply between
-servers, and pretending otherwise would be the one case where a reader loses work.
+are any. Choosing one moves the page to it. Switching is deliberately light: the socket is
+closed and reopened against the chosen server, the transcript and the board are read again
+from it, and the server that was left keeps running the turn it was given. That is why a turn
+in progress holds the switcher: nothing here moves a running reply between servers, and
+pretending otherwise would be the one case where a reader loses work.
 
 ## The board
 
