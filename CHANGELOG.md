@@ -6,7 +6,44 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Fixed
+
+- **A page opened over the network no longer loses its own name.** The header learned which
+  workspace it was showing from `GET /api/servers`, and that route answers on the machine the
+  server runs on: a page reached through `--bind` got `403`, and `refreshServers` returned on the
+  failure without drawing, so `#server-current` stayed at its placeholder for the whole visit. The
+  page's own name now comes from `/api/session`, which every caller may read, and the list is a
+  separate fact that can be empty. A refused list still draws the header, with a tooltip saying
+  why the switcher is unavailable.
+
 ### Changed
+
+- **Who may read a route is a column of the route table.** `Audience` names `anyone`, `loopback`
+  or `peer`, `Route` has no default for it, and the dispatcher holds no path names of its own — so
+  a new route answers the question by compiling, and one whose answer changed fails a case that
+  reads the table. `/api/workspaces` is now `loopback`: it answers this machine's directories and
+  was previously readable by any caller that reached the port. `handle` signatures take a `Call`
+  that carries the runtime, the board, the runner, and the three facts only the connection knows
+  (the caller's address, the peer its token speaks for, and the port this server answers on).
+- **One envelope for every answer.** `Route::key` names the member a payload is filed under, so
+  `/api/history` answers `{"messages": [...], "success": true}` rather than a bare array, and the
+  `Envelope` enum is gone. A listing cannot invent a fifth shape.
+- **The three audience refusals are three statuses.** `403` is a route that does not answer this
+  address, `401` (with `WWW-Authenticate: Bearer`) is a peer route with no token or the wrong one,
+  and `404` is a peer route on a server with no topology. A refused peer token was `400`.
+- **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already means a backend's
+  upstream address in this program; the interface a listener sits on is the one place `pu` answers
+  rather than reaches, and `0.0.0.0` is a legal bind and never a legal destination. The start-up
+  banner no longer prints `http://0.0.0.0:9000`, which reached the reader's own loopback; it names
+  the port and leaves the address to whoever opened it.
+- **`GET /api/servers` lists the other servers and not the one that answered**, and each entry is
+  `{"name", "port"}`: a label rather than a filesystem path, and no `current` mark, because the
+  page's own server is the one that answered `/api/session`. Filtering is by process, so two
+  servers serving the same workspace do not list each other's switch as a move to nowhere. A
+  sibling's address is that port on the host the page already reached, since a registry `bind` is
+  not a destination.
+- The registry's temp file is named after the writer (`serve.json.<pid>.tmp`), so a writer that
+  gave up waiting on the lock cannot rename over one that finished.
 
 - `pu --help` names each command with the one line that says what it answers. The list is
   built from the same table the `--command` flag is described from, so a command cannot be
