@@ -1,3 +1,6 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-only
+
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
