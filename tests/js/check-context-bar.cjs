@@ -40,7 +40,11 @@ function load() {
     clearTimeout,
     setInterval: () => 0,
   });
-  for (const file of ["state.js", "panel.js"]) {
+  // session.js is here for one function: `renderStatusBar` reads the thinking setting through
+  // `settingValue`, which lives in that file. Loaded without it, every case here fails on
+  // `settingValue is not defined` before it reaches an assertion — which is what the first run
+  // of this file would have shown if a node had been present to run it.
+  for (const file of ["state.js", "session.js", "panel.js"]) {
     vm.runInContext(fs.readFileSync(path.join(web, file), "utf8"), context, { filename: file });
   }
   vm.runInContext(

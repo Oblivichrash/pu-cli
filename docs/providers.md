@@ -159,8 +159,8 @@ than folded into the reply.
 Every request is bounded, and the bound is why a gateway that hangs is a failure rather than a
 wait. `BeastHttpClient` runs each operation asynchronously and drives it with `io_context::run()`,
 because beast's `expires_after` covers asynchronous operations only and asio's synchronous calls
-block where no timer can reach them. Three budgets, all in
-`include/pu/core/beast_http_client.hpp`:
+block where no timer can reach them. Three budgets, named at the top of
+`src/core/beast_http_client.cpp`:
 
 | Budget | Value | Bounds |
 | --- | --- | --- |
