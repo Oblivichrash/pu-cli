@@ -154,6 +154,25 @@ The request asks for one completion, so the reply is read from the first choice 
 the stream names. A gateway that sends a second index has it reported at `debug` rather
 than folded into the reply.
 
+## Deadlines
+
+Every request is bounded, and the bound is why a gateway that hangs is a failure rather than a
+wait. `BeastHttpClient` runs each operation asynchronously and drives it with `io_context::run()`,
+because beast's `expires_after` covers asynchronous operations only and asio's synchronous calls
+block where no timer can reach them. Three budgets, all in
+`include/pu/core/beast_http_client.hpp`:
+
+| Budget | Value | Bounds |
+| --- | --- | --- |
+| `kConnectBudget` | 10s | Reaching the host: DNS, TCP, and the TLS handshake |
+| `kStreamIdleBudget` | 300s | One read of a turn — an idle deadline, not a cap on the reply, so a long answer may run for as long as it keeps producing bytes |
+| `kReadIdleBudget` | 30s | One catalogue or health read, which is control plane rather than a model answering |
+
+A missed deadline is reported as its own sentence — `HTTP read timed out after 30s` — rather than
+as the cancelled socket operation underneath it, since the first names something a reader can act
+on. NVIDIA NIM is the reason this exists: several of its ids accept a connection and send no byte
+at all, which used to hold `pu models --verify` and `pu ask` for as long as the process lived.
+
 ## Limits
 
 Neither backend implements a capability the table above does not name. Both

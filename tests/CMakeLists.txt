@@ -37,6 +37,7 @@ add_executable(pu_tests
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
     unit/test_list_models.cpp
+    unit/test_http_deadline.cpp
     unit/test_probe.cpp
     unit/test_peer_config.cpp
     unit/test_peer_tool.cpp

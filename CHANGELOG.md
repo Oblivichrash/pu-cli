@@ -25,6 +25,15 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Fixed
 
+- **A gateway that accepts a connection and then says nothing no longer hangs the caller.**
+  `BeastHttpClient` runs every request asynchronously and drives it with `io_context::run()`,
+  which is the only arrangement in which beast's `expires_after` does anything: asio's synchronous
+  calls block in a `poll` that no timer can interrupt, and `SO_RCVTIMEO` has nothing to act on
+  there either. Three budgets replace the unbounded wait — 10s to reach the host, 30s per
+  catalogue read, 300s per idle read of a turn. A missed deadline is reported as its own sentence
+  (`HTTP read timed out after 30s`) rather than as the cancelled socket operation beneath it.
+  This is what NVIDIA NIM needed: several of its ids accept a connection and send no byte, which
+  used to hold `pu models --verify` and `pu ask` until the process was killed.
 - **A page opened over the network no longer loses its own name.** The header learned which
   workspace it was showing from `GET /api/servers`, and that route answers on the machine the
   server runs on: a page reached through `--bind` got `403`, and `refreshServers` returned on the

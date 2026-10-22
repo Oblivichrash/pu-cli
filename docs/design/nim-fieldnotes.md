@@ -28,7 +28,9 @@ The catalog is not what the account can call. Probed on 2026-10-14:
 | `qwen/qwen2.5-7b-instruct`, `deepseek-ai/deepseek-r1` | plain-text `404 page not found`, not JSON |
 
 The hang and the plain-text 404 have no machine-readable failure to read; a client can
-only time out or treat the body as text.
+only time out or treat the body as text. It now does the first: every request carries a
+deadline, so a model that hangs is answered `HTTP read timed out` rather than waited on. See
+[providers.md](../../providers.md#limits).
 
 ## The stream, from a nemotron-3-super capture
 
