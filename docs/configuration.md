@@ -40,6 +40,7 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `temperature` | `0.7` | |
 | `max_tokens` | unset | A cap on the reply. Unset sends no cap, leaving the provider's own limit to apply. A cap reached while a tool call is being written ends the turn with an error, since half an argument would run the tool on a partial value |
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
+| `context_window` | unset | How much context the model holds, in tokens. Advisory: nothing trims a prompt against it and no turn is refused for outgrowing it. It is the only figure the Web page's context bar measures the last reply against, so a model without it draws no fill and shows the count alone. `pu check --caps` prints what the gateway's own catalogue says, which is where a number to write here comes from |
 | `system_prompt` | unset | Merged with the injected context |
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
@@ -113,6 +114,7 @@ fast   (default_agent)
   model        deepseek-v4.1-flash
   api_key      (set, 59 characters)
   thinking     default
+  context      250000
   sandbox      /home/me/work
   forbids      'sudo', 'mkfs'
   tool budget  100

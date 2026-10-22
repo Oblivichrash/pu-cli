@@ -45,8 +45,9 @@ const std::set<std::string>& ReadAgentKeys() {
 }
 
 const std::set<std::string>& ReadBackendKeys() {
-  static const std::set<std::string> keys{"gateway", "host",        "model",      "api_key",
-                                          "temperature", "system_prompt", "max_tokens", "thinking"};
+  static const std::set<std::string> keys{"gateway",      "host",           "model",
+                                          "api_key",      "temperature",    "system_prompt",
+                                          "max_tokens",   "thinking",       "context_window"};
   return keys;
 }
 
@@ -133,6 +134,9 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   out << "  thinking     " << ThinkingLevelName(entry.backend.thinking) << "\n";
   if (entry.backend.max_tokens) {
     out << "  max_tokens   " << *entry.backend.max_tokens << "\n";
+  }
+  if (entry.backend.context_window) {
+    out << "  context      " << *entry.backend.context_window << "\n";
   }
   out << "  sandbox      " << SandboxState(entry.security, workspace, warnings) << "\n";
   if (!entry.security.forbidden_patterns.empty()) {

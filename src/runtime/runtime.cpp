@@ -237,6 +237,12 @@ config::Backend Runtime::CurrentBackend() const {
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
 
+int Runtime::ContextWindow() const {
+  // The file's figure, and nothing else. A catalogue read here would be a network call under the
+  // session's lock, and this build's HTTP client has no deadline to end it.
+  return ConfiguredBackend().context_window.value_or(0);
+}
+
 std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;
   std::lock_guard<std::mutex> lock(overrides_mutex_);

@@ -232,6 +232,9 @@ boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   body["backend_type"] = config::GatewayName(backend.gateway);
   body["backend_model"] = backend.model;
   body["backend_host"] = backend.host;
+  // How much context the model holds, `0` when nobody stated one. The page draws its bar
+  // against this and shows the count alone when it is absent, so a guess never becomes a fill.
+  body["context_window"] = runtime.ContextWindow();
   body["thinking"] = ThinkingLevelName(backend.thinking);
   if (const auto override_level = runtime.ThinkingOverride()) {
     body["thinking_override"] = ThinkingLevelName(*override_level);

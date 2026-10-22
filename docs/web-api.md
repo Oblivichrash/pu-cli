@@ -52,9 +52,10 @@ The front-end lives in `web/` as plain scripts with no build step, so the load o
 `index.html` is the dependency order and each file has one job — see
 [ARCHITECTURE](ARCHITECTURE.md#browser-modules). History is folded into one bubble per
 turn, with each tool result keeping the output the stream showed. Under the composer it shows
-the context the last reply ran against, from the counts the provider returned. No
-window is shown beside it: none of the backends here reports one, and a guess would
-read like a fact.
+the context the last reply ran against, from the counts the provider returned, and how much of
+the model's window that is when the backend states one. A backend that states none leaves the
+bar empty and the count alone, because a guess would read like a fact; `context_window` in
+`agents.json` supplies a figure the gateway does not.
 
 ## WebSocket
 
@@ -146,7 +147,7 @@ refused with `401`.
 
 | Method | Path | Audience | Description |
 | :----- | :--- | :------- | :---------- |
-| `GET` | `/api/session` | anyone | Current session info (agent, backend type/model), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
+| `GET` | `/api/session` | anyone | Current session info (agent, backend type/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
 | `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
 | `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
 | `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |

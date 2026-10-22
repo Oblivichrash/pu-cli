@@ -23,17 +23,21 @@ the commit that made it, and its current behaviour is in the relevant document
   server that answered is the page's own and is no longer in its own list. A client that read
   `directory`, `host` or `current` has to take the name from `/api/session` instead.
 
+### Added
+
+- **The context bar has a figure to draw against.** `backend.context_window` in `agents.json`
+  names how much context the model holds, and `GET /api/session` answers it so the page can fill
+  its bar instead of leaving the count alone. Advisory throughout: nothing trims a prompt against
+  it and no turn is refused for outgrowing it, so a wrong figure costs a misleading bar rather
+  than a broken turn. It is stated in the file rather than read from the gateway because it is
+  asked for while the session's lock is held, and a catalogue read there would stand between the
+  page and every other request for as long as the gateway took — `pu check --caps` prints what
+  each gateway reports, which is where a number to write comes from. `0` means nobody named one
+  and the bar stays empty: DeepSeek reports 1M, CodeBuddy claims 1M and answers past 250K as
+  though it fit, and NIM reports nothing at all.
+
 ### Fixed
 
-- **A gateway that accepts a connection and then says nothing no longer hangs the caller.**
-  `BeastHttpClient` runs every request asynchronously and drives it with `io_context::run()`,
-  which is the only arrangement in which beast's `expires_after` does anything: asio's synchronous
-  calls block in a `poll` that no timer can interrupt, and `SO_RCVTIMEO` has nothing to act on
-  there either. Three budgets replace the unbounded wait — 10s to reach the host, 30s per
-  catalogue read, 300s per idle read of a turn. A missed deadline is reported as its own sentence
-  (`HTTP read timed out after 30s`) rather than as the cancelled socket operation beneath it.
-  This is what NVIDIA NIM needed: several of its ids accept a connection and send no byte, which
-  used to hold `pu models --verify` and `pu ask` until the process was killed.
 - **A page opened over the network no longer loses its own name.** The header learned which
   workspace it was showing from `GET /api/servers`, and that route answers on the machine the
   server runs on: a page reached through `--bind` got `403`, and `refreshServers` returned on the

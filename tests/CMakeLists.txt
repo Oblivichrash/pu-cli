@@ -126,6 +126,12 @@ if(PU_NODE)
     add_test(NAME web/transcriptFlush
              COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-transcript-flush.cjs)
     set_tests_properties(web/transcriptFlush PROPERTIES TIMEOUT 60)
+    # The context bar: two facts arrive on different clocks — a turn's counts on the socket and
+    # the model's window with `/api/session` — and a bar drawn from whichever landed last is
+    # blank on every reload. Only running the modules sees an ordering bug like that.
+    add_test(NAME web/contextBar
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-context-bar.cjs)
+    set_tests_properties(web/contextBar PROPERTIES TIMEOUT 60)
 else()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)

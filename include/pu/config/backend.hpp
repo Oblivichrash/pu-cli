@@ -31,6 +31,12 @@ struct Backend {
   // caps on its own would otherwise be second-guessed by a default nobody chose.
   std::optional<int> max_tokens;
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
+  // How much context the model holds, when the file says so. Advisory: nothing trims a prompt
+  // against it and nothing refuses a turn that outgrows it, because a gateway that truncates
+  // silently would turn a wrong number into a bug nobody could see. Named here it outranks
+  // whatever the gateway's catalogue reports, which is how a nominal figure is corrected by
+  // hand without waiting for the product to change its mind.
+  std::optional<int> context_window;
 };
 
 // The gateway a backend names, from an agents.json entry or a stored one. Required rather
@@ -57,6 +63,7 @@ inline void ReadBackendFields(Backend& cfg, const boost::json::value& j) {
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
+  cfg.context_window = json::OptionalOrDefault<int>(j, "context_window");
   cfg.thinking = ReadThinkingLevel(j);
 }
 
@@ -78,6 +85,7 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
       {"thinking", ThinkingLevelName(cfg.thinking)},
   };
   if (cfg.max_tokens) j.as_object()["max_tokens"] = *cfg.max_tokens;
+  if (cfg.context_window) j.as_object()["context_window"] = *cfg.context_window;
 }
 
 inline Backend tag_invoke(boost::json::value_to_tag<Backend>,

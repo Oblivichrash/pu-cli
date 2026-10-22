@@ -52,6 +52,20 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
+// The page draws a context bar against this figure, so an absent one has to be answered rather
+// than left out: `0` means "this gateway states no window", which is what a blank bar reads as.
+// The harness's fake backend serves no catalogue, so this is also the gateway-that-says-nothing
+// case — the shape a NIM agent arrives in.
+TEST_CASE("serve API /api/session says how much context the model holds", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/session"));
+
+  REQUIRE(j.as_object().contains("context_window"));
+  CHECK(j.at("context_window") == 0);
+}
+
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
   ServeHarness harness("codebuddy");
   auto client = harness.Client();

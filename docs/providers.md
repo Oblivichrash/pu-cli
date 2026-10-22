@@ -185,29 +185,32 @@ thinks, calls a tool, then thinks again keeps that order. A block carries the
 `raw` JSON when it round-trips. Whether a block list reaches the wire as one string
 or as a list is decided per provider, as the signatures row says.
 
-### No backend here reports a context window
+### What each backend says about a context window
 
-Each was asked rather than assumed, and the answers are observations that drift
-rather than a contract to code against. Nothing reads them; they are kept because
-they explain why a window is not shown anywhere.
+Each was asked rather than assumed, and the answers are observations that drift rather than a
+contract to code against. `pu check --caps` prints them, and that is their whole use: the page's
+context bar is drawn from `backend.context_window` in `agents.json` rather than from here. A
+number worth writing there is the one this table's endpoint reports — with CodeBuddy's caveat
+below in mind, since it states 1M and enforces less.
 
 | Backend | Endpoint | Answer |
 | --- | --- | --- |
-| DeepSeek | `GET /v1/models` | `context_window: 1048576` on each model |
-| Ollama Cloud | `POST /api/show` | a `model_info` key ending in `context_length` |
+| DeepSeek | `GET /v1/models` | `context_window: 1048576` on each model, read by the OpenAI shape |
+| Ollama Cloud | `POST /api/show` | a `model_info` key ending in `context_length`; no catalogue endpoint states one, so this gateway states none to `pu` |
 | Ollama Cloud | `GET /api/ps` | `401 unauthorized`, so the loaded-model window is unreachable |
-| NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` |
+| NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` — no window at all |
 | NVIDIA NIM | `GET /v1/metadata` | `404 page not found` |
-| CodeBuddy | `GET /v3/config` | `data.models[]` (the account's catalogue) and `data.agents[].models[]` (the agent's usable subset); a request without the client's `User-Agent` is refused `code: 12403` |
+| CodeBuddy | `GET /v3/config` | `data.models[].maxInputTokens`, read into the catalogue's capabilities |
 
 Ollama's key prefix varies with the model's architecture, so a reader has to match
 the suffix rather than a fixed name. Measured across five models — `gptoss.`,
 `nemotron_h_moe.` and `gemma4.` for the first three, and none at all for
 `nemotron-3-ultra`, which a lookup naming `gptoss.` therefore misses.
 
-CodeBuddy truncates instead of refusing: a request carrying two million characters
-was answered `200` with a normal reply whose counts (`prompt_tokens: 250004` against
-`prompt_cache_hit_tokens: 249856` plus `prompt_cache_miss_tokens: 148`) put the
-cache ceiling at 250,000 tokens. The gateway never said so, so a request that
-outgrows the window is answered as though it fit and nothing on the client side can
-detect it from the status alone.
+Because the figure is advisory, a nominal one that is not what the product enforces costs a
+misleading bar rather than a failed turn. CodeBuddy is the case in point: it truncates instead
+of refusing, so a request carrying two million characters was answered `200` with a normal reply
+whose counts (`prompt_tokens: 250004` against `prompt_cache_hit_tokens: 249856` plus
+`prompt_cache_miss_tokens: 148`) put the cache ceiling at 250,000 tokens. The gateway never said
+so, and nothing on the client side can detect it from the status alone — which is why the
+enforced figure is the one to write in `context_window` for a CodeBuddy entry.

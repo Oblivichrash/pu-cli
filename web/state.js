@@ -12,6 +12,11 @@ const BLOCK_TYPES = {
 
 const MAX_BUSY_RETRIES = 2;
 
+// How much context each `gateway · model` holds, as the server last reported it. A window is a
+// fact about a model rather than about a gateway — two gateways serve the same id at different
+// sizes — so the key carries both. Empty means nobody stated one, and a blank bar is the honest
+// answer there: NIM reports no window at all, and a nominal figure a product does not enforce
+// would draw a fill that lies.
 const CONTEXT_WINDOWS = {};
 
 // The server this page is attached to. There is always exactly one, because a page was served by
@@ -78,6 +83,10 @@ const PU = {
   backendHostShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
   contextShown: "",
+  // The prompt of the last turn, kept so the bar can be redrawn when the window arrives late:
+  // the counts come with a turn and the window comes with the session, so the two are drawn
+  // from state rather than from whichever payload happened to land last.
+  lastTurnPrompt: null,
   // The last total the server reported for this conversation, kept so a failed read leaves
   // the panel as it was rather than blanking a figure that is still true.
   usageTotal: null,
@@ -140,8 +149,24 @@ function setConnectionState(state) {
   PU.connState = state;
 }
 
-function contextWindowFor(backendType) {
-  return CONTEXT_WINDOWS[backendType] || null;
+function contextWindowKey(backendType, model) {
+  return `${backendType || ""} · ${model || ""}`;
+}
+
+function contextWindowFor(backendType, model) {
+  return CONTEXT_WINDOWS[contextWindowKey(backendType, model)] || null;
+}
+
+// The window a server stated for the model it is running. `0` is "nobody said one", which is
+// answered by forgetting the model rather than by storing a zero: a figure that is absent and a
+// figure of zero are different answers, and only the first should leave the bar blank.
+function setContextWindow(backendType, model, window) {
+  const key = contextWindowKey(backendType, model);
+  if (Number.isFinite(window) && window > 0) {
+    CONTEXT_WINDOWS[key] = window;
+  } else {
+    delete CONTEXT_WINDOWS[key];
+  }
 }
 
 function createSystemMessage(text) {

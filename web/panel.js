@@ -20,6 +20,9 @@ function setBackendLabel(backendType, model, host) {
   if (model) PU.backendModelShown = model;
   if (host) PU.backendHostShown = host;
   renderStatusBar();
+  // The window is filed under the model, so a label naming a different one changes which window
+  // applies. A gateway that picked the model (`done` names it) has to redraw the bar here.
+  renderContextBar();
 }
 
 // The bar repeats what the panel holds, in one line, because the panel folds and the
@@ -77,7 +80,8 @@ function showUsage(payload) {
   const cached = Number(payload.cached_tokens);
   if (!Number.isFinite(prompt)) {
     el.textContent = "";
-    if (fill) fill.style.width = "0";
+    PU.lastTurnPrompt = null;
+    renderContextBar();
     return;
   }
   el.textContent =
@@ -86,20 +90,38 @@ function showUsage(payload) {
   PU.contextShown = prompt.toLocaleString() + " tok";
   PU.lastTurnPrompt = prompt;
   renderStatusBar();
+  renderContextBar();
+}
+
+// The fill, drawn from the two facts it needs rather than from whichever payload landed last:
+// the counts arrive with a turn and the window arrives with the session, and a reload can
+// deliver them in either order. Both are on `PU`, so either arrival can redraw.
+function renderContextBar() {
+  const fill = document.getElementById("context-fill");
+  const prompt = PU.lastTurnPrompt;
+  const window = contextWindowFor(PU.backendTypeShown, PU.backendModelShown);
+
+  // The bar has no room for a progress bar, so the status line carries the same warning.
+  const barEl = document.getElementById("status-context");
   if (!fill) return;
-  // The bar needs a known window; without one the number stands alone.
-  const window = contextWindowFor(PU.backendTypeShown);
-  if (!window) {
+
+  if (!Number.isFinite(prompt) || !window) {
+    // No window: the count stands alone, which is what every gateway but the ones that state
+    // a size leaves it. Said in the tooltip rather than left as a bare dash.
     fill.style.width = "0";
+    fill.className = "";
+    if (barEl) {
+      barEl.className = "status-item";
+      barEl.title = window
+        ? "Context the last reply ran against"
+        : "Context the last reply ran against; this model reports no window to measure it against";
+    }
     return;
   }
+
   const ratio = Math.min(prompt / window, 1);
   fill.style.width = (ratio * 100).toFixed(1) + "%";
   fill.className = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
-
-  // The bar has no room for a progress bar, so the number carries the same warning the
-  // panel's fill does.
-  const barEl = document.getElementById("status-context");
   if (barEl) {
     barEl.className = "status-item" + (ratio > 0.85 ? " high" : (ratio > 0.6 ? " warn" : ""));
     barEl.title = `Context the last reply ran against: ${Math.round(ratio * 100)}% of ${window.toLocaleString()}`;
