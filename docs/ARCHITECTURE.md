@@ -599,12 +599,13 @@ See [peers-and-board.md](peers-and-board.md).
 
 ```
 <workspace>/.pu/session.json   # Single session state
-./.pu/logs/                    # Log output, moved by PU_HOME
+./.pu/logs-<pid>/              # Log output, moved by PU_HOME
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing
-`PU_HOME` moves; the environment table in [configuration.md](configuration.md#environment-variables)
-owns both paths.
+`PU_HOME` moves, and their directory is per process so two processes in one
+workspace never rotate the same file; the environment table in
+[configuration.md](configuration.md#environment-variables) owns both paths.
 
 The session file carries `schema_version` beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on

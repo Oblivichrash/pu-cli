@@ -26,7 +26,9 @@ config::ServeRecord Record(int pid, std::uint16_t port, const std::string& direc
 
 // The registry is written under the user's home, so a case that registers servers would
 // otherwise edit the file of whoever is running the tests. This moves home for the length of
-// the case and removes what was written there.
+// the case and removes what was written there. The name is unique per case because the cases run
+// as separate processes at the same time, and a home shared with another process is a directory
+// another process is free to delete while this one is registering into it.
 struct HomeScope {
   HomeScope() : home(UniqueTempPath("pu_test_home")), env("HOME", home.string()) {
     fs::create_directories(home);

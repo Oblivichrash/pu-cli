@@ -177,7 +177,7 @@ else, so an A→B→A→B chain ends at the second hop by construction rather th
 | Variable | Purpose |
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Names the `agents.json` to load, ahead of `./.pu/agents.json` and `~/.pu/agents.json`. A path that does not exist is an error rather than a fallback |
-| `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
+| `PU_HOME` | Moves the log directory (default `./.pu/logs-<pid>/`; the number is the writing process, so two processes in one workspace do not rotate the same file). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
@@ -188,7 +188,12 @@ else, so an A→B→A→B chain ends at the second hop by construction rather th
 ## Logging
 
 The console shows only `error` and `critical`; the file gets `PU_LOG_LEVEL` (default
-`info`) and goes to `<data-dir>/logs/pu.log`, rotating at 5MB and keeping 3 files.
+`info`) and goes to `<workspace>/.pu/logs-<pid>/pu.log`, rotating at 5MB and keeping 3
+files.
+
+The directory is per process because the rotation is: a writer that renames `pu.log` to
+`pu.log.1` while another process has the same file open leaves that reader describing a
+name that is no longer the file, and on some systems the writer is the one that pays.
 
 The writer behind the file is an async logger on a single thread pool. That pool is
 created once per process and never replaced, so a second `Runtime` — a retried server, a
