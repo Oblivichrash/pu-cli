@@ -21,9 +21,7 @@
 #endif
 
 #include <algorithm>
-#include <cerrno>
 #include <chrono>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -51,7 +49,6 @@ class RegistryLock {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     spdlog::warn("The serve registry at {} stayed locked; writing anyway", path);
-    std::fprintf(stderr, "PROBE lock gave up path=%s\n", path.c_str());
   }
 
   ~RegistryLock() {
@@ -84,10 +81,7 @@ class RegistryLock {
     return held_;
 #else
     fd_ = ::open(path_.c_str(), O_CREAT | O_RDWR, 0600);
-    if (fd_ < 0) {
-      std::fprintf(stderr, "PROBE lock unopenable path=%s errno=%d\n", path_.c_str(), errno);
-      return true;
-    }
+    if (fd_ < 0) return true;
     held_ = ::flock(fd_, LOCK_EX | LOCK_NB) == 0;
     if (!held_) ::close(fd_);
     return held_;
@@ -131,13 +125,9 @@ void WriteRecords(const std::string& path, const json::array& records) {
 
 json::array ReadRecords(const std::string& path) {
   std::ifstream file(path);
-  if (!file.is_open()) {
-    std::fprintf(stderr, "PROBE unreadable path=%s errno=%d\n", path.c_str(), errno);
-    return {};
-  }
+  if (!file.is_open()) return {};
   std::ostringstream buffer;
   buffer << file.rdbuf();
-  std::fprintf(stderr, "PROBE read path=%s bytes=%zu\n", path.c_str(), buffer.str().size());
   json::value parsed;
   try {
     parsed = json::parse(buffer.str());
@@ -145,13 +135,10 @@ json::array ReadRecords(const std::string& path) {
     spdlog::warn("The serve registry at {} is not readable as JSON", path);
     return {};
   }
-  if (json::HasKey(parsed, kRecordsKey) && parsed.at(kRecordsKey).is_array()) {
-    const json::array records = parsed.at(kRecordsKey).as_array();
-    std::fprintf(stderr, "PROBE parsed records=%zu\n", records.size());
-    return records;
-  }
-  std::fprintf(stderr, "PROBE parsed without the key\n");
-  return {};
+  if (!json::HasKey(parsed, kRecordsKey)) return {};
+  const json::value& records = parsed.at(kRecordsKey);
+  if (!records.is_array()) return {};
+  return records.as_array();
 }
 
 ServeRecord RecordFromJson(const json::value& item) {
@@ -214,9 +201,6 @@ std::string ServeRegistryPath() {
 bool StillRunning(const ServeRecord& record) {
   const bool alive = platform::ProcessRunning(record.pid);
   const std::string now = platform::ProcessStartToken(record.pid);
-  std::fprintf(stderr, "PROBE pid=%d alive=%d errno=%d path=%s started=[%s] now=[%s]\n",
-               record.pid, alive ? 1 : 0, errno, ServeRegistryPath().c_str(),
-               record.started.c_str(), now.c_str());
   if (!alive) return false;
   if (record.started.empty() || now.empty()) return true;
   return record.started == now;

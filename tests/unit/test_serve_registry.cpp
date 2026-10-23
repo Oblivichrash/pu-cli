@@ -17,6 +17,19 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// One home per process, which is what the process already had before this case moved it. The
+// cases run at the same time as separate processes, and a home shared with another process is a
+// directory another process is free to delete while this one is registering into it — so a home
+// is asked for once and every case in this process writes into that one.
+fs::path ScopedHome() {
+  static const fs::path home = [] {
+    const fs::path path = UniqueTempPath("pu_test_home");
+    fs::create_directories(path);
+    return path;
+  }();
+  return home;
+}
+
 config::ServeRecord Record(int pid, std::uint16_t port, const std::string& directory) {
   // The stamp of this process, which is the only one a case can write honestly: a made-up stamp
   // would be dropped by the rule that a record is worth reading only while its own holder runs.
@@ -26,20 +39,15 @@ config::ServeRecord Record(int pid, std::uint16_t port, const std::string& direc
 
 // The registry is written under the user's home, so a case that registers servers would
 // otherwise edit the file of whoever is running the tests. This moves home for the length of
-// the case and removes what was written there. The name is unique per case because the cases run
-// as separate processes at the same time, and a home shared with another process is a directory
-// another process is free to delete while this one is registering into it. ScopedEnvVar writes
-// the process environment, not the C library's mirror of it, so the case also has to say that
-// the mirror is what ServeRegistryPath() reads.
+// the case and removes what was written there, so that a case leaves no record naming a pid and
+// a start time from before in a temp directory that outlives the run that wrote it.
+// ScopedEnvVar writes the process environment, not the C library's mirror of it, so the case
+// also has to say that the mirror is what ServeRegistryPath() reads.
 struct HomeScope {
   HomeScope()
-      : home(UniqueTempPath("pu_test_home")),
+      : home(ScopedHome()),
         env("HOME", home.string()),
-        mirror{} {
-    fs::create_directories(home);
-  }
-  // The file is removed before the directory: a record left behind names a pid and a start time
-  // from before, and the temp directory outlives the run that wrote it.
+        mirror{} {}
   ~HomeScope() {
     std::error_code ec;
     fs::remove(home / ".pu" / "serve.json", ec);
