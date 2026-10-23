@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -414,7 +415,13 @@ bool ProcessRunning(int pid) {
   // A child that has exited but not been reaped is this process's own to wait for, and only
   // its own: anyone else probing it gets ESRCH, which is the right answer for a record left
   // by a process that is gone.
-  return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+  errno = 0;
+  const int probe = ::kill(static_cast<pid_t>(pid), 0);
+  const int failure = errno;
+  spdlog::info("DEBUG ProcessRunning pid={} probe={} errno={} ({})", pid, probe, failure,
+               std::strerror(failure));
+  if (probe == 0) return true;
+  return failure == EPERM;
 #endif
 }
 
