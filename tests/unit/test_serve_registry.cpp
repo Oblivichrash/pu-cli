@@ -33,8 +33,11 @@ struct HomeScope {
   HomeScope() : home(UniqueTempPath("pu_test_home")), env("HOME", home.string()) {
     fs::create_directories(home);
   }
+  // The file is removed before the directory: a record left behind names a pid and a start time
+  // from before, and the temp directory outlives the run that wrote it.
   ~HomeScope() {
     std::error_code ec;
+    fs::remove(home / ".pu" / "serve.json", ec);
     fs::remove_all(home, ec);
   }
   fs::path home;

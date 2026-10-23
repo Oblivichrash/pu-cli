@@ -29,15 +29,14 @@ std::string IdOf(const HttpResponse& res) {
   return ValueOrDefault<std::string>(boost::json::parse(res.body).at("job"), "id", "");
 }
 
-const boost::json::object* Job(const HttpResponse& res, const std::string& id) {
-  static boost::json::object found;
+// The job as the board lists it, in the body it was read from: the answer owns the string the
+// fields point into, so a caller that kept a view would be reading a freed one -- the last
+// assertion of a case runs after the statement that produced the body has ended.
+boost::json::object Job(const HttpResponse& res, const std::string& id) {
   for (const auto& job : boost::json::parse(res.body).as_object().at("jobs").as_array()) {
-    if (ValueOrDefault<std::string>(job, "id", "") == id) {
-      found = job.as_object();
-      return &found;
-    }
+    if (ValueOrDefault<std::string>(job, "id", "") == id) return job.as_object();
   }
-  return nullptr;
+  return {};
 }
 
 }  // namespace
@@ -61,9 +60,9 @@ TEST_CASE("a posted job is readable from the board") {
 
   const HttpResponse listed = client.GetRaw("/api/jobs");
   CHECK(listed.status == 200);
-  const auto* job = Job(listed, id);
-  REQUIRE(job != nullptr);
-  CHECK(ValueOrDefault<std::string>(*job, "intent", "") == "check the build");
+  const boost::json::object job = Job(listed, id);
+  REQUIRE_FALSE(job.empty());
+  CHECK(ValueOrDefault<std::string>(job, "intent", "") == "check the build");
 }
 
 TEST_CASE("the holder moves a job the board answers with when it closes") {
@@ -208,9 +207,9 @@ TEST_CASE("a job belongs to the peer it names, so nobody else can move it") {
   CHECK(ValueOrDefault<bool>(boost::json::parse(stranger.body), "success", true) == false);
 
   const HttpResponse listed = client.GetRaw("/api/jobs");
-  const auto* job = Job(listed, id);
-  REQUIRE(job != nullptr);
-  CHECK(ValueOrDefault<std::string>(*job, "state", "") == "open");
+  const boost::json::object job = Job(listed, id);
+  REQUIRE_FALSE(job.empty());
+  CHECK(ValueOrDefault<std::string>(job, "state", "") == "open");
 }
 
 TEST_CASE("a person answers a blocked job, and it goes back to work") {
