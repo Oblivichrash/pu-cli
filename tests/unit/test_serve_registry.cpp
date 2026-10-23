@@ -37,9 +37,14 @@ config::ServeRecord Record(int pid, std::uint16_t port, const std::string& direc
 // otherwise edit the file of whoever is running the tests. This moves home for the length of
 // the case and removes what was written there. The name is unique per case because the cases run
 // as separate processes at the same time, and a home shared with another process is a directory
-// another process is free to delete while this one is registering into it.
+// another process is free to delete while this one is registering into it. ScopedEnvVar writes
+// the process environment, not the C library's mirror of it, so the case also has to say that
+// the mirror is what ServeRegistryPath() reads.
 struct HomeScope {
-  HomeScope() : home(UniqueTempPath("pu_test_home")), env("HOME", home.string()) {
+  HomeScope()
+      : home(UniqueTempPath("pu_test_home")),
+        env("HOME", home.string()),
+        mirror{} {
     fs::create_directories(home);
   }
   // The file is removed before the directory: a record left behind names a pid and a start time
@@ -51,6 +56,7 @@ struct HomeScope {
   }
   fs::path home;
   ScopedEnvVar env;
+  platform::LiveEnvironment mirror;
 };
 
 }  // namespace

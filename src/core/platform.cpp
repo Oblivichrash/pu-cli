@@ -28,6 +28,31 @@
 
 namespace pu::platform {
 
+namespace {
+
+#ifndef _WIN32
+// Linux would answer at /proc/self/stat, which /proc resolves to the caller, so one path serves
+// both the process's own stamp and another process's.
+std::string StartedAtTicks(const std::string& stat_line) {
+  // The field before this one is the executable's name in parentheses, and a name may contain
+  // spaces and both kinds of bracket, so the fields are counted from the last ')' rather than
+  // from the start of the line.
+  const std::size_t close = stat_line.rfind(')');
+  if (close == std::string::npos) return {};
+  std::istringstream rest(stat_line.substr(close + 1));
+  // The next field is 3 (state), so `starttime`, which is 22, is the twentieth read from here:
+  // boot-relative ticks, which is exactly the discriminator, since two processes that share a
+  // pid number were started at different times.
+  std::string field;
+  for (int index = 3; index <= 22; ++index) {
+    if (!(rest >> field)) return {};
+  }
+  return field;
+}
+#endif
+
+}  // namespace
+
 CancelToken& ShutdownToken() {
   static CancelToken token = std::make_shared<std::atomic<bool>>(false);
   return token;
@@ -347,31 +372,28 @@ std::string ProcessStartToken(int pid) {
   }
   CloseHandle(process);
   return stamp;
-#elif defined(__APPLE__)
-  // No /proc: `proc_pidinfo` would answer, and it is not linked on every build here. An empty
-  // stamp is the documented answer when the platform cannot say, and the reader falls back to
-  // the pid, which is what it did before this existed.
-  return {};
 #else
-  const std::string path = pid == CurrentProcessId() ? "/proc/self/stat"
-                                                     : "/proc/" + std::to_string(pid) + "/stat";
-  std::ifstream file(path);
+  // macOS keeps no /proc and answers with an empty stamp, which is the documented answer when the
+  // platform cannot say: the reader then falls back to the pid, which is what it did before a
+  // start time existed. Linux resolves /proc/self to the caller, so one path serves both this
+  // process's stamp and another process's.
+  std::ifstream file("/proc/" + std::to_string(pid) + "/stat");
   if (!file.is_open()) return {};
   std::string line;
   std::getline(file, line);
-  // The second field is the executable's name in parentheses and may contain spaces and both
-  // kinds of bracket, so the fields are counted from the last ')' rather than from the start.
-  const std::size_t close = line.rfind(')');
-  if (close == std::string::npos) return {};
-  std::istringstream rest(line.substr(close + 1));
-  // From here the fields are 3 (state) onward, so `starttime`, which is 22, is the twentieth.
-  std::string field;
-  for (int index = 3; index <= 22; ++index) {
-    if (!(rest >> field)) return {};
-  }
-  // Boot-relative ticks, which is exactly the discriminator: two processes that share a pid
-  // number were started at different times.
-  return field;
+  return StartedAtTicks(line);
+#endif
+}
+
+// glibc keeps its own copy of the environment, made when the process started, and reads that copy
+// until the first setenv() or a read of `environ`. The test helpers write `environ` directly,
+// which glibc is entitled to ignore, so without this the process's copy and the one getenv()
+// consults disagree and code that reads the environment sees the values the process started with.
+// Writing `environ` marks the library's copy stale, so getenv() re-reads the process's own; a libc
+// that does not keep `__environ` has nothing stale inside it.
+LiveEnvironment::LiveEnvironment() {
+#ifdef __GLIBC__
+  environ = __environ;
 #endif
 }
 

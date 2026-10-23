@@ -29,14 +29,15 @@ std::string IdOf(const HttpResponse& res) {
   return ValueOrDefault<std::string>(boost::json::parse(res.body).at("job"), "id", "");
 }
 
-// The job as the board lists it, in the body it was read from: the answer owns the string the
-// fields point into, so a caller that kept a view would be reading a freed one -- the last
-// assertion of a case runs after the statement that produced the body has ended.
-boost::json::object Job(const HttpResponse& res, const std::string& id) {
-  for (const auto& job : boost::json::parse(res.body).as_object().at("jobs").as_array()) {
-    if (ValueOrDefault<std::string>(job, "id", "") == id) return job.as_object();
-  }
-  return {};
+// The job as the board lists it. The listing is parsed and the result copied out before the parse
+// dies: every field of a parsed value points into the value that owns it, so a job whose owner
+// has already been destroyed is a freed one, and the run reports a signal rather than the
+// assertion that read it. A well-chosen name for the listing also says one job is expected.
+boost::json::object OnlyJobIn(const HttpResponse& res, const std::string& what) {
+  INFO("the " << what << " listing: " << res.body);
+  const boost::json::array jobs = boost::json::parse(res.body).at("jobs").as_array();
+  REQUIRE(jobs.size() == 1);
+  return jobs.front().as_object();
 }
 
 }  // namespace
@@ -60,8 +61,7 @@ TEST_CASE("a posted job is readable from the board") {
 
   const HttpResponse listed = client.GetRaw("/api/jobs");
   CHECK(listed.status == 200);
-  const boost::json::object job = Job(listed, id);
-  REQUIRE_FALSE(job.empty());
+  const boost::json::object job = OnlyJobIn(listed, "board");
   CHECK(ValueOrDefault<std::string>(job, "intent", "") == "check the build");
 }
 
@@ -207,8 +207,7 @@ TEST_CASE("a job belongs to the peer it names, so nobody else can move it") {
   CHECK(ValueOrDefault<bool>(boost::json::parse(stranger.body), "success", true) == false);
 
   const HttpResponse listed = client.GetRaw("/api/jobs");
-  const boost::json::object job = Job(listed, id);
-  REQUIRE_FALSE(job.empty());
+  const boost::json::object job = OnlyJobIn(listed, "board");
   CHECK(ValueOrDefault<std::string>(job, "state", "") == "open");
 }
 
