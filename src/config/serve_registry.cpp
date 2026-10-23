@@ -109,6 +109,7 @@ std::string TempPathFor(const std::string& path) {
 void WriteRecords(const std::string& path, const json::array& records) {
   if (path.empty()) return;
   const std::string text = json::serialize(json::value{json::object{{kRecordsKey, records}}});
+  std::fprintf(stderr, "PROBE write text=[%s]\n", text.c_str());
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
   const std::string temp = TempPathFor(path);
@@ -141,7 +142,7 @@ json::array ReadRecords(const std::string& path) {
     return {};
   }
   if (!json::HasKey(parsed, kRecordsKey)) {
-    std::fprintf(stderr, "PROBE no key\n");
+    std::fprintf(stderr, "PROBE no key text=[%s]\n", buffer.str().c_str());
     return {};
   }
   const json::value& records = parsed.at(kRecordsKey);
