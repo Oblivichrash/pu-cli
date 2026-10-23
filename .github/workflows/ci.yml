@@ -57,6 +57,28 @@ jobs:
     - name: Test
       run: ctest --test-dir build -C Release --parallel --output-on-failure
 
+    - name: Probe the initializer list overload on Linux
+      if: runner.os == 'Linux' && always()
+      run: |
+        cat > /tmp/kv.cpp <<'EOF'
+        #include <boost/json.hpp>
+        #include <boost/version.hpp>
+        #include <cstdio>
+        #include <string_view>
+        #include <type_traits>
+        int main() {
+          constexpr std::string_view k = "servers";
+          boost::json::array a;
+          a.emplace_back("x");
+          std::printf("BOOST %d\n", BOOST_VERSION);
+          std::printf("sv  -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{k, a}}}).c_str());
+          std::printf("lit -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{"servers", a}}}).c_str());
+          std::printf("ok  -> %s\n", boost::json::serialize(boost::json::object{{"servers", a}}).c_str());
+        }
+        EOF
+        g++ -std=c++23 -O1 /tmp/kv.cpp -lboost_json -o /tmp/kv || g++ -std=c++23 -O1 /tmp/kv.cpp -o /tmp/kv_static
+        /tmp/kv 2>/dev/null || /tmp/kv_static
+
     - name: Probe why a registry record is dropped on Linux
       if: runner.os == 'Linux' && always()
       run: |
