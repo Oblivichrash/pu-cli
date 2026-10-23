@@ -44,7 +44,10 @@ jobs:
 
     - name: Point CMake at the built Boost (Linux)
       if: runner.os == 'Linux'
-      run: echo "BOOST_ROOT=$GITHUB_WORKSPACE/boost-install" >> "$GITHUB_ENV"
+      run: |
+        echo "BOOST_ROOT=$GITHUB_WORKSPACE/boost-install" >> "$GITHUB_ENV"
+        echo "Boost_ROOT=$GITHUB_WORKSPACE/boost-install" >> "$GITHUB_ENV"
+        echo "Boost_DIR=$GITHUB_WORKSPACE/boost-install/lib/cmake/Boost-1.86.0" >> "$GITHUB_ENV"
 
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
