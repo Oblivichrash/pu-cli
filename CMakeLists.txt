@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(spdlog REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system program_options json)
+find_package(Boost 1.84 REQUIRED COMPONENTS system program_options json)
 find_package(OpenSSL REQUIRED)
 
 set(PU_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")

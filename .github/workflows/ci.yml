@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/task-board ]
   pull_request:
     branches: [ main, develop ]
 
@@ -21,7 +21,11 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y catch2 libspdlog-dev libboost-system-dev libboost-program-options-dev libboost-json-dev libssl-dev
+        # Ubuntu's libboost-json-dev is 1.83, where boost::json::value{object{...}} builds a
+        # one-element array instead of the object. Install 1.84 from the same apt source so the
+        # Linux build matches what CMakeLists.txt requires and what other platforms get.
+        sudo apt-get install -y catch2 libspdlog-dev libssl-dev libboost1.84-dev \
+          libboost-system1.84-dev libboost-program-options1.84-dev libboost-json1.84-dev
 
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
@@ -56,32 +60,3 @@ jobs:
 
     - name: Test
       run: ctest --test-dir build -C Release --parallel --output-on-failure
-
-    - name: Probe the initializer list overload on Linux
-      if: runner.os == 'Linux' && always()
-      run: |
-        cat > /tmp/kv.cpp <<'EOF'
-        #include <boost/json.hpp>
-        #include <boost/version.hpp>
-        #include <cstdio>
-        #include <string_view>
-        int main() {
-          constexpr std::string_view k = "servers";
-          boost::json::array a;
-          a.emplace_back("x");
-          std::printf("BOOST %d\n", BOOST_VERSION);
-          std::printf("A value{obj}   -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{k, a}}}).c_str());
-          std::printf("B value(obj)   -> %s\n", boost::json::serialize(boost::json::value(boost::json::object{{k, a}})).c_str());
-          std::printf("C bare obj     -> %s\n", boost::json::serialize(boost::json::object{{k, a}}).c_str());
-          std::printf("D obj via mref -> %s\n", boost::json::serialize(boost::json::object{{k, boost::json::value(a)}}).c_str());
-        }
-        EOF
-        g++ -std=c++23 -O1 /tmp/kv.cpp -lboost_json -o /tmp/kv
-        /tmp/kv
-
-    - name: Probe why a registry record is dropped on Linux
-      if: runner.os == 'Linux' && always()
-      run: |
-        ./build/tests/pu_tests "a server registered from one directory is readable from another" -s || true
-        ./build/tests/pu_tests "a server whose process has stopped is dropped from the list" -s || true
-        ./build/tests/pu_tests "registering again replaces what this process said before" -s || true

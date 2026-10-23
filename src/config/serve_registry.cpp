@@ -22,7 +22,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -108,8 +107,7 @@ std::string TempPathFor(const std::string& path) {
 
 void WriteRecords(const std::string& path, const json::array& records) {
   if (path.empty()) return;
-  const std::string text = json::serialize(json::value{json::object{{kRecordsKey, records}}});
-  std::fprintf(stderr, "PROBE write text=[%s]\n", text.c_str());
+  const std::string text = json::serialize(boost::json::object{{kRecordsKey, records}});
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
   const std::string temp = TempPathFor(path);
@@ -127,13 +125,9 @@ void WriteRecords(const std::string& path, const json::array& records) {
 
 json::array ReadRecords(const std::string& path) {
   std::ifstream file(path);
-  if (!file.is_open()) {
-    std::fprintf(stderr, "PROBE unreadable path=%s\n", path.c_str());
-    return {};
-  }
+  if (!file.is_open()) return {};
   std::ostringstream buffer;
   buffer << file.rdbuf();
-  std::fprintf(stderr, "PROBE read path=%s bytes=%zu\n", path.c_str(), buffer.str().size());
   json::value parsed;
   try {
     parsed = json::parse(buffer.str());
@@ -141,16 +135,9 @@ json::array ReadRecords(const std::string& path) {
     spdlog::warn("The serve registry at {} is not readable as JSON", path);
     return {};
   }
-  if (!json::HasKey(parsed, kRecordsKey)) {
-    std::fprintf(stderr, "PROBE no key text=[%s]\n", buffer.str().c_str());
-    return {};
-  }
+  if (!json::HasKey(parsed, kRecordsKey)) return {};
   const json::value& records = parsed.at(kRecordsKey);
-  if (!records.is_array()) {
-    std::fprintf(stderr, "PROBE not an array\n");
-    return {};
-  }
-  std::fprintf(stderr, "PROBE records=%zu\n", records.as_array().size());
+  if (!records.is_array()) return {};
   return records.as_array();
 }
 
@@ -230,9 +217,6 @@ std::vector<ServeRecord> LiveServeRecords() {
   for (const json::value& item : stored) {
     ServeRecord record = RecordFromJson(item);
     if (!StillRunning(record)) {
-      std::fprintf(stderr, "PROBE dropped pid=%d started=[%s] now=[%s]\n", record.pid,
-                   record.started.c_str(),
-                   platform::ProcessStartToken(record.pid).c_str());
       spdlog::debug("Dropping the serve record left by process {}", record.pid);
       continue;
     }
@@ -258,7 +242,6 @@ std::string RegisterServeRecord(const ServeRecord& record) {
   const std::string path = ServeRegistryPath();
   if (path.empty()) {
     spdlog::warn("HOME is not set, so this server cannot be listed on the page");
-    std::fprintf(stderr, "PROBE register home unset\n");
     return {};
   }
   RegistryLock lock(path);
@@ -267,14 +250,10 @@ std::string RegisterServeRecord(const ServeRecord& record) {
     const ServeRecord existing = RecordFromJson(item);
     if (existing.pid != record.pid && platform::ProcessRunning(existing.pid)) {
       records.push_back(item);
-      continue;
     }
-    std::fprintf(stderr, "PROBE register forgot pid=%d running=%d\n", existing.pid,
-                 platform::ProcessRunning(existing.pid) ? 1 : 0);
   }
   records.push_back(RecordToJson(record));
   WriteRecords(path, records);
-  std::fprintf(stderr, "PROBE register wrote %zu to %s\n", records.size(), path.c_str());
   return path;
 }
 

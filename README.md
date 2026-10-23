@@ -13,7 +13,7 @@ Internals and layering live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the
 
 ### Build Dependencies
 
-Runtime: **Boost >= 1.75** (Beast, Asio, JSON, ProgramOptions), **spdlog**, and
+Runtime: **Boost >= 1.84** (Beast, Asio, JSON, ProgramOptions), **spdlog**, and
 **OpenSSL**. Catch2 is needed only for tests. The exact package lists live in
 [.github/workflows/ci.yml](.github/workflows/ci.yml); the common installs are:
 
