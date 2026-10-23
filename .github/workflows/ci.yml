@@ -65,19 +65,19 @@ jobs:
         #include <boost/version.hpp>
         #include <cstdio>
         #include <string_view>
-        #include <type_traits>
         int main() {
           constexpr std::string_view k = "servers";
           boost::json::array a;
           a.emplace_back("x");
           std::printf("BOOST %d\n", BOOST_VERSION);
-          std::printf("sv  -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{k, a}}}).c_str());
-          std::printf("lit -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{"servers", a}}}).c_str());
-          std::printf("ok  -> %s\n", boost::json::serialize(boost::json::object{{"servers", a}}).c_str());
+          std::printf("A value{obj}   -> %s\n", boost::json::serialize(boost::json::value{boost::json::object{{k, a}}}).c_str());
+          std::printf("B value(obj)   -> %s\n", boost::json::serialize(boost::json::value(boost::json::object{{k, a}})).c_str());
+          std::printf("C bare obj     -> %s\n", boost::json::serialize(boost::json::object{{k, a}}).c_str());
+          std::printf("D obj via mref -> %s\n", boost::json::serialize(boost::json::object{{k, boost::json::value(a)}}).c_str());
         }
         EOF
-        g++ -std=c++23 -O1 /tmp/kv.cpp -lboost_json -o /tmp/kv || g++ -std=c++23 -O1 /tmp/kv.cpp -o /tmp/kv_static
-        /tmp/kv 2>/dev/null || /tmp/kv_static
+        g++ -std=c++23 -O1 /tmp/kv.cpp -lboost_json -o /tmp/kv
+        /tmp/kv
 
     - name: Probe why a registry record is dropped on Linux
       if: runner.os == 'Linux' && always()
