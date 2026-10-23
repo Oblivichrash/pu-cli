@@ -146,8 +146,11 @@ json::array ReadRecords(const std::string& path) {
     return {};
   }
   if (json::HasKey(parsed, kRecordsKey) && parsed.at(kRecordsKey).is_array()) {
-    return parsed.at(kRecordsKey).as_array();
+    const json::array records = parsed.at(kRecordsKey).as_array();
+    std::fprintf(stderr, "PROBE parsed records=%zu\n", records.size());
+    return records;
   }
+  std::fprintf(stderr, "PROBE parsed without the key\n");
   return {};
 }
 
