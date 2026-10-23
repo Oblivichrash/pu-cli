@@ -51,6 +51,7 @@ class RegistryLock {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     spdlog::warn("The serve registry at {} stayed locked; writing anyway", path);
+    std::fprintf(stderr, "PROBE lock gave up path=%s\n", path.c_str());
   }
 
   ~RegistryLock() {
@@ -83,7 +84,10 @@ class RegistryLock {
     return held_;
 #else
     fd_ = ::open(path_.c_str(), O_CREAT | O_RDWR, 0600);
-    if (fd_ < 0) return true;
+    if (fd_ < 0) {
+      std::fprintf(stderr, "PROBE lock unopenable path=%s errno=%d\n", path_.c_str(), errno);
+      return true;
+    }
     held_ = ::flock(fd_, LOCK_EX | LOCK_NB) == 0;
     if (!held_) ::close(fd_);
     return held_;
@@ -127,9 +131,13 @@ void WriteRecords(const std::string& path, const json::array& records) {
 
 json::array ReadRecords(const std::string& path) {
   std::ifstream file(path);
-  if (!file.is_open()) return {};
+  if (!file.is_open()) {
+    std::fprintf(stderr, "PROBE unreadable path=%s errno=%d\n", path.c_str(), errno);
+    return {};
+  }
   std::ostringstream buffer;
   buffer << file.rdbuf();
+  std::fprintf(stderr, "PROBE read path=%s bytes=%zu\n", path.c_str(), buffer.str().size());
   json::value parsed;
   try {
     parsed = json::parse(buffer.str());
