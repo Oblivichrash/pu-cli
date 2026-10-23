@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 using namespace pu;
@@ -16,6 +18,13 @@ using namespace pu::tests;
 namespace fs = std::filesystem;
 
 namespace {
+
+std::string ReadFile(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);
+  std::ostringstream text;
+  text << file.rdbuf();
+  return text.str();
+}
 
 config::ServeRecord Record(int pid, std::uint16_t port, const std::string& directory) {
   // The stamp of this process, which is the only one a case can write honestly: a made-up stamp
@@ -54,6 +63,8 @@ TEST_CASE("a server registered from one directory is readable from another") {
   REQUIRE_FALSE(config::RegisterServeRecord(Record(pid, 8811, "/work/one")).empty());
 
   const auto records = config::LiveServeRecords();
+  INFO("registry bytes: " << ReadFile(config::ServeRegistryPath()));
+  INFO("stamp now: " << platform::ProcessStartToken(pid));
   REQUIRE(records.size() == 1);
   CHECK(records.front().directory == "/work/one");
   CHECK(records.front().bind == "127.0.0.1");

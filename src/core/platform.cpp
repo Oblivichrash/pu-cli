@@ -353,7 +353,8 @@ std::string ProcessStartToken(int pid) {
   // the pid, which is what it did before this existed.
   return {};
 #else
-  const std::string path = "/proc/" + std::to_string(pid) + "/stat";
+  const std::string path = pid == CurrentProcessId() ? "/proc/self/stat"
+                                                     : "/proc/" + std::to_string(pid) + "/stat";
   std::ifstream file(path);
   if (!file.is_open()) return {};
   std::string line;

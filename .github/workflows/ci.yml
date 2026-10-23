@@ -56,3 +56,8 @@ jobs:
 
     - name: Test
       run: ctest --test-dir build -C Release --parallel --output-on-failure
+
+    - name: Diagnose the cases that fail only on Linux
+      if: failure() && runner.os == 'Linux'
+      run: |
+        ./build/tests/pu_tests "a posted job is readable from the board,a job belongs to the peer it names*,a server registered from one directory is readable from another,a server whose process has stopped is dropped from the list,registering again replaces what this process said before" --success --durations yes
