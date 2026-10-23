@@ -21,7 +21,9 @@
 #endif
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -187,7 +189,9 @@ std::string WorkspaceLabel(const std::string& directory) {
 
 std::string ServeRegistryPath() {
   // HOME is what the rest of the configuration layer reads, so it is read first; USERPROFILE is
-  // the Windows answer for the same thing, and is where the file goes when HOME is not set.
+  // the Windows answer for the same thing, and is where the file goes when HOME is not set. The
+  // path is joined, not resolved: a home that does not exist yet is a valid answer, and resolving
+  // would either throw or invent a different directory for the caller to write into.
   const char* home = std::getenv("HOME");
 #if defined(_WIN32)
   if (home == nullptr || *home == '\0') home = std::getenv("USERPROFILE");
@@ -197,10 +201,12 @@ std::string ServeRegistryPath() {
 }
 
 bool StillRunning(const ServeRecord& record) {
-  if (!platform::ProcessRunning(record.pid)) return false;
-  // A platform that cannot report a start time gives an empty stamp, and an empty stamp is not
-  // evidence of anything: the pid is then the whole answer, which is what it was before.
+  const bool alive = platform::ProcessRunning(record.pid);
   const std::string now = platform::ProcessStartToken(record.pid);
+  std::fprintf(stderr, "PROBE pid=%d alive=%d errno=%d path=%s started=[%s] now=[%s]\n",
+               record.pid, alive ? 1 : 0, errno, ServeRegistryPath().c_str(),
+               record.started.c_str(), now.c_str());
+  if (!alive) return false;
   if (record.started.empty() || now.empty()) return true;
   return record.started == now;
 }

@@ -8,7 +8,6 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -416,12 +415,8 @@ bool ProcessRunning(int pid) {
   // its own: anyone else probing it gets ESRCH, which is the right answer for a record left
   // by a process that is gone.
   errno = 0;
-  const int probe = ::kill(static_cast<pid_t>(pid), 0);
-  const int failure = errno;
-  spdlog::info("DEBUG ProcessRunning pid={} probe={} errno={} ({})", pid, probe, failure,
-               std::strerror(failure));
-  if (probe == 0) return true;
-  return failure == EPERM;
+  if (::kill(static_cast<pid_t>(pid), 0) == 0) return true;
+  return errno == EPERM;
 #endif
 }
 
