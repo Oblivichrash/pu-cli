@@ -599,7 +599,7 @@ See [peers-and-board.md](peers-and-board.md).
 
 ```
 <workspace>/.pu/session.json   # Single session state
-./.pu/logs-<pid>/              # Log output, moved by PU_HOME
+./.pu/logs/                    # Log output, moved by PU_HOME
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing

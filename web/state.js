@@ -4,12 +4,6 @@
 
 "use strict";
 
-const BLOCK_TYPES = {
-  THINKING: "thinking",
-  TOOL_CALL: "tool_call",
-  TEXT: "text",
-};
-
 const MAX_BUSY_RETRIES = 2;
 
 // How much context each `gateway · model` holds, as the server last reported it. A window is a

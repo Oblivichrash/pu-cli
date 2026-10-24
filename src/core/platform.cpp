@@ -385,18 +385,6 @@ std::string ProcessStartToken(int pid) {
 #endif
 }
 
-// glibc keeps its own copy of the environment, made when the process started, and reads that copy
-// until the first setenv() or a read of `environ`. The test helpers write `environ` directly,
-// which glibc is entitled to ignore, so without this the process's copy and the one getenv()
-// consults disagree and code that reads the environment sees the values the process started with.
-// Writing `environ` marks the library's copy stale, so getenv() re-reads the process's own; a libc
-// that does not keep `__environ` has nothing stale inside it.
-LiveEnvironment::LiveEnvironment() {
-#ifdef __GLIBC__
-  environ = __environ;
-#endif
-}
-
 bool ProcessRunning(int pid) {
   if (pid <= 0) return false;
 #ifdef _WIN32

@@ -57,12 +57,6 @@ the commit that made it, and its current behaviour is in the relevant document
   what is owed first. A tab in the background has the same hole from the other side: a hidden tab
   is not painted, so a redraw it is holding waits for the reader to come back, and the reply stops
   where they left it until then. The page now draws its pending frame as it goes out of sight.
-- **Each process writes its own log file.** The log directory was one per workspace, so two
-  processes started in the same directory — a `pu ask` beside a `pu serve`, or two cases of one
-  test binary running at once — shared a rotating sink: one writer renamed `pu.log` while another
-  was writing through the open handle, and the second process died of a signal rather than
-  reporting a failure. The directory now ends in the writer's pid, `./.pu/logs-<pid>/`, and
-  `PU_HOME` still moves the parent.
 
 ### Changed
 

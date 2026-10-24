@@ -41,13 +41,12 @@ config::ServeRecord Record(int pid, std::uint16_t port, const std::string& direc
 // otherwise edit the file of whoever is running the tests. This moves home for the length of
 // the case and removes what was written there, so that a case leaves no record naming a pid and
 // a start time from before in a temp directory that outlives the run that wrote it.
-// ScopedEnvVar writes the process environment, not the C library's mirror of it, so the case
-// also has to say that the mirror is what ServeRegistryPath() reads.
+//
+// ScopedEnvVar sets HOME through setenv(), which is the call that also updates the copy getenv()
+// reads; a case that moved the variable any other way would leave ServeRegistryPath() naming the
+// real user's home and this whole scope would be a comment.
 struct HomeScope {
-  HomeScope()
-      : home(ScopedHome()),
-        env("HOME", home.string()),
-        mirror{} {}
+  HomeScope() : home(ScopedHome()), env("HOME", home.string()) {}
   ~HomeScope() {
     std::error_code ec;
     fs::remove(home / ".pu" / "serve.json", ec);
@@ -55,7 +54,6 @@ struct HomeScope {
   }
   fs::path home;
   ScopedEnvVar env;
-  platform::LiveEnvironment mirror;
 };
 
 }  // namespace

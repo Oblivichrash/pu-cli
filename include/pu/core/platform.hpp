@@ -44,17 +44,4 @@ bool ProcessRunning(int pid);
 // stable for the life of one process, empty when the platform cannot say.
 std::string ProcessStartToken(int pid);
 
-// The C library each platform reads the environment through keeps its own copy: glibc reads what
-// it captured at startup until the first setenv(), and POSIX says in turn that writing environ
-// directly leaves getenv() behind. A process that calls both -- a test that scopes a variable for
-// one case, a launcher that sets one before a read -- therefore has to say which copy everyone
-// shares. Constructing this moves Linux onto the library's copy; on Windows there is one copy, so
-// it does nothing. Nothing needs to inspect it, so it is only there for its lifetime.
-class LiveEnvironment {
- public:
-  LiveEnvironment();
-  LiveEnvironment(const LiveEnvironment&) = delete;
-  LiveEnvironment& operator=(const LiveEnvironment&) = delete;
-};
-
 }  // namespace pu::platform

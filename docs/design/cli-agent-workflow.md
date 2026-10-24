@@ -151,7 +151,7 @@ history it did not expect) and a growth problem (nothing prunes it).
 `pu models` in an empty directory leaves:
 
 ```
-.pu/logs-<pid>/pu.log
+.pu/logs/pu.log
 .pu/session.json
 ```
 

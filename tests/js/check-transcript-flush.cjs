@@ -94,7 +94,7 @@ function loadPage() {
     clearTimeout,
   });
 
-  for (const file of ["state.js", "transcript.js"]) {
+  for (const file of ["blocks.js", "state.js", "transcript.js"]) {
     vm.runInContext(readFileSync(join(web, file), "utf8"), context, {filename: file});
   }
 

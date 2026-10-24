@@ -8,11 +8,6 @@
 #include <random>
 #include <stdexcept>
 #include <string>
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
 
 namespace pu {
 
@@ -66,22 +61,12 @@ namespace path {
 
 // The one directory PU_HOME moves, and the only thing it moves: logs. Session and
 // agent state stay under the workspace's own .pu/.
-//
-// A process with no home of its own finds a directory named after it instead: the cases of one
-// test binary run at the same time, and one shared log directory is a file several processes
-// rotate at once, which renames the sink out from under a writer and ends a case with a signal
-// rather than a failed assertion.
 inline std::filesystem::path GetLogDir() {
   if (const char* env = std::getenv("PU_HOME")) {
     return std::filesystem::path(env) / "logs";
   }
 
-#ifdef _WIN32
-  const int pid = _getpid();
-#else
-  const int pid = static_cast<int>(getpid());
-#endif
-  return std::filesystem::current_path() / ".pu" / ("logs-" + std::to_string(pid));
+  return std::filesystem::current_path() / ".pu" / "logs";
 }
 
 }  // namespace path

@@ -94,7 +94,7 @@ function loadPage(fetchImpl, origin = "http://127.0.0.1:8792") {
   });
   // api.js is in the list because the transport is what these cases drive: a case that stubbed a
   // renderer could not have seen a failure that happens before the renderer is reached.
-  for (const file of ["state.js", "api.js", "panel.js", "servers.js"]) {
+  for (const file of ["blocks.js", "state.js", "api.js", "panel.js", "servers.js"]) {
     vm.runInContext(readFileSync(join(web, file), "utf8"), context, {filename: file});
   }
   // refreshChainLength is the turn-end path, so the file that holds it is loaded the same way.
