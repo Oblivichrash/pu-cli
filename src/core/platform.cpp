@@ -5,9 +5,13 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "pu/core/text.hpp"
 
@@ -17,20 +21,49 @@
 #include <csignal>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
 
 namespace pu::platform {
 
-std::atomic<bool> interrupted{false};  // extern-declared in tests/mocks/serve_harness.hpp
+namespace {
+
+#ifndef _WIN32
+// Linux would answer at /proc/self/stat, which /proc resolves to the caller, so one path serves
+// both the process's own stamp and another process's.
+std::string StartedAtTicks(const std::string& stat_line) {
+  // The field before this one is the executable's name in parentheses, and a name may contain
+  // spaces and both kinds of bracket, so the fields are counted from the last ')' rather than
+  // from the start of the line.
+  const std::size_t close = stat_line.rfind(')');
+  if (close == std::string::npos) return {};
+  std::istringstream rest(stat_line.substr(close + 1));
+  // The next field is 3 (state), so `starttime`, which is 22, is the twentieth read from here:
+  // boot-relative ticks, which is exactly the discriminator, since two processes that share a
+  // pid number were started at different times.
+  std::string field;
+  for (int index = 3; index <= 22; ++index) {
+    if (!(rest >> field)) return {};
+  }
+  return field;
+}
+#endif
+
+}  // namespace
+
+CancelToken& ShutdownToken() {
+  static CancelToken token = std::make_shared<std::atomic<bool>>(false);
+  return token;
+}
 
 void SetupSignalHandler() {
 #ifdef _WIN32
   if (!SetConsoleCtrlHandler(
           [](unsigned long type) {
             if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT) {
-              interrupted = true;
+              ShutdownToken()->store(true, std::memory_order_release);
               return TRUE;
             }
             return FALSE;
@@ -40,14 +73,16 @@ void SetupSignalHandler() {
   }
 #else
   struct sigaction sa {};
-  sa.sa_handler = [](int) { interrupted = true; };
+  sa.sa_handler = [](int) {
+    static std::atomic<bool>* raw = ShutdownToken().get();
+    raw->store(true, std::memory_order_release);
+  };
   sigemptyset(&sa.sa_mask);
   sigaction(SIGINT, &sa, nullptr);
 #endif
 }
 
-bool IsInterrupted() { return interrupted; }
-void ClearInterruptFlag() { interrupted = false; }
+bool ShutdownRequested() { return ShutdownToken()->load(std::memory_order_acquire); }
 
 std::string FromConsoleOutput(std::string_view text) {
 #ifdef _WIN32
@@ -107,8 +142,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   } else {
     full_cmd = command;
   }
-  // The merged stream is the tool's whole output; the caller cannot tell stderr
-  // from stdout afterward, which is why the tool result carries one field for it.
   full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();
@@ -122,8 +155,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
     return -1;
   }
 
-  // setpgid in the child detaches it from this process's group, so a kill of the
-  // group takes the shell and any grandchildren with it.
   const pid_t pid = fork();
   if (pid < 0) {
     close(pipe_fds[0]);
@@ -144,9 +175,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   close(pipe_fds[1]);
   setpgid(pid, pid);  // raced with the child's own call; idempotent either way
 
-  // The stream is fdopen'd, not popen'd, so pclose is not an option: it answers for
-  // popen's pid table only, and on this stream returns 0 regardless of the child.
-  // fclose closes the descriptor and waitpid reaps the child explicitly.
   FILE* pipe = fdopen(pipe_fds[0], "r");
   if (pipe == nullptr) {
     close(pipe_fds[0]);
@@ -154,9 +182,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
     return -1;
   }
 
-  // fgets parks on the pipe until the child writes, so a quiet command would keep
-  // the token unchecked until it finished. The read runs on a poll tick instead:
-  // output when there is any, the token when there is not.
   bool stopped = false;
   for (;;) {
     struct pollfd pfd = {pipe_fds[0], POLLIN, 0};
@@ -173,7 +198,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   }
 
   if (stops && stop_token->load(std::memory_order_acquire)) {
-    // The group kill takes the shell and any grandchildren with it.
     kill(-pid, SIGKILL);
     stopped = true;
   }
@@ -190,8 +214,6 @@ int ExecuteCommand(const std::string& command, std::string& output,
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  // The command and its byte count are the whole story at debug level; the output
-  // itself reaches the transcript, and a full copy here grows the file sink alone.
   spdlog::debug(
       "[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={} stopped={}",
       command, exit_code, elapsed_ms, output.size(), stopped);
@@ -202,43 +224,188 @@ int ExecuteCommand(const std::string& command, std::string& output,
 
 int ExecuteCommand(const std::string& command, std::string& output,
                    const CancelToken& stop_token, const std::string& working_dir) {
-  // Windows keeps the popen path; a stop token is honored only between reads of the
-  // merged stream, which is no worse than what the stream reader does with cancel.
   std::string full_cmd;
   if (!working_dir.empty()) {
     full_cmd = "cd /d \"" + std::filesystem::path(working_dir).string() + "\" && (" + command + ")";
   } else {
     full_cmd = command;
   }
-  full_cmd += " 2>&1";
 
   auto start = std::chrono::steady_clock::now();
 
-  FILE* pipe = _popen(full_cmd.c_str(), "r");
-  if (!pipe) {
-    output = "popen failed";
-    spdlog::debug("[ExecuteCommand] popen failed for command: {}", command);
+  SECURITY_ATTRIBUTES inherit_read;
+  inherit_read.nLength = sizeof(SECURITY_ATTRIBUTES);
+  inherit_read.lpSecurityDescriptor = nullptr;
+  inherit_read.bInheritHandle = TRUE;
+
+  HANDLE read_pipe = nullptr;
+  HANDLE write_pipe = nullptr;
+  if (!CreatePipe(&read_pipe, &write_pipe, &inherit_read, 0)) {
+    output = "pipe failed";
+    spdlog::debug("[ExecuteCommand] CreatePipe failed for command: {}", command);
+    return -1;
+  }
+  SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
+
+  STARTUPINFOA startup{};
+  startup.cb = sizeof(STARTUPINFOA);
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.hStdOutput = write_pipe;
+  startup.hStdError = write_pipe;
+  startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+  PROCESS_INFORMATION process{};
+  std::string shell_cmd = "cmd.exe /c " + full_cmd;
+  std::vector<char> shell_buffer(shell_cmd.begin(), shell_cmd.end());
+  shell_buffer.push_back('\0');
+
+  HANDLE job = CreateJobObjectA(nullptr, nullptr);
+  if (job) {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+  }
+
+  const BOOL started = CreateProcessA(nullptr, shell_buffer.data(), nullptr, nullptr, TRUE,
+                                      CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
+                                      &startup, &process);
+  CloseHandle(write_pipe);
+
+  if (!started) {
+    CloseHandle(read_pipe);
+    if (job) CloseHandle(job);
+    output = "spawn failed";
+    spdlog::debug("[ExecuteCommand] CreateProcess failed for command: {}", command);
     return -1;
   }
 
-  std::array<char, 256> buffer{};
-  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-    output += buffer.data();
-    if (stop_token && stop_token->load(std::memory_order_acquire)) break;
+  if (job) AssignProcessToJobObject(job, process.hProcess);
+  ResumeThread(process.hThread);
+
+  const bool stops = static_cast<bool>(stop_token);
+  bool stopped = false;
+  for (;;) {
+    DWORD available = 0;
+    if (!PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &available, nullptr)) break;
+
+    if (available > 0) {
+      std::array<char, 256> buffer{};
+      DWORD read = 0;
+      if (!ReadFile(read_pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) ||
+          read == 0) {
+        break;
+      }
+      output.append(buffer.data(), read);
+      continue;
+    }
+
+    if (WaitForSingleObject(process.hProcess, 50) == WAIT_OBJECT_0) {
+      DWORD remaining = 0;
+      while (PeekNamedPipe(read_pipe, nullptr, 0, nullptr, &remaining, nullptr) && remaining > 0) {
+        std::array<char, 256> buffer{};
+        DWORD read = 0;
+        if (!ReadFile(read_pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) ||
+            read == 0) {
+          break;
+        }
+        output.append(buffer.data(), read);
+      }
+      break;
+    }
+
+    if (stops && stop_token->load(std::memory_order_acquire)) {
+      if (job) {
+        TerminateJobObject(job, 1);
+      } else {
+        TerminateProcess(process.hProcess, 1);
+      }
+      WaitForSingleObject(process.hProcess, 2000);
+      stopped = true;
+      break;
+    }
   }
 
+  DWORD exit_code = 0;
+  if (!GetExitCodeProcess(process.hProcess, &exit_code)) exit_code = 0;
+
+  if (job) TerminateJobObject(job, exit_code);
+  CloseHandle(read_pipe);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  if (job) CloseHandle(job);
+
   output = FromConsoleOutput(output);
-  int status = _pclose(pipe);
-  int exit_code = (status == -1) ? -1 : status;
+  const int code = stopped ? -1 : static_cast<int>(exit_code);
 
   auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - start)
                         .count();
-  spdlog::debug("[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={}", command,
-                exit_code, elapsed_ms, output.size());
-  return exit_code;
+  spdlog::debug(
+      "[ExecuteCommand] command='{}' exit_code={} elapsed_ms={} output_bytes={} stopped={}", command,
+      code, elapsed_ms, output.size(), stopped);
+  return code;
 }
 
 #endif
+
+int CurrentProcessId() {
+#ifdef _WIN32
+  return static_cast<int>(GetCurrentProcessId());
+#else
+  return static_cast<int>(::getpid());
+#endif
+}
+
+std::string ProcessStartToken(int pid) {
+  if (pid <= 0) return {};
+#if defined(_WIN32)
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return {};
+  FILETIME created{}, exited{}, kernel{}, user{};
+  std::string stamp;
+  if (GetProcessTimes(process, &created, &exited, &kernel, &user) != 0) {
+    ULARGE_INTEGER ticks{};
+    ticks.LowPart = created.dwLowDateTime;
+    ticks.HighPart = created.dwHighDateTime;
+    stamp = std::to_string(ticks.QuadPart);
+  }
+  CloseHandle(process);
+  return stamp;
+#else
+  // macOS keeps no /proc and answers with an empty stamp, which is the documented answer when the
+  // platform cannot say: the reader then falls back to the pid, which is what it did before a
+  // start time existed. Linux resolves /proc/self to the caller, so one path serves both this
+  // process's stamp and another process's.
+  std::ifstream file("/proc/" + std::to_string(pid) + "/stat");
+  if (!file.is_open()) return {};
+  std::string line;
+  std::getline(file, line);
+  return StartedAtTicks(line);
+#endif
+}
+
+bool ProcessRunning(int pid) {
+  if (pid <= 0) return false;
+#ifdef _WIN32
+  // A pid stays reserved while any handle to the process is open, so the signal is the exit
+  // code being readable rather than the handle having opened: a stopped server nobody joined
+  // still has a handle, and reads as stopped the moment it exits.
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                               static_cast<DWORD>(pid));
+  if (process == nullptr) return false;
+  DWORD exit_code = 0;
+  const bool alive = GetExitCodeProcess(process, &exit_code) != 0 && exit_code == STILL_ACTIVE;
+  CloseHandle(process);
+  return alive;
+#else
+  // A child that has exited but not been reaped is this process's own to wait for, and only
+  // its own: anyone else probing it gets ESRCH, which is the right answer for a record left
+  // by a process that is gone.
+  errno = 0;
+  if (::kill(static_cast<pid_t>(pid), 0) == 0) return true;
+  return errno == EPERM;
+#endif
+}
 
 }  // namespace pu::platform

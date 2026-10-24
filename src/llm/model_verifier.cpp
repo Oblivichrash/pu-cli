@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/llm/model_verifier.hpp"
+#include "pu/llm/model_listing.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/config/backend.hpp"
 
 #include <boost/json.hpp>
 
-#include "pu/context/message.hpp"
+#include "pu/session/message.hpp"
 
 namespace pu::llm {
 
@@ -35,14 +37,14 @@ std::string MissingLevelReason(const ModelEntry& entry) {
 
 }  // namespace
 
-std::vector<ModelCheck> VerifyModels(const config::BackendConfig& cfg,
+std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
                                      const std::vector<ModelEntry>& models,
                                      std::shared_ptr<http::HttpClient> http) {
   std::vector<ModelCheck> checks;
   checks.reserve(models.size());
 
   ChatMessage ping;
-  ping.role = context::kUserRole;
+  ping.role = session::kUserRole;
   ping.content = "ping";
   const std::span<const ChatMessage> history(&ping, 1);
 
@@ -58,7 +60,7 @@ std::vector<ModelCheck> VerifyModels(const config::BackendConfig& cfg,
       continue;
     }
 
-    config::BackendConfig probe = cfg;
+    config::Backend probe = cfg;
     probe.model = entry.id;
     probe.max_tokens = kProbeMaxTokens;
 

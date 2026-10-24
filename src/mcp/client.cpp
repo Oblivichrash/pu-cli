@@ -137,12 +137,12 @@ boost::json::value McpClient::SendRequest(const std::string& method,
                                           const boost::json::value& params, int timeout_ms) {
   // Only check that rpc exists; connected may be false during the handshake.
   if (!pimpl_->rpc) {
-    throw Error("MCP client not connected");
+    throw GenericError("MCP client not connected");
   }
   auto future = pimpl_->rpc->SendRequest(method, params);
   auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
   if (status == std::future_status::timeout) {
-    throw Error("MCP request timeout");
+    throw GenericError("MCP request timeout");
   }
   return future.get();
 }
@@ -168,7 +168,7 @@ std::vector<ToolDefinition> McpClient::ListTools() {
     pimpl_->cached_tools = defs;
     return defs;
   }
-  throw Error("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
+  throw GenericError("MCP server '" + pimpl_->config.name + "' answered tools/list without a tool list");
 }
 
 std::string McpClient::CallTool(const std::string& name, const boost::json::value& arguments) {
@@ -198,5 +198,33 @@ std::string McpClient::CallTool(const std::string& name, const boost::json::valu
 bool McpClient::IsConnected() const { return pimpl_->connected; }
 
 const std::string& McpClient::ServerName() const { return pimpl_->config.name; }
+
+
+std::shared_ptr<McpClient> ConnectMcpServer(const config::McpServerConfig& config) {
+  auto client = std::make_shared<McpClient>(config);
+  if (client->Connect()) return client;
+
+  spdlog::warn("MCP server '{}' connection failed", config.name);
+  return nullptr;
+}
+
+std::vector<std::shared_ptr<McpClient>> ConnectMcpServers(
+    const std::vector<config::McpServerConfig>& configs) {
+  std::vector<std::shared_ptr<McpClient>> clients;
+  clients.reserve(configs.size());
+
+  for (const auto& config : configs) {
+    if (auto client = ConnectMcpServer(config)) clients.push_back(std::move(client));
+  }
+  return clients;
+}
+
+void DisconnectMcpServers(std::vector<std::shared_ptr<McpClient>>& clients) {
+  for (auto& client : clients) {
+    if (client) client->Disconnect();
+  }
+  clients.clear();
+}
+
 
 }  // namespace pu::mcp

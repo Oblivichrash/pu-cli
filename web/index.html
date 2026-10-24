@@ -7,15 +7,21 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
 </head>
 <body>
 <div id="shell">
 
   <header>
     <div class="brand">· 朴 ·</div>
+    <!-- The workspace this page is attached to, and the other servers on the machine. The
+         name is a workspace rather than a port because that is the thing a reader knows;
+         the panel below lists the rest, and stays folded while there is only one. -->
+    <div class="header-servers">
+      <button id="server-current" class="server-current" title="The workspace this page is talking to">—</button>
+      <button id="server-toggle" title="Servers on this machine" aria-label="Servers on this machine">▾</button>
+      <ul id="server-list" class="server-list" hidden></ul>
+    </div>
     <div class="header-right">
-      <span id="conn-dot" class="conn-dot" title="Connection"></span>
       <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
     </div>
   </header>
@@ -40,23 +46,8 @@
       </div>
 
       <div id="composer">
-        <!-- Two choices, each shown by its own control: what the agent name is and what
-             was picked are the same fact, so a separate label would repeat the select.
-             Everything that is read rather than chosen lives in the panel. -->
-        <div id="session-bar">
-          <label class="session-field">Agent
-            <select id="agent-select"></select>
-          </label>
-          <label class="session-field">Thinking
-            <select id="thinking-select" title="How much reasoning to ask for">
-              <option value="auto" title="Follow the agent's configuration">Auto</option>
-              <option value="none" title="Ask the backend not to think">Off</option>
-              <option value="low" title="A little reasoning">Low</option>
-              <option value="medium" title="Balanced reasoning">Medium</option>
-              <option value="high" title="As much reasoning as the backend allows">High</option>
-            </select>
-          </label>
-        </div>
+        <!-- The field and the button, nothing else: what is chosen between messages lives in
+             the panel, and what is merely read lives on the status bar below. -->
         <div id="composer-row">
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
           <button id="send">Send</button>
@@ -66,9 +57,26 @@
 
     <aside id="sidebar">
       <div class="panel">
-        <div class="panel-title">Context</div>
+        <div class="panel-title">Session</div>
+        <label class="field">
+          <span>Agent</span>
+          <select id="agent-select"></select>
+        </label>
+        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
+             there appears here without this file changing. How much reasoning to ask for is a
+             row like any other now. -->
+        <div id="settings-rows"></div>
+        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
+          Reset to the agent's configuration
+        </button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Usage</div>
         <div id="context-usage" title="How much context the last reply ran against"></div>
         <div class="context-bar"><div id="context-fill"></div></div>
+        <!-- What the whole conversation has spent, summed by the server. -->
+        <div id="usage-total" class="usage-total" title="What this conversation has spent so far"></div>
       </div>
 
       <div class="panel">
@@ -84,8 +92,32 @@
         <div class="panel-title">Tools</div>
         <ul id="panel-tools" class="tool-list"></ul>
       </div>
+
+      <!-- The board is drawn only when it holds something: a session with no peers in play
+           should not carry an empty panel. See board.js. -->
+      <div class="panel" id="panel-board" hidden>
+        <div class="panel-title">Board</div>
+        <ul id="board-jobs" class="board-jobs"></ul>
+      </div>
     </aside>
 
+  </div>
+
+  <!-- A read-out, not a control: what the session is, so a folded panel costs no state.
+       It spans the shell rather than sitting in the column, so the panel opening and
+       closing does not move it. -->
+  <div id="status-bar">
+    <span class="status-item">
+      <span id="conn-dot" class="conn-dot" title="Connection"></span>
+      <span id="conn-text">connecting</span>
+    </span>
+    <span class="status-item" id="status-agent" title="The agent that answers">—</span>
+    <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
+    <span class="status-right">
+      <span class="status-item" id="status-backend" title="The gateway and model">—</span>
+      <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
+      <span class="status-item" id="status-context" title="Context the last reply ran against">—</span>
+    </span>
   </div>
 
   <div id="scrim" hidden></div>
@@ -93,6 +125,22 @@
 
 <script src="layout.js"></script>
 <script src="approval.js"></script>
+<script src="blocks.js"></script>
+<script src="state.js"></script>
+<script src="api.js"></script>
+<script src="block-thinking.js"></script>
+<script src="block-tool.js"></script>
+<script src="block-node.js"></script>
+<script src="message.js"></script>
+<script src="transcript.js"></script>
+<script src="panel.js"></script>
+<script src="board.js"></script>
+<script src="servers.js"></script>
+<script src="notice.js"></script>
+<script src="history.js"></script>
+<script src="ws.js"></script>
+<script src="session.js"></script>
+<script src="composer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

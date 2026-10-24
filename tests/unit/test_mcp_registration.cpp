@@ -64,7 +64,7 @@ class McpToolServer {
 };
 
 bool Offers(const pu::Toolbox& toolbox, const std::string& name) {
-  const auto names = toolbox.Names();
+  const auto names = toolbox.ToolNames();
   return std::find(names.begin(), names.end(), name) != names.end();
 }
 
@@ -79,8 +79,8 @@ TEST_CASE("A tool from a configured MCP server reaches the toolbox", "[mcp][runt
   ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_http.Port())});
 
   // The dotted name the server reports is sanitized into a provider-safe identifier.
-  REQUIRE(Offers(harness.RuntimeRef().GetToolbox(), "mcp_files_search"));
-  REQUIRE(Offers(harness.RuntimeRef().GetToolbox(), "execute_bash"));
+  REQUIRE(Offers(harness.RuntimeRef().Tools(), "mcp_files_search"));
+  REQUIRE(Offers(harness.RuntimeRef().Tools(), "execute_bash"));
 }
 
 TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "[mcp][runtime]") {
@@ -91,9 +91,9 @@ TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "
     mcp_port = mcp_http.Port();
 
     ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
-    REQUIRE(Offers(harness.RuntimeRef().GetToolbox(), "mcp_files_temporary"));
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "mcp_files_temporary"));
   }
 
   ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
-  REQUIRE_FALSE(Offers(harness.RuntimeRef().GetToolbox(), "mcp_files_temporary"));
+  REQUIRE_FALSE(Offers(harness.RuntimeRef().Tools(), "mcp_files_temporary"));
 }

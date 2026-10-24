@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/agent_manager.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <vector>
 #include <string>
 
-using namespace pu;
+#include "pu/runtime/runtime.hpp"
 
-TEST_CASE("AgentManager GetAgentNames returns names from configs", "[agent]") {
+using namespace pu;
+TEST_CASE("AgentManager AgentNames returns names from configs", "[agent]") {
   AgentManager manager;
 
   config::AgentEntry entry1;
@@ -20,20 +20,20 @@ TEST_CASE("AgentManager GetAgentNames returns names from configs", "[agent]") {
 
   manager.LoadAgentConfigs({entry1, entry2});
 
-  auto names = manager.GetAgentNames();
+  auto names = manager.AgentNames();
   REQUIRE(names.size() == 2);
   REQUIRE(names[0] == "agent1");
   REQUIRE(names[1] == "agent2");
 }
 
-TEST_CASE("AgentManager SetActiveAgent and GetActiveAgent work", "[agent]") {
+TEST_CASE("AgentManager SetActiveAgent and ActiveAgentName work", "[agent]") {
   AgentManager manager;
 
   manager.SetActiveAgent("test_agent");
-  REQUIRE(manager.GetActiveAgent() == "test_agent");
+  REQUIRE(manager.ActiveAgentName() == "test_agent");
 }
 
-TEST_CASE("AgentManager GetAgentConfig finds entry by name", "[agent]") {
+TEST_CASE("AgentManager AgentConfig finds entry by name", "[agent]") {
   AgentManager manager;
 
   config::AgentEntry entry;
@@ -42,12 +42,12 @@ TEST_CASE("AgentManager GetAgentConfig finds entry by name", "[agent]") {
 
   manager.LoadAgentConfigs({entry});
 
-  const auto* found = manager.GetAgentConfig("test");
+  const auto* found = manager.AgentConfig("test");
   REQUIRE(found != nullptr);
   REQUIRE(found->name == "test");
   REQUIRE(found->description == "Test agent");
 
-  const auto* not_found = manager.GetAgentConfig("nonexistent");
+  const auto* not_found = manager.AgentConfig("nonexistent");
   REQUIRE(not_found == nullptr);
 }
 
@@ -63,14 +63,14 @@ TEST_CASE("AgentManager LoadAgentConfigs replaces previous configs", "[agent]") 
   new_entry.description = "New agent";
 
   manager.LoadAgentConfigs({old_entry});
-  REQUIRE(manager.GetAgentNames().size() == 1);
-  REQUIRE(manager.GetAgentNames()[0] == "old");
+  REQUIRE(manager.AgentNames().size() == 1);
+  REQUIRE(manager.AgentNames()[0] == "old");
 
   manager.LoadAgentConfigs({new_entry});
 
-  auto names = manager.GetAgentNames();
+  auto names = manager.AgentNames();
   REQUIRE(names.size() == 1);
   REQUIRE(names[0] == "new");
-  REQUIRE(manager.GetAgentConfig("old") == nullptr);
-  REQUIRE(manager.GetAgentConfig("new") != nullptr);
+  REQUIRE(manager.AgentConfig("old") == nullptr);
+  REQUIRE(manager.AgentConfig("new") != nullptr);
 }

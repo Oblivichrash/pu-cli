@@ -39,7 +39,7 @@ What each dependency is for:
 | `CommandRouter` | Routes `/` commands to handlers |
 | `Web Server` | `pu serve` (`RunServe`): Boost.Beast HTTP/WebSocket server exposing the session via `/ws` for chat and REST for control/status |
 | `McpClient` | High-level MCP client: handshake, `ListTools`, `CallTool` |
-| `mcp_session` | Free functions that connect a server set and disconnect it again — the whole connect/disconnect sequence, so `Runtime` holds the result rather than driving the loop |
+| `ConnectMcpServers` / `DisconnectMcpServers` | Free functions that connect a server set and disconnect it again — the whole connect/disconnect sequence, so `Runtime` holds the result rather than driving the loop |
 | `JsonRpcClient` | JSON-RPC 2.0 protocol layer |
 | `Transport` | Abstract MCP transport (`Start` / `Stop` / `WriteLine`) |
 | `StdioTransport` | stdio subprocess transport |
@@ -48,6 +48,49 @@ What each dependency is for:
 ---
 
 ## Error Handling
+
+### What a command exits with, and what it prints
+
+Every subcommand answers with the same five statuses (`include/pu/app/cli.hpp`), separated by
+what a caller should do next rather than by which layer failed:
+
+| Code | Meaning | The caller's next move |
+| --- | --- | --- |
+| `0` | the command did what it was asked | nothing |
+| `1` | the invocation or the configuration is wrong | fix it; a retry cannot help |
+| `2` | the provider refused or could not be reached | retry may work |
+| `3` | the sandbox refused every tool call the turn made | change the command or the policy |
+| `4` | a person stopped it | neither retry nor fix |
+
+A turn the sandbox refused and the model recovered from is `0`: the refusal is advice the
+model read, not the turn's outcome. A refusal whose reason is that no channel could ask for
+approval is `1`, not `3`, because the command is fine and the configuration is not.
+
+stdout carries what was asked for — the reply, a model listing, a rendered config — and
+stderr carries everything else: notices, usage, the reason a turn failed. `pu ask "... | ..."`
+pipes the answer and nothing beside it.
+
+### The frame every command runs inside
+
+`cli::WithInitializedRuntime` loads the configuration, runs a body, and saves the session.
+Every subcommand that needs a `Runtime` goes through it, so initialization and persistence
+are stated once: a failure to initialize is `1`, because the configuration is what is wrong,
+and a command that returns without persisting is the exception, not the rule. A non-empty
+agent name overrides the configured agent for that run only.
+
+Two signatures exist for a reason rather than for symmetry:
+
+- `RunProbe` reads a product named on the command line without an `agents.json` entry — its
+  host and key come from the gateway table, and neither the configuration nor the session is
+  touched. That is what makes probing a gateway safe from inside a workspace already
+  configured for another one.
+- `RunSse` takes a URL, a method and a set of headers from the caller. A feed is not a chat
+  turn, so nothing about it is read from `agents.json`; it borrows the runtime only for the
+  `HttpClient` and the cancellation token.
+
+`FormatSseEvent` is exposed rather than private because it is what a caller's pipe reads, and
+a pipe is testable where a socket is not.
+
 
 A condition the code can know in advance is checked, not thrown: an operation that can
 fail visibly returns `std::optional` or `nullptr`. Exceptions are for what cannot be known
@@ -66,7 +109,7 @@ pu::RuntimeError : std::runtime_error
 `pu::RequestRefused` sits beside `Error` rather than under it: `pu serve` answers a refusal
 with `400` and an `Error` with `500`, so deriving one from the other would report a
 caller's mistake as a fault of this process. The status a route chooses, and the body that
-carries it, are in [README](../README.md#web-api).
+carries it, are in [web-api.md](web-api.md).
 
 A catch earns its place only by changing the control flow — returning a value, retrying,
 falling back, converting, or ending the process. Logging is not handling, and a catch
@@ -89,6 +132,13 @@ returns an empty string and `FindServeOptions` returns `std::nullopt`. Only
 `Runtime::Initialize`, which cannot continue, turns the empty path into the `Error` naming
 where the file goes. A function reports that it cannot answer rather than picking one
 caller's condition to raise.
+
+`Runtime::Initialize` resolves the configuration in one order: an explicit path argument,
+then `PU_AGENTS_CONFIG`, then `./.pu/agents.json`, then the user configuration. The
+environment variable is checked before the conventional locations so a test or a packaged
+run can point at a fixture without a writable workspace, and it is an outright failure
+when the file it names is missing — falling back to the conventional path would silently
+run against the wrong configuration rather than the one the caller asked for.
 
 The same holds for invariants: `Runtime::ActiveAgent` and `ConfiguredBackend` do not check
 that `Initialize` ran, because every path reaching them passes through it. A test for a
@@ -118,23 +168,51 @@ runs once per turn: read the `Conversation`, inject system context, call the
 provider, execute any tool calls through `Toolbox`, store each structured result
 verbatim, and repeat until the reply carries no call.
 
+**Shape of a turn.** `Execute` takes the caller's inputs once and packs them into a
+`Turn` — provider, toolbox, callbacks, and the two cancel tokens — so the three steps
+below each take that one argument instead of re-threading a seven-parameter signature:
+
+| Step | Does |
+| :--- | :--- |
+| `CallProvider` | Builds the request path from the `Conversation`, streams the reply, and reports usage. Owns the only `try`/`catch` around a provider call, including the distinction between a cancelled call and a failed one. |
+| `RunToolCalls` | Resolves the tool context once, then per call runs the tool, reports it to the callbacks, and stores the result verbatim. |
+| `RunToolLoop` | Iterates the two above until a reply carries no call, and is the only place the iteration cap and the "empty reply" failure are decided. |
+
+**Tool context lifetimes.** `ToolContext` holds raw pointers into values that must outlive
+the tool call, so the `Control` and `Approval` structs it points at are `Executor` members
+filled in by `BuildToolContext`, not locals. `Control` is present only when the caller
+supplied a stop token — the CLI has no channel to stop a command, so its pointer stays
+null there.
+
 **System context.** `Executor` prepends a system message built from:
 
 - OS name and kernel version (probed once, see below)
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
+- Whatever `context_digest` returns, when a caller set one
 
 It is merged with the agent's configured `system_prompt`, which comes from
 `agents.json` via `Runtime::RebuildToolbox` and is not session state, so
 switching the backend does not clear it.
 
+**The digest.** The executor cannot know what the task board owes this server, so
+`Runtime::SetContextDigest` hands it a function instead of a string. It is called on
+every round of every turn, which is what makes it honest: a job claimed mid-turn
+reads as claimed on the next round. `pu serve` is the only caller, and it answers
+with `Board::Digest(self_name)` — the jobs this server holds (with any question a
+peer is asking, and whether the deadline has passed) plus the jobs it handed out
+that have since closed. An empty digest contributes nothing, so a session with no
+peers in play reads exactly as it did before the board existed.
+
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool.hpp`, whose field set is documented in
-[README](../README.md#tool-output-format). The executor stores it verbatim so
-the model sees what the tool produced, and reads `output`/`error` out of it only
-for the tool callbacks. `Toolbox::ExecuteTool` answers with the same envelope
-when the named tool is absent, so callers never parse two shapes.
+`include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
+`refusal` that names why the policy refused a call when one did. The header is the field
+set's one home — `tools::Refusal` beside it says which refusal a caller can retry and which
+is a configuration to fix. The executor stores the envelope verbatim so the model sees what
+the tool produced, and reads `output`/`error` out of it only for the tool callbacks.
+`Toolbox::ExecuteTool` answers with the same envelope when the named tool is absent, so
+callers never parse two shapes.
 
 **Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
 construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
@@ -142,7 +220,7 @@ result. No tool-binary detection is performed.
 
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in
-[README](../README.md#agentsjson).
+[configuration.md](configuration.md#agentsjson).
 
 ---
 
@@ -173,27 +251,128 @@ environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
-2. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
+2. The port it bound is read back from the acceptor rather than taken from the request,
+   so a server started on port `0` still knows where to find itself, and it writes that
+   address into `$HOME/.pu/serve.json` along with the directory it serves and its pid.
+   That file is how the page names the machine's servers; a record whose process is gone
+   is dropped on the next read, and the entry is deleted when the server stops. The read
+   and the write happen under a lock file beside it, because two servers started together
+   would otherwise each read the list before the other had written and the second write
+   would erase the first.
+3. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
    `reuse_address` set before the bind so a restart can take a port a just-closed
    server left connections in `TIME_WAIT` on.
-3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
-   is read and dispatched to the static/REST routes on that strand — a short request
-   and response, so its I/O stays synchronous and the connection ends with it. A
-   WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O is
-   asynchronous from there on.
-4. A second upgrade while a page is attached is answered with a `busy` frame and
-   closed: one session, one page. Claiming the session happens when the upgrade is
-   accepted, not when the first run arrives, so the refusal reaches the peer before its
-   socket goes.
-5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
-   posts each frame back through the connection. The runner holds only the tokens that
-   steer the turn; the worker reads them by value, so a `cancel` or `stop_command` on
-   the strand reaches a turn in flight without waiting for it. The message schema, the
-   REST route table, and the status each refusal carries are in
-   [README](../README.md#web-api).
-6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
+4. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
+   is read, dispatched to the static/REST routes, and answered on that strand, and the
+   connection ends with the response. Both the read and the write are asynchronous: a
+   socket parked in a blocking read would hold the one thread the whole server runs on,
+   so a browser's idle preconnect would stall every other page until it gave up. The
+   request line and headers get a 30s deadline, and a connection that sends none is
+   dropped. A WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O
+   is asynchronous from there on.
+5. A second upgrade while a page is attached is answered with a `busy` frame and closed:
+   one session, one page. Claiming the session happens when the upgrade is accepted, not
+   when the first run arrives, so the refusal reaches the peer before its socket goes.
+   The page names itself with `?client=` on the upgrade, and the claim is compared by that
+   name: the same tab reconnecting takes the session back and the socket it left behind is
+   closed from its own strand, while another tab is refused. Without a name, every
+   connection is a page of its own.
+6. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
+   posts each frame back through the connection. The runner holds only the token that
+   steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
+   turn in flight without waiting for it. The message schema, the REST route table, and
+   the status each refusal carries are in [web-api.md](web-api.md).
+7. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
-   stopped, and `Runtime::Shutdown()` persists the session.
+   stopped, the server removes its line from the registry, and `Runtime::Shutdown()`
+   persists the session.
+
+The registry is a file rather than a running daemon because nothing else would exist to
+own the list: each server is independent, and a process that has stopped is exactly the
+one that cannot delete its own line. `LiveServeRecords()` therefore trusts the pid and
+not the file, which also means a pid the operating system has since handed to something
+else reads as live; that costs a stale row in a list the page shows, and nothing reads a
+record to decide where to send work.
+
+### Cancellation contract
+
+A turn is steered by tokens, never by a process-wide flag, so two turns in one process
+cannot stop each other.
+
+| Channel | Scope | Effect |
+| :------ | :---- | :----- |
+| `cancel` | the turn, a running command included | The turn ends, the reply keeps what already arrived, and every tool call it never ran is sealed as interrupted |
+| shutdown | the process | Every turn in flight is abandoned, and its partial reply is not persisted |
+
+A command is not stopped on its own: the composer has one button, and it ends the turn the
+command belongs to. A sealed call appends a `tool` node carrying `kCancelledReceipt`, which
+tells the model the turn is over and that it should wait for the user rather than resume on
+its own. A command killed by the turn's own token still reports `kCommandStoppedReceipt`,
+which tells the model the process died rather than answered.
+
+The sealed receipts belong to the turn's chain, so the next request carries them. They are
+appended after the interrupted assistant node and become the leaf, which is what puts them
+in `Chain()`. This does not block a rewind — `HasUnfinishedToolCalls()` counts only
+`kPending`, and a sealed call is `kInterrupted`.
+
+`platform::ShutdownRequested()` answers "has this process been asked to exit", and it is
+the one signal that is **not** a turn's cancel token. It is set by the signal handler and
+by the Web UI's stop, and it is never cleared while the process lives — a process on its
+way out does not start another turn. `platform::ShutdownToken()` exposes the same fact as
+a `CancelToken` for the call sites that take one, and the two cannot disagree because the
+token is the storage and the accessor only reads it.
+
+Treating shutdown as a cancel is what a caller must not do: a cancelled turn keeps its
+partial reply and seals its unrun tool calls, because the session goes on; a shutdown
+persists neither, because it does not.
+
+### HTTP handler contract
+
+`DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler
+should not have to: it finds the row for the request, asks `Admit` whether this caller may
+read it, parses the body once for routes that take one, takes the `io_mutex` for the
+duration of the call, wraps whatever the handler returned in the envelope that row names,
+and turns a thrown exception into the status that names whose fault it is
+(`RequestRefused` → `400`, `NotFound` → `404`, `Error` → `500`).
+
+A handler therefore only computes and returns, against a `Call` rather than a `Runtime`:
+
+```cpp
+boost::json::value HandleApiRewind(Call& call, const boost::json::value& body);
+```
+
+`Call` carries the runtime, the board and the runner a handler might need, plus the facts
+that belong to the connection rather than to the session: the address the request arrived
+from, the peer name its token speaks for, whether that address is this machine's, and the
+port this server answers on. A handler that had to reach for the socket to learn any of
+those would be a second place for the audience rule to live.
+
+One envelope, declared per row. `Route::key` names the member a payload is filed under
+(`messages`, `agents`, `servers`, `workspaces`), and an empty key means the handler's own
+object is the answer; either way `success` is added by the dispatcher. The wire format is
+read off the route table instead of being reassembled by hand in every handler, and a new
+listing cannot invent a fifth shape.
+
+`Route::audience` is the other column that matters, and it has no default: adding a route
+means answering who may read it. That is what makes `/api/workspaces` — which answers this
+machine's directories — impossible to add as a route that answers the network by omission,
+which is how it was added.
+
+The status the exception maps to is the one that names whose fault it is: `RequestRefused`
+for a request the caller can fix, `NotFound` for a name or route that does not exist, and
+`Error` for an operation that failed on our side. The audience refusals are separate and are
+answered before the handler runs: `403` for an address the route does not answer, `401` for a
+peer route with no token or the wrong one, and `404` for a peer route on a server with no
+topology at all.
+
+Routes that read the board are marked `needs_board` and take their own mutex inside, so the
+dispatch does not hold `io_mutex` around them. The board is the one piece of state peers
+share that is not part of the conversation, and putting it behind the session's lock would
+let a slow peer's poll stop the page's turn.
+
+### Static page serving
+
+Page resolution and the served-file allowlist are in [web-ui.md](web-ui.md).
 
 ### Single-session auto-persistence
 
@@ -203,6 +382,41 @@ environment, or the workspace's own `serve` block names:
 session is serialized back to the same file via `Session::Serialize`. There is no
 manual save/load/list/export; persistence is fully automatic and scoped to the
 data directory.
+
+### Tool execution
+
+A tool runs as a child process and answers with one merged stream. Its stdout and stderr are
+the same pipe, so the caller cannot tell them apart afterward and the result carries a single
+output field rather than two that would sometimes be empty for reasons the tool does not
+control.
+
+The child is put in its own process group. A stop then kills the group, which takes the shell
+and any grandchildren with it — killing the immediate pid alone would leave a `bash -c` shell's
+children running with the pipe still open, and the read that is supposed to see the token would
+keep waiting on them.
+
+The stream is read through `fdopen` on the pipe rather than `popen`, so `pclose` is not
+available: it answers for `popen`'s own pid table, and on a stream it did not open returns
+success regardless of what the child did. `fclose` closes the descriptor and `waitpid` reaps
+the child explicitly, which is the only way the exit status is known.
+
+Reading with `fgets` would park on the pipe until the child writes, so a command that stays
+quiet would keep a stop token unchecked until it finished on its own. The read instead runs on
+a poll tick: output when there is any, the token when there is not. Windows keeps the `popen`
+path and honors a stop token only between reads of the merged stream, which is no worse than
+what the stream reader does with a cancel.
+
+### Stopping an MCP server
+
+A stdio server is a child process with three pipes, and stopping it is where a client most
+easily hangs itself. Closing the descriptor a reader is blocked on does **not** wake that
+read: the close succeeds, and the `read()` that already holds its own reference waits for a
+line the server may never send. So the reader waits on a poll with a deadline and checks its
+stop flag between waits, and `Stop()` sets that flag first, closes the child's stdin second
+(the end of its input, which most servers leave on), then joins.
+
+The child itself is given a signal and a bounded wait, then killed. A server is not obliged to
+leave on its own, and a stop that hangs is worse than a process killed earlier than it liked.
 
 ### Toolbox & MCP lifecycle
 
@@ -272,20 +486,31 @@ hands each streamed chunk back through the connection, which queues it and write
 the connection's strand, producing the typewriter effect in the browser. The
 `ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
 `id`. Commands and non-streaming backends deliver their full text as a single chunk
-frame. The frame schema is owned by [README](../README.md#web-api) and implemented in
-`web/app.js`.
+frame. The frame schema is owned by [web-api.md](web-api.md) and implemented by
+`web/ws.js`.
 
 The read loop is what an asynchronous stream buys: a connection parked in a synchronous
 read cannot be woken by closing its socket, so a shutdown would wait on a client that
 will never speak again. Here the run happens on the runner's own thread and the stream
 belongs to the strand, so shutdown stops the `io_context` and every read returns at once.
 
-A turn belongs to the client watching it. Closing the page, losing the socket, or a
-second client taking over all end it, and nothing of it is kept: what it had written
-is half an answer, and storing that would make the next request read it as the model's
-finished reply. The chat is therefore never driven by nobody, and a page that reloads
-mid-answer comes back to the conversation as the store has it — the question, and no
-reply to it.
+A turn belongs to the client watching it. Closing the page or losing the socket ends it,
+and nothing of it is kept: what it had written is half an answer, and storing that would
+make the next request read it as the model's finished reply. The chat is therefore never
+driven by nobody, and a page that reloads mid-answer comes back to the conversation as the
+store has it — the question, and no reply to it. A `cancel` the page asked for is the one
+case that still answers: the turn stops, keeps what already arrived, and ends with `done`
+so the page can stop waiting. A socket the same page replaces — a reload, or the watchdog
+giving up on a socket that went silent — is not the page leaving, so the turn runs on and
+the frames produced while the swap happens are held for the socket that attaches next.
+
+### Browser modules
+
+The page is plain scripts with no build step, so the load order in `web/index.html` *is*
+the dependency order. The modules, their ownership and the static page resolution have
+their own document.
+
+See [web-ui.md](web-ui.md).
 
 ## Provider Differences
 
@@ -322,7 +547,7 @@ Runtime.ProcessInput(input, ...)
 Each stored node is rendered into one `ChatMessage` on the way out
 (`include/pu/session/request.hpp`), which is the view a provider requires. That makes
 `ChatMessage` a compatibility view rather than a place to grow: a new context
-feature belongs to `MessageNode` (`include/pu/context/message.hpp`), which owns what
+feature belongs to `MessageNode` (`include/pu/session/message.hpp`), which owns what
 a turn is.
 
 ---
@@ -362,6 +587,14 @@ lists tools.
 
 ---
 
+## Peers and the task board
+
+Peer messaging and the task board have their own document: the message a peer sends, the
+token that lets it in, the trust boundary, and every rule the board applies to a job. What
+stays here is where the board sits in the process and why it is not behind `io_mutex`.
+
+See [peers-and-board.md](peers-and-board.md).
+
 ## Persistence
 
 ```
@@ -370,13 +603,28 @@ lists tools.
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing
-`PU_HOME` moves; the environment table in [README](../README.md#environment-variables)
-owns both paths.
+`PU_HOME` moves, and their directory is per process so two processes in one
+workspace never rotate the same file; the environment table in
+[configuration.md](configuration.md#environment-variables) owns both paths.
 
 The session file carries `schema_version` beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
 shutdown, and restored on startup. A file stamped with a version this build does
 not accept is refused rather than read best-effort.
+
+**What each turn cost is kept beside the conversation, not inside it.** `usage` is a
+sibling of `conversation` in the file, keyed by the assistant node the turn produced: prompt,
+completion and cached tokens, the credit the gateway priced it at, how many provider calls the
+turn took, and which model and gateway answered. A model never reads it, `History()` never
+renders it, and a page draws it next to the reply rather than as part of it — which is why it
+is not a field of `AssistantPayload`. It is kept because it is the only record that an
+optimization changed anything: a prompt edited so the cache stops hitting, or a model swapped
+for one that costs three times as much, shows up here and nowhere else.
+
+The key is absent from every file written before it existed, and absent is read as "nothing
+was recorded" rather than as a version this build cannot load, so the schema version did not
+move. A turn that has left the chain — a rewound turn, `/clear` — takes its entry with it on
+the next save.
 
 `session_spec` names the agent and carries the session's own thinking level when
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
@@ -400,6 +648,24 @@ in the file until something replaces them. The append that follows drops whateve
 the new leaf cannot reach, so a replaced turn leaves nothing behind and the store
 ends up holding exactly the chain the view shows.
 
+A tool call has three states: `pending` while it has not been answered, `completed`
+once a receipt answers it, and `interrupted` when the turn that requested it was
+cancelled before the call ran. Cancelling seals the leaf: every call still `pending`
+becomes `interrupted` and gains a receipt recording that it never ran. Those receipts
+are chain nodes like any other, so the next request renders them to the model as
+`role: "tool"` messages. Only a `pending` call counts as unfinished, so a sealed turn
+stops blocking `/rewind` and a switch of agent while a call that may still be running
+goes on blocking both. Whether a receipt records a result or an interruption, its
+presence is what keeps each tool call paired with an answer, which is what the request
+path is rebuilt from.
+
+Three vocabularies name these states, and they are not interchangeable. Storage and the
+session file use `pending` / `completed` / `interrupted`
+([`message.hpp`](../include/pu/session/message.hpp), [`graph.cpp`](../src/session/graph.cpp)).
+`/api/history` renames `completed` to `done` for the Web UI, so a client sees `pending` /
+`done` / `interrupted`. The transcript additionally shows `running`, which is live-only
+state and is never written to a session.
+
 A file without the version, with another one, or whose history is not node storage is
 refused rather than guessed at: `pu` reports the reason and starts a fresh
 conversation, and the next save replaces the file.
@@ -417,50 +683,61 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/                  src/
-├── agent_manager.hpp        ├── app/                  # main, CLI parsing, serve
-├── command_router.hpp       ├── config/               # agents.json, the backend model
-├── runtime.hpp              ├── runtime.cpp, command_router.cpp
-├── executor.hpp             ├── executor.cpp
-├── app/                     ├── core/                 # logging, platform, HTTP client
-├── config/                  ├── context/              # message graph storage
-├── core/                    ├── gateways/            # one file per gate, behind a table
-├── context/                 ├── llm/                  # protocols, providers, streaming parser
-├── llm/                     ├── mcp/                  # transports, JSON-RPC client
-├── mcp/                     ├── session/              # Session, Conversation
-├── session/                 └── tools/                # Toolbox, tools
+├── app/                     ├── app/                  # main, CLI parsing, serve
+├── config/                  ├── config/               # agents.json, the backend model
+├── core/                    ├── core/                 # logging, platform, HTTP client
+├── llm/                     ├── gateways/             # every gateway and its table
+├── mcp/                     ├── llm/                  # protocols, providers, streaming parser
+├── runtime/                 ├── mcp/                  # transports, JSON-RPC client
+│   ├── command_router.hpp   ├── runtime/              # runtime, executor, command router
+│   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
+│   └── runtime.hpp          └── tools/                # Toolbox, tools
+├── session/                 # message graph, Session, Conversation
 └── tools/
 ```
 
-A header lives in `include/pu/` when code outside its own directory uses it
-(including tests); otherwise it stays next to its `.cpp`. A header whose module
-has a directory belongs in that directory, so `app/cli.hpp` sits beside
-`src/app/cli.cpp`.
+A header lives in its module's directory; `include/pu/runtime/` holds the
+orchestration layer (`Runtime`, `Executor`, `CommandRouter`). A header whose
+module has no directory of its own stays beside the sources that include it.
 
-The CMake targets follow the layering: `pu_lib` is the *base* static library
-(core + domain modules), `pu_agent` holds the orchestration layer, `pu_app`
-holds `src/app/`, and the `pu` executable adds only `main.cpp`.
+The build is one static library, `pu_core` (everything but `main.cpp`), and the
+`pu` executable links it.
+
+`web/` is the page the server mounts, served straight from the directory the server resolved,
+so adding a module means adding the file and its `<script>` tag and nothing else. A target that
+names a directory, or is not there, is a `404` rather than a read of the directory. Its module
+split is described in [web-ui.md](web-ui.md).
 
 ### Gates, protocols and providers
 
 Three facts about a vendor that look alike are three different things: a **protocol** is
-*how to talk*, a **gate** is *which product*, and a connection is *where*. `config/gateway.hpp`
-holds the middle one: `GatewayId` names the gates a build carries, `Gateway` is
+*how to talk*, a **gateway** is *which product*, and a connection is *where*. `config/gateway.hpp`
+holds the middle one: `GatewayId` names the gateways a build carries, `Gateway` is
 `{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
-/ `GatewayForId()` answer from one explicit table in `src/gateways/registry.cpp`. Each gate
-is a file beside it, stating its own name, host, provider and catalogue read; adding one is
-that file and one line of the table, and there is no registry the linker can drop.
+/ `GatewayForId()` answer from one explicit table (`kGateways`) in that file. Every gateway
+lives in `src/gateways/gateways.cpp` with its neighbours: a gateway is mostly a table row plus
+the mapping from the backend config to its protocol's config, and those mappings are only
+readable as a set — side by side, a field one gateway fills and another drops is visible, and
+in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
+`FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
 
-`agents.json` names a gate through `gateway`, and a missing or unknown name is refused rather
+Billing follows the same split. What a call costs is read in the protocol layer, through
+`ResponseShape`: one gateway names the field `credit`, another names nothing at all, and the
+difference never leaves `TokenUsage::credit`. The upper layers never branch on which gateway
+is in use — there is no `if (cfg.gateway == kCodeBuddy)` in the code above the protocol, and
+a turn's usage is the sum over every round its tool loop ran, accumulated in the executor.
+
+`agents.json` names a gateway through `gateway`, and a missing or unknown name is refused rather
 than defaulted, so a backend never reaches a host its author did not choose. The field is what
 a stored config carries; `BackendTypeName()` / `ParseBackendType()` are gone, and one parser
 resolves the name.
 
-A protocol stays what it was — the implementation of how a gate talks. `openai` is split into
+A protocol stays what it was — the implementation of how a gateway talks. `openai` is split into
 `llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
-host with one set of headers), because a change to the SSE parse and a change to a gate's
-headers are different changes; `ollama` keeps protocol and provider in one class. The gate
-abstraction stops short of one thing the design chose not to build yet: a gate offering more
-than one protocol, which would need an `entry` between the gate and the protocol. Every gate
+host with one set of headers), because a change to the SSE parse and a change to a gateway's
+headers are different changes; `ollama` keeps protocol and provider in one class. The gateway
+abstraction stops short of one thing the design chose not to build yet: a gateway offering more
+than one protocol, which would need an `entry` between the gateway and the protocol. Every gateway
 measured so far speaks exactly one, so that layer is deferred rather than carried as unused
 state — see [design/gateway-protocol-layout.md](design/gateway-protocol-layout.md).
 
@@ -483,10 +760,11 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gate**: Add `src/gateways/<name>.cpp`, stating the name, the default host, how to build the gate's provider, and how to build its catalogue read; then name it in the table in `src/gateways/registry.cpp`. A gate that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gate is the same in reverse - the file and its line.
+- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/gateways/gateways.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
+- **New peer (no C++)**: Add an entry to `.pu/peers.json` naming the peer and its URL, and agree on the shared token; the other side needs no restart.
 
 ---
 
@@ -494,8 +772,30 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
+- **The tool-call budget is the turn loop's one automatic stop.** It counts calls rather than
+  replies, since one reply can carry several, and it is checked between rounds: a budget of 2
+  lets two calls run and then appends an instruction to wrap up, so the model answers from what
+  it has instead of the turn failing. A wrap-up round that calls a tool anyway ends the turn with
+  `TurnOutcome::kToolBudgetReached` and an error naming the setting, rather than looping. The
+  number comes from the agent's `tool_call_budget`, or from the session's override when the page
+  or `/api/settings` set one.
+- **A session's cost is summed, not stored.** `UsageLedger::Total()` adds the counts of every
+  turn the conversation still holds. A price is summed only while every turn that reported one
+  used the same unit, and only if every turn was priced: one unpriced turn or two units make the
+  total carry no price at all, because a number that covers part of the session reads as the
+  whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
+- **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **The serve registry names a server by its pid, not by a claim.** A server that is killed
+  rather than stopped leaves its line behind, and a pid the operating system later hands to an
+  unrelated process reads as a live server until that process exits, so the page can list a
+  workspace nothing is serving. Nothing acts on a record beyond drawing it: a wrong row costs a
+  wrong name, not a message sent to the wrong place. Two smaller limits come with it: a
+  machine with no `HOME` gets no list, since there is nowhere machine-wide to write it and
+  every workspace's file is the wrong place; and a lock that is never released costs the few
+  milliseconds the writer waits before it writes anyway rather than costs the server.
+- **The transcript fold is checked by running the page's own JavaScript only where `node` exists.** Without it the same case file runs against a second implementation in Python, which catches a case that has drifted but not a page that no longer runs.
 

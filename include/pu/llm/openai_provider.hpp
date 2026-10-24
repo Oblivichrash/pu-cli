@@ -10,10 +10,10 @@
 
 namespace pu {
 
-// One gate's backend in the OpenAI protocol: that protocol at the gate's host, with the
-// headers the gate sends. Everything the wire format does belongs to OpenAIProtocol; what
-// is left here is which host and which headers, which is what a gate states. The `openai`
-// and `codebuddy` gates build this, and so does every agent of the `openai` gate — OpenAI,
+// One gateway's backend in the OpenAI protocol: that protocol at the gateway's host, with the
+// headers the gateway sends. Everything the wire format does belongs to OpenAIProtocol; what
+// is left here is which host and which headers, which is what a gateway states. The `openai`
+// and `codebuddy` gateways build this, and so does every agent of the `openai` gateway — OpenAI,
 // DeepSeek, NVIDIA and a vLLM of one's own differ only in host, headers and response shape.
 class OpenAIProvider final : public OpenAIProtocol {
  public:

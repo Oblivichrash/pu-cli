@@ -23,14 +23,19 @@ class RequestRefused : public RuntimeError {
   using RuntimeError::RuntimeError;
 };
 
-class Error : public RuntimeError {
+class NotFound : public RuntimeError {
  public:
   using RuntimeError::RuntimeError;
 };
 
-class HttpError : public Error {
+class GenericError : public RuntimeError {
  public:
-  explicit HttpError(const std::string& msg) : Error(msg) {}
+  using RuntimeError::RuntimeError;
+};
+
+class HttpError : public GenericError {
+ public:
+  explicit HttpError(const std::string& msg) : GenericError(msg) {}
 };
 
 namespace uuid {

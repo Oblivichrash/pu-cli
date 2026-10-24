@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "pu/config/backend.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #include <process.h>
@@ -70,6 +75,26 @@ class ScopedEnvVar {
   bool had_prev_ = false;
 };
 
+// Several variables, restored together. The order is the reverse of the one they were set
+// in, which is what a reader expects of scoped state and what makes a nested scope compose.
+class ScopedEnvironment {
+ public:
+  using Entries = std::vector<std::pair<std::string, std::string>>;
+
+  explicit ScopedEnvironment(Entries entries) {
+    for (const auto& [name, value] : entries) {
+      saved_.emplace_back(name, std::make_unique<ScopedEnvVar>(name, value));
+    }
+  }
+
+  ScopedEnvironment(const ScopedEnvironment&) = delete;
+  ScopedEnvironment& operator=(const ScopedEnvironment&) = delete;
+
+ private:
+  // Declared last so it is destroyed first: the saved values go back before the setters do.
+  std::vector<std::pair<std::string, std::unique_ptr<ScopedEnvVar>>> saved_;
+};
+
 class ScopedWorkingDir {
  public:
   explicit ScopedWorkingDir(const std::filesystem::path& dir)
@@ -112,5 +137,20 @@ class ScopedTempDir {
  private:
   std::filesystem::path path_;
 };
+
+}  // namespace pu::tests
+
+namespace pu::tests {
+
+// A backend pointed at whatever host a test names, with a model that says it was set.
+inline config::Backend BackendOfType(config::GatewayId type, const std::string& host,
+                                     const std::string& key = "") {
+  config::Backend cfg;
+  cfg.gateway = type;
+  cfg.host = host;
+  cfg.model = "the-active-model";
+  if (!key.empty()) cfg.api_key = key;
+  return cfg;
+}
 
 }  // namespace pu::tests

@@ -2,7 +2,6 @@
 #include "pu/llm/openai_protocol.hpp"
 
 #include "pu/llm/projection.hpp"
-#include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -20,17 +19,6 @@ std::string StreamErrorDetail(const boost::json::value& error) {
   return message.empty() ? boost::json::serialize(error) : message;
 }
 
-// A payload carried over several `data:` lines is the gateway splitting one object, and
-// the line that closes it is the one that parses.
-bool ParsesAsJson(std::string_view text) {
-  try {
-    boost::json::parse(text);
-    return true;
-  } catch (const boost::system::system_error&) {
-    return false;
-  }
-}
-
 constexpr llm::ProviderCapabilities kCapabilities{
     .role_naming = llm::RoleNaming::kAsStored,
     .echoes_reasoning = true,
@@ -44,10 +32,41 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
+namespace llm {
+
+std::vector<std::string> AbsentShapeFields(
+    const ResponseShape& shape, const std::function<bool(std::string_view)>& seen,
+    bool required_only) {
+  std::vector<std::string> absent;
+  const auto expect = [&](std::string_view field) {
+    if (!field.empty() && !seen(field)) absent.emplace_back(std::string(field));
+  };
+
+  if (!required_only) expect(shape.content_field);
+  if (!required_only) expect(shape.reasoning_field);
+  if (!required_only) expect(shape.refusal_field);
+  expect(shape.usage_field);
+  expect(shape.prompt_tokens_field);
+  expect(shape.completion_tokens_field);
+  expect(shape.total_tokens_field);
+
+  // One gateway nests the cached count, another puts it at the top level; either satisfies.
+  if (!shape.cached_tokens_nested_field.empty() &&
+      !seen(shape.cached_tokens_nested_field) && !seen(shape.cached_tokens_top_level_field)) {
+    absent.emplace_back(std::string(shape.cached_tokens_nested_field) + " (nor " +
+                        std::string(shape.cached_tokens_top_level_field) + ")");
+  }
+  expect(shape.finish_reason_field);
+  return absent;
+}
+
+}  // namespace llm
+
 OpenAIProtocol::OpenAIProtocol(const Config& config, std::shared_ptr<pu::http::HttpClient> http)
     : StreamingProvider(config.host, config.api_key, std::move(http)), config_(config) {}
 
 void OpenAIProtocol::ResetAccumulators() {
+  missing_fields_.clear();
   pending_tools_.clear();
   content_.clear();
   reasoning_.clear();
@@ -59,7 +78,6 @@ void OpenAIProtocol::ResetAccumulators() {
   raw_usage_ = nullptr;
   unread_fields_.clear();
   inspected_frame_ = false;
-  pending_data_.clear();
   reply_choice_index_ = -1;
   reported_extra_choice_ = false;
 }
@@ -105,8 +123,33 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
   };
   NoteUnreadFields(j, kReadKeys);
 
+  const boost::json::object* frame = j.if_object();
+  if (frame != nullptr) {
+    for (const auto& member : *frame) NoteSeenField(member.key());
+    if (const auto it = frame->find("choices");
+        it != frame->end() && it->value().is_array() && !it->value().as_array().empty()) {
+      const boost::json::value& first = it->value().as_array().at(0);
+      if (const boost::json::object* choice = first.if_object()) {
+        for (const auto& member : *choice) NoteSeenField(member.key());
+        if (const auto delta = choice->find("delta");
+            delta != choice->end() && delta->value().is_object()) {
+          for (const auto& member : delta->value().as_object()) NoteSeenField(member.key());
+        }
+      }
+    }
+    if (const auto usage = frame->find("usage");
+        usage != frame->end() && usage->value().is_object()) {
+      for (const auto& member : usage->value().as_object()) {
+        NoteSeenField(member.key());
+        if (member.value().is_object()) {
+          for (const auto& nested : member.value().as_object()) NoteSeenField(nested.key());
+        }
+      }
+    }
+  }
+
   if (json::HasKey(j, "error")) {
-    throw Error("provider error: " + StreamErrorDetail(j.at("error")));
+    throw GenericError("provider error: " + StreamErrorDetail(j.at("error")));
   }
 
   bool is_final = false;
@@ -192,7 +235,22 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
       counted.cached_tokens =
           json::ValueOrDefault<int>(usage, shape.cached_tokens_top_level_field, 0);
     }
-    counted.credit = json::ValueOrDefault<double>(usage, shape.credit_field, 0.0);
+    // The product says which field carries a price, if it carries one at all. Two products
+    // share this parser and only one reports a price; reading a name that is not there would
+    // turn "this product says nothing" into "this call was free".
+    if (config_.billing.kind == config::BillingKind::kReported &&
+        !config_.billing.field.empty()) {
+      if (json::HasKey(usage, config_.billing.field)) {
+        const boost::json::value& price = usage.at(config_.billing.field);
+        if (price.is_number()) {
+          counted.cost = Cost{price.to_number<double>(), std::string(config_.billing.unit)};
+        } else {
+          // Present but not a number is a shape change, and the shapes already report those.
+          spdlog::warn("usage.{} is not a number; the price it carries is unread",
+                       std::string(config_.billing.field));
+        }
+      }
+    }
     usage_ = counted;
     raw_usage_ = usage;
   }
@@ -218,7 +276,7 @@ void OpenAIProtocol::FlushPendingToolCalls(const ChatRequest& request) {
         // truncated argument. A backend that answers with something other than JSON
         // is a different thing, and its text is kept as it stands.
         if (finish_reason_ == "length") {
-          throw Error("tool call '" + acc.name + "' was cut off by the output token cap");
+          throw GenericError("tool call '" + acc.name + "' was cut off by the output token cap");
         }
         call.arguments = acc.arguments;
       }
@@ -228,41 +286,11 @@ void OpenAIProtocol::FlushPendingToolCalls(const ChatRequest& request) {
   pending_tools_.clear();
 }
 
-void OpenAIProtocol::ParseLine(std::string_view line, const ChatRequest& request) {
-  if (line.empty()) {  // an SSE event ends at a blank line
-    FlushPendingData(request);
-    return;
-  }
-  if (line.front() == ':') return;  // a comment
-
-  const std::size_t colon = line.find(':');
-  if (colon == std::string_view::npos) return;
-  const std::string_view field = line.substr(0, colon);
-  std::string_view value = line.substr(colon + 1);
-  // One optional space follows the colon; what is left is the value.
-  if (!value.empty() && value.front() == ' ') value.remove_prefix(1);
-
-  // `event`, `id` and `retry` name the event rather than carry it, so only `data` is read.
-  if (field != "data") return;
-
-  if (!pending_data_.empty()) pending_data_ += '\n';
-  pending_data_.append(value);
-  // The sentinel ends the stream on its own, and a payload split over several data lines
-  // is whole once it parses — either way what follows starts a fresh one.
-  if (pending_data_ == "[DONE]" || ParsesAsJson(pending_data_)) FlushPendingData(request);
-}
-
-void OpenAIProtocol::FlushPendingData(const ChatRequest& request) {
-  if (pending_data_.empty()) return;
-
-  std::string data = std::move(pending_data_);
-  pending_data_.clear();
-
-  if (data == "[DONE]") {
-    boost::json::value done_obj = {{"done", true}};
-    HandleJsonToken(done_obj, request);
-    return;
-  }
+void OpenAIProtocol::ParseData(std::string_view data, const ChatRequest& request) {
+  // What arrives is one event's payload: the blank-line framing, the `data:` prefix and the
+  // joining of a payload split over several lines are the format's, and `core::SseParser`
+  // does them. The sentinel is handled by the caller that owns the stream's end.
+  if (data.empty()) return;
 
   boost::json::value j;
   try {
@@ -275,8 +303,13 @@ void OpenAIProtocol::FlushPendingData(const ChatRequest& request) {
 }
 
 void OpenAIProtocol::FinishStream(const ChatRequest& request) {
-  FlushPendingData(request);
   FlushPendingToolCalls(request);
+
+  const auto seen = [this](std::string_view field) {
+    return std::find(seen_fields_.begin(), seen_fields_.end(), field) != seen_fields_.end();
+  };
+  missing_fields_ = AbsentShapeFields(config_.shape, seen, /*required_only=*/true);
+
   // A refusal that arrived beside content is still the provider's own report on the
   // turn, so it follows the reply rather than being dropped with the empty-content case.
   if (!refusal_.empty()) {

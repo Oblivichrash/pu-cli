@@ -36,7 +36,7 @@ std::string HeaderValue(const std::vector<std::string>& headers, const std::stri
 }  // namespace
 
 TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
@@ -72,7 +72,7 @@ TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[code
 }
 
 TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
@@ -94,7 +94,7 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
 }
 
 TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
@@ -119,7 +119,7 @@ TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[code
 }
 
 TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
@@ -145,7 +145,7 @@ TEST_CASE("Every backend type carries a thinking level", "[codebuddy][openai][ol
 }
 
 TEST_CASE("A configured host is not overridden", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.host = "http://127.0.0.1:9999/v1";
   cfg.model = "deepseek-v4-flash";
@@ -162,10 +162,10 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
 }
 
 TEST_CASE("CreateBackend refuses a backend that names no host", "[codebuddy]") {
-  config::BackendConfig cfg;
+  config::Backend cfg;
   cfg.gateway = config::GatewayId::kCodeBuddy;
   cfg.model = "deepseek-v4-flash";
 
   auto mock_http = std::make_shared<MockHttpClient>();
-  REQUIRE_THROWS_AS(config::CreateBackend(cfg, std::move(mock_http)), pu::Error);
+  REQUIRE_THROWS_AS(config::CreateBackend(cfg, std::move(mock_http)), pu::GenericError);
 }

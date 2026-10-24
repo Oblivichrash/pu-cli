@@ -201,3 +201,19 @@ TEST_CASE("MCP stdio transport delivers code-page bytes as UTF-8", "[mcp][text]"
   if (GetACP() == 936) REQUIRE(received == "\xE4\xB8\xAD\xE6\x96\x87");
 #endif
 }
+
+TEST_CASE("A transport error is read back as its reason", "[text][errors]") {
+  // What boost::system hands back: the reason, then where it was raised. The second half is
+  // the implementation's, and a caller deciding what to do next gains nothing from it.
+  const std::string raised =
+      "connect: Connection refused [system:111 at /usr/include/boost/asio/detail/"
+      "reactive_socket_service.hpp:590:5 in function 'boost::system::error_code "
+      "boost::asio::detail::reactive_socket_service<Protocol>::connect(implementation_type&, "
+      "const endpoint_type&, boost::system::error_code&)']";
+  REQUIRE(pu::text::ReadableError(raised) == "connect: Connection refused");
+
+  // Nothing to cut is left alone, and an unclosed bracket is not guessed at.
+  REQUIRE(pu::text::ReadableError("Request cancelled") == "Request cancelled");
+  REQUIRE(pu::text::ReadableError("HTTP error 401: bad key [oops") ==
+          "HTTP error 401: bad key [oops");
+}

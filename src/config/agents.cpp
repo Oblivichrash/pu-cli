@@ -50,8 +50,8 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   return policy;
 }
 
-BackendConfig ParseBackendConfig(const json::value& j) {
-  BackendConfig cfg;
+Backend ParseBackend(const json::value& j) {
+  Backend cfg;
   ReadBackendFields(cfg, j);
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
@@ -94,23 +94,105 @@ std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
 AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
-  if (entry.name.empty()) throw pu::Error("Missing agent name");
+  if (entry.name.empty()) throw pu::GenericError("Missing agent name");
   entry.description = json::ValueOrDefault<std::string>(j, "description", "");
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
-    throw pu::Error("Missing backend field");
-  entry.backend = ParseBackendConfig(j.at("backend"));
+    throw pu::GenericError("Missing backend field");
+  entry.backend = ParseBackend(j.at("backend"));
   if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
-  if (entry.backend.model.empty()) throw pu::Error("Missing model in backend");
+  if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
+  entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");
 
   return entry;
 }
 
 }  // unnamed namespace
+
+namespace {
+
+// A proxy gateway's name belongs in the identifier; a vendor's own API leaves the model id.
+std::string AgentNameFor(const llm::ModelEntry& model, const std::string& gateway) {
+  if (gateway == "codebuddy") return gateway + "-" + model.id;
+  return model.id;
+}
+
+std::string StringMember(const boost::json::object& object, const char* key) {
+  const auto it = object.find(key);
+  if (it == object.end() || !it->value().is_string()) return {};
+  return boost::json::value_to<std::string>(it->value());
+}
+
+}  // unnamed namespace
+
+std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source) {
+  const boost::json::object* src = source.if_object();
+  if (src == nullptr) throw GenericError("Cannot render an entry from something that is not an object");
+
+  const boost::json::object* backend = nullptr;
+  if (const auto it = src->find("backend"); it != src->end()) backend = it->value().if_object();
+  if (backend == nullptr)
+    throw GenericError("The agent this command runs as carries no backend to copy");
+
+  const std::string gateway = StringMember(*backend, "gateway");
+
+  boost::json::object entry;
+  entry["name"] = AgentNameFor(model, gateway);
+
+  std::string description = model.id + " via " + gateway;
+  if (!model.caps.credits.empty()) description += ", " + model.caps.credits;
+  entry["description"] = std::move(description);
+
+  boost::json::object copied = *backend;
+  copied["model"] = model.id;
+  // A reasoning-only model rejects a request carrying no effort; a named level is kept.
+  if (model.caps.only_reasoning && !model.caps.default_effort.empty()) {
+    const std::string named = StringMember(copied, "thinking");
+    if (named.empty() || named == "default") copied["thinking"] = model.caps.default_effort;
+  }
+  entry["backend"] = std::move(copied);
+
+  for (const char* key : {"security", "mcp_servers", "tool_call_budget"}) {
+    if (const auto it = src->find(key); it != src->end()) entry[key] = it->value();
+  }
+
+  return json::PrettyPrint(boost::json::value(std::move(entry)));
+}
+
+std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_path,
+                                                    const std::string& agent_name) {
+  std::ifstream file(config_path);
+  if (!file.is_open()) return std::nullopt;
+
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+
+  json::value parsed;
+  try {
+    parsed = json::parse(buffer.str());
+  } catch (const boost::system::system_error&) {
+    return std::nullopt;
+  }
+
+  const boost::json::array* agents = nullptr;
+  if (const boost::json::object* top = parsed.if_object()) {
+    if (const auto it = top->find("agents"); it != top->end()) agents = it->value().if_array();
+  }
+  if (agents == nullptr) return std::nullopt;
+
+  for (const auto& entry : *agents) {
+    const boost::json::object* fields = entry.if_object();
+    if (fields == nullptr) continue;
+    const auto it = fields->find("name");
+    if (it == fields->end() || !it->value().is_string()) continue;
+    if (boost::json::value_to<std::string>(it->value()) == agent_name) return entry;
+  }
+  return std::nullopt;
+}
 
 std::string FindConfigPath() {
   const std::filesystem::path project = "./.pu/agents.json";
@@ -145,9 +227,9 @@ std::optional<ServeOptions> FindServeOptions() {
   const json::value& serve = j.at("serve");
 
   ServeOptions options;
-  if (json::HasKey(serve, "host") && serve.at("host").is_string()) {
-    options.host = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("host")));
-    if (options.host->empty()) options.host = std::nullopt;
+  if (json::HasKey(serve, "bind") && serve.at("bind").is_string()) {
+    options.bind = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("bind")));
+    if (options.bind->empty()) options.bind = std::nullopt;
   }
   if (json::HasKey(serve, "port")) {
     if (serve.at("port").is_int64()) {
@@ -162,7 +244,7 @@ std::optional<ServeOptions> FindServeOptions() {
     }
   }
 
-  if (!options.host && !options.port) return std::nullopt;
+  if (!options.bind && !options.port) return std::nullopt;
   return options;
 }
 
@@ -177,16 +259,16 @@ std::optional<std::uint16_t> ParsePort(const std::string& text) {
   return static_cast<std::uint16_t>(value);
 }
 
-ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
+ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
                                    const std::optional<std::string>& flag_port,
-                                   const std::optional<std::string>& env_host,
+                                   const std::optional<std::string>& env_bind,
                                    const std::optional<std::string>& env_port,
                                    const std::optional<ServeOptions>& from_file) {
   ListenOptions options;
-  if (flag_host || env_host) {
-    options.host = flag_host ? *flag_host : *env_host;
-  } else if (from_file && from_file->host) {
-    options.host = *from_file->host;
+  if (flag_bind || env_bind) {
+    options.bind = flag_bind ? *flag_bind : *env_bind;
+  } else if (from_file && from_file->bind) {
+    options.bind = *from_file->bind;
   }
 
   const std::optional<std::string>* named = nullptr;
@@ -213,7 +295,7 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   std::ifstream file(config_path);
-  if (!file.is_open()) throw pu::Error("Configuration file not found: " + config_path);
+  if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + config_path);
 
   json::value j;
   try {
@@ -221,22 +303,22 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
     buffer << file.rdbuf();
     j = json::parse(buffer.str());
   } catch (const boost::system::system_error&) {
-    throw pu::Error("Failed to parse configuration JSON");
+    throw pu::GenericError("Failed to parse configuration JSON");
   }
 
   if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
-    throw pu::Error("Missing default_agent field");
+    throw pu::GenericError("Missing default_agent field");
   result.default_agent = boost::json::value_to<std::string>(j.at("default_agent"));
 
   if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
-    throw pu::Error("Missing agents array");
+    throw pu::GenericError("Missing agents array");
   for (const auto& item : j.at("agents").as_array()) result.agents.push_back(ParseAgentEntry(item));
 
   const auto default_agent =
       std::find_if(result.agents.begin(), result.agents.end(),
                    [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end())
-    throw pu::Error("default_agent does not match any configured agent");
+    throw pu::GenericError("default_agent does not match any configured agent");
   return result;
 }
 

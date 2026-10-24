@@ -53,8 +53,8 @@ Answers 11102 `service info not found`: `glm-5-flash`, `glm-4.7`, `glm-5`, `glm-
 `glm-4.6v`, and every dated Claude id the client carries.
 
 Ids are matched exactly, so `GLM-5.3-Flash` is 11102. An id that exists without this
-account being entitled to it says so instead: `glm-4.7-ioa` answers `model
-[glm-4.7-ioa] is only available for authorized users`.
+account being entitled to it says so instead: `glm-4.7-ioa` answers
+`model [glm-4.7-ioa] is only available for authorized users`.
 
 The candidate set a sweep needs comes from `GET {origin}/v3/config`, which answers the
 account's whole catalogue at `data.models[].id` and the agent's usable subset at

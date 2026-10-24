@@ -2,7 +2,6 @@
 #include "pu/llm/ollama_provider.hpp"
 
 #include "pu/llm/projection.hpp"
-#include "pu/llm/streaming_json_parser.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
@@ -86,7 +85,7 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
 
   if (json::HasKey(j, "error")) {
     const std::string detail = json::ErrorMessage(j);
-    if (!detail.empty()) throw Error("provider error: " + detail);
+    if (!detail.empty()) throw GenericError("provider error: " + detail);
   }
 
   if (json::HasKey(j, "message")) {
@@ -129,8 +128,11 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
-    usage_ = TokenUsage{json::ValueOrDefault<int>(j, "prompt_eval_count", 0),
-                        json::ValueOrDefault<int>(j, "eval_count", 0)};
+    // Named rather than positional: `TokenUsage` carries more than the two counts a daemon
+    // reports, and a positional list would have to grow with it.
+    usage_ = TokenUsage{};
+    usage_->prompt_tokens = json::ValueOrDefault<int>(j, "prompt_eval_count", 0);
+    usage_->completion_tokens = json::ValueOrDefault<int>(j, "eval_count", 0);
     // The cached prompt rides on the same line under Ollama's own name; without it the
     // count reads as a gateway that cached nothing.
     usage_->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
@@ -152,11 +154,13 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 }
 
-void OllamaProvider::ParseLine(std::string_view line, const ChatRequest& request) {
-  if (text::Trim(line).empty()) return;  // NDJSON frames nothing, so a blank line says nothing
+void OllamaProvider::ParseData(std::string_view data, const ChatRequest& request) {
+  // NDJSON frames nothing: a blank line is a blank line, and the frame is the payload the
+  // parser handed over.
+  if (text::Trim(data).empty()) return;
   boost::json::value j;
   try {
-    j = boost::json::parse(line);
+    j = boost::json::parse(data);
   } catch (const boost::system::system_error& e) {
     spdlog::warn("Skipping invalid JSON line: {}", e.what());
     return;

@@ -3,3 +3,5 @@ build/
 *.a
 *.so
 .pu/
+provider-probes/
+__pycache__/
