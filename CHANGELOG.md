@@ -6,6 +6,8 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+## 0.6.1
+
 ### Breaking
 
 - **Breaking** — **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
