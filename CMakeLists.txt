@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pu-cli VERSION 0.6.0 LANGUAGES CXX)
+project(pu-cli VERSION 0.6.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
