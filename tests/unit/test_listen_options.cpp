@@ -34,24 +34,24 @@ TEST_CASE("Where to listen: the command line, then the environment, then the fil
 
   const auto plain =
       ResolveListenOptions(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
-  REQUIRE(plain.host == "127.0.0.1");
+  REQUIRE(plain.bind == "127.0.0.1");
   REQUIRE(plain.port == 8080);
 
   const auto from_file =
       ResolveListenOptions(std::nullopt, std::nullopt, std::nullopt, std::nullopt, file);
-  REQUIRE(from_file.host == "from-file");
+  REQUIRE(from_file.bind == "from-file");
   REQUIRE(from_file.port == 9000);
 
-  const auto from_env = ResolveListenOptions(std::nullopt, std::nullopt, "env-host", "9100", file);
-  REQUIRE(from_env.host == "env-host");
+  const auto from_env = ResolveListenOptions(std::nullopt, std::nullopt, "env-bind", "9100", file);
+  REQUIRE(from_env.bind == "env-bind");
   REQUIRE(from_env.port == 9100);
 
-  const auto from_flag = ResolveListenOptions("flag-host", "9200", "env-host", "9100", file);
-  REQUIRE(from_flag.host == "flag-host");
+  const auto from_flag = ResolveListenOptions("flag-bind", "9200", "env-bind", "9100", file);
+  REQUIRE(from_flag.bind == "flag-bind");
   REQUIRE(from_flag.port == 9200);
 
-  const auto mixed = ResolveListenOptions("flag-host", std::nullopt, std::nullopt, "9100", file);
-  REQUIRE(mixed.host == "flag-host");
+  const auto mixed = ResolveListenOptions("flag-bind", std::nullopt, std::nullopt, "9100", file);
+  REQUIRE(mixed.bind == "flag-bind");
   REQUIRE(mixed.port == 9100);
 }
 
@@ -61,10 +61,10 @@ TEST_CASE("A port that was named is not overruled by the file", "[listen]") {
   const auto refused_flag =
       ResolveListenOptions(std::nullopt, "70000", std::nullopt, std::nullopt, file);
   REQUIRE(refused_flag.port == 8080);
-  REQUIRE(refused_flag.host == "from-file");
+  REQUIRE(refused_flag.bind == "from-file");
 
   const auto refused_env =
       ResolveListenOptions(std::nullopt, std::nullopt, std::nullopt, "not a port", file);
   REQUIRE(refused_env.port == 8080);
-  REQUIRE(refused_env.host == "from-file");
+  REQUIRE(refused_env.bind == "from-file");
 }

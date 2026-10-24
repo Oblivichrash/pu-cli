@@ -21,10 +21,15 @@ const here = __dirname;
 const web = join(here, "..", "..", "web");
 const casesPath = join(here, "..", "fixtures", "group_history.json");
 
-// state.js declares the block types; history.js reads them. Both are top-level consts, so
-// they live in the context the script is run in rather than on an object it hands back.
+// blocks.js declares the kinds; history.js reads them. Both are top-level consts, so they live in
+// the context the script is run in rather than on an object it hands back.
+//
+// Only those two are loaded. The fold is a function of the stored turn, so a context that also
+// carried the page's own origin would be naming a dependency the fold does not have — and a test
+// that stubs a browser global to load a module it does not use is pinned to the load order rather
+// than to the behaviour.
 const context = vm.createContext({console});
-for (const file of ["state.js", "history.js"]) {
+for (const file of ["blocks.js", "history.js"]) {
   const source = readFileSync(join(web, file), "utf8");
   vm.runInContext(source, context, {filename: file});
 }

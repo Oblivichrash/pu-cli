@@ -69,9 +69,9 @@ TEST_CASE("The command line names every option once", "[options]") {
     REQUIRE(verifying.count("verify") == 1);
   }
 
-  SECTION("serve takes a host and a port") {
-    const po::variables_map vm = parse({"pu", "serve", "--host", "0.0.0.0", "--port", "9000"});
-    REQUIRE(vm["host"].as<std::string>() == "0.0.0.0");
+  SECTION("serve takes a bind address and a port") {
+    const po::variables_map vm = parse({"pu", "serve", "--bind", "0.0.0.0", "--port", "9000"});
+    REQUIRE(vm["bind"].as<std::string>() == "0.0.0.0");
     REQUIRE(vm["port"].as<std::string>() == "9000");
   }
 }

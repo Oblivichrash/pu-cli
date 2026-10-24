@@ -146,9 +146,10 @@ const std::array<Gateway, 6> kGateways = {
         .make_listing = &MakeOllamaListing,
         .listing_headers = &NoListingHeaders,
     },
-    // The cloud service speaks both wires: `/api/tags` carries more about each model, and
-    // `/v1/models` is the OpenAI route. This row is the OpenAI one, so a caller picks the
-    // other by naming `ollama-cloud-native` in an agents.json entry.
+    // The cloud service answers both wires: `/api/tags` describes each model in more detail and
+    // `/v1/models` is the OpenAI route. This row is the OpenAI one. The native route is not a
+    // gateway here — nothing in this build claims it, and a name a table does not carry is
+    // refused at load.
     OpenAiProduct(GatewayId::kOllamaCloud, "ollama-cloud", "https://ollama.com/v1",
                   "OLLAMA_API_KEY"),
     OpenAiProduct(GatewayId::kOpenAI, "openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),

@@ -17,6 +17,7 @@
 #include <vector>
 
 namespace beast = boost::beast;
+namespace http = beast::http;
 namespace net = boost::asio;
 namespace websocket = beast::websocket;
 using tcp = net::ip::tcp;
@@ -54,6 +55,7 @@ class Page {
     beast::flat_buffer buffer;
     beast::error_code ec;
     ws_.read(buffer, ec);
+
     if (ec) return std::nullopt;
     try {
       return boost::json::parse(beast::buffers_to_string(buffer.data()));
@@ -103,7 +105,7 @@ std::string ChunkText(const std::vector<boost::json::value>& frames) {
 }
 
 boost::json::value StoredConversation(pu::tests::ServeHarness& harness) {
-  return boost::json::parse(harness.Client().Get("/api/history"));
+  return boost::json::parse(harness.Client().Get("/api/history")).at("messages");
 }
 
 void WaitForTheTurnToReachTheBackend(pu::tests::ServeHarness& harness) {
@@ -141,7 +143,7 @@ TEST_CASE("A page that attaches after a peer's turn reads the reply", "[serve][w
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
-    const auto history = boost::json::parse(client.Get("/api/history"));
+    const auto history = boost::json::parse(client.Get("/api/history")).at("messages");
     if (history.as_array().size() >= 2) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
@@ -155,6 +157,40 @@ TEST_CASE("A page that attaches after a peer's turn reads the reply", "[serve][w
     return FrameType(frame) == "done";
   });
   CHECK(saw_done);
+}
+
+// A backend that fails under a running turn is the ordinary case. A failure the turn *reports*
+// is survivable; one that unwinds out of the worker is not, because a thread that lets an
+// exception through its entry function calls terminate, and that took the server down along
+// with every page on it. A dead backend is the failure that reproduced it: the transport fails
+// where no handler is left to turn it into a returned error.
+TEST_CASE("A turn that throws ends the turn and not the server", "[serve][ws]") {
+  pu::tests::ServeHarness harness{pu::tests::ServeHarness::UnreachableBackend{}};
+
+  Page page(harness.Port());
+  page.Run("hello");
+
+  std::vector<boost::json::value> frames;
+  for (;;) {
+    const auto frame = page.Read(20000);
+    if (!frame) break;
+    frames.push_back(*frame);
+    if (FrameType(*frame) == "error") break;
+  }
+  if (frames.empty()) {
+    FAIL("no frames; backend_requests=" << harness.BackendRequests());
+    return;
+  }
+  CHECK(FrameType(frames.back()) == "error");
+
+  // The page survived the frame: a socket that took it as a malformed text frame would be gone.
+  const auto after = harness.Client().GetRaw("/api/session");
+  CHECK(after.status == 200);
+
+  // And the worker is still there to take the turn after it.
+  page.Run("hello again");
+  const auto next = page.Read(20000);
+  REQUIRE(next.has_value());
 }
 
 TEST_CASE("A run streams the answer and ends with done", "[serve][ws]") {
@@ -188,6 +224,84 @@ TEST_CASE("A run reports the tokens the backend counted", "[serve][ws]") {
   // The counts describe the turn that ended, so they arrive before the turn is declared over.
   REQUIRE(FrameType(frames.back()) == "done");
   REQUIRE(FrameType(*(usage + 1)) == "done");
+
+  pu::tests::FakeBackend::ReportUsage(1234, 56);
+}
+
+// The page draws two figures from a finished turn: what it cost, and what the conversation has
+// spent. Both are known when the turn ends, so the frame carries both. A page told only the
+// first has to ask again to learn the second, and a page that does not ask draws a total that
+// stops short of the turn it just watched.
+TEST_CASE("The frame a finished turn sends carries the total it is part of", "[serve][ws][usage]") {
+  pu::tests::FakeBackend::ReportUsage(1000, 100);
+  pu::tests::ServeHarness harness;
+  Page page(harness.Port());
+
+  page.Run("first");
+  const auto first = page.ReadUntilEnd(10000);
+  const auto first_usage =
+      std::find_if(first.begin(), first.end(), [](const boost::json::value& frame) {
+        return FrameType(frame) == "usage";
+      });
+  REQUIRE(first_usage != first.end());
+  const boost::json::value& first_payload = first_usage->at("payload");
+  REQUIRE(first_payload.as_object().contains("total"));
+  CHECK(first_payload.at("total").at("turns").as_int64() == 1);
+  CHECK(first_payload.at("total").at("prompt_tokens").as_int64() == 1000);
+
+  // A second turn moves the total, and the frame says so rather than leaving the page to add
+  // it up: the sums are the server's, and one of them is a price that does not always add.
+  page.Run("second");
+  const auto second = page.ReadUntilEnd(10000);
+  const auto second_usage =
+      std::find_if(second.begin(), second.end(), [](const boost::json::value& frame) {
+        return FrameType(frame) == "usage";
+      });
+  REQUIRE(second_usage != second.end());
+  const boost::json::value& second_payload = second_usage->at("payload");
+  CHECK(second_payload.at("total").at("turns").as_int64() == 2);
+  CHECK(second_payload.at("total").at("prompt_tokens").as_int64() == 2000);
+
+  pu::tests::FakeBackend::ReportUsage(1234, 56);
+}
+
+// The frame and `/api/history` describe a turn to the same reader, so they must describe it
+// with the same keys. A page that draws a live turn and a replayed one takes one path only if
+// the two agree, and a field the frame forgets is a figure that vanishes on reload.
+TEST_CASE("A turn is written the same way whether it just ended or is replayed",
+          "[serve][ws][usage]") {
+  pu::tests::FakeBackend::ReportUsage(3000, 120);
+  pu::tests::ServeHarness harness;
+  Page page(harness.Port());
+
+  page.Run("hello");
+  const auto frames = page.ReadUntilEnd(10000);
+  const auto usage = std::find_if(frames.begin(), frames.end(), [](const boost::json::value& frame) {
+    return FrameType(frame) == "usage";
+  });
+  REQUIRE(usage != frames.end());
+  const boost::json::object& live = usage->at("payload").as_object();
+
+  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history")).at("messages");
+  REQUIRE(history.is_array());
+  const boost::json::object* replayed = nullptr;
+  for (const boost::json::value& item : history.as_array()) {
+    if (item.as_object().contains("usage")) replayed = &item.at("usage").as_object();
+  }
+  REQUIRE(replayed != nullptr);
+
+  // Every key the replay carries, the frame carries too, with the same value: both read the
+  // ledger entry the turn was filed under, so a page takes one path whether a turn is live or
+  // reloaded. The frame adds `total`, which describes a moment rather than a turn.
+  for (const auto& field : *replayed) {
+    const std::string key(field.key());
+    INFO("key: " << key);
+    REQUIRE(live.contains(key));
+    CHECK(live.at(key) == field.value());
+  }
+  // The frame carries one field the replay does not, because it describes a moment.
+  CHECK(live.contains("total"));
+  CHECK_FALSE(replayed->contains("total"));
 
   pu::tests::FakeBackend::ReportUsage(1234, 56);
 }

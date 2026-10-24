@@ -118,7 +118,11 @@ std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const Catalog
     const auto& fields = entry.as_object();
     const std::string id = StringField(fields, shape.id_key);
     if (id.empty()) continue;
-    models.push_back(ModelEntry{id, ReadCapabilities(fields, shape)});
+    Capabilities caps = ReadCapabilities(fields, shape);
+    // A window is not a capability a gateway promises, so no shape names it: several
+    // OpenAI-compatible products state it as `context_window` and the rest say nothing.
+    if (caps.max_input_tokens == 0) caps.max_input_tokens = IntField(fields, "context_window");
+    models.push_back(ModelEntry{id, std::move(caps)});
   }
   return models;
 }

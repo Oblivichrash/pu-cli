@@ -17,11 +17,37 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Cache Boost source build (Linux)
+      if: runner.os == 'Linux'
+      id: boost-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/boost-install
+        key: boost-1.86-linux-gcc
+
     - name: Install dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y catch2 libspdlog-dev libboost-system-dev libboost-program-options-dev libboost-json-dev libssl-dev
+        sudo apt-get install -y catch2 libspdlog-dev libssl-dev libboost-all-dev
+
+    # Ubuntu 24.04 ships Boost 1.83, where boost::json::value{object{...}} builds a one-element
+    # array instead of the object. CMakeLists.txt requires 1.84, so build that floor from source.
+    - name: Build Boost (Linux)
+      if: runner.os == 'Linux' && steps.boost-cache.outputs.cache-hit != 'true'
+      run: |
+        curl -sSL -o boost.tar.bz2 https://archives.boost.io/release/1.86.0/source/boost_1_86_0.tar.bz2
+        tar xjf boost.tar.bz2
+        cd boost_1_86_0
+        ./bootstrap.sh --with-libraries=system,program_options,json
+        ./b2 -j"$(nproc)" link=static,shared install --prefix="$GITHUB_WORKSPACE/boost-install"
+
+    - name: Point CMake at the built Boost (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        echo "BOOST_ROOT=$GITHUB_WORKSPACE/boost-install" >> "$GITHUB_ENV"
+        echo "Boost_ROOT=$GITHUB_WORKSPACE/boost-install" >> "$GITHUB_ENV"
+        echo "Boost_DIR=$GITHUB_WORKSPACE/boost-install/lib/cmake/Boost-1.86.0" >> "$GITHUB_ENV"
 
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'

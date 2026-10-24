@@ -170,6 +170,9 @@ void Runtime::Initialize(const std::string& config_path) {
 void Runtime::Shutdown() {
   SaveCurrentSession();
   mcp::DisconnectMcpServers(mcp_clients_);
+  // Async logging only writes on its own schedule, so a process that ends abruptly would leave
+  // the last lines, which are the ones that explain the ending, unwritten.
+  FlushLogging();
 }
 
 void Runtime::SaveCurrentSession() {
@@ -233,6 +236,12 @@ config::Backend Runtime::CurrentBackend() const {
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
+
+int Runtime::ContextWindow() const {
+  // The file's figure, and nothing else. A catalogue read here would be a network call under the
+  // session's lock, and this build's HTTP client has no deadline to end it.
+  return ConfiguredBackend().context_window.value_or(0);
+}
 
 std::optional<ThinkingLevel> Runtime::ThinkingOverride() const {
   if (!current_session_) return std::nullopt;

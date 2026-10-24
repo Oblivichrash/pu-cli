@@ -12,6 +12,7 @@
 namespace pu {
 
 void InitLogging(const std::string& log_level = "");
+void FlushLogging();
 
 void BeginRequest();
 void ClearLogRequestId();

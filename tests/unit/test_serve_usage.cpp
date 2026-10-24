@@ -39,7 +39,7 @@ TEST_CASE("A stored turn's cost is what the page reads back", "[serve][api][usag
   usage.gateway = "ollama";
   session->Usage().Record(usage);
 
-  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history"));
+  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history")).at("messages");
   REQUIRE(history.is_array());
 
   // Find the reply the cost was filed against.
@@ -127,7 +127,7 @@ TEST_CASE("A turn with no recorded cost carries no usage field", "[serve][api][u
   session->Messages().Append("user", "hello");
   session->Messages().Append("assistant", "hi");
 
-  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history"));
+  const boost::json::value history = boost::json::parse(harness.Client().Get("/api/history")).at("messages");
   REQUIRE(history.is_array());
   REQUIRE(!history.as_array().empty());
   // Absent, not zero: a page can tell "nothing was billed here" from "this cost nothing".

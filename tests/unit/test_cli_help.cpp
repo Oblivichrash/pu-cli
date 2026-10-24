@@ -53,13 +53,21 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   // Each of these reads something the others do not; if every page were the same, the
   // command a reader typed would still not be the one the page described.
   REQUIRE(Names(line.HelpFor("models"), "verify"));
-  REQUIRE(Names(line.HelpFor("models"), "entry"));
+  // Reading one model's entries and capabilities is a check, not a listing; the flag that
+  // narrows a list is not on the page that lists.
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "entry"));
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "caps"));
+  REQUIRE(Names(line.HelpFor("check"), "entry"));
+  REQUIRE(Names(line.HelpFor("check"), "caps"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "verify"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "entry"));
 
-  REQUIRE(Names(line.HelpFor("serve"), "host"));
+  REQUIRE(Names(line.HelpFor("serve"), "bind"));
   REQUIRE(Names(line.HelpFor("serve"), "port"));
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "host"));
+  // `host` is a backend's to name; a listener has a `bind`, and the two are not the same word
+  // because only one of them is an address a browser can be pointed at.
+  REQUIRE_FALSE(Names(line.HelpFor("serve"), "host"));
+  REQUIRE_FALSE(Names(line.HelpFor("models"), "bind"));
 
   REQUIRE(Names(line.HelpFor("check"), "config"));
   REQUIRE_FALSE(Names(line.HelpFor("chat"), "config"));
@@ -97,4 +105,33 @@ TEST_CASE("A command this build does not have gets the whole line", "[options]")
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
   // Nothing to narrow to, and printing an empty page would be worse than printing all of it.
   REQUIRE(&line.HelpFor("no-such-command") == &line.all);
+}
+
+TEST_CASE("The commands named without one are the commands this build has", "[options]") {
+  // `pu --help` is asked by a reader who does not know which page to ask for, so it lists
+  // the command names. The list is the one `--command` is described from and the one
+  // `per_command` is built from, which is what keeps a new command from being named in one
+  // place and missing from the other.
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+
+  std::vector<std::string> listed;
+  for (const auto& command : line.commands) listed.push_back(command.name);
+
+  std::vector<std::string> described;
+  for (const auto& [name, page] : line.per_command) described.push_back(name);
+
+  REQUIRE(listed == described);
+}
+
+TEST_CASE("The list says what each command answers", "[options]") {
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+  const std::string printed = pu::cli::CommandList(line);
+
+  // A name with no sentence after it is a name a reader still has to look up.
+  for (const auto& command : line.commands) {
+    const std::size_t at = printed.find("  " + command.name);
+    REQUIRE(at != std::string::npos);
+    REQUIRE_FALSE(command.summary.empty());
+    REQUIRE(printed.find(command.summary, at) != std::string::npos);
+  }
 }

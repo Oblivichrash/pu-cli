@@ -54,13 +54,19 @@ that says why.
 A change that alters behavior under `src/` needs a test in `tests/unit/` that
 fails without it. Documentation-only changes do not.
 
-- One file per module under test: `tests/unit/test_<module>.cpp`. A new module gets
-  a new file; a change to an existing module adds cases to the file that is already
-  there rather than starting a second one. Every file is listed in
-  `tests/CMakeLists.txt`.
-- Register cases with Catch2's `TEST_CASE`, tagged with the module name (e.g.
-  `"[executor]"`). `catch_discover_tests` already registers them with `ctest`,
-  so a case that compiles is a case that runs.
+- One file per behavior domain: `tests/unit/test_<subject>.cpp`, where the subject is the
+  module under test for most files and the area for the ones that span several
+  (`test_board.cpp`, `test_peer_tool.cpp`, `test_cli_help.cpp`). A change to an existing area
+  adds cases to the file that is already there rather than starting a second one; a new area
+  gets a new file. Every file is listed in `tests/CMakeLists.txt`.
+- Register cases with Catch2's `TEST_CASE`. The discovery step registers them with `ctest`,
+  so a case that compiles is a case that runs. A tag is optional and is reserved for a case
+  that is expensive or talks to a real endpoint — `[probe]`, `[list_models]` — so it can be
+  excluded with `--exclude` on a machine that has neither. A test of ordinary logic needs no
+  tag.
+- A test names the behavior it pins, not the function it calls: "a cancelled job cannot be
+  moved again" rather than "test Update". The name is what a failure prints, and a reader who
+  has never opened the file has to act on it.
 
 ## Where Things Live
 
@@ -70,12 +76,15 @@ one of these, update the document in the same commit:
 | What changes | Document that owns it |
 |--------------|-----------------------|
 | Rules (this file) | `CONTRIBUTING.md` |
-| Build, configuration, environment variables, `pu serve` usage | `README.md` |
+| Commands, build, `pu serve` usage, and which document to read first | `README.md` |
 | `agents.json`, `peers.json`, environment variables, logging | `docs/configuration.md` |
 | Web UI and API: WebSocket messages, REST endpoints | `docs/web-api.md` |
+| The browser modules, and how the page is served | `docs/web-ui.md` |
+| Peer messaging, the task board, and their verbs | `docs/peers-and-board.md` |
 | Layer boundaries, directory layout, CMake targets, error hierarchy, persistence, extension points | `docs/ARCHITECTURE.md` |
+| The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns | `docs/security.md` |
 | What a backend puts on the wire | `docs/providers.md` |
-| Release history | `CHANGELOG.md` |
+| Release history, and how a release is cut | `CHANGELOG.md` and `docs/releases.md` |
 | An external system's contract, or a route considered and not taken | `docs/design/` |
 
 A document in `docs/design/` records what an outside system answers; the code

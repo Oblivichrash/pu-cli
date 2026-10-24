@@ -4,6 +4,8 @@
 
 "use strict";
 
+PU.announce = showNotice;
+
 PU.composer.messagesEl = document.getElementById("messages");
 PU.composer.inputEl = document.getElementById("input");
 PU.composer.sendBtn = document.getElementById("send");
@@ -28,9 +30,19 @@ PU.composer.inputEl.addEventListener("input", () => { PU.composer.inputEl.style.
 // The transcript has one loader: the socket's first open runs `resyncAfterReconnect()`,
 // which reads the store once the session is attached. Reading it here as well made the two
 // runs append the same turns to the same list, which is the turn drawn twice on every load.
+//
+// The page's own identity is already set: `state.js` reads it from the address that served this
+// document, so nothing has to be fetched before the socket opens. The label a reader sees arrives
+// with `/api/session`, and the list of other servers arrives on its own clock.
 connectWebSocket();
 
 (async () => {
   await loadAgents();
   await loadSession();
 })();
+
+// The board is read on its own clock: it changes when a peer moves a job, which is not
+// something this page's socket reports. The servers list moves for the same reason, so it
+// keeps the same clock.
+startBoardPolling();
+startServerPolling();

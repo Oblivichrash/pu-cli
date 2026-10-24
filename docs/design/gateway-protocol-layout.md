@@ -2,12 +2,12 @@
 
 This records the design behind the gateway layout, the routes it did not take, and the one
 layer it deferred. What is built is described in
-[ARCHITECTURE.md](../ARCHITECTURE.md#gateways-protocols-and-providers); what is not is here,
+[ARCHITECTURE.md](../ARCHITECTURE.md#gates-protocols-and-providers); what is not is here,
 so this document carries only the reasoning rather than the state.
 
-**Built:** `src/gateways/` holds one file per gateway behind the explicit table, `Gateway`
-carries the id, the name, the default host and the two factories, and `agents.json` names a
-`gateway` — required, with an unknown or missing name refused.
+**Built:** `src/gateways/gateways.cpp` holds the gateway table — one row per gateway, not one
+file per gateway — `Gateway` carries the id, the name, the default host and the two factories,
+and `agents.json` names a `gateway` — required, with an unknown or missing name refused.
 
 **Deferred:** the `entry` layer — a gateway offering more than one protocol, bound by a config
 field of that name. Every gateway measured so far speaks exactly one protocol, so the layer

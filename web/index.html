@@ -13,6 +13,14 @@
 
   <header>
     <div class="brand">· 朴 ·</div>
+    <!-- The workspace this page is attached to, and the other servers on the machine. The
+         name is a workspace rather than a port because that is the thing a reader knows;
+         the panel below lists the rest, and stays folded while there is only one. -->
+    <div class="header-servers">
+      <button id="server-current" class="server-current" title="The workspace this page is talking to">—</button>
+      <button id="server-toggle" title="Servers on this machine" aria-label="Servers on this machine">▾</button>
+      <ul id="server-list" class="server-list" hidden></ul>
+    </div>
     <div class="header-right">
       <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
     </div>
@@ -84,6 +92,13 @@
         <div class="panel-title">Tools</div>
         <ul id="panel-tools" class="tool-list"></ul>
       </div>
+
+      <!-- The board is drawn only when it holds something: a session with no peers in play
+           should not carry an empty panel. See board.js. -->
+      <div class="panel" id="panel-board" hidden>
+        <div class="panel-title">Board</div>
+        <ul id="board-jobs" class="board-jobs"></ul>
+      </div>
     </aside>
 
   </div>
@@ -110,13 +125,17 @@
 
 <script src="layout.js"></script>
 <script src="approval.js"></script>
+<script src="blocks.js"></script>
 <script src="state.js"></script>
+<script src="api.js"></script>
 <script src="block-thinking.js"></script>
 <script src="block-tool.js"></script>
 <script src="block-node.js"></script>
 <script src="message.js"></script>
 <script src="transcript.js"></script>
 <script src="panel.js"></script>
+<script src="board.js"></script>
+<script src="servers.js"></script>
 <script src="notice.js"></script>
 <script src="history.js"></script>
 <script src="ws.js"></script>

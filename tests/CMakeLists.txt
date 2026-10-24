@@ -37,11 +37,17 @@ add_executable(pu_tests
     unit/test_listen_options.cpp
     unit/test_rewind.cpp
     unit/test_list_models.cpp
+    unit/test_http_deadline.cpp
     unit/test_probe.cpp
     unit/test_peer_config.cpp
     unit/test_peer_tool.cpp
     unit/test_peer_serve.cpp
+    unit/test_board.cpp
+    unit/test_board_http.cpp
     unit/test_budget.cpp
+    unit/test_peer_read.cpp
+    unit/test_board_liveness.cpp
+    unit/test_serve_registry.cpp
     unit/test_usage_total.cpp
     unit/test_capabilities.cpp
     unit/test_model_verifier.cpp
@@ -60,6 +66,7 @@ add_executable(pu_tests
     unit/test_model_caps.cpp
     unit/test_sse.cpp
     unit/test_cli_sse.cpp
+    unit/test_project_rules.cpp
 )
 
 target_include_directories(pu_tests PRIVATE
@@ -73,6 +80,12 @@ target_include_directories(pu_tests PRIVATE
 # fixture a test names stays the one file it was taken from.
 target_compile_definitions(pu_tests PRIVATE
     PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+)
+
+# The page rule in unit/test_project_rules.cpp reads the tree this build was configured from
+# rather than a copy of it.
+target_compile_definitions(pu_tests PRIVATE
+    PU_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 # The program a stdio case starts. A generator expression rather than a searched path, so a
@@ -102,6 +115,23 @@ if(PU_NODE)
     add_test(NAME web/groupHistory
              COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-group-history.cjs)
     set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
+    # The header strip and the panel's spend figure, loaded the same way. Both are shapes the
+    # page drew wrong without failing to load, so nothing but running the modules catches them.
+    add_test(NAME web/pagePanels
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-page-panels.cjs)
+    set_tests_properties(web/pagePanels PROPERTIES TIMEOUT 60)
+    # The live bubble: a redraw is deferred to the next frame, so ending a turn before that frame
+    # runs used to leave the answer on screen as a prefix of what the store held. Nothing on the
+    # server side was wrong, which is why only running the page catches it.
+    add_test(NAME web/transcriptFlush
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-transcript-flush.cjs)
+    set_tests_properties(web/transcriptFlush PROPERTIES TIMEOUT 60)
+    # The context bar: two facts arrive on different clocks — a turn's counts on the socket and
+    # the model's window with `/api/session` — and a bar drawn from whichever landed last is
+    # blank on every reload. Only running the modules sees an ordering bug like that.
+    add_test(NAME web/contextBar
+             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-context-bar.cjs)
+    set_tests_properties(web/contextBar PROPERTIES TIMEOUT 60)
 else()
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)

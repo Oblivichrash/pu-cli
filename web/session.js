@@ -4,10 +4,12 @@
 
 "use strict";
 
-// The store is the authority on the chain's length, so it is read back after every run.
+// The store is the authority on the chain's length, so it is read back after every run. The
+// spend figure needs no part in this: a finished turn carries its own total, so the frame
+// updates it without a second ask.
 async function refreshChainLength() {
   try {
-    const history = await fetchJson("/api/history");
+    const history = (await fetchJson("/api/history")).messages;
     if (Array.isArray(history)) PU.chainLength = history.length;
   } catch (_) {}
 }
@@ -19,7 +21,7 @@ async function loadHistory() {
   if (PU.loadHistBusy) return;
   PU.loadHistBusy = true;
   try {
-    const history = await fetchJson("/api/history");
+    const history = (await fetchJson("/api/history")).messages;
     if (!Array.isArray(history)) return;
     // A tool-using turn is several messages; drawing each alone would show another chat.
     for (const turn of groupHistory(history)) {
@@ -147,7 +149,17 @@ async function loadSession() {
   try {
     const data = await fetchJson("/api/session");
     if (!data.success) return;
+    // The server that answered says what it is called and which port it answered on. That is the
+    // page's own identity, so a switch ends here: the label is corrected from the server the page
+    // actually reached rather than from the entry it asked for.
+    if (data.server) setSelf({ name: data.server.name, port: data.server.port });
+    renderServers();
     setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
+    // The window belongs to the model rather than to the gateway, so it is filed under both and
+    // drawn here: a trial of a turn may already have been drawn against no window, and a switch
+    // to a model that states one has to fill the bar without waiting for the next turn.
+    setContextWindow(data.backend_type, data.backend_model, data.context_window);
+    renderContextBar();
     renderSettings(data.settings);
     renderUsageTotal(data.usage_total);
     if (data.agent_name) PU.composer.agentSelect.value = data.agent_name;

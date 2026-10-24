@@ -59,7 +59,7 @@ TEST_CASE("A quiet run leaves the payload alone", "[sse][format]") {
 TEST_CASE("The JSON printing is one object per line, and omits what the server did not name",
           "[sse][format]") {
   pu::cli::SseOptions options = Options();
-  options.as_json = true;
+  options.format = pu::cli::SseFormat::kJson;
 
   const std::string named =
       pu::cli::FormatSseEvent(EventWith("tick", "42", "{\"v\":1}"), options);
@@ -78,4 +78,14 @@ TEST_CASE("The JSON printing is one object per line, and omits what the server d
   REQUIRE_FALSE(unnamed.as_object().contains("event"));
   REQUIRE_FALSE(unnamed.as_object().contains("id"));
   REQUIRE(pu::json::ValueOrDefault<std::string>(unnamed, "data", "") == "hello");
+}
+
+TEST_CASE("The raw shape is the bytes themselves, not a rendering of them", "[sse][format]") {
+  // `raw` is the one shape the formatter does not produce: the caller sees what the socket
+  // carried, so there is nothing for FormatSseEvent to add and it must not be asked. Every
+  // other shape is the formatter's, which is what makes the three differ only in framing.
+  pu::cli::SseOptions options = Options();
+  options.format = pu::cli::SseFormat::kRaw;
+  REQUIRE(options.format != pu::cli::SseFormat::kJson);
+  REQUIRE(options.format != pu::cli::SseFormat::kText);
 }

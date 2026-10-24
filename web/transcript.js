@@ -4,7 +4,10 @@
 
 "use strict";
 
-let assistantRenderQueued = false;
+// The frame a redraw is waiting on, or null when none is queued. It is an id rather than a flag
+// because a redraw that is no longer wanted has to be cancelled: a callback left in the queue
+// runs against a bubble that has since been finished or removed.
+let assistantRenderFrame = null;
 let pendingScrollFollow = false;
 
 function startAssistantMessage() {
@@ -13,14 +16,22 @@ function startAssistantMessage() {
   PU.currentAssistantEl.classList.add("typing");
 }
 
+// The content has to be on the page before the bubble stops being the live one. A chunk and the
+// `done` that follows it arrive in the same tick, so the last chunk only ever sits in the block
+// list while its redraw waits for the next frame — and `done` used to drop the element first,
+// which left the answer on screen as a prefix of what the store holds.
 function finishAssistantMessage() {
+  flushAssistantRender();
   if (!PU.currentAssistantEl) return;
   PU.currentAssistantEl.classList.remove("typing");
   PU.currentAssistantEl = null;
   PU.currentAssistantBlocks = [];
 }
 
+// A bubble that is being discarded has nothing to draw, so its queued redraw is cancelled rather
+// than run against an element that is gone.
 function removeCurrentAssistantMessage() {
+  discardAssistantRender();
   if (!PU.currentAssistantEl) return;
   PU.currentAssistantEl.remove();
   PU.currentAssistantEl = null;
@@ -46,15 +57,41 @@ function pushBlock(block) {
 function updateCurrentAssistantBlocks(stickToBottom) {
   // A following update must not be lost to one already queued that would not follow.
   if (stickToBottom !== false) pendingScrollFollow = true;
-  if (assistantRenderQueued) return;
-  assistantRenderQueued = true;
-  requestAnimationFrame(() => {
-    assistantRenderQueued = false;
+  if (assistantRenderFrame !== null) return;
+  assistantRenderFrame = requestAnimationFrame(() => {
+    assistantRenderFrame = null;
     const follow = pendingScrollFollow;
     pendingScrollFollow = false;
     renderAssistantBlocks(follow);
   });
 }
+
+// Draws what is queued now, rather than at the next frame. The frame a tab is not painting never
+// arrives, so a page in the background would otherwise come back to a bubble that stopped at the
+// point it was hidden — and a redraw waiting then would still be waiting.
+function flushAssistantRender() {
+  if (assistantRenderFrame === null) return;
+  cancelAnimationFrame(assistantRenderFrame);
+  assistantRenderFrame = null;
+  const follow = pendingScrollFollow;
+  pendingScrollFollow = false;
+  renderAssistantBlocks(follow);
+}
+
+function discardAssistantRender() {
+  if (assistantRenderFrame === null) return;
+  cancelAnimationFrame(assistantRenderFrame);
+  assistantRenderFrame = null;
+  pendingScrollFollow = false;
+}
+
+// A hidden tab is not painted, so a redraw it holds waits for the reader to come back and the
+// reply stops where they left it until then. Flushing on the way out puts the content in the DOM
+// now rather than whenever the browser next paints, so coming back shows the whole answer and not
+// the point it was interrupted at.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) flushAssistantRender();
+});
 
 function syncBlockNode(block, container, index) {
   // A node already in the container is patched; a new one is inserted, and its own

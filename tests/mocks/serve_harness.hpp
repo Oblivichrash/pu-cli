@@ -46,33 +46,49 @@ using tcp = net::ip::tcp;
 
 inline constexpr const char* kServeHost = "127.0.0.1";
 
+// Winsock counts its starts and its stops. A harness that stops as many times as it starts drops
+// the count to zero the moment two of these calls are in flight at once, and takes every other
+// socket in the process down with it -- so the process starts Winsock once, here, and every call
+// below only borrows it.
+class WinsockSession {
+ public:
+  static bool Ready() {
+    static const WinsockSession session;
+    return session.ok_;
+  }
+
+ private:
+  WinsockSession() {
+#ifdef _WIN32
+    WSADATA wsa;
+    ok_ = WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+#endif
+  }
+  ~WinsockSession() = default;
+
+  bool ok_ = true;
+};
+
 inline int FindFreePort() {
 #ifdef _WIN32
-  WSADATA wsa;
-  if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+  if (!WinsockSession::Ready()) return 0;
   SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s == INVALID_SOCKET) {
-    WSACleanup();
-    return 0;
-  }
+  if (s == INVALID_SOCKET) return 0;
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = 0;
   if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int len = sizeof(addr);
   if (getsockname(s, reinterpret_cast<sockaddr*>(&addr), &len) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int port = ntohs(addr.sin_port);
   closesocket(s);
-  WSACleanup();
   return port;
 #else
   int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -98,22 +114,17 @@ inline int FindFreePort() {
 
 inline bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  if (!WinsockSession::Ready()) return false;
   while (std::chrono::steady_clock::now() < deadline) {
 #ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s == INVALID_SOCKET) {
-      WSACleanup();
-      return false;
-    }
+    if (s == INVALID_SOCKET) return false;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<u_short>(port));
     inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
     int result = connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
     closesocket(s);
-    WSACleanup();
     if (result == 0) return true;
 #else
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -353,23 +364,33 @@ class TestHttpClient {
  public:
   explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  std::string Get(const std::string& path) { return Request(http::verb::get, path, "").body; }
+  // The bearer a board request presents. Empty sends no Authorization header at all, which is
+  // what a caller that is not a peer looks like.
+  void SetBearer(std::string bearer) { bearer_ = std::move(bearer); }
 
-  HttpResponse GetRaw(const std::string& path) { return Request(http::verb::get, path, ""); }
+  std::string Get(const std::string& path) { return GetRaw(path).body; }
+
+  HttpResponse GetRaw(const std::string& path) {
+    return Request(http::verb::get, path, "", bearer_);
+  }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
     return PostFull(path, body).body;
   }
 
   HttpResponse PostFull(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::post, path, boost::json::serialize(body));
+    return Request(http::verb::post, path, boost::json::serialize(body), bearer_);
   }
 
   HttpResponse PostRaw(const std::string& path, const std::string& body) {
-    return Request(http::verb::post, path, body);
+    return Request(http::verb::post, path, body, bearer_);
   }
 
-  // For the peer endpoint, whose authorization is a peer token rather than the page's own.
+  HttpResponse Patch(const std::string& path, const boost::json::value& body) {
+    return Request(http::verb::patch, path, boost::json::serialize(body), bearer_);
+  }
+
+  // For a call that must present a different token from the one this client carries.
   HttpResponse PostRaw(const std::string& path, const std::string& body,
                        const std::string& bearer) {
     return Request(http::verb::post, path, body, bearer);
@@ -411,6 +432,7 @@ class TestHttpClient {
 
   std::string host_;
   int port_;
+  std::string bearer_;
 };
 
 class ServeHarness {
@@ -419,6 +441,80 @@ class ServeHarness {
     std::string name;
     std::string url;
   };
+
+  struct UnreachableBackend {};
+
+  // A port that refuses connections for as long as the object lives. A port sampled and then
+  // released can be taken by another case in a parallel run, which turns this failure into a
+  // successful turn and the test into a false pass.
+  class ReservedDeadPort {
+   public:
+    ReservedDeadPort() {
+#ifdef _WIN32
+      if (!WinsockSession::Ready()) return;
+      socket_ = socket(AF_INET, SOCK_STREAM, 0);
+      if (socket_ == INVALID_SOCKET) return;
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      addr.sin_port = 0;
+      if (bind(socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(socket_);
+        socket_ = INVALID_SOCKET;
+        return;
+      }
+      int size = sizeof(addr);
+      if (getsockname(socket_, reinterpret_cast<sockaddr*>(&addr), &size) == SOCKET_ERROR) return;
+      port_ = ntohs(addr.sin_port);
+#endif
+    }
+    ~ReservedDeadPort() {
+#ifdef _WIN32
+      if (socket_ != INVALID_SOCKET) closesocket(socket_);
+#endif
+    }
+    ReservedDeadPort(const ReservedDeadPort&) = delete;
+    ReservedDeadPort& operator=(const ReservedDeadPort&) = delete;
+
+    int Port() const { return port_; }
+
+   private:
+#ifdef _WIN32
+    SOCKET socket_ = INVALID_SOCKET;
+#endif
+    int port_ = 0;
+  };
+
+  // A harness whose backend is not listening, which is the failure the crash investigation
+  // reproduced: the turn fails where the transport does, not where a handler returns an error.
+  ServeHarness(UnreachableBackend, const std::string& backend_type = "ollama") {
+    static std::atomic<int> seq{0};
+    std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_" + std::to_string(seq.fetch_add(1));
+    home_ = UniqueTempPath("pu_serve_" + tag);
+    fs::create_directories(home_ / ".pu");
+
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
+
+    dead_port_ = std::make_unique<ReservedDeadPort>();
+    WriteAgentsFile(home_, dead_port_->Port(), backend_type, "", "");
+
+    {
+      ScopedWorkingDir in_home(home_);
+      runtime_ = std::make_unique<pu::Runtime>();
+      runtime_->Initialize();
+    }
+
+    port_ = FindFreePort();
+    server_thread_ =
+        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
+    if (WaitForPort(kServeHost, port_, 15000)) return;
+    Stop();
+    FAIL("the server never took the port FindFreePort named");
+  }
 
   explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
                         std::optional<McpServer> mcp = std::nullopt,
@@ -429,10 +525,14 @@ class ServeHarness {
     home_ = UniqueTempPath("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
-    home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    const fs::path data_dir = UniqueTempPath("pu_test_data");
-    fs::create_directories(data_dir);
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
+    // A workspace of its own, and the environment pointing at it. Both are restored by the
+    // scoped owners, which run even when a REQUIRE below throws: a constructor that died
+    // halfway used to leave PU_HOME naming a directory this harness had already removed, and
+    // whichever case ran next failed on it.
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
@@ -524,15 +624,18 @@ class ServeHarness {
 
   int Port() const { return port_; }
 
-  int BackendRequests() const { return backend_->Requests(); }
+  int BackendRequests() const { return backend_ ? backend_->Requests() : 0; }
 
   Runtime& RuntimeRef() { return *runtime_; }
 
  private:
   fs::path home_;
-  std::unique_ptr<ScopedEnvVar> home_env_;
-  std::unique_ptr<ScopedEnvVar> data_env_;
+  // Restores HOME and PU_HOME together, in the order they were set, whenever this harness
+  // stops being alive — including on the way out of a failed constructor.
+  std::unique_ptr<ScopedEnvironment> env_;
   std::unique_ptr<FakeBackend> backend_;
+  // Held so the backend port refuses connections for the whole life of this harness.
+  std::unique_ptr<ReservedDeadPort> dead_port_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
   std::thread server_thread_;

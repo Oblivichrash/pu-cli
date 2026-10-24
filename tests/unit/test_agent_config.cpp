@@ -55,6 +55,9 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
         {"thinking", ThinkingLevelName(entry.backend.thinking)},
     };
     if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
+    if (entry.backend.context_window) {
+      backend.as_object()["context_window"] = *entry.backend.context_window;
+    }
     if (entry.backend.system_prompt)
       backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
     item.as_object()["backend"] = backend;
@@ -161,7 +164,7 @@ TEST_CASE("FindConfigPath reports no configuration when neither location exists"
   fs::remove_all(home, ec);
 }
 
-TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_config]") {
+TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_config]") {
   auto dir = UniqueTempPath("pu_serve_options");
   auto home = UniqueTempPath("pu_serve_options_home");
   std::error_code ec;
@@ -183,15 +186,15 @@ TEST_CASE("FindServeOptions reads the workspace's own host and port", "[agent_co
     REQUIRE_FALSE(config::FindServeOptions().has_value());
 
     {
-      ScopedEnvVar bind("PU_TEST_SERVE_HOST", "127.0.0.2");
+      ScopedEnvVar bind_env("PU_TEST_SERVE_BIND", "127.0.0.2");
       {
         std::ofstream f(dir / ".pu" / "agents.json");
-        f << R"({"serve":{"host":"${PU_TEST_SERVE_HOST}","port":8087}})";
+        f << R"({"serve":{"bind":"${PU_TEST_SERVE_BIND}","port":8087}})";
       }
       const auto options = config::FindServeOptions();
       REQUIRE(options.has_value());
       REQUIRE(options->port == 8087);
-      REQUIRE(options->host == "127.0.0.2");
+      REQUIRE(options->bind == "127.0.0.2");
     }
 
     {
@@ -449,6 +452,40 @@ TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
   tmp.write(json);
   config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kHigh);
+}
+
+TEST_CASE("LoadAgentsConfig reads the context window a file names", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "cb",
+    "agents": [
+      {
+        "name": "cb",
+        "backend": {
+          "gateway": "codebuddy",
+          "model": "deepseek-v4.1-flash",
+          "context_window": 250000
+        }
+      }
+    ]
+  })");
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  // A nominal figure a product does not enforce is corrected here, so the file outranks the
+  // catalogue: the number is kept as written rather than checked against anything.
+  REQUIRE(cfg.agents[0].backend.context_window.has_value());
+  REQUIRE(*cfg.agents[0].backend.context_window == 250000);
+}
+
+TEST_CASE("An absent context window stays absent", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "a",
+    "agents": [{"name": "a", "backend": {"gateway": "ollama", "model": "m"}}]
+  })");
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  // Absent is not zero: absent is what sends the resolver to the gateway's own catalogue, and a
+  // zero here would read as "this model holds nothing".
+  REQUIRE_FALSE(cfg.agents[0].backend.context_window.has_value());
 }
 
 TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent_config]") {

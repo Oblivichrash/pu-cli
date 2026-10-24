@@ -81,13 +81,18 @@ int main(int argc, char* argv[]) {
   }
 
   if (vm.count("help")) {
-    // `pu models --help` is a question about models, and `pu --help` about the line.
-    std::cout << line.HelpFor(vm.count("command") ? vm["command"].as<std::string>() : "") << "\n";
+    // `pu models --help` is a question about models, and `pu --help` about the line. The
+    // command list comes first: a reader who does not yet know which page to ask for is
+    // the one `--help` is for, and the flags below only answer a question they have not
+    // reached yet.
+    const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
+    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string())
+              << line.HelpFor(named) << "\n";
     return 0;
   }
 
   if (!vm.count("command")) {
-    std::cout << all << "\n";
+    std::cout << pu::cli::CommandList(line) << "\n\n" << all << "\n";
     return 0;
   }
 
@@ -145,8 +150,7 @@ int main(int argc, char* argv[]) {
 
     if (cmd == "models") {
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
-                               OptionOr(vm, "model", ""), vm.count("verify") > 0,
-                               OptionOr(vm, "entry", ""), vm.count("caps") > 0, runtime);
+                               OptionOr(vm, "model", ""), vm.count("verify") > 0, runtime);
     }
 
     if (cmd == "agents") {
@@ -179,15 +183,28 @@ int main(int argc, char* argv[]) {
       }
       options.method = vm.count("post") > 0 ? pu::http::HttpMethod::kPost
                                             : pu::http::HttpMethod::kGet;
-      options.as_json = vm.count("json") > 0;
+      const std::string format = OptionOr(vm, "format", "text");
+      if (format == "json") {
+        options.format = pu::cli::SseFormat::kJson;
+      } else if (format == "raw") {
+        options.format = pu::cli::SseFormat::kRaw;
+      } else if (format != "text") {
+        std::cerr << "Error: --format is text, json or raw, not '" << format << "'\n\n"
+                  << line.HelpFor(cmd) << "\n";
+        return pu::cli::kUsage;
+      }
       options.quiet = vm.count("quiet") > 0;
-      options.raw = vm.count("raw") > 0;
 
       return pu::cli::WithInitializedRuntime("", runtime,
                                              [&] { return pu::cli::RunSse(options, runtime); });
     }
 
     if (cmd == "check") {
+      if (vm.count("caps") > 0) return pu::cli::RunModelCaps(OptionOr(vm, "agent", ""), runtime);
+      const std::string entry = OptionOr(vm, "entry", "");
+      if (!entry.empty()) {
+        return pu::cli::RunModelEntry(OptionOr(vm, "agent", ""), entry, runtime);
+      }
       return pu::cli::RunCheck(OptionOr(vm, "config", ""));
     }
 
@@ -201,9 +218,9 @@ int main(int argc, char* argv[]) {
 
     if (cmd == "serve") {
       const auto listen = pu::config::ResolveListenOptions(
-          OptionalOption(vm, "host"), OptionalOption(vm, "port"), EnvOr("PU_SERVE_HOST"),
+          OptionalOption(vm, "bind"), OptionalOption(vm, "port"), EnvOr("PU_SERVE_BIND"),
           EnvOr("PU_SERVE_PORT"), pu::config::FindServeOptions());
-      return pu::cli::RunServe(listen.host, listen.port, runtime);
+      return pu::cli::RunServe(listen.bind, listen.port, runtime);
     }
 
     std::cerr << "Unknown command: " << cmd << "\n\n" << all << "\n";

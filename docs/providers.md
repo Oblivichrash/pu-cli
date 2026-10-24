@@ -6,11 +6,12 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-A gateway answers for a backend type. `src/gateways/<name>.cpp` states that gateway's name,
-default host, provider and catalogue read, and `src/gateways/gateways.cpp` names the
-files; `CreateBackend` and `ListModels` (`config/backend.hpp`) only look the type up in
-that table, so neither spells a gateway's endpoint or provider itself. Adding a gateway is a
-file plus a line, and removing one is the reverse.
+A gateway answers for a backend type. `src/gateways/gateways.cpp` holds the gateway table, and
+a row states that gateway's name, default host, provider and catalogue read; `CreateBackend`
+and `ListModels` (`config/backend.hpp`) only look the type up in that table, so neither spells
+a gateway's endpoint or provider itself. Adding a gateway is a row, and removing one is the
+reverse. `Gateways()` is the list a build carries, so it is the answer to "which gateways does
+this build know" rather than any sentence here.
 
 The OpenAI protocol itself is a layer below the gateway: `src/llm/openai_protocol.cpp` holds
 the endpoint, the request body and the SSE parse, and `OpenAIProvider`
@@ -18,10 +19,11 @@ the endpoint, the request body and the SSE parse, and `OpenAIProvider`
 So the `openai` and `codebuddy` gateways build the same protocol, and an agent of the `openai`
 gateway changes only the host, the headers and the response shape.
 
-The gateways a build knows are the ones it carries: `ollama`, `openai` and `codebuddy`
-today, and an entry that names none of them is refused at load time — as is one that
-names no gateway at all. "OpenAI compatible" covers OpenAI, DeepSeek thinking mode, vLLM and
-compatible gateways, all of which are the one `openai` gateway with a different `host`.
+The gateways a build knows are the rows `Gateways()` returns, and the refusal lists them, so a
+misspelt name answers with the set rather than a pointer to this page. An entry that names
+none of them is refused at load time, as is one that names no gateway at all. "OpenAI
+compatible" covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which
+are the one `openai` gateway with a different `host`.
 
 A gateway is spelled in one place for the same reason as before — a stored session, an
 `agents.json` entry and an `/api/session` answer all name it, and answering "is it
@@ -152,6 +154,25 @@ The request asks for one completion, so the reply is read from the first choice 
 the stream names. A gateway that sends a second index has it reported at `debug` rather
 than folded into the reply.
 
+## Deadlines
+
+Every request is bounded, and the bound is why a gateway that hangs is a failure rather than a
+wait. `BeastHttpClient` runs each operation asynchronously and drives it with `io_context::run()`,
+because beast's `expires_after` covers asynchronous operations only and asio's synchronous calls
+block where no timer can reach them. Three budgets, named at the top of
+`src/core/beast_http_client.cpp`:
+
+| Budget | Value | Bounds |
+| --- | --- | --- |
+| `kConnectBudget` | 10s | Reaching the host: DNS, TCP, and the TLS handshake |
+| `kStreamIdleBudget` | 300s | One read of a turn — an idle deadline, not a cap on the reply, so a long answer may run for as long as it keeps producing bytes |
+| `kReadIdleBudget` | 30s | One catalogue or health read, which is control plane rather than a model answering |
+
+A missed deadline is reported as its own sentence — `HTTP read timed out after 30s` — rather than
+as the cancelled socket operation underneath it, since the first names something a reader can act
+on. NVIDIA NIM is the reason this exists: several of its ids accept a connection and send no byte
+at all, which used to hold `pu models --verify` and `pu ask` for as long as the process lived.
+
 ## Limits
 
 Neither backend implements a capability the table above does not name. Both
@@ -164,29 +185,32 @@ thinks, calls a tool, then thinks again keeps that order. A block carries the
 `raw` JSON when it round-trips. Whether a block list reaches the wire as one string
 or as a list is decided per provider, as the signatures row says.
 
-### No backend here reports a context window
+### What each backend says about a context window
 
-Each was asked rather than assumed, and the answers are observations that drift
-rather than a contract to code against. Nothing reads them; they are kept because
-they explain why a window is not shown anywhere.
+Each was asked rather than assumed, and the answers are observations that drift rather than a
+contract to code against. `pu check --caps` prints them, and that is their whole use: the page's
+context bar is drawn from `backend.context_window` in `agents.json` rather than from here. A
+number worth writing there is the one this table's endpoint reports — with CodeBuddy's caveat
+below in mind, since it states 1M and enforces less.
 
 | Backend | Endpoint | Answer |
 | --- | --- | --- |
-| DeepSeek | `GET /v1/models` | `context_window: 1048576` on each model |
-| Ollama Cloud | `POST /api/show` | a `model_info` key ending in `context_length` |
+| DeepSeek | `GET /v1/models` | `context_window: 1048576` on each model, read by the OpenAI shape |
+| Ollama Cloud | `POST /api/show` | a `model_info` key ending in `context_length`; no catalogue endpoint states one, so this gateway states none to `pu` |
 | Ollama Cloud | `GET /api/ps` | `401 unauthorized`, so the loaded-model window is unreachable |
-| NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` |
+| NVIDIA NIM | `GET /v1/models` | 80 models, keys are only `created`, `id`, `object`, `owned_by` — no window at all |
 | NVIDIA NIM | `GET /v1/metadata` | `404 page not found` |
-| CodeBuddy | `GET /v3/config` | `data.models[]` (the account's catalogue) and `data.agents[].models[]` (the agent's usable subset); a request without the client's `User-Agent` is refused `code: 12403` |
+| CodeBuddy | `GET /v3/config` | `data.models[].maxInputTokens`, read into the catalogue's capabilities |
 
 Ollama's key prefix varies with the model's architecture, so a reader has to match
 the suffix rather than a fixed name. Measured across five models — `gptoss.`,
 `nemotron_h_moe.` and `gemma4.` for the first three, and none at all for
 `nemotron-3-ultra`, which a lookup naming `gptoss.` therefore misses.
 
-CodeBuddy truncates instead of refusing: a request carrying two million characters
-was answered `200` with a normal reply whose counts (`prompt_tokens: 250004` against
-`prompt_cache_hit_tokens: 249856` plus `prompt_cache_miss_tokens: 148`) put the
-cache ceiling at 250,000 tokens. The gateway never said so, so a request that
-outgrows the window is answered as though it fit and nothing on the client side can
-detect it from the status alone.
+Because the figure is advisory, a nominal one that is not what the product enforces costs a
+misleading bar rather than a failed turn. CodeBuddy is the case in point: it truncates instead
+of refusing, so a request carrying two million characters was answered `200` with a normal reply
+whose counts (`prompt_tokens: 250004` against `prompt_cache_hit_tokens: 249856` plus
+`prompt_cache_miss_tokens: 148`) put the cache ceiling at 250,000 tokens. The gateway never said
+so, and nothing on the client side can detect it from the status alone — which is why the
+enforced figure is the one to write in `context_window` for a CodeBuddy entry.

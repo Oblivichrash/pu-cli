@@ -33,21 +33,6 @@ function pageClientId() {
   return id;
 }
 
-async function postJson(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-async function fetchJson(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
 function sendFrame(type, payload) {
   if (!PU.ws || PU.ws.readyState !== WebSocket.OPEN) return false;
   PU.ws.send(JSON.stringify(payload === undefined ? { type } : { type, payload }));
@@ -169,6 +154,7 @@ function handleDone(payload) {
 function handleError(payload) {
   const errMsg = payload.text || "Unknown error";
   if (PU.currentAssistantEl) {
+    discardAssistantRender();
     PU.currentAssistantEl.classList.remove("typing");
     PU.currentAssistantEl.className = "msg error";
     PU.currentAssistantEl.innerHTML = errMsg;
@@ -317,9 +303,13 @@ function connectWebSocket() {
     return;
   }
 
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(
-      `${protocol}//${window.location.host}/ws?client=${encodeURIComponent(pageClientId())}`);
+  // The socket follows the server the page is attached to, which is the one that served it until
+  // the reader switches. `PU.self.origin` is always set, so there is no fallback to get wrong.
+  const url = new URL(PU.self.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws";
+  url.search = `?client=${encodeURIComponent(pageClientId())}`;
+  const ws = new WebSocket(url.toString());
   PU.ws = ws;
   let refused = false;
 

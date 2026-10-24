@@ -78,26 +78,52 @@ SessionUsageTotal UsageLedger::Total() const {
   return total;
 }
 
+boost::json::value UsageLedger::ToJson(const TurnUsage& usage) {
+  boost::json::object out{
+      {kPromptKey, usage.prompt_tokens},
+      {kCompletionKey, usage.completion_tokens},
+      {kCachedKey, usage.cached_tokens},
+      {kRoundsKey, usage.rounds},
+      {kModelKey, usage.model},
+      {kGatewayKey, usage.gateway},
+  };
+  // A price only where the product reported one. Absent and zero are different answers:
+  // a call a product priced at nothing is not a product that prices nothing.
+  if (usage.cost) {
+    out["cost"] = boost::json::object{
+        {kCostAmountKey, usage.cost->amount},
+        {kCostUnitKey, usage.cost->unit},
+    };
+  }
+  return out;
+}
+
+boost::json::value UsageLedger::ToJson(const SessionUsageTotal& total) {
+  boost::json::object out{
+      {"turns", total.turns},
+      {"rounds", total.rounds},
+      {kPromptKey, total.prompt_tokens},
+      {kCompletionKey, total.completion_tokens},
+      {kCachedKey, total.cached_tokens},
+      {"priced_turns", total.priced_turns},
+  };
+  if (total.cost) {
+    out["cost"] = boost::json::object{
+        {kCostAmountKey, total.cost->amount},
+        {kCostUnitKey, total.cost->unit},
+    };
+  }
+  return out;
+}
+
 boost::json::value UsageLedger::Serialize() const {
   boost::json::object out;
   for (const auto& [node_id, usage] : entries_) {
-    boost::json::object entry{
-        {kRoundsKey, usage.rounds},
-        {kPromptKey, usage.prompt_tokens},
-        {kCompletionKey, usage.completion_tokens},
-        {kCachedKey, usage.cached_tokens},
-    };
-    // Absent where the product reported no price: a turn that cost nothing knows it did, and
-    // one whose product says nothing does not, and the two must not look alike.
-    if (usage.cost) {
-      entry["cost"] = boost::json::object{
-          {kCostAmountKey, usage.cost->amount},
-          {kCostUnitKey, usage.cost->unit},
-      };
-    }
-    // Empty means "the provider did not say", which is not the same as a name.
-    if (!usage.model.empty()) entry[kModelKey] = usage.model;
-    if (!usage.gateway.empty()) entry[kGatewayKey] = usage.gateway;
+    boost::json::object entry = ToJson(usage).as_object();
+    // Empty means "the provider did not say", which is not the same as a name, so a stored
+    // file leaves the key out; a reader of one entry is entitled to a blank field.
+    if (usage.model.empty()) entry.erase(kModelKey);
+    if (usage.gateway.empty()) entry.erase(kGatewayKey);
     // The node is the key; repeating it inside lets a reader take one entry on its own.
     entry[kNodeKey] = node_id;
     out[node_id] = std::move(entry);

@@ -27,21 +27,25 @@ struct AgentsConfig {
   std::vector<AgentEntry> agents;
 };
 
+// Where the page and the API listen. `bind` is the interface the listener sits on, not an address
+// to dial: a backend has a `host` because it is reached, while this is the one place this program
+// answers. `0.0.0.0` is a legal bind and never a legal destination, so the two are not the same
+// word, and a page that reads one as the other is how a working server looks broken.
 struct ServeOptions {
-  std::optional<std::string> host;
+  std::optional<std::string> bind;
   std::optional<std::uint16_t> port;
 };
 
 std::optional<std::uint16_t> ParsePort(const std::string& text);
 
 struct ListenOptions {
-  std::string host = "127.0.0.1";
+  std::string bind = "127.0.0.1";
   std::uint16_t port = 8080;
 };
 
-ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
+ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
                                    const std::optional<std::string>& flag_port,
-                                   const std::optional<std::string>& env_host,
+                                   const std::optional<std::string>& env_bind,
                                    const std::optional<std::string>& env_port,
                                    const std::optional<ServeOptions>& from_file);
 

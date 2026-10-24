@@ -134,12 +134,15 @@ class PeerServer {
   };
 
   // A fixed reply, repeated for every request: what a server that only ever answers says.
-  PeerServer(const std::string& name, const boost::json::object& answer, const std::string& finish)
-      : PeerServer(name, [answer, finish](int) { return Reply{answer, finish}; }) {}
+  PeerServer(const std::string& name, const boost::json::object& answer, const std::string& finish,
+             bool with_peers = true)
+      : PeerServer(name, [answer, finish](int) { return Reply{answer, finish}; }, with_peers) {}
 
   // A reply that may differ per request: the first is the tool call, the second the answer the
   // model gives once the tool result is in the conversation.
-  PeerServer(const std::string& name, std::function<Reply(int)> reply)
+  // `with_peers` writes the topology file. It is off for a case that wants a workspace which is
+  // not part of one, since having that file is what mounts the board's endpoints.
+  PeerServer(const std::string& name, std::function<Reply(int)> reply, bool with_peers = true)
       : reply_(std::move(reply)) {
     static std::atomic<int> seq{0};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -150,6 +153,9 @@ class PeerServer {
     backend_ = std::make_unique<FakeHttpServer>(
         [this](const http::request<http::string_body>& req) { return Answer(req); });
     WritePeerBackendConfig(home_, backend_->Port());
+    // A server that is part of a topology has a peers.json, and having one is what mounts the
+    // board's endpoints: a board no peer can reach is a board no peer can read.
+    if (with_peers) WritePeersFile(home_, name, 0, "", 0);
 
     port_ = FindFreePort();
     REQUIRE(port_ > 0);
@@ -161,7 +167,16 @@ class PeerServer {
 
   const std::filesystem::path& Home() const { return home_; }
   int Port() const { return port_; }
-  TestHttpClient Client() const { return TestHttpClient(kServeHost, port_); }
+  // The client a peer uses: every board request carries the shared token, since reading and
+  // writing both say who is asking.
+  TestHttpClient Client() const {
+    TestHttpClient client(kServeHost, port_);
+    client.SetBearer(kPeerToken);
+    return client;
+  }
+
+  // A client with no token, which is what the page and a stranger look like.
+  TestHttpClient AnonymousClient() const { return TestHttpClient(kServeHost, port_); }
 
   // The environment a server needs is set for the whole time it runs, since `Runtime` reads
   // HOME and PU_HOME lazily. Both are restored in `Stop`, which every exit path reaches: a

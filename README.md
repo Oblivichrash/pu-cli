@@ -13,7 +13,7 @@ Internals and layering live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the
 
 ### Build Dependencies
 
-Runtime: **Boost >= 1.75** (Beast, Asio, JSON, ProgramOptions), **spdlog**, and
+Runtime: **Boost >= 1.84** (Beast, Asio, JSON, ProgramOptions), **spdlog**, and
 **OpenSSL**. Catch2 is needed only for tests. The exact package lists live in
 [.github/workflows/ci.yml](.github/workflows/ci.yml); the common installs are:
 
@@ -67,12 +67,13 @@ the copy it was installed with.
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
-| `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
+| `pu check [--config PATH] [--entry MODEL] [--caps]` | What an `agents.json` resolves to, without contacting a provider |
 | `pu serve` | The Web UI and its WebSocket |
-| `pu sse URL` | Read a `text/event-stream` from any endpoint and print its events |
+| `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+`pu --help` names every command with the one line that says what it answers.
 `pu <command> --help` prints that command's own page.
 
 ## Docs
@@ -81,11 +82,20 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 |----------|---------------|
 | [docs/configuration.md](docs/configuration.md) | `agents.json`, `peers.json`, environment variables, logging |
 | [docs/web-api.md](docs/web-api.md) | `pu serve`: the WebSocket protocol and the REST endpoints |
+| [docs/web-ui.md](docs/web-ui.md) | The browser modules, and how the page is served |
+| [docs/peers-and-board.md](docs/peers-and-board.md) | Peer messaging, the task board, and their verbs |
+| [docs/security.md](docs/security.md) | The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
-| [docs/design/](docs/design/) | Contracts of outside systems, and routes considered and not taken |
+| [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
+| [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
+| [docs/design/nim-fieldnotes.md](docs/design/nim-fieldnotes.md) | What NVIDIA's catalogue and SSE do that the OpenAI shape does not |
+| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
+
+Every document under `docs/` is named above or in a document that links to it, and a test
+fails on an orphan, so a new file is registered rather than left to be found.
 
 ## Configuration
 
@@ -117,6 +127,8 @@ version does:
 | 0.4.x | Rename `backend.type` to `backend.gateway`. The agent-level `"type": "llm"` is a different field and needs no change. |
 | 0.5.0 | No configuration change. `PU_AGENTS_CONFIG` is new and takes precedence over both files. |
 | 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
+| 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
+| 0.7.0 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 
@@ -129,7 +141,7 @@ The ones a normal run touches:
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Name an `agents.json` outright, ahead of both default locations |
 | `PU_WEB_DIR` | The page directory `pu serve` serves (defaults beside the binary, then `./web`) |
-| `PU_SERVE_HOST` / `PU_SERVE_PORT` | Bind address and port for `pu serve` |
+| `PU_SERVE_BIND` / `PU_SERVE_PORT` | Bind interface and port for `pu serve` |
 | `PU_LOG_LEVEL` | File log level, default `info` |
 
 ## Web Server (`pu serve`)
@@ -138,7 +150,7 @@ The ones a normal run touches:
 
 ```bash
 ./build/pu serve                       # listen on 127.0.0.1:8080
-./build/pu serve --host 0.0.0.0 --port 9000
+./build/pu serve --bind 0.0.0.0 --port 9000
 ```
 
 A server serves the directory it was started in and stays there; each directory is a

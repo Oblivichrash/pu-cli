@@ -71,6 +71,15 @@ class UsageLedger {
   // The sum, with the rule above about units.
   SessionUsageTotal Total() const;
 
+  // How a turn's usage is written for a reader. `/api/history` puts it beside the message it
+  // belongs to and the socket's `usage` frame carries the same object, so the page parses one
+  // shape whether a turn just ended or is being replayed: both read the ledger, and neither
+  // assembles the object itself.
+  static boost::json::value ToJson(const TurnUsage& usage);
+  // The sum, written for the same reader. Absent counts of zero are still written: a total is
+  // read as a whole, and a missing key would have to be guessed at.
+  static boost::json::value ToJson(const SessionUsageTotal& total);
+
   boost::json::value Serialize() const;
   // Absent is not an error: a session written before this existed has no ledger, and one
   // written by a build that dropped it is read the same way.

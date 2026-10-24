@@ -227,9 +227,9 @@ std::optional<ServeOptions> FindServeOptions() {
   const json::value& serve = j.at("serve");
 
   ServeOptions options;
-  if (json::HasKey(serve, "host") && serve.at("host").is_string()) {
-    options.host = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("host")));
-    if (options.host->empty()) options.host = std::nullopt;
+  if (json::HasKey(serve, "bind") && serve.at("bind").is_string()) {
+    options.bind = ExpandEnvVars(boost::json::value_to<std::string>(serve.at("bind")));
+    if (options.bind->empty()) options.bind = std::nullopt;
   }
   if (json::HasKey(serve, "port")) {
     if (serve.at("port").is_int64()) {
@@ -244,7 +244,7 @@ std::optional<ServeOptions> FindServeOptions() {
     }
   }
 
-  if (!options.host && !options.port) return std::nullopt;
+  if (!options.bind && !options.port) return std::nullopt;
   return options;
 }
 
@@ -259,16 +259,16 @@ std::optional<std::uint16_t> ParsePort(const std::string& text) {
   return static_cast<std::uint16_t>(value);
 }
 
-ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_host,
+ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
                                    const std::optional<std::string>& flag_port,
-                                   const std::optional<std::string>& env_host,
+                                   const std::optional<std::string>& env_bind,
                                    const std::optional<std::string>& env_port,
                                    const std::optional<ServeOptions>& from_file) {
   ListenOptions options;
-  if (flag_host || env_host) {
-    options.host = flag_host ? *flag_host : *env_host;
-  } else if (from_file && from_file->host) {
-    options.host = *from_file->host;
+  if (flag_bind || env_bind) {
+    options.bind = flag_bind ? *flag_bind : *env_bind;
+  } else if (from_file && from_file->bind) {
+    options.bind = *from_file->bind;
   }
 
   const std::optional<std::string>* named = nullptr;

@@ -41,20 +41,13 @@ function usageLine(usage) {
   return parts.join("  ·  ");
 }
 
-// Open by default: what a turn cost is short enough to read at a glance, and a reader who
-  // asked to see costs should not have to open every one. The element is still a `details`, so
-  // a long transcript can be folded one reply at a time.
-function usageDetails(usage) {
-  const details = document.createElement("details");
-  details.className = "msg-usage";
-  details.open = true;
-  const summary = document.createElement("summary");
-  summary.textContent = "cost";
-  details.appendChild(summary);
+// What a turn cost, as one quiet line under the reply. It is short enough to read in full,
+  // so there is nothing to fold away.
+function usageLineNode(usage) {
   const line = document.createElement("div");
+  line.className = "msg-usage";
   line.textContent = usageLine(usage);
-  details.appendChild(line);
-  return details;
+  return line;
 }
 
 function createMessage(role, blocks, turn, text, fromPeer, usage) {
@@ -89,7 +82,7 @@ function createMessage(role, blocks, turn, text, fromPeer, usage) {
   el.appendChild(container);
 
   if (blocks) renderBlocks(blocks, container);
-  if (role === "assistant" && usage) el.appendChild(usageDetails(usage));
+  if (role === "assistant" && usage) el.appendChild(usageLineNode(usage));
 
   // Read the position before the append, because the append itself moves the content
   // the reader is measured against: appending grows the scroll height without firing a

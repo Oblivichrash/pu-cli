@@ -145,6 +145,11 @@ std::string Executor::BuildStaticSystemContext() const {
          "'10,30p') instead of full cat dumps.\n";
   oss << "3. Use parallel tool calls when possible to minimize round trips.\n";
 
+  if (context_digest) {
+    const std::string digest = context_digest();
+    if (!digest.empty()) oss << digest;
+  }
+
   return oss.str();
 }
 

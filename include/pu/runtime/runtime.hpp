@@ -129,6 +129,13 @@ class Runtime {
     executor_->ResolveApproval(allow, std::move(note));
   }
 
+  // What the runtime knows that the executor does not: here, what the task board owes this
+  // server. Asked for on every round of every turn, so it is always current.
+  void SetContextDigest(std::function<std::string()> digest) {
+    assert(is_initialized_ && "Initialize() must run before any digest");
+    executor_->context_digest = std::move(digest);
+  }
+
   AgentManager& Agents() {
     assert(agent_manager_ && "Initialize() must run before any agent query");
     return *agent_manager_;
@@ -161,6 +168,19 @@ class Runtime {
   config::Backend CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
+  // How much context the active backend's model holds, or `0` when nobody stated one. The
+  // file's own `context_window` wins over the gateway's catalogue, because a product's
+  // nominal figure is sometimes not what it enforces and correcting it must not mean waiting
+  // for the product. Advisory: no prompt is trimmed against this and no turn is refused for
+  // outgrowing it — a wrong number draws a misleading bar, never a broken turn.
+  //
+  // How much context the active model holds, from the file's own `context_window`, or `0` when
+  // it names none. Nothing is read over the network, and the reason is the lock rather than the
+  // client: this is asked while the session's lock is held, so a catalogue read here would stand
+  // between the page and every other request for as long as the gateway takes — thirty seconds
+  // at the client's own budget, and a turn's own turn waits behind it. `pu check --caps` prints
+  // what a catalogue says, which is where the number to write comes from.
+  int ContextWindow() const;
   std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
 
@@ -197,6 +217,7 @@ class Runtime {
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads
   // them on another.
   mutable std::mutex overrides_mutex_;
+
 
   std::string default_agent_override_;
   std::optional<config::PeerConfig> peer_config_;

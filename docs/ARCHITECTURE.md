@@ -190,10 +190,20 @@ null there.
 - Security policy (sandbox root, forbidden patterns)
 - Current working directory (the sandbox root)
 - Tool-use guidelines for the model
+- Whatever `context_digest` returns, when a caller set one
 
 It is merged with the agent's configured `system_prompt`, which comes from
 `agents.json` via `Runtime::RebuildToolbox` and is not session state, so
 switching the backend does not clear it.
+
+**The digest.** The executor cannot know what the task board owes this server, so
+`Runtime::SetContextDigest` hands it a function instead of a string. It is called on
+every round of every turn, which is what makes it honest: a job claimed mid-turn
+reads as claimed on the next round. `pu serve` is the only caller, and it answers
+with `Board::Digest(self_name)` — the jobs this server holds (with any question a
+peer is asking, and whether the deadline has passed) plus the jobs it handed out
+that have since closed. An empty digest contributes nothing, so a session with no
+peers in play reads exactly as it did before the board existed.
 
 **Structured tool output.** Tools return JSON through the schema in
 `include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
@@ -241,10 +251,18 @@ environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
    server mounts the static `web/` UI and registers the HTTP routes.
-2. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
+2. The port it bound is read back from the acceptor rather than taken from the request,
+   so a server started on port `0` still knows where to find itself, and it writes that
+   address into `$HOME/.pu/serve.json` along with the directory it serves and its pid.
+   That file is how the page names the machine's servers; a record whose process is gone
+   is dropped on the next read, and the entry is deleted when the server stops. The read
+   and the write happen under a lock file beside it, because two servers started together
+   would otherwise each read the list before the other had written and the second write
+   would erase the first.
+3. An Asio `io_context` drives the `tcp::acceptor` on its own thread, with
    `reuse_address` set before the bind so a restart can take a port a just-closed
    server left connections in `TIME_WAIT` on.
-3. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
+4. Each accepted connection is dispatched on a strand of its own. A plain HTTP request
    is read, dispatched to the static/REST routes, and answered on that strand, and the
    connection ends with the response. Both the read and the write are asynchronous: a
    socket parked in a blocking read would hold the one thread the whole server runs on,
@@ -252,21 +270,29 @@ environment, or the workspace's own `serve` block names:
    request line and headers get a 30s deadline, and a connection that sends none is
    dropped. A WebSocket upgrade on `/ws` is handed to a `WebSocketConnection`, whose I/O
    is asynchronous from there on.
-4. A second upgrade while a page is attached is answered with a `busy` frame and
-   closed: one session, one page. Claiming the session happens when the upgrade is
-   accepted, not when the first run arrives, so the refusal reaches the peer before its
-   socket goes. The page names itself with `?client=` on the upgrade, and the claim is
-   compared by that name: the same tab reconnecting takes the session back and the
-   socket it left behind is closed from its own strand, while another tab is refused.
-   Without a name, every connection is a page of its own.
-5. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
+5. A second upgrade while a page is attached is answered with a `busy` frame and closed:
+   one session, one page. Claiming the session happens when the upgrade is accepted, not
+   when the first run arrives, so the refusal reaches the peer before its socket goes.
+   The page names itself with `?client=` on the upgrade, and the claim is compared by that
+   name: the same tab reconnecting takes the session back and the socket it left behind is
+   closed from its own strand, while another tab is refused. Without a name, every
+   connection is a page of its own.
+6. A run is queued to a single `SessionRunner` worker, which runs `ProcessInput` and
    posts each frame back through the connection. The runner holds only the token that
    steers the turn; the worker reads it by value, so a `cancel` on the strand reaches a
    turn in flight without waiting for it. The message schema, the REST route table, and
    the status each refusal carries are in [web-api.md](web-api.md).
-6. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
+7. On Ctrl+C the acceptor is closed, the `io_context` is stopped — which aborts every
    pending read and write, so no connection thread is left blocked — the runner is
-   stopped, and `Runtime::Shutdown()` persists the session.
+   stopped, the server removes its line from the registry, and `Runtime::Shutdown()`
+   persists the session.
+
+The registry is a file rather than a running daemon because nothing else would exist to
+own the list: each server is independent, and a process that has stopped is exactly the
+one that cannot delete its own line. `LiveServeRecords()` therefore trusts the pid and
+not the file, which also means a pid the operating system has since handed to something
+else reads as live; that costs a stale row in a list the page shows, and nothing reads a
+record to decide where to send work.
 
 ### Cancellation contract
 
@@ -303,50 +329,50 @@ persists neither, because it does not.
 ### HTTP handler contract
 
 `DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler
-should not have to: it parses the body once for routes that take one, takes the `io_mutex`
-for the duration of the call, wraps whatever the handler returned in the envelope that
-route declares, and turns a thrown exception into the status that names whose fault it is
-(`RequestRefused` → `400`, `Error` → `500`).
+should not have to: it finds the row for the request, asks `Admit` whether this caller may
+read it, parses the body once for routes that take one, takes the `io_mutex` for the
+duration of the call, wraps whatever the handler returned in the envelope that row names,
+and turns a thrown exception into the status that names whose fault it is
+(`RequestRefused` → `400`, `NotFound` → `404`, `Error` → `500`).
 
-A handler therefore only computes and returns:
+A handler therefore only computes and returns, against a `Call` rather than a `Runtime`:
 
 ```cpp
-boost::json::value HandleApiRewind(Runtime& runtime, const boost::json::value& body);
+boost::json::value HandleApiRewind(Call& call, const boost::json::value& body);
 ```
 
-Refusals are thrown rather than sent, and each route declares its own success shape —
-`{"success": true, …}` merged into the handler's object, a bare array for `/api/history`,
-or a named collection for `/api/agents` and `/api/workspaces` — so the wire format is
-read off the route table instead of being reassembled by hand in every handler.
+`Call` carries the runtime, the board and the runner a handler might need, plus the facts
+that belong to the connection rather than to the session: the address the request arrived
+from, the peer name its token speaks for, whether that address is this machine's, and the
+port this server answers on. A handler that had to reach for the socket to learn any of
+those would be a second place for the audience rule to live.
+
+One envelope, declared per row. `Route::key` names the member a payload is filed under
+(`messages`, `agents`, `servers`, `workspaces`), and an empty key means the handler's own
+object is the answer; either way `success` is added by the dispatcher. The wire format is
+read off the route table instead of being reassembled by hand in every handler, and a new
+listing cannot invent a fifth shape.
+
+`Route::audience` is the other column that matters, and it has no default: adding a route
+means answering who may read it. That is what makes `/api/workspaces` — which answers this
+machine's directories — impossible to add as a route that answers the network by omission,
+which is how it was added.
 
 The status the exception maps to is the one that names whose fault it is: `RequestRefused`
-for a request the caller can fix, `NotFound` for a name that does not exist, and `Error`
-for an operation that failed on our side.
+for a request the caller can fix, `NotFound` for a name or route that does not exist, and
+`Error` for an operation that failed on our side. The audience refusals are separate and are
+answered before the handler runs: `403` for an address the route does not answer, `401` for a
+peer route with no token or the wrong one, and `404` for a peer route on a server with no
+topology at all.
+
+Routes that read the board are marked `needs_board` and take their own mutex inside, so the
+dispatch does not hold `io_mutex` around them. The board is the one piece of state peers
+share that is not part of the conversation, and putting it behind the session's lock would
+let a slow peer's poll stop the page's turn.
 
 ### Static page serving
 
-The UI travels with the binary, not with the workspace the session is pointed at, so
-`GetWebDir` resolves the page directory in this order and takes the first that exists:
-
-| Order | Candidate | Why |
-| :---- | :-------- | :-- |
-| 1 | `$PU_WEB_DIR` | The one explicit override, for a checkout whose layout we cannot guess |
-| 2 | `<executable>/web`, `<executable>/../web`, `<executable>/../share/pu/web` | A build tree or an install keeps the page under its own prefix, and a workspace somewhere else must not hide it |
-| 3 | `./web`, `../share/pu/web`, `/usr/share/pu/web`, `/usr/local/share/pu/web` | Release and system installs, where the page sits beside the working directory |
-
-Only the files in `kPageFiles` are served. A target outside that list is answered with
-the `404` that ends `DispatchHttpRequest`, so the route cannot be walked to read anything
-else in the page directory.
-
-The target is joined to the page directory with `operator/`, after the leading slash is
-dropped and the bare `/` is mapped to `index.html`. Concatenating the strings instead
-would make the result depend on whether the configured directory happens to end in a
-separator, and would misreport a correctly configured but separator-less directory as a
-missing page.
-
-On macOS the executable's own path is reported by `_NSGetExecutablePath`, which fills a
-buffer whose size it also reports and may leave `..` in the result, so it is resolved
-before its directory is taken.
+Page resolution and the served-file allowlist are in [web-ui.md](web-ui.md).
 
 ### Single-session auto-persistence
 
@@ -481,53 +507,10 @@ the frames produced while the swap happens are held for the socket that attaches
 ### Browser modules
 
 The page is plain scripts with no build step, so the load order in `web/index.html` *is*
-the dependency order and every module's entry points are globals. `web/state.js` runs
-first and owns the one mutable object, `PU`: the socket, the streaming flags, the
-assistant message being written, the chain length, and the composer's elements. Every
-other module reads and writes `PU` rather than keeping a copy, so a fact has exactly one
-home and no module has to be told about another's.
+the dependency order. The modules, their ownership and the static page resolution have
+their own document.
 
-| File | Owns |
-| :--- | :--- |
-| `web/state.js` | The `PU` object, the frame-coalesced render queue, the connection dot's state |
-| `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
-| `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
-| `web/message.js` | The frame around a message: role label, container, edit affordance |
-| `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
-| `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
-| `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
-| `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list |
-| `web/notice.js` | The strip above the composer |
-| `web/history.js` | Folding stored messages back into the bubbles a reader saw |
-| `web/ws.js` | The socket, its reconnect policy, the frame dispatch table |
-| `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
-| `web/composer.js` | Turning a press into a run, and a second press into a cancel |
-| `web/app.js` | The element lookups and the start-up order, and nothing else |
-
-A transcript block and its element are separate things: the block is plain data (`type`,
-`content`, `collapsed`, …) and the element is a custom element that draws itself from it
-on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
-path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
-bear re-reading rather than how to draw them.
-
-The block list is a timeline, in the order the turn happened: a reasoning chunk, a tool
-call and a further reasoning chunk are three blocks, not one merged by kind. A new chunk
-joins the block it follows only when that block is the same kind, which is the rule both
-`transcript.js` and `history.js` apply, so a replayed history and a live stream are the
-same shape.
-
-A block that folds says so by setting `collapsible`, and `block-node.js` builds and
-re-reads the header, the body and the arrow for it; an element that folds is not named
-anywhere else.
-
-Whether the view follows the reply is a question asked of the transcript element at the
-moment of use, never a stored answer. Content grows under the reader without any scroll
-event, so a flag set only by scrolling goes stale the instant a bubble is appended: it
-then reads "the reader has scrolled away" while the reader is still at the bottom, and
-the reply stops following for the rest of the turn. `isAtBottom()` therefore measures the
-element each time it is asked, and a writer reads it *before* it appends, because the
-append is the very thing that moves the content being measured. A reader who scrolls up
-is left where they are; returning to the bottom resumes following with no other gesture.
+See [web-ui.md](web-ui.md).
 
 ## Provider Differences
 
@@ -604,110 +587,13 @@ lists tools.
 
 ---
 
-## Peer Messaging
+## Peers and the task board
 
-Two `pu serve` instances can talk to each other, each driven by its own agent and
-its own model. A declares B in its peer list and vice versa; either side can then
-start a conversation with the other and receive an answer.
+Peer messaging and the task board have their own document: the message a peer sends, the
+token that lets it in, the trust boundary, and every rule the board applies to a job. What
+stays here is where the board sits in the process and why it is not behind `io_mutex`.
 
-```
-     ┌─────────────────────────┐                ┌─────────────────────────┐
-     │  pu serve (A, :8911)    │                │  pu serve (B, :8912)    │
-     │                         │  POST          │                         │
-     │  agent calls            │  /api/peer/    │  SessionRunner          │
-     │  send_to_peer ──────────┼──message──────►│  ::SubmitFromPeer       │
-     │                         │                │         │               │
-     │  (returns at once)      │                │         ▼               │
-     │                         │                │  a normal turn, run     │
-     │                         │                │  on the worker thread   │
-     │                         │                │         │               │
-     │                         │                │         ▼               │
-     │                         │                │  send_to_peer back      │
-     │  a new turn             │◄───────────────┼─────────────────────────┘
-     │  is queued              │                │
-     └─────────────────────────┘                └─────────────────────────┘
-```
-
-### Delivery is asynchronous
-
-`send_to_peer` does not wait for the peer to think. It posts the message, checks
-that the peer accepted it, and returns; the asking agent is told plainly that an
-answer will arrive later. The peer's reply is injected as a **new turn**, so a
-slow or busy peer cannot hold up the sender, and the two agents can work at
-different speeds.
-
-This is why the tool reports "*has the message. It will answer in a later turn*"
-rather than a reply: if it returned the peer's words, the call would block for as
-long as the peer's model takes, and a long answer would look like a hang.
-
-### A peer turn may answer only the agent that asked
-
-The gate that stops an endless A→B→A→B chain is that a turn which arrived from a
-peer may reach **only its sender**. `send_to_peer` therefore compares the
-requested peer against `ToolContext::peer_origin`:
-
-- a turn started by a human has no origin, so every configured peer is reachable;
-- a turn started by a peer may reply to that peer, and to nobody else.
-
-Replying to the sender must stay allowed, or a peer could never answer and the
-conversation could never close. Relaying onward is refused with a reason the
-model can read, so it learns the rule and answers directly instead of retrying.
-The chain therefore ends by construction at the second hop: A can ask B, B can
-answer A, and that answer cannot be forwarded to a third agent.
-
-Hop counting is deliberately **not** the guard. It is carried for logging only,
-because a counter can only guess at intent and a low ceiling would cut off a
-legitimate long exchange between the same two agents. Structure, not a number,
-decides when the conversation stops.
-
-### Trust boundary
-
-The peer endpoint is the one surface that lets a remote conversation drive a
-local model, so it is authenticated while the rest of the HTTP API is not.
-
-| Control | Effect |
-| --- | --- |
-| `Authorization: Bearer <token>` | Required; compared in constant time |
-| Peer allowlist (`peers[]`) | An undeclared `from` is refused before any turn starts |
-| Loopback binding | The listener is not exposed beyond the host by default |
-
-`PU_PEER_TOKEN` overrides the token in `peers.json`, so the secret can stay out of
-the file. A server with no `peers.json` does not mount the endpoint at all — the
-route reports that peer messaging is not configured, and the tool is never
-registered.
-
-**How a peer's turn reaches a page.** A turn that arrived from a peer runs with no
-page attached, since the page may not be open. Its frames are not lost to that:
-`SessionRunner` keeps a record per turn, bounded to the last `kTurnsKept` (8), and
-hands the turn in flight together with the last finished one to a page that
-attaches afterwards. A page already attached when the frames are produced receives
-them as they happen, so a reply that arrives while the page is open needs no
-reload. A turn older than the window is still readable from `/api/history`, which
-carries the result rather than the stream.
-
-The turn keeps who asked: `UserPayload::from_peer` holds the peer's name, which
-the page draws where it would otherwise say "You", and which the model never
-reads — it is not part of the request. Such a turn cannot be rewound through
-`/api/rewind`; it belongs to the conversation it arrived in.
-
-Configuration lives in `.pu/peers.json`:
-
-```json
-{
-  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
-  "token": "shared-secret",
-  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
-}
-```
-
-Both sides must agree on the token and on each other's names. A peer entry
-without a name and a url is skipped with a warning rather than trusted.
-
-**Known gap:** `/api/*` and `/ws` remain unauthenticated, so any local process can
-already drive a turn. That is a separate concern from peer messaging and is not
-addressed here; it is tracked on its own.
-
----
+See [peers-and-board.md](peers-and-board.md).
 
 ## Persistence
 
@@ -717,8 +603,9 @@ addressed here; it is tracked on its own.
 ```
 
 `<workspace>` is the directory `pu` was started in. Logs are the only thing
-`PU_HOME` moves; the environment table in [configuration.md](configuration.md#environment-variables)
-owns both paths.
+`PU_HOME` moves, and their directory is per process so two processes in one
+workspace never rotate the same file; the environment table in
+[configuration.md](configuration.md#environment-variables) owns both paths.
 
 The session file carries `schema_version` beside `conversation` and
 `session_spec`. It is written automatically after every interaction and on
@@ -816,11 +703,10 @@ module has no directory of its own stays beside the sources that include it.
 The build is one static library, `pu_core` (everything but `main.cpp`), and the
 `pu` executable links it.
 
-`web/` is the page the server mounts, served from the file list in
-`kPageFiles` (`src/app/serve_http_routes.cpp`) — adding a file there means adding
-it in both places, and a target outside the list is a `404` rather than a read of
-the directory. Its module split is described under
-[Browser modules](#browser-modules).
+`web/` is the page the server mounts, served straight from the directory the server resolved,
+so adding a module means adding the file and its `<script>` tag and nothing else. A target that
+names a directory, or is not there, is a `404` rather than a read of the directory. Its module
+split is described in [web-ui.md](web-ui.md).
 
 ### Gates, protocols and providers
 
@@ -903,5 +789,13 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 - **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **The serve registry names a server by its pid, not by a claim.** A server that is killed
+  rather than stopped leaves its line behind, and a pid the operating system later hands to an
+  unrelated process reads as a live server until that process exits, so the page can list a
+  workspace nothing is serving. Nothing acts on a record beyond drawing it: a wrong row costs a
+  wrong name, not a message sent to the wrong place. Two smaller limits come with it: a
+  machine with no `HOME` gets no list, since there is nowhere machine-wide to write it and
+  every workspace's file is the wrong place; and a lock that is never released costs the few
+  milliseconds the writer waits before it writes anyway rather than costs the server.
 - **The transcript fold is checked by running the page's own JavaScript only where `node` exists.** Without it the same case file runs against a second implementation in Python, which catches a case that has drifted but not a page that no longer runs.
 

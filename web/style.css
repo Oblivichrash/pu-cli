@@ -78,6 +78,82 @@ header {
 }
 #sidebar-toggle:hover { color: var(--accent); }
 
+/* The server strip: the name of the workspace on the left, the others behind a caret. It sits
+   in the header rather than the panel because which workspace this is belongs beside the
+   page's own name, not two clicks into a column. */
+.header-servers {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.server-current {
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-light);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+#server-toggle {
+  background: transparent;
+  border: none;
+  color: var(--ink-light);
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+  font-family: inherit;
+}
+#server-toggle:hover { color: var(--accent); }
+.server-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  min-width: 200px;
+  /* A workspace name is a path, and a path in a column is unbounded. The panel takes the room
+     a name needs up to a share of the window, then the name ellipsises: a list wider than the
+     page cannot be read either. */
+  max-width: min(420px, 70vw);
+  background: var(--assistant-bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  overflow-y: auto;
+  max-height: 60vh;
+}
+.server-row { margin: 0; }
+.server-name {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-name:hover { background: rgba(0, 0, 0, 0.04); }
+.server-row.current .server-name {
+  color: var(--accent);
+  cursor: default;
+}
+.server-row.current .server-name:hover { background: transparent; }
+
 /* ---------- stage: conversation + sidebar ---------- */
 #stage {
   flex: 1;
@@ -191,17 +267,6 @@ main {
   margin-top: 4px;
   font-size: 11px;
   color: var(--ink-light);
-}
-.msg-usage summary {
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  list-style: none;
-}
-.msg-usage summary::-webkit-details-marker { display: none; }
-.msg-usage summary::before { content: "▸ "; }
-.msg-usage[open] summary::before { content: "▾ "; }
-.msg-usage div {
-  margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -650,6 +715,111 @@ main {
   margin-left: 6px;
 }
 
+/* ---------- board ---------- */
+/* A job is three short lines: what state it is in and what was asked, who it is between,
+   and — only when it is late or blocked — the thing that needs a person. */
+.board-jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board-job {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.board-job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.board-state {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-state.late { color: var(--warn); }
+.board-state-blocked { color: var(--accent); }
+.board-intent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-meta {
+  font-size: 11px;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-note {
+  font-size: 12px;
+  color: var(--ink-light);
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+}
+.board-heading {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-top: 4px;
+}
+.board-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.board-asked {
+  font-size: 12px;
+  color: var(--accent);
+}
+.board-question input {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.board-question button {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-question button:disabled {
+  color: var(--ink-light);
+  cursor: default;
+}
+.board-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.board-actions button {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-state-cancelled { color: var(--ink-light); text-decoration: line-through; }
+
 /* ---------- scrollbar ---------- */
 #messages::-webkit-scrollbar,
 #sidebar::-webkit-scrollbar { width: 6px; }
@@ -749,4 +919,5 @@ main {
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
+  .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }
