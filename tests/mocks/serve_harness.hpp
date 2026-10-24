@@ -33,12 +33,8 @@
 
 #include "pu/app/cli.hpp"
 #include "pu/core/platform.hpp"
-#include "pu/runtime.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "tests/mocks/test_helpers.hpp"
-
-namespace pu::platform {
-extern std::atomic<bool> interrupted;
-}
 
 namespace pu::tests {
 
@@ -50,33 +46,49 @@ using tcp = net::ip::tcp;
 
 inline constexpr const char* kServeHost = "127.0.0.1";
 
+// Winsock counts its starts and its stops. A harness that stops as many times as it starts drops
+// the count to zero the moment two of these calls are in flight at once, and takes every other
+// socket in the process down with it -- so the process starts Winsock once, here, and every call
+// below only borrows it.
+class WinsockSession {
+ public:
+  static bool Ready() {
+    static const WinsockSession session;
+    return session.ok_;
+  }
+
+ private:
+  WinsockSession() {
+#ifdef _WIN32
+    WSADATA wsa;
+    ok_ = WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+#endif
+  }
+  ~WinsockSession() = default;
+
+  bool ok_ = true;
+};
+
 inline int FindFreePort() {
 #ifdef _WIN32
-  WSADATA wsa;
-  if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+  if (!WinsockSession::Ready()) return 0;
   SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s == INVALID_SOCKET) {
-    WSACleanup();
-    return 0;
-  }
+  if (s == INVALID_SOCKET) return 0;
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = 0;
   if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int len = sizeof(addr);
   if (getsockname(s, reinterpret_cast<sockaddr*>(&addr), &len) == SOCKET_ERROR) {
     closesocket(s);
-    WSACleanup();
     return 0;
   }
   int port = ntohs(addr.sin_port);
   closesocket(s);
-  WSACleanup();
   return port;
 #else
   int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -102,22 +114,17 @@ inline int FindFreePort() {
 
 inline bool WaitForPort(const std::string& host, int port, int timeout_ms) {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  if (!WinsockSession::Ready()) return false;
   while (std::chrono::steady_clock::now() < deadline) {
 #ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s == INVALID_SOCKET) {
-      WSACleanup();
-      return false;
-    }
+    if (s == INVALID_SOCKET) return false;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<u_short>(port));
     inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
     int result = connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
     closesocket(s);
-    WSACleanup();
     if (result == 0) return true;
 #else
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -182,20 +189,48 @@ class FakeHttpServer {
       ioc_->stop();
       server_thread_.join();
     }
+    // The per-connection threads are joined, not detached: one still running when the
+    // process leaves main would call std::terminate on exit.
+    for (std::thread& t : TakeConnections()) if (t.joinable()) t.join();
   }
 
  private:
+  std::vector<std::thread> TakeConnections() {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    return std::move(connections_);
+  }
+
   void Accept() {
     acceptor_->async_accept([this](boost::system::error_code ec, tcp::socket socket) {
       if (!ec) {
-        std::thread([s = std::move(socket), responder = responder_, delay = response_delay_ms_,
-                     requests = requests_]() mutable {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        // A finished connection erases its own entry by id; the thread object moves
+        // with the lambda and joins itself at the end.
+        connections_.emplace_back([s = std::move(socket), responder = responder_,
+                                   delay = response_delay_ms_, requests = requests_,
+                                   this]() mutable {
           Serve(std::move(s), responder, delay, requests);
-        }).detach();
+          std::thread::id mine = std::this_thread::get_id();
+          std::thread self;
+          {
+            std::lock_guard<std::mutex> lock(connections_mutex_);
+            for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+              if (it->get_id() == mine) {
+                self = std::move(*it);
+                connections_.erase(it);
+                break;
+              }
+            }
+          }
+          if (self.joinable()) self.detach();
+        });
       }
       if (!stop_requested_) Accept();
     });
   }
+
+  std::mutex connections_mutex_;
+  std::vector<std::thread> connections_;
 
   static void Serve(tcp::socket socket, const std::shared_ptr<Responder>& responder,
                     int response_delay_ms, const std::shared_ptr<std::atomic<int>>& requests) {
@@ -236,8 +271,8 @@ class FakeBackend : public FakeHttpServer {
   // The answer is built by a static function, so the counts a test wants to observe
   // live where that function can read them.
   static void ReportUsage(int prompt_tokens, int completion_tokens) {
-    prompt_tokens_ = prompt_tokens;
-    completion_tokens_ = completion_tokens;
+    prompt_tokens_.store(prompt_tokens, std::memory_order_relaxed);
+    completion_tokens_.store(completion_tokens, std::memory_order_relaxed);
   }
 
  private:
@@ -247,8 +282,8 @@ class FakeBackend : public FakeHttpServer {
       res.result(http::status::ok);
       res.set(http::field::content_type, "application/json");
       res.body() = R"({"message":{"content":"OK"}}
-{"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_) +
-                   R"(,"eval_count":)" + std::to_string(completion_tokens_) + R"(}
+{"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_.load(std::memory_order_relaxed)) +
+                   R"(,"eval_count":)" + std::to_string(completion_tokens_.load(std::memory_order_relaxed)) + R"(}
 )";
     } else {
       res.result(http::status::not_found);
@@ -257,8 +292,8 @@ class FakeBackend : public FakeHttpServer {
     return res;
   }
 
-  static inline int prompt_tokens_ = 1234;
-  static inline int completion_tokens_ = 56;
+  static inline std::atomic<int> prompt_tokens_{1234};
+  static inline std::atomic<int> completion_tokens_{56};
 };
 
 // The name is a string, and this says so instead of leaving it to a conversion. A brace-init
@@ -272,7 +307,8 @@ inline boost::json::value JsonStr(const std::string& s) {
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
                                    const std::string& backend_type = "ollama",
                                    const std::string& mcp_name = "",
-                                   const std::string& mcp_url = "") {
+                                   const std::string& mcp_url = "",
+                                   const std::string& approval_pattern = "") {
   std::error_code ec;
   fs::create_directories(dir / ".pu", ec);
   REQUIRE_FALSE(ec);
@@ -286,6 +322,11 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   boost::json::object security;
   security["sandbox_root"] = JsonStr(".");
   security["forbidden_patterns"] = boost::json::array{};
+  // A command matching this needs approval. Empty means the policy names none, which is
+  // what every case but the approval one wants.
+  if (!approval_pattern.empty()) {
+    security["approval_patterns"] = boost::json::array{JsonStr(approval_pattern)};
+  }
 
   boost::json::object agent;
   agent["name"] = JsonStr("chat");
@@ -323,22 +364,41 @@ class TestHttpClient {
  public:
   explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  std::string Get(const std::string& path) { return Request(http::verb::get, path, "").body; }
+  // The bearer a board request presents. Empty sends no Authorization header at all, which is
+  // what a caller that is not a peer looks like.
+  void SetBearer(std::string bearer) { bearer_ = std::move(bearer); }
+
+  std::string Get(const std::string& path) { return GetRaw(path).body; }
+
+  HttpResponse GetRaw(const std::string& path) {
+    return Request(http::verb::get, path, "", bearer_);
+  }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
     return PostFull(path, body).body;
   }
 
   HttpResponse PostFull(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::post, path, boost::json::serialize(body));
+    return Request(http::verb::post, path, boost::json::serialize(body), bearer_);
   }
 
   HttpResponse PostRaw(const std::string& path, const std::string& body) {
-    return Request(http::verb::post, path, body);
+    return Request(http::verb::post, path, body, bearer_);
+  }
+
+  HttpResponse Patch(const std::string& path, const boost::json::value& body) {
+    return Request(http::verb::patch, path, boost::json::serialize(body), bearer_);
+  }
+
+  // For a call that must present a different token from the one this client carries.
+  HttpResponse PostRaw(const std::string& path, const std::string& body,
+                       const std::string& bearer) {
+    return Request(http::verb::post, path, body, bearer);
   }
 
  private:
-  HttpResponse Request(http::verb method, const std::string& path, const std::string& body) {
+  HttpResponse Request(http::verb method, const std::string& path, const std::string& body,
+                       const std::string& bearer = {}) {
     try {
       net::io_context ioc;
       tcp::resolver resolver(ioc);
@@ -351,6 +411,7 @@ class TestHttpClient {
       req.set(http::field::host, host_);
       req.set(http::field::content_type, "application/json");
       req.set(http::field::content_length, std::to_string(body.size()));
+      if (!bearer.empty()) req.set(http::field::authorization, "Bearer " + bearer);
       req.body() = body;
       req.prepare_payload();
 
@@ -371,6 +432,7 @@ class TestHttpClient {
 
   std::string host_;
   int port_;
+  std::string bearer_;
 };
 
 class ServeHarness {
@@ -380,23 +442,105 @@ class ServeHarness {
     std::string url;
   };
 
-  explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
-                        std::optional<McpServer> mcp = std::nullopt) {
+  struct UnreachableBackend {};
+
+  // A port that refuses connections for as long as the object lives. A port sampled and then
+  // released can be taken by another case in a parallel run, which turns this failure into a
+  // successful turn and the test into a false pass.
+  class ReservedDeadPort {
+   public:
+    ReservedDeadPort() {
+#ifdef _WIN32
+      if (!WinsockSession::Ready()) return;
+      socket_ = socket(AF_INET, SOCK_STREAM, 0);
+      if (socket_ == INVALID_SOCKET) return;
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      addr.sin_port = 0;
+      if (bind(socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(socket_);
+        socket_ = INVALID_SOCKET;
+        return;
+      }
+      int size = sizeof(addr);
+      if (getsockname(socket_, reinterpret_cast<sockaddr*>(&addr), &size) == SOCKET_ERROR) return;
+      port_ = ntohs(addr.sin_port);
+#endif
+    }
+    ~ReservedDeadPort() {
+#ifdef _WIN32
+      if (socket_ != INVALID_SOCKET) closesocket(socket_);
+#endif
+    }
+    ReservedDeadPort(const ReservedDeadPort&) = delete;
+    ReservedDeadPort& operator=(const ReservedDeadPort&) = delete;
+
+    int Port() const { return port_; }
+
+   private:
+#ifdef _WIN32
+    SOCKET socket_ = INVALID_SOCKET;
+#endif
+    int port_ = 0;
+  };
+
+  // A harness whose backend is not listening, which is the failure the crash investigation
+  // reproduced: the turn fails where the transport does, not where a handler returns an error.
+  ServeHarness(UnreachableBackend, const std::string& backend_type = "ollama") {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
     home_ = UniqueTempPath("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
-    home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    const fs::path data_dir = UniqueTempPath("pu_test_data");
-    fs::create_directories(data_dir);
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
+
+    dead_port_ = std::make_unique<ReservedDeadPort>();
+    WriteAgentsFile(home_, dead_port_->Port(), backend_type, "", "");
+
+    {
+      ScopedWorkingDir in_home(home_);
+      runtime_ = std::make_unique<pu::Runtime>();
+      runtime_->Initialize();
+    }
+
+    port_ = FindFreePort();
+    server_thread_ =
+        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
+    if (WaitForPort(kServeHost, port_, 15000)) return;
+    Stop();
+    FAIL("the server never took the port FindFreePort named");
+  }
+
+  explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
+                        std::optional<McpServer> mcp = std::nullopt,
+                        bool with_peers = false) {
+    static std::atomic<int> seq{0};
+    std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_" + std::to_string(seq.fetch_add(1));
+    home_ = UniqueTempPath("pu_serve_" + tag);
+    fs::create_directories(home_ / ".pu");
+
+    // A workspace of its own, and the environment pointing at it. Both are restored by the
+    // scoped owners, which run even when a REQUIRE below throws: a constructor that died
+    // halfway used to leave PU_HOME naming a directory this harness had already removed, and
+    // whichever case ran next failed on it.
+    env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
+        {"HOME", home_.string()},
+        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+    });
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
     WriteAgentsFile(home_, backend_->Port(), backend_type, mcp ? mcp->name : "",
                     mcp ? mcp->url : "");
+    // A workspace that is part of a topology names its peer before the runtime reads the
+    // directory: the endpoint and the tool both follow from the file being there.
+    if (with_peers) WritePeersConfig("B", "A");
 
     {
       // Read back what was written, the way the runtime will. A config the harness cannot
@@ -418,13 +562,21 @@ class ServeHarness {
       runtime_->Initialize();
     }
 
-    port_ = FindFreePort();
-    REQUIRE(port_ > 0);
+    // FindFreePort closes the socket it bound, so the port can be taken back before
+    // RunServe binds it. On a loss the thread is joined before the REQUIRE fires:
+    // an exception out of a constructor skips the destructor, and a detached thread
+    // still running RunServe would then abort the whole test binary at exit.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      port_ = FindFreePort();
+      REQUIRE(port_ > 0);
 
-    server_thread_ =
-        std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
+      server_thread_ =
+          std::thread([this] { cli::RunServe(kServeHost, static_cast<std::uint16_t>(port_), *runtime_); });
 
-    REQUIRE(WaitForPort(kServeHost, port_, 15000));
+      if (WaitForPort(kServeHost, port_, 15000)) return;
+      Stop();
+    }
+    FAIL("the server never took the port FindFreePort named");
   }
 
   ~ServeHarness() {
@@ -433,15 +585,36 @@ class ServeHarness {
     fs::remove_all(home_, ec);
   }
 
+  // Writes a peers.json into the workspace before Initialize reads it. A case that needs the
+  // peer endpoint mounted says so here rather than editing .pu/ after the runtime has started,
+  // which would be read too late.
+  void WritePeersConfig(const std::string& self_name, const std::string& peer_name) {
+    std::error_code ec;
+    std::filesystem::create_directories(home_ / ".pu", ec);
+    boost::json::object self;
+    self["name"] = JsonStr(self_name);
+    boost::json::object peer;
+    peer["name"] = JsonStr(peer_name);
+    peer["url"] = JsonStr("http://127.0.0.1:1");
+    boost::json::object root;
+    root["self"] = std::move(self);
+    root["token"] = JsonStr("shared-secret");
+    root["peers"] = boost::json::array{std::move(peer)};
+    std::ofstream file(home_ / ".pu" / "peers.json", std::ios::binary | std::ios::trunc);
+    REQUIRE(file.is_open());
+    file << boost::json::serialize(root);
+    REQUIRE(file.good());
+  }
+
   void Stop() {
     if (stopped_) return;
     stopped_ = true;
-    platform::interrupted = true;
+    platform::ShutdownToken()->store(true, std::memory_order_release);
     if (server_thread_.joinable()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       server_thread_.join();
     }
-    platform::interrupted = false;
+    platform::ShutdownToken()->store(false, std::memory_order_release);
     if (runtime_) runtime_->Shutdown();
   }
 
@@ -451,15 +624,18 @@ class ServeHarness {
 
   int Port() const { return port_; }
 
-  int BackendRequests() const { return backend_->Requests(); }
+  int BackendRequests() const { return backend_ ? backend_->Requests() : 0; }
 
   Runtime& RuntimeRef() { return *runtime_; }
 
  private:
   fs::path home_;
-  std::unique_ptr<ScopedEnvVar> home_env_;
-  std::unique_ptr<ScopedEnvVar> data_env_;
+  // Restores HOME and PU_HOME together, in the order they were set, whenever this harness
+  // stops being alive — including on the way out of a failed constructor.
+  std::unique_ptr<ScopedEnvironment> env_;
   std::unique_ptr<FakeBackend> backend_;
+  // Held so the backend port refuses connections for the whole life of this harness.
+  std::unique_ptr<ReservedDeadPort> dead_port_;
   int port_ = 0;
   std::unique_ptr<pu::Runtime> runtime_;
   std::thread server_thread_;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/mcp/http_transport.hpp"
 
-#include "pu/core/platform.hpp"
 #include "pu/core/beast_http_client.hpp"
 
 #include <spdlog/spdlog.h>
@@ -20,8 +19,12 @@ bool HttpTransport::Start(MessageCallback on_message) {
   on_message_ = std::move(on_message);
   stopping_ = false;
 
+  // Only this transport's own stop flag interrupts a request in flight. The global
+  // shutdown token is a process-wide signal a test harness toggles around a server it
+  // runs beside, and a handshake of this transport reading it as true failed for an
+  // unrelated lifecycle's sake.
   http_.SetInterruptChecker([this] {
-    return stopping_.load(std::memory_order_acquire) || pu::platform::IsInterrupted();
+    return stopping_.load(std::memory_order_acquire);
   });
 
   running_ = true;

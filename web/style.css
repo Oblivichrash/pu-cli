@@ -1,5 +1,5 @@
 :root {
-  --column: 720px;
+  --column: 900px;
   --sidebar: 280px;
   --paper: #fdfbf7;
   --ink: #2c2c2c;
@@ -77,6 +77,82 @@ header {
   font-family: inherit;
 }
 #sidebar-toggle:hover { color: var(--accent); }
+
+/* The server strip: the name of the workspace on the left, the others behind a caret. It sits
+   in the header rather than the panel because which workspace this is belongs beside the
+   page's own name, not two clicks into a column. */
+.header-servers {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.server-current {
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-light);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+#server-toggle {
+  background: transparent;
+  border: none;
+  color: var(--ink-light);
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+  font-family: inherit;
+}
+#server-toggle:hover { color: var(--accent); }
+.server-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  min-width: 200px;
+  /* A workspace name is a path, and a path in a column is unbounded. The panel takes the room
+     a name needs up to a share of the window, then the name ellipsises: a list wider than the
+     page cannot be read either. */
+  max-width: min(420px, 70vw);
+  background: var(--assistant-bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  overflow-y: auto;
+  max-height: 60vh;
+}
+.server-row { margin: 0; }
+.server-name {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-name:hover { background: rgba(0, 0, 0, 0.04); }
+.server-row.current .server-name {
+  color: var(--accent);
+  cursor: default;
+}
+.server-row.current .server-name:hover { background: transparent; }
 
 /* ---------- stage: conversation + sidebar ---------- */
 #stage {
@@ -177,25 +253,68 @@ main {
 
 .blocks-container { width: 100%; }
 
+/* The session's running total, under the context bar: facts, not a control. */
+.usage-total {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cost of a reply, folded: a line to open when the number matters, not part of the answer. */
+.msg-usage {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* These are custom elements, which the browser lays out inline until told otherwise; an
+   inline box draws its own rule beside a near-zero height and pushes the header to the
+   next line, which is what puts a stray line above every step. */
 .block-thinking,
+.block-tool,
+.block-text {
+  display: block;
+}
+
+/* A tool call reads as one line of a log rather than a card: a rule down the left marks
+   how far the step reaches, and nothing else takes weight away from the answer. */
 .block-tool {
-  margin: 6px 0;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: rgba(255, 252, 245, 0.4);
+  margin: 2px 0;
+  border: none;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: none;
 }
 .block-thinking .block-header,
 .block-tool .block-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
+  justify-content: flex-start;
+  padding: 3px 10px;
   cursor: pointer;
   font-size: 13px;
+  line-height: 1.3;
   color: var(--ink-light);
   user-select: none;
-  gap: 8px;
+  gap: 6px;
 }
+.block-tool .block-header {
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.block-tool .tool-name {
+  color: var(--ink);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.block-tool .tool-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-tool .toggle-icon { margin-left: auto; }
 .block-thinking .block-header:hover,
 .block-tool .block-header:hover {
   background: rgba(0, 0, 0, 0.03);
@@ -217,10 +336,11 @@ main {
   flex-shrink: 0;
 }
 .tool-status {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink-light);
   flex-shrink: 0;
 }
+.tool-status:empty { display: none; }
 
 .tool-args,
 .tool-result { margin: 4px 0; }
@@ -234,7 +354,7 @@ main {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 70vh;
+  max-height: 40vh;
   overflow: auto;
 }
 .tool-error {
@@ -254,33 +374,6 @@ main {
   flex: 0 0 auto;
 }
 
-/* The two choices that change between messages, kept with the input they affect. Each is
-   shown by its own control, so no read-only text repeats what the select already says. */
-#session-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-}
-.session-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--ink-light);
-}
-#agent-select,
-#thinking-select {
-  background: transparent;
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 4px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  min-width: 120px;
-  max-width: 220px;
-}
 #composer-row {
   display: flex;
   gap: 12px;
@@ -319,60 +412,6 @@ main {
 }
 #send:hover { background: var(--accent); }
 #send:disabled { opacity: 0.5; cursor: not-allowed; }
-/* The stop sits on the command it would kill, so the thing stopped is the thing on
-   screen rather than a button that names it from far away. */
-.stop-command {
-  background: transparent;
-  border: 1px solid var(--error-border);
-  color: var(--error-text);
-  border-radius: 2px;
-  padding: 1px 8px;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.stop-command:hover { background: rgba(181, 49, 42, 0.08); }
-
-/* The note is written beside the command it explains: shown before the stop lands, and
-   left in place so the reason can be read afterwards. */
-.stop-note {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dotted var(--border);
-}
-.stop-note input {
-  flex: 1;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 6px 10px;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--ink);
-  outline: none;
-}
-.stop-note input:focus { border-color: var(--accent); }
-.stop-note button {
-  background: var(--error-border);
-  color: var(--paper);
-  border: 1px solid var(--error-border);
-  border-radius: 2px;
-  padding: 6px 14px;
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.stop-note button.stop-note-cancel {
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--border);
-}
-
 /* The approval gate is parked above the composer, not floating over the page: a
    decision waited on is the one thing that must not be scrolled past or missed. */
 #approval-bar {
@@ -488,6 +527,46 @@ main {
   line-height: 1;
 }
 
+/* ---------- status bar: what the session is, at the shell's own width ---------- */
+#status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 252, 245, 0.85);
+  font-size: 11px;
+  color: var(--ink-light);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A bound is what makes the ellipsis above mean anything: without one the item grows to its
+   content and pushes its neighbours out of the bar instead. */
+#status-agent { max-width: 220px; }
+#status-backend { max-width: 300px; }
+#status-tools { max-width: 120px; }
+/* The panel has a bar for this; the status bar has room for the number and its colour. */
+#status-context.warn { color: var(--warn); }
+#status-context.high { color: var(--accent); }
+/* The right-hand group is the gateway and the count: the two a reader checks rather than
+   acts on, so they sit at the far edge the way a status bar's are. */
+.status-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+}
+
 /* ---------- sidebar ---------- */
 #sidebar {
   width: var(--sidebar);
@@ -501,6 +580,64 @@ main {
   gap: 20px;
 }
 #shell.sidebar-hidden #sidebar { display: none; }
+/* A choice in the panel has room, so it keeps the control's own shape: the label above,
+   the select filling the column. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+.field select {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  /* A long name is cut rather than allowed to widen the panel; the title carries the rest. */
+  text-overflow: ellipsis;
+}
+.field select:disabled { opacity: 0.55; cursor: not-allowed; }
+.field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A number setting is an input rather than a list, and reads as the same box. */
+.field input {
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.field input:disabled { opacity: 0.55; cursor: not-allowed; }
+.field input:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* The way back to the agent's own numbers, offered rather than needed. */
+#settings-reset {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+#settings-reset:hover { color: var(--ink); }
+#settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;
@@ -578,6 +715,111 @@ main {
   margin-left: 6px;
 }
 
+/* ---------- board ---------- */
+/* A job is three short lines: what state it is in and what was asked, who it is between,
+   and — only when it is late or blocked — the thing that needs a person. */
+.board-jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board-job {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.board-job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.board-state {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-state.late { color: var(--warn); }
+.board-state-blocked { color: var(--accent); }
+.board-intent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-meta {
+  font-size: 11px;
+  color: var(--ink-light);
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+.board-note {
+  font-size: 12px;
+  color: var(--ink-light);
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+}
+.board-heading {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-top: 4px;
+}
+.board-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.board-asked {
+  font-size: 12px;
+  color: var(--accent);
+}
+.board-question input {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.board-question button {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-question button:disabled {
+  color: var(--ink-light);
+  cursor: default;
+}
+.board-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.board-actions button {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+.board-state-cancelled { color: var(--ink-light); text-decoration: line-through; }
+
 /* ---------- scrollbar ---------- */
 #messages::-webkit-scrollbar,
 #sidebar::-webkit-scrollbar { width: 6px; }
@@ -641,16 +883,20 @@ main {
   }
   #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
   #shell.sidebar-hidden #sidebar { display: flex; }
+  /* The drawer reaches the bottom, covering the bar: what it shows is what the bar says. */
 }
 @media (max-width: 640px) {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
   .msg { font-size: 14px; }
+  /* The field takes the row, and the choices share the line under it. */
   #composer-row { flex-wrap: wrap; }
   #input { flex-basis: 100%; }
   #send { flex: 1; height: 40px; min-width: 0; }
-  #session-bar { gap: 10px; }
-  #agent-select, #thinking-select { max-width: 140px; }
+  /* The readings a narrow screen can live without, dropped in the order they matter least;
+     the connection, the agent and the thinking level stay. */
+  #status-context { display: none; }
+  #status-tools { display: none; }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -667,10 +913,11 @@ main {
     --ok: #6fa07d;
     --warn: #c9a24a;
   }
-  header, #composer, #sidebar { background: rgba(28, 26, 23, 0.7); }
+  header, #composer, #sidebar, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
+  .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }

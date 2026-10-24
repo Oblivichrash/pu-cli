@@ -4,6 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/tools/toolbox.hpp"
 #include "pu/core/json.hpp"
+#include "pu/session/message.hpp"
 
 #include <boost/json.hpp>
 
@@ -172,7 +173,7 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
               tools::QuoteJoin(ctx.security ? ctx.security->approval_patterns
                                             : std::vector<std::string>{}) +
               ".",
-          -1, true);
+          -1, true, tools::Refusal::kNobodyToAsk);
     }
     std::string note;
     if (!ctx.approval->ask(command, note)) {
@@ -189,7 +190,7 @@ std::string ExecuteBashToolStandard::Execute(const boost::json::value& args, pu:
     ctx.control->on_note(approval_note);
   }
   if (result.was_stopped) {
-    std::string note = "Command stopped by the user";
+    std::string note = session::kCommandStoppedReceipt;
     if (ctx.control && !ctx.control->note.empty()) {
       note += ". The user adds: " + ctx.control->note;
     }

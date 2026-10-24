@@ -28,9 +28,17 @@ The catalog is not what the account can call. Probed on 2026-10-14:
 | `qwen/qwen2.5-7b-instruct`, `deepseek-ai/deepseek-r1` | plain-text `404 page not found`, not JSON |
 
 The hang and the plain-text 404 have no machine-readable failure to read; a client can
-only time out or treat the body as text.
+only time out or treat the body as text. It now does the first: every request carries a
+deadline, so a model that hangs is answered `HTTP read timed out` rather than waited on. See
+[providers.md](../../providers.md#limits).
 
 ## The stream, from a nemotron-3-super capture
+
+The capture this section describes is kept as
+[`tests/fixtures/nim-nemotron3-super.sse`](../../tests/fixtures/nim-nemotron3-super.sse), so a
+reader can check a claim here against the bytes rather than re-probing. Nothing reads it in a
+test: the `nim` gateway speaks the `openai` protocol, so the parser is exercised by the OpenAI
+fixtures and this file is evidence rather than a fixture.
 
 Standard OpenAI-compatible SSE: `data: ` lines, blank line between them, ended by
 `data: [DONE]`. Each chunk is a `chat.completion.chunk` with a stable per-reply `id`.

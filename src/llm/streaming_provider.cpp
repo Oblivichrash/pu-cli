@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/streaming_provider.hpp"
 
-#include "pu/llm/streaming_json_parser.hpp"
+#include "pu/core/sse.hpp"
 #include "pu/core/platform.hpp"
 
 #include <spdlog/spdlog.h>
@@ -16,7 +16,8 @@ StreamingProvider::StreamingProvider(std::string host, std::string api_key,
 
 std::vector<std::string> StreamingProvider::Headers() const {
   std::vector<std::string> headers = {"Content-Type: application/json"};
-  if (!api_key_.empty()) headers.push_back("Authorization: Bearer " + api_key_);
+  const std::string bearer = http::BearerHeader(api_key_);
+  if (!bearer.empty()) headers.push_back(bearer);
   return headers;
 }
 
@@ -68,9 +69,14 @@ void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
   }
 }
 
+void StreamingProvider::NoteSeenField(std::string_view key) {
+  if (std::find(seen_fields_.begin(), seen_fields_.end(), key) == seen_fields_.end()) {
+    seen_fields_.emplace_back(key);
+  }
+}
+
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   ChatResult result;
-  platform::ClearInterruptFlag();
   ResetAccumulators();
 
   const std::string body = BuildRequest(request.history, request.tools);
@@ -80,17 +86,27 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
 
   std::vector<std::string> headers = Headers();
 
-  llm::StreamingJsonParser parser([&](std::string_view line) { ParseLine(line, request); });
+  core::SseParser parser([&](const core::SseEvent& event) {
+    // A frame that carried no data is a name with nothing to deliver. The `[DONE]` sentinel is
+    // the sender's last word and nothing follows it, so it is skipped: finishing the turn is
+    // what the end of the stream does, once, below. Doing it here as well ran the flush twice
+    // and appended what it folded in twice.
+    if (event.data.empty() || event.data == "[DONE]") return;
+    ParseData(event.data, request);
+  });
+  parser.SetBareLinesAreEvents(FramesBareLines());
 
   auto write_cb = [&](char* ptr, size_t total) -> size_t {
     parser.Feed(ptr, total);
-    if (platform::IsInterrupted()) return 0;
     if (request.cancel_token && request.cancel_token->load(std::memory_order_acquire)) return 0;
     return total;
   };
 
   http_->PostStream(host_ + EndpointPath(), body, headers, write_cb, request.cancel_token);
 
+  // A frame that was never closed by a blank line is still a frame, and a `[DONE]` sent
+  // without one is still the end: the close terminates the last line.
+  parser.Finish();
   FinishStream(request);
 
   result.content = std::move(content_);
@@ -99,6 +115,8 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   result.usage = usage_;
   result.raw_usage = std::move(raw_usage_);
   result.unread_fields = std::move(unread_fields_);
+  result.seen_fields = std::move(seen_fields_);
+  result.missing_fields = std::move(missing_fields_);
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);
   return result;

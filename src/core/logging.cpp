@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
+#include <spdlog/details/thread_pool.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
@@ -108,6 +109,30 @@ std::unique_ptr<spdlog::formatter> JsonLogFormatter::clone() const {
   return std::make_unique<JsonLogFormatter>();
 }
 
+// InitLogging runs again for every Runtime in the process, so the pool has to outlive each of
+// them. Installing a fresh pool under a logger that is still writing leaves it holding a weak
+// reference to a queue that no longer exists, which is the shape of the crash a serve test hit
+// when a second Runtime started in the same process. Whichever pool exists first is the one the
+// process keeps.
+const std::shared_ptr<spdlog::details::thread_pool>& LogThreadPool() {
+  static const std::shared_ptr<spdlog::details::thread_pool> pool = [] {
+    if (auto existing = spdlog::thread_pool()) return existing;
+    spdlog::init_thread_pool(8192, 1);
+    return spdlog::thread_pool();
+  }();
+  return pool;
+}
+
+// `spdlog::default_logger_raw()` hands out a bare pointer with no lock and no owning
+// reference, so replacing the default logger would destroy the old one under any thread
+// sitting between that call and `log_it_`. The process keeps every logger it installs
+// instead: they are few (one per Runtime), and a logger nobody asks for any more costs a
+// file handle, while one destroyed mid-write costs the process.
+void KeepAlive(std::shared_ptr<spdlog::logger> logger) {
+  static std::vector<std::shared_ptr<spdlog::logger>> kept;
+  if (logger) kept.push_back(std::move(logger));
+}
+
 void InitLogging(const std::string& log_level) {
   spdlog::level::level_enum level = spdlog::level::info;
   if (!log_level.empty()) {
@@ -145,9 +170,8 @@ void InitLogging(const std::string& log_level) {
   if (use_json) {
     logger = std::make_shared<spdlog::logger>("pu", sinks.begin(), sinks.end());
   } else {
-    spdlog::init_thread_pool(8192, 1);
     logger = std::make_shared<spdlog::async_logger>("pu", sinks.begin(), sinks.end(),
-                                                    spdlog::thread_pool(),
+                                                    LogThreadPool(),
                                                     spdlog::async_overflow_policy::block);
   }
   logger->set_level(level);
@@ -155,7 +179,15 @@ void InitLogging(const std::string& log_level) {
   if (use_json) {
     logger->set_formatter(std::make_unique<JsonLogFormatter>());
   }
+  // The logger this replaces may still be inside `log_it_` on another thread, so the swap
+  // hands the old one to the list that outlives the process rather than dropping it here.
+  std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
   spdlog::set_default_logger(logger);
+  if (previous != logger) KeepAlive(std::move(previous));
+}
+
+void FlushLogging() {
+  if (auto logger = spdlog::default_logger()) logger->flush();
 }
 
 }  // namespace pu

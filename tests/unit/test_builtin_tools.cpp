@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/tool.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -194,4 +195,31 @@ TEST_CASE("Write_file returns error JSON when no security policy set", "[builtin
   auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("error") == "security policy not set");
+}
+
+TEST_CASE("A refusal says which kind it is", "[tools][refusal]") {
+  // What a policy refusal looks like: the flag alone, since the command is what to rework.
+  const pu::tools::ToolResult policy = pu::tools::ParseToolResult(
+      R"({"success":false,"blocked":true,"output":"","error":"contains forbidden pattern","exit_code":-1})");
+  REQUIRE(policy.valid);
+  REQUIRE(policy.blocked);
+  REQUIRE(policy.refusal == pu::tools::Refusal::kPolicy);
+
+  // What an agent with approval_patterns and no channel to ask on looks like. Same flag,
+  // different remedy: nothing is wrong with the command.
+  const pu::tools::ToolResult unaskable = pu::tools::ParseToolResult(pu::tools::MakeToolResultJson(
+      false, "", "needs approval and no channel is open", -1, true,
+      pu::tools::Refusal::kNobodyToAsk));
+  REQUIRE(unaskable.valid);
+  REQUIRE(unaskable.blocked);
+  REQUIRE(unaskable.refusal == pu::tools::Refusal::kNobodyToAsk);
+
+  // A result that ran carries no refusal at all, and one that failed on its own is not a
+  // refusal either.
+  REQUIRE(pu::tools::ParseToolResult(
+              R"({"success":true,"blocked":false,"output":"a.txt","error":"","exit_code":0})")
+              .refusal == pu::tools::Refusal::kNone);
+  REQUIRE(pu::tools::ParseToolResult(
+              R"({"success":false,"blocked":false,"output":"","error":"exit 1","exit_code":1})")
+              .refusal == pu::tools::Refusal::kNone);
 }
