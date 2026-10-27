@@ -10,7 +10,7 @@ Beside the usual `success`/`output`/`error`/`exit_code`, a page carries three sc
 
 ```json
 "page":   {"first": 3401, "last": 3520, "earlier": "o7:3281", "later": null},
-"buffer": {"id": "o7", "source": "s3"},
+"buffer": {"id": "o7", "source": "s3f2a1c4"},
 "extent": {"lines": 3520, "retained": 240, "truncated": true}
 ```
 
@@ -20,7 +20,9 @@ Beside the usual `success`/`output`/`error`/`exit_code`, a page carries three sc
   is how a log is read backwards.
 - **`buffer`** is which run produced it. `id` names the run and is what a cursor points
   at; `source` names the question — the command and the directory — so two runs of one
-  command share a source and differ in id.
+  command share a source and differ in id. The source is computed from the question
+  rather than counted, so it means the same thing in a later process: a resumed
+  transcript reads a question as itself instead of as whatever asked second.
 - **`extent`** is how much of the run survived: `lines` what the command printed,
   `retained` what the buffer kept, `truncated` whether they differ. Paging can reach
   `retained` and no further, which is why a truncated capture is a different statement
@@ -37,8 +39,9 @@ second source of truth that can only disagree with the first.
 
 Two limits follow from the store being a store:
 
-- **A page request also names the command it belongs to.** A cursor from a different
-  command is refused rather than answered from the wrong output.
+- **A cursor names its own run**, so a page can never be answered from another
+  command's output: there is nothing to compare it against and nothing to get wrong. A
+  cursor whose buffer is gone is refused, and so is one past the end of its buffer.
 - **A cursor expires only when its buffer is dropped** — the last 8 runs within 4 MiB,
   both configurable under [`paging`](configuration.md#paging). The buffers belong to the
   runtime, not to a tool, so a cursor still pages after the toolbox is rebuilt, which is
@@ -56,7 +59,7 @@ again since:
 ```json
 {"success": true, "output": "", "superseded_by": "o9",
  "page": {"first": 1, "last": 120, "earlier": null, "later": "o7:120"},
- "buffer": {"id": "o7", "source": "s3"}}
+ "buffer": {"id": "o7", "source": "s3f2a1c4"}}
 ```
 
 - a page goes only when a *newer run* of the same source was answered after it. A run's

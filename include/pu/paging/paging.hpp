@@ -2,13 +2,14 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <boost/json.hpp>
 
 #include "pu/exec/run.hpp"
 
@@ -92,6 +93,29 @@ struct Page {
 
 Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines);
 
+// A page's wire form, in both directions: the three scopes a result carries beside its
+// text, and the way back in — where a page came from, and a page whose run has since been
+// replaced. One module writes and reads it, because a writer in one place and a reader in
+// another is how the two drift apart.
+boost::json::object Envelope(const Buffer& buffer, const Page& page);
+
+// What a result says about where it came from: the question it answered, the run that
+// answered it, and how late that run was. A receipt carrying all three is a page;
+// nothing else is a candidate for replacement.
+struct Origin {
+  std::string source;
+  std::string buffer;
+  // The run's place in the order runs were started, which is what makes one page newer
+  // than another. 0 where the id does not name one, and then no page supersedes any.
+  std::size_t rank = 0;
+};
+
+std::optional<Origin> OriginOf(std::string_view receipt);
+
+// A page of an older run: the verdict and the window stay, the text goes, and the run
+// that replaced it is named so the model can ask for this one back by its cursor.
+std::string SupersededReceipt(std::string_view receipt, std::string_view superseded_by);
+
 // The buffers a session can still read. A page in flight holds its buffer through the
 // shared_ptr, so eviction never pulls the text out from under it.
 class Pager {
@@ -104,7 +128,8 @@ class Pager {
   void SetBudget(Budget budget);
 
   // A run's output and its verdict, stored under the question it answered. Two runs of
-  // one question share a source id and keep separate buffer ids.
+  // one question share a source id and keep separate buffer ids; the id is derived from
+  // the key rather than counted, so a resumed transcript still reads a question as itself.
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
@@ -112,11 +137,9 @@ class Pager {
  private:
   mutable std::mutex mutex_;
   std::vector<std::shared_ptr<const Buffer>> buffers_;  // oldest first
-  std::map<std::string, std::string> sources_;          // question -> its source id
   std::size_t retained_bytes_ = 0;
   Budget budget_;
   std::size_t next_id_ = 1;
-  std::size_t next_source_id_ = 1;
 };
 
 }  // namespace pu::paging

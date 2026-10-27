@@ -228,3 +228,37 @@ TEST_CASE("A run stored without a source has no source id", "[paging]") {
   Pager pager;
   REQUIRE(pager.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->source().empty());
 }
+
+TEST_CASE("The id of a question survives the process that asked it", "[paging]") {
+  // Derived from the question rather than counted. A counter starts over with the process,
+  // and a resumed transcript would read the new s1 as the old s1 — two questions wearing
+  // one name, which is the one thing elision cannot survive.
+  Pager before;
+  Pager after;
+  const auto first = before.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
+  const auto again = after.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
+
+  REQUIRE(first->source() == again->source());
+  REQUIRE(first->source() != first->id());
+}
+
+TEST_CASE("A receipt the pager writes is one it can read back", "[paging]") {
+  // The envelope has one definition, so the writer in the tool and the reader in the
+  // projection cannot disagree about where a page came from.
+  Pager pager;
+  auto buffer = pager.Store(exec::Captured{"one\ntwo\nthree\n", {}}, VerdictOf("seq 1 3"),
+                            "seq 1 3\x1f/repo");
+  const Page page = Read(*buffer, Anchor::Head(), 2);
+
+  const std::string receipt = boost::json::serialize(Envelope(*buffer, page));
+  const auto origin = OriginOf(receipt);
+
+  REQUIRE(origin.has_value());
+  REQUIRE(origin->source == buffer->source());
+  REQUIRE(origin->buffer == "o1");
+  REQUIRE(origin->rank == 1);
+
+  // Anything that is not a page receipt names no run, so nothing supersedes it.
+  REQUIRE_FALSE(OriginOf("just text").has_value());
+  REQUIRE_FALSE(OriginOf(R"({"success":true})").has_value());
+}

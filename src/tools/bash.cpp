@@ -19,12 +19,6 @@ std::string Refuse(const std::string& error, bool blocked = false,
   return MakeToolResultJson(false, "", error, -1, blocked, refusal);
 }
 
-// Absent cursors are written as null rather than left out, so a reader can tell "no page
-// that way" from "a field this version does not send".
-boost::json::value CursorOrNull(const std::optional<paging::Cursor>& cursor) {
-  return cursor ? boost::json::value(cursor->ToString()) : boost::json::value{};
-}
-
 }  // namespace
 
 BashTool::BashTool(std::string sandbox_root, paging::Pager& pager)
@@ -93,26 +87,7 @@ std::string BashTool::SourceKey(const std::string& command) const {
 
 std::string BashTool::Envelope(const paging::Buffer& buffer, const paging::Page& page) const {
   const exec::Verdict& verdict = buffer.verdict();
-  const exec::Extent& extent = buffer.extent();
-
-  // Three scopes, named: where this page sits, which run produced it, how much of the run
-  // survived. A single object holding all three is what makes a result hard to read.
-  const boost::json::object extra{
-      {"page",
-       boost::json::object{
-           {"first", page.first},
-           {"last", page.last},
-           {"earlier", CursorOrNull(page.earlier)},
-           {"later", CursorOrNull(page.later)},
-       }},
-      {"buffer", boost::json::object{{"id", buffer.id()}, {"source", buffer.source()}}},
-      {"extent",
-       boost::json::object{
-           {"lines", extent.lines},
-           {"retained", extent.retained},
-           {"truncated", extent.truncated()},
-       }},
-  };
+  boost::json::object extra = paging::Envelope(buffer, page);
   return MakeToolResultJson(verdict.ok, page.text, verdict.error, verdict.exit_code, false,
                             Refusal::kNone, &extra);
 }

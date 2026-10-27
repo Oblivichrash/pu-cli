@@ -243,9 +243,16 @@ model or agent switch and a cursor has to outlive that. What a page cannot reach
 reported rather than hidden: `page` says where the page sits, `extent` says how much of
 the run survived, and `buffer` says which run it was.
 
+The page's wire form is paging's too, in both directions: `Envelope` writes the three
+scopes, `OriginOf` reads a receipt back, `SupersededReceipt` empties one. A writer in the
+tool and a reader in the projection is how the two drift apart, and a receipt is only ever
+read by machinery that did not write it.
+
 **One page per source.** A buffer carries two ids: `id` names the run, `source` names
 the question — the command and the directory — so two runs of one command share a
-source. `BuildRequestPath` uses both: while it assembles a request it replaces the page
+source. The source is computed from the question rather than counted from one, because a
+counter starts over with the process and a resumed transcript would then read the new `s1`
+as the old `s1`. `BuildRequestPath` uses both: while it assembles a request it replaces the page
 of a run that the same source has since been run again to supersede, leaving the verdict,
 the `page` and the `extent` in place and naming the newer run in `superseded_by`. A page
 is only superseded by a newer run read *after* it, so a run's own pages stay (they are
@@ -823,7 +830,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
   total carry no price at all, because a number that covers part of the session reads as the
   whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
 - **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error. Tool output is the one thing that is bounded up front: `execute_bash` returns a page and leaves the rest in the pager.
-- **A cursor does not outlive its buffer.** The pager keeps the last 8 buffers within 4 MiB; a page for one already dropped is refused rather than answered from another command's output, so the model runs the command again. A page request also names the command it belongs to, and a cursor from a different one is refused the same way.
+- **A cursor does not outlive its buffer.** The pager keeps the last 8 buffers within 4 MiB; a page for one already dropped is refused rather than answered from another command's output, so the model runs the command again. A cursor names its own run, so the other half of that risk does not exist: a page request cannot reach a different command's output and does not have to restate the command to prove it.
 - **On Windows a silent command cannot be stopped.** `exec::Run`'s Windows reader is a blocking `popen` read and notices the stop token only between two reads, so a command that prints nothing runs to its own end there. The POSIX reader waits in `poll` and kills the process group, which stops the same command on Linux and macOS.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
