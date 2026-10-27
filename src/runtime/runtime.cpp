@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime/runtime.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <system_error>
+#include <variant>
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -84,6 +86,22 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   return nullptr;
 }
 
+// The highest rank the transcript already carries. A pager opening that transcript has to
+// continue from it: ranks only compare against each other, so a fresh one starting at 1 would
+// rank every run made after a restart below every page read before it, and elision would never
+// fire again.
+std::size_t HighestRankIn(const Session& session) {
+  std::size_t highest = 0;
+  for (const session::MessageNode* node : session.Messages().Chain()) {
+    const auto* receipt = std::get_if<session::ToolPayload>(&node->payload);
+    if (receipt == nullptr) continue;
+    if (const auto origin = paging::OriginOf(receipt->content)) {
+      highest = std::max(highest, origin->rank);
+    }
+  }
+  return highest;
+}
+
 }  // namespace
 
 void Runtime::Initialize(const std::string& config_path) {
@@ -147,6 +165,11 @@ void Runtime::Initialize(const std::string& config_path) {
   const auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
     current_session_ = LoadSessionFromFile(session_path);
+    // A page read before the restart keeps its place in the order, so the runs made after it
+    // arrive behind it rather than at the front.
+    if (current_session_ != nullptr) {
+      pager_.ContinueRankingFrom(HighestRankIn(*current_session_));
+    }
   }
 
   if (current_session_) {

@@ -49,6 +49,12 @@ std::string Page(boost::json::value& j, const char* field) {
   return boost::json::value_to<std::string>(j.at("page").at(field));
 }
 
+// The id of the run a receipt came from. Tests read it back rather than spelling it, because
+// the id also names the pager that wrote it and no test should have to know that mark.
+std::string IdOf(boost::json::value& j) {
+  return boost::json::value_to<std::string>(j.at("buffer").at("id"));
+}
+
 }  // namespace
 
 TEST_CASE("execute_bash reports success for a command that worked", "[bash]") {
@@ -153,19 +159,20 @@ TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]
   REQUIRE(first.at("page").at("first") == 1);
   REQUIRE(first.at("page").at("last") == 3);
   REQUIRE(first.at("page").at("earlier").is_null());
-  REQUIRE(Page(first, "later") == "o1:3");
+  const std::string id = IdOf(first);
+  REQUIRE(Page(first, "later") == id + ":3");
 
   // Three scopes, not one: where the page is, which run it came from, how much survived.
-  REQUIRE(first.at("buffer").at("id") == "o1");
+  REQUIRE(first.at("buffer").at("rank") == 1);
   REQUIRE(first.at("extent").at("lines") == 10);
   REQUIRE(first.at("extent").at("retained") == 10);
   REQUIRE(first.at("extent").at("truncated") == false);
 
-  auto second = boost::json::parse(tool.Execute(boost::json::value{{"at", "o1:3"}}, ctx));
+  auto second = boost::json::parse(tool.Execute(boost::json::value{{"at", id + ":3"}}, ctx));
   REQUIRE(second.at("success") == true);
   REQUIRE(boost::json::value_to<std::string>(second.at("output")) == "line 4\nline 5\nline 6\n");
-  REQUIRE(Page(second, "earlier") == "o1:0");
-  REQUIRE(Page(second, "later") == "o1:6");
+  REQUIRE(Page(second, "earlier") == id + ":0");
+  REQUIRE(Page(second, "later") == id + ":6");
 }
 
 TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
@@ -181,7 +188,7 @@ TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
   REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 8\nline 9\nline 10\n");
   REQUIRE(j.at("page").at("first") == 8);
   REQUIRE(j.at("page").at("last") == 10);
-  REQUIRE(Page(j, "earlier") == "o1:4");
+  REQUIRE(Page(j, "earlier") == IdOf(j) + ":4");
   REQUIRE(j.at("page").at("later").is_null());
 }
 

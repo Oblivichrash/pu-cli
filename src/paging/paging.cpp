@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
+#include <random>
 #include <utility>
 
 namespace pu::paging {
@@ -43,29 +45,32 @@ boost::json::value CursorOrNull(const std::optional<Cursor>& cursor) {
   return cursor ? boost::json::value(cursor->ToString()) : boost::json::value{};
 }
 
-// The ordinal in a buffer id, which is what says how late a run was. An id that does not
-// end in digits names no order, and then no page supersedes another.
-std::size_t RankOf(std::string_view buffer_id) {
-  std::size_t i = 0;
-  while (i < buffer_id.size() && (buffer_id[i] < '0' || buffer_id[i] > '9')) ++i;
-  if (i == buffer_id.size()) return 0;
-  std::size_t rank = 0;
-  for (; i < buffer_id.size(); ++i) {
-    if (buffer_id[i] < '0' || buffer_id[i] > '9') return 0;
-    rank = rank * 10 + static_cast<std::size_t>(buffer_id[i] - '0');
-  }
-  return rank;
+// The mark of one pager, four hex digits. An id is read back by someone who did not write it —
+// a resumed transcript, a peer's answer — and a bare `o1` would then name whatever this process
+// stored first rather than the run the cursor meant. With the mark, a cursor from elsewhere
+// finds nothing, which is an answer the tool can defend; without it, it finds a stranger's
+// output and cannot tell.
+std::string NewGeneration() {
+  static std::mt19937 engine(std::random_device{}());
+  static std::mutex guard;
+  std::lock_guard<std::mutex> lock(guard);
+  const unsigned value = static_cast<unsigned>(engine()) & 0xffffu;
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string text;
+  for (int shift = 12; shift >= 0; shift -= 4) text.push_back(kHex[(value >> shift) & 0xf]);
+  return text;
 }
 
 }  // namespace
 
 Buffer::Buffer(std::string id, std::string source, exec::Verdict verdict, std::string text,
-               exec::Extent extent)
+               exec::Extent extent, std::size_t rank)
     : id_(std::move(id)),
       source_(std::move(source)),
       verdict_(std::move(verdict)),
       text_(std::move(text)),
       extent_(extent),
+      rank_(rank),
       line_starts_(IndexLines(text_)) {}
 
 std::string_view Buffer::line(std::size_t index) const {
@@ -145,7 +150,12 @@ boost::json::object Envelope(const Buffer& buffer, const Page& page) {
            {"earlier", CursorOrNull(page.earlier)},
            {"later", CursorOrNull(page.later)},
        }},
-      {"buffer", boost::json::object{{"id", buffer.id()}, {"source", buffer.source()}}},
+      {"buffer",
+       boost::json::object{
+           {"id", buffer.id()},
+           {"source", buffer.source()},
+           {"rank", buffer.rank()},
+       }},
       {"extent",
        boost::json::object{
            {"lines", extent.lines},
@@ -173,7 +183,17 @@ std::optional<Origin> OriginOf(std::string_view receipt) {
     Origin origin{std::string(source->value().as_string()),
                   std::string(buffer->value().as_string()), 0};
     if (origin.source.empty() || origin.buffer.empty()) return std::nullopt;
-    origin.rank = RankOf(origin.buffer);
+
+    // A receipt written before `rank` existed carries no order, so it is never superseded:
+    // keeping a page too long costs tokens, while calling the wrong one older loses the page.
+    const auto order = fields.find("rank");
+    if (order != fields.end()) {
+      if (order->value().is_uint64()) {
+        origin.rank = static_cast<std::size_t>(order->value().as_uint64());
+      } else if (order->value().is_int64() && order->value().as_int64() > 0) {
+        origin.rank = static_cast<std::size_t>(order->value().as_int64());
+      }
+    }
     return origin;
   } catch (const std::exception&) {
     return std::nullopt;
@@ -188,7 +208,7 @@ std::string SupersededReceipt(std::string_view receipt, std::string_view superse
   return boost::json::serialize(parsed);
 }
 
-Pager::Pager(Budget budget) : budget_(budget) {}
+Pager::Pager(Budget budget) : budget_(budget), generation_(NewGeneration()) {}
 
 Budget Pager::budget() const {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -200,15 +220,21 @@ void Pager::SetBudget(Budget budget) {
   budget_ = budget;
 }
 
+void Pager::ContinueRankingFrom(std::size_t last_rank) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  next_rank_ = std::max(next_rank_, last_rank + 1);
+}
+
 std::shared_ptr<const Buffer> Pager::Store(exec::Captured captured, exec::Verdict verdict,
                                            std::string source_key) {
   std::lock_guard<std::mutex> lock(mutex_);
-  const std::string id = "o" + std::to_string(next_id_++);
+  const std::string id = "o" + generation_ + "-" + std::to_string(next_ordinal_++);
   const std::string source = source_key.empty() ? std::string{} : SourceIdFor(source_key);
+  const std::size_t rank = next_rank_++;
 
   const std::size_t bytes = captured.text.size();
   auto buffer = std::make_shared<const Buffer>(id, std::move(source), std::move(verdict),
-                                               std::move(captured.text), captured.extent);
+                                               std::move(captured.text), captured.extent, rank);
 
   buffers_.push_back(buffer);
   retained_bytes_ += bytes;

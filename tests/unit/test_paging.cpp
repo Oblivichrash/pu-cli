@@ -175,12 +175,27 @@ TEST_CASE("An anchor is one value with three forms", "[paging]") {
 TEST_CASE("A buffer is found by the id its cursor names", "[paging]") {
   Pager pager;
   const auto stored = pager.Store(exec::Captured{"a\nb\n", ExtentOf("a\nb\n")}, VerdictOf("ls"));
-  REQUIRE(stored->id() == "o1");
+  REQUIRE(stored->id().front() == 'o');
 
-  const auto found = pager.Find("o1");
+  const auto found = pager.Find(stored->id());
   REQUIRE(found != nullptr);
   REQUIRE(found->lines() == 2);
   REQUIRE(pager.Find("o404") == nullptr);
+}
+
+TEST_CASE("An id written by another pager names nothing here", "[paging]") {
+  // The id carries the mark of the pager that wrote it, so a cursor out of a resumed
+  // transcript — or out of a peer's answer — is refused instead of reading a namesake.
+  // A bare `o1` would make the first run of every process the same run.
+  Pager yesterday;
+  Pager today;
+
+  const auto before = yesterday.Store(exec::Captured{"yesterday\n", {}}, VerdictOf("ls"));
+  const auto after = today.Store(exec::Captured{"today\n", {}}, VerdictOf("ls"));
+
+  REQUIRE(before->id() != after->id());
+  REQUIRE(today.Find(before->id()) == nullptr);
+  REQUIRE(today.Find(after->id()) != nullptr);
 }
 
 TEST_CASE("The pager drops the oldest buffer when the budget is spent", "[paging]") {
@@ -255,10 +270,36 @@ TEST_CASE("A receipt the pager writes is one it can read back", "[paging]") {
 
   REQUIRE(origin.has_value());
   REQUIRE(origin->source == buffer->source());
-  REQUIRE(origin->buffer == "o1");
-  REQUIRE(origin->rank == 1);
+  REQUIRE(origin->buffer == buffer->id());
+  REQUIRE(origin->rank == buffer->rank());
 
   // Anything that is not a page receipt names no run, so nothing supersedes it.
   REQUIRE_FALSE(OriginOf("just text").has_value());
   REQUIRE_FALSE(OriginOf(R"({"success":true})").has_value());
+}
+
+TEST_CASE("A receipt without a rank names no order", "[paging]") {
+  // Receipts written before the rank was its own field carry only the id, and the id no
+  // longer spells an order. Such a page is kept rather than superseded: one page too many
+  // costs tokens, while calling the wrong page the older one loses it.
+  const auto origin = OriginOf(R"({"buffer":{"id":"o1","source":"s1"},"page":{"first":1}})");
+  REQUIRE(origin.has_value());
+  REQUIRE(origin->rank == 0);
+
+  const auto ranked = OriginOf(R"({"buffer":{"id":"o9","source":"s1","rank":4}})");
+  REQUIRE(ranked.has_value());
+  REQUIRE(ranked->rank == 4);
+}
+
+TEST_CASE("A pager opening a transcript continues its ranking", "[paging]") {
+  // Ranks compare against each other, so the first run after a restart has to arrive after
+  // the pages the transcript already holds; starting over would freeze elision for good.
+  Pager pager;
+  pager.ContinueRankingFrom(7);
+  REQUIRE(pager.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 8);
+
+  // A transcript with no pages in it leaves the ranking where it was.
+  Pager fresh;
+  fresh.ContinueRankingFrom(0);
+  REQUIRE(fresh.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 1);
 }

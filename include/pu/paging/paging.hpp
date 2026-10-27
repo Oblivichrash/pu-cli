@@ -61,12 +61,16 @@ class Anchor {
 class Buffer {
  public:
   Buffer(std::string id, std::string source, exec::Verdict verdict, std::string text,
-         exec::Extent extent);
+         exec::Extent extent, std::size_t rank = 0);
 
   const std::string& id() const { return id_; }
   const std::string& source() const { return source_; }
   const exec::Verdict& verdict() const { return verdict_; }
   const exec::Extent& extent() const { return extent_; }
+  // The run's place in the order runs were started. Only ranks from one chain of runs compare,
+  // which is why a pager opening a transcript continues its numbering instead of restarting;
+  // 0 means the run names no order, and then no page supersedes any.
+  std::size_t rank() const { return rank_; }
 
   std::size_t lines() const { return line_starts_.size(); }
   std::size_t bytes() const { return text_.size(); }
@@ -78,6 +82,7 @@ class Buffer {
   exec::Verdict verdict_;
   std::string text_;
   exec::Extent extent_;
+  std::size_t rank_ = 0;
   std::vector<std::size_t> line_starts_;
 };
 
@@ -127,9 +132,17 @@ class Pager {
   Budget budget() const;
   void SetBudget(Budget budget);
 
+  // Ranks compare against each other, so a pager opening a transcript continues the order it
+  // finds there rather than starting over: `last_rank` is the highest rank in that transcript,
+  // and the next stored run takes the one after it. Without this, a run made after a restart
+  // would rank below every page the transcript already carries and elision would stop firing.
+  void ContinueRankingFrom(std::size_t last_rank);
+
   // A run's output and its verdict, stored under the question it answered. Two runs of
-  // one question share a source id and keep separate buffer ids; the id is derived from
+  // one question share a source id and keep separate buffer ids; the source is derived from
   // the key rather than counted, so a resumed transcript still reads a question as itself.
+  // The buffer id names the run *and this pager*, so a cursor written elsewhere — by an
+  // earlier process, by a peer — finds nothing instead of finding a namesake.
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
@@ -139,7 +152,11 @@ class Pager {
   std::vector<std::shared_ptr<const Buffer>> buffers_;  // oldest first
   std::size_t retained_bytes_ = 0;
   Budget budget_;
-  std::size_t next_id_ = 1;
+  // Four hex digits, one per pager: the part of an id that keeps two processes' first run
+  // from wearing one name.
+  std::string generation_;
+  std::size_t next_ordinal_ = 1;
+  std::size_t next_rank_ = 1;
 };
 
 }  // namespace pu::paging
