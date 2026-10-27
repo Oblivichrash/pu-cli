@@ -67,6 +67,7 @@ add_library(pu_core STATIC
     src/serve/board.cpp
     src/serve/peer_read.cpp
     src/session/graph.cpp
+    src/session/request.cpp
     src/session/session.cpp
     src/session/settings.cpp
     src/session/usage.cpp

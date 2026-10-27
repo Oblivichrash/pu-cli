@@ -85,7 +85,9 @@ std::string BashTool::SourceKey(const std::string& command) const {
   return key;
 }
 
-std::string BashTool::Envelope(const paging::Buffer& buffer, const paging::Page& page) const {
+std::string BashTool::PageResult(const paging::Buffer& buffer, const paging::Anchor& anchor,
+                                 std::size_t lines) const {
+  const paging::Page page = paging::Read(buffer, anchor, lines);
   const exec::Verdict& verdict = buffer.verdict();
   boost::json::object extra = paging::Envelope(buffer, page);
   return MakeToolResultJson(verdict.ok, page.text, verdict.error, verdict.exit_code, false,
@@ -101,11 +103,11 @@ std::string BashTool::ReadAt(const paging::Cursor& cursor, std::size_t lines) {
   if (cursor.line >= buffer->lines()) {
     return Refuse("cursor is past the end of " + cursor.buffer);
   }
-  return Envelope(*buffer, paging::Read(*buffer, paging::Anchor::At(cursor), lines));
+  return PageResult(*buffer, paging::Anchor::At(cursor), lines);
 }
 
-std::string BashTool::Run(const std::string& command, const paging::Anchor& anchor,
-                          std::size_t lines, const pu::ToolContext& ctx) {
+std::string BashTool::RunAndPage(const std::string& command, const paging::Anchor& anchor,
+                                 std::size_t lines, const pu::ToolContext& ctx) {
   const pu::CancelToken stop = ctx.control != nullptr ? ctx.control->stop_token : pu::CancelToken{};
   const paging::Budget budget = pager_.budget();
 
@@ -119,7 +121,7 @@ std::string BashTool::Run(const std::string& command, const paging::Anchor& anch
 
   auto buffer =
       pager_.Store(std::move(ran.captured), std::move(ran.verdict), SourceKey(command));
-  return Envelope(*buffer, paging::Read(*buffer, anchor, lines));
+  return PageResult(*buffer, anchor, lines);
 }
 
 std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
@@ -189,7 +191,7 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
     }
   }
 
-  return Run(command, *anchor, lines, ctx);
+  return RunAndPage(command, *anchor, lines, ctx);
 }
 
 }  // namespace pu::tools

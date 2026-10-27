@@ -35,10 +35,14 @@ class BashTool : public pu::Tool {
   // page of this one can be called superseded.
   std::string SourceKey(const std::string& command) const;
 
-  std::string Run(const std::string& command, const paging::Anchor& anchor, std::size_t lines,
-                  const pu::ToolContext& ctx);
+  // Reads a page of a stored run and wraps it as a tool result. One place, so a page read
+  // first and a page read later cannot say different things about the same run.
+  std::string PageResult(const paging::Buffer& buffer, const paging::Anchor& anchor,
+                         std::size_t lines) const;
+
+  std::string RunAndPage(const std::string& command, const paging::Anchor& anchor,
+                         std::size_t lines, const pu::ToolContext& ctx);
   std::string ReadAt(const paging::Cursor& cursor, std::size_t lines);
-  std::string Envelope(const paging::Buffer& buffer, const paging::Page& page) const;
 
   std::string sandbox_root_;
   paging::Pager& pager_;
