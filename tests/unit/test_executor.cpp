@@ -120,8 +120,10 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
 
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
   REQUIRE(msg.find("step-by-step plan") != std::string::npos);
-  // Which end a read starts at is the model's call, so the prompt names both ends.
-  REQUIRE(msg.find("view=tail") != std::string::npos);
+  // Which end a read starts at is the model's call, so the prompt names both ends — and
+  // names them the way the tool's schema does, since a name the schema does not carry
+  // comes back as a refusal.
+  REQUIRE(msg.find("at='tail'") != std::string::npos);
   REQUIRE(msg.find("cursor") != std::string::npos);
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }

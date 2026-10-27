@@ -4,7 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/exec/capture.hpp"
+#include "pu/exec/run.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -143,7 +143,7 @@ std::string Executor::BuildStaticSystemContext() const {
          "stating the plan.\n";
   oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
          "read from its head (the default), and a log, a build's output, or a failure is read "
-         "from its tail with view=tail.\n";
+         "from its tail with at='tail'.\n";
   oss << "3. A command's output comes back one page at a time. When page.later or page.earlier is "
          "set, pass that cursor back as `at` to read that page instead of running the command "
          "again. Paging reads what is already stored; grep runs again and finds a needle in "
