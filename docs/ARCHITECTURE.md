@@ -248,18 +248,24 @@ scopes, `OriginOf` reads a receipt back, `SupersededReceipt` empties one. A writ
 tool and a reader in the projection is how the two drift apart, and a receipt is only ever
 read by machinery that did not write it.
 
-**One page per source.** A buffer carries two ids: `id` names the run, `source` names
-the question — the command and the directory — so two runs of one command share a
-source. The source is computed from the question rather than counted from one, because a
-counter starts over with the process and a resumed transcript would then read the new `s1`
-as the old `s1`. `BuildRequestPath` uses both: while it assembles a request it replaces the page
-of a run that the same source has since been run again to supersede, leaving the verdict,
-the `page` and the `extent` in place and naming the newer run in `superseded_by`. A page
-is only superseded by a newer run read *after* it, so a run's own pages stay (they are
-complementary, not successive) and so does a page the model paged back to. The substitution
-lives in the projection, not in the graph, so a rewind or a reload still sees every page
-that was ever read, and the buffer it replaces is still stored — the receipt is a
-pointer, not a dead end.
+**One page per source.** A buffer carries two ids and an order: `id` names the run,
+`source` names the question — the command and the directory — so two runs of one command
+share a source, and `rank` says how late the run was. Both ids are computed from what
+produced the run rather than counted from one, because a counter starts over with the
+process: the source would make a resumed transcript read the new `s1` as the old `s1`, and
+the run id would make this process's first run the same run as the last one's. The run id
+carries the mark of the pager that wrote it, so a cursor written elsewhere — by an earlier
+process, by a peer — finds nothing instead of a namesake. `BuildRequestPath` compares the
+`rank`: while it assembles a request it replaces the page of a run that the same source has
+since been run again to supersede, leaving the verdict, the `page` and the `extent` in
+place and naming the newer run in `superseded_by`. A page is only superseded by a newer run
+read *after* it, so a run's own pages stay (they are complementary, not successive) and so
+does a page the model paged back to. A pager opening a transcript continues the numbering
+past the highest rank it finds there (`ContinueRankingFrom`), so a run made after a restart
+is not ranked below every page the transcript already holds. The substitution lives in the
+projection, not in the graph, so a rewind or a reload still sees every page that was ever
+read, and the buffer it replaces is still stored — the receipt is a pointer, not a dead
+end.
 
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in

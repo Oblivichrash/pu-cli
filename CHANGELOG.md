@@ -6,6 +6,18 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Added
+
+- **`execute_bash` answers with one page of a command's output instead of all of it.** The
+  output is kept in a store that belongs to the session, `at` says where to read (`head`,
+  `tail`, or a cursor taken from `page.earlier`/`page.later`), and a receipt carries `page`,
+  `buffer` and `extent`: where the page sits in the command's whole output, which run produced
+  it, and how much of that run survived the byte budget. A cursor names its own run and the
+  store that wrote it, so one left by an earlier process reads nothing rather than a namesake;
+  a page of a command that has since been run again is sent as a receipt naming the newer run,
+  which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
+  sets the budget — see [docs/paging.md](docs/paging.md).
+
 ## 0.6.1
 
 ### Breaking

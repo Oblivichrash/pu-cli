@@ -262,11 +262,14 @@ Every field is optional and every field is labelled. The snapshot is a *source*
 
 ## 7. Config and budget
 
-The `output` block added for `execute_bash` becomes `viewport` (keep `output` as an
-accepted alias for one release):
+The block `execute_bash` is configured by is `paging`, and it keeps that name. The worry
+that `output` read as the tool's field rather than the session's budget was answered by
+naming the fields instead of renaming the block, and a second name for one block is a
+second thing to keep in step — `output` is refused rather than accepted as an alias. What
+this document would change about the block is the unit it counts in:
 
 ```json
-"viewport": {
+"paging": {
   "page_units": 120,
   "max_units": 400,
   "max_bytes": 262144,
@@ -282,9 +285,9 @@ dropped and `marks_omitted` is reported.
 
 ## 8. Migration
 
-1. **Mechanical, no behaviour change.** `paging/paging.*` → `viewport.*`; `line`
-   becomes a `Unit` whose only implemented value is `kLine`; `first_line`/`last_line`
-   stay in the JSON as aliases of `first`/`last`.
+1. **Mechanical, no behaviour change.** `line` becomes a `Unit` whose only implemented
+   value is `kLine`; the module keeps the name `paging`, because a page of a terminal
+   screen is still a page and renaming it bought nothing the fields did not.
 2. **`read_file` takes an anchor and a cursor.** It already has `offset`/`limit`;
    this gives it the same envelope and the same pager, so a file read is resumable.
 3. **`find` over a retained source.** Search, jump, then page. The cursor stays.

@@ -73,22 +73,24 @@ others, and the pager can be reasoned about as a lifetime question alone.
 
 **The budget follows the end.** A log's newest lines are what a reader wants and a
 file's opening lines are what an editor wants, and one budget cannot be spent on
-both. `view` is passed down to the capture, which keeps a prefix or a suffix — the
+both. `at` is passed down to the capture, which keeps a prefix or a suffix — the
 same choice `head` and `tail` make in the shell. A suffix capture counts the lines
-it dropped from the front (`skipped_lines`) so a page can still say *line 3505 of
-3520* rather than numbering the buffer it happens to hold.
+it dropped from the front, which the envelope reports as `extent.retained` against
+`extent.lines`, so a page can still say *line 3505 of 3520* rather than numbering the
+buffer it happens to hold.
 
-**A page says what it cannot reach.** `retained_lines` is what the buffer kept and
-`total_lines` is what the command printed; `truncated` is the difference being
+**A page says what it cannot reach.** `extent.lines` is what the command printed and
+`extent.retained` is what the buffer kept; `truncated` is the difference being
 non-zero. `earlier` and `later` are cursors, and a missing one means no page lies
 that way *within the buffer* — which, when `truncated` is set, is the honest answer
 rather than a promise that nothing exists there.
 
 **A cursor is data, not a session.** It names a buffer and a line, and the buffer
-names the command that produced it. A cursor offered with a different `command` is
-refused instead of silently paging the other command's output: a model that reworded
-its command meant a different output, and the refusal says which command the cursor
-does belong to.
+names the run that produced it. A run id also carries the mark of the pager that
+stored it, so a cursor offered to a store that never wrote it — an earlier process, a
+peer — is refused instead of paging a namesake's output. Nothing restates the command:
+the run already knows what it ran, and a second copy of the question could only
+disagree with the first.
 
 ## 4. Routes not taken
 

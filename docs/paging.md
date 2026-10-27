@@ -9,8 +9,8 @@ running the command again.
 Beside the usual `success`/`output`/`error`/`exit_code`, a page carries three scopes:
 
 ```json
-"page":   {"first": 3401, "last": 3520, "earlier": "o7:3281", "later": null},
-"buffer": {"id": "o7", "source": "s3f2a1c4"},
+"page":   {"first": 3401, "last": 3520, "earlier": "o3f2a1c4:3281", "later": null},
+"buffer": {"id": "o3f2a1c4", "source": "s3f2a1c4", "rank": 7},
 "extent": {"lines": 3520, "retained": 240, "truncated": true}
 ```
 
@@ -18,10 +18,11 @@ Beside the usual `success`/`output`/`error`/`exit_code`, a page carries three sc
   whole output, so a page says where it is even when the buffer holds one end of it.
   `earlier`/`later` hold a cursor where a page lies that way — `earlier` from a tail page
   is how a log is read backwards.
-- **`buffer`** is which run produced it. `id` names the run and is what a cursor points
+- **`buffer`** is which run produced it. `id` names the run, and is what a cursor points
   at; `source` names the question — the command and the directory — so two runs of one
-  command share a source and differ in id. The source is computed from the question
-  rather than counted, so it means the same thing in a later process: a resumed
+  command share a source and differ in id; `rank` says how late the run was, and is what
+  makes one page supersede another. Both ids are computed from what produced the run
+  rather than counted, so they mean the same thing in a later process: a resumed
   transcript reads a question as itself instead of as whatever asked second.
 - **`extent`** is how much of the run survived: `lines` what the command printed,
   `retained` what the buffer kept, `truncated` whether they differ. Paging can reach
@@ -33,15 +34,18 @@ number of lines, clamped to `max_lines`.
 
 ## A cursor needs no command
 
-`at: "o7:3281"` reads that page. The cursor already names the run, and the run already
+`at: "o3f2a1c4:3281"` reads that page. The cursor already names the run, and the run already
 knows its command, so restating a 200-character command to read page two would be a
 second source of truth that can only disagree with the first.
 
 Two limits follow from the store being a store:
 
 - **A cursor names its own run**, so a page can never be answered from another
-  command's output: there is nothing to compare it against and nothing to get wrong. A
-  cursor whose buffer is gone is refused, and so is one past the end of its buffer.
+  command's output: there is nothing to compare it against and nothing to get wrong. The
+  run id carries the mark of the pager that stored it, so a cursor written by an earlier
+  process or by a peer finds nothing here rather than a namesake — a bare counter would
+  have made the first run of every process the same run. A cursor whose buffer is gone is
+  refused, and so is one past the end of its buffer.
 - **A cursor expires only when its buffer is dropped** — the last 8 runs within 4 MiB,
   both configurable under [`paging`](configuration.md#paging). The buffers belong to the
   runtime, not to a tool, so a cursor still pages after the toolbox is rebuilt, which is
