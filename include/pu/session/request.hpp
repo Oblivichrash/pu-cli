@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <optional>
 #include <string>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <boost/json.hpp>
@@ -15,6 +18,68 @@ struct RequestInputs {
   std::string system_prompt;  // the agent's configured prompt
   std::string environment;    // generated context: OS, policy, guidelines
 };
+
+namespace detail {
+
+// What a page says about where it came from: the question it answered, the run that
+// answered it, and how late that run was. A result carrying all three is a page;
+// nothing else is a candidate for replacement.
+struct PageOrigin {
+  std::string source;
+  std::string buffer;
+  // The run's place in the order runs were started, which is what makes one page newer
+  // than another. 0 where the id does not name one, and then no page supersedes any.
+  std::size_t rank = 0;
+};
+
+inline std::size_t RunRank(const std::string& buffer_id) {
+  std::size_t i = 0;
+  while (i < buffer_id.size() && (buffer_id[i] < '0' || buffer_id[i] > '9')) ++i;
+  if (i == buffer_id.size()) return 0;
+  std::size_t rank = 0;
+  for (; i < buffer_id.size(); ++i) {
+    if (buffer_id[i] < '0' || buffer_id[i] > '9') return 0;
+    rank = rank * 10 + static_cast<std::size_t>(buffer_id[i] - '0');
+  }
+  return rank;
+}
+
+inline std::optional<PageOrigin> PageOriginOf(const std::string& content) {
+  if (content.empty() || content.front() != '{') return std::nullopt;
+  try {
+    const boost::json::value parsed = boost::json::parse(content);
+    if (!parsed.is_object()) return std::nullopt;
+    const boost::json::object& result = parsed.as_object();
+    const auto held = result.find("buffer");
+    if (held == result.end() || !held->value().is_object()) return std::nullopt;
+    const boost::json::object& fields = held->value().as_object();
+
+    const auto source = fields.find("source");
+    const auto buffer = fields.find("id");
+    if (source == fields.end() || buffer == fields.end()) return std::nullopt;
+    if (!source->value().is_string() || !buffer->value().is_string()) return std::nullopt;
+
+    PageOrigin origin{std::string(source->value().as_string()),
+                      std::string(buffer->value().as_string()), 0};
+    if (origin.source.empty() || origin.buffer.empty()) return std::nullopt;
+    origin.rank = RunRank(origin.buffer);
+    return origin;
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+}
+
+// A page of an older run: the verdict and the window stay, the text goes, and the run
+// that replaced it is named so the model can ask for this one back by its cursor.
+inline std::string SupersededReceipt(const std::string& content, const std::string& superseded_by) {
+  boost::json::value parsed = boost::json::parse(content);
+  boost::json::object& result = parsed.as_object();
+  result["output"] = "";
+  result["superseded_by"] = superseded_by;
+  return boost::json::serialize(parsed);
+}
+
+}  // namespace detail
 
 inline ChatMessage RenderMessage(const session::MessageNode& node, int position) {
   ChatMessage msg;
@@ -69,8 +134,48 @@ inline std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& gr
   }
 
   int position = static_cast<int>(messages.size()) + 1;
-  for (const session::MessageNode* node : graph.Chain()) {
-    messages.push_back(RenderMessage(*node, position++));
+
+  // A page is superseded when a *newer run* of the same question was answered after it
+  // was read. Then its text is replaced by a receipt, because a page re-sent on every
+  // turn is what turns a long exploration into a full context. Three things survive:
+  // a later page of the same run, since pages of one log are complementary rather than
+  // successive; the newest run, always; and a page read *after* a newer run, since paging
+  // back is a deliberate act and eliding what the model just asked for would only make it
+  // ask again.
+  const auto chain = graph.Chain();
+  std::unordered_map<const session::MessageNode*, detail::PageOrigin> origins;
+  for (const session::MessageNode* node : chain) {
+    if (!std::holds_alternative<session::ToolPayload>(node->payload)) continue;
+    auto origin = detail::PageOriginOf(std::get<session::ToolPayload>(node->payload).content);
+    if (origin) origins.emplace(node, std::move(*origin));
+  }
+
+  // Walking backwards keeps, per source, the newest run that was read after this point.
+  struct Newer {
+    std::size_t rank = 0;
+    std::string buffer;
+  };
+  std::unordered_map<std::string, Newer> newer_behind;
+  std::unordered_map<const session::MessageNode*, std::string> superseded_by;
+  for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+    const auto origin = origins.find(*it);
+    if (origin == origins.end()) continue;
+    const detail::PageOrigin& page = origin->second;
+    const auto seen = newer_behind.find(page.source);
+    if (seen != newer_behind.end() && seen->second.rank > page.rank) {
+      superseded_by.emplace(*it, seen->second.buffer);
+    }
+    auto& newest = newer_behind[page.source];
+    if (page.rank > newest.rank) newest = Newer{page.rank, page.buffer};
+  }
+
+  for (const session::MessageNode* node : chain) {
+    ChatMessage msg = RenderMessage(*node, position++);
+    const auto replaced = superseded_by.find(node);
+    if (replaced != superseded_by.end()) {
+      msg.content = detail::SupersededReceipt(msg.content, replaced->second);
+    }
+    messages.push_back(std::move(msg));
   }
   return messages;
 }

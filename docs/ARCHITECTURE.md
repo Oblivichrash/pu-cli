@@ -218,6 +218,42 @@ callers never parse two shapes.
 construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
 result. No tool-binary detection is performed.
 
+**Paged tool output.** `execute_bash` answers with one page of what the command
+printed. That shape is four nouns and a budget, in `include/pu/paging/paging.hpp`:
+
+| Noun | What it is |
+|---|---|
+| `Buffer` | one run's output, indexed by line, immutable once stored |
+| `Page` | a contiguous run of a buffer's lines, with the cursors either side |
+| `Cursor` | `<buffer>:<line>` — where a page starts |
+| `Pager` | the buffers a session can still read, and the `Budget` that decides |
+| `Anchor` | where a read starts: `head`, `tail`, or a cursor |
+
+`exec::Run` (`include/pu/exec/capture.hpp`) produces the other half: the text, an
+`Extent` saying how much of the stream survived, and the verdict. Output and verdict are
+one value because only the reader of the stream knows both — a reader that looked away
+has to say the command was stopped, and an exit code means nothing without that. The
+budget lives in the `Pager` alone; the tool reads it from there, so a page size and a
+retention policy cannot disagree.
+
+A cursor identifies its page by itself: it names the run, and the run knows its command,
+so paging does not restate the command. The store belongs to the runtime and is borrowed
+by the tool at construction, because `RebuildToolbox()` replaces every tool object on a
+model or agent switch and a cursor has to outlive that. What a page cannot reach is
+reported rather than hidden: `page` says where the page sits, `extent` says how much of
+the run survived, and `buffer` says which run it was.
+
+**One page per source.** A buffer carries two ids: `id` names the run, `source` names
+the question — the command and the directory — so two runs of one command share a
+source. `BuildRequestPath` uses both: while it assembles a request it replaces the page
+of a run that the same source has since been run again to supersede, leaving the verdict,
+the `page` and the `extent` in place and naming the newer run in `superseded_by`. A page
+is only superseded by a newer run read *after* it, so a run's own pages stay (they are
+complementary, not successive) and so does a page the model paged back to. The substitution
+lives in the projection, not in the graph, so a rewind or a reload still sees every page
+that was ever read, and the buffer it replaces is still stored — the receipt is a
+pointer, not a dead end.
+
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in
 [configuration.md](configuration.md#agentsjson).
@@ -686,13 +722,15 @@ include/pu/                  src/
 ├── app/                     ├── app/                  # main, CLI parsing, serve
 ├── config/                  ├── config/               # agents.json, the backend model
 ├── core/                    ├── core/                 # logging, platform, HTTP client
+├── exec/                    ├── exec/                 # running a command, and its verdict
 ├── llm/                     ├── gateways/             # every gateway and its table
 ├── mcp/                     ├── llm/                  # protocols, providers, streaming parser
-├── runtime/                 ├── mcp/                  # transports, JSON-RPC client
+├── paging/                  ├── mcp/                  # transports, JSON-RPC client
+├── runtime/                 ├── paging/               # the buffers a session can still read
 │   ├── command_router.hpp   ├── runtime/              # runtime, executor, command router
 │   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
 │   └── runtime.hpp          └── tools/                # Toolbox, tools
-├── session/                 # message graph, Session, Conversation
+├── session/
 └── tools/
 ```
 
@@ -784,7 +822,9 @@ that pulled the whole transport layer into any header naming a `Tool`.
   used the same unit, and only if every turn was priced: one unpriced turn or two units make the
   total carry no price at all, because a number that covers part of the session reads as the
   whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
-- **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error.
+- **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error. Tool output is the one thing that is bounded up front: `execute_bash` returns a page and leaves the rest in the pager.
+- **A cursor does not outlive its buffer.** The pager keeps the last 8 buffers within 4 MiB; a page for one already dropped is refused rather than answered from another command's output, so the model runs the command again. A page request also names the command it belongs to, and a cursor from a different one is refused the same way.
+- **On Windows a silent command cannot be stopped.** `exec::Run`'s Windows reader is a blocking `popen` read and notices the stop token only between two reads, so a command that prints nothing runs to its own end there. The POSIX reader waits in `poll` and kills the process group, which stops the same command on Linux and macOS.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.

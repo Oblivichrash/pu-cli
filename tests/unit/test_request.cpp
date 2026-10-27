@@ -168,3 +168,105 @@ TEST_CASE("Every stored node reaches the model, with its tool receipt", "[reques
   }
   REQUIRE(call_followed_by_receipt);
 }
+
+namespace {
+
+// A page as execute_bash writes one: the envelope, plus the two ids the projection
+// reads.
+std::string PageJson(const std::string& source, const std::string& buffer,
+                     const std::string& text) {
+  // The envelope a page really carries: where the page sits, which run produced it, how
+  // much of that run survived.
+  boost::json::object page{{"first", 1}, {"last", 3}, {"earlier", nullptr}, {"later", nullptr}};
+  boost::json::object result{{"success", true},
+                             {"blocked", false},
+                             {"output", text},
+                             {"error", ""},
+                             {"exit_code", 0},
+                             {"page", page},
+                             {"buffer", boost::json::object{{"id", buffer}, {"source", source}}},
+                             {"extent", boost::json::object{{"lines", 3}, {"retained", 3}, {"truncated", false}}}};
+  return boost::json::serialize(result);
+}
+
+void AppendPage(session::MessageGraph& graph, const std::string& source, const std::string& buffer,
+                const std::string& text) {
+  session::ToolPayload receipt;
+  receipt.tool_call_id = "call";
+  receipt.tool_name = "execute_bash";
+  receipt.content = PageJson(source, buffer, text);
+  graph.AppendAfterLeaf(std::move(receipt));
+}
+
+}  // namespace
+
+TEST_CASE("A page of an older run of one command is replaced by a receipt", "[request]") {
+  session::MessageGraph graph;
+  AppendPage(graph, "s1", "o1", "line 1 of run one\n");
+  AppendPage(graph, "s1", "o2", "line 1 of run two\n");
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages.size() == 2);
+
+  const boost::json::value older = boost::json::parse(messages[0].content);
+  REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
+  REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "o2");
+  // The page and the extent survive, so the model still knows how much it is not seeing.
+  REQUIRE(older.at("extent").at("lines") == 3);
+  REQUIRE(older.at("page").at("first") == 1);
+
+  REQUIRE(messages[1].content.find("line 1 of run two") != std::string::npos);
+}
+
+TEST_CASE("Two pages of one run are both kept", "[request]") {
+  session::MessageGraph graph;
+  AppendPage(graph, "s1", "o1", "first page\n");
+  AppendPage(graph, "s1", "o1", "second page\n");
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages.size() == 2);
+  // Complementary, not successive: dropping the first would take away what the model
+  // read on the way to the second.
+  REQUIRE(messages[0].content.find("first page") != std::string::npos);
+  REQUIRE(messages[1].content.find("second page") != std::string::npos);
+}
+
+TEST_CASE("Pages of different commands do not replace each other", "[request]") {
+  session::MessageGraph graph;
+  AppendPage(graph, "s1", "o1", "from ls\n");
+  AppendPage(graph, "s2", "o2", "from cat\n");
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages[0].content.find("from ls") != std::string::npos);
+  REQUIRE(messages[1].content.find("from cat") != std::string::npos);
+}
+
+TEST_CASE("A tool result that is no page is left alone", "[request]") {
+  session::MessageGraph graph;
+  session::ToolPayload plain;
+  plain.tool_call_id = "call";
+  plain.tool_name = "write_file";
+  plain.content = R"({"success":true,"output":"","error":"","exit_code":0})";
+  graph.AppendAfterLeaf(std::move(plain));
+  AppendPage(graph, "s1", "o1", "from ls\n");
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages[0].content.find("\"success\":true") != std::string::npos);
+  REQUIRE(messages[0].content.find("superseded_by") == std::string::npos);
+  REQUIRE(messages[1].content.find("from ls") != std::string::npos);
+}
+
+TEST_CASE("A page read after a newer run is not replaced", "[request]") {
+  session::MessageGraph graph;
+  AppendPage(graph, "s1", "o1", "run one\n");
+  AppendPage(graph, "s1", "o2", "run two\n");
+  // The model paged back into the older run on purpose; eliding what it just asked for
+  // would only make it ask again.
+  AppendPage(graph, "s1", "o1", "run one, page two\n");
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages.size() == 3);
+  REQUIRE(messages[0].content.find("superseded_by") != std::string::npos);
+  REQUIRE(messages[1].content.find("run two") != std::string::npos);
+  REQUIRE(messages[2].content.find("run one, page two") != std::string::npos);
+}

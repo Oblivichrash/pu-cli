@@ -21,13 +21,14 @@ add_executable(pu_tests
     unit/test_graph.cpp
     unit/test_request.cpp
     unit/test_encoding.cpp
-    unit/test_command_execution.cpp
+    unit/test_run.cpp
     unit/test_logging.cpp
     unit/test_mcp_client.cpp
     unit/test_mcp_tool.cpp
     unit/test_mcp_registration.cpp
     unit/test_command_router.cpp
-    unit/test_builtin_tools.cpp
+    unit/test_bash_tool.cpp
+    unit/test_paging.cpp
     unit/test_executor.cpp
     unit/test_serve_api.cpp
     unit/test_serve_ws.cpp

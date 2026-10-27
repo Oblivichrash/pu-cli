@@ -3,7 +3,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/message.hpp"
-#include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -120,7 +120,9 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
 
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
   REQUIRE(msg.find("step-by-step plan") != std::string::npos);
-  REQUIRE(msg.find("head -n 50") != std::string::npos);
+  // Which end a read starts at is the model's call, so the prompt names both ends.
+  REQUIRE(msg.find("view=tail") != std::string::npos);
+  REQUIRE(msg.find("cursor") != std::string::npos);
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
 }
 

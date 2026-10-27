@@ -4,6 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/exec/capture.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -68,8 +69,7 @@ std::string WindowsKernelVersion() {
 
 #ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
-  std::string output;
-  pu::platform::ExecuteCommand(cmd, output);
+  std::string output = pu::exec::Run(cmd, pu::CancelToken{}, "", 0).captured.text;
   while (!output.empty() && (output.back() == '\n' || output.back() == '\r' ||
                              output.back() == ' ' || output.back() == '\t')) {
     output.pop_back();
@@ -141,9 +141,14 @@ std::string Executor::BuildStaticSystemContext() const {
   oss << "=== Tool Use Guidelines ===\n";
   oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after "
          "stating the plan.\n";
-  oss << "2. When inspecting files, use targeted commands (head -n 50, tail -n 50, grep, sed -n "
-         "'10,30p') instead of full cat dumps.\n";
-  oss << "3. Use parallel tool calls when possible to minimize round trips.\n";
+  oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
+         "read from its head (the default), and a log, a build's output, or a failure is read "
+         "from its tail with view=tail.\n";
+  oss << "3. A command's output comes back one page at a time. When page.later or page.earlier is "
+         "set, pass that cursor back as `at` to read that page instead of running the command "
+         "again. Paging reads what is already stored; grep runs again and finds a needle in "
+         "what you have not stored.\n";
+  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
 
   if (context_digest) {
     const std::string digest = context_digest();

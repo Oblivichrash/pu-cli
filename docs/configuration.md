@@ -71,6 +71,23 @@ logs a warning.
 | `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
 | `approval_patterns` | Commands matching one of these wait for the user's approval before they run; the Web UI shows the command with Approve and Deny buttons and an optional note, which reaches the model beside the result. `pu serve` only: the CLI has no channel to ask on, so a matching command there is refused |
 
+**`paging`**
+
+What a session keeps of a command's output, and how much of it one page shows. One
+block, one owner: the pager reads these, and the tool that writes to it obeys them.
+The shape a page takes is in [paging.md](paging.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `page_lines` | `120` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1 |
+| `max_lines` | `400` | The most lines one page may show — a larger `limit` is clamped to it. Raised to `page_lines` when set below it |
+| `capture_bytes` | `262144` | Bytes of one command's output kept for paging; beyond it the command still runs and the rest is counted rather than kept. Raised to 1024 when set below it |
+| `retain_bytes` | `4194304` | Bytes kept across all retained runs; the oldest are dropped first |
+| `retain_buffers` | `8` | Runs kept readable. A cursor whose run has been dropped is refused, not pointed at a neighbour |
+
+The budget buys lines for the end the call asked for, so a model reading a log can size
+`capture_bytes` for it without that costing a file's opening bytes.
+
 **`mcp_servers`**
 
 Each entry is a stdio subprocess or an HTTP endpoint, selected by whether `url`

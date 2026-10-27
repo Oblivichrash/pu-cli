@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(pu-cli VERSION 0.6.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
@@ -59,8 +59,12 @@ add_library(pu_core STATIC
     src/config/serve_registry.cpp
     src/runtime/executor.cpp
     src/tools/toolbox.cpp
-    src/tools/builtin_tools.cpp
+    src/tools/bash.cpp
+    src/tools/policy.cpp
+    src/tools/write_file.cpp
     src/tools/peer_tool.cpp
+    src/exec/run.cpp
+    src/paging/paging.cpp
     src/runtime/runtime.cpp
     src/runtime/command_router.cpp
     src/app/cli.cpp
@@ -113,4 +117,9 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(WIN32)
+    # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
+    # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.
+    install(FILES $<TARGET_RUNTIME_DLLS:pu> DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web/ DESTINATION ${CMAKE_INSTALL_DATADIR}/pu/web)

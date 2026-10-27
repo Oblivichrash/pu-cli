@@ -83,6 +83,7 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 | [docs/configuration.md](docs/configuration.md) | `agents.json`, `peers.json`, environment variables, logging |
 | [docs/web-api.md](docs/web-api.md) | `pu serve`: the WebSocket protocol and the REST endpoints |
 | [docs/web-ui.md](docs/web-ui.md) | The browser modules, and how the page is served |
+| [docs/paging.md](docs/paging.md) | `execute_bash` page by page: the envelope, cursors, and what a turn keeps |
 | [docs/peers-and-board.md](docs/peers-and-board.md) | Peer messaging, the task board, and their verbs |
 | [docs/security.md](docs/security.md) | The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |

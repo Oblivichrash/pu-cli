@@ -17,7 +17,8 @@
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/bash.hpp"
+#include "pu/tools/write_file.hpp"
 #include "pu/tools/mcp_tool.hpp"
 
 namespace pu {
@@ -400,8 +401,11 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
 }
 
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
-  toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
+  // The budget is the store's, and the tool reads it from there: one owner for the page
+  // size and the retention, applied before the tool that will obey it is built.
+  pager_.SetBudget(agent.paging);
+  toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
   if (peer_config_.has_value() && !peer_config_->peers.empty()) {
     toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
