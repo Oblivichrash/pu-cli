@@ -18,10 +18,10 @@ Three things are already in the right shape and should be used rather than repla
 | Seam | Where | Why it matters here |
 |---|---|---|
 | `BuildRequestPath(graph, inputs)` is a pure projection | `include/pu/session/request.hpp` | every turn's wire form passes through **one** function that never mutates the graph — the natural place to elide what the model no longer needs, and rewind-safe by construction |
-| `ToolContext` carries injected capabilities | `include/pu/tools/tool.hpp` | `security`, `control`, `approval` are already pointers to session-scoped state; a viewport store joins them without changing a single tool signature |
-| `output` is an agent-level config block | `config/agents.hpp`, `paging/paging.hpp` | per-agent tuning exists and is parsed with an eye to bad values; the rest of the viewport knobs go beside it, not into a new file |
+| `ToolContext` carries injected capabilities | `include/pu/tools/tool.hpp` | `security`, `control`, `approval` are pointers to session-scoped state, so a capability costs a field rather than a new signature. The pager is the exception and took the other route: `Runtime` holds the `Pager` and hands it to the tool that reads it, in that tool's constructor |
+| `paging` is an agent-level config block | `include/pu/config/agents.hpp`, `include/pu/paging/paging.hpp` | per-agent tuning exists and is parsed with an eye to bad values; the remaining knobs go beside it, not into a new file |
 
-`ToolPayload.content` is an opaque string in the session (`context/message.hpp`), so
+`ToolPayload.content` is an opaque string in the session (`include/pu/session/message.hpp`), so
 a richer `window` object needs **no** session schema bump — the version guard in
 `Runtime::LoadSessionFromFile` stays as it is.
 
@@ -90,12 +90,11 @@ N cursor calls and N stored messages, and it keeps B2's transcript flat.
 
 | Phase | Change | Touches | Why here |
 |---|---|---|---|
-| **0** | `ViewportStore` on `Runtime`/`Session`, injected via `ToolContext` | `runtime.{hpp,cpp}`, `tool.hpp`, `include/pu/tools/bash.hpp` | B1: a cursor must survive a model switch before any of it is worth documenting |
-| **1** | Projection elision of superseded windows | `session/request.hpp` (+ test) | B2: the only lever that bounds a *turn*, and it is pure |
-| **2** | `find` on a buffer; `window` reaches the UI | `src/tools/bash.cpp`, `executor.cpp:344`, `web/app.js` | B3, plus: today `on_end` drops `window`, so a person reading the transcript cannot tell a page from a whole answer |
-| **3** | Rename `paging` → `viewport`, `unit` field, `read` sources | `tools/`, `README`, `ARCHITECTURE` | purely mechanical once 0–2 exist; doing it first would move code without changing behaviour |
-| **4** | `core/process.hpp` (spawn + binary pipes) → FFI worker → `lib.call` | new | the hidden cost of the native work is the process layer, not the marshalling; `exec::Run` merges stderr into text and cannot carry a binary frame |
-| **5** | pty source (`forkpty` / ConPTY), `pu run -- <cmd>` | `src/exec/run.cpp`, `app/` | the POSIX fork path already exists at `platform.cpp`; ConPTY is the part with no prior art in this tree |
+| **0** | The pager on `Runtime`, handed to the tool that reads it | `include/pu/runtime/runtime.hpp`, `src/runtime/runtime.cpp`, `include/pu/tools/bash.hpp` | B1: a cursor must survive a model switch before any of it is worth documenting |
+| **1** | Projection elision of superseded pages | `session/request.hpp` (+ test) | B2: the only lever that bounds a *turn*, and it is pure |
+| **2** | `find` on a buffer; `page` reaches the UI | `src/tools/bash.cpp`, `src/runtime/executor.cpp`, `web/app.js` | B3, plus: today `on_end` drops the envelope, so a person reading the transcript cannot tell a page from a whole answer |
+| **3** | `core/process.hpp` (spawn + binary pipes) → FFI worker → `lib.call` | new | the hidden cost of the native work is the process layer, not the marshalling; `exec::Run` merges stderr into text and cannot carry a binary frame |
+| **4** | pty source (`forkpty` / ConPTY), `pu run -- <cmd>` | `src/exec/run.cpp`, `app/` | the POSIX fork path already exists at `platform.cpp`; ConPTY is the part with no prior art in this tree |
 
 Phases 0 and 1 are done, and phase 2 is half done: the store moved to `Runtime`, the
 envelope was split into `page` / `buffer` / `extent`, and a cursor now carries its own
@@ -104,7 +103,7 @@ identity so a page request does not restate the command. `find` on a buffer and 
 cannot tell a page from a whole answer.
 
 Phase 1 before 2 is deliberate: without elision, `find` results accumulate the same
-way pages do. Phase 4 before 5 is also deliberate: the FFI worker and the pty reader
+way pages do. Phase 3 before 4 is also deliberate: the FFI worker and the pty reader
 want the same thing (a child process with two binary pipes and a killable lifetime),
 so build it once.
 

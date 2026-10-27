@@ -16,7 +16,7 @@ and why. Retention, selection and presentation are three concerns that the curre
 
 | Piece | Text-specific? | Note |
 |---|---|---|
-| `CaptureStats`, byte budget, `truncated` | no | any producer with a stream |
+| `exec::Extent` (byte budget, `truncated`) | no | any producer with a stream |
 | `line_starts_`, 1-based line numbers | yes | unit is line |
 | `head`/`tail` first page | no | both are "first" and "last" under a unit |
 | `Cursor` `<buffer>:<line>` | half | the *anchor* generalises, the unit does not |
