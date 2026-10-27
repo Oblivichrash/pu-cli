@@ -11,7 +11,7 @@ budget is spent on the end the call names (`head` or `tail`).
 
 **Names.** The four nouns below are types now: `paging::Buffer`, `paging::Page`,
 `paging::Cursor`, `paging::Pager`, with `paging::Anchor` for "where a read starts" and
-`exec::Run` for the capture. `paging/paging.hpp` and `exec/capture.hpp` are the whole
+`exec::Run` for the capture. `paging/paging.hpp` and `exec/run.hpp` are the whole
 surface; what follows is why it has that shape.
 
 ---

@@ -12,7 +12,7 @@ namespace pu::exec {
 // Which end of a stream a bounded capture keeps. A log is read from its end and a file
 // about to be edited from its start, so the budget follows the call rather than always
 // paying for the opening bytes.
-enum class Tail { kHead, kEnd };
+enum class Keep { kHead, kEnd };
 
 // How much of a stream there was, and how much of it was kept. `from_end` says which
 // part survived, which is what lets a page number its lines against the command that
@@ -54,9 +54,9 @@ struct Ran {
 };
 
 // Runs a shell command with stderr merged into stdout. `max_bytes` of 0 keeps all. The
-// budget is spent on the end `tail` names; the command still runs to its own end,
+// budget is spent on the end `keep` names; the command still runs to its own end,
 // because a reader that walked away would turn its exit code into a signal.
 Ran Run(std::string_view command, const CancelToken& stop, std::string_view working_dir,
-        std::size_t max_bytes, Tail tail = Tail::kHead);
+        std::size_t max_bytes, Keep keep = Keep::kHead);
 
 }  // namespace pu::exec

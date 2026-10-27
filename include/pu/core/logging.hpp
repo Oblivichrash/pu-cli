@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -10,6 +11,10 @@
 #include <spdlog/formatter.h>
 
 namespace pu {
+
+// The one directory PU_HOME moves, and the only thing it moves: logs. Session and
+// agent state stay under the workspace's own .pu/.
+std::filesystem::path LogDir();
 
 void InitLogging(const std::string& log_level = "");
 void FlushLogging();

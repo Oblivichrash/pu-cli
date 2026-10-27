@@ -229,7 +229,7 @@ printed. That shape is four nouns and a budget, in `include/pu/paging/paging.hpp
 | `Pager` | the buffers a session can still read, and the `Budget` that decides |
 | `Anchor` | where a read starts: `head`, `tail`, or a cursor |
 
-`exec::Run` (`include/pu/exec/capture.hpp`) produces the other half: the text, an
+`exec::Run` (`include/pu/exec/run.hpp`) produces the other half: the text, an
 `Extent` saying how much of the stream survived, and the verdict. Output and verdict are
 one value because only the reader of the stream knows both — a reader that looked away
 has to say the command was stopped, and an exit code means nothing without that. The
@@ -720,16 +720,16 @@ the root of `include/pu/` and `src/`.
 ```
 include/pu/                  src/
 ├── app/                     ├── app/                  # main, CLI parsing, serve
-├── config/                  ├── config/               # agents.json, the backend model
+├── config/                  ├── config/               # agents.json, the backend model, the gateways
 ├── core/                    ├── core/                 # logging, platform, HTTP client
 ├── exec/                    ├── exec/                 # running a command, and its verdict
-├── llm/                     ├── gateways/             # every gateway and its table
-├── mcp/                     ├── llm/                  # protocols, providers, streaming parser
-├── paging/                  ├── mcp/                  # transports, JSON-RPC client
-├── runtime/                 ├── paging/               # the buffers a session can still read
-│   ├── command_router.hpp   ├── runtime/              # runtime, executor, command router
-│   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
-│   └── runtime.hpp          └── tools/                # Toolbox, tools
+├── llm/                     ├── llm/                  # protocols, providers, streaming parser
+├── mcp/                     ├── mcp/                  # transports, JSON-RPC client
+├── paging/                  ├── paging/               # the buffers a session can still read
+├── runtime/                 ├── runtime/              # runtime, executor, command router
+│   ├── command_router.hpp   ├── session/              # Session, Conversation, message graph
+│   ├── executor.hpp         └── tools/                # Toolbox, tools
+│   └── runtime.hpp
 ├── session/
 └── tools/
 ```
@@ -753,7 +753,7 @@ Three facts about a vendor that look alike are three different things: a **proto
 holds the middle one: `GatewayId` names the gateways a build carries, `Gateway` is
 `{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
 / `GatewayForId()` answer from one explicit table (`kGateways`) in that file. Every gateway
-lives in `src/gateways/gateways.cpp` with its neighbours: a gateway is mostly a table row plus
+lives in `src/config/gateway.cpp` with its neighbours: a gateway is mostly a table row plus
 the mapping from the backend config to its protocol's config, and those mappings are only
 readable as a set — side by side, a field one gateway fills and another drops is visible, and
 in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
@@ -798,7 +798,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/gateways/gateways.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
+- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/config/gateway.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.

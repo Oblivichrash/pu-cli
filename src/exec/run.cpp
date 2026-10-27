@@ -4,7 +4,7 @@
 // verdict as well as the bytes: it is the only party that knows whether the process it
 // was reading finished or was killed, and an exit code means nothing without that.
 
-#include "pu/exec/capture.hpp"
+#include "pu/exec/run.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -46,7 +46,7 @@ std::size_t CountLines(std::string_view text) {
 // a line at the cut.
 class Capture {
  public:
-  Capture(std::size_t max_bytes, Tail tail) : max_bytes_(max_bytes), tail_(tail) {}
+  Capture(std::size_t max_bytes, Keep keep) : max_bytes_(max_bytes), keep_(keep) {}
 
   void Append(const char* data, std::size_t size) {
     if (size == 0) return;
@@ -60,7 +60,7 @@ class Capture {
       text_.append(data, size);
       return;
     }
-    if (tail_ == Tail::kHead) {
+    if (keep_ == Keep::kHead) {
       const std::size_t room = text_.size() < max_bytes_ ? max_bytes_ - text_.size() : 0;
       const std::size_t kept = std::min(size, room);
       if (kept > 0) text_.append(data, kept);
@@ -77,9 +77,9 @@ class Capture {
   Captured Take() {
     // A stream that did not end with a newline still ended a line.
     extent_.lines = newlines_ + (extent_.bytes > 0 && last_ != '\n' ? 1 : 0);
-    extent_.from_end = tail_ == Tail::kEnd;
+    extent_.from_end = keep_ == Keep::kEnd;
 
-    if (tail_ == Tail::kHead && truncated_) {
+    if (keep_ == Keep::kHead && truncated_) {
       while (!text_.empty() && text::EndsWithPartialSequence(text_)) {
         text_.pop_back();
       }
@@ -87,7 +87,7 @@ class Capture {
       const std::size_t newline = text_.rfind('\n');
       if (newline != std::string::npos) text_.resize(newline + 1);
     }
-    if (tail_ == Tail::kEnd && truncated_) DropToBudget();
+    if (keep_ == Keep::kEnd && truncated_) DropToBudget();
 
     extent_.retained = CountLines(text_);
     return Captured{std::move(text_), extent_};
@@ -109,7 +109,7 @@ class Capture {
   Extent extent_;
   std::string text_;
   std::size_t max_bytes_;
-  Tail tail_;
+  Keep keep_;
   std::size_t newlines_ = 0;
   char last_ = '\n';
   bool truncated_ = false;
@@ -131,7 +131,7 @@ void Settle(Verdict& verdict, bool stopped, int exit_code) {
 #ifndef _WIN32
 
 Ran Run(std::string_view command, const CancelToken& stop_token, std::string_view working_dir,
-        std::size_t max_bytes, Tail tail) {
+        std::size_t max_bytes, Keep keep) {
   Ran ran;
   ran.verdict.command = std::string(command);
 
@@ -192,7 +192,7 @@ Ran Run(std::string_view command, const CancelToken& stop_token, std::string_vie
   // fgets parks on the pipe until the child writes, so a quiet command would keep the
   // token unchecked until it finished. The read runs on a poll tick instead: output when
   // there is any, the token when there is not.
-  Capture capture(max_bytes, tail);
+  Capture capture(max_bytes, keep);
   for (;;) {
     struct pollfd pfd = {pipe_fds[0], POLLIN, 0};
     const int ready = poll(&pfd, 1, stops ? 50 : -1);
@@ -235,7 +235,7 @@ Ran Run(std::string_view command, const CancelToken& stop_token, std::string_vie
 #else  // _WIN32
 
 Ran Run(std::string_view command, const CancelToken& stop_token, std::string_view working_dir,
-        std::size_t max_bytes, Tail tail) {
+        std::size_t max_bytes, Keep keep) {
   Ran ran;
   ran.verdict.command = std::string(command);
 
@@ -259,7 +259,7 @@ Ran Run(std::string_view command, const CancelToken& stop_token, std::string_vie
     return ran;
   }
 
-  Capture capture(max_bytes, tail);
+  Capture capture(max_bytes, keep);
   std::array<char, 4096> buffer{};
   bool stopped = false;
   while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe_stream) != nullptr) {

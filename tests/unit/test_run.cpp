@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/platform.hpp"
-#include "pu/exec/capture.hpp"
+#include "pu/exec/run.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -92,7 +92,7 @@ TEST_CASE("A budget spent on the end keeps the newest lines", "[exec]") {
   const auto file = LinesFile(dir.Path(), 200);
 
   const auto ran =
-      Run(pu::tests::PrintFileCommand(file.string()), pu::CancelToken{}, "", 256, Tail::kEnd);
+      Run(pu::tests::PrintFileCommand(file.string()), pu::CancelToken{}, "", 256, Keep::kEnd);
 
   REQUIRE(ran.verdict.exit_code == 0);
   REQUIRE(ran.captured.extent.truncated());

@@ -47,9 +47,9 @@ add_library(pu_core STATIC
     src/llm/projection.cpp
     src/llm/model_listing.cpp
     src/llm/probe.cpp
-    src/llm/model_verifier.cpp
+    src/llm/model_check.cpp
     src/llm/streaming_provider.cpp
-    src/gateways/gateways.cpp
+    src/config/gateway.cpp
     src/config/backend.cpp
     src/mcp/stdio_transport.cpp
     src/mcp/http_transport.cpp

@@ -2,7 +2,7 @@
 
 Every field `pu` reads. Where a value belongs to the build rather than to a file (a
 gateway's default host, the variable a key is read from), it is a fact of the gateway
-table in `src/gateways/`, not of this document.
+table in `src/config/gateway.cpp`, not of this document.
 
 ## `agents.json`
 

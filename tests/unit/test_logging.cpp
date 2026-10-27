@@ -93,14 +93,14 @@ TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
   const auto scratch = std::filesystem::temp_directory_path() / "pu_log_dir_test";
   std::filesystem::remove_all(scratch);
 
-  REQUIRE(pu::path::GetLogDir() == std::filesystem::current_path() / ".pu" / "logs");
+  REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
 
   {
     ScopedEnvVar home("PU_HOME", scratch.string());
-    REQUIRE(pu::path::GetLogDir() == scratch / "logs");
+    REQUIRE(pu::LogDir() == scratch / "logs");
   }
 
-  REQUIRE(pu::path::GetLogDir() == std::filesystem::current_path() / ".pu" / "logs");
+  REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
   std::filesystem::remove_all(scratch);
 }
 

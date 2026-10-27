@@ -2,7 +2,7 @@
 #include "pu/tools/bash.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/exec/capture.hpp"
+#include "pu/exec/run.hpp"
 #include "pu/tools/policy.hpp"
 
 #include <algorithm>
@@ -135,7 +135,7 @@ std::string BashTool::Run(const std::string& command, const paging::Anchor& anch
   const paging::Budget budget = pager_.budget();
 
   auto ran = exec::Run(command, stop, sandbox_root_, budget.capture_bytes,
-                       anchor.from_end() ? exec::Tail::kEnd : exec::Tail::kHead);
+                       anchor.from_end() ? exec::Keep::kEnd : exec::Keep::kHead);
 
   // The user's own words beside a stopped command reach the model beside its result.
   if (ran.verdict.stopped && ctx.control != nullptr && !ctx.control->note.empty()) {

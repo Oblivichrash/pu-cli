@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "pu/llm/model_listing.hpp"
+#include "pu/llm/model_check.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
@@ -38,8 +38,8 @@ std::vector<llm::ModelEntry> EntriesOf(std::initializer_list<const char*> ids) {
 
 }  // namespace
 
-TEST_CASE("[model_verifier] a model that answers is reported as answered",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a model that answers is reported as answered",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
@@ -55,8 +55,8 @@ TEST_CASE("[model_verifier] a model that answers is reported as answered",
   REQUIRE(checks[1].answered);
 }
 
-TEST_CASE("[model_verifier] the probe names the model under test, not the active one",
-          "[model_verifier]") {
+TEST_CASE("[model_check] the probe names the model under test, not the active one",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
@@ -67,8 +67,8 @@ TEST_CASE("[model_verifier] the probe names the model under test, not the active
   REQUIRE(mock->last_body.find("\"model\":\"org/two\"") != std::string::npos);
 }
 
-TEST_CASE("[model_verifier] a refusal is a result, not a throw, and the loop goes on",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a refusal is a result, not a throw, and the loop goes on",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   int calls = 0;
   mock->simulate_response = [&calls](const std::string&, const std::string&,
@@ -90,8 +90,8 @@ TEST_CASE("[model_verifier] a refusal is a result, not a throw, and the loop goe
   REQUIRE(checks[1].answered);
 }
 
-TEST_CASE("[model_verifier] one token is asked for, and it rides the probe",
-          "[model_verifier]") {
+TEST_CASE("[model_check] one token is asked for, and it rides the probe",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
@@ -101,8 +101,8 @@ TEST_CASE("[model_verifier] one token is asked for, and it rides the probe",
   REQUIRE(mock->last_body.find("\"max_tokens\":1") != std::string::npos);
 }
 
-TEST_CASE("[model_verifier] a model the catalogue needs a level for is not asked without one",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a model the catalogue needs a level for is not asked without one",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   int calls = 0;
   mock->simulate_response = [&calls](const std::string&, const std::string&,
@@ -136,8 +136,8 @@ TEST_CASE("[model_verifier] a model the catalogue needs a level for is not asked
   }
 }
 
-TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a level the backend sets is what the probe carries",
+          "[model_check]") {
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
@@ -154,8 +154,8 @@ TEST_CASE("[model_verifier] a level the backend sets is what the probe carries",
   REQUIRE(mock->last_body.find("\"reasoning_effort\":\"medium\"") != std::string::npos);
 }
 
-TEST_CASE("[model_verifier] the listing is rendered the one way, whichever command asked",
-          "[model_verifier]") {
+TEST_CASE("[model_check] the listing is rendered the one way, whichever command asked",
+          "[model_check]") {
   const std::vector<llm::ModelEntry> models = EntriesOf({"alpha", "the-active-model", "beta"});
 
   const std::string rendered =
@@ -167,8 +167,8 @@ TEST_CASE("[model_verifier] the listing is rendered the one way, whichever comma
   REQUIRE(rendered.find("alpha (active)") == std::string::npos);
 }
 
-TEST_CASE("[model_verifier] a model outside the listing is still named as the active one",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a model outside the listing is still named as the active one",
+          "[model_check]") {
   // CodeBuddy answers with the subset its agent may run, and a backend may name a model
   // outside it. Dropping the marker would leave the running model as the one row missing.
   const std::string rendered =
@@ -180,7 +180,7 @@ TEST_CASE("[model_verifier] a model outside the listing is still named as the ac
   REQUIRE(rendered.find("alpha (active)") == std::string::npos);
 }
 
-TEST_CASE("[model_verifier] a listing carrying a price says so beside the model", "[model_verifier]") {
+TEST_CASE("[model_check] a listing carrying a price says so beside the model", "[model_check]") {
   std::vector<llm::ModelEntry> models = EntriesOf({"cheap"});
   models[0].caps.credits = "x0.06 credits";
 
@@ -190,8 +190,8 @@ TEST_CASE("[model_verifier] a listing carrying a price says so beside the model"
   REQUIRE(rendered.find("cheap (active)  x0.06 credits") != std::string::npos);
 }
 
-TEST_CASE("[model_verifier] a listing that names no model says so rather than heading nothing",
-          "[model_verifier]") {
+TEST_CASE("[model_check] a listing that names no model says so rather than heading nothing",
+          "[model_check]") {
   const std::string rendered =
       llm::FormatModelList({}, "ollama", "http://127.0.0.1:1", "whatever");
 

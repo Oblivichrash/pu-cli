@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/core/platform.hpp"
-#include "pu/exec/capture.hpp"
+#include "pu/exec/run.hpp"
 #include "pu/core/text.hpp"
 #include "pu/mcp/stdio_transport.hpp"
 #include "pu/tools/tool.hpp"
