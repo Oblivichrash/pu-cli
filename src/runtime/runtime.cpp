@@ -256,7 +256,7 @@ config::Backend Runtime::ConfiguredBackend() const {
 config::Backend Runtime::CurrentBackend() const {
   const config::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
-  return session::ApplyOverrides(backend, Overrides());
+  return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
@@ -319,8 +319,9 @@ void Runtime::ClearSettings() {
 
 void Runtime::ApplyToolBudget() {
   if (!executor_) return;
-  executor_->SetToolCallBudget(
-      session::EffectiveToolBudget(ConfiguredToolBudget(), Overrides()));
+  const session::InForce in_force =
+      session::InForce::Resolve(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
+  executor_->SetToolCallBudget(in_force.tool_budget);
 }
 
 namespace {
