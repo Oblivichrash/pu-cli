@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 #include "pu/core/text.hpp"
+#include "pu/session/request.hpp"
 #include "pu/session/session.hpp"
 #include <boost/json.hpp>
 
@@ -158,4 +159,67 @@ TEST_CASE("Appending continues from the leaf without dropping anything", "[conve
   REQUIRE(h[0].content == "msg1");
   REQUIRE(h[19].content == "msg20");
   REQUIRE(h[20].content == "after");
+}
+
+namespace {
+
+// A page as `execute_bash` writes one, with the one field this file is about.
+ChatMessage PageMessage(const char* call_id, const char* buffer, std::size_t rank) {
+  ChatMessage tool;
+  tool.role = "tool";
+  tool.tool_name = "execute_bash";
+  tool.tool_call_id = call_id;
+  tool.content = std::string(R"({"success":true,"output":"line one\n","buffer":{"id":")") + buffer +
+                 R"(","source":"s3f2a1c4","rank":)" + std::to_string(rank) +
+                 R"(},"page":{"first":1,"last":1},"extent":{"lines":1,"retained":1,"truncated":false}})";
+  return tool;
+}
+
+}  // namespace
+
+TEST_CASE("A page keeps where it came from through a save and a load", "[conversation]") {
+  Conversation t;
+  t.Append(PageMessage("call_1", "o7f3a-1", 1));
+  t.Append(PageMessage("call_2", "o7f3a-2", 2));
+
+  const boost::json::value saved = t.Serialize();
+  const auto& nodes = saved.at("history").at("nodes").as_array();
+  REQUIRE(nodes.size() == 2);
+  // Written down rather than left to be parsed again: the file says which run answered, so a
+  // reader does not have to re-derive it from text it already read once.
+  REQUIRE(nodes[0].at("origin").at("buffer") == "o7f3a-1");
+  REQUIRE(nodes[0].at("origin").at("rank") == 1);
+
+  auto restored = Conversation::Deserialize(saved);
+  REQUIRE(restored != nullptr);
+  const auto chain = restored->Graph().Chain();
+  REQUIRE(chain.size() == 2);
+  const auto* receipt = std::get_if<session::ToolPayload>(&chain[1]->payload);
+  REQUIRE(receipt != nullptr);
+  REQUIRE(receipt->origin.has_value());
+  REQUIRE(receipt->origin->buffer == "o7f3a-2");
+  REQUIRE(receipt->origin->rank == 2);
+
+  // The point of keeping it: elision still fires on a transcript that was reloaded, without
+  // the projection reading a single receipt's text to find out what is a page.
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(restored->Graph(), {});
+  REQUIRE(messages.size() == 2);
+  REQUIRE(messages[0].content.find("superseded_by") != std::string::npos);
+  REQUIRE(messages[1].content.find("line one") != std::string::npos);
+}
+
+TEST_CASE("A tool result that is no page carries no origin", "[conversation]") {
+  Conversation t;
+  ChatMessage tool;
+  tool.role = "tool";
+  tool.tool_name = "write_file";
+  tool.tool_call_id = "call_1";
+  tool.content = R"({"success":true,"output":"","error":"","exit_code":0})";
+  t.Append(tool);
+
+  const boost::json::value saved = t.Serialize();
+  const auto& node = saved.at("history").at("nodes").as_array()[0];
+  // Nothing to say, so nothing said: every other tool call in a long conversation would
+  // otherwise carry an origin that names no run.
+  REQUIRE_FALSE(node.as_object().contains("origin"));
 }

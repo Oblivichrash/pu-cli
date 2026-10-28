@@ -22,6 +22,7 @@
 #include <string>
 
 #include "pu/app/cli.hpp"
+#include "pu/session/session.hpp"
 
 namespace {
 
@@ -144,7 +145,8 @@ TEST_CASE("A session naming an agent the file no longer has is reported", "[chec
   const fs::path config = workspace.Write(
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"}}]})");
   std::ofstream(workspace.root() / ".pu" / "session.json")
-      << R"({"schema_version":8,"conversation":{"history":{"nodes":[],"leaf":""}},"session_spec":{"agent_name":"gone"}})";
+      << R"({"schema_version":)" << pu::kSessionSchemaVersion
+      << R"(,"conversation":{"history":{"nodes":[],"leaf":""}},"session_spec":{"agent_name":"gone"}})";
 
   CapturedStdout capture;
   // The session outranks default_agent by design, so a stale name is a fact to print, not a

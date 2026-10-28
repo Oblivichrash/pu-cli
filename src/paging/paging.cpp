@@ -7,6 +7,8 @@
 #include <random>
 #include <utility>
 
+#include "pu/core/json.hpp"
+
 namespace pu::paging {
 
 namespace {
@@ -59,6 +61,22 @@ std::string NewGeneration() {
   std::string text;
   for (int shift = 12; shift >= 0; shift -= 4) text.push_back(kHex[(value >> shift) & 0xf]);
   return text;
+}
+
+// A page that names no order is never superseded, and one written before `rank` was a field
+// of its own names none: keeping a page too long costs tokens, while calling the wrong page
+// the older one loses it.
+std::size_t RankIn(const boost::json::value& object) {
+  if (!object.is_object()) return 0;
+  const boost::json::object& fields = object.as_object();
+  const auto order = fields.find("rank");
+  if (order == fields.end()) return 0;
+  const boost::json::value& value = order->value();
+  if (value.is_uint64()) return static_cast<std::size_t>(value.as_uint64());
+  if (value.is_int64() && value.as_int64() > 0) {
+    return static_cast<std::size_t>(value.as_int64());
+  }
+  return 0;
 }
 
 }  // namespace
@@ -183,21 +201,30 @@ std::optional<Origin> OriginOf(std::string_view receipt) {
     Origin origin{std::string(source->value().as_string()),
                   std::string(buffer->value().as_string()), 0};
     if (origin.source.empty() || origin.buffer.empty()) return std::nullopt;
-
-    // A receipt written before `rank` existed carries no order, so it is never superseded:
-    // keeping a page too long costs tokens, while calling the wrong one older loses the page.
-    const auto order = fields.find("rank");
-    if (order != fields.end()) {
-      if (order->value().is_uint64()) {
-        origin.rank = static_cast<std::size_t>(order->value().as_uint64());
-      } else if (order->value().is_int64() && order->value().as_int64() > 0) {
-        origin.rank = static_cast<std::size_t>(order->value().as_int64());
-      }
-    }
+    origin.rank = RankIn(held->value());
     return origin;
   } catch (const std::exception&) {
     return std::nullopt;
   }
+}
+
+boost::json::value OriginToJson(const Origin& origin) {
+  return boost::json::value{
+      {"source", origin.source},
+      {"buffer", origin.buffer},
+      {"rank", origin.rank},
+  };
+}
+
+std::optional<Origin> OriginFromJson(const boost::json::value& value) {
+  if (!value.is_object()) return std::nullopt;
+
+  Origin origin;
+  origin.source = json::ValueOrDefault<std::string>(value, "source", "");
+  origin.buffer = json::ValueOrDefault<std::string>(value, "buffer", "");
+  if (origin.source.empty() || origin.buffer.empty()) return std::nullopt;
+  origin.rank = RankIn(value);
+  return origin;
 }
 
 std::string SupersededReceipt(std::string_view receipt, std::string_view superseded_by) {

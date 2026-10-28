@@ -21,8 +21,8 @@ std::unordered_map<const MessageNode*, std::string> SupersededPages(
   std::unordered_map<const MessageNode*, paging::Origin> origins;
   for (const MessageNode* node : chain) {
     const auto* receipt = std::get_if<ToolPayload>(&node->payload);
-    if (receipt == nullptr) continue;
-    if (auto origin = paging::OriginOf(receipt->content)) origins.emplace(node, std::move(*origin));
+    if (receipt == nullptr || !receipt->origin) continue;
+    origins.emplace(node, *receipt->origin);
   }
 
   // Walking backwards keeps, per source, the newest run that was read after this point.

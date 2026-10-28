@@ -94,10 +94,8 @@ std::size_t HighestRankIn(const Session& session) {
   std::size_t highest = 0;
   for (const session::MessageNode* node : session.Messages().Chain()) {
     const auto* receipt = std::get_if<session::ToolPayload>(&node->payload);
-    if (receipt == nullptr) continue;
-    if (const auto origin = paging::OriginOf(receipt->content)) {
-      highest = std::max(highest, origin->rank);
-    }
+    if (receipt == nullptr || !receipt->origin) continue;
+    highest = std::max(highest, receipt->origin->rank);
   }
   return highest;
 }

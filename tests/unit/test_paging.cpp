@@ -276,6 +276,14 @@ TEST_CASE("A receipt the pager writes is one it can read back", "[paging]") {
   // Anything that is not a page receipt names no run, so nothing supersedes it.
   REQUIRE_FALSE(OriginOf("just text").has_value());
   REQUIRE_FALSE(OriginOf(R"({"success":true})").has_value());
+
+  // A session node stores the same three fields on their own, and the pair that writes and
+  // reads them is the pair this receipt is read by.
+  const auto stored = OriginFromJson(OriginToJson(*origin));
+  REQUIRE(stored.has_value());
+  REQUIRE(stored->source == origin->source);
+  REQUIRE(stored->buffer == origin->buffer);
+  REQUIRE(stored->rank == origin->rank);
 }
 
 TEST_CASE("A receipt without a rank names no order", "[paging]") {

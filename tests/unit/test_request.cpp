@@ -206,6 +206,9 @@ void AppendPage(session::MessageGraph& graph, const std::string& source, const s
   receipt.tool_call_id = "call";
   receipt.tool_name = "execute_bash";
   receipt.content = PageJson(source, buffer, text, rank);
+  // Set here rather than derived from the text: the projection reads what the writer stored,
+  // and what the writer stores is the subject of test_conversation.cpp.
+  receipt.origin = paging::Origin{source, buffer, rank};
   graph.AppendAfterLeaf(std::move(receipt));
 }
 

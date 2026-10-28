@@ -12,6 +12,7 @@
 #include <boost/json.hpp>
 
 #include "pu/exec/run.hpp"
+#include "pu/paging/origin.hpp"
 
 namespace pu::paging {
 
@@ -98,24 +99,11 @@ struct Page {
 
 Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines);
 
-// A page's wire form, in both directions: the three scopes a result carries beside its
-// text, and the way back in — where a page came from, and a page whose run has since been
-// replaced. One module writes and reads it, because a writer in one place and a reader in
-// another is how the two drift apart.
+// A page's wire form: the three scopes a result carries beside its text. `OriginOf` in
+// origin.hpp reads the origin back out of it, and `SupersededReceipt` rewrites it, so the
+// writer and the readers stay in one module even though the struct they share is in a header
+// the session can include without the store.
 boost::json::object Envelope(const Buffer& buffer, const Page& page);
-
-// What a result says about where it came from: the question it answered, the run that
-// answered it, and how late that run was. A receipt carrying all three is a page;
-// nothing else is a candidate for replacement.
-struct Origin {
-  std::string source;
-  std::string buffer;
-  // The run's place in the order runs were started, which is what makes one page newer
-  // than another. 0 where the id does not name one, and then no page supersedes any.
-  std::size_t rank = 0;
-};
-
-std::optional<Origin> OriginOf(std::string_view receipt);
 
 // A page of an older run: the verdict and the window stay, the text goes, and the run
 // that replaced it is named so the model can ask for this one back by its cursor.
