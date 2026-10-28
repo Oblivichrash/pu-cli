@@ -89,6 +89,8 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
+| [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
+| [docs/design/bash-output-window.md](docs/design/bash-output-window.md) | The note paging shipped from: one window per tool call, and why |
 | [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
 | [docs/design/nim-fieldnotes.md](docs/design/nim-fieldnotes.md) | What NVIDIA's catalogue and SSE do that the OpenAI shape does not |
 | [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |

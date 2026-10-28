@@ -141,9 +141,7 @@ disagree with the first.
 
 ## 6. See also
 
-- [context-viewport.md](context-viewport.md) — the general shape this is an
-  instance of: *(source, anchor, budget)* instead of *(command, line, page)*, the
-  salience sidecar, and how a terminal screen becomes a source.
-- [native-library-calls.md](native-library-calls.md) — a second producer of the
-  same problem, where a call's result is a handle that is inspected through a
-  window rather than copied into the transcript.
+- [next.md](next.md) — what is left of the wider shape this is an instance of, and
+  which parts were decided against. This note is the record of one tool's window; the
+  general *(source, anchor, budget)* argument lives on there in one paragraph instead
+  of three documents.
