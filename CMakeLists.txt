@@ -25,7 +25,9 @@ function(pu_configure_target target)
 
     if(MSVC)
         target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-        target_compile_options(${target} PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+        # The sources are UTF-8 and carry typographic punctuation in comments; without this MSVC
+        # reads them in the system code page and warns C4819 on every file that has any.
+        target_compile_options(${target} PRIVATE /W4 /utf-8 /D_CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     endif()

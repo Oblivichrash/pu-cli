@@ -6,6 +6,10 @@ find_package(Catch2 3 REQUIRED)
 add_executable(pu_echo_server mocks/echo_server_main.cpp)
 target_include_directories(pu_echo_server PRIVATE ${CMAKE_SOURCE_DIR}/tests/mocks)
 target_link_libraries(pu_echo_server PRIVATE Boost::json)
+if(MSVC)
+    # Same reason as `pu_configure_target`: the source is UTF-8, the compiler's default is not.
+    target_compile_options(pu_echo_server PRIVATE /utf-8)
+endif()
 
 add_executable(pu_tests
     unit/test_agent_config.cpp
