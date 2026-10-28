@@ -5,6 +5,10 @@
 #include "pu/session/session.hpp"
 #include <boost/json.hpp>
 
+#include <map>
+#include <string>
+#include <vector>
+
 using namespace pu;
 
 TEST_CASE("Conversation basic operations", "[conversation]") {
@@ -186,9 +190,18 @@ TEST_CASE("A page keeps where it came from through a save and a load", "[convers
   const auto& nodes = saved.at("history").at("nodes").as_array();
   REQUIRE(nodes.size() == 2);
   // Written down rather than left to be parsed again: the file says which run answered, so a
-  // reader does not have to re-derive it from text it already read once.
-  REQUIRE(nodes[0].at("origin").at("buffer") == "o7f3a-1");
-  REQUIRE(nodes[0].at("origin").at("rank") == 1);
+  // reader does not have to re-derive it from text it already read once. The array is the
+  // graph's storage order rather than the order the messages were appended, so each node is
+  // matched to the run it names instead of to a position.
+  std::map<std::string, std::size_t> ranks;
+  for (const auto& node : nodes) {
+    REQUIRE(node.at("origin").is_object());
+    ranks[std::string(node.at("origin").at("buffer").as_string())] =
+        static_cast<std::size_t>(node.at("origin").at("rank").as_uint64());
+  }
+  REQUIRE(ranks.size() == 2);
+  REQUIRE(ranks.at("o7f3a-1") == 1);
+  REQUIRE(ranks.at("o7f3a-2") == 2);
 
   auto restored = Conversation::Deserialize(saved);
   REQUIRE(restored != nullptr);
