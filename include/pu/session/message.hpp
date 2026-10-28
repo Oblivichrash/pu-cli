@@ -125,7 +125,7 @@ struct ToolPayload {
   // run was. Read out of `content` once, as the result enters the conversation, because the
   // text does not change afterwards — a projection that parsed it again every turn would be
   // asking a question whose answer it already had.
-  std::optional<paging::Origin> origin;
+  std::optional<paging::Origin> origin{};
 };
 
 using MessagePayload = std::variant<UserPayload, AssistantPayload, SystemPayload, ToolPayload>;
