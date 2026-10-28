@@ -346,22 +346,6 @@ boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& bo
   return boost::json::object{{"agent", agent_name}};
 }
 
-boost::json::value HandleApiClear(Call& call, const boost::json::value&) {
-  call.runtime.ClearConversation();
-  return boost::json::object{};
-}
-
-// The sibling workspaces this machine could serve. A workspace is a directory, so the route is
-// answered on the machine the server runs on: the entries are this computer's filesystem, and a
-// reader on another one has no way to tell a project name from a path it should not have.
-boost::json::value HandleApiWorkspaces(Call& call, const boost::json::value&) {
-  boost::json::array workspaces;
-  for (const auto& [name, path] : call.runtime.ListWorkspaces()) {
-    workspaces.push_back(boost::json::value{{"name", name}, {"path", path}});
-  }
-  return workspaces;
-}
-
 // The other servers on this machine, so the page can name a workspace instead of a port. The one
 // that answered is not in the list: it is the page's own, and offering a switch to where the
 // reader already is is a control that does nothing. The entry carries a label and a port, never a
@@ -564,12 +548,10 @@ constexpr Route kRoutes[] = {
     {"/api/history", http::verb::get, &HandleApiHistory, "messages", Audience::kAnyone, 200, false, false, false},
     {"/api/agents", http::verb::get, &HandleApiAgents, "agents", Audience::kAnyone, 200, false, false, false},
     {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, "", Audience::kAnyone, 200, true, false, false},
-    {"/api/clear", http::verb::post, &HandleApiClear, "", Audience::kAnyone, 200, false, false, false},
     {"/api/rewind", http::verb::post, &HandleApiRewind, "", Audience::kAnyone, 200, true, false, false},
     {"/api/settings", http::verb::get, &HandleApiSettings, "", Audience::kAnyone, 200, false, false, false},
     {"/api/settings", http::verb::post, &HandleApiSetSetting, "", Audience::kAnyone, 200, true, false, false},
     {"/api/settings/reset", http::verb::post, &HandleApiResetSettings, "", Audience::kAnyone, 200, false, false, false},
-    {"/api/workspaces", http::verb::get, &HandleApiWorkspaces, "workspaces", Audience::kLoopback, 200, false, false, false},
     {"/api/servers", http::verb::get, &HandleApiServers, "servers", Audience::kLoopback, 200, false, false, false},
     {"/api/board", http::verb::get, &HandleApiBoard, "", Audience::kLoopback, 200, false, true, true},
     {"/api/jobs", http::verb::get, &HandleApiJobsGet, "", Audience::kPeerToken, 200, false, true, true},

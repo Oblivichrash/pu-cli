@@ -397,15 +397,14 @@ port this server answers on. A handler that had to reach for the socket to learn
 those would be a second place for the audience rule to live.
 
 One envelope, declared per row. `Route::key` names the member a payload is filed under
-(`messages`, `agents`, `servers`, `workspaces`), and an empty key means the handler's own
-object is the answer; either way `success` is added by the dispatcher. The wire format is
-read off the route table instead of being reassembled by hand in every handler, and a new
-listing cannot invent a fifth shape.
+(`messages`, `agents`, `servers`), and an empty key means the handler's own object is the
+answer; either way `success` is added by the dispatcher. The wire format is read off the
+route table instead of being reassembled by hand in every handler, and a new listing cannot
+invent a fourth shape.
 
 `Route::audience` is the other column that matters, and it has no default: adding a route
-means answering who may read it. That is what makes `/api/workspaces` — which answers this
-machine's directories — impossible to add as a route that answers the network by omission,
-which is how it was added.
+means answering who may read it. That is what makes a route answering this machine's
+directories impossible to add as one that answers the network by omission.
 
 The status the exception maps to is the one that names whose fault it is: `RequestRefused`
 for a request the caller can fix, `NotFound` for a name or route that does not exist, and

@@ -100,7 +100,6 @@ class Runtime {
   void SwitchAgent(const config::AgentEntry& new_agent);
   void SwitchBackend(const config::Backend& backend);
 
-  std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
   // The file Initialize() loaded.
   const std::string& ConfigPath() const { return config_path_; }
@@ -164,7 +163,6 @@ class Runtime {
   const config::AgentEntry& ActiveAgent() const;
 
   bool RewindBefore(size_t turn);
-  void ClearConversation();
 
   config::Backend CurrentBackend() const;
 

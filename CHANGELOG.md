@@ -18,6 +18,15 @@ the commit that made it, and its current behaviour is in the relevant document
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
 
+### Removed
+
+- **Breaking** — **`GET /api/workspaces` and `POST /api/clear` are gone.** Neither had a
+  caller: the page names another server from `/api/servers`, which lists what this machine is
+  actually serving rather than every sibling directory that carries a `.pu/agents.json`, and it
+  clears a conversation by sending the new one. A second way to say either thing was a surface
+  to keep in step with no reader to keep it honest. `pu /clear` still clears a conversation in
+  the terminal, and `/api/rewind` still steps back a turn over HTTP.
+
 ## 0.6.1
 
 ### Breaking
