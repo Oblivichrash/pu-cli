@@ -18,6 +18,15 @@ the commit that made it, and its current behaviour is in the relevant document
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
 
+### Changed
+
+- **Breaking** — **`session.json` is schema 9: a tool receipt carries `origin`.** The
+  question it answered, the run that answered it and that run's rank are now written with
+  the receipt instead of being parsed out of its text on every turn. A file written by an
+  older build names schema 8, so it is moved to `session.json.bak` and a fresh conversation
+  starts, with the reason printed. Nothing else about a session changed: a rewind, a reload
+  and a page read after a newer run all behave as they did.
+
 ### Removed
 
 - **Breaking** — **`GET /api/workspaces` and `POST /api/clear` are gone.** Neither had a

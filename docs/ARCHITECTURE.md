@@ -246,7 +246,10 @@ the run survived, and `buffer` says which run it was.
 The page's wire form is paging's too, in both directions: `Envelope` writes the three
 scopes, `OriginOf` reads a receipt back, `SupersededReceipt` empties one. A writer in the
 tool and a reader in the projection is how the two drift apart, and a receipt is only ever
-read by machinery that did not write it.
+read by machinery that did not write it. The origin is read once, where the result enters
+the conversation (`ToolPayload::origin`), and stored with the node: a page's provenance is
+a fact about the text, and re-deriving it from the text on every turn is the same question
+asked for as long as the conversation lasts.
 
 **One page per source.** A buffer carries two ids and an order: `id` names the run,
 `source` names the question — the command and the directory — so two runs of one command
@@ -256,9 +259,9 @@ process: the source would make a resumed transcript read the new `s1` as the old
 the run id would make this process's first run the same run as the last one's. The run id
 carries the mark of the pager that wrote it, so a cursor written elsewhere — by an earlier
 process, by a peer — finds nothing instead of a namesake. `BuildRequestPath` compares the
-`rank`: while it assembles a request it replaces the page of a run that the same source has
-since been run again to supersede, leaving the verdict, the `page` and the `extent` in
-place and naming the newer run in `superseded_by`. A page is only superseded by a newer run
+`rank` a receipt carries: while it assembles a request it replaces the page of a run that
+the same source has since been run again to supersede, leaving the verdict, the `page` and
+the `extent` in place and naming the newer run in `superseded_by`. A page is only superseded by a newer run
 read *after* it, so a run's own pages stay (they are complementary, not successive) and so
 does a page the model paged back to. A pager opening a transcript continues the numbering
 past the highest rank it finds there (`ContinueRankingFrom`), so a run made after a restart

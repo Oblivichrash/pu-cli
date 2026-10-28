@@ -74,6 +74,13 @@ again since:
 - the graph is untouched. This happens while the request is assembled, so rewinding,
   saving and reloading all still see the full transcript
 
+Which page came from which run is a fact about a receipt, so it is stored with one: the
+session node carries `origin` (`source`, `buffer`, `rank`), written when the result enters
+the conversation and read back on load. The projection compares that field instead of
+parsing each receipt's text again on every turn — the answer cannot have changed, and
+asking it once per turn for a conversation's whole history is how a long session gets slow
+in a way nothing points at.
+
 What this does not bound is a conversation that runs many *different* commands, or one
 whose prompts and replies grow on their own. Each such run keeps one page, and the pages
 accumulate — see [Known Limitations](ARCHITECTURE.md#known-limitations).
