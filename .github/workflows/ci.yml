@@ -10,6 +10,9 @@ jobs:
   build:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # A stalled job otherwise hangs for the 6h default. 45 min covers the slowest observed
+    # job (~35 min on macOS) while still failing fast on a wedged runner.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +32,10 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y catch2 libspdlog-dev libssl-dev libboost-all-dev
+        # Only the Boost libraries CMakeLists.txt actually links are needed; the umbrella
+        # libboost-all-dev pulls in ROCm/MPI and roughly triples install time.
+        sudo apt-get install -y catch2 libspdlog-dev libssl-dev libboost-dev \
+          libboost-system-dev libboost-program-options-dev libboost-json-dev
 
     # Ubuntu 24.04 ships Boost 1.83, where boost::json::value{object{...}} builds a one-element
     # array instead of the object. CMakeLists.txt requires 1.84, so build that floor from source.
@@ -78,7 +84,13 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
     - name: Build
-      run: cmake --build build --config Release --parallel
+      shell: bash
+      # A full --parallel build fans out to every runner core, which stalls longer per file and
+      # keeps peak memory high; capping the Linux fan-out finishes sooner and stays bounded.
+      env:
+        BUILD_JOBS: ${{ runner.os == 'Linux' && '4' || '' }}
+      # Empty BUILD_JOBS means unlimited fan-out, which is what Windows and macOS did before.
+      run: cmake --build build --config Release --parallel $BUILD_JOBS
 
     - name: Test
       run: ctest --test-dir build -C Release --parallel --output-on-failure
