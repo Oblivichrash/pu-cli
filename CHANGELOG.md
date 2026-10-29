@@ -36,6 +36,13 @@ the commit that made it, and its current behaviour is in the relevant document
   to keep in step with no reader to keep it honest. `pu /clear` still clears a conversation in
   the terminal, and `/api/rewind` still steps back a turn over HTTP.
 
+### Fixed
+
+- **`pu check` no longer calls `paging` a field this build ignores.** The check keeps its own
+  list of the keys a file may hold, and `paging` was missing from it although the parser reads
+  it, so the command advised deleting a budget that was in force. The block's own keys are now
+  checked too: `page_line` for `page_lines` is named instead of being silently ignored.
+
 ## 0.6.1
 
 ### Breaking

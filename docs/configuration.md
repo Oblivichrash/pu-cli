@@ -139,8 +139,9 @@ fast   (default_agent)
 
 A host marked `(default for this gateway)` is one the file never named. A key printed as
 `(empty)` is a reference that expanded to nothing, and the warning beside it names the
-variable. A field this build never reads is listed under `warnings` — a build may be older
-than the file, so that is a warning and not a failure.
+variable. A field this build never reads is listed under `warnings`, named with the path it
+sits at — the agent itself, `backend`, `security` or `paging` — because a build may be older
+than the file, and that is a warning and not a failure.
 
 A session naming an agent the file no longer has is reported with the names that do exist.
 The session outranks `default_agent` by design (see
