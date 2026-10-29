@@ -94,7 +94,7 @@ struct Gateway {
   Billing billing{};
 };
 
-// Adding a gateway is a line in the gateway table in gateways.cpp. There is no file per
+// Adding a gateway is a line in the gateway table in config/gateway.cpp. There is no file per
 // gateway: the table holds every one, which is what keeps a gateway's name, host and
 // provider in one place instead of one place each.
 std::span<const Gateway> Gateways();

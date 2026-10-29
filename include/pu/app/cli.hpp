@@ -57,8 +57,6 @@ CommandLine BuildCommandLine();
 
 std::string CommandList(const CommandLine& line);
 
-CommandLine BuildCommandLine();
-
 // The frame every command that needs a Runtime runs inside; see
 // docs/ARCHITECTURE.md#the-frame-every-command-runs-inside.
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,

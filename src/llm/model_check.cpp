@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/llm/model_listing.hpp"
+#include "pu/llm/model_check.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/config/backend.hpp"
 

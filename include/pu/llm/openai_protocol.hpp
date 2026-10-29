@@ -3,7 +3,6 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/config/gateway.hpp"
-#include "pu/llm/openai_protocol.hpp"
 #include "pu/llm/streaming_provider.hpp"
 
 #include <functional>

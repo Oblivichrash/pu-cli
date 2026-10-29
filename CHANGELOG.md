@@ -6,6 +6,43 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Added
+
+- **`execute_bash` answers with one page of a command's output instead of all of it.** The
+  output is kept in a store that belongs to the session, `at` says where to read (`head`,
+  `tail`, or a cursor taken from `page.earlier`/`page.later`), and a receipt carries `page`,
+  `buffer` and `extent`: where the page sits in the command's whole output, which run produced
+  it, and how much of that run survived the byte budget. A cursor names its own run and the
+  store that wrote it, so one left by an earlier process reads nothing rather than a namesake;
+  a page of a command that has since been run again is sent as a receipt naming the newer run,
+  which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
+  sets the budget — see [docs/paging.md](docs/paging.md).
+
+### Changed
+
+- **Breaking** — **`session.json` is schema 9: a tool receipt carries `origin`.** The
+  question it answered, the run that answered it and that run's rank are now written with
+  the receipt instead of being parsed out of its text on every turn. A file written by an
+  older build names schema 8, so it is moved to `session.json.bak` and a fresh conversation
+  starts, with the reason printed. Nothing else about a session changed: a rewind, a reload
+  and a page read after a newer run all behave as they did.
+
+### Removed
+
+- **Breaking** — **`GET /api/workspaces` and `POST /api/clear` are gone.** Neither had a
+  caller: the page names another server from `/api/servers`, which lists what this machine is
+  actually serving rather than every sibling directory that carries a `.pu/agents.json`, and it
+  clears a conversation by sending the new one. A second way to say either thing was a surface
+  to keep in step with no reader to keep it honest. `pu /clear` still clears a conversation in
+  the terminal, and `/api/rewind` still steps back a turn over HTTP.
+
+### Fixed
+
+- **`pu check` no longer calls `paging` a field this build ignores.** The check keeps its own
+  list of the keys a file may hold, and `paging` was missing from it although the parser reads
+  it, so the command advised deleting a budget that was in force. The block's own keys are now
+  checked too: `page_line` for `page_lines` is named instead of being silently ignored.
+
 ## 0.6.1
 
 ### Breaking

@@ -114,6 +114,15 @@ class ScopedWorkingDir {
   std::filesystem::path original_;
 };
 
+// Whichever shell a build runs commands through, printing a file whole.
+inline std::string PrintFileCommand(const std::string& path) {
+#ifdef _WIN32
+  return "type \"" + path + "\"";
+#else
+  return "cat \"" + path + "\"";
+#endif
+}
+
 class ScopedTempDir {
  public:
   explicit ScopedTempDir(const std::string& prefix) {

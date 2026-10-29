@@ -6,6 +6,16 @@ lets it in, and the jobs the board holds. The routes those verbs appear on are i
 [web-api.md](web-api.md); where the board sits in the process is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+> **Frozen.** This block works, is tested, and is not being extended. Nothing in it is
+> reachable from one `pu serve` on its own: exercising any verb takes two instances, a
+> `peers.json` on each, and a token between them, so it is the one part of the tree that
+> cannot be checked by a single command — which means a change here is a change nobody
+> notices until it is used. It stays because it is the only working answer this project has
+> to "two agents, one job", and removing it would delete the record along with the code.
+> Freezing means: no new verbs, no new fields, no new readers on the page, and tests kept
+> green. Unfreeze by deciding it is a product direction — and then write down what the
+> direction is, because the design that follows from it is not in this document.
+
 ## Peer messaging
 
 Two `pu serve` instances can talk to each other, each driven by its own agent and

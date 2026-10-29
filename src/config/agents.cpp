@@ -50,6 +50,30 @@ SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   return policy;
 }
 
+paging::Budget ParsePaging(const json::value& j) {
+  paging::Budget budget;
+  if (json::HasKey(j, "page_lines") && j.at("page_lines").is_number())
+    budget.page_lines = boost::json::value_to<std::size_t>(j.at("page_lines"));
+  if (json::HasKey(j, "max_lines") && j.at("max_lines").is_number())
+    budget.max_lines = boost::json::value_to<std::size_t>(j.at("max_lines"));
+  if (json::HasKey(j, "capture_bytes") && j.at("capture_bytes").is_number())
+    budget.capture_bytes = boost::json::value_to<std::size_t>(j.at("capture_bytes"));
+  if (json::HasKey(j, "retain_bytes") && j.at("retain_bytes").is_number())
+    budget.retain_bytes = boost::json::value_to<std::size_t>(j.at("retain_bytes"));
+  if (json::HasKey(j, "retain_buffers") && j.at("retain_buffers").is_number())
+    budget.retain_buffers = boost::json::value_to<std::size_t>(j.at("retain_buffers"));
+
+  // A page is a page: a request is clamped to `max_lines`, so a `page_lines` above it
+  // would be silently narrowed. Nothing retained keeps nothing, and a store that keeps
+  // nothing cannot be paged at all.
+  budget.page_lines = std::max<std::size_t>(1, budget.page_lines);
+  budget.max_lines = std::max(budget.page_lines, budget.max_lines);
+  budget.capture_bytes = std::max<std::size_t>(1024, budget.capture_bytes);
+  budget.retain_bytes = std::max<std::size_t>(1024, budget.retain_bytes);
+  budget.retain_buffers = std::max<std::size_t>(1, budget.retain_buffers);
+  return budget;
+}
+
 Backend ParseBackend(const json::value& j) {
   Backend cfg;
   ReadBackendFields(cfg, j);
@@ -104,6 +128,8 @@ AgentEntry ParseAgentEntry(const json::value& j) {
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
     entry.security = ParseSecurityPolicy(j.at("security"));
+  if (json::HasKey(j, "paging") && j.at("paging").is_object())
+    entry.paging = ParsePaging(j.at("paging"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
   entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");

@@ -56,7 +56,7 @@ inline void WritePeersFile(const std::filesystem::path& dir, const std::string& 
 // An agents.json whose one agent talks to a FakeBackend over the OpenAI protocol, which is the
 // one that carries a tool call as JSON — so a backend can be made to call send_to_peer by
 // answering with one.
-inline void WritePeerBackendConfig(const std::filesystem::path& dir, int backend_port) {
+inline void WritePeerBackend(const std::filesystem::path& dir, int backend_port) {
   std::error_code ec;
   std::filesystem::create_directories(dir / ".pu", ec);
   REQUIRE_FALSE(ec);
@@ -152,7 +152,7 @@ class PeerServer {
 
     backend_ = std::make_unique<FakeHttpServer>(
         [this](const http::request<http::string_body>& req) { return Answer(req); });
-    WritePeerBackendConfig(home_, backend_->Port());
+    WritePeerBackend(home_, backend_->Port());
     // A server that is part of a topology has a peers.json, and having one is what mounts the
     // board's endpoints: a board no peer can reach is a board no peer can read.
     if (with_peers) WritePeersFile(home_, name, 0, "", 0);

@@ -93,7 +93,9 @@ struct SessionSpec {
   }
 };
 
-inline constexpr int kSessionSchemaVersion = 8;
+// 9: a tool receipt carries `origin` — the question, the run and its rank — so a projection
+// reads where a page came from instead of parsing its text on every turn.
+inline constexpr int kSessionSchemaVersion = 9;
 
 class Session {
  public:

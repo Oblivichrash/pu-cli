@@ -603,3 +603,95 @@ TEST_CASE("FindRawAgentEntry reads the file as written, not as resolved", "[agen
 
   REQUIRE_FALSE(config::FindRawAgentEntry(tmp.path.string(), "absent").has_value());
 }
+
+// What a session will spend on keeping a command's output. The block is per agent, so
+// a small local model and a 1M-context cloud model can want different page sizes.
+TEST_CASE("A paging block sets the budget a session runs with", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "gateway": "ollama", "model": "qwen" },
+        "paging": { "page_lines": 40, "max_lines": 90, "capture_bytes": 4096,
+                    "retain_bytes": 8192, "retain_buffers": 3 }
+      }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const paging::Budget& budget = cfg.agents[0].paging;
+
+  REQUIRE(budget.page_lines == 40);
+  REQUIRE(budget.max_lines == 90);
+  REQUIRE(budget.capture_bytes == 4096);
+  REQUIRE(budget.retain_bytes == 8192);
+  REQUIRE(budget.retain_buffers == 3);
+}
+
+// A page is a page: a `page_lines` above `max_lines` would be silently narrowed, and a
+// store that retains nothing cannot be paged at all. Both are raised, not refused, so a
+// typo in one number does not keep the agent from starting.
+TEST_CASE("A paging block that cannot be obeyed is raised to one that can", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "gateway": "ollama", "model": "qwen" },
+        "paging": { "page_lines": 0, "max_lines": 0, "capture_bytes": 1,
+                    "retain_bytes": 1, "retain_buffers": 0 }
+      }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const paging::Budget& budget = cfg.agents[0].paging;
+
+  REQUIRE(budget.page_lines == 1);
+  REQUIRE(budget.max_lines == 1);  // raised to page_lines, which was itself raised to 1
+  REQUIRE(budget.capture_bytes == 1024);
+  REQUIRE(budget.retain_bytes == 1024);
+  REQUIRE(budget.retain_buffers == 1);
+}
+
+TEST_CASE("An agent with no paging block keeps the default budget", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "gateway": "ollama", "model": "qwen" } }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const paging::Budget defaults;
+
+  REQUIRE(cfg.agents[0].paging.page_lines == defaults.page_lines);
+  REQUIRE(cfg.agents[0].paging.max_lines == defaults.max_lines);
+  REQUIRE(cfg.agents[0].paging.capture_bytes == defaults.capture_bytes);
+  REQUIRE(cfg.agents[0].paging.retain_bytes == defaults.retain_bytes);
+  REQUIRE(cfg.agents[0].paging.retain_buffers == defaults.retain_buffers);
+}
+
+// `output` was the block's name before it grew retention as well as page size. A config
+// written then must still load: the old key is ignored, not fatal.
+TEST_CASE("An output block from an older config is ignored, not fatal", "[agent_config]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "default_agent": "chat",
+    "agents": [
+      {
+        "name": "chat",
+        "backend": { "gateway": "ollama", "model": "qwen" },
+        "output": { "page_lines": 40 }
+      }
+    ]
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+
+  REQUIRE(cfg.agents[0].paging.page_lines == paging::Budget{}.page_lines);
+}

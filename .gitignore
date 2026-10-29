@@ -5,3 +5,4 @@ build/
 .pu/
 provider-probes/
 __pycache__/
+.workbuddy/

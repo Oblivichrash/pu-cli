@@ -82,7 +82,7 @@ response header.
 ## 4. Headers
 
 The set is the one the installed client sends and every captured request used:
-the sixteen in `src/gateways/gateways.cpp`, with the bearer token, `Accept`
+the sixteen in `src/config/gateway.cpp`, with the bearer token, `Accept`
 and `Content-Type` headers the HTTP layer adds. Only
 `Authorization` is required: dropping any other header, or all of them, still
 returns 200, and the gateway answers with nothing but the key present. The rest
@@ -94,7 +94,7 @@ sends because it is generated from an SDK; the conversation and request ids are
 correlation values the server records rather than echoes. The three per-call ids are
 one shape, a uuid with its dashes removed, spliced from the client's generator rather
 than a second id format, while the two values that name a thing rather than an event
-keep their dashes. The gateway in `src/gateways/gateways.cpp` is the source for that shape
+keep their dashes. The gateway in `src/config/gateway.cpp` is the source for that shape
 and for each id's lifetime.
 
 ## 5. Request body

@@ -12,6 +12,7 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/base.hpp"
+#include "pu/paging/origin.hpp"
 
 namespace pu::session {
 
@@ -120,6 +121,11 @@ struct ToolPayload {
   std::string tool_call_id;
   std::string tool_name;
   std::string content;
+  // Where the result came from, when it is a page: the question, the run, and how late the
+  // run was. Read out of `content` once, as the result enters the conversation, because the
+  // text does not change afterwards — a projection that parsed it again every turn would be
+  // asking a question whose answer it already had.
+  std::optional<paging::Origin> origin{};
 };
 
 using MessagePayload = std::variant<UserPayload, AssistantPayload, SystemPayload, ToolPayload>;

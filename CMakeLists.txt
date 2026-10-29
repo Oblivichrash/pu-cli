@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(pu-cli VERSION 0.6.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
@@ -25,52 +25,61 @@ function(pu_configure_target target)
 
     if(MSVC)
         target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-        target_compile_options(${target} PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
+        # The sources are UTF-8 and carry typographic punctuation in comments; without this MSVC
+        # reads them in the system code page and warns C4819 on every file that has any.
+        # /bigobj: an object file holds at most 65535 sections, and a Debug build of the unit that
+        # instantiates Boost.Beast's templates passes that — C1128, on a file nobody edited.
+        target_compile_options(${target} PRIVATE /W4 /utf-8 /bigobj /D_CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 endfunction()
 
 add_library(pu_core STATIC
-    src/session/graph.cpp
-    src/core/beast_http_client.cpp
-    src/core/platform.cpp
-    src/core/sse.cpp
-    src/session/session.cpp
-    src/session/usage.cpp
-    src/session/settings.cpp
-    src/serve/peer_read.cpp
-    src/core/logging.cpp
-    src/llm/ollama_provider.cpp
-    src/llm/openai_provider.cpp
-    src/llm/openai_protocol.cpp
-    src/llm/projection.cpp
-    src/llm/model_listing.cpp
-    src/llm/probe.cpp
-    src/llm/model_verifier.cpp
-    src/llm/streaming_provider.cpp
-    src/gateways/gateways.cpp
-    src/config/backend.cpp
-    src/mcp/stdio_transport.cpp
-    src/mcp/http_transport.cpp
-    src/mcp/client.cpp
-    src/config/agents.cpp
-    src/config/peer.cpp
-    src/config/serve_registry.cpp
-    src/runtime/executor.cpp
-    src/tools/toolbox.cpp
-    src/tools/builtin_tools.cpp
-    src/tools/peer_tool.cpp
-    src/runtime/runtime.cpp
-    src/runtime/command_router.cpp
     src/app/cli.cpp
-    src/app/cli_check.cpp
     src/app/cli_agents.cpp
+    src/app/cli_check.cpp
     src/app/cli_sse.cpp
-    src/config/agent_summary.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
+    src/config/agent_summary.cpp
+    src/config/agents.cpp
+    src/config/backend.cpp
+    src/config/gateway.cpp
+    src/config/peer.cpp
+    src/config/serve_registry.cpp
+    src/core/beast_http_client.cpp
+    src/core/logging.cpp
+    src/core/platform.cpp
+    src/core/sse.cpp
+    src/exec/run.cpp
+    src/llm/model_check.cpp
+    src/llm/model_listing.cpp
+    src/llm/ollama_provider.cpp
+    src/llm/openai_protocol.cpp
+    src/llm/openai_provider.cpp
+    src/llm/probe.cpp
+    src/llm/projection.cpp
+    src/llm/streaming_provider.cpp
+    src/mcp/client.cpp
+    src/mcp/http_transport.cpp
+    src/mcp/stdio_transport.cpp
+    src/paging/paging.cpp
+    src/runtime/command_router.cpp
+    src/runtime/executor.cpp
+    src/runtime/runtime.cpp
     src/serve/board.cpp
+    src/serve/peer_read.cpp
+    src/session/graph.cpp
+    src/session/request.cpp
+    src/session/session.cpp
+    src/session/settings.cpp
+    src/session/usage.cpp
+    src/tools/bash.cpp
+    src/tools/peer_tool.cpp
+    src/tools/policy.cpp
+    src/tools/toolbox.cpp
+    src/tools/write_file.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC
@@ -113,4 +122,9 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(WIN32)
+    # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
+    # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.
+    install(FILES $<TARGET_RUNTIME_DLLS:pu> DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web/ DESTINATION ${CMAKE_INSTALL_DATADIR}/pu/web)

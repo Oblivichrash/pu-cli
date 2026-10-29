@@ -16,13 +16,20 @@
 #include <string>
 
 #include "pu/runtime/executor.hpp"
-#include "pu/tools/builtin_tools.hpp"
+#include "pu/paging/paging.hpp"
+#include "pu/tools/bash.hpp"
 
 namespace {
 
 using pu::ToolContext;
 namespace config = pu::config;
 namespace tools = pu::tools;
+
+// The store is the session's; a test borrows one for as long as it runs.
+pu::paging::Pager& Store() {
+  static pu::paging::Pager pager;
+  return pager;
+}
 
 // The policy names one command for approval. No approval callback is installed, which is
 // what both front ends look like: `pu ask` has no channel, and the CLI's chat has none
@@ -46,7 +53,7 @@ TEST_CASE("A command the policy parks for approval is refused when nobody can an
           "[tools][refusal]") {
   const config::SecurityPolicy policy = PolicyNaming("my_script");
   ToolContext ctx = ContextNeedingApproval(policy);
-  tools::ExecuteBashToolStandard tool(policy.sandbox_root);
+  tools::BashTool tool(policy.sandbox_root, Store());
 
   const std::string raw = tool.Execute(boost::json::object{{"command", "my_script --go"}}, ctx);
 
@@ -64,7 +71,7 @@ TEST_CASE("The same policy leaves a command it does not name alone", "[tools][re
   // above has to be about this command, not about the policy being present.
   const config::SecurityPolicy policy = PolicyNaming("my_script");
   ToolContext ctx = ContextNeedingApproval(policy);
-  tools::ExecuteBashToolStandard tool(policy.sandbox_root);
+  tools::BashTool tool(policy.sandbox_root, Store());
 
   const std::string raw = tool.Execute(boost::json::object{{"command", "true"}}, ctx);
   const tools::ToolResult parsed = tools::ParseToolResult(raw);

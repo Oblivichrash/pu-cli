@@ -8,6 +8,7 @@
 
 #include "pu/config/backend.hpp"
 #include "pu/config/mcp_server.hpp"
+#include "pu/paging/paging.hpp"
 #include "pu/config/security_policy.hpp"
 
 namespace pu::config {
@@ -17,6 +18,7 @@ struct AgentEntry {
   std::string description;
   Backend backend;
   SecurityPolicy security;
+  paging::Budget paging;
   std::vector<McpServerConfig> mcp_servers;
   // The tool-call budget for one turn. Absent: the executor's default applies.
   std::optional<int> tool_call_budget;
