@@ -121,18 +121,6 @@ the commit that made it, and its current behaviour is in the relevant document
   process rather than by directory, so two servers on one workspace do not offer each other. A
   sibling's address is that port on the host the page already reached, since a registry `bind` is
   not a destination. The entry's shape is in **Breaking** above.
-- The registry's temp file is named after the writer (`serve.json.<pid>.tmp`), so a writer that
-  gave up waiting on the lock cannot rename over one that finished.
-
-- `pu --help` names each command with the one line that says what it answers. The list is
-  built from the same table the `--command` flag is described from, so a command cannot be
-  added to one and forgotten in the other.
-- **Six of the seven project rules are gone.** The cases that read Markdown and source text —
-  the SPDX line, the test file list, every document reachable from outside `docs/`, every
-  relative link and anchor, every closed inline code span, and the repeated `###` heading in a
-  CHANGELOG section — are removed with nothing replacing them, so each of those rules is a
-  reviewer's again. The page rule stays, because it decides how the page runs rather than how
-  the text reads.
 
 ## 0.6.0
 
