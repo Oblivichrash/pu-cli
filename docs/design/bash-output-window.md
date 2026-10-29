@@ -2,7 +2,7 @@
 
 This records why `execute_bash` answers with a page, the routes that were not taken,
 and what the shape gives up. What is built is stated in
-[README](../../README.md#execute_bash-pages-its-output) and
+[paging.md](../paging.md) and
 [ARCHITECTURE](../ARCHITECTURE.md#executor); this document carries the reasoning.
 
 **Built:** a command's output is captured within a byte budget, kept in a

@@ -131,7 +131,7 @@ Where each gateway keeps those fields, and what it calls them, is `CatalogShape`
 the protocol parser names no vendor. The measured requirement behind one of them: a model
 whose `onlyReasoning` is true is answered `400 11150` when a request carries no
 `reasoning_effort`, and answers 200 to any level — so a level is required rather than one
-particular level ([codebuddy-fieldnotes.md](codebuddy-fieldnotes.md)).
+particular level.
 
 The one caller that acts on the field today is `pu models --verify`: such a model is not
 asked at all when the backend sends no level, since the request cannot succeed, and the
