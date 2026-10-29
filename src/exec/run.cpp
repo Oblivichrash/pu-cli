@@ -23,6 +23,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <signal.h>
 #include <poll.h>
 #include <sys/wait.h>
 #include <unistd.h>
