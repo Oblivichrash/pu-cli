@@ -18,14 +18,15 @@ Runtime: **Boost >= 1.84** (Beast, Asio, JSON, ProgramOptions), **spdlog**, and
 [.github/workflows/ci.yml](.github/workflows/ci.yml); the common installs are:
 
 ```bash
-sudo apt-get install -y libboost-all-dev libspdlog-dev libssl-dev catch2   # Debian/Ubuntu
+sudo apt-get install -y libboost-dev libboost-system-dev \
+  libboost-program-options-dev libboost-json-dev libspdlog-dev libssl-dev catch2  # Debian/Ubuntu
 brew install boost spdlog openssl catch2                                   # macOS
 vcpkg install boost-asio boost-beast boost-json boost-program-options spdlog openssl catch2  # Windows
 ```
 
 ### Build
 
-A C++23 compiler and CMake >= 3.16 are required. Point CMake at your vcpkg
+A C++23 compiler and CMake >= 3.21 are required. Point CMake at your vcpkg
 toolchain on Windows (`-DCMAKE_TOOLCHAIN_FILE=...`).
 
 ```bash
@@ -92,7 +93,6 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 | [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
 | [docs/design/bash-output-window.md](docs/design/bash-output-window.md) | The note paging shipped from: one window per tool call, and why |
 | [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
-| [docs/design/nim-fieldnotes.md](docs/design/nim-fieldnotes.md) | What NVIDIA's catalogue and SSE do that the OpenAI shape does not |
 | [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
@@ -128,7 +128,6 @@ version does:
 | From | What to do |
 |------|------------|
 | 0.4.x | Rename `backend.type` to `backend.gateway`. The agent-level `"type": "llm"` is a different field and needs no change. |
-| 0.5.0 | No configuration change. `PU_AGENTS_CONFIG` is new and takes precedence over both files. |
 | 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
 | 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
 | 0.6.1 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
