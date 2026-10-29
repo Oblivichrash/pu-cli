@@ -43,7 +43,8 @@ port a workspace asks for, and the registry is what actually answers.
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
 > agent's tools. Keep the default loopback bind unless the port is protected by
-> other means.
+> other means. [security.md](security.md) is where the rest of the trust boundary is
+> stated.
 
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` in the [README](../README.md#core-commands).
