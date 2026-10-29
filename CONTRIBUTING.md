@@ -12,6 +12,12 @@ not comply is left as it is.
 - A `Co-authored-by:` trailer is a record of a real co-author, never a
   requirement: no trailer is expected on a change you wrote alone.
 
+Work happens on a branch taken from `main` and lands through a pull request that
+is merged into `main`. There is no long-lived `develop` branch: a second line to
+keep in sync only drifts, and a rebase merge makes it drift silently because the
+commits it rewrites are no longer ancestors of `main`. Merge with a merge commit
+or a squash, never a rebase.
+
 ## Commit Messages
 Follow [Conventional Commits](https://www.conventionalcommits.org/): one
 coherent change per commit, an imperative summary within 72 characters, and a body
