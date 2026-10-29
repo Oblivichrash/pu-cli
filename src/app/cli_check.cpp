@@ -39,8 +39,8 @@ namespace fs = std::filesystem;
 // Everything ParseAgentEntry reads. A key outside this set is read by nothing, which is the
 // one mistake a file cannot show by running: the field is simply not there any more.
 const std::set<std::string>& ReadAgentKeys() {
-  static const std::set<std::string> keys{"name",   "description",  "backend",
-                                          "security", "mcp_servers", "tool_call_budget"};
+  static const std::set<std::string> keys{"name",     "description",    "backend", "security",
+                                          "paging",   "mcp_servers",    "tool_call_budget"};
   return keys;
 }
 
@@ -54,6 +54,12 @@ const std::set<std::string>& ReadBackendKeys() {
 const std::set<std::string>& ReadSecurityKeys() {
   static const std::set<std::string> keys{"sandbox_root", "max_command_length",
                                           "forbidden_patterns", "approval_patterns"};
+  return keys;
+}
+
+const std::set<std::string>& ReadPagingKeys() {
+  static const std::set<std::string> keys{"page_lines", "max_lines", "capture_bytes",
+                                          "retain_bytes", "retain_buffers"};
   return keys;
 }
 
@@ -179,6 +185,11 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
       raw_agent->at("security").is_object()) {
     WarnIgnoredKeys(raw_agent->at("security").as_object(), ReadSecurityKeys(),
                     entry.name + ".security", warnings);
+  }
+  if (raw_agent != nullptr && raw_agent->contains("paging") &&
+      raw_agent->at("paging").is_object()) {
+    WarnIgnoredKeys(raw_agent->at("paging").as_object(), ReadPagingKeys(),
+                    entry.name + ".paging", warnings);
   }
   return out.str();
 }

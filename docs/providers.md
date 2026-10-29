@@ -6,7 +6,7 @@ is reference material: which layer decides the provider is in
 
 ## Which provider a request reaches
 
-A gateway answers for a backend type. `src/gateways/gateways.cpp` holds the gateway table, and
+A gateway answers for a backend type. `src/config/gateway.cpp` holds the gateway table, and
 a row states that gateway's name, default host, provider and catalogue read; `CreateBackend`
 and `ListModels` (`config/backend.hpp`) only look the type up in that table, so neither spells
 a gateway's endpoint or provider itself. Adding a gateway is a row, and removing one is the

@@ -18,14 +18,15 @@ it answers in the route table — a row without an audience does not compile:
 
 | Audience | Routes | Narrowed by |
 | --- | --- | --- |
-| `loopback` | `/api/workspaces`, `/api/servers`, `/api/board` | The address the request arrived from. Each answer is a fact about this machine — a path per workspace, a list of what it serves, and the trail of who asked whom for what — so a caller from anywhere else gets `403` |
+| `loopback` | `/api/servers`, `/api/board` | The address the request arrived from. Each answer is a fact about this machine — a list of what it serves, and the trail of who asked whom for what — so a caller from anywhere else gets `403` |
 | `peer` | `/api/jobs`, its three verbs, `/api/peer/message` | A bearer token compared in constant time. No token, or the wrong one, is `401` with `WWW-Authenticate: Bearer`; a server with no `peers.json` answers `404`, because it has no topology at all. `/api/peer/message` additionally refuses a `from` that is not in `peers[]` |
 | `anyone` | The rest | Nothing beyond the bind address |
 
 The reason this is a column rather than a check inside the dispatcher is that a check in the
 dispatcher has to name a path, and a path it does not name is a route that answers the
-network. `/api/workspaces` was exactly that: it answers this machine's directories and the
-table said nothing about it.
+network. A route that answered this machine's directories was added that way once: it named
+no audience, so by omission it answered the network. The route is gone; the column is what
+keeps the next one from being added the same way.
 
 `anyone` is a known gap rather than an oversight, and it is why the bind address is the
 control that matters: a caller that reaches the port can read the conversation, drive a turn,

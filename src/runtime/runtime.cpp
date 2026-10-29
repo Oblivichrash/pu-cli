@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/runtime/runtime.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <system_error>
+#include <variant>
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -17,7 +19,8 @@
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/builtin_tools.hpp"
+#include "pu/tools/bash.hpp"
+#include "pu/tools/write_file.hpp"
 #include "pu/tools/mcp_tool.hpp"
 
 namespace pu {
@@ -83,6 +86,20 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
   return nullptr;
 }
 
+// The highest rank the transcript already carries. A pager opening that transcript has to
+// continue from it: ranks only compare against each other, so a fresh one starting at 1 would
+// rank every run made after a restart below every page read before it, and elision would never
+// fire again.
+std::size_t HighestRankIn(const Session& session) {
+  std::size_t highest = 0;
+  for (const session::MessageNode* node : session.Messages().Chain()) {
+    const auto* receipt = std::get_if<session::ToolPayload>(&node->payload);
+    if (receipt == nullptr || !receipt->origin) continue;
+    highest = std::max(highest, receipt->origin->rank);
+  }
+  return highest;
+}
+
 }  // namespace
 
 void Runtime::Initialize(const std::string& config_path) {
@@ -146,6 +163,11 @@ void Runtime::Initialize(const std::string& config_path) {
   const auto session_path = workspace_root_ / ".pu" / "session.json";
   if (std::filesystem::exists(session_path)) {
     current_session_ = LoadSessionFromFile(session_path);
+    // A page read before the restart keeps its place in the order, so the runs made after it
+    // arrive behind it rather than at the front.
+    if (current_session_ != nullptr) {
+      pager_.ContinueRankingFrom(HighestRankIn(*current_session_));
+    }
   }
 
   if (current_session_) {
@@ -194,11 +216,6 @@ bool Runtime::RewindBefore(size_t turn) {
   return true;
 }
 
-void Runtime::ClearConversation() {
-  DefaultSession()->Messages().ClearHistory();
-  SaveCurrentSession();
-}
-
 std::shared_ptr<Session> Runtime::DefaultSession() {
   if (current_session_) return current_session_;
 
@@ -232,7 +249,7 @@ config::Backend Runtime::ConfiguredBackend() const {
 config::Backend Runtime::CurrentBackend() const {
   const config::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
-  return session::ApplyOverrides(backend, Overrides());
+  return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
@@ -295,8 +312,9 @@ void Runtime::ClearSettings() {
 
 void Runtime::ApplyToolBudget() {
   if (!executor_) return;
-  executor_->SetToolCallBudget(
-      session::EffectiveToolBudget(ConfiguredToolBudget(), Overrides()));
+  const session::InForce in_force =
+      session::InForce::Resolve(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
+  executor_->SetToolCallBudget(in_force.tool_budget);
 }
 
 namespace {
@@ -375,33 +393,16 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   }
 }
 
-std::vector<std::pair<std::string, std::string>> Runtime::ListWorkspaces() const {
-  std::vector<std::pair<std::string, std::string>> workspaces;
-  const auto parent = workspace_root_.parent_path();
-
-  std::error_code ec;
-  std::filesystem::directory_iterator entries(parent, ec);
-  if (ec) return workspaces;
-
-  for (const auto& entry : entries) {
-    std::error_code entry_ec;
-    if (!entry.is_directory(entry_ec) || entry_ec) continue;
-    auto agents_path = entry.path() / ".pu" / "agents.json";
-    if (std::filesystem::exists(agents_path, entry_ec) && !entry_ec) {
-      workspaces.emplace_back(entry.path().filename().string(),
-                              std::filesystem::absolute(entry.path()).string());
-    }
-  }
-  return workspaces;
-}
-
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
 
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
-  toolbox_.RegisterTool(std::make_unique<tools::ExecuteBashToolStandard>(
-      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string()));
+  // The budget is the store's, and the tool reads it from there: one owner for the page
+  // size and the retention, applied before the tool that will obey it is built.
+  pager_.SetBudget(agent.paging);
+  toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
   if (peer_config_.has_value() && !peer_config_->peers.empty()) {
     toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));

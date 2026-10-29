@@ -9,16 +9,6 @@
 
 namespace pu::platform {
 
-// Runs a shell command with stderr merged via `2>&1`; -1 when the shell could not run.
-int ExecuteCommand(const std::string& command, std::string& output,
-                   const std::string& working_dir = {});
-
-// Same, with a stop token: when it becomes true the command's process group is
-// killed and the call returns with what the command had printed so far. The caller
-// tells a kill from an ordinary exit by the token, not by the exit code.
-int ExecuteCommand(const std::string& command, std::string& output,
-                   const CancelToken& stop_token, const std::string& working_dir = {});
-
 // A child on a console follows the console output code page (cmd.exe).
 std::string FromConsoleOutput(std::string_view text);
 

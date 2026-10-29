@@ -77,8 +77,9 @@ struct ToolResult {
 inline std::string MakeToolResultJson(bool success, const std::string& output,
                                       const std::string& error, int exit_code,
                                       bool blocked = false,
-                                      Refusal refusal = Refusal::kNone) {
-  boost::json::value j = {
+                                      Refusal refusal = Refusal::kNone,
+                                      const boost::json::object* extra = nullptr) {
+  boost::json::object j = {
       {"success", success},
       {"blocked", blocked},
       {"output", text::SanitizeUtf8(output)},
@@ -87,7 +88,12 @@ inline std::string MakeToolResultJson(bool success, const std::string& output,
   };
   // Named only when there is a reason: a result that ran, or was refused by its command,
   // carries no refusal field and reads as it always did.
-  if (refusal == Refusal::kNobodyToAsk) j.as_object()["refusal"] = "nobody_to_ask";
+  if (refusal == Refusal::kNobodyToAsk) j["refusal"] = "nobody_to_ask";
+  // What a tool reports beside the envelope rather than inside it — a page's window,
+  // and the cursor that names the next one.
+  if (extra != nullptr) {
+    for (const auto& field : *extra) j[field.key()] = field.value();
+  }
   return boost::json::serialize(j);
 }
 

@@ -238,19 +238,6 @@ TEST_CASE("serve API /api/agents", "[serve][api]") {
   REQUIRE(agents[0].at("name") == "chat");
 }
 
-TEST_CASE("serve API /api/clear", "[serve][api]") {
-  ServeHarness harness;
-  auto client = harness.Client();
-
-  std::string clear_body = client.Post("/api/clear", boost::json::object{});
-  auto clear_j = ParseJson(clear_body);
-  REQUIRE(clear_j.at("success") == true);
-
-  auto history_j = HistoryOf(client);
-  REQUIRE(history_j.is_array());
-  REQUIRE(history_j.as_array().empty());
-}
-
 TEST_CASE("serve API /api/settings names every setting and where it came from",
           "[serve][api]") {
   ServeHarness harness("openai");
@@ -504,10 +491,9 @@ TEST_CASE("every route states the audience it answers, and none of them silently
   const auto routes = pu::cli::detail::HttpRoutes();
   REQUIRE_FALSE(routes.empty());
 
-  // The routes whose answer is a fact about this machine rather than about the session: a
-  // filesystem path per workspace, a path per server, and the trail of who asked whom for what.
+  // The routes whose answer is a fact about this machine rather than about the session: a path
+  // per server and the trail of who asked whom for what.
   const std::map<std::string, pu::cli::detail::Audience> kLoopbackOnly{
-      {"/api/workspaces", pu::cli::detail::Audience::kLoopback},
       {"/api/servers", pu::cli::detail::Audience::kLoopback},
       {"/api/board", pu::cli::detail::Audience::kLoopback},
   };
@@ -592,48 +578,6 @@ TEST_CASE("serve API /api/servers lists the others and not this one", "[serve][a
     // route is loopback-only and why the entry carries a label instead.
     CHECK_FALSE(row.contains("directory"));
   }
-}
-
-TEST_CASE("serve API /api/workspaces lists only directories it can serve", "[serve][api]") {
-  ServeHarness harness;
-  auto client = harness.Client();
-
-  // The scan reads the harness home's parent, so the neighbours go there too. They are named
-  // after this harness and removed below, so a parallel case's own neighbours stay untouched.
-  const fs::path parent = harness.Home().parent_path();
-  const std::string tag = harness.Home().filename().string();
-  const fs::path stranger = parent / (tag + "_stranger");
-  const fs::path sibling = parent / (tag + "_sibling");
-  std::error_code ec;
-  fs::create_directories(stranger, ec);
-  REQUIRE_FALSE(ec);
-  fs::create_directories(sibling / ".pu", ec);
-  REQUIRE_FALSE(ec);
-  {
-    std::ofstream config(sibling / ".pu" / "agents.json", std::ios::binary | std::ios::trunc);
-    REQUIRE(config.is_open());
-    config << R"({"agents":[],"default":"chat"})";
-  }
-
-  const auto workspaces = ParseJson(client.Get("/api/workspaces")).at("workspaces").as_array();
-  bool listed_own = false;
-  bool listed_stranger = false;
-  bool listed_sibling = false;
-  for (const auto& workspace : workspaces) {
-    const fs::path path{std::string(workspace.at("path").as_string())};
-    // The API answers with absolute paths, and on a platform where /tmp is a symlink the
-    // harness home and the answer differ before canonicalization. Compare canonically.
-    if (fs::weakly_canonical(path) == fs::weakly_canonical(harness.Home())) listed_own = true;
-    if (fs::weakly_canonical(path) == fs::weakly_canonical(stranger)) listed_stranger = true;
-    if (fs::weakly_canonical(path) == fs::weakly_canonical(sibling)) listed_sibling = true;
-  }
-
-  fs::remove_all(stranger, ec);
-  fs::remove_all(sibling, ec);
-
-  CHECK(listed_own);
-  CHECK(listed_sibling);
-  CHECK_FALSE(listed_stranger);
 }
 
 TEST_CASE("serve page files are mounted and served from the web directory", "[serve][page]") {

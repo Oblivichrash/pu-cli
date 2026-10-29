@@ -6,11 +6,18 @@
 #include <string>
 
 #include "pu/config/security_policy.hpp"
-#include "pu/tools/builtin_tools.hpp"
+#include "pu/paging/paging.hpp"
+#include "pu/tools/bash.hpp"
 
 using namespace pu;
 
 namespace {
+
+// The store is the session's; a test borrows one for as long as it runs.
+paging::Pager& Store() {
+  static paging::Pager pager;
+  return pager;
+}
 
 ToolContext GateContext(config::SecurityPolicy& policy, bool allow, std::string note,
                         bool* asked) {
@@ -29,8 +36,8 @@ ToolContext GateContext(config::SecurityPolicy& policy, bool allow, std::string 
 }  // namespace
 
 TEST_CASE("a command matching an approval pattern asks and runs when allowed",
-          "[builtin_tools][approval]") {
-  tools::ExecuteBashToolStandard tool(".");
+          "[bash][approval]") {
+  tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;
@@ -45,8 +52,8 @@ TEST_CASE("a command matching an approval pattern asks and runs when allowed",
 }
 
 TEST_CASE("a denied command is refused with the user's note beside it",
-          "[builtin_tools][approval]") {
-  tools::ExecuteBashToolStandard tool(".");
+          "[bash][approval]") {
+  tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;
@@ -62,9 +69,9 @@ TEST_CASE("a denied command is refused with the user's note beside it",
           std::string::npos);
 }
 
-TEST_CASE("a command the gateway has no channel for is refused, not silently run",
-          "[builtin_tools][approval]") {
-  tools::ExecuteBashToolStandard tool(".");
+TEST_CASE("a command the gate has no channel for is refused, not silently run",
+          "[bash][approval]") {
+  tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
 
@@ -79,8 +86,8 @@ TEST_CASE("a command the gateway has no channel for is refused, not silently run
   REQUIRE(j.at("blocked") == true);
 }
 
-TEST_CASE("a command matching no approval pattern never asks", "[builtin_tools][approval]") {
-  tools::ExecuteBashToolStandard tool(".");
+TEST_CASE("a command matching no approval pattern never asks", "[bash][approval]") {
+  tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;

@@ -36,6 +36,17 @@ struct SettingView {
 // before it is stored, so a typo is an error rather than a value nothing reads.
 using Overrides = boost::json::object;
 
+// What a turn actually runs with: the agent's configuration with this session's overrides
+// applied. One value rather than one per setting, because a caller that reads two of them
+// apart can be given two answers that were true a moment apart.
+struct InForce {
+  config::Backend backend;
+  int tool_budget = 0;
+
+  static InForce Resolve(const config::Backend& agent_backend, int agent_tool_budget,
+                         const Overrides& overrides);
+};
+
 // Reads a setting's value out of a request body. `null` (or a missing member, which the caller
 // turns into the same thing) clears the override. Anything else that does not fit the setting's
 // type is refused here, with a message naming the setting.
@@ -45,12 +56,5 @@ boost::json::value ParseSetting(const std::string& name, const boost::json::valu
 // is one, and the agent's own configuration otherwise.
 std::vector<SettingView> ViewSettings(const config::Backend& agent_backend,
                                       int agent_tool_budget, const Overrides& overrides);
-
-// What the session override changes about the agent's backend. `thinking` is folded in here
-// because the provider reads a Backend rather than a set of overrides.
-config::Backend ApplyOverrides(const config::Backend& agent_backend, const Overrides& overrides);
-
-// The tool-call budget in force: the session's override where there is one.
-int EffectiveToolBudget(int agent_budget, const Overrides& overrides);
 
 }  // namespace pu::session

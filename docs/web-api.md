@@ -151,9 +151,7 @@ refused with `401`.
 | `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
 | `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
 | `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |
-| `GET` | `/api/workspaces` | loopback | `workspaces`: every sibling directory this machine could serve (each containing `.pu/agents.json`), with its name and its path |
 | `GET` | `/api/servers` | loopback | `servers`: the **other** servers on this machine, each with a `name` and a `port`. The one that answered is not in the list |
-| `POST` | `/api/clear` | anyone | Clear the conversation history |
 | `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
 | `GET` | `/api/settings` | anyone | Every setting this build knows, with the value in force and whether it came from this session or the agent |
 | `POST` | `/api/settings` | anyone | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |

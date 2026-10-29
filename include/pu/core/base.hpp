@@ -2,8 +2,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdlib>
-#include <filesystem>
 #include <memory>
 #include <random>
 #include <stdexcept>
@@ -56,19 +54,5 @@ inline std::string Generate() {
 }
 
 }  // namespace uuid
-
-namespace path {
-
-// The one directory PU_HOME moves, and the only thing it moves: logs. Session and
-// agent state stay under the workspace's own .pu/.
-inline std::filesystem::path GetLogDir() {
-  if (const char* env = std::getenv("PU_HOME")) {
-    return std::filesystem::path(env) / "logs";
-  }
-
-  return std::filesystem::current_path() / ".pu" / "logs";
-}
-
-}  // namespace path
 
 }  // namespace pu

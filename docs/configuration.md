@@ -2,7 +2,7 @@
 
 Every field `pu` reads. Where a value belongs to the build rather than to a file (a
 gateway's default host, the variable a key is read from), it is a fact of the gateway
-table in `src/gateways/`, not of this document.
+table in `src/config/gateway.cpp`, not of this document.
 
 ## `agents.json`
 
@@ -71,6 +71,23 @@ logs a warning.
 | `max_command_length` | Reject a shell command longer than this many bytes. Defaults to `0`, which disables the check |
 | `approval_patterns` | Commands matching one of these wait for the user's approval before they run; the Web UI shows the command with Approve and Deny buttons and an optional note, which reaches the model beside the result. `pu serve` only: the CLI has no channel to ask on, so a matching command there is refused |
 
+**`paging`**
+
+What a session keeps of a command's output, and how much of it one page shows. One
+block, one owner: the pager reads these, and the tool that writes to it obeys them.
+The shape a page takes is in [paging.md](paging.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `page_lines` | `120` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1 |
+| `max_lines` | `400` | The most lines one page may show — a larger `limit` is clamped to it. Raised to `page_lines` when set below it |
+| `capture_bytes` | `262144` | Bytes of one command's output kept for paging; beyond it the command still runs and the rest is counted rather than kept. Raised to 1024 when set below it |
+| `retain_bytes` | `4194304` | Bytes kept across all retained runs; the oldest are dropped first |
+| `retain_buffers` | `8` | Runs kept readable. A cursor whose run has been dropped is refused, not pointed at a neighbour |
+
+The budget buys lines for the end the call asked for, so a model reading a log can size
+`capture_bytes` for it without that costing a file's opening bytes.
+
 **`mcp_servers`**
 
 Each entry is a stdio subprocess or an HTTP endpoint, selected by whether `url`
@@ -122,8 +139,9 @@ fast   (default_agent)
 
 A host marked `(default for this gateway)` is one the file never named. A key printed as
 `(empty)` is a reference that expanded to nothing, and the warning beside it names the
-variable. A field this build never reads is listed under `warnings` — a build may be older
-than the file, so that is a warning and not a failure.
+variable. A field this build never reads is listed under `warnings`, named with the path it
+sits at — the agent itself, `backend`, `security` or `paging` — because a build may be older
+than the file, and that is a warning and not a failure.
 
 A session naming an agent the file no longer has is reported with the names that do exist.
 The session outranks `default_agent` by design (see

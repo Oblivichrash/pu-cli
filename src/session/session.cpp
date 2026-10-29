@@ -9,6 +9,7 @@
 #include "pu/core/http_client.hpp"
 #include "pu/core/text.hpp"
 #include "pu/llm/llm_provider.hpp"
+#include "pu/paging/origin.hpp"
 #include "pu/session/request.hpp"
 
 #include <boost/json.hpp>
@@ -43,6 +44,9 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
     receipt.content = msg.content;
+    // The one place a result enters the conversation, so the one place worth reading the
+    // envelope: what a page came from is a fact about the text, and the text is fixed here.
+    receipt.origin = paging::OriginOf(receipt.content);
     return receipt;
   }
 

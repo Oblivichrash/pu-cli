@@ -18,6 +18,7 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/mcp/client.hpp"
 #include "pu/runtime/command_router.hpp"
+#include "pu/paging/paging.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
 
@@ -99,7 +100,6 @@ class Runtime {
   void SwitchAgent(const config::AgentEntry& new_agent);
   void SwitchBackend(const config::Backend& backend);
 
-  std::vector<std::pair<std::string, std::string>> ListWorkspaces() const;
   std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
   // The file Initialize() loaded.
   const std::string& ConfigPath() const { return config_path_; }
@@ -163,7 +163,6 @@ class Runtime {
   const config::AgentEntry& ActiveAgent() const;
 
   bool RewindBefore(size_t turn);
-  void ClearConversation();
 
   config::Backend CurrentBackend() const;
 
@@ -212,6 +211,10 @@ class Runtime {
   std::shared_ptr<pu::http::HttpClient> http_client_;
   Toolbox toolbox_;
   std::unique_ptr<Executor> executor_;
+  // One store per runtime, beside the toolbox rather than inside it: a model switch
+  // rebuilds the tools, and a page the model was told it could read again has to stay
+  // readable across that.
+  paging::Pager pager_;
   std::filesystem::path workspace_root_;
   std::shared_ptr<Session> current_session_;
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads

@@ -59,6 +59,10 @@ boost::json::value SerializeNode(const MessageNode& node) {
     out["content"] = receipt.content;
     out["tool_call_id"] = receipt.tool_call_id;
     out["tool_name"] = receipt.tool_name;
+    // Stored rather than re-read: the receipt's text is what the model was shown, and the
+    // question "which run answered this" was answered when the result arrived. A result that
+    // is no page has no origin, and then there is nothing to write.
+    if (receipt.origin) out["origin"] = paging::OriginToJson(*receipt.origin);
   }
 
   return out;
@@ -118,6 +122,7 @@ bool DeserializeNode(const boost::json::value& value, MessageNode& out) {
     receipt.content = content;
     receipt.tool_call_id = json::ValueOrDefault<std::string>(value, "tool_call_id", "");
     receipt.tool_name = json::ValueOrDefault<std::string>(value, "tool_name", "");
+    if (json::HasKey(value, "origin")) receipt.origin = paging::OriginFromJson(value.at("origin"));
     out.payload = std::move(receipt);
     return true;
   }

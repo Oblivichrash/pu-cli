@@ -5,7 +5,7 @@ layer it deferred. What is built is described in
 [ARCHITECTURE.md](../ARCHITECTURE.md#gates-protocols-and-providers); what is not is here,
 so this document carries only the reasoning rather than the state.
 
-**Built:** `src/gateways/gateways.cpp` holds the gateway table — one row per gateway, not one
+**Built:** `src/config/gateway.cpp` holds the gateway table — one row per gateway, not one
 file per gateway — `Gateway` carries the id, the name, the default host and the two factories,
 and `agents.json` names a `gateway` — required, with an unknown or missing name refused.
 

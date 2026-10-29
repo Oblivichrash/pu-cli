@@ -20,6 +20,14 @@
 
 namespace pu {
 
+std::filesystem::path LogDir() {
+  if (const char* env = std::getenv("PU_HOME")) {
+    return std::filesystem::path(env) / "logs";
+  }
+
+  return std::filesystem::current_path() / ".pu" / "logs";
+}
+
 namespace {
 
 thread_local std::string g_request_id;
@@ -156,7 +164,7 @@ void InitLogging(const std::string& log_level) {
   console_sink->set_level(spdlog::level::err);
   sinks.push_back(console_sink);
 
-  std::filesystem::path log_dir = pu::path::GetLogDir();
+  std::filesystem::path log_dir = LogDir();
   std::filesystem::create_directories(log_dir);
   auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
       (log_dir / "pu.log").string(), 1024 * 1024 * 5, 3);
