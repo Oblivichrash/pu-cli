@@ -6,20 +6,10 @@
 #include "pu/tools/policy.hpp"
 
 #include <algorithm>
-#include <regex>
 #include <string>
 #include <vector>
 
 namespace pu::tools {
-
-namespace {
-
-std::string Refuse(const std::string& error, bool blocked = false,
-                   Refusal refusal = Refusal::kNone) {
-  return MakeToolResultJson(false, "", error, -1, blocked, refusal);
-}
-
-}  // namespace
 
 BashTool::BashTool(std::string sandbox_root, paging::Pager& pager)
     : sandbox_root_(std::move(sandbox_root)), pager_(pager) {}
@@ -97,11 +87,11 @@ std::string BashTool::PageResult(const paging::Buffer& buffer, const paging::Anc
 std::string BashTool::ReadAt(const paging::Cursor& cursor, std::size_t lines) {
   auto buffer = pager_.Find(cursor.buffer);
   if (!buffer) {
-    return Refuse("no such page: " + cursor.buffer +
+    return MakeRefusal("no such page: " + cursor.buffer +
                   " is no longer retained. Run the command again to read it.");
   }
   if (cursor.line >= buffer->lines()) {
-    return Refuse("cursor is past the end of " + cursor.buffer);
+    return MakeRefusal("cursor is past the end of " + cursor.buffer);
   }
   return PageResult(*buffer, paging::Anchor::At(cursor), lines);
 }
@@ -128,7 +118,7 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
   const std::string at = json::ValueOrDefault<std::string>(args, "at", "head");
   const auto anchor = paging::Anchor::Parse(at);
   if (!anchor) {
-    return Refuse("at must be 'head', 'tail', or a cursor from page.earlier/page.later, not '" +
+    return MakeRefusal("at must be 'head', 'tail', or a cursor from page.earlier/page.later, not '" +
                   at + "'");
   }
 
@@ -142,37 +132,30 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
   if (args.is_object() && json::HasKey(args, "command")) {
     command = boost::json::value_to<std::string>(args.at("command"));
   }
-  if (command.empty()) return Refuse("'command' is required unless 'at' names a cursor");
+  if (command.empty()) return MakeRefusal("'command' is required unless 'at' names a cursor");
 
   if (ctx.security != nullptr && ctx.security->max_command_length > 0 &&
       command.size() > ctx.security->max_command_length) {
-    return Refuse("command exceeds maximum allowed length (" +
+    return MakeRefusal("command exceeds maximum allowed length (" +
                   std::to_string(ctx.security->max_command_length) + ")");
   }
 
-  if (ctx.security != nullptr) {
-    for (const auto& pattern : ctx.security->forbidden_patterns) {
-      try {
-        if (std::regex_search(command, std::regex("\\b" + pattern + "\\b"))) {
-          return Refuse("Command rejected: contains forbidden pattern '" + pattern +
-                            "'. This sandbox forbids " +
-                            QuoteJoin(ctx.security->forbidden_patterns) +
-                            ". Rework the command to stay within them.",
-                        true);
-        }
-      } catch (const std::regex_error&) {
-      }
-    }
+  if (ctx.security != nullptr && !ctx.security->forbidden_patterns.empty() &&
+      MatchesAnyPattern(command, ctx.security->forbidden_patterns)) {
+    return MakeRefusal("Command rejected: contains a forbidden pattern. This sandbox forbids " +
+                           QuoteJoin(ctx.security->forbidden_patterns) +
+                           ". Rework the command to stay within them.",
+                       true);
   }
 
   const Assessment assessment = Assess(command, ctx.security);
   if (assessment.risk == Risk::kDangerous) {
-    return Refuse("Command rejected: " + assessment.reason, true);
+    return MakeRefusal("Command rejected: " + assessment.reason, true);
   }
   if (assessment.risk == Risk::kApproval) {
     if (ctx.approval == nullptr || !ctx.approval->ask) {
       // Nowhere to ask is a refusal, not a silent run: the policy named this command.
-      return Refuse("Command needs user approval and no approval channel is open. Rework it to "
+      return MakeRefusal("Command needs user approval and no approval channel is open. Rework it to "
                     "avoid: " +
                         QuoteJoin(ctx.security != nullptr ? ctx.security->approval_patterns
                                                           : std::vector<std::string>{}) +
@@ -183,7 +166,7 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
     if (!ctx.approval->ask(command, note)) {
       std::string message = "Command rejected by the user";
       if (!note.empty()) message += ". The user adds: " + note;
-      return Refuse(message, true);
+      return MakeRefusal(message, true);
     }
     // The words the user typed beside their yes reach the model beside the result.
     if (!note.empty() && ctx.control != nullptr && ctx.control->on_note) {

@@ -97,6 +97,14 @@ inline std::string MakeToolResultJson(bool success, const std::string& output,
   return boost::json::serialize(j);
 }
 
+// A tool that refused before doing anything: no output, no exit code, the reason in `error`.
+// Every tool refuses this way, so the shape is stated once rather than three times with a
+// parameter list that drifted apart.
+inline std::string MakeRefusal(const std::string& error, bool blocked = false,
+                               Refusal refusal = Refusal::kNone) {
+  return MakeToolResultJson(false, "", error, -1, blocked, refusal);
+}
+
 // Quotes each name and joins with commas, for messages that name a whole set.
 inline std::string QuoteJoin(const std::vector<std::string>& names) {
   std::string joined;

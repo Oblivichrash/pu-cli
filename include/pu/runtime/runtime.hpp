@@ -167,18 +167,15 @@ class Runtime {
   config::Backend CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
-  // How much context the active backend's model holds, or `0` when nobody stated one. The
-  // file's own `context_window` wins over the gateway's catalogue, because a product's
-  // nominal figure is sometimes not what it enforces and correcting it must not mean waiting
-  // for the product. Advisory: no prompt is trimmed against this and no turn is refused for
-  // outgrowing it — a wrong number draws a misleading bar, never a broken turn.
-  //
   // How much context the active model holds, from the file's own `context_window`, or `0` when
   // it names none. Nothing is read over the network, and the reason is the lock rather than the
   // client: this is asked while the session's lock is held, so a catalogue read here would stand
   // between the page and every other request for as long as the gateway takes — thirty seconds
   // at the client's own budget, and a turn's own turn waits behind it. `pu check --caps` prints
   // what a catalogue says, which is where the number to write comes from.
+  //
+  // Advisory: no prompt is trimmed against this and no turn is refused for outgrowing it — a
+  // wrong number draws a misleading bar, never a broken turn.
   int ContextWindow() const;
   std::optional<ThinkingLevel> ThinkingOverride() const;
   void SetThinkingLevel(std::optional<ThinkingLevel> level);
