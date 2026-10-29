@@ -131,6 +131,55 @@ TEST_CASE("A field this build ignores is reported, and is not a failure", "[chec
   REQUIRE(out.find("not read by this build") != std::string::npos);
 }
 
+TEST_CASE("A file that sets every field it can is called out for none of them", "[check]") {
+  TempWorkspace workspace;
+  // Every key ParseAgentEntry and the parsers under it read, written out. The point is not
+  // that this config is realistic — it is that a key the parser reads and the check does not
+  // know about turns a working setting into advice to delete it. `paging` was that key.
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [{
+      "name": "a",
+      "description": "d",
+      "backend": {
+        "gateway": "ollama", "host": "http://h:1", "model": "m", "api_key": "k",
+        "temperature": 0.2, "system_prompt": "s", "max_tokens": 16,
+        "thinking": "low", "context_window": 4096
+      },
+      "security": {
+        "sandbox_root": ".", "max_command_length": 100,
+        "forbidden_patterns": ["rm -rf"], "approval_patterns": ["git push"]
+      },
+      "paging": {
+        "page_lines": 100, "max_lines": 200, "capture_bytes": 8192,
+        "retain_bytes": 16384, "retain_buffers": 2
+      },
+      "mcp_servers": [{"name": "s", "command": "c"}],
+      "tool_call_budget": 4
+    }]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+
+  INFO(capture.text());
+  REQUIRE(capture.text().find("not read by this build") == std::string::npos);
+}
+
+TEST_CASE("A misspelt paging field is reported, like any other unread field", "[check]") {
+  TempWorkspace workspace;
+  // The budget block is nested one level deeper than the rest, so it is the one a reader
+  // writes a stray underscore into and hears nothing about.
+  const fs::path config = workspace.Write(
+      R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"},"paging":{"page_line":100}}]})");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+
+  const std::string out = capture.text();
+  REQUIRE(out.find("'page_line' in a.paging is not read by this build") != std::string::npos);
+}
+
 TEST_CASE("A file this build cannot load exits 1", "[check]") {
   TempWorkspace workspace;
   // The 0.5.0 rename: `type` is not read, and the message says which key to write instead.
