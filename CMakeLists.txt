@@ -27,7 +27,9 @@ function(pu_configure_target target)
         target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
         # The sources are UTF-8 and carry typographic punctuation in comments; without this MSVC
         # reads them in the system code page and warns C4819 on every file that has any.
-        target_compile_options(${target} PRIVATE /W4 /utf-8 /D_CRT_SECURE_NO_WARNINGS)
+        # /bigobj: an object file holds at most 65535 sections, and a Debug build of the unit that
+        # instantiates Boost.Beast's templates passes that — C1128, on a file nobody edited.
+        target_compile_options(${target} PRIVATE /W4 /utf-8 /bigobj /D_CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     endif()
