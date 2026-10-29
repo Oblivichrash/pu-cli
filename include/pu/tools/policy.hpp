@@ -3,6 +3,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "pu/config/security_policy.hpp"
 
@@ -22,5 +23,11 @@ struct Assessment {
 // built-in dangerous patterns: a command that deletes a filesystem is refused whoever
 // asks.
 Assessment Assess(std::string_view command, const config::SecurityPolicy* policy);
+
+// Whether `command` matches any of `patterns`, case-insensitively. A pattern the engine
+// refuses is skipped rather than thrown: they arrive from a file, and one malformed line
+// must not decide that every command afterwards is an error. Also compiles them, so it
+// belongs next to `Assess` rather than beside every caller that has its own list.
+bool MatchesAnyPattern(std::string_view command, const std::vector<std::string>& patterns);
 
 }  // namespace pu::tools

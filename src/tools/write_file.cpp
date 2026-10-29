@@ -10,10 +10,6 @@ namespace pu::tools {
 
 namespace {
 
-std::string Refuse(const std::string& error, bool blocked = false) {
-  return MakeToolResultJson(false, "", error, -1, blocked);
-}
-
 // Compares paths by component rather than by string prefix: `/tmp/safe-evil` starts with
 // `/tmp/safe` and is not inside it.
 bool Within(const std::filesystem::path& root, const std::filesystem::path& target) {
@@ -54,25 +50,25 @@ boost::json::value WriteFileTool::ParametersSchema() const {
 std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   const std::string path = json::ValueOrDefault<std::string>(args, "path", "");
   const std::string content = json::ValueOrDefault<std::string>(args, "content", "");
-  if (path.empty()) return Refuse("'path' is required");
-  if (ctx.security == nullptr) return Refuse("security policy not set");
+  if (path.empty()) return MakeRefusal("'path' is required");
+  if (ctx.security == nullptr) return MakeRefusal("security policy not set");
 
   std::error_code ec;
   const auto root = std::filesystem::weakly_canonical(
       std::filesystem::path(ctx.security->sandbox_root), ec);
-  if (ec) return Refuse("cannot resolve sandbox root: " + ctx.security->sandbox_root);
+  if (ec) return MakeRefusal("cannot resolve sandbox root: " + ctx.security->sandbox_root);
 
   const auto target = std::filesystem::weakly_canonical(root / path, ec);
-  if (ec) return Refuse("invalid path");
+  if (ec) return MakeRefusal("invalid path");
   if (!Within(root, target)) {
-    return Refuse("path outside sandbox root (traversal not allowed)", true);
+    return MakeRefusal("path outside sandbox root (traversal not allowed)", true);
   }
 
   std::filesystem::create_directories(target.parent_path(), ec);
-  if (ec) return Refuse("cannot create parent directories");
+  if (ec) return MakeRefusal("cannot create parent directories");
 
   std::ofstream file(target);
-  if (!file.is_open()) return Refuse("cannot write to " + path);
+  if (!file.is_open()) return MakeRefusal("cannot write to " + path);
   file << content;
 
   return MakeToolResultJson(
