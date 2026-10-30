@@ -16,7 +16,7 @@ namespace {
 
 constexpr const char* kBackendHelp =
     "  /backend <agent_name>  Switch to a predefined agent\n"
-    "  /backend <type> <model> [host] [api_key]  Adopt a backend as an agent of its type\n";
+    "  /backend <type> <model> [host]  Adopt a backend as an agent of its type\n";
 
 }  // namespace
 
@@ -141,8 +141,16 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     return true;
   }
 
-  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
+  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host]"), output)) return true;
+
+  // A key typed at a slash prompt is written into the scrollback and into whatever records
+  // that terminal, so the command does not take one. An endpoint that needs a key is named
+  // in agents.json, where it can come from the environment and stay out of the transcript.
+  if (args.size() > 3) {
+    output =
+        "Usage: /backend <type> <model> [host]. A key is set in agents.json, not here.";
     return true;
+  }
 
   const auto type = config::ParseGatewayId(args[0]);
   if (!type) {
@@ -154,16 +162,12 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
   new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
-  if (args.size() > 3) new_cfg.api_key = args[3];
   if (new_cfg.host.empty()) new_cfg.host = config::DefaultHostFor(*type);
 
   try {
     runtime_.SwitchBackend(new_cfg);
     output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
              ", host: " + new_cfg.host + ")";
-    if (new_cfg.api_key && !new_cfg.api_key->empty()) {
-      output += " (API key set)";
-    }
   } catch (const std::exception& e) {
     output = "Error: " + std::string(e.what());
   }

@@ -20,6 +20,13 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **Breaking** — **`/backend <type> <model> [host]` no longer takes an API key.** A key
+  typed at the chat prompt is written into the scrollback and into whatever records that
+  terminal, so the command now refuses a fourth argument instead of accepting one. An
+  endpoint that needs a key is named in `agents.json`, which is where every keyed endpoint
+  was already configured and where the key can come from the environment. `/backend
+  <agent>` and `/backend <type> <model> [host]` are unchanged.
+
 - **`pu probe` is a developer tool and no longer appears in `pu --help`.** It captures a
   provider's raw stream for someone writing a `ResponseShape`, which is a question about a
   gateway rather than about an `agents.json`. It is unchanged and still documented in

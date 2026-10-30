@@ -145,6 +145,26 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
   REQUIRE(output.find("Unknown type") != std::string::npos);
 }
 
+TEST_CASE("CommandRouter will not take a key at the prompt", "[router]") {
+  RouterFixture f;
+  std::string output;
+
+  // A key typed here lands in the scrollback, in the terminal's own history, and in
+  // whatever captures a screen, which is the opposite of what docs/security.md promises.
+  REQUIRE(f.Route("/backend ollama llama3 http://localhost:11434 sk-secret", output));
+  REQUIRE(output.find("agents.json") != std::string::npos);
+  REQUIRE(output.find("sk-secret") == std::string::npos);
+
+  // Refusing the argument must not half-apply it: the active agent is where it started.
+  REQUIRE(f.Route("/backend", output));
+  REQUIRE(output.find("chat-model") != std::string::npos);
+
+  // Three arguments are still a host, and still accepted.
+  REQUIRE(f.Route("/backend ollama llama3 http://localhost:11500", output));
+  REQUIRE(output.find("Switched backend to") != std::string::npos);
+  REQUIRE(output.find("http://localhost:11500") != std::string::npos);
+}
+
 TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[router]") {
   RouterFixture f;
   std::string output;
