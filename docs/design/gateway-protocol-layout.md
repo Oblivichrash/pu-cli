@@ -135,7 +135,7 @@ whose `onlyReasoning` is true is answered `400 11150` when a request carries no
 `reasoning_effort`, and answers 200 to any level — so a level is required rather than one
 particular level.
 
-The one caller that acts on the field today is `pu check --caps`: such a model is not
+The one caller that acts on the field today is `pu models --verify`: such a model is not
 asked at all when the backend sends no level, since the request cannot succeed, and the
 reason it was not asked is reported in place of the host's own refusal. A turn is not
 refused this way — nothing on that path reads the catalogue — so this is as far as the

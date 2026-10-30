@@ -130,8 +130,7 @@ CommandLine BuildCommandLine() {
       {"agents", "list the agents in agents.json and the gateway each one names"},
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
-      {"check", "read agents.json and report what it resolves to, without asking a provider"},
-      {"models", "list the models a gateway offers"},
+      {"check", "read agents.json and report what it resolves to, without asking a provider"},      {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe", "save a raw provider stream and summarise what it contained"},
       {"serve", "host the page and the API that a browser talks to"},
       {"sse", "read a server-sent-event stream and print each event"},
@@ -166,6 +165,12 @@ CommandLine BuildCommandLine() {
       {"chat", {agent_option}},
       {"models",
        {agent_option, gateway_option, model_option,
+        {"detail", "ids (default) for what you can pick, caps for the columns that decide "
+                   "between two models",
+         true},
+        {"entry", "print an agents.json entry for this model id, ready to paste; implies "
+                  "--detail entry",
+         true},
         {"verify", "ask each listed model for one token and report what answered", false}}},
       {"probe",
        {agent_option, gateway_option, model_option,
@@ -173,10 +178,7 @@ CommandLine BuildCommandLine() {
         {"no-save", "print the summary without writing the raw stream", false},
         {"listing", "probe the model listing instead of the stream", false}}},
       {"check",
-       {agent_option,
-        {"config", "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)", true},
-        {"entry", "print an agents.json entry for this model id, ready to paste", true},
-        {"caps", "print the capabilities and price that decide between two models", false}}},
+       {{"config", "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)", true}}},
       {"sse",
        {{"url", "the endpoint to read (positional as well)", true},
         {"header", "a request header, repeatable: --header 'Authorization: Bearer ...'", true},
@@ -393,14 +395,35 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 }
 
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, Runtime& runtime) {
+              ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = BackendFor(gateway, model, runtime);
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
 
+    // The listing is read once for every shape. Two of them ask nothing else of the network,
+    // and the third only adds a token request per model.
+    if (shape == ModelShape::kEntry) {
+      // A model outside the listing is exactly the one being written for, so a missing id is
+      // an empty entry rather than an error.
+      llm::ModelEntry wanted{entry_id, {}};
+      for (const llm::ModelEntry& listed : models) {
+        if (listed.id == entry_id) {
+          wanted = listed;
+          break;
+        }
+      }
+      const std::optional<boost::json::value> source =
+          config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
+      if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
+      std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
+      return kOk;
+    }
+
     if (!verify) {
-      std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway), backend.host,
-                                       backend.model, llm::ListingDetail::kIds)
+      std::cout << llm::FormatModelList(
+                       models, config::GatewayName(backend.gateway), backend.host, backend.model,
+                       shape == ModelShape::kCaps ? llm::ListingDetail::kCaps
+                                                  : llm::ListingDetail::kIds)
                 << "\n";
       return kOk;
     }
@@ -422,38 +445,6 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
     // A verification that found a model down is the answer the caller asked for, and a
     // script needs to read it without parsing the text.
     return answered == static_cast<int>(checks.size()) ? kOk : kProvider;
-  });
-}
-
-int RunModelCaps(const std::string& agent, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor("", "", runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
-    std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway), backend.host,
-                                     backend.model, llm::ListingDetail::kCaps)
-              << "\n";
-    return kOk;
-  });
-}
-
-int RunModelEntry(const std::string& agent, const std::string& entry_id, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor("", "", runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
-
-    // A model outside the listing is exactly the one being written for.
-    llm::ModelEntry wanted{entry_id, {}};
-    for (const llm::ModelEntry& model : models) {
-      if (model.id == entry_id) {
-        wanted = model;
-        break;
-      }
-    }
-    const std::optional<boost::json::value> source =
-        config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
-    if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
-    std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
-    return kOk;
   });
 }
 

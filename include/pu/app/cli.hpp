@@ -73,17 +73,18 @@ int RunChat(const std::string& agent, Runtime& runtime);
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime);
+// What `models` prints, and how much of it. The three shapes are exclusive answers to the same
+// listing, so they are one choice rather than three flags that could be set together: `kIds`
+// answers "what can I pick", `kCaps` "which of these two", and `kEntry` "how do I write this
+// one into agents.json". `verify` is separate because it is the only shape that asks a
+// provider instead of reading a catalogue.
+enum class ModelShape { kIds, kCaps, kEntry };
+
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, Runtime& runtime);
+              ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
 int RunCheck(const std::string& config_path);
-// The two questions answered from a gateway's listing without asking a model anything: the
-// columns that decide between two models, and an agents.json entry for one of them. They read
-// the same listing `models` prints, which is why they are named here rather than there -- but
-// they are the only two that need a runtime, so `check` keeps its no-runtime path.
-int RunModelCaps(const std::string& agent, Runtime& runtime);
-int RunModelEntry(const std::string& agent, const std::string& entry_id, Runtime& runtime);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
 

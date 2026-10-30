@@ -188,8 +188,8 @@ or as a list is decided per provider, as the signatures row says.
 ### What each backend says about a context window
 
 Each was asked rather than assumed, and the answers are observations that drift rather than a
-contract to code against. `pu check --caps` prints them, and that is their whole use: the page's
-context bar is drawn from `backend.context_window` in `agents.json` rather than from here. A
+contract to code against. `pu models --detail caps` prints them, and that is their whole use: the
+page's context bar is drawn from `backend.context_window` in `agents.json` rather than from here. A
 number worth writing there is the one this table's endpoint reports — with CodeBuddy's caveat
 below in mind, since it states 1M and enforces less.
 

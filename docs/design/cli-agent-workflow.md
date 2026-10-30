@@ -230,9 +230,10 @@ ask "what does `ask` take".
 
 ### 2.12 Nothing reports cost or capability
 
-**Fixed.** `ask --show-usage` prints what a turn cost, and `models --caps` prints the columns
-that decide between two models — including `only-reasoning`, the flag that predicts a refused
-request. `pu check --caps` asks the gateway and exits 2 when a model it asked did not answer.
+**Fixed.** `ask --show-usage` prints what a turn cost, and `models --detail caps` prints the
+columns that decide between two models — including `only-reasoning`, the flag that predicts a
+refused request. `pu models --verify` asks the gateway and exits 2 when a model it asked did not
+answer.
 
 `ExecutionResult` carries `usage` (prompt / completion / cached / credit) and the CLI
 never prints it. `ModelEntry` carries `supports_tools`, `supports_images`,
@@ -358,14 +359,14 @@ The chat already has `/thinking`; the CLI cannot express it. Add to `ask` and `c
 
 These are the fields people actually tune per run, and they exist in `Backend` already —
 this is a front end for `SetThinkingLevel` (`runtime.cpp:234`) plus a transient `Backend`,
-not new state. It also gives `pu check --caps` a way to answer "does this model work at
+not new state. It also gives `pu models --verify` a way to answer "does this model work at
 `high`", which is the question `only_reasoning` makes people ask.
 
 ### 3.6 Show cost and capability
 
 - `ask`: print `usage` on stderr when `--show-usage` is given (stdout stays clean for
   piping). Tokens plus `credit` when the gateway reported it.
-- `models`: add `--caps` to print the columns `Capabilities` already holds —
+- `models`: add `--detail caps` to print the columns `Capabilities` already holds —
   `tools`, `images`, `reasoning`, `only-reasoning`, `default-effort`, `max-input`.
   A `only-reasoning` model with no `thinking` configured is exactly the row a user needs
   warned about.

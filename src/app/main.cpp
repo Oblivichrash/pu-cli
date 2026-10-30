@@ -149,8 +149,25 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "models") {
+      // One command, three depths of the same answer. `--detail` is a single choice so two of
+      // them cannot be asked for at once; `--verify` is a separate flag because it is the only
+      // one that contacts a provider.
+      const std::string detail = OptionOr(vm, "detail", "ids");
+      pu::cli::ModelShape shape = pu::cli::ModelShape::kIds;
+      if (detail == "caps") {
+        shape = pu::cli::ModelShape::kCaps;
+      } else if (detail == "ids") {
+        shape = pu::cli::ModelShape::kIds;
+      } else {
+        std::cerr << "Error: --detail is ids or caps, not '" << detail << "'\n\n"
+                  << line.HelpFor(cmd) << "\n";
+        return pu::cli::kUsage;
+      }
+      const std::string entry = OptionOr(vm, "entry", "");
+      if (!entry.empty()) shape = pu::cli::ModelShape::kEntry;
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
-                               OptionOr(vm, "model", ""), vm.count("verify") > 0, runtime);
+                               OptionOr(vm, "model", ""), shape, entry, vm.count("verify") > 0,
+                               runtime);
     }
 
     if (cmd == "agents") {
@@ -200,11 +217,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "check") {
-      if (vm.count("caps") > 0) return pu::cli::RunModelCaps(OptionOr(vm, "agent", ""), runtime);
-      const std::string entry = OptionOr(vm, "entry", "");
-      if (!entry.empty()) {
-        return pu::cli::RunModelEntry(OptionOr(vm, "agent", ""), entry, runtime);
-      }
+      // Only `check`'s own job is left here: read agents.json and say what it resolves to.
+      // The two listing questions moved back to `models`, whose listing they read.
       return pu::cli::RunCheck(OptionOr(vm, "config", ""));
     }
 
