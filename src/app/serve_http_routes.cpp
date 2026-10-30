@@ -229,7 +229,10 @@ boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   const config::Backend backend = runtime.CurrentBackend();
   boost::json::object body;
   body["agent_name"] = session->Spec().agent_name;
-  body["backend_type"] = config::GatewayName(backend.gateway);
+  // Named `gateway`, not `backend_type`: the rest of this file and `agents.json` call the
+  // scheme a gateway, and a page that reads one word here and another everywhere else is a
+  // page that has to be told twice.
+  body["gateway"] = config::GatewayName(backend.gateway);
   body["backend_model"] = backend.model;
   body["backend_host"] = backend.host;
   // How much context the model holds, `0` when nobody stated one. The page draws its bar

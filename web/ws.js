@@ -148,7 +148,7 @@ function handleDone(payload) {
     createSystemMessage("Stopped.");
     PU.stopRequested = false;
   }
-  if (payload && payload.model) setBackendLabel(PU.backendTypeShown, payload.model);
+  if (payload && payload.model) setBackendLabel(PU.gatewayShown, payload.model);
 }
 
 function handleError(payload) {
