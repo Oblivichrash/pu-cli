@@ -42,6 +42,8 @@ add_library(pu_core STATIC
     src/app/cli_sse.cpp
     src/app/serve.cpp
     src/app/serve_http_routes.cpp
+    src/app/serve_runner.cpp
+    src/app/serve_websocket.cpp
     src/config/agent_summary.cpp
     src/config/agents.cpp
     src/config/backend.cpp
