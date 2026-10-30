@@ -20,6 +20,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **`pu probe` is a developer tool and no longer appears in `pu --help`.** It captures a
+  provider's raw stream for someone writing a `ResponseShape`, which is a question about a
+  gateway rather than about an `agents.json`. It is unchanged and still documented in
+  [README.md](README.md#core-commands); only the top-level listing and its `--command` hint
+  leave it out. `pu models` remains the answer to what a gateway offers.
+
 - **Breaking** — **`pu check --caps` and `pu check --entry` are `pu models --detail caps`
   and `pu models --entry`.** Both read the listing `pu models` already prints, and `pu
   check` now answers only its own question: what an `agents.json` resolves to, without

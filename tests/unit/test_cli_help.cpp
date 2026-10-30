@@ -129,11 +129,22 @@ TEST_CASE("The list says what each command answers", "[options]") {
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
   const std::string printed = pu::cli::CommandList(line);
 
-  // A name with no sentence after it is a name a reader still has to look up.
+  // A name with no sentence after it is a name a reader still has to look up. A developer tool
+  // is named and described but kept off the page, so the two claims are made separately: it has
+  // a sentence, and that sentence is not printed.
+  std::size_t visible = 0;
   for (const auto& command : line.commands) {
-    const std::size_t at = printed.find("  " + command.name);
-    REQUIRE(at != std::string::npos);
     REQUIRE_FALSE(command.summary.empty());
+    const std::size_t at = printed.find("  " + command.name);
+    if (command.developer) {
+      REQUIRE(at == std::string::npos);
+      continue;
+    }
+    REQUIRE(at != std::string::npos);
     REQUIRE(printed.find(command.summary, at) != std::string::npos);
+    ++visible;
   }
+  // The listing is not allowed to empty itself: every command becoming a developer tool would
+  // satisfy the loop above and leave a reader with a page that says nothing.
+  REQUIRE(visible == line.commands.size() - 1);
 }

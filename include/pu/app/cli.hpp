@@ -46,6 +46,8 @@ struct CommandLine {
   struct CommandSummary {
     std::string name;
     std::string summary;
+    // Named and documented, but not offered in the top-level listing; see `CommandSpec`.
+    bool developer = false;
   };
   std::vector<CommandSummary> commands;
 
@@ -67,9 +69,10 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
            bool show_usage = false);
 int RunChat(const std::string& agent, Runtime& runtime);
-// `gateway` reads a product without an agents.json entry; `caps` prints the columns that
-// decide between two models that both work. Both are in
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside.
+// A developer tool, kept off the top-level listing: it captures a provider's raw bytes for
+// someone writing a `ResponseShape`, which is not a question `agents.json` has an answer to.
+// `gateway` reads a product without an agents.json entry; `listing` reads the catalogue where
+// `models` reads and prints it, and is kept for the raw report rather than the ids.
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime);
