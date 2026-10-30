@@ -18,6 +18,12 @@ constexpr const char* kBackendHelp =
     "  /backend <agent_name>  Switch to a predefined agent\n"
     "  /backend <type> <model> [host]  Adopt a backend as an agent of its type\n";
 
+// What a failed command says in the transcript. Written once so the prefix is one fact: a
+// prefix that changed in three of four places would read as two different failures.
+std::string DescribeError(const std::exception& e) {
+  return std::string("Error: ") + e.what();
+}
+
 }  // namespace
 
 bool CommandRouter::RequireMinArgs(Args args, size_t min, const std::string& usage,
@@ -136,7 +142,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
                std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
                agent_config->backend.model + ")";
     } catch (const std::exception& e) {
-      output = "Error: " + std::string(e.what());
+      output = DescribeError(e);
     }
     return true;
   }
@@ -169,7 +175,7 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
     output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
              ", host: " + new_cfg.host + ")";
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }
@@ -192,7 +198,7 @@ bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
         config::ListModels(cfg, runtime_.Http());
     output = llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model);
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }
@@ -224,7 +230,7 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
     output = "Stepped back to before turn " + args[0] +
              ". The next message replaces it; the turns after it stay in the file until one does.";
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }

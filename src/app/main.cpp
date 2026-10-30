@@ -103,6 +103,15 @@ int main(int argc, char* argv[]) {
 
   std::string cmd = vm["command"].as<std::string>();
 
+  // A mistake in the invocation is answered with the page for the command it is about: the
+  // reader is on that page already, and the flags below the message are how it is corrected.
+  // Written once because every usage error is that shape, and one of them printing a
+  // different frame would read as a different kind of failure.
+  const auto usage_error = [&](const std::string& message) {
+    std::cerr << "Error: " << message << "\n\n" << line.HelpFor(cmd) << "\n";
+    return pu::cli::kUsage;
+  };
+
   // The parser had to accept every name to learn which command was typed; now that it is
   // known, each flag in it is held against the page for it. A flag that belongs to another
   // command is what it always was — an option this one does not have — and a typo is caught
@@ -129,9 +138,7 @@ int main(int argc, char* argv[]) {
       rejected.push_back(name);
     }
     if (!rejected.empty()) {
-      std::cerr << "Error: " << rejected.front() << " is not an option of '" << cmd << "'\n\n"
-                << line.HelpFor(cmd) << "\n";
-      return pu::cli::kUsage;
+      return usage_error(rejected.front() + " is not an option of '" + cmd + "'");
     }
   }
 
@@ -142,8 +149,7 @@ int main(int argc, char* argv[]) {
       // An empty prompt is a mistake in the invocation, not a turn to send: the store would
       // gain a question with no words and the provider a request for nothing.
       if (!vm.count("prompt") || vm["prompt"].as<std::string>().empty()) {
-        std::cerr << "Error: prompt required for ask command\n\n" << all << "\n";
-        return pu::cli::kUsage;
+        return usage_error("prompt required for ask command");
       }
       return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime,
                              vm.count("show-usage") > 0);
@@ -164,9 +170,7 @@ int main(int argc, char* argv[]) {
       } else if (detail == "ids") {
         shape = pu::cli::ModelShape::kIds;
       } else {
-        std::cerr << "Error: --detail is ids or caps, not '" << detail << "'\n\n"
-                  << line.HelpFor(cmd) << "\n";
-        return pu::cli::kUsage;
+        return usage_error("--detail is ids or caps, not '" + detail + "'");
       }
       const std::string entry = OptionOr(vm, "entry", "");
       if (!entry.empty()) shape = pu::cli::ModelShape::kEntry;
@@ -187,8 +191,7 @@ int main(int argc, char* argv[]) {
       // rest as flags.
       options.url = OptionOr(vm, "url", vm.count("command") > 0 ? OptionOr(vm, "prompt", "") : "");
       if (options.url.empty()) {
-        std::cerr << "Error: no URL to read\n\n" << line.HelpFor(cmd) << "\n";
-        return pu::cli::kUsage;
+        return usage_error("no URL to read");
       }
       if (vm.count("header") > 0) {
         options.headers = vm["header"].as<std::vector<std::string>>();
@@ -211,9 +214,7 @@ int main(int argc, char* argv[]) {
       } else if (format == "raw") {
         options.format = pu::cli::SseFormat::kRaw;
       } else if (format != "text") {
-        std::cerr << "Error: --format is text, json or raw, not '" << format << "'\n\n"
-                  << line.HelpFor(cmd) << "\n";
-        return pu::cli::kUsage;
+        return usage_error("--format is text, json or raw, not '" + format + "'");
       }
       options.quiet = vm.count("quiet") > 0;
 

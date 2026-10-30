@@ -271,14 +271,12 @@ CommandLine BuildCommandLine() {
     return description;
   };
 
-  line.per_command.emplace("agents", page(option_table.at("agents")));
-  line.per_command.emplace("ask", page(option_table.at("ask")));
-  line.per_command.emplace("chat", page(option_table.at("chat")));
-  line.per_command.emplace("models", page(option_table.at("models")));
-  line.per_command.emplace("probe", page(option_table.at("probe")));
-  line.per_command.emplace("check", page(option_table.at("check")));
-  line.per_command.emplace("sse", page(option_table.at("sse")));
-  line.per_command.emplace("serve", page(option_table.at("serve")));
+  // One page per name the table declares, so a command added to the table cannot be left
+  // without one: a page that is missing does not fail, it falls back to `all`, and a reader
+  // asking `pu <cmd> --help` would be shown every flag the line has.
+  for (const auto& [command, options] : option_table) {
+    line.per_command.emplace(command, page(options));
+  }
 
   boost::program_options::positional_options_description positional;
   positional.add("command", 1);
