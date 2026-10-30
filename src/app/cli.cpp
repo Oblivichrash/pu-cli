@@ -124,21 +124,32 @@ CommandLine BuildCommandLine() {
   struct CommandSpec {
     const char* name;
     const char* summary;
+    // Off the top-level listing, which is a reader's map of what this tool is for. A command
+    // that captures a provider's raw bytes answers a question about a gateway a reader has not
+    // met yet, so it stays reachable and documented without being one of the visible choices.
+    bool developer = false;
   };
 
   const std::vector<CommandSpec> commands = {
       {"agents", "list the agents in agents.json and the gateway each one names"},
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
-      {"check", "read agents.json and report what it resolves to, without asking a provider"},      {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
-      {"probe", "save a raw provider stream and summarise what it contained"},
+      {"check", "read agents.json and report what it resolves to, without asking a provider"},
+      {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
+      {"probe",
+       "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true},
       {"serve", "host the page and the API that a browser talks to"},
       {"sse", "read a server-sent-event stream and print each event"},
   };
 
+  // The hint names what the listing names: a command kept off the page is not a name a reader
+  // arriving with no command is asked to choose from.
   std::string command_hint = "command to execute (";
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    command_hint += (i == 0 ? "" : "/") + std::string(commands[i].name);
+  bool first = true;
+  for (const CommandSpec& command : commands) {
+    if (command.developer) continue;
+    command_hint += (first ? "" : "/") + std::string(command.name);
+    first = false;
   }
   command_hint += ")";
 
@@ -265,7 +276,7 @@ CommandLine BuildCommandLine() {
   line.positional = std::move(positional);
 
   for (const CommandSpec& command : commands) {
-    line.commands.push_back({command.name, command.summary});
+    line.commands.push_back({command.name, command.summary, command.developer});
   }
   return line;
 }
@@ -280,6 +291,7 @@ std::string CommandList(const CommandLine& line) {
   std::ostringstream printed;
   printed << "commands:\n";
   for (const CommandLine::CommandSummary& command : line.commands) {
+    if (command.developer) continue;
     printed << "  " << command.name;
     printed << std::string(command.name.size() < 8 ? 8 - command.name.size() : 1, ' ');
     printed << command.summary << "\n";

@@ -67,7 +67,7 @@ the copy it was installed with.
 | `pu chat [--agent NAME]` | The same conversation, kept open, with `/commands` |
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--gateway GW] [--model M] [--detail ids\|caps] [--entry ID] [--verify]` | What the agent's gateway reports, and which model is active |
-| `pu probe` | A gateway's raw stream, kept, and the field names it actually sent |
+| `pu probe` *(developer tool, not in `pu --help`)* | A gateway's raw stream, kept, and the field names it actually sent |
 | `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
 | `pu serve` | The Web UI and its WebSocket |
 | `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
