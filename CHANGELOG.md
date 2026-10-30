@@ -18,6 +18,13 @@ the commit that made it, and its current behaviour is in the relevant document
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
 
+### Fixed
+
+- **An MCP server on Windows no longer leaks a little on every start.** The transport hands
+  its reader thread a small record of the handle to poll and the flag to clear, and freed
+  that record only when the thread failed to start — so a server that ran leaked one on each
+  start. The transport now owns the record and frees it when it stops the reader.
+
 ### Changed
 
 - **`pu sse --help` and `pu probe --help` say how the two differ.** Both reach a provider and
