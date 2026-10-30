@@ -20,6 +20,11 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **Breaking** — **The session API reports `gateway` where it reported `backend_type`.** The
+  rest of the API, `agents.json` and the code all call the scheme a gateway, and the one
+  field that used the older word was the field a page reads first. A client that read
+  `backend_type` reads `gateway`; `backend_model` and `backend_host` are unchanged.
+
 - **Breaking** — **`/backend <type> <model> [host]` no longer takes an API key.** A key
   typed at the chat prompt is written into the scrollback and into whatever records that
   terminal, so the command now refuses a fourth argument instead of accepting one. An

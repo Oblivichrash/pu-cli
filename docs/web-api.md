@@ -148,7 +148,7 @@ refused with `401`.
 
 | Method | Path | Audience | Description |
 | :----- | :--- | :------- | :---------- |
-| `GET` | `/api/session` | anyone | Current session info (agent, backend type/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
+| `GET` | `/api/session` | anyone | Current session info (agent, gateway/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
 | `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
 | `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
 | `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |

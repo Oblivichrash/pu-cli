@@ -305,7 +305,7 @@ inline boost::json::value JsonStr(const std::string& s) {
 }
 
 inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
-                                   const std::string& backend_type = "ollama",
+                                   const std::string& gateway = "ollama",
                                    const std::string& mcp_name = "",
                                    const std::string& mcp_url = "",
                                    const std::string& approval_pattern = "") {
@@ -315,7 +315,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   fs::path path = dir / ".pu" / "agents.json";
 
   boost::json::object backend;
-  backend["gateway"] = JsonStr(backend_type);
+  backend["gateway"] = JsonStr(gateway);
   backend["host"] = JsonStr("http://127.0.0.1:" + std::to_string(backend_port));
   backend["model"] = JsonStr("test-model");
 
@@ -487,7 +487,7 @@ class ServeHarness {
 
   // A harness whose backend is not listening, which is the failure the crash investigation
   // reproduced: the turn fails where the transport does, not where a handler returns an error.
-  ServeHarness(UnreachableBackend, const std::string& backend_type = "ollama") {
+  ServeHarness(UnreachableBackend, const std::string& gateway = "ollama") {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -500,7 +500,7 @@ class ServeHarness {
     });
 
     dead_port_ = std::make_unique<ReservedDeadPort>();
-    WriteAgentsFile(home_, dead_port_->Port(), backend_type, "", "");
+    WriteAgentsFile(home_, dead_port_->Port(), gateway, "", "");
 
     {
       ScopedWorkingDir in_home(home_);
@@ -516,7 +516,7 @@ class ServeHarness {
     FAIL("the server never took the port FindFreePort named");
   }
 
-  explicit ServeHarness(const std::string& backend_type = "ollama", int backend_delay_ms = 0,
+  explicit ServeHarness(const std::string& gateway = "ollama", int backend_delay_ms = 0,
                         std::optional<McpServer> mcp = std::nullopt,
                         bool with_peers = false) {
     static std::atomic<int> seq{0};
@@ -536,7 +536,7 @@ class ServeHarness {
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
-    WriteAgentsFile(home_, backend_->Port(), backend_type, mcp ? mcp->name : "",
+    WriteAgentsFile(home_, backend_->Port(), gateway, mcp ? mcp->name : "",
                     mcp ? mcp->url : "");
     // A workspace that is part of a topology names its peer before the runtime reads the
     // directory: the endpoint and the tool both follow from the file being there.

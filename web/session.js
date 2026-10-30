@@ -154,11 +154,11 @@ async function loadSession() {
     // actually reached rather than from the entry it asked for.
     if (data.server) setSelf({ name: data.server.name, port: data.server.port });
     renderServers();
-    setBackendLabel(data.backend_type, data.backend_model, data.backend_host);
+    setBackendLabel(data.gateway, data.backend_model, data.backend_host);
     // The window belongs to the model rather than to the gateway, so it is filed under both and
     // drawn here: a trial of a turn may already have been drawn against no window, and a switch
     // to a model that states one has to fill the bar without waiting for the next turn.
-    setContextWindow(data.backend_type, data.backend_model, data.context_window);
+    setContextWindow(data.gateway, data.backend_model, data.context_window);
     renderContextBar();
     renderSettings(data.settings);
     renderUsageTotal(data.usage_total);

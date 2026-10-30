@@ -12,9 +12,9 @@ function setText(id, text) {
   if (el) el.textContent = text || "—";
 }
 
-function setBackendLabel(backendType, model, host) {
-  if (backendType) PU.backendTypeShown = backendType;
-  setText(BACKEND_FIELDS.type, PU.backendTypeShown);
+function setBackendLabel(gateway, model, host) {
+  if (gateway) PU.gatewayShown = gateway;
+  setText(BACKEND_FIELDS.type, PU.gatewayShown);
   if (model) setText(BACKEND_FIELDS.model, model);
   if (host) setText(BACKEND_FIELDS.host, host);
   if (model) PU.backendModelShown = model;
@@ -42,7 +42,7 @@ function renderStatusBar() {
   const thinking = settingValue("thinking");
   setText("status-thinking", thinking === null ? "—" : String(thinking));
 
-  const gateway = PU.backendTypeShown;
+  const gateway = PU.gatewayShown;
   const model = PU.backendModelShown;
   setText("status-backend", gateway && model ? `${gateway} · ${model}` : (gateway || model));
   // The host is a fact about the configuration rather than about this turn, and it is long
@@ -99,7 +99,7 @@ function showUsage(payload) {
 function renderContextBar() {
   const fill = document.getElementById("context-fill");
   const prompt = PU.lastTurnPrompt;
-  const window = contextWindowFor(PU.backendTypeShown, PU.backendModelShown);
+  const window = contextWindowFor(PU.gatewayShown, PU.backendModelShown);
 
   // The bar has no room for a progress bar, so the status line carries the same warning.
   const barEl = document.getElementById("status-context");

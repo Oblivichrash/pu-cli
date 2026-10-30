@@ -72,7 +72,7 @@ const PU = {
   currentAssistantEl: null,
   // name -> description, so the closed control can carry the chosen agent's tooltip.
   agentDescriptions: {},
-  backendTypeShown: "",
+  gatewayShown: "",
   backendModelShown: "",
   backendHostShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
@@ -143,19 +143,19 @@ function setConnectionState(state) {
   PU.connState = state;
 }
 
-function contextWindowKey(backendType, model) {
-  return `${backendType || ""} · ${model || ""}`;
+function contextWindowKey(gateway, model) {
+  return `${gateway || ""} · ${model || ""}`;
 }
 
-function contextWindowFor(backendType, model) {
-  return CONTEXT_WINDOWS[contextWindowKey(backendType, model)] || null;
+function contextWindowFor(gateway, model) {
+  return CONTEXT_WINDOWS[contextWindowKey(gateway, model)] || null;
 }
 
 // The window a server stated for the model it is running. `0` is "nobody said one", which is
 // answered by forgetting the model rather than by storing a zero: a figure that is absent and a
 // figure of zero are different answers, and only the first should leave the bar blank.
-function setContextWindow(backendType, model, window) {
-  const key = contextWindowKey(backendType, model);
+function setContextWindow(gateway, model, window) {
+  const key = contextWindowKey(gateway, model);
   if (Number.isFinite(window) && window > 0) {
     CONTEXT_WINDOWS[key] = window;
   } else {
