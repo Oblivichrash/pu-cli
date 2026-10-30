@@ -53,12 +53,14 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   // Each of these reads something the others do not; if every page were the same, the
   // command a reader typed would still not be the one the page described.
   REQUIRE(Names(line.HelpFor("models"), "verify"));
-  // Reading one model's entries and capabilities is a check, not a listing; the flag that
-  // narrows a list is not on the page that lists.
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "entry"));
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "caps"));
-  REQUIRE(Names(line.HelpFor("check"), "entry"));
-  REQUIRE(Names(line.HelpFor("check"), "caps"));
+  // Both narrow the listing rather than answering about the configuration, so both are on the
+  // page that prints it: `--detail caps` adds the columns, `--entry` replaces the list with one
+  // model's agents.json entry. `check` keeps only the question it can answer without a runtime.
+  REQUIRE(Names(line.HelpFor("models"), "entry"));
+  REQUIRE(Names(line.HelpFor("models"), "detail"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "entry"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "caps"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "agent"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "verify"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "entry"));
 

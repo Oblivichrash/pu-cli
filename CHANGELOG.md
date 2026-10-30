@@ -20,6 +20,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **Breaking** — **`pu check --caps` and `pu check --entry` are `pu models --detail caps`
+  and `pu models --entry`.** Both read the listing `pu models` already prints, and `pu
+  check` now answers only its own question: what an `agents.json` resolves to, without
+  contacting a provider. `pu models` also takes `--gateway` and `--model`, which it was the
+  only listing command without. No configuration change.
+
 - **Breaking** — **`session.json` is schema 9: a tool receipt carries `origin`.** The
   question it answered, the run that answered it and that run's rank are now written with
   the receipt instead of being parsed out of its text on every turn. A file written by an
