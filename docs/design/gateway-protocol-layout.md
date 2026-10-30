@@ -18,7 +18,9 @@ current behaviour, and nothing in them should be read as built.
 
 ## 1. The problem
 
-`BackendType` (`config/backend.hpp`) is one value answering three questions at once:
+`BackendType` (`config/backend.hpp`) was one value answering three questions at once — it is
+gone now, and this section records what it made impossible rather than a shape to find in
+the tree:
 
 ```
 ollama    → the ollama protocol, the Ollama product, and the provider to build
@@ -116,9 +118,9 @@ The table is explicit, so the linker always sees it.
 - `api_key` is optional and unchanged.
 
 The `entry` field is not read today, and the section above describes the shape it would
-take rather than a change made. `kSessionSchemaVersion` is still 7: a stored `type` maps to
-the gateway of the same name, so `ollama`, `openai` and `codebuddy` keep reading, and the
-version moves to 8 only if `entry` is built.
+take rather than a change made. A stored backend that names no `gateway` keeps reading as
+before: a stored `type` maps to the gateway of the same name, so `ollama`, `openai` and
+`codebuddy` keep reading under their own names.
 
 ## 6. Capability
 
@@ -131,7 +133,7 @@ Where each gateway keeps those fields, and what it calls them, is `CatalogShape`
 the protocol parser names no vendor. The measured requirement behind one of them: a model
 whose `onlyReasoning` is true is answered `400 11150` when a request carries no
 `reasoning_effort`, and answers 200 to any level — so a level is required rather than one
-particular level ([codebuddy-fieldnotes.md](codebuddy-fieldnotes.md)).
+particular level.
 
 The one caller that acts on the field today is `pu models --verify`: such a model is not
 asked at all when the backend sends no level, since the request cannot succeed, and the

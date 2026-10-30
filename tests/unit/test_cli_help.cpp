@@ -53,12 +53,14 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   // Each of these reads something the others do not; if every page were the same, the
   // command a reader typed would still not be the one the page described.
   REQUIRE(Names(line.HelpFor("models"), "verify"));
-  // Reading one model's entries and capabilities is a check, not a listing; the flag that
-  // narrows a list is not on the page that lists.
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "entry"));
-  REQUIRE_FALSE(Names(line.HelpFor("models"), "caps"));
-  REQUIRE(Names(line.HelpFor("check"), "entry"));
-  REQUIRE(Names(line.HelpFor("check"), "caps"));
+  // Both narrow the listing rather than answering about the configuration, so both are on the
+  // page that prints it: `--detail caps` adds the columns, `--entry` replaces the list with one
+  // model's agents.json entry. `check` keeps only the question it can answer without a runtime.
+  REQUIRE(Names(line.HelpFor("models"), "entry"));
+  REQUIRE(Names(line.HelpFor("models"), "detail"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "entry"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "caps"));
+  REQUIRE_FALSE(Names(line.HelpFor("check"), "agent"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "verify"));
   REQUIRE_FALSE(Names(line.HelpFor("ask"), "entry"));
 
@@ -127,11 +129,55 @@ TEST_CASE("The list says what each command answers", "[options]") {
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
   const std::string printed = pu::cli::CommandList(line);
 
-  // A name with no sentence after it is a name a reader still has to look up.
+  // A name with no sentence after it is a name a reader still has to look up. A developer tool
+  // is named and described but kept off the page, so the two claims are made separately: it has
+  // a sentence, and that sentence is not printed.
+  std::size_t visible = 0;
   for (const auto& command : line.commands) {
-    const std::size_t at = printed.find("  " + command.name);
-    REQUIRE(at != std::string::npos);
     REQUIRE_FALSE(command.summary.empty());
+    const std::size_t at = printed.find("  " + command.name);
+    if (command.developer) {
+      REQUIRE(at == std::string::npos);
+      continue;
+    }
+    REQUIRE(at != std::string::npos);
     REQUIRE(printed.find(command.summary, at) != std::string::npos);
+    ++visible;
   }
+  // The listing is not allowed to empty itself: every command becoming a developer tool would
+  // satisfy the loop above and leave a reader with a page that says nothing.
+  REQUIRE(visible == line.commands.size() - 1);
+}
+
+TEST_CASE("A hint belongs to its command's page and nowhere else", "[options]") {
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+
+  // The two commands that read a provider are the ones a reader can pick wrongly, so the
+  // page says how they differ. Anything else naming a neighbour would be a page explaining a
+  // choice nobody is standing at.
+  REQUIRE_FALSE(line.HintFor("probe").empty());
+  REQUIRE_FALSE(line.HintFor("sse").empty());
+  REQUIRE(line.HintFor("probe").find("agents.json") != std::string::npos);
+  REQUIRE(line.HintFor("sse").find("agents.json") != std::string::npos);
+
+  // A hint that named every command would make the two above true for the wrong reason.
+  std::size_t hinted = 0;
+  for (const auto& command : line.commands) {
+    if (!line.HintFor(command.name).empty()) ++hinted;
+  }
+  REQUIRE(hinted == 2);
+
+  // Nothing outside a command's own page prints it: the top-level listing is written from
+  // `summary` alone, and a hint leaking into it would be a second sentence in a one-line map.
+  // An empty hint is skipped, since the empty string is found in every line.
+  const std::string printed = pu::cli::CommandList(line);
+  for (const auto& command : line.commands) {
+    const std::string hint = line.HintFor(command.name);
+    if (hint.empty()) continue;
+    REQUIRE(printed.find(hint) == std::string::npos);
+  }
+
+  // A name this build does not have has no page, so it has no hint either.
+  REQUIRE(line.HintFor("").empty());
+  REQUIRE(line.HintFor("definitely-not-a-command").empty());
 }

@@ -106,24 +106,22 @@ std::string PeerTool::Execute(const boost::json::value& args, pu::ToolContext& c
   const std::string message = json::ValueOrDefault<std::string>(args, "message", "");
 
   if (name.empty() || intent.empty() || message.empty()) {
-    return MakeToolResultJson(false, "", "A peer, an intent and a message are all required", -1,
-                              true);
+    return MakeRefusal("A peer, an intent and a message are all required", true);
   }
 
   if (!ctx.peer_origin.empty() && name != ctx.peer_origin) {
-    return MakeToolResultJson(false, "",
-                              std::string(session::kPeerOriginNote) + " (this turn was asked by '" +
-                                  ctx.peer_origin + "', so only '" + ctx.peer_origin +
-                                  "' can be reached)",
-                              -1, true);
+    return MakeRefusal(std::string(session::kPeerOriginNote) + " (this turn was asked by '" +
+                           ctx.peer_origin + "', so only '" + ctx.peer_origin +
+                           "' can be reached)",
+                       true);
   }
 
   const auto peer = peers_.FindPeer(name);
   if (!peer.has_value()) {
-    return MakeToolResultJson(false, "", "No peer named '" + name + "' is configured", -1, true);
+    return MakeRefusal("No peer named '" + name + "' is configured", true);
   }
   if (client_ == nullptr) {
-    return MakeToolResultJson(false, "", "No HTTP client is available to reach '" + name + "'", -1);
+    return MakeRefusal("No HTTP client is available to reach '" + name + "'");
   }
 
   const std::string due = json::ValueOrDefault<std::string>(args, "due", "");
@@ -134,10 +132,8 @@ std::string PeerTool::Execute(const boost::json::value& args, pu::ToolContext& c
     job = PostJob(peer->url, peer->name, intent, deadline);
   } catch (const std::exception& e) {
     spdlog::warn("Peer '{}' did not take the job: {}", name, e.what());
-    return MakeToolResultJson(false, "",
-                              "Peer '" + name + "' did not take the job, so nothing was sent: " +
-                                  e.what(),
-                              -1);
+    return MakeRefusal("Peer '" + name + "' did not take the job, so nothing was sent: " +
+                       e.what());
   }
 
   boost::json::value reply;
@@ -146,19 +142,14 @@ std::string PeerTool::Execute(const boost::json::value& args, pu::ToolContext& c
   } catch (const std::exception& e) {
     // The job stays on the board, open and unseen. Saying so is what lets this turn or a
     // person pick it up rather than assume the work is under way.
-    return MakeToolResultJson(false, "",
-                              "Job '" + job.id + "' was posted on '" + name +
-                                  "' but the message did not arrive: " + e.what(),
-                              -1);
+    return MakeRefusal("Job '" + job.id + "' was posted on '" + name +
+                       "' but the message did not arrive: " + e.what());
   }
 
   if (!json::ValueOrDefault<bool>(reply, "accepted", false)) {
     const std::string reason =
         json::ValueOrDefault<std::string>(reply, "error", "the peer did not say why");
-    return MakeToolResultJson(false, "",
-                              "Job '" + job.id + "' was posted but '" + name + "' refused it: " +
-                                  reason,
-                              -1);
+    return MakeRefusal("Job '" + job.id + "' was posted but '" + name + "' refused it: " + reason);
   }
 
   const std::string turn = json::ValueOrDefault<std::string>(reply, "turn", "");

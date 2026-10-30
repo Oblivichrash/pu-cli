@@ -11,9 +11,11 @@ is already the surface the installed client uses. The code side of this — the 
 name, where the base and the header set live — is in [providers.md](../providers.md).
 
 What was measured *about* this gateway rather than required *of* it — which fields are
-honored, which models answer, and what is still unresolved — is in
-[codebuddy-fieldnotes.md](codebuddy-fieldnotes.md). Those findings describe one account
-at one time and are not part of the contract below.
+honored and which models answer — is recorded where it decides something: `reasoning_effort`
+is the field that makes it reason at all, so it is required rather than one level among
+many, and a model whose `onlyReasoning` is true answers `400 11150` to a request carrying
+no level. A model id list is not kept here: it describes one account at one time and rots
+faster than it is read.
 
 ---
 
@@ -116,7 +118,6 @@ call for it (section 7).
 
 `temperature` and `max_tokens` are accepted. `reasoning_effort` is honoured — it is what
 makes this gateway reason at all — while `extra_body.thinking` is accepted and inert.
-[codebuddy-fieldnotes.md](codebuddy-fieldnotes.md) records how each was measured.
 
 ## 6. Response stream
 
@@ -183,8 +184,10 @@ read two fields out of it: `displayMsg` is written for a user and is what gets s
 ```
 
 A single `code` covers more than one cause — 11102 is raised both for a model that does
-not exist and for one this account may not use, told apart only by `msg`. The codes seen
-so far are recorded in [codebuddy-fieldnotes.md](codebuddy-fieldnotes.md).
+not exist and for one this account may not use, told apart only by `msg`. A code seen once
+is not a list: the two this provider reads are the one above and `400 11150` for a model
+that reasons only when told to, described in
+[gateway-protocol-layout.md](gateway-protocol-layout.md).
 
 What the provider does with a non-200 body: `displayMsg.en` becomes the error a user
 reads, and `msg`, `code` and `requestId` go to the log at warning. A body carrying no

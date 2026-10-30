@@ -43,7 +43,8 @@ port a workspace asks for, and the registry is what actually answers.
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
 > agent's tools. Keep the default loopback bind unless the port is protected by
-> other means.
+> other means. [security.md](security.md) is where the rest of the trust boundary is
+> stated.
 
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` in the [README](../README.md#core-commands).
@@ -147,7 +148,7 @@ refused with `401`.
 
 | Method | Path | Audience | Description |
 | :----- | :--- | :------- | :---------- |
-| `GET` | `/api/session` | anyone | Current session info (agent, backend type/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
+| `GET` | `/api/session` | anyone | Current session info (agent, gateway/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
 | `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
 | `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
 | `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |

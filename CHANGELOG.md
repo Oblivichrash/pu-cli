@@ -18,7 +18,44 @@ the commit that made it, and its current behaviour is in the relevant document
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
 
+### Fixed
+
+- **An MCP server on Windows no longer leaks a little on every start.** The transport hands
+  its reader thread a small record of the handle to poll and the flag to clear, and freed
+  that record only when the thread failed to start — so a server that ran leaked one on each
+  start. The transport now owns the record and frees it when it stops the reader.
+
 ### Changed
+
+- **`pu sse --help` and `pu probe --help` say how the two differ.** Both reach a provider and
+  both can show what it sent, so a reader working out which to run had to find the difference
+  in the documents. The page now says it: `probe` reads `agents.json` for a gateway that is
+  already configured, and `sse` takes a URL and headers and reads no configuration at all.
+  Nothing about either command changed.
+
+- **Breaking** — **The session API reports `gateway` where it reported `backend_type`.** The
+  rest of the API, `agents.json` and the code all call the scheme a gateway, and the one
+  field that used the older word was the field a page reads first. A client that read
+  `backend_type` reads `gateway`; `backend_model` and `backend_host` are unchanged.
+
+- **Breaking** — **`/backend <type> <model> [host]` no longer takes an API key.** A key
+  typed at the chat prompt is written into the scrollback and into whatever records that
+  terminal, so the command now refuses a fourth argument instead of accepting one. An
+  endpoint that needs a key is named in `agents.json`, which is where every keyed endpoint
+  was already configured and where the key can come from the environment. `/backend
+  <agent>` and `/backend <type> <model> [host]` are unchanged.
+
+- **`pu probe` is a developer tool and no longer appears in `pu --help`.** It captures a
+  provider's raw stream for someone writing a `ResponseShape`, which is a question about a
+  gateway rather than about an `agents.json`. It is unchanged and still documented in
+  [README.md](README.md#core-commands); only the top-level listing and its `--command` hint
+  leave it out. `pu models` remains the answer to what a gateway offers.
+
+- **Breaking** — **`pu check --caps` and `pu check --entry` are `pu models --detail caps`
+  and `pu models --entry`.** Both read the listing `pu models` already prints, and `pu
+  check` now answers only its own question: what an `agents.json` resolves to, without
+  contacting a provider. `pu models` also takes `--gateway` and `--model`, which it was the
+  only listing command without. No configuration change.
 
 - **Breaking** — **`session.json` is schema 9: a tool receipt carries `origin`.** The
   question it answered, the run that answered it and that run's rank are now written with
@@ -121,18 +158,6 @@ the commit that made it, and its current behaviour is in the relevant document
   process rather than by directory, so two servers on one workspace do not offer each other. A
   sibling's address is that port on the host the page already reached, since a registry `bind` is
   not a destination. The entry's shape is in **Breaking** above.
-- The registry's temp file is named after the writer (`serve.json.<pid>.tmp`), so a writer that
-  gave up waiting on the lock cannot rename over one that finished.
-
-- `pu --help` names each command with the one line that says what it answers. The list is
-  built from the same table the `--command` flag is described from, so a command cannot be
-  added to one and forgotten in the other.
-- **Six of the seven project rules are gone.** The cases that read Markdown and source text —
-  the SPDX line, the test file list, every document reachable from outside `docs/`, every
-  relative link and anchor, every closed inline code span, and the repeated `###` heading in a
-  CHANGELOG section — are removed with nothing replacing them, so each of those rules is a
-  reviewer's again. The page rule stays, because it decides how the page runs rather than how
-  the text reads.
 
 ## 0.6.0
 

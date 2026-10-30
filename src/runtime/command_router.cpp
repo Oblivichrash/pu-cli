@@ -16,7 +16,13 @@ namespace {
 
 constexpr const char* kBackendHelp =
     "  /backend <agent_name>  Switch to a predefined agent\n"
-    "  /backend <type> <model> [host] [api_key]  Adopt a backend as an agent of its type\n";
+    "  /backend <type> <model> [host]  Adopt a backend as an agent of its type\n";
+
+// What a failed command says in the transcript. Written once so the prefix is one fact: a
+// prefix that changed in three of four places would read as two different failures.
+std::string DescribeError(const std::exception& e) {
+  return std::string("Error: ") + e.what();
+}
 
 }  // namespace
 
@@ -136,13 +142,21 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
                std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
                agent_config->backend.model + ")";
     } catch (const std::exception& e) {
-      output = "Error: " + std::string(e.what());
+      output = DescribeError(e);
     }
     return true;
   }
 
-  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host] [api_key]"), output))
+  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host]"), output)) return true;
+
+  // A key typed at a slash prompt is written into the scrollback and into whatever records
+  // that terminal, so the command does not take one. An endpoint that needs a key is named
+  // in agents.json, where it can come from the environment and stay out of the transcript.
+  if (args.size() > 3) {
+    output =
+        "Usage: /backend <type> <model> [host]. A key is set in agents.json, not here.";
     return true;
+  }
 
   const auto type = config::ParseGatewayId(args[0]);
   if (!type) {
@@ -154,18 +168,14 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
   new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
-  if (args.size() > 3) new_cfg.api_key = args[3];
   if (new_cfg.host.empty()) new_cfg.host = config::DefaultHostFor(*type);
 
   try {
     runtime_.SwitchBackend(new_cfg);
     output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
              ", host: " + new_cfg.host + ")";
-    if (new_cfg.api_key && !new_cfg.api_key->empty()) {
-      output += " (API key set)";
-    }
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }
@@ -188,7 +198,7 @@ bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
         config::ListModels(cfg, runtime_.Http());
     output = llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model);
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }
@@ -220,7 +230,7 @@ bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
     output = "Stepped back to before turn " + args[0] +
              ". The next message replaces it; the turns after it stay in the file until one does.";
   } catch (const std::exception& e) {
-    output = "Error: " + std::string(e.what());
+    output = DescribeError(e);
   }
   return true;
 }

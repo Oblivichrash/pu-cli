@@ -79,5 +79,9 @@ the user's file.
   is worth knowing before it reaches a provider as a blank key — see
   [configuration.md](configuration.md#agentsjson).
 - `PU_PEER_TOKEN` does the same for the peer token.
+- No prompt takes a key. `/backend` refuses a fourth argument rather than adopt a backend
+  with a key typed at the chat prompt, because that prompt is echo'd into the scrollback,
+  into the terminal's own history, and into anything that captures a screen. A keyed
+  endpoint is named in `agents.json`.
 - A stored session holds the conversation, which is whatever was said to the model. It does
   not hold the key that was used to reach it.

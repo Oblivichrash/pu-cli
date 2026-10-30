@@ -230,9 +230,10 @@ ask "what does `ask` take".
 
 ### 2.12 Nothing reports cost or capability
 
-**Fixed.** `ask --show-usage` prints what a turn cost, and `models --caps` prints the columns
-that decide between two models — including `only-reasoning`, the flag that predicts a refused
-request. `models --verify` exits 2 when a model it asked did not answer.
+**Fixed.** `ask --show-usage` prints what a turn cost, and `models --detail caps` prints the
+columns that decide between two models — including `only-reasoning`, the flag that predicts a
+refused request. `pu models --verify` asks the gateway and exits 2 when a model it asked did not
+answer.
 
 `ExecutionResult` carries `usage` (prompt / completion / cached / credit) and the CLI
 never prints it. `ModelEntry` carries `supports_tools`, `supports_images`,
@@ -365,7 +366,7 @@ not new state. It also gives `pu models --verify` a way to answer "does this mod
 
 - `ask`: print `usage` on stderr when `--show-usage` is given (stdout stays clean for
   piping). Tokens plus `credit` when the gateway reported it.
-- `models`: add `--caps` to print the columns `Capabilities` already holds —
+- `models`: add `--detail caps` to print the columns `Capabilities` already holds —
   `tools`, `images`, `reasoning`, `only-reasoning`, `default-effort`, `max-input`.
   A `only-reasoning` model with no `thinking` configured is exactly the row a user needs
   warned about.

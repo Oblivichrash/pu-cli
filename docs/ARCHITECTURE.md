@@ -157,7 +157,7 @@ rather than the raw Boost call, so the fallbacks stay in one place.
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
 (`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
-API in `src/app/serve_http_routes.cpp` and `src/app/serve.cpp`.
+API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
 
 ---
 
@@ -681,7 +681,9 @@ the next save.
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
 editing the configuration takes effect without touching the session.
 `/backend <type> <model>` adopts an agent named after the type, so the backend a
-session reports and the agent it names are always the same answer. The session
+session reports and the agent it names are always the same answer. It takes no key:
+a key typed at the prompt is written into the scrollback, so an endpoint that needs
+one is named in `agents.json`, where it can come from the environment. The session
 also decides which agent a restart resumes: the named agent wins over
 `default_agent`.
 

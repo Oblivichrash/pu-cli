@@ -45,14 +45,8 @@ constexpr int kReadPollMs = 100;
 
 namespace {
 
-struct ReaderContext {
-  HANDLE stdout_read;
-  std::atomic<bool>* running;
-  MessageCallback on_message;
-};
-
 DWORD WINAPI ReaderThreadProc(LPVOID param) {
-  auto* ctx = static_cast<ReaderContext*>(param);
+  auto* ctx = static_cast<StdioTransport::ReaderContext*>(param);
 
   char buf[4096];
   std::string leftover;
@@ -211,13 +205,18 @@ bool StdioTransport::Start(MessageCallback on_message) {
   on_message_ = std::move(on_message);
   if (!SpawnProcess()) return false;
   running_ = true;
-  // The reader owns the handle it polls and the flag it clears; the transport must not free
-  // either while it runs, which is why the context lives until the thread has been joined.
-  auto* ctx = new ReaderContext{stdout_read_, &running_, on_message_};
-  reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, ctx, 0, nullptr);
+  // The context outlives this call but not the reader: the transport owns it and
+  // frees it in Stop, after the thread has been waited for.
+  reader_context_ = std::make_unique<ReaderContext>();
+  reader_context_->stdout_read = stdout_read_;
+  reader_context_->running = &running_;
+  reader_context_->on_message = on_message_;
+
+  reader_thread_handle_ = CreateThread(nullptr, 0, ReaderThreadProc, reader_context_.get(), 0,
+                                       nullptr);
   if (reader_thread_handle_ == nullptr) {
     spdlog::error("CreateThread for the MCP reader failed: {}", GetLastError());
-    delete ctx;
+    reader_context_.reset();
     running_ = false;
     return false;
   }
@@ -236,6 +235,8 @@ void StdioTransport::Stop() {
     WaitForSingleObject(reader_thread_handle_, 3000);
     CloseHandle(reader_thread_handle_);
     reader_thread_handle_ = INVALID_HANDLE_VALUE;
+    // The thread is no longer running, so the context it read from is free.
+    reader_context_.reset();
   }
 
   if (stdout_read_ != INVALID_HANDLE_VALUE) {

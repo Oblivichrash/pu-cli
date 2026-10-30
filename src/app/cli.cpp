@@ -124,6 +124,14 @@ CommandLine BuildCommandLine() {
   struct CommandSpec {
     const char* name;
     const char* summary;
+    // Off the top-level listing, which is a reader's map of what this tool is for. A command
+    // that captures a provider's raw bytes answers a question about a gateway a reader has not
+    // met yet, so it stays reachable and documented without being one of the visible choices.
+    bool developer = false;
+    // Printed above this command's own page, and nowhere else. A page is read by someone who
+    // has already picked the command, so it is the one place where saying how it differs from
+    // its nearest neighbour costs nothing and saves a wrong choice.
+    const char* hint = nullptr;
   };
 
   const std::vector<CommandSpec> commands = {
@@ -131,15 +139,27 @@ CommandLine BuildCommandLine() {
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
-      {"models", "list the models a gateway offers"},
-      {"probe", "save a raw provider stream and summarise what it contained"},
+      {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
+      {"probe",
+       "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
+       "Reads agents.json for the gateway, its key and its model: what is asked of a provider "
+       "that is already configured. `pu sse` takes a URL and headers instead, for a feed that "
+       "is not a chat turn."},
       {"serve", "host the page and the API that a browser talks to"},
-      {"sse", "read a server-sent-event stream and print each event"},
+      {"sse",
+       "read a server-sent-event stream and print each event", false,
+       "A plain client: the URL, the method and the headers are yours, and no agents.json is "
+       "read. To capture what a configured gateway sends, ask for one token, use `pu probe`."},
   };
 
+  // The hint names what the listing names: a command kept off the page is not a name a reader
+  // arriving with no command is asked to choose from.
   std::string command_hint = "command to execute (";
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    command_hint += (i == 0 ? "" : "/") + std::string(commands[i].name);
+  bool first = true;
+  for (const CommandSpec& command : commands) {
+    if (command.developer) continue;
+    command_hint += (first ? "" : "/") + std::string(command.name);
+    first = false;
   }
   command_hint += ")";
 
@@ -166,6 +186,12 @@ CommandLine BuildCommandLine() {
       {"chat", {agent_option}},
       {"models",
        {agent_option, gateway_option, model_option,
+        {"detail", "ids (default) for what you can pick, caps for the columns that decide "
+                   "between two models",
+         true},
+        {"entry", "print an agents.json entry for this model id, ready to paste; implies "
+                  "--detail entry",
+         true},
         {"verify", "ask each listed model for one token and report what answered", false}}},
       {"probe",
        {agent_option, gateway_option, model_option,
@@ -173,10 +199,7 @@ CommandLine BuildCommandLine() {
         {"no-save", "print the summary without writing the raw stream", false},
         {"listing", "probe the model listing instead of the stream", false}}},
       {"check",
-       {agent_option,
-        {"config", "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)", true},
-        {"entry", "print an agents.json entry for this model id, ready to paste", true},
-        {"caps", "print the capabilities and price that decide between two models", false}}},
+       {{"config", "agents.json to read (default: ./.pu/agents.json, then ~/.pu/)", true}}},
       {"sse",
        {{"url", "the endpoint to read (positional as well)", true},
         {"header", "a request header, repeatable: --header 'Authorization: Bearer ...'", true},
@@ -248,14 +271,12 @@ CommandLine BuildCommandLine() {
     return description;
   };
 
-  line.per_command.emplace("agents", page(option_table.at("agents")));
-  line.per_command.emplace("ask", page(option_table.at("ask")));
-  line.per_command.emplace("chat", page(option_table.at("chat")));
-  line.per_command.emplace("models", page(option_table.at("models")));
-  line.per_command.emplace("probe", page(option_table.at("probe")));
-  line.per_command.emplace("check", page(option_table.at("check")));
-  line.per_command.emplace("sse", page(option_table.at("sse")));
-  line.per_command.emplace("serve", page(option_table.at("serve")));
+  // One page per name the table declares, so a command added to the table cannot be left
+  // without one: a page that is missing does not fail, it falls back to `all`, and a reader
+  // asking `pu <cmd> --help` would be shown every flag the line has.
+  for (const auto& [command, options] : option_table) {
+    line.per_command.emplace(command, page(options));
+  }
 
   boost::program_options::positional_options_description positional;
   positional.add("command", 1);
@@ -263,7 +284,8 @@ CommandLine BuildCommandLine() {
   line.positional = std::move(positional);
 
   for (const CommandSpec& command : commands) {
-    line.commands.push_back({command.name, command.summary});
+    line.commands.push_back(
+        {command.name, command.summary, command.developer, command.hint ? command.hint : ""});
   }
   return line;
 }
@@ -274,10 +296,18 @@ const boost::program_options::options_description& CommandLine::HelpFor(
   return it == per_command.end() ? all : it->second;
 }
 
+std::string CommandLine::HintFor(const std::string& command) const {
+  for (const CommandSummary& summary : commands) {
+    if (summary.name == command) return summary.hint;
+  }
+  return "";
+}
+
 std::string CommandList(const CommandLine& line) {
   std::ostringstream printed;
   printed << "commands:\n";
   for (const CommandLine::CommandSummary& command : line.commands) {
+    if (command.developer) continue;
     printed << "  " << command.name;
     printed << std::string(command.name.size() < 8 ? 8 - command.name.size() : 1, ' ');
     printed << command.summary << "\n";
@@ -393,14 +423,35 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 }
 
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, Runtime& runtime) {
+              ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
     const config::Backend backend = BackendFor(gateway, model, runtime);
     const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
 
+    // The listing is read once for every shape. Two of them ask nothing else of the network,
+    // and the third only adds a token request per model.
+    if (shape == ModelShape::kEntry) {
+      // A model outside the listing is exactly the one being written for, so a missing id is
+      // an empty entry rather than an error.
+      llm::ModelEntry wanted{entry_id, {}};
+      for (const llm::ModelEntry& listed : models) {
+        if (listed.id == entry_id) {
+          wanted = listed;
+          break;
+        }
+      }
+      const std::optional<boost::json::value> source =
+          config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
+      if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
+      std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
+      return kOk;
+    }
+
     if (!verify) {
-      std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway), backend.host,
-                                       backend.model, llm::ListingDetail::kIds)
+      std::cout << llm::FormatModelList(
+                       models, config::GatewayName(backend.gateway), backend.host, backend.model,
+                       shape == ModelShape::kCaps ? llm::ListingDetail::kCaps
+                                                  : llm::ListingDetail::kIds)
                 << "\n";
       return kOk;
     }
@@ -422,38 +473,6 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
     // A verification that found a model down is the answer the caller asked for, and a
     // script needs to read it without parsing the text.
     return answered == static_cast<int>(checks.size()) ? kOk : kProvider;
-  });
-}
-
-int RunModelCaps(const std::string& agent, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor("", "", runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
-    std::cout << llm::FormatModelList(models, config::GatewayName(backend.gateway), backend.host,
-                                     backend.model, llm::ListingDetail::kCaps)
-              << "\n";
-    return kOk;
-  });
-}
-
-int RunModelEntry(const std::string& agent, const std::string& entry_id, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor("", "", runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
-
-    // A model outside the listing is exactly the one being written for.
-    llm::ModelEntry wanted{entry_id, {}};
-    for (const llm::ModelEntry& model : models) {
-      if (model.id == entry_id) {
-        wanted = model;
-        break;
-      }
-    }
-    const std::optional<boost::json::value> source =
-        config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
-    if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
-    std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
-    return kOk;
   });
 }
 

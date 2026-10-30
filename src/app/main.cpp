@@ -86,8 +86,13 @@ int main(int argc, char* argv[]) {
     // the one `--help` is for, and the flags below only answer a question they have not
     // reached yet.
     const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
-    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string())
-              << line.HelpFor(named) << "\n";
+    // A note about how this command differs from its nearest neighbour belongs to its page,
+    // above the flags: someone reading the page has already paid for the choice, and a
+    // choice taken wrongly is the thing the note prevents.
+    const std::string hint = named.empty() ? std::string() : line.HintFor(named);
+    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string());
+    if (!hint.empty()) std::cout << hint << "\n\n";
+    std::cout << line.HelpFor(named) << "\n";
     return 0;
   }
 
@@ -97,6 +102,15 @@ int main(int argc, char* argv[]) {
   }
 
   std::string cmd = vm["command"].as<std::string>();
+
+  // A mistake in the invocation is answered with the page for the command it is about: the
+  // reader is on that page already, and the flags below the message are how it is corrected.
+  // Written once because every usage error is that shape, and one of them printing a
+  // different frame would read as a different kind of failure.
+  const auto usage_error = [&](const std::string& message) {
+    std::cerr << "Error: " << message << "\n\n" << line.HelpFor(cmd) << "\n";
+    return pu::cli::kUsage;
+  };
 
   // The parser had to accept every name to learn which command was typed; now that it is
   // known, each flag in it is held against the page for it. A flag that belongs to another
@@ -124,9 +138,7 @@ int main(int argc, char* argv[]) {
       rejected.push_back(name);
     }
     if (!rejected.empty()) {
-      std::cerr << "Error: " << rejected.front() << " is not an option of '" << cmd << "'\n\n"
-                << line.HelpFor(cmd) << "\n";
-      return pu::cli::kUsage;
+      return usage_error(rejected.front() + " is not an option of '" + cmd + "'");
     }
   }
 
@@ -137,8 +149,7 @@ int main(int argc, char* argv[]) {
       // An empty prompt is a mistake in the invocation, not a turn to send: the store would
       // gain a question with no words and the provider a request for nothing.
       if (!vm.count("prompt") || vm["prompt"].as<std::string>().empty()) {
-        std::cerr << "Error: prompt required for ask command\n\n" << all << "\n";
-        return pu::cli::kUsage;
+        return usage_error("prompt required for ask command");
       }
       return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime,
                              vm.count("show-usage") > 0);
@@ -149,8 +160,23 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "models") {
+      // One command, three depths of the same answer. `--detail` is a single choice so two of
+      // them cannot be asked for at once; `--verify` is a separate flag because it is the only
+      // one that contacts a provider.
+      const std::string detail = OptionOr(vm, "detail", "ids");
+      pu::cli::ModelShape shape = pu::cli::ModelShape::kIds;
+      if (detail == "caps") {
+        shape = pu::cli::ModelShape::kCaps;
+      } else if (detail == "ids") {
+        shape = pu::cli::ModelShape::kIds;
+      } else {
+        return usage_error("--detail is ids or caps, not '" + detail + "'");
+      }
+      const std::string entry = OptionOr(vm, "entry", "");
+      if (!entry.empty()) shape = pu::cli::ModelShape::kEntry;
       return pu::cli::RunModels(OptionOr(vm, "agent", ""), OptionOr(vm, "gateway", ""),
-                               OptionOr(vm, "model", ""), vm.count("verify") > 0, runtime);
+                               OptionOr(vm, "model", ""), shape, entry, vm.count("verify") > 0,
+                               runtime);
     }
 
     if (cmd == "agents") {
@@ -165,8 +191,7 @@ int main(int argc, char* argv[]) {
       // rest as flags.
       options.url = OptionOr(vm, "url", vm.count("command") > 0 ? OptionOr(vm, "prompt", "") : "");
       if (options.url.empty()) {
-        std::cerr << "Error: no URL to read\n\n" << line.HelpFor(cmd) << "\n";
-        return pu::cli::kUsage;
+        return usage_error("no URL to read");
       }
       if (vm.count("header") > 0) {
         options.headers = vm["header"].as<std::vector<std::string>>();
@@ -189,9 +214,7 @@ int main(int argc, char* argv[]) {
       } else if (format == "raw") {
         options.format = pu::cli::SseFormat::kRaw;
       } else if (format != "text") {
-        std::cerr << "Error: --format is text, json or raw, not '" << format << "'\n\n"
-                  << line.HelpFor(cmd) << "\n";
-        return pu::cli::kUsage;
+        return usage_error("--format is text, json or raw, not '" + format + "'");
       }
       options.quiet = vm.count("quiet") > 0;
 
@@ -200,11 +223,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "check") {
-      if (vm.count("caps") > 0) return pu::cli::RunModelCaps(OptionOr(vm, "agent", ""), runtime);
-      const std::string entry = OptionOr(vm, "entry", "");
-      if (!entry.empty()) {
-        return pu::cli::RunModelEntry(OptionOr(vm, "agent", ""), entry, runtime);
-      }
+      // Only `check`'s own job is left here: read agents.json and say what it resolves to.
+      // The two listing questions moved back to `models`, whose listing they read.
       return pu::cli::RunCheck(OptionOr(vm, "config", ""));
     }
 

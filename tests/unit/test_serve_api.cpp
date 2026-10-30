@@ -48,7 +48,7 @@ TEST_CASE("serve API /api/session", "[serve][api]") {
 
   REQUIRE(j.at("success") == true);
   REQUIRE(j.at("agent_name") == "chat");
-  REQUIRE(j.at("backend_type") == "ollama");
+  REQUIRE(j.at("gateway") == "ollama");
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
@@ -73,7 +73,7 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
   auto j = ParseJson(client.Get("/api/session"));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("backend_type") == "codebuddy");
+  REQUIRE(j.at("gateway") == "codebuddy");
   REQUIRE(j.at("backend_model") == "test-model");
 }
 

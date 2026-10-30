@@ -46,11 +46,19 @@ struct CommandLine {
   struct CommandSummary {
     std::string name;
     std::string summary;
+    // Named and documented, but not offered in the top-level listing; see `CommandSpec`.
+    bool developer = false;
+    // How this command differs from its nearest neighbour. Empty when there is nothing to
+    // say, and printed only above this command's own page; see `CommandSpec`.
+    std::string hint;
   };
   std::vector<CommandSummary> commands;
 
   // Never empty: a name this build does not have gets the whole line.
   const boost::program_options::options_description& HelpFor(const std::string& command) const;
+
+  // The hint for a command's own page, or an empty string when it has none.
+  std::string HintFor(const std::string& command) const;
 };
 
 CommandLine BuildCommandLine();
@@ -67,23 +75,25 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
            bool show_usage = false);
 int RunChat(const std::string& agent, Runtime& runtime);
-// `gateway` reads a product without an agents.json entry; `caps` prints the columns that
-// decide between two models that both work. Both are in
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside.
+// A developer tool, kept off the top-level listing: it captures a provider's raw bytes for
+// someone writing a `ResponseShape`, which is not a question `agents.json` has an answer to.
+// `gateway` reads a product without an agents.json entry; `listing` reads the catalogue where
+// `models` reads and prints it, and is kept for the raw report rather than the ids.
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime);
+// What `models` prints, and how much of it. The three shapes are exclusive answers to the same
+// listing, so they are one choice rather than three flags that could be set together: `kIds`
+// answers "what can I pick", `kCaps` "which of these two", and `kEntry` "how do I write this
+// one into agents.json". `verify` is separate because it is the only shape that asks a
+// provider instead of reading a catalogue.
+enum class ModelShape { kIds, kCaps, kEntry };
+
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              bool verify, Runtime& runtime);
+              ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
 int RunCheck(const std::string& config_path);
-// The two questions answered from a gateway's listing without asking a model anything: the
-// columns that decide between two models, and an agents.json entry for one of them. They read
-// the same listing `models` prints, which is why they are named here rather than there -- but
-// they are the only two that need a runtime, so `check` keeps its no-runtime path.
-int RunModelCaps(const std::string& agent, Runtime& runtime);
-int RunModelEntry(const std::string& agent, const std::string& entry_id, Runtime& runtime);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
 

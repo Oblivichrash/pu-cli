@@ -2,6 +2,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,6 +30,17 @@ class StdioTransport : public Transport {
   void Stop() override;
   bool WriteLine(const std::string& line) override;
 
+#ifdef _WIN32
+  // The reader thread polls a handle and clears a flag; the transport must keep
+  // both alive while it runs. The reader holds no ownership, so the transport
+  // frees the context once the thread has been waited for.
+  struct ReaderContext {
+    HANDLE stdout_read = INVALID_HANDLE_VALUE;
+    std::atomic<bool>* running = nullptr;
+    MessageCallback on_message;
+  };
+#endif
+
  private:
   bool SpawnProcess();
 #ifndef _WIN32
@@ -44,6 +56,7 @@ class StdioTransport : public Transport {
   HANDLE stderr_read_ = INVALID_HANDLE_VALUE;
   HANDLE process_handle_ = INVALID_HANDLE_VALUE;
   HANDLE reader_thread_handle_ = INVALID_HANDLE_VALUE;
+  std::unique_ptr<ReaderContext> reader_context_;
 #else
   int stdin_fd_ = -1;
   int stdout_fd_ = -1;
