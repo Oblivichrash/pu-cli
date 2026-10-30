@@ -3,41 +3,36 @@
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/config/backend.hpp"
-#include "tests/mocks/mock_http_client.hpp"
+#include "tests/mocks/provider_harness.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
-
-#include <fstream>
-#include <sstream>
 
 using namespace pu;
 using namespace pu::tests;
 
 namespace {
 
-std::string ReadFixture(const std::string& name) {
-  std::ifstream file(std::string(PU_FIXTURES_DIR) + "/" + name, std::ios::binary);
-  std::ostringstream buf;
-  buf << file.rdbuf();
-  return buf.str();
+using Harness = ProviderHarness<OllamaProvider, OllamaProvider::Config>;
+
+// The config every test here starts from: one model, and the daemon it is asked
+// of. A test that needs something else copies this and changes that one field.
+OllamaProvider::Config LocalConfig(const char* model = "llama3.2:1b",
+                                   const char* host = "http://localhost:11434") {
+  OllamaProvider::Config config;
+  config.model = model;
+  config.host = host;
+  return config;
 }
 
 }  // namespace
 
 TEST_CASE("OllamaProvider request building", "[ollama]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
+  auto config = LocalConfig();
   config.temperature = 0.5f;
-  config.host = "http://localhost:11434";
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
+  Harness harness(std::move(config));
+  const auto body = harness.BodyOf("Hello");
 
-  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hello"}};
-
-  provider.Chat(ChatRequest(history, {}));
-
-  auto body = boost::json::parse(mock_ptr->last_body);
   REQUIRE(body.at("model") == "llama3.2:1b");
   REQUIRE(body.at("stream") == true);
   REQUIRE(body.at("options").at("temperature") == 0.5f);
@@ -61,15 +56,10 @@ TEST_CASE("Backend leaves the token cap unset until it is asked for", "[config]"
 
 TEST_CASE("OllamaProvider sends a thinking level as top-level think", "[ollama]") {
   const auto body_for = [](ThinkingLevel level) {
-    OllamaProvider::Config config;
-    config.model = "llama3.2:1b";
-    config.host = "http://localhost:11434";
+    auto config = LocalConfig();
     config.thinking = level;
-
-    auto [mock_http, mock_ptr] = MakeMockHttpClient();
-    OllamaProvider provider(std::move(config), std::move(mock_http));
-    provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hello"}}}, {}));
-    return boost::json::parse(mock_ptr->last_body);
+    Harness harness(std::move(config));
+    return harness.BodyOf("Hello");
   };
 
   REQUIRE(body_for(ThinkingLevel::kNone).at("think") == false);
@@ -81,45 +71,36 @@ TEST_CASE("OllamaProvider sends a thinking level as top-level think", "[ollama]"
 }
 
 TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
+  Harness harness(LocalConfig());
 
   std::vector<std::string> chunks = {R"({"message":{"content":"Hello"}})",
                                      R"({"message":{"content":" world"}})", R"({"done":true})"};
 
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     for (const auto& chunk : chunks) {
       std::string data = chunk + "\n";
       cb(data.data(), data.size());
     }
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
-
   std::string accumulated;
-  bool final_received = false;
-
-  auto result = provider.Chat(ChatRequest(history, {}, [&](std::string_view token) { accumulated += token; }));
+  const std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
+  auto result = harness->Chat(ChatRequest(history, {}, [&](std::string_view token) {
+    accumulated += token;
+  }));
 
   REQUIRE(result.content == "Hello world");
   REQUIRE_FALSE(result.usage.has_value());
 }
 
 TEST_CASE("OllamaProvider joins consecutive thinking deltas into one block", "[ollama][reasoning]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     for (const char* chunk : {R"({"message":{"thinking":"Let me "}})" "\n",
                               R"({"message":{"thinking":"think."}})" "\n",
                               R"({"message":{"content":"done"},"done":true})" "\n"}) {
@@ -128,8 +109,7 @@ TEST_CASE("OllamaProvider joins consecutive thinking deltas into one block", "[o
     }
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-  auto result = provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hi"}}}, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.reasoning.size() == 1);
   REQUIRE(result.reasoning.front().text == "Let me think.");
@@ -137,14 +117,11 @@ TEST_CASE("OllamaProvider joins consecutive thinking deltas into one block", "[o
 }
 
 TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk =
         R"({"message":{"content":"hi"}})"
         "\n"
@@ -153,10 +130,7 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.usage.has_value());
   REQUIRE(result.usage->prompt_tokens == 21);
@@ -169,14 +143,11 @@ TEST_CASE("OllamaProvider reports the token counts it was sent", "[ollama][usage
 }
 
 TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk =
         R"({"message":{"content":"hi"}})"
         "\n"
@@ -185,10 +156,7 @@ TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send();
 
   // A count this build has never heard of survives, because the line is kept whole
   // rather than filtered to a list of names that would have to be remembered.
@@ -197,22 +165,16 @@ TEST_CASE("OllamaProvider keeps a count it does not name", "[ollama][usage]") {
 
 TEST_CASE("OllamaProvider names the fields on a captured frame that nothing reads",
           "[ollama][usage][fixture]") {
-  OllamaProvider::Config config;
-  config.model = "gpt-oss:120b";
-  config.host = "https://ollama.com";
+  Harness harness(LocalConfig("gpt-oss:120b", "https://ollama.com"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     const std::string chunk = ReadFixture("ollama-thinking.ndjson");
     cb(const_cast<char*>(chunk.data()), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.usage->cached_tokens == 48);
 
@@ -222,22 +184,16 @@ TEST_CASE("OllamaProvider names the fields on a captured frame that nothing read
 }
 
 TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
-  OllamaProvider::Config config;
-  config.model = "gpt-oss:120b";
-  config.host = "https://ollama.com";
+  Harness harness(LocalConfig("gpt-oss:120b", "https://ollama.com"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     const std::string chunk = ReadFixture("ollama-thinking.ndjson");
     cb(const_cast<char*>(chunk.data()), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.content == "pong");
   REQUIRE(result.finish_reason == "stop");
@@ -251,14 +207,11 @@ TEST_CASE("OllamaProvider reads a captured thinking stream", "[ollama]") {
 }
 
 TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk = R"({"message":{"content":"hi"}})"
                         "\n"
                         "\n"
@@ -267,21 +220,17 @@ TEST_CASE("OllamaProvider ignores a blank line in the stream", "[ollama][streami
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-  auto result = provider.Chat(ChatRequest({{ChatMessage{1, "now", "user", "Hi"}}}, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.content == "hi");
 }
 
 TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string data =
         R"({"message":{"content":"Running ls","tool_calls":[{"function":{"name":"execute_bash","arguments":{"command":"ls"}}}]}})" +
         std::string("\n");
@@ -290,27 +239,20 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
     cb(done.data(), done.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
   std::vector<ChatMessage> history = {{1, "now", "user", "list files"}};
   ToolDefinition tool;
   tool.name = "execute_bash";
   tool.parameters = boost::json::object{};
   std::vector<ToolDefinition> tools = {tool};
 
-  auto result = provider.Chat(ChatRequest(history, tools, [](std::string_view) {}));
+  auto result = harness->Chat(ChatRequest(history, tools, [](std::string_view) {}));
 
   REQUIRE(result.tool_calls.size() == 1);
   REQUIRE(result.tool_calls[0].name == "execute_bash");
 }
 
 TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tools]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
+  Harness harness(LocalConfig());
 
   ChatMessage tool_msg;
   tool_msg.id = 1;
@@ -320,21 +262,15 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
   tool_msg.tool_call_id = "call_42";
   std::vector<ChatMessage> history = {tool_msg};
 
-  provider.Chat(ChatRequest(history, {}));
-
-  auto body = boost::json::parse(mock_ptr->last_body);
+  harness->Chat(ChatRequest(history, {}));
+  auto body = harness.Body();
   REQUIRE(body.at("messages").at(0).at("role") == "tool");
   REQUIRE(body.at("messages").at(0).at("tool_name") == "execute_bash");
   REQUIRE(body.at("messages").at(0).at("tool_call_id") == "call_42");
 }
 
 TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
+  Harness harness(LocalConfig());
 
   ChatMessage assistant;
   assistant.role = "assistant";
@@ -346,9 +282,9 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
   tool.name = "ls";
   tool.parameters = boost::json::object{};
   const std::vector<ToolDefinition> tools = {tool};
-  provider.Chat(ChatRequest(history, tools));
+  harness->Chat(ChatRequest(history, tools));
 
-  auto body = boost::json::parse(mock_ptr->last_body);
+  auto body = harness.Body();
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
   REQUIRE(sent.at("id") == "call_1");
   REQUIRE(sent.at("function").at("name") == "ls");
@@ -356,12 +292,7 @@ TEST_CASE("OllamaProvider keeps tool call names and arguments", "[ollama][tools]
 }
 
 TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][tools]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
-
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  OllamaProvider provider(std::move(config), std::move(mock_http));
+  Harness harness(LocalConfig());
 
   ChatMessage assistant;
   assistant.role = "assistant";
@@ -373,56 +304,44 @@ TEST_CASE("OllamaProvider decodes arguments sent as a JSON string", "[ollama][to
   tool.name = "ls";
   tool.parameters = boost::json::object{};
   const std::vector<ToolDefinition> tools = {tool};
-  provider.Chat(ChatRequest(history, tools));
+  harness->Chat(ChatRequest(history, tools));
 
-  auto body = boost::json::parse(mock_ptr->last_body);
+  auto body = harness.Body();
   auto& sent = body.at("messages").at(0).at("tool_calls").as_array()[0];
   REQUIRE(sent.at("function").at("arguments").is_object());
   REQUIRE(sent.at("function").at("arguments").at("path") == ".");
 }
 
 TEST_CASE("OllamaProvider reports why the reply stopped", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2:1b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig());
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk =
         R"({"message":{"content":"half"},"done":true,"done_reason":"length"})" + std::string("\n");
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send("write a lot");
 
   REQUIRE(result.content == "half");
   REQUIRE(result.finish_reason == "length");
 }
 
 TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "deepseek-r1:7b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig("deepseek-r1:7b"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk =
         R"({"message":{"content":"","thinking":"weighing the options"},"done":true})" +
         std::string("\n");
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "think about it"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send("think about it");
 
   REQUIRE(llm::ProjectReasoningText(result.reasoning) == "weighing the options");
   REQUIRE(result.content.empty());
@@ -430,15 +349,12 @@ TEST_CASE("OllamaProvider keeps the reasoning a thinking model reports", "[ollam
 
 TEST_CASE("Reasoning fragments coalesce into one block, a signed one starts a new block",
           "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "deepseek-r1:7b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig("deepseek-r1:7b"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    for (const char* fragment : {R"({"message":{"thinking":"weigh"}})", 
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
+    for (const char* fragment : {R"({"message":{"thinking":"weigh"}})",
                                  R"({"message":{"thinking":"ing"}})"}) {
       std::string chunk = std::string(fragment) + "\n";
       cb(chunk.data(), chunk.size());
@@ -447,33 +363,24 @@ TEST_CASE("Reasoning fragments coalesce into one block, a signed one starts a ne
     cb(last.data(), last.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send("think");
 
   REQUIRE(result.reasoning.size() == 1);
   REQUIRE(result.reasoning[0].text == "weighingdone");
 }
 
 TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][error]") {
-  OllamaProvider::Config config;
-  config.model = "missing-model";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig("missing-model"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk = R"({"error":"model not found"})" + std::string("\n");
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
   try {
-    provider.Chat(ChatRequest(history, {}));
+    harness.Send();
     FAIL("an error inside the stream should reach the caller");
   } catch (const std::exception& e) {
     REQUIRE(std::string(e.what()).find("model not found") != std::string::npos);
@@ -481,14 +388,13 @@ TEST_CASE("OllamaProvider raises an error sent inside the stream", "[ollama][err
 }
 
 TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "llama3.2";  // a tag, which the daemon resolves to a build
-  config.host = "http://localhost:11434";
+  // A tag, which the daemon resolves to a build: the test asserts the build it
+  // named back, not the tag it was asked for.
+  Harness harness(LocalConfig("llama3.2"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk =
         std::string(R"({"model":"llama3.2:1b","message":{"content":"hi"},"done":false})") + "\n" +
         std::string(
@@ -497,23 +403,17 @@ TEST_CASE("OllamaProvider reports the model that answered", "[ollama][streaming]
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  auto result = provider.Chat(ChatRequest(history, {}));
+  auto result = harness.Send();
 
   REQUIRE(result.model == "llama3.2:1b");
 }
 
 TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama][streaming]") {
-  OllamaProvider::Config config;
-  config.model = "deepseek-r1:7b";
-  config.host = "http://localhost:11434";
+  Harness harness(LocalConfig("deepseek-r1:7b"));
 
-  auto [mock_http, mock_ptr] = MakeMockHttpClient();
-
-  mock_ptr->simulate_response = [&](const std::string&, const std::string&,
-                                    const std::vector<std::string>&, pu::http::WriteCallback cb) {
+  harness.Mock().simulate_response = [&](const std::string&, const std::string&,
+                                         const std::vector<std::string>&,
+                                         pu::http::WriteCallback cb) {
     std::string chunk = R"({"message":{"content":"","thinking":"weighing "}})"
                         "\n"
                         R"({"message":{"content":"","thinking":"the options"}})"
@@ -523,15 +423,13 @@ TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama
     cb(chunk.data(), chunk.size());
   };
 
-  OllamaProvider provider(std::move(config), std::move(mock_http));
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
   std::string streamed;
   std::string content;
+  const std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
   ChatRequest request(history, {});
   request.on_content = [&](std::string_view token) { content += token; };
   request.on_reasoning = [&](std::string_view token) { streamed += token; };
-  auto result = provider.Chat(request);
+  auto result = harness->Chat(request);
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(content == "answer");
