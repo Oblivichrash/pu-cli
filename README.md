@@ -72,6 +72,12 @@ the copy it was installed with.
 | `pu serve` | The Web UI and its WebSocket |
 | `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
 
+The three commands that read a provider answer different questions. `pu models` asks what a
+gateway offers and names the model to pick; `pu probe` asks what the answer is shaped like and
+keeps the bytes; `pu sse` asks nothing of a gateway at all — it is a plain client that sends the
+URL and headers it is given, reads no `agents.json`, and therefore reaches a feed that is not a
+chat turn.
+
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
 `pu --help` names every command with the one line that says what it answers.

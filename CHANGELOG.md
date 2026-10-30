@@ -20,6 +20,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **`pu sse --help` and `pu probe --help` say how the two differ.** Both reach a provider and
+  both can show what it sent, so a reader working out which to run had to find the difference
+  in the documents. The page now says it: `probe` reads `agents.json` for a gateway that is
+  already configured, and `sse` takes a URL and headers and reads no configuration at all.
+  Nothing about either command changed.
+
 - **Breaking** — **The session API reports `gateway` where it reported `backend_type`.** The
   rest of the API, `agents.json` and the code all call the scheme a gateway, and the one
   field that used the older word was the field a page reads first. A client that read
