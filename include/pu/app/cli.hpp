@@ -48,11 +48,17 @@ struct CommandLine {
     std::string summary;
     // Named and documented, but not offered in the top-level listing; see `CommandSpec`.
     bool developer = false;
+    // How this command differs from its nearest neighbour. Empty when there is nothing to
+    // say, and printed only above this command's own page; see `CommandSpec`.
+    std::string hint;
   };
   std::vector<CommandSummary> commands;
 
   // Never empty: a name this build does not have gets the whole line.
   const boost::program_options::options_description& HelpFor(const std::string& command) const;
+
+  // The hint for a command's own page, or an empty string when it has none.
+  std::string HintFor(const std::string& command) const;
 };
 
 CommandLine BuildCommandLine();

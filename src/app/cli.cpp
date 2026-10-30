@@ -128,6 +128,10 @@ CommandLine BuildCommandLine() {
     // that captures a provider's raw bytes answers a question about a gateway a reader has not
     // met yet, so it stays reachable and documented without being one of the visible choices.
     bool developer = false;
+    // Printed above this command's own page, and nowhere else. A page is read by someone who
+    // has already picked the command, so it is the one place where saying how it differs from
+    // its nearest neighbour costs nothing and saves a wrong choice.
+    const char* hint = nullptr;
   };
 
   const std::vector<CommandSpec> commands = {
@@ -137,9 +141,15 @@ CommandLine BuildCommandLine() {
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
       {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe",
-       "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true},
+       "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
+       "Reads agents.json for the gateway, its key and its model: what is asked of a provider "
+       "that is already configured. `pu sse` takes a URL and headers instead, for a feed that "
+       "is not a chat turn."},
       {"serve", "host the page and the API that a browser talks to"},
-      {"sse", "read a server-sent-event stream and print each event"},
+      {"sse",
+       "read a server-sent-event stream and print each event", false,
+       "A plain client: the URL, the method and the headers are yours, and no agents.json is "
+       "read. To capture what a configured gateway sends, ask for one token, use `pu probe`."},
   };
 
   // The hint names what the listing names: a command kept off the page is not a name a reader
@@ -276,7 +286,8 @@ CommandLine BuildCommandLine() {
   line.positional = std::move(positional);
 
   for (const CommandSpec& command : commands) {
-    line.commands.push_back({command.name, command.summary, command.developer});
+    line.commands.push_back(
+        {command.name, command.summary, command.developer, command.hint ? command.hint : ""});
   }
   return line;
 }
@@ -285,6 +296,13 @@ const boost::program_options::options_description& CommandLine::HelpFor(
     const std::string& command) const {
   const auto it = per_command.find(command);
   return it == per_command.end() ? all : it->second;
+}
+
+std::string CommandLine::HintFor(const std::string& command) const {
+  for (const CommandSummary& summary : commands) {
+    if (summary.name == command) return summary.hint;
+  }
+  return "";
 }
 
 std::string CommandList(const CommandLine& line) {

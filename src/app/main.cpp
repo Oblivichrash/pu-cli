@@ -86,8 +86,13 @@ int main(int argc, char* argv[]) {
     // the one `--help` is for, and the flags below only answer a question they have not
     // reached yet.
     const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
-    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string())
-              << line.HelpFor(named) << "\n";
+    // A note about how this command differs from its nearest neighbour belongs to its page,
+    // above the flags: someone reading the page has already paid for the choice, and a
+    // choice taken wrongly is the thing the note prevents.
+    const std::string hint = named.empty() ? std::string() : line.HintFor(named);
+    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string());
+    if (!hint.empty()) std::cout << hint << "\n\n";
+    std::cout << line.HelpFor(named) << "\n";
     return 0;
   }
 
