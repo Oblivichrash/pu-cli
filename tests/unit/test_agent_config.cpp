@@ -7,6 +7,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <fstream>
 #include <filesystem>
 
@@ -264,6 +265,186 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
     REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
     REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
   }
+}
+
+
+namespace {
+
+// A workspace of the shape this build reads: a top-level table, and one directory per agent
+// beside it. Built and removed per case so two cases cannot see each other's files.
+struct TempAgentWorkspace {
+  fs::path root;
+  TempAgentWorkspace() {
+    root = UniqueTempPath("pu_agents_dir");
+    fs::create_directories(root / ".pu");
+  }
+  ~TempAgentWorkspace() {
+    std::error_code ec;
+    fs::remove_all(root, ec);
+  }
+  fs::path Table() const { return root / ".pu" / "agents.json"; }
+  fs::path AgentDir(const std::string& name) const { return root / ".pu" / "agents" / name; }
+  void WriteTable(const std::string& content) const {
+    std::ofstream file(Table(), std::ios::trunc);
+    file << content;
+  }
+  void WriteAgent(const std::string& name, const std::string& content) const {
+    fs::create_directories(AgentDir(name));
+    std::ofstream file(AgentDir(name) / "agents.json", std::ios::trunc);
+    file << content;
+  }
+  void WritePersona(const std::string& name, const std::string& text) const {
+    fs::create_directories(AgentDir(name));
+    std::ofstream file(AgentDir(name) / "persona.md", std::ios::trunc);
+    file << text;
+  }
+};
+
+const char* kInlineOnly = R"({
+  "default_agent": "chat",
+  "agents": [
+    { "name": "chat", "backend": { "gateway": "ollama", "host": "http://x:1", "model": "m" } }
+  ]
+})";
+
+const char* kOneAgentDir = R"({
+  "description": "reads and reports",
+  "delegates": ["reviewer"],
+  "tools": ["bash"],
+  "backend": { "gateway": "ollama", "model": "m" }
+})";
+
+}  // namespace
+
+TEST_CASE("An agent filed under .pu/agents/ is read by the name of its directory",
+          "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reader", kOneAgentDir);
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+
+  REQUIRE(cfg.agents.size() == 2);
+  const auto& reader = cfg.agents[1];
+  CHECK(reader.name == "reader");
+  CHECK(reader.description == "reads and reports");
+  CHECK(reader.delegates == std::vector<std::string>{"reviewer"});
+  CHECK(reader.tools == std::vector<std::string>{"bash"});
+  // A gateway with a default host supplies it, exactly as it does for an inline entry.
+  CHECK_FALSE(reader.backend.host.empty());
+  CHECK(reader.source_dir == ws.AgentDir("reader"));
+}
+
+TEST_CASE("A persona file becomes the agent's system prompt", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reviewer", R"({
+    "persona": "persona.md",
+    "backend": { "gateway": "ollama", "model": "m" }
+  })");
+  // Trailing blank lines are the file's shape, not part of what the model is told.
+  ws.WritePersona("reviewer", "You review code and never write it.\n\n");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+  const auto& reviewer = cfg.agents.at(1);
+
+  CHECK(reviewer.backend.system_prompt.has_value());
+  CHECK(*reviewer.backend.system_prompt == "You review code and never write it.");
+}
+
+TEST_CASE("A table naming both persona and system_prompt is refused", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reader", R"({
+    "persona": "persona.md",
+    "backend": { "gateway": "ollama", "model": "m", "system_prompt": "be brief" }
+  })");
+  ws.WritePersona("reader", "You read.\n");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("both persona and backend.system_prompt"));
+}
+
+TEST_CASE("A persona that is not there is refused by name", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reader", R"({
+    "persona": "missing.md",
+    "backend": { "gateway": "ollama", "model": "m" }
+  })");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("persona file not found for reader"));
+}
+
+TEST_CASE("A directory whose table names another agent is refused", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reader", R"({
+    "name": "writer",
+    "backend": { "gateway": "ollama", "model": "m" }
+  })");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("a directory is named after its agent"));
+}
+
+TEST_CASE("Two agents with one name are refused rather than merged", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(R"({
+    "default_agent": "chat",
+    "agents": [
+      { "name": "chat", "backend": { "gateway": "ollama", "host": "http://x:1", "model": "m" } }
+    ]
+  })");
+  ws.WriteAgent("chat", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("two agents are named 'chat'"));
+}
+
+TEST_CASE("A directory without a table is not an agent", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  fs::create_directories(ws.AgentDir("notes"));
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+
+  CHECK(cfg.agents.size() == 1);
+}
+
+TEST_CASE("A tools list naming something this build does not register is refused",
+          "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("reader", R"({
+    "tools": ["bash", "telepathy"],
+    "backend": { "gateway": "ollama", "model": "m" }
+  })");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("not a builtin tool"));
+}
+
+TEST_CASE("default_agent may name an agent that lives in its own directory",
+          "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(R"({ "default_agent": "reviewer", "agents": [] })");
+  ws.WriteAgent("reviewer", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+
+  REQUIRE(cfg.agents.size() == 1);
+  CHECK(cfg.agents[0].name == "reviewer");
+}
+
+TEST_CASE("A default_agent nothing configures lists what is configured", "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(R"({ "default_agent": "nobody", "agents": [] })");
+  ws.WriteAgent("reviewer", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
+
+  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
+                    Catch::Matchers::ContainsSubstring("have: reviewer"));
 }
 
 TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {
