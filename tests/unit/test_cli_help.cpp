@@ -74,9 +74,18 @@ TEST_CASE("A subcommand's page names that command's flags", "[options]") {
   REQUIRE(Names(line.HelpFor("check"), "config"));
   REQUIRE_FALSE(Names(line.HelpFor("chat"), "config"));
 
+  // `delegate` asks one other agent a question, so it names who and what, and reports what the
+  // answer cost. It reads no config file and holds no conversation.
+  REQUIRE(Names(line.HelpFor("delegate"), "agent"));
+  REQUIRE(Names(line.HelpFor("delegate"), "prompt"));
+  REQUIRE(Names(line.HelpFor("delegate"), "show-usage"));
+  REQUIRE_FALSE(Names(line.HelpFor("delegate"), "config"));
+  REQUIRE_FALSE(Names(line.HelpFor("delegate"), "verify"));
+  REQUIRE_FALSE(Names(line.HelpFor("chat"), "show-usage"));
+
   // The two answered before any command runs, and the flag that asked for the page, stay on
   // every one of them.
-  for (const char* command : {"ask", "chat", "models", "probe", "check", "serve"}) {
+  for (const char* command : {"ask", "chat", "delegate", "models", "probe", "check", "serve"}) {
     INFO(command);
     const po::options_description& page = line.HelpFor(command);
     REQUIRE(Names(page, "help"));
