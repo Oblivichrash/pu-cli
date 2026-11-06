@@ -1,37 +1,49 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The composer's two jobs: turning what is typed into a run, and turning a second press
-// while one is in flight into a cancel.
+// while one is in flight into a stop.
 
 "use strict";
 
-// Cancelling the turn and stopping a command are different acts, so neither is "Stop".
-function setSendButtonState(streaming) {
+// One button, one word. What the frame ends is a turn and whatever it has running, and a
+// reader who presses it means both: splitting the label would offer a choice the protocol
+// does not make.
+function renderSendButton() {
   const { sendBtn } = PU.composer;
+  if (!PU.isStreaming) {
+    sendBtn.textContent = "Send";
+    sendBtn.disabled = false;
+    return;
+  }
+  // "Stopping…" is the window between asking and the server's `done`: without it a press
+  // that is still on its way looks like one that did nothing.
+  sendBtn.textContent = PU.stopRequested ? "Stopping…" : "Stop";
+  sendBtn.disabled = PU.stopRequested;
+}
+
+function setSendButtonState(streaming) {
   PU.isStreaming = streaming;
-  sendBtn.textContent = streaming ? "Cancel reply" : "Send";
-  sendBtn.disabled = false;
   // A setting applies to the next message, so every control is locked while one is in flight.
   for (const control of document.querySelectorAll("[data-setting]")) {
     control.disabled = streaming;
   }
   if (PU.composer.settingsReset) PU.composer.settingsReset.disabled = streaming;
+  renderSendButton();
 }
 
-function cancelReply() {
-  // Cancelling only asks; the partial reply is dropped because the store keeps none.
+function stopReply() {
+  // Stopping only asks; the partial reply is dropped because the store keeps none.
   if (!sendFrame("cancel")) {
     setSendButtonState(false);
     return;
   }
   PU.stopRequested = true;
   removeCurrentAssistantMessage();
-  PU.composer.sendBtn.textContent = "Stopping…";
-  PU.composer.sendBtn.disabled = true;
+  renderSendButton();
 }
 
 function sendMessage() {
   if (PU.isStreaming) {
-    cancelReply();
+    stopReply();
     return;
   }
 
