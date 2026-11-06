@@ -390,35 +390,16 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor(gateway, model, runtime);
-    // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
-    if (!listing && backend.model.empty()) {
-      throw GenericError("--gateway names a host, not a model: pass --model, or --listing to "
-                         "read the catalogue it offers");
-    }
-
-    if (listing) {
-      // A listing is one answer rather than a stream, so there is nothing to keep as raw
-      // bytes beyond the body the client already returned.
-      const llm::ListingReport report = llm::ProbeListing(backend, runtime.Http());
-      std::cout << "\n" << llm::FormatListingReport(report) << "\n";
-      return report.error.empty() ? kOk : kProvider;
-    }
-
-    std::optional<std::string> raw_path;
-    if (save) {
-      std::filesystem::create_directories(out_dir);
-      raw_path = (std::filesystem::path(out_dir) /
-                  (std::string(config::GatewayName(backend.gateway)) + ".raw"))
-                     .string();
-      std::cout << "raw stream: " << *raw_path << "\n";
-    }
-
-    const llm::ProbeReport report = llm::ProbeStream(backend, runtime.Http(), prompt, raw_path);
-    std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
-    // A capture that never parsed is a provider failure; one that parsed and merely lacks
-    // fields is the finding the probe was run for, so it succeeded.
-    return report.stream_parsed ? kOk : kProvider;
+    tools_cli::ProbeOptions options;
+    options.gateway = gateway;
+    options.model = model;
+    options.prompt = prompt;
+    options.out_dir = out_dir;
+    options.save = save;
+    options.listing = listing;
+    // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
+    // the agent's keys; the standalone tool builds the same table from its own config read.
+    return tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http());
   });
 }
 
