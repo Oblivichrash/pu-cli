@@ -62,10 +62,10 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
     return MakeRefusal("A directory and a prompt are both required", true);
   }
 
-  // A turn that arrived from elsewhere is already spending someone else's budget. Asking
-  // further would make one request fan out with no one left to attribute the cost to.
-  if (!ctx.peer_origin.empty()) {
-    return MakeRefusal("a relayed turn cannot ask another directory", true);
+  // A turn that is itself an answer is already spending someone else's budget. Asking further
+  // would make one request fan out with no one left to attribute the cost to.
+  if (depth_ > 0) {
+    return MakeRefusal("a turn inside another directory cannot ask one further", true);
   }
 
   // A path that climbs out of the tree would let a prompt reach any `.pu` on the machine,

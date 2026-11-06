@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/peer.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/runtime/executor.hpp"
@@ -100,13 +99,7 @@ class Runtime {
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,
-      CancelToken command_stop_token = nullptr,
-      // The peer this turn arrived from, empty for a turn the user started. A turn from a
-      // peer must not reach another one.
-      const std::string& peer_origin = {});
-
-  // What `.pu/peers.json` named, or nothing when this server is not part of a topology.
-  const std::optional<config::PeerConfig>& Peers() const { return peer_config_; }
+      CancelToken command_stop_token = nullptr);
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -139,13 +132,6 @@ class Runtime {
   }
   void ResolveApproval(bool allow, std::string note) {
     executor_->ResolveApproval(allow, std::move(note));
-  }
-
-  // What the runtime knows that the executor does not: here, what the task board owes this
-  // server. Asked for on every round of every turn, so it is always current.
-  void SetContextDigest(std::function<std::string()> digest) {
-    assert(is_initialized_ && "Initialize() must run before any digest");
-    executor_->context_digest = std::move(digest);
   }
 
   AgentManager& Agents() {
@@ -233,7 +219,6 @@ class Runtime {
 
 
   std::string default_agent_override_;
-  std::optional<config::PeerConfig> peer_config_;
   std::string config_path_;
 
   std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;

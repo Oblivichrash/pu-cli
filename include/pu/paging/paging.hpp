@@ -130,7 +130,7 @@ class Pager {
   // one question share a source id and keep separate buffer ids; the source is derived from
   // the key rather than counted, so a resumed transcript still reads a question as itself.
   // The buffer id names the run *and this pager*, so a cursor written elsewhere — by an
-  // earlier process, by a peer — finds nothing instead of finding a namesake.
+  // earlier process — finds nothing instead of finding a namesake.
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
