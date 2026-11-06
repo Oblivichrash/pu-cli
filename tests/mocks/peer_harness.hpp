@@ -163,7 +163,16 @@ class PeerServer {
 
   PeerServer(const PeerServer&) = delete;
   PeerServer& operator=(const PeerServer&) = delete;
-  ~PeerServer() { Stop(); }
+
+  // Both directories this harness created go with it. `Stop` restores the environment and
+  // stops the server; the files are this object's, so removing them belongs here, on the one
+  // path every case takes.
+  ~PeerServer() {
+    Stop();
+    std::error_code ec;
+    std::filesystem::remove_all(home_, ec);
+    if (!data_home_.empty()) std::filesystem::remove_all(data_home_, ec);
+  }
 
   const std::filesystem::path& Home() const { return home_; }
   int Port() const { return port_; }
@@ -184,9 +193,11 @@ class PeerServer {
   // REQUIRE out of a constructor would leak them for the rest of the binary.
   void Start() {
     home_env_ = std::make_unique<ScopedEnvVar>("HOME", home_.string());
-    const std::filesystem::path data_dir = UniqueTempPath("pu_peer_data");
-    std::filesystem::create_directories(data_dir);
-    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_dir.string());
+    // A member, not a local: a directory this harness creates files in has to outlive the
+    // call that named it, or nothing is left that could remove it.
+    data_home_ = UniqueTempPath("pu_peer_data");
+    std::filesystem::create_directories(data_home_);
+    data_env_ = std::make_unique<ScopedEnvVar>("PU_HOME", data_home_.string());
 
     // The workspace is the working directory: both agents.json and peers.json are found
     // relative to it, and `./.pu` is what a deployment reads.
@@ -263,6 +274,8 @@ class PeerServer {
   }
 
   std::filesystem::path home_;
+  // PU_HOME for the lifetime of the server, removed by the destructor.
+  std::filesystem::path data_home_;
   std::function<Reply(int)> reply_;
   int requests_ = 0;
   std::unique_ptr<FakeHttpServer> backend_;

@@ -105,8 +105,18 @@ target_link_libraries(pu_tests PRIVATE
     Catch2::Catch2WithMain
 )
 
+# The directory the fixtures make their files in. Naming it here rather than letting each
+# case use the system default does two things: everything lands under the build tree that
+# `git clean` and a rebuild already discard, and the property below is set once instead of
+# in every harness.
+set(PU_TEST_TMPDIR "${CMAKE_CURRENT_BINARY_DIR}/test-tmp")
+file(MAKE_DIRECTORY "${PU_TEST_TMPDIR}")
+
 include(Catch)
-catch_discover_tests(pu_tests)
+catch_discover_tests(pu_tests
+    PROPERTIES
+        ENVIRONMENT "TMPDIR=${PU_TEST_TMPDIR}"
+)
 
 # The page's transcript fold is plain JavaScript with no DOM in it, so its cases can be
 # checked without a browser. They are one file of input/output pairs; what runs them differs.

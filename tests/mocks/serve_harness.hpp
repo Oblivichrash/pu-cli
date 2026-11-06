@@ -494,9 +494,10 @@ class ServeHarness {
     home_ = UniqueTempPath("pu_serve_" + tag);
     fs::create_directories(home_ / ".pu");
 
+    data_home_ = UniqueTempPath("pu_test_data");
     env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
         {"HOME", home_.string()},
-        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+        {"PU_HOME", data_home_.string()},
     });
 
     dead_port_ = std::make_unique<ReservedDeadPort>();
@@ -529,9 +530,15 @@ class ServeHarness {
     // scoped owners, which run even when a REQUIRE below throws: a constructor that died
     // halfway used to leave PU_HOME naming a directory this harness had already removed, and
     // whichever case ran next failed on it.
+    //
+    // The data directory is a member and not a temporary: it names a directory this harness
+    // creates files in, so the destructor has to be able to remove it. Held only inside the
+    // entries below, it outlived every place that could have cleaned it up.
+    data_home_ = UniqueTempPath("pu_test_data");
+    fs::create_directories(data_home_);
     env_ = std::make_unique<ScopedEnvironment>(ScopedEnvironment::Entries{
         {"HOME", home_.string()},
-        {"PU_HOME", UniqueTempPath("pu_test_data").string()},
+        {"PU_HOME", data_home_.string()},
     });
 
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
@@ -583,6 +590,10 @@ class ServeHarness {
     Stop();
     std::error_code ec;
     fs::remove_all(home_, ec);
+    // The data directory is created by the constructor whether or not a case names it, so the
+    // same exit path removes it. Leaving it behind left one entry per case in the temp
+    // directory, invisible because nothing removed the directory that contained it.
+    fs::remove_all(data_home_, ec);
   }
 
   // Writes a peers.json into the workspace before Initialize reads it. A case that needs the
@@ -630,6 +641,8 @@ class ServeHarness {
 
  private:
   fs::path home_;
+  // PU_HOME: a directory of its own, removed by the destructor alongside `home_`.
+  fs::path data_home_;
   // Restores HOME and PU_HOME together, in the order they were set, whenever this harness
   // stops being alive — including on the way out of a failed constructor.
   std::unique_ptr<ScopedEnvironment> env_;

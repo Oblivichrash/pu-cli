@@ -80,6 +80,20 @@ the commit that made it, and its current behaviour is in the relevant document
   it, so the command advised deleting a budget that was in force. The block's own keys are now
   checked too: `page_line` for `page_lines` is named instead of being silently ignored.
 
+## 0.6.2
+
+### Fixed
+
+- **A test run no longer leaves roughly a hundred directories behind in the temp directory.**
+  Both server fixtures point `PU_HOME` at a directory of their own, and both kept that path
+  only for as long as the call that made it: the serve fixture held it inside the environment
+  block that restored it, and the peer fixture held it in a local. Neither destructor could
+  name the directory, so neither removed it, and every case left one behind. The path is now
+  a member and the slot each destructor already used removes it. The two logging cases that
+  named a fixed directory now use one of their own, so cases running in parallel no longer
+  write to the same one. `ctest` names the temp directory too, so a fixture that is ever
+  missed again leaves its files in the build tree rather than outside it.
+
 ## 0.6.1
 
 ### Breaking
