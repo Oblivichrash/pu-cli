@@ -4,7 +4,7 @@ Notable changes, newest first. This file is a summary; a change's reasoning is i
 the commit that made it, and its current behaviour is in the relevant document
 (see [Where Things Live](CONTRIBUTING.md#where-things-live)).
 
-## 0.6.1
+## 0.7.0
 
 ### Changed
 
@@ -57,6 +57,21 @@ the commit that made it, and its current behaviour is in the relevant document
   a page of a command that has since been run again is sent as a receipt naming the newer run,
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
+
+### Removed
+
+- **Breaking** — **Peer messaging and the task board are gone.** Two `pu serve` instances could
+  declare each other in `.pu/peers.json`, exchange a shared token, and hand work across as a
+  job on the receiver's board: `send_to_peer`, `peers.json`, `PU_PEER_TOKEN`, the `/api/jobs`
+  verbs, `/api/peer/message`, `/api/board`, and the board panel in the page. The one thing it
+  offered that nothing else does is delegating across two machines, and the part worth having —
+  "let another directory answer, bring back only the answer" — is what `ask_dir` now does
+  inside one process: it runs the turn where the files are and returns the conclusion alone,
+  with no second server, no token, and no state to reconcile. A workspace that carries a
+  `peers.json` can delete it; nothing reads the file and no tool answers to it. A session whose
+  turns arrived from a peer keeps its messages as ordinary user turns, so no file has to be
+  rewritten — but `/api/history` no longer reports `from_peer`, and a cancelled turn is now
+  rewound like any other.
 
 ### Fixed
 
