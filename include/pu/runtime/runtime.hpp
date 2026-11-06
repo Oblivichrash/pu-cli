@@ -80,6 +80,18 @@ class Runtime {
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
 
+  // The directory whose `.pu/` this runtime reads and writes: the agents table, the session
+  // and the sandbox all resolve from here. Set before Initialize, because Initialize is where
+  // the three are read. Defaults to the current directory, so a caller that never calls this
+  // gets the behaviour of a plain `cd`-then-run.
+  void SetWorkspaceRoot(std::filesystem::path root) { workspace_root_ = std::move(root); }
+
+  // A turn with no memory: Initialize does not load `.pu/session.json` and every save is a
+  // no-op. For a caller that supplies the whole context and wants only an answer — the
+  // delegated turn, and `pu ask`. A remembered conversation is what `chat` and `serve` are
+  // for; two ways to hold one would disagree about what a second run of the same prompt means.
+  void SetEphemeral(bool ephemeral = true) { ephemeral_ = ephemeral; }
+
   void Initialize(const std::string& config_path = "");
   void Shutdown();
 
@@ -213,6 +225,7 @@ class Runtime {
   // readable across that.
   paging::Pager pager_;
   std::filesystem::path workspace_root_;
+  bool ephemeral_ = false;
   std::shared_ptr<Session> current_session_;
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads
   // them on another.

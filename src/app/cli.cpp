@@ -94,9 +94,12 @@ config::Backend BackendFor(const std::string& gateway, const std::string& model,
 }  // namespace
 
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
-                           const std::function<int()>& body) {
+                           const std::function<int()>& body, bool ephemeral) {
   try {
     if (!agent.empty()) runtime.SetDefaultAgent(agent);
+    // Before Initialize, which is where a stored conversation is read: a flag set afterwards
+    // would arrive after the one decision it was meant to change.
+    if (ephemeral) runtime.SetEphemeral();
     runtime.Initialize();
     const int status = body();
     runtime.Shutdown();
@@ -166,6 +169,10 @@ CommandLine BuildCommandLine() {
   const std::vector<OptionSpec> global_options = {
       {"help,h", "show help message", false},
       {"version", "show version and exit", false},
+      // `git -C` spellt the same way, and for the same reason: a command that reads a directory
+      // can be run on one without leaving the one you are in. Every path the run touches
+      // resolves from here, so nothing is read from one tree and written to another.
+      {"directory,C", "run as if started in DIR", true},
       {"command", command_hint.c_str(), true},
   };
 
@@ -251,9 +258,14 @@ CommandLine BuildCommandLine() {
   // a page leaves it out; --help and --version stay, since they are how a page is asked for.
   auto page = [&](const std::vector<OptionSpec>& own) {
     boost::program_options::options_description description("Global options");
-    auto copy = [&](const char* name) {
+    // A declared name may carry its short spelling — `directory,C` — and only the part before
+    // the comma is the long name the option object answers to. Matching the whole string
+    // would silently leave every such option off every page.
+    auto copy = [&](const char* declared_name) {
+      const std::string wanted =
+          std::string(declared_name).substr(0, std::string(declared_name).find(','));
       for (const auto& option : line.all.options()) {
-        if (option->long_name() == std::string(name)) {
+        if (option->long_name() == wanted) {
           description.add(option);
           return;
         }
@@ -318,25 +330,31 @@ std::string CommandList(const CommandLine& line) {
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
            bool show_usage) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    bool is_command = false;
-    ExecutionResult result =
-        runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {}, nullptr,
-                             platform::ShutdownToken());
-    PrintFailure(result);
-    if (!result.has_error) {
-      if (result.was_streamed) {
-        std::cout << "\n";
-      } else if (!result.content.empty()) {
-        std::cout << result.content << "\n";
-      } else if (!is_command) {
-        std::cout << "\n";
-      }
-    }
-    PrintNotice(result);
-    if (show_usage) PrintUsage(result);
-    return ExitCodeForAsk(result, is_command);
-  });
+  // The prompt is the whole of what this turn knows. `chat` and `serve` remember, and are
+  // where a conversation that continues belongs; an answer asked for once should not move the
+  // conversation the next `pu ask` inherits.
+  return WithInitializedRuntime(
+      agent, runtime,
+      [&] {
+        bool is_command = false;
+        ExecutionResult result =
+            runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {},
+                                 nullptr, platform::ShutdownToken());
+        PrintFailure(result);
+        if (!result.has_error) {
+          if (result.was_streamed) {
+            std::cout << "\n";
+          } else if (!result.content.empty()) {
+            std::cout << result.content << "\n";
+          } else if (!is_command) {
+            std::cout << "\n";
+          }
+        }
+        PrintNotice(result);
+        if (show_usage) PrintUsage(result);
+        return ExitCodeForAsk(result, is_command);
+      },
+      /*ephemeral=*/true);
 }
 
 int RunChat(const std::string& agent, Runtime& runtime) {

@@ -9,11 +9,13 @@
 #include <boost/program_options.hpp>
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
 #include <sstream>
+#include <system_error>
 #include <utility>
 
 namespace po = boost::program_options;
@@ -132,10 +134,16 @@ int main(int argc, char* argv[]) {
       // refuse every flag that has one, so only the leading run is removed.
       const std::size_t first = name.find_first_not_of('-');
       const std::string bare = first == std::string::npos ? std::string() : name.substr(first);
-      if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/false) != nullptr) continue;
-      if (line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr) continue;
-      if (line.HelpFor(cmd).find_nothrow(bare, /*approx=*/true) != nullptr) continue;
-      rejected.push_back(name);
+      // A page answers for both spellings of its own options, and `find_nothrow` only knows
+      // the long one. `-C` reaches here as `C`, which no long name matches, so a one-letter
+      // token is held against the page as it was written instead.
+      bool known = line.HelpFor(cmd).find_nothrow(bare, /*approx=*/false) != nullptr ||
+                   line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr ||
+                   line.HelpFor(cmd).find_nothrow(bare, /*approx=*/true) != nullptr;
+      if (!known && token.rfind("--", 0) != 0) {
+        known = line.HelpFor(cmd).find_nothrow(name, /*approx=*/false) != nullptr;
+      }
+      if (!known) rejected.push_back(name);
     }
     if (!rejected.empty()) {
       return usage_error(rejected.front() + " is not an option of '" + cmd + "'");
@@ -143,6 +151,19 @@ int main(int argc, char* argv[]) {
   }
 
   pu::Runtime runtime;
+
+  // Before any command reads or writes anything: `-C` is the one directory the run is about,
+  // and every path below it — the agents table, the session, the sandbox — resolves from here.
+  // Applying it later would leave a command that had already read the current directory, which
+  // is the split this option exists to remove.
+  if (vm.count("directory") > 0) {
+    const std::string dir = vm["directory"].as<std::string>();
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) {
+      return usage_error("--directory is not a directory: " + dir);
+    }
+    runtime.SetWorkspaceRoot(std::filesystem::absolute(dir, ec));
+  }
 
   try {
     if (cmd == "ask") {
