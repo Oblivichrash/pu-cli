@@ -176,6 +176,18 @@ int main(int argc, char* argv[]) {
                              vm.count("show-usage") > 0);
     }
 
+    if (cmd == "delegate") {
+      // The same path a model takes when it hands a turn to another agent, offered by hand:
+      // without it, the only way to reproduce a delegation is to read a log and guess.
+      const std::string to = OptionOr(vm, "agent", "");
+      if (to.empty()) return usage_error("--agent names the agent to ask");
+      if (!vm.count("prompt") || vm["prompt"].as<std::string>().empty()) {
+        return usage_error("prompt required for delegate command");
+      }
+      return pu::cli::RunDelegate(to, vm["prompt"].as<std::string>(), runtime,
+                                  vm.count("show-usage") > 0);
+    }
+
     if (cmd == "chat") {
       return pu::cli::RunChat(OptionOr(vm, "agent", ""), runtime);
     }

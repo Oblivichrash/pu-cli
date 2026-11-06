@@ -142,6 +142,7 @@ CommandLine BuildCommandLine() {
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
+      {"delegate", "have another agent answer one question, in a turn of its own"},
       {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe",
        "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
@@ -191,6 +192,10 @@ CommandLine BuildCommandLine() {
         agent_option,
         {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"chat", {agent_option}},
+      {"delegate",
+       {{"agent", "the agent to ask", true},
+        {"prompt", "the whole question", true},
+        {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"models",
        {agent_option, gateway_option, model_option,
         {"detail", "ids (default) for what you can pick, caps for the columns that decide "

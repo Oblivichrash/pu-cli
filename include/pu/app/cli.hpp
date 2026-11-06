@@ -97,6 +97,16 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
 int RunCheck(const std::string& config_path);
+
+// One turn taken by another agent, along the path a tool takes: the question is the whole of
+// what that turn knows, because the agent asked has no idea what this conversation has said.
+int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& runtime,
+                bool show_usage);
+
+// One turn taken by another agent, along the path a tool takes: the question is the whole of
+// what that turn knows, because the agent asked has no idea what this conversation has said.
+int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& runtime,
+                bool show_usage);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
 
