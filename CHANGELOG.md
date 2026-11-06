@@ -16,6 +16,14 @@ the commit that made it, and its current behaviour is in the relevant document
   `pu-sse` cannot disagree about what an event looks like. `cmake --install` places both, so
   one package still installs everything.
 
+- **`pu-probe` is a standalone tool, installed beside `pu`.** A probe asks what a gateway
+  sends, which is a question about a wire format and not about a conversation: the subcommand
+  could only be reached through a binary that links a session, a transcript and a pager.
+  The capture now lives beside the reader in the layer with no session of its own, and both
+  `pu probe` and `pu-probe` call it, so the field names one reports are the field names the
+  other reports. The tool reads `agents.json` to find a gateway, because a host and a key are
+  the one thing a probe cannot invent; it opens no session and keeps nothing between runs.
+
 - **`execute_bash` answers with one page of a command's output instead of all of it.** The
   output is kept in a store that belongs to the session, `at` says where to read (`head`,
   `tail`, or a cursor taken from `page.earlier`/`page.later`), and a receipt carries `page`,

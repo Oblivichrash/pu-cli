@@ -14,17 +14,9 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/tools_cli/exit_code.hpp"
 
 namespace pu::tools_cli {
-
-// The exit codes the standalone tools answer with. `pu` has more of them — a usage error, a
-// sandbox that refused — and the ones here are the subset a client of a stream can reach.
-enum ExitCode : int {
-  kOk = 0,
-  kUsage = 1,
-  kProvider = 2,
-  kInterrupted = 4,
-};
 
 // What `sse` prints. The three shapes are exclusive: raw bytes, one JSON object per event, or
 // the event read as text -- so they are one choice rather than three flags that could be set

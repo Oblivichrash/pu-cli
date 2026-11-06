@@ -60,6 +60,26 @@ endif()
 pu_configure_target(pu_core_util)
 add_library(pu::core_util ALIAS pu_core_util)
 
+add_library(pu_config STATIC
+    src/config/agents.cpp
+    src/config/backend.cpp
+    src/config/gateway.cpp
+    src/config/peer.cpp
+    src/config/serve_registry.cpp
+    src/llm/model_check.cpp
+    src/llm/model_listing.cpp
+    src/llm/ollama_provider.cpp
+    src/llm/openai_protocol.cpp
+    src/llm/openai_provider.cpp
+    src/llm/probe.cpp
+    src/llm/projection.cpp
+    src/llm/streaming_provider.cpp
+    src/tools_cli/probe.cpp
+)
+target_link_libraries(pu_config PUBLIC pu_core_util)
+pu_configure_target(pu_config)
+add_library(pu::config ALIAS pu_config)
+
 add_library(pu_core STATIC
     src/app/cli.cpp
     src/app/cli_agents.cpp
@@ -70,20 +90,7 @@ add_library(pu_core STATIC
     src/app/serve_runner.cpp
     src/app/serve_websocket.cpp
     src/config/agent_summary.cpp
-    src/config/agents.cpp
-    src/config/backend.cpp
-    src/config/gateway.cpp
-    src/config/peer.cpp
-    src/config/serve_registry.cpp
     src/exec/run.cpp
-    src/llm/model_check.cpp
-    src/llm/model_listing.cpp
-    src/llm/ollama_provider.cpp
-    src/llm/openai_protocol.cpp
-    src/llm/openai_provider.cpp
-    src/llm/probe.cpp
-    src/llm/projection.cpp
-    src/llm/streaming_provider.cpp
     src/mcp/client.cpp
     src/mcp/http_transport.cpp
     src/mcp/stdio_transport.cpp
@@ -106,7 +113,7 @@ add_library(pu_core STATIC
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC
-    pu_core_util
+    pu_config
     Boost::program_options
 )
 pu_configure_target(pu_core)
@@ -128,6 +135,16 @@ target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
 pu_configure_target(pu-sse)
 add_executable(pu::sse ALIAS pu-sse)
 
+# The standalone probe. It needs the agent table to find a gateway and nothing else: no
+# session, no transcript, no pager. `pu probe` runs the same implementation, so a field
+# name read by one is a field name read by the other.
+add_executable(pu-probe
+    src/tools_cli/probe_main.cpp
+)
+target_link_libraries(pu-probe PRIVATE pu_config Boost::program_options)
+pu_configure_target(pu-probe)
+add_executable(pu::probe ALIAS pu-probe)
+
 # The page is found relative to the executable, so a build tree without a sibling web/ serves
 # nothing. Copying it after every build keeps the binary runnable from where it was built; the
 # install rule below places the same files where a packaged layout expects them.
@@ -148,7 +165,7 @@ endif()
 include(GNUInstallDirs)
 # The tools go in beside the command that owns them: one package to install, and a reader who
 # has `pu` has `pu-sse`, whether they reach it as `pu sse` or as its own name.
-install(TARGETS pu pu-sse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS pu pu-sse pu-probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(WIN32)
     # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
     # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.

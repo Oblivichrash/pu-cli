@@ -5,6 +5,7 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/tools_cli/probe.hpp"
 #include "pu/tools_cli/sse.hpp"
 
 #include <cstdint>

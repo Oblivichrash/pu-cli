@@ -87,10 +87,16 @@ two entry points run the same implementation — so an answer from `pu-sse` is a
 | Tool | Same as | What it needs |
 | --- | --- | --- |
 | `pu-sse URL [--format text\|json\|raw]` | `pu sse` | Nothing but the URL |
+| `pu-probe [--gateway G] [--model M]` | `pu probe` | `agents.json`, to find a gateway |
 
 `pu-sse` is the case the split exists for: reading a feed needs an endpoint, not a workspace,
 a session or a configuration file. A script that only wants to watch an event stream runs
 `pu-sse` without `pu` having been set up at all.
+
+`pu-probe` is the narrower one: it reads the agent table to find a host and a key, then sends
+one prompt and prints what came back. No session, no transcript, no pager — a question about
+a wire format does not need a conversation to answer it, and a ResponseShape for a new
+gateway is written from this capture rather than from a specification.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
