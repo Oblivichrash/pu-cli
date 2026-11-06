@@ -180,6 +180,79 @@ TEST_CASE("A misspelt paging field is reported, like any other unread field", "[
   REQUIRE(out.find("'page_line' in a.paging is not read by this build") != std::string::npos);
 }
 
+
+TEST_CASE("A delegation nothing can answer is a failure, and names the chain", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["ghost"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kUsage);
+
+  REQUIRE(capture.text().find("delegates to 'ghost', which nothing configures") != std::string::npos);
+}
+
+TEST_CASE("An agent told it may ask itself is refused", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["a"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kUsage);
+  REQUIRE(capture.text().find("delegates to itself") != std::string::npos);
+}
+
+TEST_CASE("A circle in the delegation graph is drawn once", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["b"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} },
+      { "name": "b", "delegates": ["a"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kUsage);
+
+  const std::string out = capture.text();
+  REQUIRE(out.find("goes round in a circle") != std::string::npos);
+  REQUIRE(out.find("a -> b -> a") != std::string::npos);
+}
+
+TEST_CASE("The tools an agent has are printed, and the default says it is the default",
+          "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} },
+      { "name": "b", "tools": ["bash"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+
+  const std::string out = capture.text();
+  // The default is every builtin, which is the thing a reader is most often wrong about.
+  REQUIRE(out.find("tools        all builtin (bash, write_file, ask_dir)") != std::string::npos);
+  REQUIRE(out.find("tools        bash") != std::string::npos);
+}
+
 TEST_CASE("A file this build cannot load exits 1", "[check]") {
   TempWorkspace workspace;
   // The 0.5.0 rename: `type` is not read, and the message says which key to write instead.

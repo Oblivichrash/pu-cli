@@ -40,7 +40,8 @@ namespace fs = std::filesystem;
 // one mistake a file cannot show by running: the field is simply not there any more.
 const std::set<std::string>& ReadAgentKeys() {
   static const std::set<std::string> keys{"name",     "description",    "backend", "security",
-                                          "paging",   "mcp_servers",    "tool_call_budget"};
+                                          "paging",   "mcp_servers",    "tool_call_budget",
+                                          "delegates", "tools",         "persona"};
   return keys;
 }
 
@@ -174,6 +175,27 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   if (entry.tool_call_budget) {
     out << "  tool budget  " << *entry.tool_call_budget << "\n";
   }
+  // What this one is allowed to change. The default is every builtin, which is the answer a
+  // reader is most likely to be wrong about, so it is said rather than left blank.
+  out << "  tools        ";
+  if (entry.tools.empty()) {
+    out << "all builtin (bash, write_file, ask_dir)\n";
+  } else {
+    for (std::size_t i = 0; i < entry.tools.size(); ++i) {
+      if (i > 0) out << ", ";
+      out << entry.tools[i];
+    }
+    out << "\n";
+  }
+  if (!entry.delegates.empty()) {
+    out << "  delegates to ";
+    for (std::size_t i = 0; i < entry.delegates.size(); ++i) {
+      if (i > 0) out << ", ";
+      out << entry.delegates[i];
+    }
+    out << "\n";
+  }
+  if (!entry.source_dir.empty()) out << "  table        " << entry.source_dir.string() << "\n";
 
   if (raw_agent != nullptr) WarnIgnoredKeys(*raw_agent, ReadAgentKeys(), entry.name, warnings);
   if (raw_agent != nullptr && raw_agent->contains("backend") &&
@@ -285,13 +307,63 @@ int RunCheck(const std::string& config_path) {
     }
   }
 
+  // Delegation is a relation between entries, so it is checked once against all of them: a
+  // name nothing configures, an agent told it may ask itself, and a cycle are all facts the
+  // single entry cannot show. Each is an error rather than a warning, because a table that
+  // says it cannot be used is one a turn will fail on later with less to go on.
+  std::set<std::string> configured;
+  for (const config::AgentEntry& entry : cfg.agents) configured.insert(entry.name);
+
+  std::vector<std::string> errors;
+  for (const config::AgentEntry& entry : cfg.agents) {
+    for (const std::string& target : entry.delegates) {
+      if (configured.count(target) == 0) {
+        errors.push_back(entry.name + " delegates to '" + target +
+                         "', which nothing configures");
+      } else if (target == entry.name) {
+        errors.push_back(entry.name + " delegates to itself");
+      }
+    }
+  }
+  // A cycle would run out of depth rather than run forever, but it is still a table nobody
+  // meant to write, and the chain is what makes it obvious.
+  for (const config::AgentEntry& entry : cfg.agents) {
+    std::vector<std::string> chain{entry.name};
+    std::string here = entry.name;
+    for (std::size_t step = 0; step < cfg.agents.size(); ++step) {
+      const auto it = std::find_if(cfg.agents.begin(), cfg.agents.end(),
+                                   [&](const config::AgentEntry& known) { return known.name == here; });
+      if (it == cfg.agents.end() || it->delegates.empty()) break;
+      here = it->delegates.front();
+      if (here == entry.name) {
+        std::string drawn;
+        for (const std::string& name : chain) drawn += name + " -> ";
+        errors.push_back("delegation goes round in a circle: " + drawn + entry.name);
+        break;
+      }
+      if (std::find(chain.begin(), chain.end(), here) != chain.end()) break;
+      chain.push_back(here);
+    }
+  }
+  // One report per cycle, not one per member of it.
+  std::sort(errors.begin(), errors.end());
+  errors.erase(std::unique(errors.begin(), errors.end()), errors.end());
+
+  if (!errors.empty()) {
+    std::cout << "delegation\n";
+    for (const std::string& error : errors) std::cout << "  " << error << "\n";
+    std::cout << "\n";
+  }
+
   if (!warnings.empty()) {
     std::cout << "warnings\n";
     for (const std::string& warning : warnings) std::cout << "  " << warning << "\n";
   }
 
   // A warning is not a failure: a file this build reads and an entry it can run is a pass,
-  // and what it noticed is for a person to weigh.
+  // and what it noticed is for a person to weigh. A delegation that names nothing runnable is
+  // a failure, because the turn that reaches it fails with less to go on than this does.
+  if (!errors.empty()) return kUsage;
   return kOk;
 }
 
