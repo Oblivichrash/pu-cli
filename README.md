@@ -153,6 +153,13 @@ fails on an orphan, so a new file is registered rather than left to be found.
 `gateway` is required and must name a product the build carries. A config that
 names a protocol instead is refused at load rather than guessed at.
 
+An agent can also live in its own directory — `.pu/agents/<name>/agents.json`, with a
+`persona.md` beside it that becomes its system prompt — and one agent can hand a turn to
+another with `delegates`. That is how several models share one conversation without sharing
+one context: the turn runs where the work is and comes back as an answer. The two forms, and
+what a persona is not for, are in
+[docs/configuration.md](docs/configuration.md#one-directory-per-agent).
+
 **Upgrading** — the keys that changed, and what a session saved by an older
 version does:
 
