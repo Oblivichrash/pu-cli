@@ -190,16 +190,41 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
   user_turn.content = input;
   conversation.Append(user_turn);
 
+  // A turn's tally starts at nothing. What a tool spends on its behalf is added here, so a
+  // receipt can say what the call cost rather than only what the model that asked cost.
+  spent_by_tools_ = ToolContext::Spending{};
 
   const Turn turn{provider,          &toolbox,          std::move(content_callback),
                   std::move(tool_callbacks), std::move(reasoning_callback), cancel_token,
                   command_stop_token};
 
   ExecutionResult result = RunToolLoop(conversation, turn);
+  AddToolSpending(result);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
   return result;
+}
+
+void Executor::AddToolSpending(ExecutionResult& result) const {
+  const ToolContext::Spending& spent = spent_by_tools_;
+  if (spent.prompt_tokens == 0 && spent.completion_tokens == 0 && !spent.cost) return;
+  if (!result.usage) result.usage = TokenUsage{};
+  result.usage->prompt_tokens += spent.prompt_tokens;
+  result.usage->completion_tokens += spent.completion_tokens;
+  result.usage->cached_tokens += spent.cached_tokens;
+  // A price adds within one unit and is dropped across two. The turn's own price may already
+  // be absent for the same reason, and a mixed total would read as the turn's cost when it is
+  // only part of it.
+  if (spent.cost) {
+    if (!result.usage->cost) {
+      result.usage->cost = spent.cost;
+    } else if (result.usage->cost->unit == spent.cost->unit) {
+      result.usage->cost->amount += spent.cost->amount;
+    } else {
+      result.usage->cost.reset();
+    }
+  }
 }
 
 ToolContext Executor::BuildToolContext(const Turn& turn) {
@@ -219,6 +244,9 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
+  // The tally belongs to the turn: a tool adds to it, and the turn reports it beside what its
+  // own model cost.
+  tool_ctx.spent = &spent_by_tools_;
 
   return tool_ctx;
 }

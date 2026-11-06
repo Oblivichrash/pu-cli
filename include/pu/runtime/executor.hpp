@@ -115,6 +115,8 @@ class Executor {
                           CancelToken command_stop_token = nullptr);
 
   std::string BuildStaticSystemContext() const;
+  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
+  void AddToolSpending(ExecutionResult& result) const;
 
  private:
   struct Turn {
@@ -155,6 +157,9 @@ class Executor {
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
+  // What tools spent on the turn's behalf. Cleared at the start of a turn, and added to the
+  // provider's own count before the result is returned.
+  ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
 
   int tool_call_budget_ = kDefaultToolCallBudget;

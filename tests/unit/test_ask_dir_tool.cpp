@@ -77,6 +77,23 @@ TEST_CASE("ask_dir refuses to ask a named agent when it may ask none", "[ask_dir
   REQUIRE(Says(reply, "may not ask 'reader'"));
 }
 
+
+TEST_CASE("ask_dir adds what the turn it asked cost to the asking turn's tally", "[ask_dir]") {
+  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::ToolContext ctx;
+  pu::ToolContext::Spending spent;
+  ctx.spent = &spent;
+
+  // A call that never reaches a provider spends nothing, and must not invent a figure: the
+  // tally is what a receipt prints, and a made-up one is worse than a missing one.
+  const std::string refused = tool.Execute(Ask("ghost-directory-that-is-not-here", "hi"), ctx);
+  REQUIRE(Says(refused, "no .pu/agents.json"));
+  CHECK(spent.prompt_tokens == 0);
+  CHECK(spent.completion_tokens == 0);
+  CHECK_FALSE(spent.cost.has_value());
+  CHECK(spent.turns == 0);
+}
+
 TEST_CASE("ask_dir refuses a call naming neither an agent nor a directory", "[ask_dir]") {
   pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;

@@ -36,6 +36,20 @@ struct ToolContext {
     std::function<bool(const std::string& command, std::string& note)> ask;
   };
   const Approval* approval = nullptr;
+
+  // What a tool spent that the turn's own model did not: a delegated turn runs a whole runtime
+  // of its own, and its provider reports to that one. Without this the asking turn's receipt
+  // would say it cost nothing, while the bill says otherwise.
+  struct Spending {
+    int prompt_tokens = 0;
+    int completion_tokens = 0;
+    int cached_tokens = 0;
+    std::optional<Cost> cost;
+    // How many turns were spent to answer the call. A delegation is one; a tool that asked
+    // twice says so.
+    int turns = 0;
+  };
+  Spending* spent = nullptr;
 };
 
 class Tool {
