@@ -4,7 +4,7 @@ Notable changes, newest first. This file is a summary; a change's reasoning is i
 the commit that made it, and its current behaviour is in the relevant document
 (see [Where Things Live](CONTRIBUTING.md#where-things-live)).
 
-## Unreleased
+## 0.6.1
 
 ### Added
 
@@ -95,11 +95,6 @@ the commit that made it, and its current behaviour is in the relevant document
   list of the keys a file may hold, and `paging` was missing from it although the parser reads
   it, so the command advised deleting a budget that was in force. The block's own keys are now
   checked too: `page_line` for `page_lines` is named instead of being silently ignored.
-
-## 0.6.2
-
-### Fixed
-
 - **A test run no longer leaves roughly a hundred directories behind in the temp directory.**
   Both server fixtures point `PU_HOME` at a directory of their own, and both kept that path
   only for as long as the call that made it: the serve fixture held it inside the environment
@@ -110,21 +105,21 @@ the commit that made it, and its current behaviour is in the relevant document
   write to the same one. `ctest` names the temp directory too, so a fixture that is ever
   missed again leaves its files in the build tree rather than outside it.
 
-## 0.6.1
+## 0.6.0
 
 ### Breaking
 
-- **Breaking** — **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
+- **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
   names a backend's upstream address in this program, and `0.0.0.0` is a legal bind and never a
   destination; the two are not the same question. A script or unit file that passes `--host`
   stops with an unrecognised option rather than binding somewhere unexpected, and one that sets
   `PU_SERVE_HOST` falls back to `127.0.0.1`. `serve` in `agents.json` takes `bind` for the same
   reason.
-- **Breaking** — **`GET /api/history` answers an object, not an array.** Every route now answers
+- **`GET /api/history` answers an object, not an array.** Every route now answers
   one envelope with the payload under the key its row names, so the listing is
   `{"messages": [...], "success": true}`. A client that read the body as an array has to read
   `.messages`.
-- **Breaking** — **`GET /api/servers` describes other servers, not this one.** An entry is
+- **`GET /api/servers` describes other servers, not this one.** An entry is
   `{"name", "port"}`: a label rather than a filesystem path, and no `current` mark, because the
   server that answered is the page's own and is no longer in its own list. A client that read
   `directory`, `host` or `current` has to take the name from `/api/session` instead.
@@ -188,8 +183,6 @@ the commit that made it, and its current behaviour is in the relevant document
   process rather than by directory, so two servers on one workspace do not offer each other. A
   sibling's address is that port on the host the page already reached, since a registry `bind` is
   not a destination. The entry's shape is in **Breaking** above.
-
-## 0.6.0
 
 ### Added
 
