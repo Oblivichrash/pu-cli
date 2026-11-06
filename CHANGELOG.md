@@ -6,7 +6,31 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## 0.6.1
 
+### Changed
+
+- **`pu ask` no longer remembers anything.** It used to read `.pu/session.json` before the turn
+  and write it after, which made the same prompt mean two different things depending on what
+  had been typed earlier in that directory — and made the command unusable as a way to ask a
+  question whose whole context the caller supplies. A conversation that is kept is what `chat`
+  and `serve` are for. `ask` now sends the prompt and nothing else, and leaves the file alone.
+
 ### Added
+
+- **`-C DIR` runs any command as if started in that directory.** A `.pu/` directory is a whole
+  world: its own agents table, its own session, its own sandbox root. Nothing tied those three
+  to one place before — `--config` moved the table alone, which is how a run could read one
+  tree's configuration and write another tree's history. `-C` moves the root, and the rest
+  follows from it, so a project with several directories configures a model per directory
+  without the directories learning about each other.
+
+- **`ask_dir` lets an agent ask another directory, and get back only its answer.** The turn
+  runs there in full — reading files, running commands, paging output — and none of that
+  reaches the asking conversation, which grows by one answer rather than by everything it took
+  to reach one. It is worth doing only when that directory can find things out for itself,
+  which is why it runs a whole runtime rather than sending a prompt to a model. The other
+  directory's session is neither read nor written; relative paths may not climb out of the
+  asking directory; a relayed turn may not ask further; and `PU_ASK_DEPTH` stops a directory
+  that asks back from going round forever.
 
 - **`pu-sse` is a standalone tool, installed beside `pu`.** Reading a `text/event-stream`
   needed an endpoint and nothing else, but the only way to reach the reader was through the

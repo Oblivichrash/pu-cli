@@ -106,6 +106,7 @@ add_library(pu_core STATIC
     src/session/settings.cpp
     src/session/usage.cpp
     src/tools/bash.cpp
+    src/tools/ask_dir_tool.cpp
     src/tools/peer_tool.cpp
     src/tools/policy.cpp
     src/tools/toolbox.cpp
