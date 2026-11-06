@@ -426,6 +426,35 @@ TEST_CASE("A tools list naming something this build does not register is refused
                     Catch::Matchers::ContainsSubstring("not a builtin tool"));
 }
 
+
+TEST_CASE("An MCP path in an agent's own table names something beside that table",
+          "[agent_config][delegates]") {
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("runner", R"({
+    "backend": { "gateway": "ollama", "model": "m" },
+    "mcp_servers": [
+      { "name": "local", "command": "./serve.sh", "args": ["./serve.sh", "--verbose"] },
+      { "name": "elsewhere", "command": "/usr/bin/other" }
+    ]
+  })");
+  {
+    std::ofstream script(ws.AgentDir("runner") / "serve.sh", std::ios::trunc);
+    script << "#!/bin/sh\n";
+  }
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+  const auto& servers = cfg.agents.at(1).mcp_servers;
+  REQUIRE(servers.size() == 2);
+
+  // Named and present beside the table: rewritten so it runs from wherever the process is.
+  CHECK(servers[0].command == (ws.AgentDir("runner") / "serve.sh").lexically_normal().string());
+  // A flag is not a path, and must be handed to the server as written.
+  CHECK(servers[0].args.at(1) == "--verbose");
+  // An absolute command is already unambiguous, and is left alone.
+  CHECK(servers[1].command == "/usr/bin/other");
+}
+
 TEST_CASE("default_agent may name an agent that lives in its own directory",
           "[agent_config][delegates]") {
   TempAgentWorkspace ws;
