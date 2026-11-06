@@ -40,7 +40,7 @@ own name.
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
-| `web/composer.js` | Turning a press into a run, and a second press into a cancel |
+| `web/composer.js` | Turning a press into a run, and a second press into a stop |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
 A transcript block and its element are separate things: the block is plain data (`type`,
@@ -48,6 +48,13 @@ A transcript block and its element are separate things: the block is plain data 
 on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
+
+**One button, one word.** While a turn is in flight the send button reads `Stop`, and reads
+`Stopping…` from the press until the server's `done` arrives. The frame it sends is `cancel`,
+which ends the turn and whatever command it is running; a reader who presses it means both, so
+splitting the label would offer a choice the protocol does not make. `renderSendButton` is the
+one place those three states are written, so a path that ends a turn cannot leave the button
+saying something the page is not doing.
 
 That re-render is deferred to the next animation frame, so a fast stream costs one paint
 rather than one per chunk — which makes the frame a thing that can be *owed*. Two rules
