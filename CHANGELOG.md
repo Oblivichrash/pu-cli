@@ -8,6 +8,14 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **`pu-sse` is a standalone tool, installed beside `pu`.** Reading a `text/event-stream`
+  needed an endpoint and nothing else, but the only way to reach the reader was through the
+  `pu` binary, which links a session, a pager and a tool box none of that work uses. The
+  reader now lives in a library of its own and both entry points call it, so a script that
+  only watches a feed runs without a workspace or a configuration file, and `pu sse` and
+  `pu-sse` cannot disagree about what an event looks like. `cmake --install` places both, so
+  one package still installs everything.
+
 - **`execute_bash` answers with one page of a command's output instead of all of it.** The
   output is kept in a store that belongs to the session, `at` says where to read (`head`,
   `tail`, or a cursor taken from `page.earlier`/`page.later`), and a receipt carries `page`,

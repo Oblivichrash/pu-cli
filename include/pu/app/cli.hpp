@@ -5,6 +5,7 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/tools_cli/sse.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -97,22 +98,12 @@ int RunCheck(const std::string& config_path);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
 
-// What `sse` prints. The three shapes are exclusive: raw bytes, one JSON object per event, or
-// the event read as text -- so they are one choice rather than three flags that could be set
-// together and contradict each other.
-enum class SseFormat { kText, kJson, kRaw };
+// What `sse` prints, and the shape `pu sse` and the standalone `pu-sse` both read. Declared
+// in one place because the two binaries call the one implementation.
+using SseFormat = tools_cli::SseFormat;
+using SseOptions = tools_cli::SseOptions;
 
-struct SseOptions {
-  std::string url;
-  pu::http::HttpMethod method = pu::http::HttpMethod::kGet;
-  std::vector<std::string> headers;
-  std::optional<std::string> body;
-  SseFormat format = SseFormat::kText;
-  // Whether the `event:` and `id:` lines are printed beside the data in the text shape.
-  bool quiet = false;
-};
-
-int RunSse(const SseOptions& options, Runtime& runtime);
+int RunSse(const SseOptions& options, http::HttpClient& http);
 
 // docs/ARCHITECTURE.md#the-frame-every-command-runs-inside
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options);

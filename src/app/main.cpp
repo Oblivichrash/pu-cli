@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
       options.quiet = vm.count("quiet") > 0;
 
       return pu::cli::WithInitializedRuntime("", runtime,
-                                             [&] { return pu::cli::RunSse(options, runtime); });
+                                             [&] { return pu::cli::RunSse(options, runtime.Http()); });
     }
 
     if (cmd == "check") {

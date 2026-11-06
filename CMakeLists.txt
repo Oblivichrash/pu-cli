@@ -35,6 +35,31 @@ function(pu_configure_target target)
     endif()
 endfunction()
 
+# The layer with no dependencies of its own: an HTTP client, the SSE framing, the JSON and
+# text helpers, logging and the platform's token. A tool that talks to a server and prints
+# what it reads needs this and nothing else, which is why it is a target of its own rather
+# than the first entries of `pu_core`. A standalone tool links this; it does not link the
+# session, the pager or the tool box it has no use for.
+add_library(pu_core_util STATIC
+    src/core/beast_http_client.cpp
+    src/core/logging.cpp
+    src/core/platform.cpp
+    src/core/sse.cpp
+    src/tools_cli/sse.cpp
+)
+target_link_libraries(pu_core_util PUBLIC
+    spdlog::spdlog
+    Boost::json
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+if(WIN32)
+    target_link_libraries(pu_core_util PRIVATE crypt32)
+endif()
+pu_configure_target(pu_core_util)
+add_library(pu::core_util ALIAS pu_core_util)
+
 add_library(pu_core STATIC
     src/app/cli.cpp
     src/app/cli_agents.cpp
@@ -50,10 +75,6 @@ add_library(pu_core STATIC
     src/config/gateway.cpp
     src/config/peer.cpp
     src/config/serve_registry.cpp
-    src/core/beast_http_client.cpp
-    src/core/logging.cpp
-    src/core/platform.cpp
-    src/core/sse.cpp
     src/exec/run.cpp
     src/llm/model_check.cpp
     src/llm/model_listing.cpp
@@ -85,17 +106,9 @@ add_library(pu_core STATIC
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC
-    spdlog::spdlog
-    Boost::json
-    Boost::system
+    pu_core_util
     Boost::program_options
-    OpenSSL::SSL
-    OpenSSL::Crypto
 )
-if(WIN32)
-    # The Windows root store, read to give OpenSSL the anchors this platform has.
-    target_link_libraries(pu_core PRIVATE crypt32)
-endif()
 pu_configure_target(pu_core)
 add_library(pu::core ALIAS pu_core)
 
@@ -104,6 +117,16 @@ add_executable(pu
 )
 target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
+
+# The standalone reader. It links the layer with no dependencies of its own, which is what
+# reading a feed needs: no session, no configuration, no pager. `pu sse` runs the same
+# implementation, so the two never disagree about what an event looks like.
+add_executable(pu-sse
+    src/tools_cli/sse_main.cpp
+)
+target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
+pu_configure_target(pu-sse)
+add_executable(pu::sse ALIAS pu-sse)
 
 # The page is found relative to the executable, so a build tree without a sibling web/ serves
 # nothing. Copying it after every build keeps the binary runnable from where it was built; the
@@ -123,7 +146,9 @@ if(BUILD_TESTS)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# The tools go in beside the command that owns them: one package to install, and a reader who
+# has `pu` has `pu-sse`, whether they reach it as `pu sse` or as its own name.
+install(TARGETS pu pu-sse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(WIN32)
     # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
     # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.

@@ -78,6 +78,20 @@ keeps the bytes; `pu sse` asks nothing of a gateway at all — it is a plain cli
 URL and headers it is given, reads no `agents.json`, and therefore reaches a feed that is not a
 chat turn.
 
+### The tools that ship beside `pu`
+
+Installing `pu` installs these too, in the same directory. Each is also a subcommand, and the
+two entry points run the same implementation — so an answer from `pu-sse` is an answer from
+`pu sse`.
+
+| Tool | Same as | What it needs |
+| --- | --- | --- |
+| `pu-sse URL [--format text\|json\|raw]` | `pu sse` | Nothing but the URL |
+
+`pu-sse` is the case the split exists for: reading a feed needs an endpoint, not a workspace,
+a session or a configuration file. A script that only wants to watch an event stream runs
+`pu-sse` without `pu` having been set up at all.
+
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
 `pu --help` names every command with the one line that says what it answers.
