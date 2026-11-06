@@ -63,14 +63,19 @@ the copy it was installed with.
 
 | Command | What it does |
 | --- | --- |
-| `pu ask [--agent NAME] "..."` | One turn in the workspace's conversation, printed to stdout |
-| `pu chat [--agent NAME]` | The same conversation, kept open, with `/commands` |
+| `pu ask [--agent NAME] "..."` | One turn with no memory: the prompt is the whole of what it knows |
+| `pu chat [--agent NAME]` | A conversation that is kept, with `/commands` |
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--gateway GW] [--model M] [--detail ids\|caps] [--entry ID] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` *(developer tool, not in `pu --help`)* | A gateway's raw stream, kept, and the field names it actually sent |
 | `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
 | `pu serve` | The Web UI and its WebSocket |
 | `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
+
+Every command takes `-C DIR`, spelled and meant the same way as `git -C`: run as if started
+in that directory. A `.pu/` directory is a whole world — its own agents table, its own
+session, its own sandbox — so `-C` is how one directory asks another without either learning
+about the other.
 
 The three commands that read a provider answer different questions. `pu models` asks what a
 gateway offers and names the model to pick; `pu probe` asks what the answer is shaped like and

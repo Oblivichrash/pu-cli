@@ -17,6 +17,7 @@ add_executable(pu_tests
     unit/test_agents_summary.cpp
     unit/test_approval_gate.cpp
     unit/test_approval_refusal.cpp
+    unit/test_ask_dir_tool.cpp
     unit/test_backend_resolution.cpp
     unit/test_bash_tool.cpp
     unit/test_billing.cpp

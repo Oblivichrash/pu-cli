@@ -14,6 +14,7 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/peer.hpp"
+#include "pu/tools/ask_dir_tool.hpp"
 #include "pu/tools/peer_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
@@ -160,8 +161,10 @@ void Runtime::Initialize(const std::string& config_path) {
 
   RebuildToolbox(*default_entry);
 
+  // An ephemeral runtime wakes up with no past: a stored conversation belongs to the world
+  // that asked for it, and this one was asked to answer a question, not to continue one.
   const auto session_path = workspace_root_ / ".pu" / "session.json";
-  if (std::filesystem::exists(session_path)) {
+  if (!ephemeral_ && std::filesystem::exists(session_path)) {
     current_session_ = LoadSessionFromFile(session_path);
     // A page read before the restart keeps its place in the order, so the runs made after it
     // arrive behind it rather than at the front.
@@ -198,7 +201,7 @@ void Runtime::Shutdown() {
 }
 
 void Runtime::SaveCurrentSession() {
-  if (!current_session_) return;
+  if (!current_session_ || ephemeral_) return;
   auto path = workspace_root_ / ".pu" / "session.json";
   std::filesystem::create_directories(path.parent_path());
   std::ofstream file(path);
@@ -406,6 +409,15 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
   if (peer_config_.has_value() && !peer_config_->peers.empty()) {
     toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
+  }
+  // A turn that is itself a delegation does not get the tool: the depth it inherits is how
+  // far from the user it already is, and past `kMaxDepth` the answer would cost more than
+  // reading the directory would have.
+  const char* asked_depth = std::getenv("PU_ASK_DEPTH");
+  const std::size_t depth =
+      asked_depth == nullptr ? 0 : static_cast<std::size_t>(std::atol(asked_depth));
+  if (depth < tools::AskDirTool::kMaxDepth) {
+    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, depth));
   }
 }
 

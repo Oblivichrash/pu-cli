@@ -69,6 +69,10 @@ The second row is the sharp one: listing another agent's models silently changes
 agent your session talks to. It is not obvious from `--agent`'s help text, and the
 session file is the only place it shows up.
 
+The first and third rows no longer apply to `ask`, which since 0.6.1 writes no session at
+all: it reads a stored conversation neither before nor after the turn. `models` is unchanged,
+so the second row — a read-only query re-pointing what the next turn runs on — still stands.
+
 ### The mirror-image problem
 
 Because the session wins over configuration (`runtime.cpp:143`), editing
