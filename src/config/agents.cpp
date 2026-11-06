@@ -343,6 +343,18 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
   return options;
 }
 
+// Only a path that names something the table's own directory holds is rewritten: an arguments
+// list also carries flags and plain words, and turning `--verbose` into an absolute path would
+// break every server that has one.
+std::string ResolveAgainst(const std::filesystem::path& dir, const std::string& value) {
+  if (value.empty()) return value;
+  const std::filesystem::path path(value);
+  if (path.is_absolute()) return value;
+  std::error_code ec;
+  if (!std::filesystem::exists(dir / path, ec)) return value;
+  return (dir / path).lexically_normal().string();
+}
+
 json::value ReadJsonFile(const std::filesystem::path& path) {
   std::ifstream file(path);
   if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + path.string());
@@ -449,6 +461,10 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
       }
       entry.source_dir = table.parent_path();
       ApplyPersona(entry, dir_json, table.parent_path());
+      for (config::McpServerConfig& server : entry.mcp_servers) {
+        server.command = ResolveAgainst(table.parent_path(), server.command);
+        for (std::string& arg : server.args) arg = ResolveAgainst(table.parent_path(), arg);
+      }
       if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
       if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
       result.agents.push_back(std::move(entry));
