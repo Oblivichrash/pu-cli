@@ -152,44 +152,6 @@ The command exits `1` only when the file cannot be loaded — which is what the 
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
 table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
 
-## `peers.json`
-
-Two `pu serve` instances can message each other: one agent calls `send_to_peer`, the
-other answers in a later turn. A server with no `.pu/peers.json` does not mount the
-endpoint and never registers the tool, so a single-server workspace needs nothing.
-
-```json
-{
-  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
-  "token": "shared-secret",
-  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `self.name` | This server's name, which the other side must list in its `peers` |
-| `self.host` / `self.port` | Informational; the listener's own flags still decide where it binds |
-| `token` | Shared secret every inbound message must present as `Authorization: Bearer` |
-| `peers[].name` | The name this server knows a peer by, matched against the sender's `from` |
-| `peers[].url` | Where that peer's `/api/peer/message` is posted |
-
-Both sides must agree on the token and on each other's names. A peer entry without a
-name and a `url` is skipped with a warning rather than trusted, and an undeclared
-`from` is refused before any turn starts.
-
-`send_to_peer` posts a job on the receiving server's board before it says anything, so
-the hand-off exists as an object before it exists as a message: the job names the peer it
-is for, the `intent` it was asked to do and an optional `due` duration, and the receiver
-claims it as it accepts the turn. A board that refuses the job stops the call, so work the
-receiver could not take on never arrives as a turn. When the turn ends the job closes with
-`done` and the answer, or `failed` and the error, which is how the sender's next turn — or a
-person reading `/api/jobs` — learns the outcome without polling the peer.
-
-The call returns as soon as the peer accepts rather than waiting for an answer, which
-arrives as a new turn. A turn that arrived from a peer may reply to that peer and to nobody
-else, so an A→B→A→B chain ends at the second hop by construction rather than by a counter.
-
 ## Environment Variables
 
 | Variable | Purpose |
@@ -201,7 +163,6 @@ else, so an A→B→A→B chain ends at the second hop by construction rather th
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
 | `PU_SERVE_BIND` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
-| `PU_PEER_TOKEN` | Overrides `token` in `peers.json`, so the secret can stay out of the file |
 
 ## Logging
 

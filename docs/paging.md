@@ -43,7 +43,7 @@ Two limits follow from the store being a store:
 - **A cursor names its own run**, so a page can never be answered from another
   command's output: there is nothing to compare it against and nothing to get wrong. The
   run id carries the mark of the pager that stored it, so a cursor written by an earlier
-  process or by a peer finds nothing here rather than a namesake — a bare counter would
+  process finds nothing here rather than a namesake — a bare counter would
   have made the first run of every process the same run. A cursor whose buffer is gone is
   refused, and so is one past the end of its buffer.
 - **A cursor expires only when its buffer is dropped** — the last 8 runs within 4 MiB,

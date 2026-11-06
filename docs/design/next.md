@@ -117,6 +117,3 @@ field) is where to resume rather than restart.
 
 ## 6. Adjacent, worth a commit each
 
-- `peers-and-board` is frozen, and [peers-and-board.md](../peers-and-board.md) says what that
-  means: the board is drawn, but every verb behind it needs two servers and a `peers.json` to
-  exercise, and there is no product direction to justify extending it.

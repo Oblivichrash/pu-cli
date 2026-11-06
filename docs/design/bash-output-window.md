@@ -88,7 +88,7 @@ rather than a promise that nothing exists there.
 **A cursor is data, not a session.** It names a buffer and a line, and the buffer
 names the run that produced it. A run id also carries the mark of the pager that
 stored it, so a cursor offered to a store that never wrote it — an earlier process, a
-peer — is refused instead of paging a namesake's output. Nothing restates the command:
+another process — is refused instead of paging a namesake's output. Nothing restates the command:
 the run already knows what it ran, and a second copy of the question could only
 disagree with the first.
 

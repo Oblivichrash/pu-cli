@@ -196,15 +196,6 @@ It is merged with the agent's configured `system_prompt`, which comes from
 `agents.json` via `Runtime::RebuildToolbox` and is not session state, so
 switching the backend does not clear it.
 
-**The digest.** The executor cannot know what the task board owes this server, so
-`Runtime::SetContextDigest` hands it a function instead of a string. It is called on
-every round of every turn, which is what makes it honest: a job claimed mid-turn
-reads as claimed on the next round. `pu serve` is the only caller, and it answers
-with `Board::Digest(self_name)` — the jobs this server holds (with any question a
-peer is asking, and whether the deadline has passed) plus the jobs it handed out
-that have since closed. An empty digest contributes nothing, so a session with no
-peers in play reads exactly as it did before the board existed.
-
 **Structured tool output.** Tools return JSON through the schema in
 `include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
 `refusal` that names why the policy refused a call when one did. The header is the field
@@ -258,7 +249,7 @@ produced the run rather than counted from one, because a counter starts over wit
 process: the source would make a resumed transcript read the new `s1` as the old `s1`, and
 the run id would make this process's first run the same run as the last one's. The run id
 carries the mark of the pager that wrote it, so a cursor written elsewhere — by an earlier
-process, by a peer — finds nothing instead of a namesake. `BuildRequestPath` compares the
+process — finds nothing instead of a namesake. `BuildRequestPath` compares the
 `rank` a receipt carries: while it assembles a request it replaces the page of a run that
 the same source has since been run again to supersede, leaving the verdict, the `page` and
 the `extent` in place and naming the newer run in `superseded_by`. A page is only superseded by a newer run
@@ -324,7 +315,7 @@ environment, or the workspace's own `serve` block names:
    is asynchronous from there on.
 5. A second upgrade while a page is attached is answered with a `busy` frame and closed:
    one session, one page. Claiming the session happens when the upgrade is accepted, not
-   when the first run arrives, so the refusal reaches the peer before its socket goes.
+   when the first run arrives, so the refusal reaches the caller before its socket goes.
    The page names itself with `?client=` on the upgrade, and the claim is compared by that
    name: the same tab reconnecting takes the session back and the socket it left behind is
    closed from its own strand, while another tab is refused. Without a name, every
@@ -393,10 +384,9 @@ A handler therefore only computes and returns, against a `Call` rather than a `R
 boost::json::value HandleApiRewind(Call& call, const boost::json::value& body);
 ```
 
-`Call` carries the runtime, the board and the runner a handler might need, plus the facts
-that belong to the connection rather than to the session: the address the request arrived
-from, the peer name its token speaks for, whether that address is this machine's, and the
-port this server answers on. A handler that had to reach for the socket to learn any of
+`Call` carries the runtime, plus the facts that belong to the connection rather than to the
+session: the address the request arrived from, whether that address is this machine's, and
+the port this server answers on. A handler that had to reach for the socket to learn any of
 those would be a second place for the audience rule to live.
 
 One envelope, declared per row. `Route::key` names the member a payload is filed under
@@ -412,14 +402,9 @@ directories impossible to add as one that answers the network by omission.
 The status the exception maps to is the one that names whose fault it is: `RequestRefused`
 for a request the caller can fix, `NotFound` for a name or route that does not exist, and
 `Error` for an operation that failed on our side. The audience refusals are separate and are
-answered before the handler runs: `403` for an address the route does not answer, `401` for a
-peer route with no token or the wrong one, and `404` for a peer route on a server with no
-topology at all.
-
-Routes that read the board are marked `needs_board` and take their own mutex inside, so the
-dispatch does not hold `io_mutex` around them. The board is the one piece of state peers
-share that is not part of the conversation, and putting it behind the session's lock would
-let a slow peer's poll stop the page's turn.
+answered before the handler runs: `403` for an address the route does not answer. Every route
+this server answers is answered under `io_mutex`, since every one of them reads or changes
+the session.
 
 ### Static page serving
 
@@ -638,14 +623,6 @@ lists tools.
 
 ---
 
-## Peers and the task board
-
-Peer messaging and the task board have their own document: the message a peer sends, the
-token that lets it in, the trust boundary, and every rule the board applies to a job. What
-stays here is where the board sits in the process and why it is not behind `io_mutex`.
-
-See [peers-and-board.md](peers-and-board.md).
-
 ## Persistence
 
 ```
@@ -800,7 +777,7 @@ state — see [design/gateway-protocol-layout.md](design/gateway-protocol-layout
 
 Includes point one way: `core/` is a leaf, `config/` and `llm/` build on it, and
 `mcp/`, `tools/`, `session/`, and the orchestration headers build on those. No
-directory includes a peer that sits above it, and `config/` in particular never
+directory includes one that sits above it, and `config/` in particular never
 reaches `mcp/`.
 
 The rule holds because a record belongs to the layer that *parses* it, not the
@@ -819,7 +796,6 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
-- **New peer (no C++)**: Add an entry to `.pu/peers.json` naming the peer and its URL, and agree on the shared token; the other side needs no restart.
 
 ---
 

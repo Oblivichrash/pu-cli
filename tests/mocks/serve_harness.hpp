@@ -364,41 +364,28 @@ class TestHttpClient {
  public:
   explicit TestHttpClient(const std::string& host, int port) : host_(host), port_(port) {}
 
-  // The bearer a board request presents. Empty sends no Authorization header at all, which is
-  // what a caller that is not a peer looks like.
-  void SetBearer(std::string bearer) { bearer_ = std::move(bearer); }
-
   std::string Get(const std::string& path) { return GetRaw(path).body; }
 
-  HttpResponse GetRaw(const std::string& path) {
-    return Request(http::verb::get, path, "", bearer_);
-  }
+  HttpResponse GetRaw(const std::string& path) { return Request(http::verb::get, path, ""); }
 
   std::string Post(const std::string& path, const boost::json::value& body) {
     return PostFull(path, body).body;
   }
 
   HttpResponse PostFull(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::post, path, boost::json::serialize(body), bearer_);
+    return Request(http::verb::post, path, boost::json::serialize(body));
   }
 
   HttpResponse PostRaw(const std::string& path, const std::string& body) {
-    return Request(http::verb::post, path, body, bearer_);
+    return Request(http::verb::post, path, body);
   }
 
   HttpResponse Patch(const std::string& path, const boost::json::value& body) {
-    return Request(http::verb::patch, path, boost::json::serialize(body), bearer_);
-  }
-
-  // For a call that must present a different token from the one this client carries.
-  HttpResponse PostRaw(const std::string& path, const std::string& body,
-                       const std::string& bearer) {
-    return Request(http::verb::post, path, body, bearer);
+    return Request(http::verb::patch, path, boost::json::serialize(body));
   }
 
  private:
-  HttpResponse Request(http::verb method, const std::string& path, const std::string& body,
-                       const std::string& bearer = {}) {
+  HttpResponse Request(http::verb method, const std::string& path, const std::string& body) {
     try {
       net::io_context ioc;
       tcp::resolver resolver(ioc);
@@ -411,7 +398,6 @@ class TestHttpClient {
       req.set(http::field::host, host_);
       req.set(http::field::content_type, "application/json");
       req.set(http::field::content_length, std::to_string(body.size()));
-      if (!bearer.empty()) req.set(http::field::authorization, "Bearer " + bearer);
       req.body() = body;
       req.prepare_payload();
 
@@ -432,7 +418,6 @@ class TestHttpClient {
 
   std::string host_;
   int port_;
-  std::string bearer_;
 };
 
 class ServeHarness {
@@ -518,8 +503,7 @@ class ServeHarness {
   }
 
   explicit ServeHarness(const std::string& gateway = "ollama", int backend_delay_ms = 0,
-                        std::optional<McpServer> mcp = std::nullopt,
-                        bool with_peers = false) {
+                        std::optional<McpServer> mcp = std::nullopt) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -545,10 +529,6 @@ class ServeHarness {
 
     WriteAgentsFile(home_, backend_->Port(), gateway, mcp ? mcp->name : "",
                     mcp ? mcp->url : "");
-    // A workspace that is part of a topology names its peer before the runtime reads the
-    // directory: the endpoint and the tool both follow from the file being there.
-    if (with_peers) WritePeersConfig("B", "A");
-
     {
       // Read back what was written, the way the runtime will. A config the harness cannot
       // round-trip here would surface deeper as an unrelated startup error.
@@ -594,27 +574,6 @@ class ServeHarness {
     // same exit path removes it. Leaving it behind left one entry per case in the temp
     // directory, invisible because nothing removed the directory that contained it.
     fs::remove_all(data_home_, ec);
-  }
-
-  // Writes a peers.json into the workspace before Initialize reads it. A case that needs the
-  // peer endpoint mounted says so here rather than editing .pu/ after the runtime has started,
-  // which would be read too late.
-  void WritePeersConfig(const std::string& self_name, const std::string& peer_name) {
-    std::error_code ec;
-    std::filesystem::create_directories(home_ / ".pu", ec);
-    boost::json::object self;
-    self["name"] = JsonStr(self_name);
-    boost::json::object peer;
-    peer["name"] = JsonStr(peer_name);
-    peer["url"] = JsonStr("http://127.0.0.1:1");
-    boost::json::object root;
-    root["self"] = std::move(self);
-    root["token"] = JsonStr("shared-secret");
-    root["peers"] = boost::json::array{std::move(peer)};
-    std::ofstream file(home_ / ".pu" / "peers.json", std::ios::binary | std::ios::trunc);
-    REQUIRE(file.is_open());
-    file << boost::json::serialize(root);
-    REQUIRE(file.good());
   }
 
   void Stop() {

@@ -35,7 +35,6 @@ own name.
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list, and the spend total a finished turn brings with it |
-| `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
 | `web/servers.js` | The header's server strip: the workspace this page is attached to, the other servers over `/api/servers`, and the switch to one of them. The name comes from `/api/session`, never from the list, so a refused list leaves the name intact and the caret explains why it cannot be used |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
