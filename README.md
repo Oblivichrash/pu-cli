@@ -112,12 +112,11 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 
 | Document | What it holds |
 |----------|---------------|
-| [docs/configuration.md](docs/configuration.md) | `agents.json`, `peers.json`, environment variables, logging |
+| [docs/configuration.md](docs/configuration.md) | `agents.json`, environment variables, logging |
 | [docs/web-api.md](docs/web-api.md) | `pu serve`: the WebSocket protocol and the REST endpoints |
 | [docs/web-ui.md](docs/web-ui.md) | The browser modules, and how the page is served |
 | [docs/paging.md](docs/paging.md) | `execute_bash` page by page: the envelope, cursors, and what a turn keeps |
-| [docs/peers-and-board.md](docs/peers-and-board.md) | Peer messaging, the task board, and their verbs |
-| [docs/security.md](docs/security.md) | The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns |
+| [docs/security.md](docs/security.md) | The trust boundary, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
@@ -163,6 +162,7 @@ version does:
 | 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
 | 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
 | 0.6.1 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
+| 0.7.0 | Peer messaging and the task board are removed: `.pu/peers.json`, `PU_PEER_TOKEN`, `send_to_peer`, `/api/jobs`, `/api/peer/message` and `/api/board` no longer exist. Delete the file if a workspace has one; a tool that posted to a peer should use `ask_dir` or read the directory instead. `GET /api/history` no longer reports `from_peer`. |
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 
