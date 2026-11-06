@@ -79,11 +79,10 @@ TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
   REQUIRE(Says(tool.Execute(Args("", "a question"), ctx), "required"));
 }
 
-TEST_CASE("ask_dir will not ask on behalf of a relayed turn", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), 0);
+TEST_CASE("ask_dir stops a turn that is itself an answer from asking further", "[ask_dir]") {
+  pu::tools::AskDirTool tool(fs::current_path(), 1);
   pu::ToolContext ctx;
-  ctx.peer_origin = "someone-else";
 
   const std::string reply = tool.Execute(Args("somewhere", "hi"), ctx);
-  REQUIRE(Says(reply, "relayed"));
+  REQUIRE(Says(reply, "further"));
 }

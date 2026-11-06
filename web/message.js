@@ -11,11 +11,9 @@ function renderBlocks(blocks, container) {
   }
 }
 
-// Who a turn is from. The person at the page is "You"; a message that arrived from another
-  // pu server is named after the peer that sent it, which the server records on the turn.
-function roleLabel(role, fromPeer) {
-  if (role !== "user") return "Assistant";
-  return fromPeer ? fromPeer : "You";
+// Who a turn is from. The person at the page is "You".
+function roleLabel(role) {
+  return role === "user" ? "You" : "Assistant";
 }
 
 // What a turn cost, as one line: the counts always, a price only where the product reported
@@ -50,17 +48,15 @@ function usageLineNode(usage) {
   return line;
 }
 
-function createMessage(role, blocks, turn, text, fromPeer, usage) {
+function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
 
   const label = document.createElement("span");
   label.className = "role";
-  label.textContent = roleLabel(role, fromPeer);
+  label.textContent = roleLabel(role);
 
-  // A turn a peer asked is not this page's to take back, so it carries no edit affordance.
-  // /api/rewind refuses it for the same reason.
-  if (role === "user" && typeof turn === "number" && turn > 0 && !fromPeer) {
+  if (role === "user" && typeof turn === "number" && turn > 0) {
     const head = document.createElement("div");
     head.className = "msg-head";
     head.appendChild(label);

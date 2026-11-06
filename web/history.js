@@ -91,7 +91,7 @@ function groupHistory(history) {
       turns.push({ role: "system", text: content });
     } else if (msg.role === "user") {
       closeReply();
-      turns.push({ role: "user", text: content, turn: msg.id, fromPeer: msg.from_peer });
+      turns.push({ role: "user", text: content, turn: msg.id });
     } else if (msg.role === "tool") {
       applyToolResult(currentReply().blocks, msg);
     } else if (msg.role === "assistant") {

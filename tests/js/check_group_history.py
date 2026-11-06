@@ -93,10 +93,6 @@ def group_history(history):
         elif role == "user":
             close_reply()
             turn = {"role": "user", "text": content, "turn": msg.get("id")}
-            # Absent rather than null for a turn the user asked, which is the shape the page
-            # builds and the one a case file describes.
-            if msg.get("from_peer"):
-                turn["fromPeer"] = msg["from_peer"]
             turns.append(turn)
         elif role == "tool":
             apply_tool_result(current_reply()["blocks"], msg)

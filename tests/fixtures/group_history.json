@@ -301,39 +301,6 @@
       ]
     },
     {
-      "name": "a turn a peer asked keeps the peer's name instead of You",
-      "history": [
-        {
-          "id": "a",
-          "role": "user",
-          "content": "ping",
-          "from_peer": "B"
-        },
-        {
-          "id": "b",
-          "role": "assistant",
-          "content": "pong"
-        }
-      ],
-      "expected": [
-        {
-          "role": "user",
-          "text": "ping",
-          "turn": "a",
-          "fromPeer": "B"
-        },
-        {
-          "role": "assistant",
-          "blocks": [
-            {
-              "type": "text",
-              "content": "pong"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "a reply keeps what the turn cost",
       "history": [
         {

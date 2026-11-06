@@ -48,9 +48,7 @@ function sendMessage() {
   input.style.height = "auto";
 
   // The store appends this message, so its turn is the next one.
-  // What a page sends is its own, so it carries no peer name.
-  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], PU.chainLength + 1, text,
-                undefined);
+  createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], PU.chainLength + 1, text);
   startAssistantMessage();
   setSendButtonState(true);
   sendFrame("run", { text });

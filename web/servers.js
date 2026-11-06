@@ -8,7 +8,7 @@
 // on: a remote page gets a refusal there, and that refusal is an ordinary state the header draws
 // rather than an error the page hides.
 //
-// Switching is light on purpose. One socket, one transcript, one board: the page rebuilds
+// Switching is light on purpose. One socket, one transcript: the page rebuilds
 // against the server it moved to and lets the one it left keep running whatever it was running. A
 // turn that was streaming is handed over rather than cancelled, so switching back finds it where
 // it was.
@@ -88,7 +88,7 @@ async function refreshServers() {
 }
 
 // Everything the page has drawn is about one server, so it is dropped rather than patched. The
-// transcript, the session and the board are read again from the one it moved to; nothing is
+// transcript and the session are read again from the one it moved to; nothing is
 // carried across, because nothing about a conversation in one workspace is true of another.
 async function adoptServer(server) {
   setSelf({ origin: siblingOrigin(server.port), name: serverLabel(server), port: server.port });
@@ -111,7 +111,6 @@ async function adoptServer(server) {
   await loadHistory();
   scrollToBottom();
   connectWebSocket();
-  refreshBoard();
 }
 
 async function switchToServer(server) {
