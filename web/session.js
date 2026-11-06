@@ -29,9 +29,9 @@ async function loadHistory() {
         createSystemMessage(turn.text);
       } else if (turn.role === "user") {
         createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: turn.text }], turn.turn,
-                      turn.text, turn.fromPeer);
+                      turn.text);
       } else {
-        createMessage("assistant", turn.blocks, undefined, undefined, undefined, turn.usage);
+        createMessage("assistant", turn.blocks, undefined, undefined, turn.usage);
       }
     }
     PU.chainLength = history.length;

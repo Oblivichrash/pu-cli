@@ -185,7 +185,7 @@ TEST_CASE("A buffer is found by the id its cursor names", "[paging]") {
 
 TEST_CASE("An id written by another pager names nothing here", "[paging]") {
   // The id carries the mark of the pager that wrote it, so a cursor out of a resumed
-  // transcript — or out of a peer's answer — is refused instead of reading a namesake.
+  // transcript, or out of another process's answer — is refused instead of reading a namesake.
   // A bare `o1` would make the first run of every process the same run.
   Pager yesterday;
   Pager today;

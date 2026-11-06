@@ -77,35 +77,21 @@ TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
-// A user message that arrived from a peer keeps the peer's name beside it, so a page says who
-// asked rather than "You". The field is absent for a turn the page itself sent.
-TEST_CASE("serve API /api/history names the peer a turn arrived from", "[serve][api]") {
+TEST_CASE("serve API /api/rewind steps back a turn the page asked", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
   auto session = harness.RuntimeRef().DefaultSession();
   REQUIRE(session != nullptr);
-  pu::ChatMessage from_peer;
-  from_peer.role = "user";
-  from_peer.content = "ping";
-  from_peer.from_peer = "B";
-  session->Messages().Append(from_peer);
-  session->Messages().Append("assistant", "pong");
+  session->Messages().Append("user", "first");
+  session->Messages().Append("assistant", "second");
   session->Messages().Append("user", "mine");
 
   const auto j = HistoryOf(client);
   REQUIRE(j.as_array().size() == 3);
-  CHECK(j.as_array()[0].at("from_peer") == "B");
-  CHECK_FALSE(j.as_array()[2].as_object().contains("from_peer"));
 
-  // A peer's turn is not this page's to take back, and the refusal says why.
-  const auto rewind = client.PostFull("/api/rewind", boost::json::object{{"turn", 1}});
-  CHECK(rewind.status == 400);
-  CHECK(rewind.body.find("arrived from a peer") != std::string::npos);
-
-  // A turn the page asked is still rewindable.
-  const auto mine = client.PostFull("/api/rewind", boost::json::object{{"turn", 3}});
-  CHECK(mine.status == 200);
+  const auto rewind = client.PostFull("/api/rewind", boost::json::object{{"turn", 3}});
+  CHECK(rewind.status == 200);
 }
 
 TEST_CASE("serve API /api/history initially empty", "[serve][api]") {
@@ -491,73 +477,38 @@ TEST_CASE("every route states the audience it answers, and none of them silently
   const auto routes = pu::cli::detail::HttpRoutes();
   REQUIRE_FALSE(routes.empty());
 
-  // The routes whose answer is a fact about this machine rather than about the session: a path
-  // per server and the trail of who asked whom for what.
-  const std::map<std::string, pu::cli::detail::Audience> kLoopbackOnly{
-      {"/api/servers", pu::cli::detail::Audience::kLoopback},
-      {"/api/board", pu::cli::detail::Audience::kLoopback},
-  };
-  // The peer endpoint and the board verbs are the only surface that lets a remote caller change
-  // something, and every one of them takes the shared token.
-  const std::set<std::string> kPeerOnly{
-      "/api/jobs", "/api/jobs/answer", "/api/jobs/chase", "/api/jobs/drop", "/api/peer/message",
-  };
+  // The one route whose answer is a fact about this machine rather than about the session: the
+  // path per server this machine is serving. Everything else changes or reads the session the
+  // page is attached to, and answers whoever reaches the port. The bind address is the control
+  // there, not a route.
+  const std::set<std::string> kLoopbackOnly{"/api/servers"};
 
   for (const pu::cli::detail::Route& route : routes) {
     const std::string target{route.target};
-    if (const auto it = kLoopbackOnly.find(target); it != kLoopbackOnly.end()) {
-      INFO(target);
-      CHECK(route.audience == it->second);
-      continue;
-    }
-    if (kPeerOnly.count(target) > 0) {
-      INFO(target);
-      CHECK(route.audience == pu::cli::detail::Audience::kPeerToken);
-      continue;
-    }
-    // Everything else is a route that changes or reads the session the page is attached to, and
-    // it answers whoever reaches the port. The bind address is the control there, not a route.
     INFO(target);
+    if (kLoopbackOnly.count(target) > 0) {
+      CHECK(route.audience == pu::cli::detail::Audience::kLoopback);
+      continue;
+    }
     CHECK(route.audience == pu::cli::detail::Audience::kAnyone);
   }
 }
 
-TEST_CASE("an audience admits a caller by the three questions it can fail", "[serve][api][rules]") {
+TEST_CASE("an audience admits a caller by the two questions it can fail", "[serve][api][rules]") {
   using pu::cli::detail::Admission;
   using pu::cli::detail::Admit;
   using pu::cli::detail::Audience;
 
-  pu::config::PeerConfig peers;
-  peers.self_name = "A";
-  peers.token = "shared-secret";
-  const std::optional<pu::config::PeerConfig> configured = peers;
-
-  // Anyone: the address and the token are both irrelevant.
-  CHECK(Admit(Audience::kAnyone, "192.168.1.10", "", configured) == Admission::kAllowed);
-  CHECK(Admit(Audience::kAnyone, "", "", std::nullopt) == Admission::kAllowed);
+  // Anyone: the address is irrelevant.
+  CHECK(Admit(Audience::kAnyone, "192.168.1.10") == Admission::kAllowed);
+  CHECK(Admit(Audience::kAnyone, "") == Admission::kAllowed);
 
   // Loopback: only this machine's own addresses, and an address the socket could not name is not
-  // one of them — refusing it is what keeps the rule true when the peer is unknown.
-  CHECK(Admit(Audience::kLoopback, "127.0.0.1", "", std::nullopt) == Admission::kAllowed);
-  CHECK(Admit(Audience::kLoopback, "::1", "", std::nullopt) == Admission::kAllowed);
-  CHECK(Admit(Audience::kLoopback, "192.168.1.10", "", std::nullopt) ==
-        Admission::kNotFromHere);
-  CHECK(Admit(Audience::kLoopback, "", "", std::nullopt) == Admission::kNotFromHere);
-
-  // The token: a server with no topology cannot accept a peer at all, which is a different answer
-  // from a caller that presented the wrong secret.
-  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "shared-secret", std::nullopt) ==
-        Admission::kNoTopology);
-  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "", configured) == Admission::kWrongToken);
-  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "not-the-token", configured) ==
-        Admission::kWrongToken);
-  CHECK(Admit(Audience::kPeerToken, "10.0.0.5", "shared-secret", configured) ==
-        Admission::kAllowed);
-  // A peer may arrive from anywhere; the token is the whole credential, so the address is not
-  // consulted. Pinned because a loopback check added here would look like a tightening and would
-  // break every topology spread across two machines.
-  CHECK(Admit(Audience::kPeerToken, "127.0.0.1", "shared-secret", configured) ==
-        Admission::kAllowed);
+  // one of them — refusing it is what keeps the rule true when the caller is unknown.
+  CHECK(Admit(Audience::kLoopback, "127.0.0.1") == Admission::kAllowed);
+  CHECK(Admit(Audience::kLoopback, "::1") == Admission::kAllowed);
+  CHECK(Admit(Audience::kLoopback, "192.168.1.10") == Admission::kNotFromHere);
+  CHECK(Admit(Audience::kLoopback, "") == Admission::kNotFromHere);
 }
 
 TEST_CASE("serve API /api/servers lists the others and not this one", "[serve][api]") {
@@ -596,7 +547,7 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
   write_page("index.html", "<!doctype html>fixture index");
   write_page("style.css", ":root{--column:720px}");
   write_page("app.js", "const APP = true;");
-  write_page("board.js", "const BOARD = true;");
+  write_page("panel.js", "const PANEL = true;");
 
   const ScopedEnvVar web_dir("PU_WEB_DIR", web.string());
 
@@ -621,9 +572,9 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
 
   // The page's script list is a whitelist, not a directory read: a module added to
   // index.html but missed there is served as a 404 and the page silently loses it.
-  const HttpResponse board = client.GetRaw("/board.js");
-  CHECK(board.status == 200);
-  CHECK(board.body == "const BOARD = true;");
+  const HttpResponse panel = client.GetRaw("/panel.js");
+  CHECK(panel.status == 200);
+  CHECK(panel.body == "const PANEL = true;");
 
   const HttpResponse unmounted = client.GetRaw("/secret.txt");
   CHECK(unmounted.status == 404);
