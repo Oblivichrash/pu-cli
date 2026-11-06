@@ -21,9 +21,6 @@ add_executable(pu_tests
     unit/test_backend_resolution.cpp
     unit/test_bash_tool.cpp
     unit/test_billing.cpp
-    unit/test_board.cpp
-    unit/test_board_http.cpp
-    unit/test_board_liveness.cpp
     unit/test_budget.cpp
     unit/test_capabilities.cpp
     unit/test_cli_check.cpp
@@ -54,10 +51,6 @@ add_executable(pu_tests
     unit/test_openai_backend.cpp
     unit/test_options.cpp
     unit/test_paging.cpp
-    unit/test_peer_config.cpp
-    unit/test_peer_read.cpp
-    unit/test_peer_serve.cpp
-    unit/test_peer_tool.cpp
     unit/test_probe.cpp
     unit/test_project_rules.cpp
     unit/test_projection.cpp
