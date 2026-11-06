@@ -308,7 +308,8 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
                                    const std::string& gateway = "ollama",
                                    const std::string& mcp_name = "",
                                    const std::string& mcp_url = "",
-                                   const std::string& approval_pattern = "") {
+                                   const std::string& approval_pattern = "",
+                                   const std::vector<std::string>& tools = {}) {
   std::error_code ec;
   fs::create_directories(dir / ".pu", ec);
   REQUIRE_FALSE(ec);
@@ -333,6 +334,14 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   agent["description"] = JsonStr("Chat agent");
   agent["backend"] = std::move(backend);
   agent["security"] = std::move(security);
+
+  // An empty list writes no `tools` key at all, which is what "every builtin" looks like in a
+  // file: a case that narrows the list has to write one.
+  if (!tools.empty()) {
+    boost::json::array listed;
+    for (const std::string& tool : tools) listed.push_back(JsonStr(tool));
+    agent["tools"] = std::move(listed);
+  }
 
   if (!mcp_url.empty()) {
     boost::json::object server;
@@ -502,8 +511,11 @@ class ServeHarness {
     FAIL("the server never took the port FindFreePort named");
   }
 
+  // `tools` is the agent's own list, written into the workspace's `agents.json`: a case that
+  // cares which builtins an agent has says so here rather than editing the file afterwards.
   explicit ServeHarness(const std::string& gateway = "ollama", int backend_delay_ms = 0,
-                        std::optional<McpServer> mcp = std::nullopt) {
+                        std::optional<McpServer> mcp = std::nullopt,
+                        std::vector<std::string> tools = {}) {
     static std::atomic<int> seq{0};
     std::string tag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
                       "_" + std::to_string(seq.fetch_add(1));
@@ -528,7 +540,7 @@ class ServeHarness {
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
     WriteAgentsFile(home_, backend_->Port(), gateway, mcp ? mcp->name : "",
-                    mcp ? mcp->url : "");
+                    mcp ? mcp->url : "", "", tools);
     {
       // Read back what was written, the way the runtime will. A config the harness cannot
       // round-trip here would surface deeper as an unrelated startup error.

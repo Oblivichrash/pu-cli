@@ -445,12 +445,24 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   // The budget is the store's, and the tool reads it from there: one owner for the page
   // size and the retention, applied before the tool that will obey it is built.
   pager_.SetBudget(agent.paging);
-  toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
-      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
-  toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+
+  // Which builtins this agent has. An empty list means every one of them, which is what a
+  // table written before the field existed meant and must keep meaning. A tool named here and
+  // not registered is the entry's mistake and `pu check` refuses it, so this reads the list
+  // rather than validating it a second time.
+  const auto has = [&](const char* name) {
+    if (agent.tools.empty()) return true;
+    return std::find(agent.tools.begin(), agent.tools.end(), name) != agent.tools.end();
+  };
+
+  if (has("bash")) {
+    toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+        ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
+  }
+  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
   // A runtime that is itself answering a delegated turn gets no way to ask one further: the
   // chain that could grow is the one a tool starts, and this is where it does not start.
-  if (!delegated_) {
+  if (has("ask_dir") && !delegated_) {
     toolbox_.RegisterTool(
         std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates));
   }
