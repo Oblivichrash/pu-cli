@@ -28,9 +28,18 @@ the commit that made it, and its current behaviour is in the relevant document
   reaches the asking conversation, which grows by one answer rather than by everything it took
   to reach one. It is worth doing only when that directory can find things out for itself,
   which is why it runs a whole runtime rather than sending a prompt to a model. The other
-  directory's session is neither read nor written; relative paths may not climb out of the
-  asking directory; a relayed turn may not ask further; and `PU_ASK_DEPTH` stops a directory
-  that asks back from going round forever.
+  directory's session is neither read nor written, and a relative path may not climb out of
+  the asking directory.
+
+- **An agent can be a directory, and one agent can hand a turn to another.** A `.pu/agents/<name>/`
+  holds that agent's own table and, optionally, a `persona.md` whose text becomes its system
+  prompt — a document rather than a string, because a character worth describing takes more
+  than a line. `ask_dir` takes an `agent` as well as a directory, so the same question can be
+  put to a cheap reader and to a careful reviewer without a directory for each; `delegates`
+  names the agents an agent may reach and is the whole of what it may reach. `tools` narrows
+  which builtins an agent has, and absent means every one, so a reviewer meant to be read-only
+  has to say so. A delegated turn gets no `ask_dir` of its own, so a chain stops at one hop,
+  and its cost comes back to the turn that asked.
 
 - **`pu-sse` is a standalone tool, installed beside `pu`.** Reading a `text/event-stream`
   needed an endpoint and nothing else, but the only way to reach the reader was through the
