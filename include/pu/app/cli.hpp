@@ -68,9 +68,10 @@ CommandLine BuildCommandLine();
 std::string CommandList(const CommandLine& line);
 
 // The frame every command that needs a Runtime runs inside; see
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside.
+// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside. `ephemeral` settles it before
+// Initialize, so it belongs to the command's signature rather than to its body.
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
-                           const std::function<int()>& body);
+                           const std::function<int()>& body, bool ephemeral = false);
 
 // `show_usage` moves what the turn cost onto stderr, off by default so that stdout stays the
 // answer alone.
