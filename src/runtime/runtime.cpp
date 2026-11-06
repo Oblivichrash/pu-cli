@@ -385,6 +385,58 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   }
 }
 
+DelegationResult Runtime::Delegate(const Delegation& request) {
+  DelegationResult result;
+
+  const std::filesystem::path target =
+      request.dir.empty() ? workspace_root_ : request.dir;
+  const std::filesystem::path table = target / ".pu" / "agents.json";
+  const std::filesystem::path inherited = target / ".pu" / "agents";
+  std::error_code ec;
+  if (!std::filesystem::exists(table, ec) && !std::filesystem::is_directory(inherited, ec)) {
+    result.error = "'" + target.string() + "' configures no agent: it has no .pu/agents.json";
+    return result;
+  }
+
+  try {
+    Runtime child;
+    child.workspace_root_ = target;
+    // Ephemeral on both sides: the other directory's stored conversation is neither read nor
+    // written, so the same question asked twice costs the same and means the same.
+    child.SetEphemeral();
+    if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
+    child.delegated_ = true;
+    child.Initialize();
+
+    bool is_command = false;
+    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command);
+    if (const auto session = child.DefaultSession()) result.usage = session->Usage().Total();
+    child.Shutdown();
+
+    if (answered.has_error) {
+      result.error = answered.error_message.empty() ? answered.content : answered.error_message;
+      return result;
+    }
+    if (is_command) {
+      // A line the asking agent meant as a question, read as a command, is not an answer: the
+      // text it produced is a page of help or a setting, and handing it back as a conclusion
+      // would report something nobody asked for. Nothing was asked of a provider either, so
+      // this is a mistake in the call rather than a turn that went wrong.
+      result.error = "'" + request.prompt + "' was read as a command, not a question";
+      return result;
+    }
+    if (answered.content.empty()) {
+      result.error = "'" + target.string() + "' answered with nothing";
+      return result;
+    }
+    result.answer = answered.content;
+    return result;
+  } catch (const std::exception& e) {
+    result.error = std::string("could not ask '") + target.string() + "': " + e.what();
+    return result;
+  }
+}
+
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
@@ -396,14 +448,11 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
-  // A turn that is itself a delegation does not get the tool: the depth it inherits is how
-  // far from the user it already is, and past `kMaxDepth` the answer would cost more than
-  // reading the directory would have.
-  const char* asked_depth = std::getenv("PU_ASK_DEPTH");
-  const std::size_t depth =
-      asked_depth == nullptr ? 0 : static_cast<std::size_t>(std::atol(asked_depth));
-  if (depth < tools::AskDirTool::kMaxDepth) {
-    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, depth));
+  // A runtime that is itself answering a delegated turn gets no way to ask one further: the
+  // chain that could grow is the one a tool starts, and this is where it does not start.
+  if (!delegated_) {
+    toolbox_.RegisterTool(
+        std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates));
   }
 }
 

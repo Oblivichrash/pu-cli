@@ -71,6 +71,25 @@ class AgentManager {
 };
 
 
+// One turn asked of an agent, without a conversation either side can remember. The caller
+// states the whole question, because the agent it asks has no idea what this conversation has
+// said: that is the boundary, and what the turn reads on the way to its answer stays on the
+// other side of it.
+//
+// A delegated turn gets no `ask_dir` of its own, so a chain of them stops at one hop, and what
+// it cost comes back, so the turn that asked can account for what it spent.
+struct Delegation {
+  std::string agent;            // empty: the table's own default_agent
+  std::filesystem::path dir;    // empty: the asking runtime's workspace
+  std::string prompt;
+};
+
+struct DelegationResult {
+  std::string answer;
+  std::string error;                 // non-empty when the turn did not answer
+  session::SessionUsageTotal usage;  // what that turn cost, in its own account
+};
+
 class Runtime {
  public:
   Runtime() = default;
@@ -92,6 +111,8 @@ class Runtime {
   void SetEphemeral(bool ephemeral = true) { ephemeral_ = ephemeral; }
 
   void Initialize(const std::string& config_path = "");
+
+  DelegationResult Delegate(const Delegation& request);
   void Shutdown();
 
   ExecutionResult ProcessInput(
@@ -211,6 +232,9 @@ class Runtime {
   // readable across that.
   paging::Pager pager_;
   std::filesystem::path workspace_root_;
+  // Whether this runtime is itself answering a delegated turn. A delegated runtime registers no
+  // `ask_dir`, so a chain stops here rather than at a depth counter somebody has to carry.
+  bool delegated_ = false;
   bool ephemeral_ = false;
   std::shared_ptr<Session> current_session_;
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads
