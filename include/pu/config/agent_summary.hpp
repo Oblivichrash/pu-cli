@@ -29,6 +29,9 @@ struct AgentSummary {
   std::string description;
   std::string gateway;
   std::string model;
+  // What this one may hand a turn to. The list is the whole of what it may reach, so a reader
+  // looking at who can call whom reads it here rather than in each table.
+  std::vector<std::string> delegates;
   bool active = false;
 };
 

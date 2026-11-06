@@ -22,6 +22,7 @@ std::vector<AgentSummary> SummarizeAgents(const Runtime& runtime, const std::str
       summary.description = entry->description;
       summary.gateway = GatewayName(entry->backend.gateway);
       summary.model = entry->backend.model;
+      summary.delegates = entry->delegates;
     }
     summary.active = (name == active);
     agents.push_back(std::move(summary));
@@ -37,6 +38,7 @@ boost::json::value AgentsAsJson(const std::vector<AgentSummary>& agents) {
                                      {"description", agent.description},
                                      {"gateway", agent.gateway},
                                      {"model", agent.model},
+                                     {"delegates", boost::json::value_from(agent.delegates)},
                                      {"active", agent.active}});
   }
   return out;

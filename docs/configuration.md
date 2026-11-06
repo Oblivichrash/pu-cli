@@ -28,6 +28,9 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
 | `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
+| `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
+| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. A name nothing configures, this agent's own name, and a circle are all refused by `pu check` |
+| `persona` | Optional, in an agent's own directory only; a path to a file whose text becomes `backend.system_prompt`. Naming this and `backend.system_prompt` both is refused |
 
 **Backend fields**
 
@@ -42,6 +45,37 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
 | `context_window` | unset | How much context the model holds, in tokens. Advisory: nothing trims a prompt against it and no turn is refused for outgrowing it. It is the only figure the Web page's context bar measures the last reply against, so a model without it draws no fill and shows the count alone. `pu models --detail caps` prints what the gateway's own catalogue says, which is where a number to write here comes from |
 | `system_prompt` | unset | Merged with the injected context |
+
+### One directory per agent
+
+An agent can also be a directory of its own, beside the table that names it. The directory is
+named after the agent, so `ls .pu/agents/` is the list, and a table inside it that names itself
+something else is refused rather than renamed:
+
+```
+.pu/
+  agents.json              the default_agent, and any agent written inline
+  agents/
+    reviewer/
+      agents.json          this agent's backend, security, tools and delegates
+      persona.md           what it is, read into backend.system_prompt
+```
+
+The table inside a directory takes every agent field above except `name`, which the directory
+supplies. Paths in it — `persona`, and an `mcp_servers` command or url — resolve against that
+directory, not the workspace. Both forms may be used at once; two agents with one name are
+refused rather than merged.
+
+A persona is a document rather than a string because a character worth describing takes more
+than a line, and Markdown is what an editor can hold. Three things it is not:
+
+- **Not a place for environment.** The sandbox root, the forbidden commands and how the tools
+  are to be used are injected every turn from the configuration, and a persona that restates
+  them will eventually contradict them.
+- **Not trimmed.** Nothing measures it against `context_window`; a persona long enough to crowd
+  out the conversation will, and the conversation loses.
+- **Not the agent's only voice.** It is the `system` message's first half, beside the injected
+  environment — what it says is who the agent is, not where it is.
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in
