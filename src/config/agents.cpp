@@ -118,7 +118,6 @@ std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
 AgentEntry ParseAgentEntry(const json::value& j) {
   AgentEntry entry;
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
-  if (entry.name.empty()) throw pu::GenericError("Missing agent name");
   entry.description = json::ValueOrDefault<std::string>(j, "description", "");
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::GenericError("Missing backend field");
@@ -133,6 +132,32 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
   entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");
+
+  if (json::HasKey(j, "delegates")) {
+    const json::value& list = j.at("delegates");
+    if (!list.is_array()) throw pu::GenericError("delegates must be an array of agent names");
+    for (const auto& item : list.as_array()) {
+      if (!item.is_string()) throw pu::GenericError("delegates must be an array of agent names");
+      entry.delegates.push_back(boost::json::value_to<std::string>(item));
+    }
+  }
+
+  if (json::HasKey(j, "tools")) {
+    const json::value& list = j.at("tools");
+    if (!list.is_array()) throw pu::GenericError("tools must be an array of tool names");
+    for (const auto& item : list.as_array()) {
+      if (!item.is_string()) throw pu::GenericError("tools must be an array of tool names");
+      const std::string name = boost::json::value_to<std::string>(item);
+      const auto& known = BuiltinToolNames();
+      if (std::find(known.begin(), known.end(), name) == known.end()) {
+        std::string listed;
+        for (const std::string& tool : known) listed += (listed.empty() ? "" : ", ") + tool;
+        throw pu::GenericError("tools names '" + name + "', which is not a builtin tool (" +
+                               listed + ")");
+      }
+      entry.tools.push_back(name);
+    }
+  }
 
   return entry;
 }
@@ -318,19 +343,68 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
   return options;
 }
 
+json::value ReadJsonFile(const std::filesystem::path& path) {
+  std::ifstream file(path);
+  if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + path.string());
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  try {
+    return json::parse(buffer.str());
+  } catch (const boost::system::system_error&) {
+    throw pu::GenericError("Failed to parse configuration JSON: " + path.string());
+  }
+}
+
+// An agent whose table names a file reads it, and the file's text becomes the entry's system
+// prompt. Naming both is refused rather than ordered: which one wins is a rule a reader would
+// have to know, and there is no reason for a file to say the same thing twice.
+void ApplyPersona(AgentEntry& entry, const json::value& table,
+                  const std::filesystem::path& table_dir) {
+  const bool names_file = json::HasKey(table, "persona");
+  const bool inline_prompt = json::HasKey(table, "backend") &&
+                             json::HasKey(table.at("backend"), "system_prompt");
+  if (!names_file) return;
+  if (!table.at("persona").is_string() || table.at("persona").get_string().empty()) {
+    throw pu::GenericError("persona must be a path, in the table of " + entry.name);
+  }
+  if (inline_prompt) {
+    throw pu::GenericError("the table of " + entry.name +
+                           " names both persona and backend.system_prompt; keep one");
+  }
+
+  const std::filesystem::path declared(boost::json::value_to<std::string>(table.at("persona")));
+  const std::filesystem::path path = declared.is_absolute() ? declared : table_dir / declared;
+
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    throw pu::GenericError("persona file not found for " + entry.name + ": " + path.string());
+  }
+  std::ostringstream text;
+  text << file.rdbuf();
+  std::string prompt = text.str();
+  // The reader wrote a document, not a prompt: the trailing newline of the last line is the
+  // file's own shape and not something the model should be handed as part of what it was told.
+  while (!prompt.empty() && (prompt.back() == '\n' || prompt.back() == '\r')) prompt.pop_back();
+  if (prompt.empty()) {
+    throw pu::GenericError("persona file for " + entry.name + " is empty: " + path.string());
+  }
+  entry.backend.system_prompt = ExpandEnvVars(prompt);
+}
+
+std::filesystem::path AgentTableDir(const std::filesystem::path& config_path) {
+  return config_path.parent_path() / "agents";
+}
+
+const std::vector<std::string>& BuiltinToolNames() {
+  // The names `RegisterBuiltinTools` registers. A tool added there and not here is one a
+  // `tools` list cannot name, which is the direction that fails loudly rather than silently.
+  static const std::vector<std::string> names{"bash", "write_file", "ask_dir"};
+  return names;
+}
+
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
-  std::ifstream file(config_path);
-  if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + config_path);
-
-  json::value j;
-  try {
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    j = json::parse(buffer.str());
-  } catch (const boost::system::system_error&) {
-    throw pu::GenericError("Failed to parse configuration JSON");
-  }
+  const json::value j = ReadJsonFile(config_path);
 
   if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
     throw pu::GenericError("Missing default_agent field");
@@ -338,13 +412,58 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
 
   if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
     throw pu::GenericError("Missing agents array");
-  for (const auto& item : j.at("agents").as_array()) result.agents.push_back(ParseAgentEntry(item));
+  for (const auto& item : j.at("agents").as_array()) {
+    AgentEntry entry = ParseAgentEntry(item);
+    if (entry.name.empty()) throw pu::GenericError("Missing agent name");
+    result.agents.push_back(std::move(entry));
+  }
+
+  // One directory per agent, beside the table that names them. The directory name is the
+  // agent's name, so `ls .pu/agents/` is the list, and a table that disagrees with the name it
+  // was filed under is refused rather than silently renamed.
+  const std::filesystem::path agents_dir = AgentTableDir(config_path);
+  std::error_code ec;
+  if (std::filesystem::is_directory(agents_dir, ec)) {
+    std::vector<std::filesystem::path> tables;
+    for (const auto& item : std::filesystem::directory_iterator(agents_dir, ec)) {
+      if (!item.is_directory()) continue;
+      const std::filesystem::path table = item.path() / "agents.json";
+      if (std::filesystem::exists(table)) tables.push_back(table);
+    }
+    std::sort(tables.begin(), tables.end());
+
+    for (const std::filesystem::path& table : tables) {
+      const json::value dir_json = ReadJsonFile(table);
+      AgentEntry entry = ParseAgentEntry(dir_json);
+      const std::string from_dir = table.parent_path().filename().string();
+      if (json::HasKey(dir_json, "name") && entry.name != from_dir) {
+        throw pu::GenericError("the table in agents/" + from_dir + " names itself '" +
+                               entry.name + "'; a directory is named after its agent");
+      }
+      entry.name = from_dir;
+      const auto clash = std::find_if(result.agents.begin(), result.agents.end(),
+                                      [&](const AgentEntry& known) { return known.name == entry.name; });
+      if (clash != result.agents.end()) {
+        throw pu::GenericError("two agents are named '" + entry.name + "': one inline in " +
+                               config_path + ", one in " + table.string());
+      }
+      entry.source_dir = table.parent_path();
+      ApplyPersona(entry, dir_json, table.parent_path());
+      if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+      if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
+      result.agents.push_back(std::move(entry));
+    }
+  }
 
   const auto default_agent =
       std::find_if(result.agents.begin(), result.agents.end(),
                    [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
-  if (default_agent == result.agents.end())
-    throw pu::GenericError("default_agent does not match any configured agent");
+  if (default_agent == result.agents.end()) {
+    std::string known;
+    for (const AgentEntry& entry : result.agents) known += (known.empty() ? "" : ", ") + entry.name;
+    throw pu::GenericError("default_agent does not match any configured agent (have: " + known +
+                           ")");
+  }
   return result;
 }
 
