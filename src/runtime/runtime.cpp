@@ -13,9 +13,7 @@
 #include "pu/core/json.hpp"
 
 #include "pu/config/agents.hpp"
-#include "pu/config/peer.hpp"
 #include "pu/tools/ask_dir_tool.hpp"
-#include "pu/tools/peer_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
@@ -151,13 +149,6 @@ void Runtime::Initialize(const std::string& config_path) {
 
   executor_ = std::make_unique<Executor>();
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
-
-  peer_config_ = config::FindPeerConfig();
-  if (peer_config_.has_value()) {
-    spdlog::info("Peer '{}' knows {} peer(s)",
-                 peer_config_->self_name.empty() ? "<unnamed>" : peer_config_->self_name,
-                 peer_config_->peers.size());
-  }
 
   RebuildToolbox(*default_entry);
 
@@ -356,12 +347,10 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token,
-                                      const std::string& peer_origin) {
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
   try {
     BeginRequest();
-    executor_->SetPeerOrigin(peer_origin);
 
     auto session = DefaultSession();
 
@@ -407,9 +396,6 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
       ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
-  if (peer_config_.has_value() && !peer_config_->peers.empty()) {
-    toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
-  }
   // A turn that is itself a delegation does not get the tool: the depth it inherits is how
   // far from the user it already is, and past `kMaxDepth` the answer would cost more than
   // reading the directory would have.

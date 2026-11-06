@@ -68,9 +68,6 @@ struct ChatMessage {
   boost::json::value tool_calls;
   std::vector<ReasoningBlock> reasoning;
   std::string tool_call_id;
-  // The peer a user turn arrived from, drawn where the page would say "You". Never part of
-  // the request; see docs/ARCHITECTURE.md#peer-messaging.
-  std::string from_peer;
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();

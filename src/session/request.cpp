@@ -56,7 +56,6 @@ ChatMessage RenderMessage(const session::MessageNode& node, int position) {
   if (const auto* user = std::get_if<UserPayload>(&node.payload)) {
     msg.role = kUserRole;
     msg.content = user->content;
-    msg.from_peer = user->from_peer;
   } else if (const auto* assistant = std::get_if<AssistantPayload>(&node.payload)) {
     msg.role = kAssistantRole;
     msg.content = assistant->content;

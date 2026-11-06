@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(pu-cli VERSION 0.6.1 LANGUAGES CXX)
+project(pu-cli VERSION 0.7.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -64,7 +64,6 @@ add_library(pu_config STATIC
     src/config/agents.cpp
     src/config/backend.cpp
     src/config/gateway.cpp
-    src/config/peer.cpp
     src/config/serve_registry.cpp
     src/llm/model_check.cpp
     src/llm/model_listing.cpp
@@ -98,8 +97,6 @@ add_library(pu_core STATIC
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
-    src/serve/board.cpp
-    src/serve/peer_read.cpp
     src/session/graph.cpp
     src/session/request.cpp
     src/session/session.cpp
@@ -107,7 +104,6 @@ add_library(pu_core STATIC
     src/session/usage.cpp
     src/tools/bash.cpp
     src/tools/ask_dir_tool.cpp
-    src/tools/peer_tool.cpp
     src/tools/policy.cpp
     src/tools/toolbox.cpp
     src/tools/write_file.cpp

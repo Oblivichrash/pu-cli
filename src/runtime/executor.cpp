@@ -150,11 +150,6 @@ std::string Executor::BuildStaticSystemContext() const {
          "what you have not stored.\n";
   oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
 
-  if (context_digest) {
-    const std::string digest = context_digest();
-    if (!digest.empty()) oss << digest;
-  }
-
   return oss.str();
 }
 
@@ -190,12 +185,9 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   ToolCallbacks tool_callbacks,
                                   TokenCallback reasoning_callback,
                                   CancelToken command_stop_token) {
-  // The turn keeps who asked. It is the one place the origin is known before the user message
-  // is written, and the page reads it back rather than inferring it from the text.
   ChatMessage user_turn;
   user_turn.role = session::kUserRole;
   user_turn.content = input;
-  user_turn.from_peer = peer_origin_;
   conversation.Append(user_turn);
 
 
@@ -227,11 +219,6 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
-
-  // Read here and cleared: a turn from a peer reaches the tool set once, and a later turn in
-  // the same session is the user's own.
-  tool_ctx.peer_origin = peer_origin_;
-  peer_origin_.clear();
 
   return tool_ctx;
 }

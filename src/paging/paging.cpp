@@ -48,7 +48,7 @@ boost::json::value CursorOrNull(const std::optional<Cursor>& cursor) {
 }
 
 // The mark of one pager, four hex digits. An id is read back by someone who did not write it —
-// a resumed transcript, a peer's answer — and a bare `o1` would then name whatever this process
+// a resumed transcript, another process's answer — and a bare `o1` would then name whatever this
 // stored first rather than the run the cursor meant. With the mark, a cursor from elsewhere
 // finds nothing, which is an answer the tool can defend; without it, it finds a stranger's
 // output and cannot tell.
