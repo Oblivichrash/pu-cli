@@ -455,6 +455,32 @@ TEST_CASE("An MCP path in an agent's own table names something beside that table
   CHECK(servers[1].command == "/usr/bin/other");
 }
 
+
+TEST_CASE("An agent that delegates without ask_dir is a warning, not a refusal",
+          "[agent_config][delegates]") {
+  // The table is legal: `delegates` names who it may ask, `tools` names what it has, and the
+  // pair is what a reader has to hold together to see that the delegation is unreachable.
+  // `pu check` says so; loading does not refuse it, because a table that names a relation it
+  // has no tool for is a mistake to point out rather than one to stop for.
+  TempAgentWorkspace ws;
+  ws.WriteTable(kInlineOnly);
+  ws.WriteAgent("orchestrator", R"({
+    "delegates": ["reader"],
+    "tools": ["bash"],
+    "backend": { "gateway": "ollama", "model": "m" }
+  })");
+  ws.WriteAgent("reader", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
+  const auto orchestrator = std::find_if(cfg.agents.begin(), cfg.agents.end(),
+                                         [](const config::AgentEntry& entry) {
+                                           return entry.name == "orchestrator";
+                                         });
+  REQUIRE(orchestrator != cfg.agents.end());
+  CHECK(orchestrator->delegates == std::vector<std::string>{"reader"});
+  CHECK(orchestrator->tools == std::vector<std::string>{"bash"});
+}
+
 TEST_CASE("default_agent may name an agent that lives in its own directory",
           "[agent_config][delegates]") {
   TempAgentWorkspace ws;
