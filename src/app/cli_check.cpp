@@ -194,6 +194,17 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
       out << entry.delegates[i];
     }
     out << "\n";
+    // A delegation is reached through `ask_dir`, and one whose `tools` list leaves that out
+    // names a relationship nothing can use. Not an error — the table is legal — but the one
+    // thing a reader would not see from either field alone.
+    const bool has_ask_dir =
+        entry.tools.empty() ||
+        std::find(entry.tools.begin(), entry.tools.end(), "ask_dir") != entry.tools.end();
+    if (!has_ask_dir) {
+      warnings.push_back(entry.name +
+                         " delegates to another agent but its tools leave out ask_dir, so the "
+                         "delegation cannot be used");
+    }
   }
   if (!entry.source_dir.empty()) out << "  table        " << entry.source_dir.string() << "\n";
 

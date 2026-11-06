@@ -65,6 +65,7 @@ the copy it was installed with.
 | --- | --- |
 | `pu ask [--agent NAME] "..."` | One turn with no memory: the prompt is the whole of what it knows |
 | `pu chat [--agent NAME]` | A conversation that is kept, with `/commands` |
+| `pu delegate --agent NAME "..."` | One question put to another agent, answered in a turn of its own |
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--gateway GW] [--model M] [--detail ids\|caps] [--entry ID] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` *(developer tool, not in `pu --help`)* | A gateway's raw stream, kept, and the field names it actually sent |
@@ -76,6 +77,11 @@ Every command takes `-C DIR`, spelled and meant the same way as `git -C`: run as
 in that directory. A `.pu/` directory is a whole world — its own agents table, its own
 session, its own sandbox — so `-C` is how one directory asks another without either learning
 about the other.
+
+`pu delegate` is the same path a model takes when it hands a turn to another agent with
+`ask_dir`: the question is the whole of what that turn knows, and the answer comes back without
+the reading it took to reach one. A model may only hand a turn to an agent its own table lists
+in `delegates`; by hand you may name any of them, and `--show-usage` prints what the turn cost.
 
 The three commands that read a provider answer different questions. `pu models` asks what a
 gateway offers and names the model to pick; `pu probe` asks what the answer is shaped like and
