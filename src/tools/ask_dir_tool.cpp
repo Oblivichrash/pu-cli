@@ -144,6 +144,26 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
   const DelegationResult result = runtime.Delegate(request);
   if (!result.error.empty()) return MakeRefusal(result.error, true);
+
+  // What it cost is the asking turn's business: the child's provider billed its own runtime,
+  // and a receipt that said this call was free would be the one number nobody could check.
+  if (ctx.spent != nullptr) {
+    ctx.spent->prompt_tokens += result.usage.prompt_tokens;
+    ctx.spent->completion_tokens += result.usage.completion_tokens;
+    ctx.spent->cached_tokens += result.usage.cached_tokens;
+    ctx.spent->turns += result.usage.turns;
+    // A price adds only within one unit: two products' units are not comparable, and a total
+    // that mixed them would read as this call's price when it is only part of it.
+    if (result.usage.cost) {
+      if (!ctx.spent->cost) {
+        ctx.spent->cost = result.usage.cost;
+      } else if (ctx.spent->cost->unit == result.usage.cost->unit) {
+        ctx.spent->cost->amount += result.usage.cost->amount;
+      } else {
+        ctx.spent->cost.reset();
+      }
+    }
+  }
   return result.answer;
 }
 
