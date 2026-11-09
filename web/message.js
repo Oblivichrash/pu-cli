@@ -118,21 +118,22 @@ function createMessage(role, blocks, turn, text, usage) {
 
   if (blocks) renderBlocks(blocks, container);
 
-  // The footing closes the message: what it cost, on one line under the words. It is outside the
-  // bubble, so the marked-up text and the note about the turn are two surfaces rather than one:
-  // everything inside the frame is what was said, and everything under it is a fact about the
-  // turn rather than something to do with it.
+  // The cost of the turn closes the message from inside the bubble: it is the last line of what
+  // was said, in the paper's own side inset, and nothing sits under the frame. A line outside
+  // the frame had to be told apart from the message by its distance and its missing tint, and
+  // the eye read a reply as two things -- an answer and a footnote about it -- when it is one
+  // turn that happened to cost something.
   // Who spoke is not written here. The two backgrounds already tell the two sides apart, and a
   // name saying what a colour has said four times down the page is a caption on a caption.
-  // A message the reader cannot act on still gets no footing at all: a system remark is the page
-  // talking, and an error is already something to be read.
+  // A message with nothing to report gets no line at all: a system remark is the page talking,
+  // and an error is already something to be read.
   // What a reader *may* do with the message is not here: copying and editing are asked for with
-  // the right button, so a reply at rest is its words and nothing else.
+  // the right button, so a reply at rest is its words and what they cost.
   if (role === "assistant" && usage) {
     const foot = document.createElement("div");
     foot.className = "msg-foot";
     foot.appendChild(usageLineNode(usage));
-    el.appendChild(foot);
+    bubble.appendChild(foot);
   }
 
   // A turn of yours carries the turn number and the words it was drawn from, because what may be
@@ -144,9 +145,9 @@ function createMessage(role, blocks, turn, text, usage) {
   }
 
   // A menu behind the right button is a thing nobody is told about, and the only way to find one
-  // is to try. This is the telling. It goes on the bubble's top edge rather than in the footing,
-  // because a footing line would make every turn taller to carry a reminder: the note is
-  // positioned over the paper, so nothing moves when it appears and nothing moved to make room.
+  // is to try. This is the telling. It goes on the bubble's top edge rather than on a line of its
+  // own, because a line would make every turn taller to carry a reminder: the note is positioned
+  // over the paper, so nothing moves when it appears and nothing moved to make room.
   // It is text rather than a mark because the sentence is the point: a glyph would have to be
   // learned, which is the problem it is meant to solve.
   // Only messages the menu will open for get one. A system remark and an error have nothing to

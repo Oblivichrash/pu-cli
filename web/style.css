@@ -280,42 +280,28 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-/* The footing closes the message: what it cost, then what may be done with it. One line,
-   because none of it is the message and all of it is quiet. It sits outside the bubble and
-   takes a margin wide enough that the frame above it reads as a frame and this line as a note
-   under one, which is the whole reason for moving it out. It also takes the bubble's own
-   side inset, so the first character of the note lines up with the first character of the
-   text above rather than with the edge of the frame.
+/* The cost of the turn is the last line of the bubble: it sits inside the paper, at the same
+   left inset as the words, so it closes the message rather than trailing after it. On the page
+   it read as a footnote to the frame above it -- a note in a second surface about a first one --
+   and a reply is one turn, not an answer with an annotation.
    The gap is 4px rather than the 8px it started at: the line is 11px type in an 18px box, so
    half of what the eye reads as gap is the leading inside the line box, not the margin. Eight
-   plus that leading put the note far enough down to look detached from the frame it belongs to.
-   The line centres rather than sits on baselines. Baseline alignment is right for two runs of
-   type and wrong for a type run beside an icon: a button aligning by baseline puts the bottom
-   of its margin box there, and a 20px button around a 16px mark therefore lands with the mark
-   riding about 4px above the words it sits beside. Centring the boxes brings them back level. */
+   plus that leading put the note far enough down to look detached from the text it belongs to.
+   It centres rather than sits on baselines. Baseline alignment is right for two runs of type and
+   wrong for a type run beside an icon; the line has no icons left, and centring keeps whatever
+   is added beside it later level without re-deciding the alignment. */
 .msg-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-  padding: 0 18px;
+  padding: 0;
+  white-space: nowrap;
 }
-/* Both ends of the footing sit at the left, on the bubble's own side inset, so the first thing
-   on the line shares a column with the first character of the text above it. Nothing is pushed
-   to the far edge: a cost at one end of a wide column left a gap of a hand's length between a
-   message and what it had cost. */
 .msg-foot .msg-usage {
   flex: none;
   min-width: 0;
   margin-top: 0;
-}
-/* What a reader may do with a message is asked for with the right button, so a message at rest
-   draws nothing: this footing is the cost of a turn and no more. A row of marks under every
-   turn on a page of twenty is twenty rows of furniture the eye reading the conversation has to
-   step over, and the bar that replaced them had to be dismissed before the next reply could be
-   read. `nowrap` keeps a long cost from folding onto a line of its own under a short reply. */
-.msg-foot {
-  white-space: nowrap;
 }
 
 /* The menu the right button opens. It floats over the message it names rather than pushing one
@@ -427,7 +413,7 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* The cost of a reply: a remark at the end of the footing, not part of the answer. */
+/* The cost of a reply: a remark at the end of the message, not part of the answer. */
 .msg-usage {
   font-size: 11px;
   color: var(--ink-light);

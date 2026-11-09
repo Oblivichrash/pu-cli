@@ -66,13 +66,18 @@ function attachUsageToOpenReply(payload) {
   const el = PU.currentAssistantEl;
   if (!el) return;
   el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
-  // The footing carries the cost and nothing else, so it is the whole place for it to go, and
-  // the two paths -- a turn drawn from the store and a turn still streaming -- now agree because
-  // there is nothing left to order the line against. A live turn has no footing at all until
-  // this line is the reason for one; the bar of controls lives inside the bubble, out of the way.
-  const foot = el.querySelector(".msg-foot");
+  // The cost is the last line inside the bubble, and a live turn has none until this frame makes
+  // one: the two paths -- a turn drawn from the store and a turn still streaming -- agree because
+  // there is only one place for it to go. A bubble that already has the line from the store keeps
+  // it where it is rather than growing a second one.
+  const foot = el.querySelector(".msg-bubble > .msg-foot");
   if (foot) foot.appendChild(usageLineNode(payload));
-  else el.appendChild(usageLineNode(payload));
+  else {
+    const line = document.createElement("div");
+    line.className = "msg-foot";
+    line.appendChild(usageLineNode(payload));
+    (el.querySelector(".msg-bubble") || el).appendChild(line);
+  }
 }
 
 // Draws one turn's usage in the panel and the bar, and the conversation's total under it. The
