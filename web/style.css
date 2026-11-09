@@ -274,7 +274,51 @@ main {
      reader while the eye gets the target where it can be hit. */
   order: -1;
 }
-.msg-foot.busy .msg-actions { visibility: hidden; }
+/* The controls are the message's answer to a reader who has arrived at it, not something to read
+   while passing: on a page of twenty turns a row of marks under every one of them is twenty rows
+   of furniture, and the eye that is reading the conversation has to step over each. So they wait
+   until the message is pointed at.
+   They are faded rather than removed. `visibility: hidden` would take the buttons out of the tab
+   order, so a keyboard reader would tab past a control that does not exist for them while the
+   pointer reader is offered it — and `:focus-within` below could never fire, since a box that is
+   hidden cannot be focused in the first place. At zero opacity the row is still a target and
+   still reachable; what it is not is visible, which is the whole of what was wanted.
+   `opacity` rather than `display` because the footing holds a column: removing the box would move
+   the cost up under the words and back down again on every hover, which is a flicker in place of
+   a hint.
+   The bubble is the target, not the message: the message is a container that draws nothing, and
+   its own box is a column the width of the column, so hovering well to the side of a short
+   remark would offer to copy it. `:focus-within` is the second way in. */
+.msg-foot .msg-actions {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.msg:hover .msg-foot .msg-actions,
+.msg:focus-within .msg-foot .msg-actions {
+  opacity: 1;
+}
+/* A press that has just been confirmed is not a hover: "Copied" is the page telling the reader
+   something happened, and a confirmation that vanished because the pointer had meanwhile moved is
+   a press with no answer. It stays while it says anything. */
+.msg-foot .msg-actions:has(.said) {
+  opacity: 1;
+}
+/* A touch screen has no pointer to arrive with, so the reveal above would be a control that
+   cannot be reached at all. There the row is simply always there, which is what it was before
+   this rule existed. */
+@media (hover: none) {
+  .msg-foot .msg-actions {
+    opacity: 1;
+  }
+}
+/* Editing steps aside for the same reason it always did, and it is written last so that it wins
+   over the reveal and the confirmation: Copy would take the text as it was before the field
+   opened, and Edit is the thing already happening. Nothing here is pressed while the field is
+   open, so the row is unreachable as well as invisible. */
+.msg-foot.busy .msg-actions {
+  opacity: 0;
+  pointer-events: none;
+}
 .msg-actions {
   display: flex;
   gap: 8px;

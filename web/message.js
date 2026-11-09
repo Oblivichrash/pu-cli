@@ -158,6 +158,8 @@ function copyFallback(text) {
 // The controls a message carries: copy on both sides, and edit only where a turn can be taken
 // back. They close the footing under the bubble, at its left end where the text above starts,
 // so everything a reader may do with a message is in one place and one reach from the words.
+// The row is only drawn when the message is pointed at or focused into; the stylesheet owns
+// that, so nothing here decides when a reader has arrived.
 function messageActions(el, role, turn, blocks) {
   const actions = document.createElement("span");
   actions.className = "msg-actions";
