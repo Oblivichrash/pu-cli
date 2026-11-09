@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
     if (cmd == "check") {
       // Only `check`'s own job is left here: read agents.json and say what it resolves to.
       // The two listing questions moved back to `models`, whose listing they read.
-      return pu::cli::RunCheck(OptionOr(vm, "config", ""));
+      return pu::cli::RunCheck(OptionOr(vm, "config", ""), runtime.WorkspaceRoot());
     }
 
     if (cmd == "probe") {

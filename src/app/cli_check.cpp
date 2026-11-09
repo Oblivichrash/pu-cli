@@ -229,11 +229,25 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
 
 }  // namespace
 
-int RunCheck(const std::string& config_path) {
+int RunCheck(const std::string& config_path, const std::filesystem::path& workspace_in) {
+  const fs::path workspace = workspace_in.empty() ? fs::current_path() : workspace_in;
+
   std::string path = config_path;
-  if (path.empty()) path = config::FindConfigPath();
   if (path.empty()) {
-    std::cerr << "No agents.json found: looked in ./.pu/ and ~/.pu/.\n";
+    // The same order `Initialize` reads a run by, resolved against this directory rather than
+    // the process's: a table beside the directory `-C` named is the one the run would load.
+    const fs::path local = workspace / ".pu" / "agents.json";
+    std::error_code ec;
+    if (fs::exists(local, ec)) {
+      path = local.string();
+    } else if (const char* home = std::getenv("HOME"); home != nullptr) {
+      const fs::path user = fs::path(home) / ".pu" / "agents.json";
+      if (fs::exists(user, ec)) path = user.string();
+    }
+  }
+  if (path.empty()) {
+    std::cerr << "No agents.json found: looked in " << (workspace / ".pu").string()
+              << "/ and ~/.pu/.\n";
     return kUsage;
   }
 
@@ -248,7 +262,6 @@ int RunCheck(const std::string& config_path) {
     return kUsage;
   }
 
-  const fs::path workspace = fs::current_path();
   std::cout << "workspace  " << workspace.string() << "\n";
   std::cout << "default    " << cfg.default_agent << "\n\n";
 

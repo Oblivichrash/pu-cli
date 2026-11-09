@@ -9,6 +9,7 @@
 #include "pu/tools_cli/sse.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <optional>
@@ -96,7 +97,11 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
-int RunCheck(const std::string& config_path);
+// `workspace` is the directory the run is about — `-C` when one was given, the current
+// directory otherwise. It is passed rather than read here because a sandbox root is relative
+// to it and so is the search for an unset table, and a check that reported one directory
+// while the run used another would be the split `-C` exists to remove.
+int RunCheck(const std::string& config_path, const std::filesystem::path& workspace);
 
 // One turn taken by another agent, along the path a tool takes: the question is the whole of
 // what that turn knows, because the agent asked has no idea what this conversation has said.
