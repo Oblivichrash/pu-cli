@@ -281,9 +281,9 @@ main {
   color: var(--ink-light);
   font-family: inherit;
   /* Sixteen, not fourteen. These marks are a sheet and a pencil rather than letters, and at 14px
-     the pencil's fill and the sheet's second edge both came out a pixel wide and greyed into the
-     tint behind them. Two points more costs the footing a single pixel of height (18 to 19) and
-     is the difference between a mark a reader can name and a smudge they have to hover to
+     the pencil's stroke and the sheet's second edge both came out a pixel wide and greyed into
+     the tint behind them. Two points more costs the footing a single pixel of height (18 to 19)
+     and is the difference between a mark a reader can name and a smudge they have to hover to
      identify. */
   font-size: 16px;
   line-height: 1;

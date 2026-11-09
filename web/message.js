@@ -53,10 +53,15 @@ function usageLineNode(usage) {
 // drawn at 16px on a tinted background. The copy mark used to be U+2398, a dotted frame with an
 // arrow through it: four ideas in a box 16px wide is three too many, and at that size it read as
 // a smudge rather than as a sheet going somewhere. Two sheets offset from each other say "copy"
-// with nothing to spare, and the solid pencil keeps a fill where a hairline would vanish.
+// with nothing to spare.
+//
+// The pencil is U+270E rather than the heavier U+270F, because U+270F is drawn lying on its side,
+// point right, and a horizontal pencil does not read as "edit" -- it reads as a crayon at rest.
+// U+270E leans, point down-left, which is the angle a pencil is held at and the angle the word
+// means. It was rejected once for being a hairline at 14px; at 16px the stroke holds.
 const CONTROL_GLYPHS = {
   copy: "\u2750",      // ❐ -- a sheet laid over another, the one behind it showing at two edges
-  edit: "\u270F",      // ✏
+  edit: "\u270E",      // ✎ -- a pencil leaning on its point, not lying flat
 };
 
 // The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool
