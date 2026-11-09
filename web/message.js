@@ -55,23 +55,7 @@ function createMessage(role, blocks, turn, text, usage) {
   const label = document.createElement("span");
   label.className = "role";
   label.textContent = roleLabel(role);
-
-  if (role === "user" && typeof turn === "number" && turn > 0) {
-    const head = document.createElement("div");
-    head.className = "msg-head";
-    head.appendChild(label);
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "edit-btn";
-    editBtn.textContent = "edit";
-    editBtn.onclick = () => rewindToTurn(turn, text || "");
-    head.appendChild(editBtn);
-
-    el.appendChild(head);
-  } else {
-    el.appendChild(label);
-  }
+  el.appendChild(label);
 
   const container = document.createElement("div");
   container.className = "blocks-container";
@@ -79,6 +63,18 @@ function createMessage(role, blocks, turn, text, usage) {
 
   if (blocks) renderBlocks(blocks, container);
   if (role === "assistant" && usage) el.appendChild(usageLineNode(usage));
+
+  // A turn of yours is a thing you may have meant differently, so its text carries the
+  // affordance: the bubble stays where it is and the words become editable in place. It is a
+  // property of the sentence rather than a button beside it, which is why there is nothing to
+  // click when a turn cannot be taken back anyway.
+  if (role === "user" && typeof turn === "number" && turn > 0) {
+    el.classList.add("editable");
+    el.dataset.turn = String(turn);
+    el.dataset.text = text || "";
+    el.title = "Click to edit this message";
+    el.addEventListener("click", (event) => beginEdit(el, event));
+  }
 
   // Read the position before the append, because the append itself moves the content
   // the reader is measured against: appending grows the scroll height without firing a
