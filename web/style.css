@@ -273,33 +273,36 @@ main {
 .msg-action {
   background: transparent;
   border: none;
-  /* A glyph 16px tall is a 16px target, which is well under what a pointer can be relied on to
-     hit. The padding is the target and nothing else: the glyph itself stays the size it reads
-     at, and `line-height` keeps the extra room from changing the footing's height. */
+  /* The mark is a drawn path now, not a character: there is no font to inherit and no baseline
+     to sit on, so the button is a box the 16px icon is centred in. The padding is the target and
+     nothing else -- the mark keeps the size it reads at, and the negative margin takes the
+     padding back out of the footing's height. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 3px;
   margin: -2px -3px;
   color: var(--ink-light);
-  font-family: inherit;
-  /* Sixteen, not fourteen. These marks are a sheet and a pencil rather than letters, and at 14px
-     the pencil's stroke and the sheet's second edge both came out a pixel wide and greyed into
-     the tint behind them. Two points more costs the footing a single pixel of height (18 to 19)
-     and is the difference between a mark a reader can name and a smudge they have to hover to
-     identify. */
-  font-size: 16px;
   line-height: 1;
-  letter-spacing: 0;
   cursor: pointer;
   /* Quieter than the words, but not by much. These marks now sit inside the bubble rather than
      above it, where the tinted background of a turn of yours eats most of the contrast a faint
      stroke had: at 0.55 the copy mark on a user bubble read as a smudge on the paper. */
   opacity: 0.7;
 }
+.msg-action svg { display: block; }
 .msg-action:hover { color: var(--accent); opacity: 1; }
-/* A copy that has just happened says so in words: a glyph cannot tell a reader whether anything
-   was taken, and the confirmation is the only reason the button changes at all. The mark keeps
-   its own width so the two controls beside it do not shuffle when the word replaces it. */
-.msg-copy { min-width: 1em; text-align: center; }
-.msg-copy.said { min-width: 0; font-size: 11px; letter-spacing: 0.05em; }
+/* A copy that has just happened says so in words: a mark cannot tell a reader whether anything
+   was taken, and the confirmation is the only reason the button changes at all. The fixed width
+   is the icon's, so the control beside it does not shuffle when the word replaces the mark. */
+.msg-copy { min-width: 16px; }
+.msg-copy.said {
+  min-width: 0;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
 
 /* A turn of yours can be taken back, so the text is a second way in. The cursor becoming a text
    caret and the border warming to the accent are the hints that clicking does anything; the

@@ -46,23 +46,54 @@ function usageLineNode(usage) {
 // The mark a control wears. The page draws its other controls as bare glyphs in the same family
 // -- a caret for the servers, a block for the panel, a cross to dismiss -- so a message's two
 // controls are drawn rather than spelled, and the word they stand for stays as their accessible
-// name. The letter changed to "Copied" is the one place a word is still shown, because a copy
-// that says nothing looks exactly like a copy that failed.
+// name. The word a copy turns into, "Copied", is the one place a word is still shown, because a
+// copy that says nothing looks exactly like a copy that failed.
 //
-// Both marks are a single weight of stroke with no interior detail, which is what survives being
-// drawn at 16px on a tinted background. The copy mark used to be U+2398, a dotted frame with an
-// arrow through it: four ideas in a box 16px wide is three too many, and at that size it read as
-// a smudge rather than as a sheet going somewhere. Two sheets offset from each other say "copy"
+// These are drawn as paths rather than set as characters, because a character's shape is whatever
+// the resolved font decides it is. The body stack on this page is a CJK serif, and dingbats are
+// among the codepoints where the CJK and the Latin designs disagree: U+270E in the CJK face leans
+// with its tip one way and in a Latin face leans the other, so the same markup rendered as a
+// different mark depending on which fallback happened to answer. A path cannot drift that way.
+// It also settles the size: a dingbat carries the font's own side bearings and em placement, so
+// two of them set at 16px sit at slightly different heights in the same row.
+//
+// Both are a single weight of stroke with no interior detail, which is what survives being drawn
+// at 16px on a tinted background. The copy mark used to be U+2398, a dotted frame with an arrow
+// through it: four ideas in a box 16px wide is three too many, and at that size it read as a
+// smudge rather than as a sheet going somewhere. Two sheets offset from each other say "copy"
 // with nothing to spare.
 //
-// The pencil is U+270E rather than the heavier U+270F, because U+270F is drawn lying on its side,
-// point right, and a horizontal pencil does not read as "edit" -- it reads as a crayon at rest.
-// U+270E leans, point down-left, which is the angle a pencil is held at and the angle the word
-// means. It was rejected once for being a hairline at 14px; at 16px the stroke holds.
-const CONTROL_GLYPHS = {
-  copy: "\u2750",      // ❐ -- a sheet laid over another, the one behind it showing at two edges
-  edit: "\u270E",      // ✎ -- a pencil leaning on its point, not lying flat
+// The pencil points down-left, the angle it is held at and the angle the word means. The glyph it
+// replaced, U+270F, is drawn lying on its side and reads as a crayon at rest rather than as a tool
+// in use.
+const CONTROL_ICONS = {
+  // A sheet laid over another: the one behind is open on its two hidden edges, so the pair reads
+  // as two sheets rather than as one frame with a line in it.
+  copy: "M5.5 2.5h8v8M10.5 13.5h-8v-8h8Z",
+  // A pencil, tip down-left: the body runs in from the upper right and closes to a point, with a
+  // cut across the shaft marking where the wood ends and the graphite begins.
+  edit: "M12.9 1.9a1.5 1.5 0 0 1 2.1 2.1L6.2 12.8 1.8 14.2 3.2 9.8ZM2.9 13.1 5.1 10.9M10.9 3.9 13.1 6.1",
 };
+
+// The two shapes are drawn as one <svg> each so the button keeps a single child to swap in and
+// out, and so the stroke width and cap style are set in one place for both.
+function controlIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.75");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", CONTROL_ICONS[name]);
+  svg.appendChild(path);
+  return svg;
+}
 
 // The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool
 // call and a thought are drawn around the sentence rather than being part of it, so a copy
@@ -90,7 +121,8 @@ function copyMessage(text, button) {
     button.classList.add("said");
     clearTimeout(button.copyTimer);
     button.copyTimer = setTimeout(() => {
-      button.textContent = CONTROL_GLYPHS.copy;
+      button.textContent = "";
+      button.appendChild(controlIcon("copy"));
       button.classList.remove("said");
     }, 1400);
   };
@@ -131,7 +163,7 @@ function messageActions(el, role, turn, blocks) {
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "msg-action msg-copy";
-  copy.textContent = CONTROL_GLYPHS.copy;
+  copy.appendChild(controlIcon("copy"));
   copy.title = "Copy this message";
   copy.setAttribute("aria-label", "Copy this message");
   copy.addEventListener("click", (event) => {
@@ -144,7 +176,7 @@ function messageActions(el, role, turn, blocks) {
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "msg-action msg-edit";
-    edit.textContent = CONTROL_GLYPHS.edit;
+    edit.appendChild(controlIcon("edit"));
     edit.title = "Edit this message";
     edit.setAttribute("aria-label", "Edit this message");
     edit.addEventListener("click", (event) => {
