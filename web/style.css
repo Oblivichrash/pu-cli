@@ -275,6 +275,7 @@ main {
    next line, which is what puts a stray line above every step. */
 .block-thinking,
 .block-tool,
+.block-subtask,
 .block-text {
   display: block;
 }
@@ -288,8 +289,20 @@ main {
   border-radius: 0;
   background: none;
 }
+
+/* A subtask is a step of this turn that happened somewhere else, so it keeps the tool
+   call's log shape and doubles the rule: a double line reads as a boundary crossed rather
+   than as one more command. */
+.block-subtask {
+  margin: 2px 0;
+  border: none;
+  border-left: 4px double var(--accent);
+  border-radius: 0;
+  background: none;
+}
 .block-thinking .block-header,
-.block-tool .block-header {
+.block-tool .block-header,
+.block-subtask .block-header {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -301,7 +314,8 @@ main {
   user-select: none;
   gap: 6px;
 }
-.block-tool .block-header {
+.block-tool .block-header,
+.block-subtask .block-header {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
 }
 .block-tool .tool-name {
@@ -314,13 +328,44 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.block-tool .toggle-icon { margin-left: auto; }
+.block-subtask .subtask-label {
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+/* The directory is what makes a subtask worth reading at a glance: it says where the
+   conversation happened, which the question alone does not. */
+.block-subtask .subtask-dir {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 30%;
+}
+.block-subtask .subtask-dir:empty { display: none; }
+.block-subtask .subtask-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-subtask .subtask-status {
+  font-size: 11px;
+  color: var(--ink-light);
+  flex-shrink: 0;
+}
+.block-subtask .subtask-status:empty { display: none; }
+.block-subtask .toggle-icon { margin-left: auto; }
 .block-thinking .block-header:hover,
-.block-tool .block-header:hover {
+.block-tool .block-header:hover,
+.block-subtask .block-header:hover {
   background: rgba(0, 0, 0, 0.03);
 }
 .block-thinking .block-body,
-.block-tool .block-body {
+.block-tool .block-body,
+.block-subtask .block-body {
   padding: 8px 12px 12px 12px;
   font-size: 14px;
   white-space: pre-wrap;
@@ -358,6 +403,37 @@ main {
   overflow: auto;
 }
 .tool-error {
+  color: var(--error-text);
+  border-left: 3px solid var(--error-border);
+  padding-left: 10px;
+}
+
+/* The subtask body names the two things the call was made of, then the answer. The
+   header says where and what was asked in one line each, so these repeat them in full
+   rather than truncating. */
+.subtask-dir-row,
+.subtask-prompt-row,
+.subtask-answer { margin: 4px 0; }
+.subtask-dir-row .subtask-key,
+.subtask-prompt-row .subtask-key {
+  font-size: 11px;
+  color: var(--ink-light);
+}
+.subtask-dir-row pre,
+.subtask-prompt-row pre,
+.subtask-answer pre {
+  margin: 4px 0 0 0;
+  padding: 6px 10px;
+  background: var(--paper);
+  border-radius: 2px;
+  font-size: 13px;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow: auto;
+}
+.subtask-error {
   color: var(--error-text);
   border-left: 3px solid var(--error-border);
   padding-left: 10px;
@@ -814,5 +890,6 @@ main {
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
+  .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
   .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }

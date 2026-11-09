@@ -7,6 +7,7 @@
 const BLOCK_NODES = {
   [BLOCK_TYPES.THINKING]: ThinkingBlock,
   [BLOCK_TYPES.TOOL_CALL]: ToolBlock,
+  [BLOCK_TYPES.SUBTASK]: SubtaskBlock,
   [BLOCK_TYPES.TEXT]: TextBlock,
 };
 

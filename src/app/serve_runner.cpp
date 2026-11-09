@@ -184,7 +184,7 @@ void SessionRunner::WorkerMain() {
   }
 }
 
-void SessionRunner::ReportFailedTurn(const Job& job, const std::string& reason) {
+void SessionRunner::ReportFailedTurn(const Job& /*job*/, const std::string& reason) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
