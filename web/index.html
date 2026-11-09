@@ -107,8 +107,11 @@
     </span>
     <span class="status-item" id="status-agent" title="The agent that answers">—</span>
     <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
+    <!-- The gateway and the model are not here. They are a fact about the configuration, and
+         they do not change from one turn to the next, so the bar spent a third of its width
+         repeating what the Backend panel already holds. What is left is what moves: the tools
+         the agent can reach and the context the last reply ran against. -->
     <span class="status-right">
-      <span class="status-item" id="status-backend" title="The gateway and model">—</span>
       <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
       <span class="status-item" id="status-context" title="Context the last reply ran against">—</span>
     </span>

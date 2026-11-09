@@ -42,18 +42,6 @@ function renderStatusBar() {
   const thinking = settingValue("thinking");
   setText("status-thinking", thinking === null ? "—" : String(thinking));
 
-  const gateway = PU.gatewayShown;
-  const model = PU.backendModelShown;
-  setText("status-backend", gateway && model ? `${gateway} · ${model}` : (gateway || model));
-  // The host is a fact about the configuration rather than about this turn, and it is long
-  // enough to crowd the bar, so it rides where the rest of the address already does.
-  const backendEl = document.getElementById("status-backend");
-  if (backendEl) {
-    backendEl.title = PU.backendHostShown
-      ? `${gateway || "—"} · ${model || "—"}\n${PU.backendHostShown}`
-      : "The gateway and model";
-  }
-
   setText("status-context", PU.contextShown || "—");
 }
 

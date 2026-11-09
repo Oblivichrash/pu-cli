@@ -30,7 +30,9 @@ function usageLine(usage) {
   if (Number.isFinite(Number(usage.rounds)) && Number(usage.rounds) > 1) {
     parts.push(`${Number(usage.rounds)} calls`);
   }
-  if (usage.model) parts.push(usage.model);
+  // No model name here. A turn's cost says what this reply spent; which model spent it is a fact
+  // about the session, held in the Backend panel, and appending it made the one line that is
+  // meant to be skimmed into the longest line in the footing.
   return parts.join("  ·  ");
 }
 

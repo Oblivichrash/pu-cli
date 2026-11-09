@@ -747,13 +747,13 @@ main {
 /* A bound is what makes the ellipsis above mean anything: without one the item grows to its
    content and pushes its neighbours out of the bar instead. */
 #status-agent { max-width: 220px; }
-#status-backend { max-width: 300px; }
 #status-tools { max-width: 120px; }
 /* The panel has a bar for this; the status bar has room for the number and its colour. */
 #status-context.warn { color: var(--warn); }
 #status-context.high { color: var(--accent); }
-/* The right-hand group is the gateway and the count: the two a reader checks rather than
-   acts on, so they sit at the far edge the way a status bar's are. */
+/* The right-hand group is the count and the tool tally: what moves, kept at the far edge where
+   a status bar's readings sit. The gateway and its model lived here too and were removed, because
+   they name a configuration rather than a state, and the Backend panel already holds them. */
 .status-right {
   margin-left: auto;
   display: flex;
