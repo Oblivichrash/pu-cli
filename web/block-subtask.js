@@ -13,23 +13,27 @@ function subtaskOneLine(text) {
   return flat.length > SUBTASK_PROMPT_MAX ? flat.slice(0, SUBTASK_PROMPT_MAX) + "…" : flat;
 }
 
-// The `ask_dir` arguments, named the way the tool names them. The tool is aimed one of two
-// ways — a name picks an agent already in this table, a directory picks a world of its own —
-// and `prompt` is required under both, so the question is never the thing that is missing.
+// The `ask_dir` arguments, named the way the tool names them. One field names who answers —
+// an agent in this table, or a directory that is a world of its own — and `prompt` is the
+// whole question, so the question is never the thing that is missing. A record written before
+// the two were one carries `agent` and `dir` instead, and is drawn the way it was meant.
 function subtaskFields(args) {
   // A call whose arguments could not be parsed arrives as its raw string, which is the only
   // thing there is to show.
-  if (typeof args === "string") return { agent: "", dir: "", prompt: args };
-  if (!args || typeof args !== "object") return { agent: "", dir: "", prompt: "" };
+  if (typeof args === "string") return { who: "", agent: "", dir: "", prompt: args };
+  if (!args || typeof args !== "object") {
+    return { who: "", agent: "", dir: "", prompt: "" };
+  }
   const agent = typeof args.agent === "string" ? args.agent : "";
   const dir = typeof args.dir === "string" ? args.dir : "";
+  const ask = typeof args.ask === "string" ? args.ask : "";
   let prompt = typeof args.prompt === "string" ? args.prompt : "";
   if (!prompt) {
     // Stored before `prompt` had that name: the longest string is the question, not a path.
     const strings = Object.values(args).filter((v) => typeof v === "string" && v);
     prompt = strings.sort((a, b) => b.length - a.length)[0] || "";
   }
-  return { agent, dir, prompt };
+  return { who: ask, agent, dir, prompt };
 }
 
 function labelledBlock(wrapperClass, label, text, preClass) {
@@ -70,11 +74,11 @@ class SubtaskBlock extends HTMLElement {
   sync(block) {
     this._block = block;
     this.dataset.subtaskId = block.id || "";
-    const { agent, dir, prompt } = subtaskFields(block.args);
+    const { who, agent, dir, prompt } = subtaskFields(block.args);
     // What the call was aimed at is the one fact that says which sub-agent ran, so it stays
     // in the header; the prompt is cut to a gist and read whole once the block is open.
-    this.dirEl.textContent = dir || agent;
-    this.dirEl.hidden = !dir && !agent;
+    this.dirEl.textContent = who || dir || agent;
+    this.dirEl.hidden = !who && !dir && !agent;
     const summary = subtaskOneLine(prompt);
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
@@ -96,12 +100,20 @@ class SubtaskBlock extends HTMLElement {
 
   #fillBody(block) {
     this.body.replaceChildren();
-    const { agent, dir, prompt } = subtaskFields(block.args);
-    if (agent || dir || prompt) {
+    const { who, agent, dir, prompt } = subtaskFields(block.args);
+    if (who || agent || dir || prompt) {
       const asked = document.createElement("div");
       asked.className = "subtask-asked";
-      if (agent) asked.appendChild(labelledBlock("subtask-agent-row", "Agent", agent, ""));
-      if (dir) asked.appendChild(labelledBlock("subtask-dir-row", "Directory", dir, ""));
+      if (who) {
+        // One field named who answers, so it is shown once rather than split into an agent
+        // line and a directory line that could disagree.
+        asked.appendChild(labelledBlock("subtask-dir-row", "Asked of", who, ""));
+      } else {
+        // A record written before the two were one: it named agent and directory separately,
+        // and each of its fields is still what it said.
+        if (agent) asked.appendChild(labelledBlock("subtask-agent-row", "Agent", agent, ""));
+        if (dir) asked.appendChild(labelledBlock("subtask-dir-row", "Directory", dir, ""));
+      }
       if (prompt) asked.appendChild(labelledBlock("subtask-prompt-row", "Asked", prompt, ""));
       this.body.appendChild(asked);
     }

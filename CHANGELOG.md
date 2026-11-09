@@ -8,6 +8,15 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **`ask_dir` names who answers in one field, `ask`.** It used to take `agent` and `dir`
+  separately, and every caller had to know which of the two a question wanted — a pair that
+  could also contradict each other, since a named agent was only checked against `delegates`
+  after the directory had already been resolved. One field removes the choice: a name the
+  agent may reach is an agent, and anything else is a directory. The narrower reading wins on
+  a name that is both, so a table that lists an agent and a directory under the same word
+  still asks the agent, which is what it wrote down. A stored call that used the old pair is
+  still drawn as it was.
+
 - **`pu ask` no longer remembers anything.** It used to read `.pu/session.json` before the turn
   and write it after, which made the same prompt mean two different things depending on what
   had been typed earlier in that directory — and made the command unusable as a way to ask a
@@ -41,7 +50,7 @@ the commit that made it, and its current behaviour is in the relevant document
 - **An agent can be a directory, and one agent can hand a turn to another.** A `.pu/agents/<name>/`
   holds that agent's own table and, optionally, a `persona.md` whose text becomes its system
   prompt — a document rather than a string, because a character worth describing takes more
-  than a line. `ask_dir` takes an `agent` as well as a directory, so the same question can be
+  than a line. `ask_dir` takes one `ask` field naming who answers, so the same question can be
   put to a cheap reader and to a careful reviewer without a directory for each; `delegates`
   names the agents an agent may reach and is the whole of what it may reach. `tools` narrows
   which builtins an agent has, and absent means every one, so a reviewer meant to be read-only

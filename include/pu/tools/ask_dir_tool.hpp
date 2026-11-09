@@ -19,7 +19,9 @@ namespace pu::tools {
 // handing a prompt to a model.
 //
 // Where that agent runs follows from what was named: a directory is a world of its own (its own
-// table, its own sandbox), while a named agent with no directory is another entry in this one.
+// table, its own sandbox), while a named agent is another entry in this one. Both are the same
+// question — who answers — so the call asks it once, and `allowed` decides which of the two a
+// name was.
 class AskDirTool : public pu::Tool {
  public:
   // `root` is where the asking agent's own `.pu` is, and is what a relative directory names.
