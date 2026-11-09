@@ -48,14 +48,113 @@ function usageLineNode(usage) {
   return line;
 }
 
+// The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool
+// call and a thought are drawn around the sentence rather than being part of it, so a copy
+// that carried them would paste as a transcript of the machinery instead of what was said.
+function messageText(blocks) {
+  const parts = [];
+  for (const block of blocks || []) {
+    if (block.type !== BLOCK_TYPES.TEXT) continue;
+    const text = String(block.content || "").trim();
+    if (text) parts.push(text);
+  }
+  return parts.join("\n\n");
+}
+
+// Copy is a reading action, so it is offered on both sides: a reply is the thing most often
+// taken somewhere else, and a question is what it gets quoted back to. The label is the page's
+// only confirmation, on the button that was pressed rather than in a strip elsewhere, because a
+// notice about a copy is about a copy and nothing else on the page changed.
+function copyMessage(text, button) {
+  if (!text) return;
+  const settle = (ok) => {
+    button.textContent = ok ? "Copied" : "Failed";
+    clearTimeout(button.copyTimer);
+    button.copyTimer = setTimeout(() => {
+      button.textContent = "Copy";
+    }, 1400);
+  };
+  // A page served over plain http has no clipboard API, so the older command is the fallback
+  // rather than a failure the reader cannot do anything about.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => settle(true), () => settle(copyFallback(text)));
+    return;
+  }
+  settle(copyFallback(text));
+}
+
+function copyFallback(text) {
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  }
+  field.remove();
+  return ok;
+}
+
+// The controls a message carries: copy on both sides, and edit only where a turn can be taken
+// back. They sit in the sender's row rather than floating over the text, so one place on the
+// page holds every action and none of them covers a word.
+function messageActions(el, role, turn, blocks) {
+  const actions = document.createElement("span");
+  actions.className = "msg-actions";
+
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "msg-action msg-copy";
+  copy.textContent = "Copy";
+  copy.title = "Copy this message";
+  copy.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyMessage(messageText(blocks), copy);
+  });
+  actions.appendChild(copy);
+
+  if (role === "user" && typeof turn === "number" && turn > 0) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "msg-action msg-edit";
+    edit.textContent = "Edit";
+    edit.title = "Edit this message";
+    edit.addEventListener("click", (event) => {
+      event.stopPropagation();
+      beginEdit(el, event, true);
+    });
+    actions.appendChild(edit);
+  }
+
+  return actions;
+}
+
 function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
 
+  // The sender's row holds the name and the controls, so the controls line up down the column
+  // and the rule under them reads as one continuous line per message.
+  const head = document.createElement("div");
+  head.className = "msg-head";
+
   const label = document.createElement("span");
   label.className = "role";
   label.textContent = roleLabel(role);
-  el.appendChild(label);
+  head.appendChild(label);
+
+  // A message the reader cannot act on still gets the row, but nothing in it: a system remark
+  // is the page talking, and an error is already something to be read rather than filed.
+  if (role === "user" || role === "assistant") {
+    head.appendChild(messageActions(el, role, turn, blocks));
+  }
+  el.appendChild(head);
 
   const container = document.createElement("div");
   container.className = "blocks-container";
@@ -64,10 +163,10 @@ function createMessage(role, blocks, turn, text, usage) {
   if (blocks) renderBlocks(blocks, container);
   if (role === "assistant" && usage) el.appendChild(usageLineNode(usage));
 
-  // A turn of yours is a thing you may have meant differently, so its text carries the
-  // affordance: the bubble stays where it is and the words become editable in place. It is a
-  // property of the sentence rather than a button beside it, which is why there is nothing to
-  // click when a turn cannot be taken back anyway.
+  // A turn of yours is a thing you may have meant differently, and its text carries the same
+  // affordance the Edit button offers: the bubble stays where it is and the words become
+  // editable in place. The row above is the named way to do it; the text is the way a reader
+  // reaches for without looking.
   if (role === "user" && typeof turn === "number" && turn > 0) {
     el.classList.add("editable");
     el.dataset.turn = String(turn);

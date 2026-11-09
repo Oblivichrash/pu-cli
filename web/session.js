@@ -250,10 +250,15 @@ async function loadAgents() {
 //
 // Only the turn being edited is touched. A step back before turn N drops everything from N on,
 // and those bubbles are dropped here too, so the page and the store agree without a re-read.
-function beginEdit(el, event) {
+//
+// `fromButton` is set by the Edit control, whose own click would otherwise be read as a click
+// on a button inside the bubble and ignored: that guard exists to keep a press on a link or a
+// fold from opening the field, and the control says plainly that it is the way in.
+function beginEdit(el, event, fromButton) {
   // Selecting text to copy it also clicks. A drag that leaves a selection is not a request to
   // edit, and neither is a click that landed on a fold or a link inside the bubble.
-  if (event && (event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking"))) {
+  if (!fromButton && event &&
+      event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking")) {
     return;
   }
   const selection = window.getSelection();
@@ -268,12 +273,15 @@ function beginEdit(el, event) {
   el.dataset.editing = "1";
   el.classList.add("editing");
   el.title = "";
-
   const container = el.querySelector(".blocks-container");
   const field = document.createElement("textarea");
   field.className = "edit-field";
   field.value = original;
   container.replaceChildren(field);
+  // The row above still names the message, but Copy would copy the text as it was before the
+  // field opened and Edit is the thing already happening, so both step aside while it is open.
+  const head = el.querySelector(".msg-head");
+  if (head) head.classList.add("busy");
 
   const actions = document.createElement("div");
   actions.className = "edit-actions";
@@ -296,6 +304,7 @@ function beginEdit(el, event) {
     el.classList.remove("editing");
     el.title = "Click to edit this message";
     actions.remove();
+    if (head) head.classList.remove("busy");
     const text = value === null ? (el.dataset.text || "") : value;
     renderBlocks([{ type: BLOCK_TYPES.TEXT, content: text }], container);
   };

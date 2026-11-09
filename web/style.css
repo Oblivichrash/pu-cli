@@ -219,22 +219,58 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-.msg .role {
-  display: block;
-  font-size: 11px;
-  color: var(--ink-light);
+/* The sender's row: the name at the left and the controls at the right, on one line so every
+   message carries its actions in the same place. The rule under it belongs to the row rather
+   than to the name, so it stays unbroken from edge to edge however long the name is. */
+.msg .msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   margin-bottom: 4px;
-  letter-spacing: 0.05em;
-  font-weight: 400;
-  text-transform: none;
   border-bottom: 1px dotted var(--border);
   padding-bottom: 2px;
 }
+.msg .role {
+  display: block;
+  flex: 1;
+  font-size: 11px;
+  color: var(--ink-light);
+  margin-bottom: 0;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+  text-transform: none;
+  border-bottom: none;
+  padding-bottom: 0;
+}
 
-/* A turn of yours can be taken back, so its text is the control: no button sits beside it,
-   and the rule under the sender is the only hint that clicking does anything. */
+/* Copy and Edit are quiet until the message is being read closely, which is when either is
+   wanted: at rest they are the sender's line and little more. */
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.msg-head.busy .msg-actions { visibility: hidden; }
+/* A remark from the page and an error have no sender line to speak of, so the row that would
+   hold one is not drawn for them. */
+.msg.system .msg-head, .msg.error .msg-head { display: none; }
+.msg-action {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--ink-light);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.msg-action:hover { color: var(--accent); opacity: 1; }
+
+/* A turn of yours can be taken back, so the text is a second way in: the rule under the sender
+   is the only hint that clicking does anything. */
 .msg.user.editable { cursor: text; }
-.msg.user.editable:hover .role { border-bottom-style: solid; border-bottom-color: var(--accent); }
+.msg.user.editable:hover .role { color: var(--accent); }
 .msg.user.editing { cursor: default; }
 
 /* The field is the bubble: it is sized to its own text and carries no frame of its own, so
