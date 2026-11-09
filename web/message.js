@@ -156,8 +156,8 @@ function copyFallback(text) {
 }
 
 // The controls a message carries: copy on both sides, and edit only where a turn can be taken
-// back. They close the footing under the bubble, pushed to its far edge, so everything a reader
-// may do with a message is in one place and the name and the cost are left to read as a remark.
+// back. They close the footing under the bubble, after the cost, so everything a reader may do
+// with a message is in one place and the line starts where the text above it starts.
 function messageActions(el, role, turn, blocks) {
   const actions = document.createElement("span");
   actions.className = "msg-actions";
@@ -220,10 +220,12 @@ function createMessage(role, blocks, turn, text, usage) {
     const foot = document.createElement("div");
     foot.className = "msg-foot";
 
+    // The cost goes first and the controls follow, both at the left end of the line. The order is
+    // the reading order -- what the turn spent, then what may be done with it -- and it is the one
+    // `attachUsageToOpenReply` keeps for a live turn, so a streamed reply and a replayed one are
+    // laid out the same way.
     if (role === "assistant" && usage) foot.appendChild(usageLineNode(usage));
 
-    // The controls go last and are pushed to the far edge, so the cost reads as one remark at
-    // the left and the things that can be pressed sit where a hand already is.
     foot.appendChild(messageActions(el, role, turn, blocks));
     el.appendChild(foot);
   }

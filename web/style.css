@@ -251,18 +251,19 @@ main {
   margin-top: 4px;
   padding: 0 18px;
 }
-/* The cost sits at the left end of the line and takes no room it does not need, so a message
-   that reports a cost and a message that does not are laid out the same way. */
+/* The cost leads the line and the controls follow it, both at the left end. The footing shares
+   the bubble's own side inset, so the first character of the note sits on the same line as the
+   first character of the text above it: the note reads as the tail of the message rather than as
+   a remark pinned to the far edge of the page. Pushing the controls right instead pulled the
+   pair apart across whatever width the column had -- a gap of a hand's length in a wide window,
+   which separated the cost from the answer it described. */
 .msg-foot .msg-usage {
   flex: none;
   min-width: 0;
   margin-top: 0;
 }
 .msg-foot .msg-actions {
-  /* Pushed away from the cost at the left, so the line has two ends and the gap between them
-     is whatever space the message did not need. A turn of yours has nothing at the left, so the
-     controls stand alone at the right, in the same place on every message. */
-  margin-left: auto;
+  flex: none;
 }
 .msg-foot.busy .msg-actions { visibility: hidden; }
 .msg-actions {
