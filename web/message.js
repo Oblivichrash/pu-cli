@@ -39,10 +39,10 @@ function usageLine(usage) {
   return parts.join("  ·  ");
 }
 
-// What a turn cost, as one quiet line under the reply. It is short enough to read in full,
-  // so there is nothing to fold away.
+// What a turn cost, as one quiet line. It is short enough to read in full, so there is nothing
+// to fold away.
 function usageLineNode(usage) {
-  const line = document.createElement("div");
+  const line = document.createElement("span");
   line.className = "msg-usage";
   line.textContent = usageLine(usage);
   return line;
@@ -116,8 +116,8 @@ function copyFallback(text) {
 }
 
 // The controls a message carries: copy on both sides, and edit only where a turn can be taken
-// back. They sit in the sender's row rather than floating over the text, so one place on the
-// page holds every action and none of them covers a word.
+// back. They close the footing under the bubble, pushed to its far edge, so everything a reader
+// may do with a message is in one place and the name and the cost are left to read as a remark.
 function messageActions(el, role, turn, blocks) {
   const actions = document.createElement("span");
   actions.className = "msg-actions";
@@ -155,29 +155,34 @@ function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
 
-  // The sender's row holds the name and the controls, so the controls line up down the column
-  // and the rule under them reads as one continuous line per message.
-  const head = document.createElement("div");
-  head.className = "msg-head";
-
-  const label = document.createElement("span");
-  label.className = "role";
-  label.textContent = roleLabel(role);
-  head.appendChild(label);
-
-  // A message the reader cannot act on still gets the row, but nothing in it: a system remark
-  // is the page talking, and an error is already something to be read rather than filed.
-  if (role === "user" || role === "assistant") {
-    head.appendChild(messageActions(el, role, turn, blocks));
-  }
-  el.appendChild(head);
-
   const container = document.createElement("div");
   container.className = "blocks-container";
   el.appendChild(container);
 
   if (blocks) renderBlocks(blocks, container);
-  if (role === "assistant" && usage) el.appendChild(usageLineNode(usage));
+
+  // The footing names the message and closes it: who spoke, what it cost, and what may be done
+  // with it, all on one line under the words. The bubble holds nothing but the words, so a
+  // message reads as what was said and the line under it as what the reader may do about it.
+  // Everything on that line is quiet, which is why it is one line: none of it is the message.
+  // A message the reader cannot act on still gets no footing at all: a system remark is the page
+  // talking, and an error is already something to be read.
+  if (role === "user" || role === "assistant") {
+    const foot = document.createElement("div");
+    foot.className = "msg-foot";
+
+    const label = document.createElement("span");
+    label.className = "role";
+    label.textContent = roleLabel(role);
+    foot.appendChild(label);
+
+    if (role === "assistant" && usage) foot.appendChild(usageLineNode(usage));
+
+    // The controls go last and are pushed to the far edge, so the name and the cost read as one
+    // remark at the left and the things that can be pressed sit where a hand already is.
+    foot.appendChild(messageActions(el, role, turn, blocks));
+    el.appendChild(foot);
+  }
 
   // A turn of yours is a thing you may have meant differently, and its text carries the same
   // affordance the Edit button offers: the bubble stays where it is and the words become

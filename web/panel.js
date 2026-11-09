@@ -78,7 +78,10 @@ function attachUsageToOpenReply(payload) {
   const el = PU.currentAssistantEl;
   if (!el) return;
   el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
-  el.appendChild(usageLineNode(payload));
+  // The cost joins the controls in the footing under the bubble, after them: what the reply
+  // cost is the quieter half of that line and sits where a line of text would run out.
+  const foot = el.querySelector(".msg-foot");
+  (foot || el).appendChild(usageLineNode(payload));
 }
 
 // Draws one turn's usage in the panel and the bar, and the conversation's total under it. The

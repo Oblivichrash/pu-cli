@@ -278,9 +278,10 @@ function beginEdit(el, event, fromButton) {
   field.className = "edit-field";
   field.value = original;
   container.replaceChildren(field);
-  // The row above still names the message, but Copy would copy the text as it was before the
-  // field opened and Edit is the thing already happening, so both step aside while it is open.
-  const head = el.querySelector(".msg-head");
+  // The footing under the bubble still names what may be done with the message, but Copy would
+  // copy the text as it was before the field opened and Edit is the thing already happening, so
+  // both step aside while it is open.
+  const head = el.querySelector(".msg-foot");
   if (head) head.classList.add("busy");
 
   const actions = document.createElement("div");

@@ -219,45 +219,55 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-/* The sender's row: the name at the left and the controls at the right, on one line so every
-   message carries its actions in the same place. The rule under it belongs to the row rather
-   than to the name, so it stays unbroken from edge to edge however long the name is. */
-.msg .msg-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
-  border-bottom: 1px dotted var(--border);
-  padding-bottom: 2px;
-}
+/* The sender's name is no longer part of the bubble: it closes the message, sitting on the line
+   under it where it belongs to the whole message rather than to the first word of it. */
 .msg .role {
   display: block;
-  flex: 1;
+  flex: none;
   font-size: 11px;
   color: var(--ink-light);
   margin-bottom: 0;
   letter-spacing: 0.05em;
   font-weight: 400;
   text-transform: none;
-  border-bottom: none;
-  padding-bottom: 0;
 }
 
-/* Copy and Edit are quiet until the message is being read closely, which is when either is
-   wanted: at rest they are the sender's line and little more. */
+/* The footing closes the message: the name, then what it cost, then what may be done with it.
+   One line, because none of it is the message and all of it is quiet. The name and cost run
+   together at the left; the controls take the far edge, where a hand already is. */
+.msg-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+}
+/* The cost follows the name directly rather than taking the room in between, so the two read as
+   one remark. `margin-right: auto` does the pushing instead, and only the controls feel it. */
+.msg-foot .msg-usage {
+  flex: none;
+  min-width: 0;
+  margin-top: 0;
+  margin-left: 2px;
+}
+.msg-foot .msg-actions {
+  /* Pushed away from the remark at the left, so the line has two ends and the gap between them
+     is whatever space the message did not need. */
+  margin-left: auto;
+}
+.msg-foot.busy .msg-actions { visibility: hidden; }
 .msg-actions {
   display: flex;
   gap: 8px;
   flex: none;
 }
-.msg-head.busy .msg-actions { visibility: hidden; }
-/* A remark from the page and an error have no sender line to speak of, so the row that would
-   hold one is not drawn for them. */
-.msg.system .msg-head, .msg.error .msg-head { display: none; }
 .msg-action {
   background: transparent;
   border: none;
-  padding: 0;
+  /* A glyph 14px tall is a 14px target, which is well under what a pointer can be relied on to
+     hit. The padding is the target and nothing else: the glyph itself stays the size it reads
+     at, and `line-height` keeps the extra room from changing the footing's height. */
+  padding: 2px 3px;
+  margin: -2px -3px;
   color: var(--ink-light);
   font-family: inherit;
   /* The glyphs are drawn smaller than a letter of the same size reads, so they take a step up
@@ -267,16 +277,21 @@ main {
   line-height: 1;
   letter-spacing: 0;
   cursor: pointer;
-  opacity: 0.55;
+  /* Quieter than the words, but not by much. These marks now sit inside the bubble rather than
+     above it, where the tinted background of a turn of yours eats most of the contrast a faint
+     stroke had: at 0.55 the copy mark on a user bubble read as a smudge on the paper. */
+  opacity: 0.7;
 }
 .msg-action:hover { color: var(--accent); opacity: 1; }
 /* A copy that has just happened says so in words: a glyph cannot tell a reader whether anything
-   was taken, and the confirmation is the only reason the button changes at all. */
+   was taken, and the confirmation is the only reason the button changes at all. The mark keeps
+   its own width so the two controls beside it do not shuffle when the word replaces it. */
 .msg-copy { min-width: 1em; text-align: center; }
-.msg-copy.said { font-size: 11px; letter-spacing: 0.05em; }
+.msg-copy.said { min-width: 0; font-size: 11px; letter-spacing: 0.05em; }
 
-/* A turn of yours can be taken back, so the text is a second way in: the rule under the sender
-   is the only hint that clicking does anything. */
+/* A turn of yours can be taken back, so the text is a second way in: the name turning accent
+   on hover, and the cursor becoming a text caret, are the only hints that clicking does
+   anything. The Edit control under the bubble is the named way to do the same thing. */
 .msg.user.editable { cursor: text; }
 .msg.user.editable:hover .role { color: var(--accent); }
 .msg.user.editing { cursor: default; }
@@ -346,9 +361,8 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* The cost of a reply, folded: a line to open when the number matters, not part of the answer. */
+/* The cost of a reply: a remark at the end of the footing, not part of the answer. */
 .msg-usage {
-  margin-top: 4px;
   font-size: 11px;
   color: var(--ink-light);
   font-variant-numeric: tabular-nums;
