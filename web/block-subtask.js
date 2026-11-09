@@ -58,7 +58,7 @@ class SubtaskBlock extends HTMLElement {
 
     this.labelEl = document.createElement("span");
     this.labelEl.className = "subtask-label";
-    this.labelEl.textContent = "子任务";
+    this.labelEl.textContent = "Subtask";
     this.dirEl = document.createElement("span");
     this.dirEl.className = "subtask-dir";
     this.summaryEl = document.createElement("span");

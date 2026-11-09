@@ -23,7 +23,7 @@ function summarizeArgs(args) {
     if (typeof value === "string" && value) return value;
   }
   const count = Object.keys(args).length;
-  return count === 0 ? "" : count + " 参数";
+  return count === 0 ? "" : count + " args";
 }
 
 function oneLine(text) {
