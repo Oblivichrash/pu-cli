@@ -67,6 +67,20 @@ function tokenLine(prompt, cached) {
   return line;
 }
 
+// Puts the turn's cost beside the reply it paid for. A reload draws this line from the stored
+// turn through `createMessage`; a live turn never went through that path, so the same node is
+// added here, built by the same function, and the two cannot say different things.
+//
+// The bubble takes it only once: `usage` is sent once per turn, but a resync can replay it after
+// a reconnect has already redrawn the turn from the store.
+function attachUsageToOpenReply(payload) {
+  if (!Number.isFinite(Number(payload.prompt_tokens))) return;
+  const el = PU.currentAssistantEl;
+  if (!el) return;
+  el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
+  el.appendChild(usageLineNode(payload));
+}
+
 // Draws one turn's usage in the panel and the bar, and the conversation's total under it. The
 // socket sends both together because the turn that just ended is part of the total, so a frame
 // drawn without its total would answer a question the reader has already asked.
@@ -75,6 +89,10 @@ function showUsage(payload) {
   const fill = document.getElementById("context-fill");
   if (!el || !payload) return;
   if (payload.total) renderUsageTotal(payload.total);
+  // The frame arrives before the `done` that closes the bubble, so the reply on screen is still
+  // the live one. Without this the figure only appeared on reload, where the stored turn carries
+  // it into the replayed message -- a live turn read as if it had cost nothing.
+  attachUsageToOpenReply(payload);
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
   const cached = Number(payload.cached_tokens);
