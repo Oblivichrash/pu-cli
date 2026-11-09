@@ -442,6 +442,56 @@ a poll tick: output when there is any, the token when there is not. Windows keep
 path and honors a stop token only between reads of the merged stream, which is no worse than
 what the stream reader does with a cancel.
 
+### Delegation
+
+`ask_dir` is the one tool that runs a turn rather than a command, and the only place a
+`Runtime` is built by another `Runtime`. `Runtime::Delegate()` (`src/runtime/runtime.cpp`)
+constructs a second instance, sets its `workspace_root_` to the target directory, marks it
+`ephemeral_` and `delegated_`, initializes it, and calls `ProcessInput` — the same path the
+user's own turn takes, so a delegated turn has the same executor, the same tool loop and the
+same receipts. Nothing about the child is a special case of the loop; it is a second loop.
+
+**One hop, by construction.** The child's `delegated_` flag is what withholds the tool: at
+`RegisterBuiltinTools()` the `ask_dir` tool is registered `if (has("ask_dir") && !delegated_)`,
+so a delegated turn's toolbox has no way to delegate further. The rule is a fact about which
+toolbox was built rather than a counter that a call could get wrong.
+
+**The child owns its own rules.** A directory target must already carry `.pu/agents.json`;
+nothing creates one. That file — not the parent's — decides the child's sandbox, approval
+patterns, model and tool budget, which is why a parent cannot widen or narrow its child's
+reach, and why `Inside()` in the parent only ever guards the `ask` string itself.
+
+**Stop and deadline cross the boundary.** These are not tickets the asking turn can hold, so
+the `Delegation` struct carries them in two forms rather than one:
+
+| Field | What it is |
+| :---- | :--------- |
+| `cancel_token` | the asking turn's own token, handed down rather than copied — one button stops both turns |
+| `timeout` | a ceiling on the whole delegated turn; zero means the asking turn's own platform default |
+
+`AskDirTool` supplies the ceiling (`kDelegatedTurnBudget`, ten minutes, generous because a
+sub-agent reading a repository is doing the work it was asked for). A ceiling has no token to
+cancel, and a process going down has none either, so `Runtime::StopRequested()` folds all
+three — the turn's token, the deadline it was given, and `platform::ShutdownRequested()` —
+into one question, and `Executor::SetStopCheck()` is where the executor asks it. It is asked
+at two places, and both are needed: at the top of each round, before the model is called, and
+before each tool call in the round. One check alone buys a reply the user already stopped, or
+a tool call they will never read the result of. The round counter increments when a round
+opens, so a turn stopped before asking anything still reports the round it abandoned.
+
+**The token is injected per turn, not captured.** A `Toolbox` outlives a turn — `ProcessInput`
+reuses the one `Initialize()` built — but the cancel token belongs to the turn, and the serve
+loop makes a new one per request. So `ProcessInput` walks `Toolbox::Tools()` and hands the
+current token to `AskDirTool::SetCancelToken()` before the loop starts; a token captured in
+the constructor would be the previous turn's.
+
+**What comes back.** `DelegationResult` carries the child's answer, its error, its usage, and
+a `stopped` flag that separates a stop from a fault: a stopped child produces "was still
+answering when the turn was stopped, so its answer was dropped", and one that outlived its
+deadline produces a message naming the budget and suggesting a smaller question. Neither is
+`has_error` on the asking turn's behalf — they are a result the parent model can read and act
+on, which is what keeps a stop from being reported as a broken child.
+
 ### Stopping an MCP server
 
 A stdio server is a child process with three pipes, and stopping it is where a client most
@@ -822,6 +872,18 @@ that pulled the whole transport layer into any header naming a `Tool`.
 - **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and the executor ends the turn with neither a reply nor an error, so nothing is appended: the session holds the user message and no answer, and a follow-up "continue" restarts the answer rather than resuming it.
 - **The store is only persisted after a completed interaction and on shutdown.** A crash loses everything since the last save, and the store is held in memory in between.
 - **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`, two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does not get it.
+- **A delegated turn cannot be asked for approval, and cannot be sandboxed tighter than
+  its own file says.** The child `Runtime` never calls `EnableApprovalGate()`, so a tool
+  call its directory's `approval_patterns` cover comes back `kNobodyToAsk` even when a
+  user is sitting in front of the page: the approval channel belongs to the parent's
+  toolbox, not the child's. And the parent's sandbox does not reach into the child at all
+  — `Inside()` guards the `ask` string, not the work that follows it, so a directory you
+  delegate to is trusted as far as its own `agents.json` allows. Both are deliberate: a
+  child that inherited the parent's policy would turn that file into a suggestion instead
+  of the boundary.
+- **A stopped or overlong delegated turn is reported, not resumed.** Its answer is
+  dropped, and the asking model reads a note saying so; the work the child did is still in
+  the child's own turn, which the parent never sees.
 - **The serve registry names a server by its pid, not by a claim.** A server that is killed
   rather than stopped leaves its line behind, and a pid the operating system later hands to an
   unrelated process reads as a live server until that process exits, so the page can list a

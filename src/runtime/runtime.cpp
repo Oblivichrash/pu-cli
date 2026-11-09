@@ -17,6 +17,7 @@
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/bash.hpp"
 #include "pu/tools/write_file.hpp"
@@ -148,6 +149,11 @@ void Runtime::Initialize(const std::string& config_path) {
   command_router_ = std::make_unique<CommandRouter>(*this);
 
   executor_ = std::make_unique<Executor>();
+  // The executor is the only place a turn spends its time, so it is the place that has to hear
+  // about a deadline: the token it already receives covers a caller that cancels, and this covers
+  // the two stops that have no token. A runtime that is never delegated leaves both unset, and
+  // then the check answers `ShutdownRequested()` alone, which is what it answered before.
+  executor_->SetStopCheck([this] { return StopRequested(); });
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
   RebuildToolbox(*default_entry);
@@ -352,6 +358,15 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   try {
     BeginRequest();
 
+    // The tools were built before this turn existed, so the stop this turn was given has to be
+    // handed to them now: a page cancels a turn rather than a runtime, and a token captured at
+    // build time would be the previous turn's. Delegation is the one tool that outlives its own
+    // turn while it waits, which is why it is the one that needs the current token.
+    for (Tool* tool : toolbox_.Tools()) {
+      auto* asking = dynamic_cast<tools::AskDirTool*>(tool);
+      if (asking != nullptr) asking->SetCancelToken(cancel_token);
+    }
+
     auto session = DefaultSession();
 
     if (!input.empty() && input[0] == '/') {
@@ -414,12 +429,38 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     child.SetEphemeral();
     if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
     child.delegated_ = true;
+    // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
+    // waiting rather than in the one that has already handed the question over.
+    child.turn_cancel_ = request.cancel_token;
+    if (request.timeout.count() > 0) {
+      child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
+    }
     child.Initialize();
 
     bool is_command = false;
-    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command);
+    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command,
+                                                        request.cancel_token);
     if (const auto session = child.DefaultSession()) result.usage = session->Usage().Total();
     child.Shutdown();
+
+    // Read before the error branches: a stopped turn ends with no reply and no error, and the
+    // two refusals below would otherwise describe it as an empty answer.
+    result.stopped = request.cancel_token && request.cancel_token->load(std::memory_order_acquire);
+    if (result.stopped) {
+      result.error = "'" + target.string() +
+                     "' was still answering when the turn was stopped, so its answer was "
+                     "dropped. Ask again if the answer is still wanted";
+      return result;
+    }
+    if (child.turn_deadline_ != std::chrono::steady_clock::time_point{} &&
+        std::chrono::steady_clock::now() >= child.turn_deadline_) {
+      // Named as a ceiling rather than as a failure: the turn did nothing wrong, it ran out of
+      // the time it was given, and the number is what a caller changes.
+      result.error = "'" + target.string() + "' did not answer within " +
+                     std::to_string(request.timeout.count()) +
+                     "ms. Ask something smaller, or give it longer";
+      return result;
+    }
 
     if (answered.has_error) {
       result.error = answered.error_message.empty() ? answered.content : answered.error_message;
@@ -456,6 +497,19 @@ void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
 
+bool Runtime::StopRequested() const {
+  // A delegated turn's stop is three things folded into one question. The caller's token is the
+  // one a person pressed a button for; the deadline is the one nobody pressed anything for; and a
+  // shutting-down process is a stop that was never asked for and cannot be reported to anybody,
+  // so it is answered here rather than surfacing as a failed turn in a log nobody reads.
+  if (turn_cancel_ && turn_cancel_->load(std::memory_order_acquire)) return true;
+  if (turn_deadline_ != std::chrono::steady_clock::time_point{} &&
+      std::chrono::steady_clock::now() >= turn_deadline_) {
+    return true;
+  }
+  return platform::ShutdownRequested();
+}
+
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   // The budget is the store's, and the tool reads it from there: one owner for the page
   // size and the retention, applied before the tool that will obey it is built.
@@ -478,8 +532,11 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   // A runtime that is itself answering a delegated turn gets no way to ask one further: the
   // chain that could grow is the one a tool starts, and this is where it does not start.
   if (has("ask_dir") && !delegated_) {
+    // The turn's own stop is handed over per turn (see ProcessInput), since the toolbox outlives
+    // the turn that built it; a runtime with no turn in flight hands over nothing, and the
+    // delegate's deadline is what stops it then.
     toolbox_.RegisterTool(
-        std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates));
+        std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates, turn_cancel_));
   }
 }
 

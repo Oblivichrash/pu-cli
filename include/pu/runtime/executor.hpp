@@ -92,6 +92,13 @@ class Executor {
 
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
+  // How the executor learns it should stop, beyond the token its caller passed. A token covers a
+  // caller that can press a button; the runtime also holds a deadline and knows whether the
+  // process is shutting down, and those two have no token to hand over. Asked at the top of every
+  // round and before every tool call, so a deadline lands between them rather than after the
+  // whole turn.
+  void SetStopCheck(std::function<bool()> check) { stop_check_ = std::move(check); }
+
   void EnableApprovalGate() { approval_asks_ = true; }
   void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
     on_approval_ask = std::move(cb);
@@ -163,6 +170,8 @@ class Executor {
   int next_tool_call_id_ = 0;
 
   int tool_call_budget_ = kDefaultToolCallBudget;
+
+  std::function<bool()> stop_check_;
 
   ToolContext::Control control_;
   ToolContext::Approval approval_;

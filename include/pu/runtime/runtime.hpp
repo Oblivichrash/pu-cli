@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -82,12 +83,27 @@ struct Delegation {
   std::string agent;            // empty: the table's own default_agent
   std::filesystem::path dir;    // empty: the asking runtime's workspace
   std::string prompt;
+
+  // The asking turn's own stop, handed down rather than copied: the point is that a stop reaches
+  // the turn that is actually waiting, which is this one. Checked by the same code the asking
+  // turn checks its own token with, so a stop lands between rounds and between tool calls, and
+  // a provider read is abandoned at the next fragment.
+  CancelToken cancel_token;
+
+  // A ceiling on the whole delegated turn, since it may run several rounds and call tools that
+  // take minutes each. Zero means the ceiling the asking turn's own platform applies, which for
+  // a stream is an idle deadline per read rather than a cap on the reply.
+  std::chrono::milliseconds timeout{0};
 };
 
 struct DelegationResult {
   std::string answer;
   std::string error;                 // non-empty when the turn did not answer
   session::SessionUsageTotal usage;  // what that turn cost, in its own account
+  // The turn was asked to stop by the caller rather than finished or failed. A tool has no
+  // vocabulary for "you were stopped", so this reads as an error naming the stop; it is kept
+  // apart from one so a caller that stopped deliberately does not read it as a fault.
+  bool stopped = false;
 };
 
 class Runtime {
@@ -121,6 +137,11 @@ class Runtime {
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,
       CancelToken command_stop_token = nullptr);
+
+  // Whether this turn should stop now: the caller's token, the shutdown below, and the clock.
+  // The runtime owns the two things a caller cannot see, which is why it is the runtime that
+  // folds them into one answer rather than each round asking three times.
+  bool StopRequested() const;
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -236,6 +257,11 @@ class Runtime {
   // `ask_dir`, so a chain stops here rather than at a depth counter somebody has to carry.
   bool delegated_ = false;
   bool ephemeral_ = false;
+  // The stop the current turn answers to, when it is a delegated turn: the asking turn's token
+  // and the clock, folded into one by StopRequested(). Both are empty for an ordinary turn, whose
+  // caller passes its token to ProcessInput directly.
+  CancelToken turn_cancel_;
+  std::chrono::steady_clock::time_point turn_deadline_{};  // zero: no deadline
   std::shared_ptr<Session> current_session_;
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads
   // them on another.

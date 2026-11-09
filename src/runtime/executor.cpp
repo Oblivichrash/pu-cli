@@ -376,6 +376,12 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
       spdlog::debug("Turn cancelled before tool '{}' ran", call.name);
       break;
     }
+    // The same stop, one layer out: a deadline that passed while a tool was being called would
+    // otherwise only be noticed at the next round, after the tool had already run.
+    if (stop_check_ && stop_check_()) {
+      spdlog::debug("Turn stopped before tool '{}' ran", call.name);
+      break;
+    }
 
     ++result.tool_call_count;
 
@@ -445,7 +451,23 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   bool wrap_up_asked = false;
   bool abandoned = false;
 
+  // The tool-call budget is what this loop counts, and the two stop checks inside it are what
+  // end it early; neither is a property of this loop, so both are read rather than held here.
   for (;;) {
+    // A round is counted when it opens rather than when its reply arrives: a turn stopped
+    // before asking the model did open that round and did nothing in it, and a count that
+    // skipped it would describe a turn shorter than the one the user stopped.
+    ++result.rounds;
+
+    // A delegated turn's stop is not one token: the runtime also holds a deadline and knows
+    // whether the process is going down, and neither of those has a token to cancel. Asked here
+    // so it lands between rounds, which is the only point where a turn can end cleanly.
+    if (stop_check_ && stop_check_()) {
+      spdlog::debug("Turn stopped before round {} asked anything", result.rounds);
+      conversation.SealInterruptedToolCalls();
+      return result;
+    }
+
     // The budget counts tool calls, not replies: one reply can carry several calls. The check
     // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
     // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
@@ -460,6 +482,14 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       // Rather than ending the turn with an error, spend one round on a wrap-up: the
       // model answers from what it has gathered, and the user reads an answer instead
       // of a refusal. A wrap-up that still calls a tool is answered no further.
+      //
+      // A wrap-up is a round like any other, so a stop that arrived while the last tools ran
+      // ends the turn here rather than buying one more reply the user no longer wants.
+      if (stop_check_ && stop_check_()) {
+        spdlog::debug("Turn stopped before the wrap-up round");
+        conversation.SealInterruptedToolCalls();
+        return result;
+      }
       ChatMessage wrap_up;
       wrap_up.role = session::kUserRole;
       wrap_up.content =
@@ -474,7 +504,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     bool failed = false;
     bool stopped = false;
-    ++result.rounds;
     ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
     if (failed) break;
     if (stopped) {

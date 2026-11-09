@@ -22,6 +22,10 @@ class Toolbox {
   std::string ExecuteTool(const std::string& name, const boost::json::value& args,
                           ToolContext& ctx);
 
+  // Every tool, in no particular order. For the one piece of news a turn has that the tools do
+  // not: a stop, which belongs to the turn rather than to the toolbox that outlives it.
+  std::vector<Tool*> Tools() const;
+
  private:
   static std::string SanitizeToolName(const std::string& name);
 

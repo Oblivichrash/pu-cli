@@ -6,6 +6,7 @@
 
 #include <boost/json.hpp>
 
+#include "pu/core/base.hpp"
 #include "pu/tools/tool.hpp"
 
 namespace pu::tools {
@@ -27,16 +28,25 @@ class AskDirTool : public pu::Tool {
   // `root` is where the asking agent's own `.pu` is, and is what a relative directory names.
   // `allowed` is the agents this one was told it may ask; a directory names its own agent, so
   // the list bounds what a directory can reach as well as what a name can.
-  AskDirTool(std::filesystem::path root, std::vector<std::string> allowed);
+  // `cancel_token` is the asking turn's stop, handed down rather than copied: the point is that
+  // a stop reaches the turn that is actually waiting, which is the delegated one.
+  AskDirTool(std::filesystem::path root, std::vector<std::string> allowed,
+             CancelToken cancel_token = nullptr);
 
   std::string Name() const override;
   std::string Description() const override;
   boost::json::value ParametersSchema() const override;
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 
+  // The stop of the turn this tool is about to run inside. Set per turn rather than held from
+  // construction, because a token belongs to a turn and a toolbox outlives every one of them.
+  void SetCancelToken(CancelToken token) { cancel_token_ = std::move(token); }
+
  private:
   std::filesystem::path root_;
   std::vector<std::string> allowed_;
+  // The asking turn's stop, which the delegated turn answers to as its own.
+  CancelToken cancel_token_;
 };
 
 }  // namespace pu::tools

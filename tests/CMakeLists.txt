@@ -34,6 +34,7 @@ add_executable(pu_tests
     unit/test_conversation.cpp
     unit/test_encoding.cpp
     unit/test_executor.cpp
+    unit/test_executor_stop.cpp
     unit/test_graph.cpp
     unit/test_http_deadline.cpp
     unit/test_http_errors.cpp

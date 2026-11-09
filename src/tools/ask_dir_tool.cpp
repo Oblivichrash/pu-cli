@@ -7,6 +7,7 @@
 #include <boost/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <utility>
@@ -14,6 +15,11 @@
 namespace pu::tools {
 
 namespace {
+
+// How long a delegated turn may run in all. It is generous on purpose: a sub-agent that reads a
+// repository and runs its tests is doing the work it was asked for, and a tight figure would turn
+// slow into broken. It is a ceiling rather than a target, so the common turn never meets it.
+constexpr std::chrono::milliseconds kDelegatedTurnBudget{std::chrono::minutes(10)};
 
 std::string Listed(const std::vector<std::string>& names) {
   std::string out;
@@ -62,8 +68,9 @@ void Charge(pu::ToolContext& ctx, const DelegationResult& result) {
 
 }  // namespace
 
-AskDirTool::AskDirTool(std::filesystem::path root, std::vector<std::string> allowed)
-    : root_(std::move(root)), allowed_(std::move(allowed)) {}
+AskDirTool::AskDirTool(std::filesystem::path root, std::vector<std::string> allowed,
+                       CancelToken cancel_token)
+    : root_(std::move(root)), allowed_(std::move(allowed)), cancel_token_(std::move(cancel_token)) {}
 
 std::string AskDirTool::Name() const { return "ask_dir"; }
 
@@ -125,6 +132,13 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
 
   Delegation request;
   request.prompt = prompt;
+  // The turn that is waiting is this one's turn: a stop pressed while the delegate is thinking
+  // has to reach the thinking, or the button does nothing for as long as the question is slow.
+  request.cancel_token = cancel_token_;
+  // A ceiling on the whole delegated turn. The transport's own idle deadline bounds a single
+  // read; a turn may make many, and each one may be a tool running for minutes, so without a
+  // figure here the only stop is the process.
+  request.timeout = kDelegatedTurnBudget;
 
   // One field names who answers, and which of the two it is is read rather than declared: a
   // name this agent may reach is an agent, and anything else is a directory to look for. The
