@@ -180,28 +180,41 @@ main {
    lines break, so the container does not preserve whitespace of its own -- doing both
    rendered markdown's own newlines between blocks as well, which read as blank lines.
    The blocks that are set as raw text keep their own white-space. */
+/* A message is two surfaces: the bubble, which is the text and nothing else, and the footing
+   under it, which is the cost and the controls. The message itself draws neither, so the two
+   are free to be shaped differently -- which is the point of putting the line outside. */
 .msg {
-  padding: 12px 18px;
   border-radius: 2px;
   line-height: 1.65;
   font-size: 15px;
   word-break: break-word;
+}
+/* The paper: the tint, the frame and the room around the words. This is the only part of a
+   message that looks like something was said. */
+.msg-bubble {
+  padding: 12px 18px;
+  border-radius: 2px;
   border: 1px solid transparent;
 }
-/* Document flow, not an IM thread: every message is anchored left with a rule down
-   its side, so a long conversation reads as one column of text. */
 .msg.user {
   align-self: stretch;
-  background: var(--user-bg);
-  border-color: #d0c4b0;
 }
 .msg.assistant {
   align-self: stretch;
+}
+.msg.user .msg-bubble {
+  background: var(--user-bg);
+  border-color: #d0c4b0;
+}
+.msg.assistant .msg-bubble {
   background: var(--assistant-bg);
   border-color: var(--border);
 }
 .msg.error {
   align-self: stretch;
+}
+.msg.error .msg-bubble {
+  padding: 12px 18px;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
@@ -209,6 +222,9 @@ main {
   font-size: 13px;
   white-space: pre-wrap;
 }
+/* A remark from the page is not a bubble and has no footing: it is built by
+   `createSystemMessage`, which puts the text straight into the message element, so the padding
+   and the tint it needs stay here rather than moving to a bubble element that was never made. */
 .msg.system {
   align-self: center;
   background: transparent;
@@ -220,13 +236,17 @@ main {
   white-space: pre-wrap;
 }
 /* The footing closes the message: what it cost, then what may be done with it. One line,
-   because none of it is the message and all of it is quiet. The cost runs at the left; the
-   controls take the far edge, where a hand already is. */
+   because none of it is the message and all of it is quiet. It sits outside the bubble and
+   takes a margin wide enough that the frame above it reads as a frame and this line as a note
+   under one, which is the whole reason for moving it out. It also takes the bubble's own
+   side inset, so the first character of the note lines up with the first character of the
+   text above rather than with the edge of the frame. */
 .msg-foot {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
+  padding: 0 18px;
 }
 /* The cost sits at the left end of the line and takes no room it does not need, so a message
    that reports a cost and a message that does not are laid out the same way. */
@@ -281,7 +301,9 @@ main {
    Edit control under the bubble is the named way to do the same thing. The name used to carry
    the hover, but a message no longer has one to colour, so the whole bubble answers instead. */
 .msg.user.editable { cursor: text; }
-.msg.user.editable:hover { border-color: var(--accent); }
+/* The frame that warms is the bubble's, not the message's: the message is now a container that
+   draws nothing, so a border colour set on it would have nothing to show. */
+.msg.user.editable:hover .msg-bubble { border-color: var(--accent); }
 .msg.user.editing { cursor: default; }
 
 /* The field is the bubble: it is sized to its own text and carries no frame of its own, so

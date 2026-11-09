@@ -295,7 +295,9 @@ function beginEdit(el, event, fromButton) {
   cancel.className = "edit-cancel";
   cancel.textContent = "Cancel";
   actions.append(save, cancel);
-  el.appendChild(actions);
+  // Inside the bubble, with the field: Save and Cancel belong to the sentence being changed, not
+  // to the line under it that says what may be done with a message at rest.
+  (el.querySelector(".msg-bubble") || el).appendChild(actions);
 
   // `value` is what the bubble says once the field is gone: `null` is a cancelled edit, which
   // goes back to what it said before. Either way the sentence lands where the field was, so the
@@ -404,5 +406,7 @@ function offerResend(el, text) {
     }
   });
   bar.append(note, send);
-  el.appendChild(bar);
+  // The offer to re-send belongs to the turn that was just changed, so it stays inside the
+  // bubble rather than joining the footing, which describes a message that is settled.
+  (el.querySelector(".msg-bubble") || el).appendChild(bar);
 }

@@ -150,16 +150,23 @@ function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
 
+  // The bubble is what is drawn as a reply: the frame, the tint, and the room around the words.
+  // It is a child of the message rather than the message itself so that the line under it can
+  // sit outside it, on the page rather than on the paper -- see the footing below.
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+  el.appendChild(bubble);
+
   const container = document.createElement("div");
   container.className = "blocks-container";
-  el.appendChild(container);
+  bubble.appendChild(container);
 
   if (blocks) renderBlocks(blocks, container);
 
   // The footing closes the message: what it cost, and what may be done with it, on one line
-  // under the words. The bubble holds nothing but the words, so a message reads as what was
-  // said and the line under it as what the reader may do about it. Everything on that line is
-  // quiet, which is why it is one line: none of it is the message.
+  // under the words. It is outside the bubble, so the marked-up text and the note about the
+  // turn are two surfaces rather than one: everything inside the frame is what was said, and
+  // everything under it is what the reader may do about it.
   // Who spoke is not written here. The two backgrounds already tell the two sides apart, and a
   // name saying what a colour has said four times down the page is a caption on a caption.
   // A message the reader cannot act on still gets no footing at all: a system remark is the page
