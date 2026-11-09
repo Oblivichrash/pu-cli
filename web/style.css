@@ -251,12 +251,10 @@ main {
   margin-top: 4px;
   padding: 0 18px;
 }
-/* The cost leads the line and the controls follow it, both at the left end. The footing shares
-   the bubble's own side inset, so the first character of the note sits on the same line as the
-   first character of the text above it: the note reads as the tail of the message rather than as
-   a remark pinned to the far edge of the page. Pushing the controls right instead pulled the
-   pair apart across whatever width the column had -- a gap of a hand's length in a wide window,
-   which separated the cost from the answer it described. */
+/* Both ends of the footing sit at the left, on the bubble's own side inset, so the first thing
+   on the line shares a column with the first character of the text above it. Nothing is pushed
+   to the far edge: a cost at one end of a wide column and its controls at the other left a gap
+   of a hand's length between a message and what it had cost. */
 .msg-foot .msg-usage {
   flex: none;
   min-width: 0;
@@ -264,6 +262,13 @@ main {
 }
 .msg-foot .msg-actions {
   flex: none;
+  /* Drawn first, though built second. The controls are the only thing on this line a reader can
+     act on, so they take the position the eye lands on when it leaves the text, and they hold it:
+     the cost changes length with every turn and would otherwise shift them along. The order is
+     spent here rather than in the markup because the cost is the better thing to read first --
+     "what this cost, and what I may do about it" -- and the DOM keeps that order for a screen
+     reader while the eye gets the target where it can be hit. */
+  order: -1;
 }
 .msg-foot.busy .msg-actions { visibility: hidden; }
 .msg-actions {
