@@ -247,7 +247,7 @@ main {
    wanted: at rest they are the sender's line and little more. */
 .msg-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex: none;
 }
 .msg-head.busy .msg-actions { visibility: hidden; }
@@ -260,12 +260,20 @@ main {
   padding: 0;
   color: var(--ink-light);
   font-family: inherit;
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  /* The glyphs are drawn smaller than a letter of the same size reads, so they take a step up
+     to sit level with the sender's name beside them, and a step beyond that to keep the thin
+     strokes of a dotted outline from closing up into a smudge. */
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0;
   cursor: pointer;
   opacity: 0.55;
 }
 .msg-action:hover { color: var(--accent); opacity: 1; }
+/* A copy that has just happened says so in words: a glyph cannot tell a reader whether anything
+   was taken, and the confirmation is the only reason the button changes at all. */
+.msg-copy { min-width: 1em; text-align: center; }
+.msg-copy.said { font-size: 11px; letter-spacing: 0.05em; }
 
 /* A turn of yours can be taken back, so the text is a second way in: the rule under the sender
    is the only hint that clicking does anything. */

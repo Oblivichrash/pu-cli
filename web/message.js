@@ -48,6 +48,16 @@ function usageLineNode(usage) {
   return line;
 }
 
+// The mark a control wears. The page draws its other controls as bare glyphs in the same family
+// -- a caret for the servers, a block for the panel, a cross to dismiss -- so a message's two
+// controls are drawn rather than spelled, and the word they stand for stays as their accessible
+// name. The letter changed to "Copied" is the one place a word is still shown, because a copy
+// that says nothing looks exactly like a copy that failed.
+const CONTROL_GLYPHS = {
+  copy: "\u2398",      // ⎘ -- a sheet going to another sheet
+  edit: "\u270E",      // ✎
+};
+
 // The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool
 // call and a thought are drawn around the sentence rather than being part of it, so a copy
 // that carried them would paste as a transcript of the machinery instead of what was said.
@@ -65,13 +75,17 @@ function messageText(blocks) {
 // taken somewhere else, and a question is what it gets quoted back to. The label is the page's
 // only confirmation, on the button that was pressed rather than in a strip elsewhere, because a
 // notice about a copy is about a copy and nothing else on the page changed.
+// Only the words are replaced, never the accessible name: the state is a remark about the press,
+// and a control whose announcable name changed under the reader would be a different control.
 function copyMessage(text, button) {
   if (!text) return;
   const settle = (ok) => {
     button.textContent = ok ? "Copied" : "Failed";
+    button.classList.add("said");
     clearTimeout(button.copyTimer);
     button.copyTimer = setTimeout(() => {
-      button.textContent = "Copy";
+      button.textContent = CONTROL_GLYPHS.copy;
+      button.classList.remove("said");
     }, 1400);
   };
   // A page served over plain http has no clipboard API, so the older command is the fallback
@@ -111,8 +125,9 @@ function messageActions(el, role, turn, blocks) {
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "msg-action msg-copy";
-  copy.textContent = "Copy";
+  copy.textContent = CONTROL_GLYPHS.copy;
   copy.title = "Copy this message";
+  copy.setAttribute("aria-label", "Copy this message");
   copy.addEventListener("click", (event) => {
     event.stopPropagation();
     copyMessage(messageText(blocks), copy);
@@ -123,8 +138,9 @@ function messageActions(el, role, turn, blocks) {
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "msg-action msg-edit";
-    edit.textContent = "Edit";
+    edit.textContent = CONTROL_GLYPHS.edit;
     edit.title = "Edit this message";
+    edit.setAttribute("aria-label", "Edit this message");
     edit.addEventListener("click", (event) => {
       event.stopPropagation();
       beginEdit(el, event, true);
