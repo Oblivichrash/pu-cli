@@ -28,7 +28,8 @@ own name.
 | :--- | :--- |
 | `web/state.js` | The `PU` object, the page's own identity and the list of siblings, the writers for both (`setSelf`, `setOthers`, `siblingOrigin`), the connection dot's state |
 | `web/api.js` | The page's one way out: `fetchJson`/`postJson` over `PU.self.origin`, and `ApiError`, which keeps the status a refusal arrived with. A caller that cannot tell `403` from a dropped connection cannot say which happened |
-| `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
+| `web/block-thinking.js`, `web/block-tool.js`, `web/block-subtask.js` | The block custom elements and their own drawing |
+| `web/blocks.js` | The block kinds, and which kind a tool call is drawn as |
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |

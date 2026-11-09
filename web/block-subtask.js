@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// A task the agent handed to a sub-agent: which directory was run, what it was asked, and
-// what came back. It folds like a tool call because that is what it is from the outside --
-// one step of a turn -- but what it holds is a whole conversation elsewhere, so it is read
-// as its own kind rather than as an argument set.
+// A task the agent handed to a sub-agent: which agent or directory was asked, what it was put
+// to, and what came back. It folds like a tool call because that is what it is from the
+// outside -- one step of a turn -- but what it holds is a whole conversation elsewhere, so it
+// is read as its own kind rather than as an argument set.
 
 "use strict";
 
@@ -13,23 +13,23 @@ function subtaskOneLine(text) {
   return flat.length > SUBTASK_PROMPT_MAX ? flat.slice(0, SUBTASK_PROMPT_MAX) + "…" : flat;
 }
 
-// The `ask_dir` arguments, named the way the tool names them. A turn stored before the field
-// was called `dir` falls back to whatever single string the call carried.
+// The `ask_dir` arguments, named the way the tool names them. The tool is aimed one of two
+// ways — a name picks an agent already in this table, a directory picks a world of its own —
+// and `prompt` is required under both, so the question is never the thing that is missing.
 function subtaskFields(args) {
-  if (!args || typeof args !== "object") return { dir: "", prompt: "" };
-  let dir = typeof args.dir === "string" ? args.dir : "";
+  // A call whose arguments could not be parsed arrives as its raw string, which is the only
+  // thing there is to show.
+  if (typeof args === "string") return { agent: "", dir: "", prompt: args };
+  if (!args || typeof args !== "object") return { agent: "", dir: "", prompt: "" };
+  const agent = typeof args.agent === "string" ? args.agent : "";
+  const dir = typeof args.dir === "string" ? args.dir : "";
   let prompt = typeof args.prompt === "string" ? args.prompt : "";
-  if (!dir) {
-    for (const value of Object.values(args)) {
-      if (typeof value !== "string" || !value) continue;
-      if (!prompt) {
-        prompt = value;
-      } else if (!dir) {
-        dir = value;
-      }
-    }
+  if (!prompt) {
+    // Stored before `prompt` had that name: the longest string is the question, not a path.
+    const strings = Object.values(args).filter((v) => typeof v === "string" && v);
+    prompt = strings.sort((a, b) => b.length - a.length)[0] || "";
   }
-  return { dir, prompt };
+  return { agent, dir, prompt };
 }
 
 function labelledBlock(wrapperClass, label, text, preClass) {
@@ -70,11 +70,11 @@ class SubtaskBlock extends HTMLElement {
   sync(block) {
     this._block = block;
     this.dataset.subtaskId = block.id || "";
-    const { dir, prompt } = subtaskFields(block.args);
-    // The directory is the one fact that says which sub-agent ran, so it stays in the
-    // header; the prompt is cut to a gist and read whole once the block is open.
-    this.dirEl.textContent = dir;
-    this.dirEl.hidden = !dir;
+    const { agent, dir, prompt } = subtaskFields(block.args);
+    // What the call was aimed at is the one fact that says which sub-agent ran, so it stays
+    // in the header; the prompt is cut to a gist and read whole once the block is open.
+    this.dirEl.textContent = dir || agent;
+    this.dirEl.hidden = !dir && !agent;
     const summary = subtaskOneLine(prompt);
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
@@ -96,10 +96,11 @@ class SubtaskBlock extends HTMLElement {
 
   #fillBody(block) {
     this.body.replaceChildren();
-    const { dir, prompt } = subtaskFields(block.args);
-    if (dir || prompt) {
+    const { agent, dir, prompt } = subtaskFields(block.args);
+    if (agent || dir || prompt) {
       const asked = document.createElement("div");
       asked.className = "subtask-asked";
+      if (agent) asked.appendChild(labelledBlock("subtask-agent-row", "Agent", agent, ""));
       if (dir) asked.appendChild(labelledBlock("subtask-dir-row", "Directory", dir, ""));
       if (prompt) asked.appendChild(labelledBlock("subtask-prompt-row", "Asked", prompt, ""));
       this.body.appendChild(asked);

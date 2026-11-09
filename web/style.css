@@ -411,14 +411,17 @@ main {
 /* The subtask body names the two things the call was made of, then the answer. The
    header says where and what was asked in one line each, so these repeat them in full
    rather than truncating. */
+.subtask-agent-row,
 .subtask-dir-row,
 .subtask-prompt-row,
 .subtask-answer { margin: 4px 0; }
+.subtask-agent-row .subtask-key,
 .subtask-dir-row .subtask-key,
 .subtask-prompt-row .subtask-key {
   font-size: 11px;
   color: var(--ink-light);
 }
+.subtask-agent-row pre,
 .subtask-dir-row pre,
 .subtask-prompt-row pre,
 .subtask-answer pre {
@@ -890,6 +893,6 @@ main {
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
-  .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
+  .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
   .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }

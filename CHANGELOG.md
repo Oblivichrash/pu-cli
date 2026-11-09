@@ -14,6 +14,13 @@ the commit that made it, and its current behaviour is in the relevant document
   question whose whole context the caller supplies. A conversation that is kept is what `chat`
   and `serve` are for. `ask` now sends the prompt and nothing else, and leaves the file alone.
 
+- **`ask_dir` is drawn as a subtask block rather than a tool call.** It arrives over the wire
+  as a tool call and still is one, but what it holds is a whole conversation elsewhere: drawn
+  as a step, the name or directory asked sat inside a collapsed block's argument JSON, and the
+  answer was easy to read as work this turn did. The block names the agent or directory and the
+  question in its header, repeats them with the answer in its body, and folds like any other
+  step. No protocol change accompanies it — the same `tool_call` record is read differently.
+
 ### Added
 
 - **`-C DIR` runs any command as if started in that directory.** A `.pu/` directory is a whole
