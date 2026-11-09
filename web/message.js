@@ -126,9 +126,8 @@ function createMessage(role, blocks, turn, text, usage) {
   // name saying what a colour has said four times down the page is a caption on a caption.
   // A message the reader cannot act on still gets no footing at all: a system remark is the page
   // talking, and an error is already something to be read.
-  // What a reader *may* do with the message is not here: copying and editing are offered when
-  // the bubble is clicked, in the same bar that carries Save and Cancel, so a reply at rest is
-  // its words and nothing else.
+  // What a reader *may* do with the message is not here: copying and editing are asked for with
+  // the right button, so a reply at rest is its words and nothing else.
   if (role === "assistant" && usage) {
     const foot = document.createElement("div");
     foot.className = "msg-foot";
@@ -142,6 +141,22 @@ function createMessage(role, blocks, turn, text, usage) {
   if (role === "user" && typeof turn === "number" && turn > 0) {
     el.dataset.turn = String(turn);
     el.dataset.text = text || "";
+  }
+
+  // A menu behind the right button is a thing nobody is told about, and the only way to find one
+  // is to try. This is the telling. It goes on the bubble's top edge rather than in the footing,
+  // because a footing line would make every turn taller to carry a reminder: the note is
+  // positioned over the paper, so nothing moves when it appears and nothing moved to make room.
+  // It is text rather than a mark because the sentence is the point: a glyph would have to be
+  // learned, which is the problem it is meant to solve.
+  // Only messages the menu will open for get one. A system remark and an error have nothing to
+  // offer, and a hint of options that never arrive would be worse than no hint at all.
+  if (role === "user" || role === "assistant") {
+    const hint = document.createElement("span");
+    hint.className = "msg-hint";
+    hint.textContent = "right-click for options";
+    hint.setAttribute("aria-hidden", "true");
+    bubble.appendChild(hint);
   }
 
   // Read the position before the append, because the append itself moves the content

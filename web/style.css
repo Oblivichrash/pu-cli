@@ -199,6 +199,48 @@ main {
   border-radius: 2px;
   border: 1px solid transparent;
 }
+/* A message says what may be done with it only when a reader is on it: a menu behind the right
+   button is a thing nobody is told about, so this is the telling, and it costs no layout: the
+   note is placed over the paper rather than laid out into it, so a turn is the same height with
+   it and without it.
+   It sits on the bubble's top edge, outside the frame. Inside is where the words are -- a
+   one-line turn puts its first line exactly where a corner label would go, and a long one runs
+   under it -- but above the edge there is never anything, so the note reads as a remark about
+   the paper rather than as the beginning of the sentence.
+   It is text rather than a mark because the sentence is the point: a glyph would have to be
+   learned, which is the problem it is meant to solve. It is kept out of the accessibility tree
+   for the converse reason: a screen reader is told about the message by the message, and
+   "right-click" names a gesture it cannot make.
+   Faded in rather than shown, so that moving the pointer down a column of turns does not make
+   twelve of these blink on and off on the way past. */
+.msg-bubble {
+  position: relative;
+}
+.msg-hint {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  right: 2px;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--ink-light);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.msg:hover > .msg-bubble > .msg-hint,
+.msg:focus-within > .msg-bubble > .msg-hint {
+  opacity: 0.55;
+}
+/* A touch screen has no right button, so the note would name a gesture that cannot be made. The
+   menu is not reachable there either, which is a gap this rule does not pretend to fill. */
+@media (hover: none) {
+  .msg-hint {
+    display: none;
+  }
+}
 .msg.user {
   align-self: stretch;
 }
