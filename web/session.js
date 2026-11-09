@@ -251,9 +251,10 @@ async function loadAgents() {
 // Only the turn being edited is touched. A step back before turn N drops everything from N on,
 // and those bubbles are dropped here too, so the page and the store agree without a re-read.
 //
-// `fromButton` is set by the Edit control, whose own click would otherwise be read as a click
-// on a button inside the bubble and ignored: that guard exists to keep a press on a link or a
-// fold from opening the field, and the control says plainly that it is the way in.
+// `fromButton` is set by the menu item, which is not a click on the bubble: the guards below
+// exist to keep a drag that left a selection, or a press that landed on a link or a fold, from
+// opening the field. The menu has already made those decisions before it drew itself, so its
+// word is taken rather than re-litigated.
 function beginEdit(el, event, fromButton) {
   // Selecting text to copy it also clicks. A drag that leaves a selection is not a request to
   // edit, and neither is a click that landed on a fold or a link inside the bubble.
@@ -268,7 +269,6 @@ function beginEdit(el, event, fromButton) {
     createSystemMessage("Cannot edit while a reply is streaming.");
     return;
   }
-  const turn = Number(el.dataset.turn);
   const original = el.dataset.text || "";
   el.dataset.editing = "1";
   el.classList.add("editing");
@@ -278,15 +278,11 @@ function beginEdit(el, event, fromButton) {
   field.className = "edit-field";
   field.value = original;
   container.replaceChildren(field);
-  // The bar under the field is where everything a reader may do with this message is offered at
-  // once: copy and edit, then the two that end the edit. They used to sit under the bubble at
-  // rest, which put a row of marks under every turn whether or not anyone meant to act on it.
-  // Copy stays here beside Save because the field holds the text as it is *now*: a reader who
-  // has just changed a sentence often wants the new words somewhere else, and taking them from
-  // the field is the only reading of "copy" that matches what is on screen.
+  // The bar under the field holds the two ways out of the edit and nothing else. Copy moved to
+  // the menu, where it copies the message as the store holds it: a copy taken from the field
+  // would take the half-changed sentence in it, which is not yet a message.
   const actions = document.createElement("div");
   actions.className = "edit-actions";
-  actions.appendChild(messageActions(el, "user", turn, blocksOf(el)));
 
   const save = document.createElement("button");
   save.type = "button";
@@ -307,7 +303,6 @@ function beginEdit(el, event, fromButton) {
   const close = (value) => {
     delete el.dataset.editing;
     el.classList.remove("editing");
-    el.title = "Click to edit this message";
     actions.remove();
     const text = value === null ? (el.dataset.text || "") : value;
     // The bar offered a copy of the words as they were when it was built, and the field has

@@ -6,6 +6,9 @@
   --ink-light: #6b5f55;
   --border: #ddd0c0;
   --accent: #b5312a;
+  /* The accent at a tenth, for the row a pointer or a focused caret is resting on. A filled
+     block of accent is the loudest thing on a page whose messages are paper and hairline. */
+  --accent-soft: rgba(181, 49, 42, 0.1);
   --user-bg: #f5efe8;
   --assistant-bg: #ffffff;
   --error-border: #b5312a;
@@ -264,82 +267,55 @@ main {
   min-width: 0;
   margin-top: 0;
 }
-/* What a reader may do with a message is offered when they reach for the message, not under it
-   while it is at rest. On a page of twenty turns a row of marks under every one of them is
-   twenty rows of furniture the eye reading the conversation has to step over, so the controls
-   live in the bar a click opens: next to Save and Cancel for a turn of yours, and in a bar of
-   its own inside the bubble for a reply.
-   That leaves the footing holding one line of small print, and `nowrap` keeps a long cost from
-   folding onto a line of its own under a short reply. */
+/* What a reader may do with a message is asked for with the right button, so a message at rest
+   draws nothing: this footing is the cost of a turn and no more. A row of marks under every
+   turn on a page of twenty is twenty rows of furniture the eye reading the conversation has to
+   step over, and the bar that replaced them had to be dismissed before the next reply could be
+   read. `nowrap` keeps a long cost from folding onto a line of its own under a short reply. */
 .msg-foot {
   white-space: nowrap;
 }
-.msg-actions {
-  display: flex;
-  gap: 8px;
-  flex: none;
-  align-items: center;
+
+/* The menu the right button opens. It floats over the message it names rather than pushing one
+   into the transcript: a reader opening it is looking at a message they have already found, and
+   the menu must not move it out from under the pointer that is about to press it. */
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--paper, #fff);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
 }
-/* The bar a reply opens on click. It sits at the bottom of the bubble, on the text's own left
-   edge, because the words above it are the thing it acts on and the click that opened it landed
-   somewhere in them. A hairline above it separates the marks from the last line of the reply
-   without drawing a second frame inside the bubble. */
-.msg-bubble > .msg-actions.reply-bar {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px dotted var(--border);
-}
-.msg-action {
+.context-menu[hidden] { display: none; }
+
+/* One row per action, each a whole sentence about what it does. A menu is read once by a reader
+   already looking for one line in it, so an icon with a tooltip would be a thing to point at
+   before it could be understood. */
+.context-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
   background: transparent;
   border: none;
-  /* The mark is a drawn path now, not a character: there is no font to inherit and no baseline
-     to sit on, so the button is a box the 16px icon is centred in. The padding is the target and
-     nothing else -- the mark keeps the size it reads at, and the negative margin takes the
-     padding back out of the footing's height, so growing the target to something a finger can
-     hit costs no layout. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 6px;
-  margin: -5px -6px;
-  color: var(--ink-light);
-  line-height: 1;
-  cursor: pointer;
-  /* Quieter than the words, but not by much. These marks now sit inside the bubble rather than
-     above it, where the tinted background of a turn of yours eats most of the contrast a faint
-     stroke had: at 0.55 the copy mark on a user bubble read as a smudge on the paper. */
-  opacity: 0.7;
-}
-/* Centre the mark, then seat it. The path inside the viewBox is 11px tall in a 16px box --
-   `M5.5 2.5h8v8` -- so 2.5px of dead space sits above and below the strokes, and a box centred
-   on the words leaves the strokes reading low, not high: the box's own middle is not the
-   strokes' middle. The nudge is against the ink rather than the box, and it is the half-pixel
-   the two centres disagree by, rounded to something a renderer can draw on a pixel grid. */
-.msg-action svg {
-  display: block;
-  transform: translateY(-1px);
-}
-.msg-action:hover { color: var(--accent); opacity: 1; }
-/* A copy that has just happened says so in words: a mark cannot tell a reader whether anything
-   was taken, and the confirmation is the only reason the button changes at all. The fixed width
-   is the icon's, so the control beside it does not shuffle when the word replaces the mark. */
-.msg-copy { min-width: 16px; }
-.msg-copy.said {
-  min-width: 0;
+  border-radius: 2px;
+  color: var(--ink);
   font-family: inherit;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }
-
-/* A turn of yours can be taken back, so the text is a second way in. The cursor becoming a text
-   caret and the border warming to the accent are the hints that clicking does anything; the
-   Edit control under the bubble is the named way to do the same thing. The name used to carry
-   the hover, but a message no longer has one to colour, so the whole bubble answers instead. */
-.msg.user.editable { cursor: text; }
-/* The frame that warms is the bubble's, not the message's: the message is now a container that
-   draws nothing, so a border colour set on it would have nothing to show. */
-.msg.user.editable:hover .msg-bubble { border-color: var(--accent); }
+.context-item:hover,
+.context-item:focus-visible {
+  /* Tinted rather than filled. A block of accent under the pointer is the loudest thing on a
+     page whose messages are paper and hairline: the menu is a list of sentences, and the row
+     under the pointer is where the reader is, not a button asking to be pressed. */
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
 .msg.user.editing { cursor: default; }
 
 /* The field is the bubble: it is sized to its own text and carries no frame of its own, so
@@ -367,11 +343,8 @@ main {
   margin-top: 8px;
 }
 
-/* The bar holds two kinds of button: the drawn marks, which are a shape and no frame, and the
-   two that end the edit, which are words in a box. The marks are excluded here rather than
-   given a frame of their own, so that the control a reader presses keeps the look it has
-   everywhere else on the page. */
-.edit-actions button:not(.msg-action),
+/* The bar holds the two ways out of an edit. */
+.edit-actions button,
 .edit-resend-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -383,12 +356,9 @@ main {
   letter-spacing: 0.05em;
   cursor: pointer;
 }
-.edit-actions button:not(.msg-action):hover,
+.edit-actions button:hover,
 .edit-resend-btn:hover { color: var(--accent); border-color: var(--accent); }
 .edit-save { color: var(--ink); }
-/* Save and Cancel are the end of the sentence; the marks are what may be done with it on the
-   way. Pushed to the far end they read as a group rather than as two more marks in a row. */
-.edit-actions .edit-save { margin-left: auto; }
 
 /* A saved edit sits in the transcript until it is sent: the store no longer holds it, so the
    one thing the page can offer is the one action that asks it again. */
