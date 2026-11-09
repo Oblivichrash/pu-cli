@@ -27,21 +27,40 @@ Four tiers, applied per node, monotone — a decision may only move down:
 |---|---|---|
 | T0 live | the whole text | newest run for its source, or a page read deliberately after |
 | T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
-| T2 tombstone | `command`, `cwd`, `exit`, line count, buffer id — no cursor | the pool is over budget and the pair is older than the newest K |
+| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `extent`, `buffer.{id,source}`, `elided` — no cursor | the pool is over budget and the pair is older than the newest K |
 | T3 gone | nothing | scaffolding is over budget |
 
-T0 and T1 exist. T2 and T3 do not. T2 is worth its ~15 tokens because what stops a model
+T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `ToolBudget` in
+`src/session/request.cpp`; T3 does not. T2 is worth its ~15 tokens because what stops a model
 repeating a failed approach is knowing it tried: **compress along the body axis, never along
 the argv/verdict axis.** T3 goes in whole pairs, oldest first, keeping the newest K (≈6 covers
 a plan-and-verify cycle), because a `tool` message whose `tool_call_id` names no call is
 invalid on every provider.
 
+The table first said `command` and `cwd` survive T2, and both are wrong as written: a paged
+result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
+nothing else — no verdict, no command, no working directory. The command a model repeats is
+in the assistant's `tool_calls` one message above, which T2 never touches. So a tombstone
+keeps a `verdict` or a top-level `command` when the receipt happens to carry one (a raw
+`execute_bash` result does, a page does not) and otherwise keeps what the envelope has. This
+is the argv axis honoured by *not compressing what is there*, rather than by inventing a field
+to preserve.
+
 ## 2. The queue
 
-1. **A per-turn budget in the projection** (`request_bytes`, then `elided: "budget"`). The
-   projection is the one place removal is provably safe, and it is already pure and
-   rewind-safe. A running *token* counter does not work: it has to guess which message is
-   disposable and breaks the call/result pairing.
+1. ~~**A per-turn budget in the projection** (`request_bytes`, then `elided: "budget"`).~~ Done
+   as `RequestInputs::tool_bytes`, defaulting to 256 KiB in the executor. The projection is the
+   one place removal is provably safe, and it is already pure and rewind-safe. A running
+   *token* counter does not work: it has to guess which message is disposable and breaks the
+   call/result pairing. It spends from the oldest end, keeps the newest six results whole
+   whatever the budget, and never removes a message — only shrinks its body to a tombstone.
+   Two things the number still cannot do: it counts bytes rather than tokens, so the bound is
+   approximate; and a budget smaller than the newest six can never be met, which is a floor by
+   design rather than a bug, but means the setting is not a hard cap.
+1b. **Let the budget be configured.** `Executor::SetToolBytesBudget` exists and nothing calls
+   it: the bound is a fixed 256 KiB. Routing it through `session::InForce` beside
+   `tool_budget` is the remaining step, and it wants a decision first about whether a per-agent
+   setting belongs in the same file the paging budget already lives in.
 2. **`find` over a retained buffer.** `grep` today is a shell command, so searching means
    *executing again*: it re-runs the build, its output can disagree with the page already in
    hand, and the retained page is not searched at all. The same cursor space should answer two
@@ -114,6 +133,4 @@ field) is where to resume rather than restart.
 - **Scraping another process's pty, OCR of a screenshot, a global pointer→cell map, Konsole
   plugins, `TIOCSTI`.** Each buys back a computation worth doing properly, at a privacy or a
   version-lock cost.
-
-## 6. Adjacent, worth a commit each
 

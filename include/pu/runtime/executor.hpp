@@ -90,6 +90,11 @@ class Executor {
 
   void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
+  // How much of the stored command output one request may carry, in bytes. Sits beside the
+  // tool-call budget because both answer the same question -- how large one turn is allowed to
+  // get -- and leave `0` meaning unbounded for a caller that has decided nothing.
+  void SetToolBytesBudget(std::size_t bytes) { tool_bytes_budget_ = bytes; }
+
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
   // How the executor learns it should stop, beyond the token its caller passed. A token covers a
@@ -170,6 +175,11 @@ class Executor {
   int next_tool_call_id_ = 0;
 
   int tool_call_budget_ = kDefaultToolCallBudget;
+
+  // A quarter of a megabyte of accumulated command output is enough history to argue from and
+  // small enough that an exploration does not re-send itself every round. Named here rather
+  // than left to the projection so that the number a session runs with is one number.
+  std::size_t tool_bytes_budget_ = 256u << 10;
 
   std::function<bool()> stop_check_;
 

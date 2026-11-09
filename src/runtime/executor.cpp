@@ -272,6 +272,7 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
   session::RequestInputs inputs;
   inputs.system_prompt = system_prompt_;
   inputs.environment = BuildStaticSystemContext();
+  inputs.tool_bytes = tool_bytes_budget_;
 
   std::vector<ChatMessage> history = session::BuildRequestPath(conversation.Graph(), inputs);
   std::vector<ToolDefinition> tools = turn.toolbox->ToolDefinitions();

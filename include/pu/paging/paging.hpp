@@ -109,6 +109,25 @@ boost::json::object Envelope(const Buffer& buffer, const Page& page);
 // that replaced it is named so the model can ask for this one back by its cursor.
 std::string SupersededReceipt(std::string_view receipt, std::string_view superseded_by);
 
+// A result compressed one tier further: what the command was, where it ran, whether it worked
+// and how much came out -- and nothing a caller could page back through.
+//
+// T2 exists for the things a model must remember it *tried*. A run elided to a superseded
+// receipt still holds a cursor, which is a standing invitation to spend a turn reading it
+// again; once the pool is over budget that invitation is exactly what must go, while the
+// verdict is what stops the same failing approach being attempted a fourth time.
+//
+// So the compression is along the body axis and never along the argv/verdict axis: the
+// command, its exit code, the line and byte counts and the buffer id stay, because they are
+// a sentence about what happened; the window, the text and the cursors go, because they are
+// a way to ask for more. `Error` is kept for the same reason its verdict is -- a refusal the
+// model cannot read is a refusal it will walk into again.
+//
+// The result is not a page and must not be read as one: `OriginOf` returns nothing for it, so
+// nothing downstream offers to page into a tombstone. A receipt that is not JSON at all is
+// returned unchanged, since a caller that never had an envelope has nothing here to keep.
+std::string TombstonedReceipt(std::string_view receipt);
+
 // The buffers a session can still read. A page in flight holds its buffer through the
 // shared_ptr, so eviction never pulls the text out from under it.
 class Pager {

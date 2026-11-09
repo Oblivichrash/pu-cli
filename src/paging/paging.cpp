@@ -235,6 +235,70 @@ std::string SupersededReceipt(std::string_view receipt, std::string_view superse
   return boost::json::serialize(parsed);
 }
 
+std::string TombstonedReceipt(std::string_view receipt) {
+  // Not an envelope: a refusal, a plain string, an empty body. There is no verdict inside to
+  // lift out, and inventing one would put a success the call never had in front of the model.
+  if (receipt.empty() || receipt.front() != '{') return std::string(receipt);
+
+  boost::json::value parsed;
+  try {
+    parsed = boost::json::parse(receipt);
+  } catch (const std::exception&) {
+    return std::string(receipt);
+  }
+  if (!parsed.is_object()) return std::string(receipt);
+  const boost::json::object& held = parsed.as_object();
+
+  // Rebuilt field by field rather than copied and pruned: a caller's `extra` fields are not
+  // known here, and an allow-list is the only way this stays a compression of the envelope
+  // rather than a place for a future field to be forgotten in and re-shipped every turn.
+  boost::json::object tombstone;
+  const auto lift = [&held, &tombstone](std::string_view key) {
+    const auto found = held.find(key);
+    if (found != held.end()) tombstone[key] = found->value();
+  };
+  // What happened.
+  lift("success");
+  lift("blocked");
+  lift("error");
+  lift("exit_code");
+  lift("refusal");
+  // Which run it was, and how much of it there was. `id` and `source` are the pair that keeps
+  // this result attributable across turns; the counts say how much is not being shown.
+  if (const auto buffer = held.find("buffer"); buffer != held.end() && buffer->value().is_object()) {
+    const boost::json::object& fields = buffer->value().as_object();
+    boost::json::object kept;
+    for (const std::string_view key : {"id", "source"}) {
+      const auto found = fields.find(key);
+      if (found != fields.end()) kept[key] = found->value();
+    }
+    tombstone["buffer"] = std::move(kept);
+  }
+  if (const auto extent = held.find("extent"); extent != held.end() && extent->value().is_object()) {
+    tombstone["extent"] = extent->value();
+  }
+  // The command itself is the thing a model repeats, so it is carried in full even though it
+  // is the biggest single field here. This is the argv axis, and it is the one axis this
+  // function does not compress. A paged result keeps it under `verdict`; a raw
+  // `execute_bash` result keeps it at the top, so both are lifted and whichever exists wins.
+  if (const auto verdict = held.find("verdict"); verdict != held.end() && verdict->value().is_object()) {
+    const boost::json::object& fields = verdict->value().as_object();
+    boost::json::object kept;
+    for (const std::string_view key : {"command", "cwd", "exit_code", "ok", "error", "stopped"}) {
+      const auto found = fields.find(key);
+      if (found != fields.end()) kept[key] = found->value();
+    }
+    if (!kept.empty()) tombstone["verdict"] = std::move(kept);
+  }
+  lift("command");
+  lift("cwd");
+
+  // What is gone, said plainly: a result that silently lost its body reads as a command that
+  // printed nothing, and a model that believes that will run the command again.
+  tombstone["elided"] = "tombstone";
+  return boost::json::serialize(tombstone);
+}
+
 Pager::Pager(Budget budget) : budget_(budget), generation_(NewGeneration()) {}
 
 Budget Pager::budget() const {

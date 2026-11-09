@@ -46,6 +46,57 @@ std::unordered_map<const MessageNode*, std::string> SupersededPages(
   return superseded_by;
 }
 
+// The newest turns always keep their tool results whole, however tight the budget: the turn
+// being reasoned about is the one whose output matters, and a projection that compressed it
+// would make the model ask for what it was just handed.
+constexpr std::size_t kKeepNewestResults = 6;
+
+// A result that is already a tombstone costs nothing to leave alone, and re-tombstoning it
+// would not make it smaller.
+bool IsTombstone(std::string_view content) {
+  return content.find("\"elided\":\"tombstone\"") != std::string_view::npos;
+}
+
+// Spends the budget from the end, compressing the oldest tool results until the total fits.
+//
+// Only tool results are candidates. A user turn is what somebody said; a reply is what the
+// model said. Neither can be restored from anywhere, and neither is re-sent in bulk by
+// accident -- a command's output is, because a page is a copy of a buffer that is still on
+// disk. So the compression runs along the axis that can be undone: the model is told the
+// command, the verdict and how much there was, and may page it back if it turns out to matter.
+//
+// The walk goes newest to oldest, so what is nearest is the last thing to be compressed, and
+// a budget merely a little too small costs a little rather than everything. Nothing is
+// removed: the receipt stays where it was, which is what keeps each `tool_calls[].id` beside
+// the `tool_call_id` that answers it.
+void ToolBudget(std::vector<ChatMessage>& messages, std::size_t limit) {
+  std::vector<std::size_t> tool_at;
+  std::size_t total = 0;
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (messages[i].role != kToolRole) continue;
+    total += messages[i].content.size();
+    tool_at.push_back(i);
+  }
+  if (total <= limit || tool_at.empty()) return;
+
+  // The newest results are protected by position in the list of tool results, not by index in
+  // the transcript: a reply between them does not make one of them newer.
+  const std::size_t protected_from = tool_at.size() > kKeepNewestResults
+                                         ? tool_at.size() - kKeepNewestResults
+                                         : 0;
+  for (std::size_t k = protected_from; k-- > 0;) {
+    ChatMessage& msg = messages[tool_at[k]];
+    if (msg.content.size() <= 32 || IsTombstone(msg.content)) continue;
+    const std::string smaller = paging::TombstonedReceipt(msg.content);
+    // A body that does not parse gains nothing from the rewrite, and replacing one opaque
+    // string with another only loses the field names a provider might still validate.
+    if (smaller.size() >= msg.content.size()) continue;
+    total = total - msg.content.size() + smaller.size();
+    msg.content = smaller;
+    if (total <= limit) return;
+  }
+}
+
 }  // namespace
 
 ChatMessage RenderMessage(const session::MessageNode& node, int position) {
@@ -113,6 +164,8 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
     }
     messages.push_back(std::move(msg));
   }
+
+  if (inputs.tool_bytes > 0) ToolBudget(messages, inputs.tool_bytes);
   return messages;
 }
 

@@ -284,3 +284,172 @@ TEST_CASE("A page read after a newer run is not replaced", "[request]") {
   REQUIRE(messages[1].content.find("run two") != std::string::npos);
   REQUIRE(messages[2].content.find("run one, page two") != std::string::npos);
 }
+
+TEST_CASE("A tombstone keeps the verdict and drops the way to ask for more", "[request]") {
+  const std::string page = PageJson("s1", "o1", "line 1 of run one\nline 2\nline 3\n", 1);
+  const std::string tombstone = paging::TombstonedReceipt(page);
+
+  const boost::json::value kept = boost::json::parse(tombstone);
+  // What happened survives: a model that forgets a command failed will run it again.
+  REQUIRE(boost::json::value_to<bool>(kept.at("success")));
+  // The envelope a page is written as carries no verdict -- the command lives in the
+  // conversation, not in the result -- so a tombstone keeps the parts a page does have:
+  // which run it was and how much of it there was.
+  REQUIRE(kept.at("extent").at("lines") == 3);
+  REQUIRE(boost::json::value_to<std::string>(kept.at("buffer").at("id")) == "o1");
+  REQUIRE(boost::json::value_to<std::string>(kept.at("buffer").at("source")) == "s1");
+  // How to ask for it again does not: a cursor is a standing invitation to spend a turn.
+  REQUIRE(!kept.as_object().contains("page"));
+  REQUIRE(!kept.as_object().contains("output"));
+  // And the loss is said, not implied: a silently empty body reads as a command that
+  // printed nothing.
+  REQUIRE(boost::json::value_to<std::string>(kept.at("elided")) == "tombstone");
+  // The origin still resolves, and that is the point of keeping `buffer`: the model can tell
+  // which run it is looking at, even though the page number it would have used is gone.
+  REQUIRE(paging::OriginOf(tombstone).has_value());
+  REQUIRE(tombstone.size() < page.size());
+}
+
+TEST_CASE("A tombstone of something that is not an envelope is left alone", "[request]") {
+  // A refusal, an empty result, a body a tool wrote itself: there is no verdict inside to
+  // lift out, and inventing one would put a success the call never had in front of the model.
+  for (const std::string& body : {std::string("plain text"), std::string(""),
+                                  std::string("[]")}) {
+    REQUIRE(paging::TombstonedReceipt(body) == body);
+  }
+  // A refusal is an object, and it is one of the things a tombstone exists to preserve: the
+  // `refusal` field survives the rewrite along with the verdict beside it.
+  const boost::json::value refusal =
+      boost::json::parse(paging::TombstonedReceipt(R"({"success":false,"refusal":"no"})"));
+  REQUIRE(boost::json::value_to<std::string>(refusal.at("refusal")) == "no");
+  REQUIRE(!boost::json::value_to<bool>(refusal.at("success")));
+}
+
+namespace {
+
+// One assistant turn that calls a tool, and the receipt that answers it. Adding these in
+// pairs is what the budget must never break apart.
+//
+// Each pair names its own `source`, so no page supersedes another and the budget is the only
+// thing acting on the results. Sharing one command would make the supersession rule elide
+// most of them first, and the test would pass without exercising the budget at all.
+void AppendCallAndReceipt(session::MessageGraph& graph, int n, const std::string& output) {
+  session::AssistantPayload assistant;
+  assistant.content = "calling";
+  const std::string id = "call_" + std::to_string(n);
+  assistant.tool_calls.push_back(session::ToolCallRecord{id, "execute_bash", boost::json::parse(
+                                                                               R"({"command":"seq"})")});
+  graph.AppendAfterLeaf(std::move(assistant));
+
+  const std::string source = "s" + std::to_string(n);
+  const std::string buffer = "o" + std::to_string(n);
+  session::ToolPayload receipt;
+  receipt.tool_call_id = id;
+  receipt.tool_name = "execute_bash";
+  receipt.content = PageJson(source, buffer, output, static_cast<std::size_t>(n));
+  receipt.origin = paging::Origin{source, buffer, static_cast<std::size_t>(n)};
+  graph.AppendAfterLeaf(std::move(receipt));
+}
+
+std::string Wide(int lines) {
+  std::string text;
+  for (int i = 1; i <= lines; ++i) text += "line " + std::to_string(i) + " of the output\n";
+  return text;
+}
+
+}  // namespace
+
+TEST_CASE("A request with no budget is the request it would be without one", "[request]") {
+  session::MessageGraph graph;
+  for (int i = 1; i <= 10; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+
+  const std::vector<ChatMessage> unbounded =
+      session::BuildRequestPath(graph, session::RequestInputs{"prompt", "env", 0});
+  // One system message, then every node: a budget of zero is not a budget.
+  REQUIRE(unbounded.size() == graph.Size() + 1);
+  REQUIRE(unbounded.front().role == "system");
+}
+
+TEST_CASE("A tight budget tombstones the oldest results and leaves the pairs intact",
+          "[request]") {
+  session::MessageGraph graph;
+  for (int i = 1; i <= 12; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+
+  session::RequestInputs inputs;
+  inputs.tool_bytes = 12000;
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
+
+  // Nothing is removed, so every call still has the receipt that names it. This is the one
+  // invariant a projection may not break: a `tool` message whose `tool_call_id` matches no
+  // call is rejected by every provider.
+  REQUIRE(messages.size() == graph.Size());
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    bool answered = false;
+    for (const ChatMessage& call : messages) {
+      if (!call.HasToolCalls()) continue;
+      for (const auto& tc : call.tool_calls.as_array()) {
+        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
+      }
+    }
+    REQUIRE(answered);
+  }
+
+
+  std::size_t tool_total = 0;
+  int tombstones = 0;
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    tool_total += msg.content.size();
+    if (msg.content.find("\"elided\":\"tombstone\"") != std::string::npos) ++tombstones;
+  }
+  // The budget is spent from the oldest end and stops as soon as it fits, so it comes out
+  // near the limit rather than far under it, and something really was compressed.
+  REQUIRE(tombstones > 0);
+  REQUIRE(tool_total <= 12000);
+  // Only as many as it took: the results near the end are kept whole because the budget
+  // allowed it, not because they were protected.
+  REQUIRE(tombstones < 12);
+
+  // The newest results are whole: they are what the current turn is reasoning about.
+  const std::string& newest = messages.back().content;
+  REQUIRE(newest.find("line 40 of the output") != std::string::npos);
+  REQUIRE(newest.find("tombstone") == std::string::npos);
+}
+
+TEST_CASE("A budget the results already fit inside changes nothing", "[request]") {
+  session::MessageGraph graph;
+  for (int i = 1; i <= 4; ++i) AppendCallAndReceipt(graph, i, Wide(3));
+
+  session::RequestInputs inputs;
+  inputs.tool_bytes = 1u << 20;
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
+  for (const ChatMessage& msg : messages) REQUIRE(msg.content.find("tombstone") == std::string::npos);
+}
+
+TEST_CASE("A budget never tombstones a result of the newest few turns", "[request]") {
+  session::MessageGraph graph;
+  for (int i = 1; i <= 8; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+
+  session::RequestInputs inputs;
+  inputs.tool_bytes = 1;  // impossible to satisfy; the hold floor is what answers this
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
+
+  std::vector<std::size_t> tool_at;
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (messages[i].role == "tool") tool_at.push_back(i);
+  }
+  REQUIRE(tool_at.size() == 8);
+
+  // The newest results are held regardless of the budget, because compressing the output the
+  // current turn just asked for would make the model ask for it again -- a saved token that
+  // costs a turn.
+  for (std::size_t k = tool_at.size() - 6; k < tool_at.size(); ++k) {
+    REQUIRE(messages[tool_at[k]].content.find("tombstone") == std::string::npos);
+  }
+  // Everything older than the newest six is fair game, and a budget that cannot be met spends
+  // all of it: the oldest result is a tombstone, not the text it started as.
+  const std::string& oldest = messages[tool_at.front()].content;
+  REQUIRE(oldest.find("\"elided\":\"tombstone\"") != std::string::npos);
+  REQUIRE(oldest.find("line 40 of the output") == std::string::npos);
+}
