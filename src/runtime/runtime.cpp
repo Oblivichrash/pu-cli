@@ -535,8 +535,11 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
     // The turn's own stop is handed over per turn (see ProcessInput), since the toolbox outlives
     // the turn that built it; a runtime with no turn in flight hands over nothing, and the
     // delegate's deadline is what stops it then.
-    toolbox_.RegisterTool(
-        std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates, turn_cancel_));
+    // The pager is this runtime's own, so an answer's rank continues the transcript's and a
+    // second answer to one question elides the first. Without it the answer went in as prose
+    // with no origin, and prose is the one thing the projection never compresses.
+    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates,
+                                                              &pager_, turn_cancel_));
   }
 }
 

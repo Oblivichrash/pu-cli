@@ -2,6 +2,8 @@
 #include "pu/tools/ask_dir_tool.hpp"
 
 #include "pu/core/json.hpp"
+#include "pu/exec/run.hpp"
+#include "pu/paging/paging.hpp"
 #include "pu/runtime/runtime.hpp"
 
 #include <boost/json.hpp>
@@ -69,8 +71,11 @@ void Charge(pu::ToolContext& ctx, const DelegationResult& result) {
 }  // namespace
 
 AskDirTool::AskDirTool(std::filesystem::path root, std::vector<std::string> allowed,
-                       CancelToken cancel_token)
-    : root_(std::move(root)), allowed_(std::move(allowed)), cancel_token_(std::move(cancel_token)) {}
+                       paging::Pager* pager, CancelToken cancel_token)
+    : root_(std::move(root)),
+      allowed_(std::move(allowed)),
+      pager_(pager),
+      cancel_token_(std::move(cancel_token)) {}
 
 std::string AskDirTool::Name() const { return "ask_dir"; }
 
@@ -122,6 +127,39 @@ boost::json::value AskDirTool::ParametersSchema() const {
   };
 }
 
+// The answer as a receipt: the conclusion, plus where it came from. It is not a page -- there
+// is no window to read and no cursor to hand back -- but it carries the one field the
+// projection reasons about, `buffer.source`. That is what makes two answers to one question
+// two runs of one source, and therefore lets the older answer be elided instead of re-sent on
+// every turn. Without it the answer went in as bare prose, no `OriginOf` could read it, and it
+// stayed in the request in full for as long as the conversation lasted.
+std::string AskDirTool::Answer(const std::string& target, const std::string& prompt,
+                               const DelegationResult& result, pu::ToolContext& ctx) {
+  Charge(ctx, result);
+
+  if (pager_ == nullptr) return result.answer;
+
+  // The question is the identity, and the target is part of the question: `review` asked of
+  // two directories asks two different things. The separator is the one `BashTool` uses for
+  // the same reason -- a key that can be spelled two ways answers as two questions.
+  std::string key = target;
+  key.push_back('\x1f');
+  key.append(prompt);
+
+  exec::Verdict verdict;
+  verdict.command = "ask_dir " + target;
+  verdict.ok = true;
+
+  const auto answer = pager_->Record(result.answer, std::move(verdict), std::move(key));
+  boost::json::object extra{
+      {"buffer",
+       boost::json::object{{"id", answer->id()},
+                           {"source", answer->source()},
+                           {"rank", answer->rank()}}},
+  };
+  return MakeToolResultJson(true, result.answer, "", 0, false, Refusal::kNone, &extra);
+}
+
 std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
   (void)ctx;
   const std::string ask = json::ValueOrDefault<std::string>(args, "ask", "");
@@ -151,8 +189,7 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
     Runtime runtime;
     const DelegationResult result = runtime.Delegate(request);
     if (!result.error.empty()) return MakeRefusal(result.error, true);
-    Charge(ctx, result);
-    return result.answer;
+    return Answer(request.dir.string(), prompt, result, ctx);
   }
 
   // A path climbing out of the tree would let one prompt reach any `.pu` on the machine.
@@ -189,8 +226,7 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
   const DelegationResult result = runtime.Delegate(request);
   if (!result.error.empty()) return MakeRefusal(result.error, true);
-  Charge(ctx, result);
-  return result.answer;
+  return Answer(target.string(), prompt, result, ctx);
 }
 
 }  // namespace pu::tools

@@ -24,23 +24,6 @@ std::vector<std::size_t> IndexLines(std::string_view text) {
   return starts;
 }
 
-// A question's id, computed from the question rather than counted. A counter restarts
-// with the process, and a resumed transcript would then read the new `s1` as the old
-// `s1` — two different questions wearing one name, which is exactly the case elision
-// cannot survive. FNV-1a over the key, eight hex digits: a collision needs both a
-// billion-to-one roll and two questions in one transcript.
-std::string SourceIdFor(std::string_view key) {
-  std::uint64_t hash = 1469598103934665603ull;
-  for (const char c : key) {
-    hash ^= static_cast<unsigned char>(c);
-    hash *= 1099511628211ull;
-  }
-  constexpr char kHex[] = "0123456789abcdef";
-  std::string id = "s";
-  for (int shift = 28; shift >= 0; shift -= 4) id.push_back(kHex[(hash >> shift) & 0xf]);
-  return id;
-}
-
 // Absent cursors are written as null rather than left out, so a reader can tell "no page
 // that way" from "a field this version does not send".
 boost::json::value CursorOrNull(const std::optional<Cursor>& cursor) {
@@ -80,6 +63,27 @@ std::size_t RankIn(const boost::json::value& object) {
 }
 
 }  // namespace
+
+// A question's id, computed from the question rather than counted. A counter restarts
+// with the process, and a resumed transcript would then read the new `s1` as the old
+// `s1` -- two different questions wearing one name, which is exactly the case elision
+// cannot survive. FNV-1a over the key, eight hex digits: a collision needs both a
+// billion-to-one roll and two questions in one transcript.
+//
+// Public because the id is a fact about a question, not about the store: a delegated answer
+// carries the same kind of origin and is never written to a pager, so its source has to be
+// derivable by whoever writes it down.
+std::string SourceIdFor(std::string_view key) {
+  std::uint64_t hash = 1469598103934665603ull;
+  for (const char c : key) {
+    hash ^= static_cast<unsigned char>(c);
+    hash *= 1099511628211ull;
+  }
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string id = "s";
+  for (int shift = 28; shift >= 0; shift -= 4) id.push_back(kHex[(hash >> shift) & 0xf]);
+  return id;
+}
 
 Buffer::Buffer(std::string id, std::string source, exec::Verdict verdict, std::string text,
                exec::Extent extent, std::size_t rank)
@@ -293,6 +297,15 @@ std::string TombstonedReceipt(std::string_view receipt) {
   lift("command");
   lift("cwd");
 
+  // A conclusion is not a window. An answer that carries a `buffer` but no `page` and no
+  // `extent` has nothing to read back -- there is no cursor, and the run behind it is another
+  // agent's, which this conversation cannot page into. Compressing it would leave a receipt
+  // that names a question and can only be re-asked, at the price of the whole delegated turn.
+  // So it is kept whole: the budget buys back nothing here, and that is the cheaper mistake.
+  const bool conclusion = tombstone.contains("buffer") && !tombstone.contains("page") &&
+                          !tombstone.contains("extent");
+  if (conclusion) return std::string(receipt);
+
   // What is gone, said plainly: a result that silently lost its body reads as a command that
   // printed nothing, and a model that believes that will run the command again.
   tombstone["elided"] = "tombstone";
@@ -345,6 +358,34 @@ std::shared_ptr<const Buffer> Pager::Find(std::string_view id) const {
     if (buffer->id() == id) return buffer;
   }
   return nullptr;
+}
+
+std::shared_ptr<const Buffer> Pager::Record(std::string text, exec::Verdict verdict,
+                                            std::string source_key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const std::string id = "a" + generation_ + "-" + std::to_string(next_ordinal_++);
+  const std::string source = source_key.empty() ? std::string{} : SourceIdFor(source_key);
+  const std::size_t rank = next_rank_++;
+
+  // The extent is the answer's own: what it is, and all of it retained. There is no second
+  // window onto it, so `retained == lines` and nothing downstream reads it as truncated.
+  exec::Extent extent;
+  extent.lines = 1;
+  extent.bytes = text.size();
+  extent.retained = 1;
+
+  auto buffer = std::make_shared<const Buffer>(id, std::move(source), std::move(verdict),
+                                               std::move(text), extent, rank);
+  // Kept outside the buffer list on purpose: the list is what eviction walks, and it is sized
+  // by what a *command* retains. An answer is a few hundred lines at most, and it is the text
+  // the conversation is about, so nothing here may drop it while a receipt still names it.
+  //
+  // That is why `Find` can never return one of these, and why the projection must not treat the
+  // `buffer` on an answer as a page it may elide. A body that names no cursor and no extent is
+  // a conclusion, not a window: taking it away leaves a receipt that can only be re-asked, at
+  // the price of the whole delegated turn again. Dropping the text is worth less than keeping
+  // the answer.
+  return buffer;
 }
 
 }  // namespace pu::paging

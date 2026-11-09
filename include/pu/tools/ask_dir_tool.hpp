@@ -7,6 +7,8 @@
 #include <boost/json.hpp>
 
 #include "pu/core/base.hpp"
+#include "pu/paging/paging.hpp"
+#include "pu/runtime/runtime.hpp"
 #include "pu/tools/tool.hpp"
 
 namespace pu::tools {
@@ -30,8 +32,14 @@ class AskDirTool : public pu::Tool {
   // the list bounds what a directory can reach as well as what a name can.
   // `cancel_token` is the asking turn's stop, handed down rather than copied: the point is that
   // a stop reaches the turn that is actually waiting, which is the delegated one.
+  //
+  // `pager` is where an answer is recorded: not so it can be paged -- an answer has no window --
+  // but so it takes a rank and a source, which is what lets a second answer to the same
+  // question elide the first. It is the asking runtime's own store, so its ranks continue the
+  // transcript's. Null means the answer is returned unrecorded, and the cost is that asking one
+  // question twice keeps both answers.
   AskDirTool(std::filesystem::path root, std::vector<std::string> allowed,
-             CancelToken cancel_token = nullptr);
+             paging::Pager* pager = nullptr, CancelToken cancel_token = nullptr);
 
   std::string Name() const override;
   std::string Description() const override;
@@ -43,8 +51,14 @@ class AskDirTool : public pu::Tool {
   void SetCancelToken(CancelToken token) { cancel_token_ = std::move(token); }
 
  private:
+  std::string Answer(const std::string& target, const std::string& prompt,
+                     const DelegationResult& result, pu::ToolContext& ctx);
+
   std::filesystem::path root_;
   std::vector<std::string> allowed_;
+  // Where an answer is recorded so it can be superseded. Owned by the runtime, which outlives
+  // every toolbox this tool is rebuilt into.
+  paging::Pager* pager_ = nullptr;
   // The asking turn's stop, which the delegated turn answers to as its own.
   CancelToken cancel_token_;
 };

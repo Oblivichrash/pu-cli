@@ -128,6 +128,12 @@ std::string SupersededReceipt(std::string_view receipt, std::string_view superse
 // returned unchanged, since a caller that never had an envelope has nothing here to keep.
 std::string TombstonedReceipt(std::string_view receipt);
 
+// The source id a question's runs are grouped under, derived from the key rather than counted.
+// Public because the id is a fact about a question and not about the store: a delegated answer
+// carries the same kind of origin and is never written into a pager, so whoever writes it down
+// has to be able to reach the same id.
+std::string SourceIdFor(std::string_view key);
+
 // The buffers a session can still read. A page in flight holds its buffer through the
 // shared_ptr, so eviction never pulls the text out from under it.
 class Pager {
@@ -153,6 +159,14 @@ class Pager {
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
+
+  // A run that has no window to page: a delegated answer rather than a command's output. It is
+  // stored like any other run -- it takes a rank, and the text stays readable -- and it keeps
+  // the source its key derives, which is what makes two answers to one question two runs of one
+  // source. It cannot be found by a cursor, because no cursor names it; what it buys is the
+  // rank, and the rank is what elides the older answer. `source_key` must not be empty.
+  std::shared_ptr<const Buffer> Record(std::string text, exec::Verdict verdict,
+                                       std::string source_key);
 
  private:
   mutable std::mutex mutex_;

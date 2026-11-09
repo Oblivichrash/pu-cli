@@ -149,6 +149,14 @@ std::string Executor::BuildStaticSystemContext() const {
          "again. Paging reads what is already stored; grep runs again and finds a needle in "
          "what you have not stored.\n";
   oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
+  // A delegated answer is already prose somebody finished writing. The one continuation this
+  // has to stop is the cheapest a model can make: reading a paragraph and then writing the
+  // same paragraph again. Stated here rather than in ask_dir's own description, because a
+  // description says what a tool is, while this says what to do with what came back.
+  oss << "5. When a tool returns a conclusion -- a delegated answer, a review, a summary -- pass "
+         "it on rather than restating it. Say in your own words only what is yours to add: the "
+         "question that was asked, what you did with the answer, what is still open. Never "
+         "repeat the answer's content back as if writing it out were the work.\n";
 
   return oss.str();
 }

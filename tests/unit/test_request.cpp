@@ -453,3 +453,93 @@ TEST_CASE("A budget never tombstones a result of the newest few turns", "[reques
   REQUIRE(oldest.find("\"elided\":\"tombstone\"") != std::string::npos);
   REQUIRE(oldest.find("line 40 of the output") == std::string::npos);
 }
+
+namespace {
+
+// A delegated answer as ask_dir writes one: the conclusion, and the buffer fields that say
+// which question it answered and how late that run was. It is deliberately not a page -- there
+// is no `page` scope and no cursor -- because an answer has no window to read.
+std::string AnswerJson(const std::string& source, const std::string& buffer, const std::string& text,
+                       std::size_t rank) {
+  boost::json::object result{{"success", true},
+                             {"blocked", false},
+                             {"output", text},
+                             {"error", ""},
+                             {"exit_code", 0}};
+  result["buffer"] =
+      boost::json::object{{"id", buffer}, {"source", source}, {"rank", rank}};
+  return boost::json::serialize(result);
+}
+
+void AppendAnswer(session::MessageGraph& graph, const std::string& source, const std::string& buffer,
+                  const std::string& text, std::size_t rank) {
+  session::ToolPayload receipt;
+  receipt.tool_call_id = "call";
+  receipt.tool_name = "ask_dir";
+  receipt.content = AnswerJson(source, buffer, text, rank);
+  receipt.origin = paging::Origin{source, buffer, rank};
+  graph.AppendAfterLeaf(std::move(receipt));
+}
+
+}  // namespace
+
+TEST_CASE("A second answer to one question replaces the first", "[request]") {
+  // The bug this holds shut: an answer used to go in as bare prose, so no origin could be read
+  // out of it and the projection had nothing to elide. Every answer to every question stayed in
+  // the request at full length for as long as the conversation lasted.
+  session::MessageGraph graph;
+  AppendAnswer(graph, "s1", "a1", "the first answer, long enough to matter\n", 1);
+  AppendAnswer(graph, "s1", "a2", "the second answer\n", 2);
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+
+  const boost::json::value older = boost::json::parse(messages[0].content);
+  REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
+  REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "a2");
+
+  // The newer answer is the one the model reads in full.
+  REQUIRE(messages[1].content.find("the second answer") != std::string::npos);
+}
+
+TEST_CASE("Answers to two different questions do not replace each other", "[request]") {
+  session::MessageGraph graph;
+  AppendAnswer(graph, "s1", "a1", "answer about pricing\n", 1);
+  AppendAnswer(graph, "s2", "a2", "answer about latency\n", 2);
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+
+  REQUIRE(messages[0].content.find("answer about pricing") != std::string::npos);
+  REQUIRE(messages[1].content.find("answer about latency") != std::string::npos);
+}
+
+TEST_CASE("The budget compresses a command's output and never a conclusion", "[request]") {
+  // Two ways a result stops being re-sent, and only one of them applies to an answer. A page is
+  // a window onto output that is still on disk, so dropping its body costs a cursor. An answer
+  // is not: there is no cursor into another agent's run, so a tombstoned answer could only be
+  // re-asked, at the price of the whole delegated turn. The budget spends on the pages.
+  session::MessageGraph graph;
+  // Twelve pages of 80 lines each is about 30 KiB, and the budget is a third of that: enough
+  // that the walk has to compress something, and far enough under the total that it does not
+  // have to compress everything.
+  for (int i = 1; i <= 12; ++i) AppendCallAndReceipt(graph, i, Wide(80));
+  AppendAnswer(graph, "s9", "a9", "the conclusion this turn is about: " + Wide(10), 13);
+
+  session::RequestInputs inputs;
+  inputs.tool_bytes = 10000;
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
+
+  // Every call still has the receipt that answers it: the projection never removes a message.
+  REQUIRE(messages.size() == graph.Size());
+
+  int tombstones = 0;
+  for (const ChatMessage& msg : messages) {
+    if (msg.role == "tool" && msg.content.find("\"elided\":\"tombstone\"") != std::string::npos) {
+      ++tombstones;
+    }
+    // Nothing that is an answer was compressed: each one still holds the text it answered with.
+    if (msg.role == "tool" && msg.content.find("the conclusion this turn is about") != std::string::npos) {
+      REQUIRE(msg.content.find("tombstone") == std::string::npos);
+    }
+  }
+  REQUIRE(tombstones > 0);
+}
