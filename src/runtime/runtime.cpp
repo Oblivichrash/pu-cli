@@ -394,7 +394,15 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
   const std::filesystem::path inherited = target / ".pu" / "agents";
   std::error_code ec;
   if (!std::filesystem::exists(table, ec) && !std::filesystem::is_directory(inherited, ec)) {
-    result.error = "'" + target.string() + "' configures no agent: it has no .pu/agents.json";
+    // The remedy rides with the refusal. A model that is told only what is missing asks the
+    // same question again, because "no table here" names no action it can take; the file it
+    // would have to write is the action, and it is one line of a shape it already knows.
+    result.error =
+        "'" + target.string() +
+        "' configures no agent: it has no .pu/agents.json. Write one with write_file, in the "
+        "shape of this workspace's own .pu/agents.json ({\"default_agent\": \"<name>\", "
+        "\"agents\": [{\"name\": \"<name>\", \"backend\": {\"gateway\": ..., \"model\": ...}}]}), "
+        "then ask again.";
     return result;
   }
 
@@ -421,12 +429,19 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       // A line the asking agent meant as a question, read as a command, is not an answer: the
       // text it produced is a page of help or a setting, and handing it back as a conclusion
       // would report something nobody asked for. Nothing was asked of a provider either, so
-      // this is a mistake in the call rather than a turn that went wrong.
-      result.error = "'" + request.prompt + "' was read as a command, not a question";
+      // this is a mistake in the call rather than a turn that went wrong. The prompt is
+      // therefore named as the thing to change, since it is the only input this call controls.
+      result.error = "the question began with '/' and was read as a pu command, not a question: "
+                     "'" + request.prompt +
+                     "'. Reword it so it does not start with a slash";
       return result;
     }
     if (answered.content.empty()) {
-      result.error = "'" + target.string() + "' answered with nothing";
+      // Not retried with the same words: an empty turn is a fact about the question or the
+      // provider, and the honest next move is to say more, not to say it again.
+      result.error = "'" + target.string() +
+                     "' answered with nothing. Ask again in more specific terms, or ask "
+                     "something smaller";
       return result;
     }
     result.answer = answered.content;

@@ -375,9 +375,22 @@ TEST_CASE("write_file refuses a path that only looks like the sandbox", "[bash]"
     auto j = boost::json::parse(
         tool.Execute(boost::json::value{{"path", path}, {"content", "evil"}}, ctx));
     REQUIRE(j.at("success") == false);
-    REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("traversal") !=
-            std::string::npos);
+    const std::string error = boost::json::value_to<std::string>(j.at("error"));
+    REQUIRE(error.find("traversal") != std::string::npos);
+    // The root is the half of the answer a model cannot compute on its own: it has only the
+    // path it wrote, and no way to tell which directory that path was measured from.
+    REQUIRE(error.find("/tmp/safe") != std::string::npos);
   }
+}
+
+TEST_CASE("write_file's page says a dot-directory is an ordinary path", "[bash]") {
+  // The one directory a model is most often asked to create for a sub-agent is a `.pu/`, and
+  // nothing about "write text to a file" says whether that is in scope. The page answers it
+  // before the call, which is cheaper than the turn spent being refused.
+  WriteFileTool tool;
+  const std::string description = tool.Description();
+  REQUIRE(description.find(".pu/") != std::string::npos);
+  REQUIRE(description.find("sandbox") != std::string::npos);
 }
 
 TEST_CASE("write_file refuses to run with no policy", "[bash]") {

@@ -68,9 +68,17 @@ AskDirTool::AskDirTool(std::filesystem::path root, std::vector<std::string> allo
 std::string AskDirTool::Name() const { return "ask_dir"; }
 
 std::string AskDirTool::Description() const {
+  // The directory branch is the one a model gets wrong, because nothing about a path says
+  // it needs a table: it writes to the directory, asks, and reads the refusal as a bug. So
+  // the shape is stated here, where the model reads it before the first call.
   return "Ask another agent a question and get only its answer. `ask` names who answers: an "
          "agent this table configures, or a directory whose own agent answers there. You get "
-         "the conclusion and not the reading.";
+         "the conclusion and not the reading.\n"
+         "A directory must already carry its own configuration before you ask it: write "
+         "'<dir>/.pu/agents.json' with write_file first, holding {\"default_agent\": \"name\", "
+         "\"agents\": [{\"name\": \"name\", \"backend\": {\"gateway\", \"model\"\")]} "
+         "(the same shape as this workspace's own .pu/agents.json). It is not created for "
+         "you, and a directory without one is refused rather than answered.";
 }
 
 boost::json::value AskDirTool::ParametersSchema() const {
@@ -78,11 +86,13 @@ boost::json::value AskDirTool::ParametersSchema() const {
   if (allowed_.empty()) {
     ask_description =
         "A directory to ask in, relative to this one, for what it knows about its own files. "
-        "Needs its own .pu/ with an agents.json.";
+        "That directory must already have .pu/agents.json -- write it with write_file before "
+        "asking; nothing creates it for you.";
   } else {
     ask_description = std::string("Who answers: one of ") + Listed(allowed_) +
                       ", or a directory to ask in, relative to this one, for what it knows "
-                      "about its own files (that directory needs its own .pu/).";
+                      "about its own files. That directory must already have .pu/agents.json "
+                      "-- write it with write_file before asking; nothing creates it for you.";
   }
 
   boost::json::object properties{
@@ -134,7 +144,11 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   // A path climbing out of the tree would let one prompt reach any `.pu` on the machine.
   const std::filesystem::path relative(ask);
   if (relative.is_absolute()) {
-    return MakeRefusal("a directory to ask is relative to this one, not absolute", true);
+    return MakeRefusal(
+        "a directory to ask is relative to this one, not absolute: drop the leading '" +
+            relative.root_path().string() + "' and give the path from here, or name the " +
+            "directory from a workspace that can already see it",
+        true);
   }
 
   std::error_code ec;
@@ -144,7 +158,14 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   }
   const std::filesystem::path base = std::filesystem::weakly_canonical(root_, ec);
   if (!ec && !Inside(base, target)) {
-    return MakeRefusal("'" + ask + "' leads outside the directory this agent may read", true);
+    // Named as a directory that is out of reach, not as a mistake in the spelling: the
+    // difference is that the asker may still want that directory, and the only way in is a
+    // workspace that sits there.
+    return MakeRefusal("'" + ask +
+                           "' is outside this directory's own tree, so it is not a directory "
+                           "this agent may ask. What is reachable is a path under here, or an "
+                           "agent this table's `delegates` names",
+                       true);
   }
   if (target == base) {
     return MakeRefusal("'" + ask + "' is this directory; ask the question here instead", true);

@@ -51,6 +51,22 @@ TEST_CASE("ask_dir names itself as a tool the model can see", "[ask_dir]") {
   REQUIRE(Says(boost::json::serialize(properties.at("ask")), "reader, reviewer"));
 }
 
+TEST_CASE("The page says a directory needs its own table before it is asked", "[ask_dir]") {
+  // The directory branch is the one a model gets wrong, and no amount of a good refusal
+  // repairs a first call it could have made right. Both ways of reaching the page say it.
+  pu::tools::AskDirTool reached(fs::current_path(), Allowed{"reader"});
+  pu::tools::AskDirTool alone(fs::current_path(), Allowed{});
+
+  REQUIRE(Says(reached.Description(), "write_file"));
+  REQUIRE(Says(reached.Description(), "refused rather than answered"));
+  for (const auto* tool : {&reached, &alone}) {
+    const boost::json::value schema = tool->ParametersSchema();
+    const std::string ask = boost::json::serialize(schema.at("properties").at("ask"));
+    REQUIRE(Says(ask, ".pu/agents.json"));
+    REQUIRE(Says(ask, "nothing creates it for you"));
+  }
+}
+
 TEST_CASE("An agent that may ask nobody is offered only a directory", "[ask_dir]") {
   pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
   const boost::json::value schema = tool.ParametersSchema();
@@ -127,6 +143,10 @@ TEST_CASE("ask_dir refuses a directory that configures no agent", "[ask_dir]") {
 
   const std::string reply = tool.Execute(Ask("ghost-directory-that-is-not-here", "hi"), ctx);
   REQUIRE(Says(reply, "no .pu/agents.json"));
+  // A refusal a model cannot act on is one it retries. The remedy rides with the reason: the
+  // file to write, and the shape to write in, are both in the message.
+  REQUIRE(Says(reply, "write_file"));
+  REQUIRE(Says(reply, "then ask again"));
 }
 
 TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
@@ -135,6 +155,9 @@ TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
 
   const std::string reply = tool.Execute(Ask("/etc", "hi"), ctx);
   REQUIRE(Says(reply, "relative"));
+  // Which part to drop, rather than which rule was broken: the caller keeps the path it
+  // meant and rewrites the one thing that is wrong with it.
+  REQUIRE(Says(reply, "leading '/'"));
 }
 
 TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]") {
@@ -144,6 +167,10 @@ TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]
 
   const std::string reply = tool.Execute(Ask("../../../..", "hi"), ctx);
   REQUIRE(Says(reply, "outside"));
+  // The boundary is named along with the two ways that stay inside it, because "outside"
+  // alone reads as a mistake in the spelling of a path the caller still wants.
+  REQUIRE(Says(reply, "under here"));
+  REQUIRE(Says(reply, "delegates"));
 }
 
 TEST_CASE("ask_dir refuses to ask the directory it is already in", "[ask_dir]") {

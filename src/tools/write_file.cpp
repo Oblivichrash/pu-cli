@@ -25,7 +25,16 @@ bool Within(const std::filesystem::path& root, const std::filesystem::path& targ
 
 std::string WriteFileTool::Name() const { return "write_file"; }
 
-std::string WriteFileTool::Description() const { return "Write text to a file."; }
+std::string WriteFileTool::Description() const {
+  // Nothing about "write a file" says that a dot-directory is in scope, and the one folder a
+  // model is most likely to be asked to create is a `.pu/` for a sub-agent. Saying so here
+  // is cheaper than the turn spent discovering it, and the sandbox sentence is the half of
+  // the answer a model otherwise learns by being refused outside it.
+  return "Write text to a file. The path is relative to this workspace's sandbox root, and "
+         "the parent directories are created. A path that resolves outside the sandbox is "
+         "refused; dot-directories such as '.pu/' are ordinary paths and are written like "
+         "any other.";
+}
 
 boost::json::value WriteFileTool::ParametersSchema() const {
   return boost::json::object{
@@ -61,7 +70,11 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
   const auto target = std::filesystem::weakly_canonical(root / path, ec);
   if (ec) return MakeRefusal("invalid path");
   if (!Within(root, target)) {
-    return MakeRefusal("path outside sandbox root (traversal not allowed)", true);
+    // The root is named because it is what explains the refusal: a path the model computed
+    // from the directory it can see is out of bounds only relative to a root it never saw.
+    return MakeRefusal("path outside sandbox root (traversal not allowed): paths are relative "
+                       "to '" + root.string() + "', which is this agent's sandbox",
+                       true);
   }
 
   std::filesystem::create_directories(target.parent_path(), ec);

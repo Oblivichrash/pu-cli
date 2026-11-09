@@ -82,6 +82,9 @@ about the other.
 `ask_dir`: the question is the whole of what that turn knows, and the answer comes back without
 the reading it took to reach one. A model may only hand a turn to an agent its own table lists
 in `delegates`; by hand you may name any of them, and `--show-usage` prints what the turn cost.
+Naming a directory instead works too, but only one that already carries its own `.pu/agents.json`
+— nothing creates it for you, so the first move is to write that file and the second is to ask.
+The delegated turn is one hop: it gets no `ask_dir` of its own.
 
 The three commands that read a provider answer different questions. `pu models` asks what a
 gateway offers and names the model to pick; `pu probe` asks what the answer is shaped like and

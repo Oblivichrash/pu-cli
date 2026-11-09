@@ -77,6 +77,28 @@ than a line, and Markdown is what an editor can hold. Three things it is not:
 - **Not the agent's only voice.** It is the `system` message's first half, beside the injected
   environment — what it says is who the agent is, not where it is.
 
+### Asking a directory that is not an agent of yours
+
+`ask_dir` takes one `ask`: a name from the table's `delegates`, or a **directory relative to
+this one**. The second form reaches a `.pu/` this workspace does not own — its own agents table,
+its own session, its own sandbox — which is what makes it useful for a sub-agent created
+mid-conversation.
+
+Three things are true of it, and the first is the one that surprises:
+
+- **The directory must already carry its own `.pu/agents.json`.** Nothing creates it: a
+  directory without one is refused, not configured on the fly. The refusal names the file and
+  the shape to write, so the recovery is one `write_file` followed by the same question again.
+- **The path is under here.** It is resolved against this workspace's sandbox root and must
+  stay inside it; an absolute path is refused with the leading component it wants dropped,
+  since an absolute path is the shape of a mistake rather than a request.
+- **The turn is one hop.** The delegated agent has no `ask_dir` of its own, so a question
+  cannot travel further than the agent it was handed to. This is a property of the
+  configuration rather than a depth limit to tune.
+
+Its sandbox is its own, taken from its own table, so what it may read is decided there and not
+here; a sub-agent whose table is wider than the parent's is a decision its `.pu/` made.
+
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md). Its
