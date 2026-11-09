@@ -243,10 +243,14 @@ main {
    text above rather than with the edge of the frame.
    The gap is 4px rather than the 8px it started at: the line is 11px type in an 18px box, so
    half of what the eye reads as gap is the leading inside the line box, not the margin. Eight
-   plus that leading put the note far enough down to look detached from the frame it belongs to. */
+   plus that leading put the note far enough down to look detached from the frame it belongs to.
+   The line centres rather than sits on baselines. Baseline alignment is right for two runs of
+   type and wrong for a type run beside an icon: a button aligning by baseline puts the bottom
+   of its margin box there, and a 20px button around a 16px mark therefore lands with the mark
+   riding about 4px above the words it sits beside. Centring the boxes brings them back level. */
 .msg-foot {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin-top: 4px;
   padding: 0 18px;
@@ -282,12 +286,13 @@ main {
   /* The mark is a drawn path now, not a character: there is no font to inherit and no baseline
      to sit on, so the button is a box the 16px icon is centred in. The padding is the target and
      nothing else -- the mark keeps the size it reads at, and the negative margin takes the
-     padding back out of the footing's height. */
+     padding back out of the footing's height, so growing the target to something a finger can
+     hit costs no layout. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 3px;
-  margin: -2px -3px;
+  padding: 5px 6px;
+  margin: -5px -6px;
   color: var(--ink-light);
   line-height: 1;
   cursor: pointer;
@@ -296,7 +301,15 @@ main {
      stroke had: at 0.55 the copy mark on a user bubble read as a smudge on the paper. */
   opacity: 0.7;
 }
-.msg-action svg { display: block; }
+/* Centre the mark, then seat it. The path inside the viewBox is 11px tall in a 16px box --
+   `M5.5 2.5h8v8` -- so 2.5px of dead space sits above and below the strokes, and a box centred
+   on the words leaves the strokes reading low, not high: the box's own middle is not the
+   strokes' middle. The nudge is against the ink rather than the box, and it is the half-pixel
+   the two centres disagree by, rounded to something a renderer can draw on a pixel grid. */
+.msg-action svg {
+  display: block;
+  transform: translateY(-1px);
+}
 .msg-action:hover { color: var(--accent); opacity: 1; }
 /* A copy that has just happened says so in words: a mark cannot tell a reader whether anything
    was taken, and the confirmation is the only reason the button changes at all. The fixed width
@@ -934,11 +947,29 @@ main {
 
 /* One rhythm inside a reply: what markdown emits carries no margins of its own, and
    consecutive blocks are separated by a single step, so a paragraph, a list and a code
-   block are spaced alike instead of by the browser's defaults around some of them. */
+   block are spaced alike instead of by the browser's defaults around some of them.
+   The step is 0.75em, not the 0.5em it started at: at 15px/24.75px half an em is a gap narrower
+   than the leading inside a line, so two paragraphs read as one long one that happens to break
+   early. Three quarters of an em clears the leading and shows the seam without doubling the
+   space a reply takes on screen. */
 .msg .block-text > * { margin: 0; }
-.msg .block-text > * + * { margin-top: 0.5em; }
+.msg .block-text > * + * { margin-top: 0.75em; }
 .msg .block-text ul,
 .msg .block-text ol { padding-left: 1.5em; }
+/* A heading is a title, not another block: it wants more air above it than the step gives and
+   less below, so it binds to what it names rather than floating between two paragraphs. */
+.msg .block-text h1,
+.msg .block-text h2,
+.msg .block-text h3,
+.msg .block-text h4 { margin-top: 1em; }
+.msg .block-text h1 + *,
+.msg .block-text h2 + *,
+.msg .block-text h3 + *,
+.msg .block-text h4 + * { margin-top: 0.4em; }
+/* A code block is the block most likely to be reached for, so it gets a little more air than a
+   paragraph and keeps it on both sides. */
+.msg .block-text pre { margin-top: 0.75em; }
+.msg .block-text pre + * { margin-top: 0.75em; }
 
 .msg.assistant.typing .block-text:last-child::after {
   content: "▌";
@@ -989,10 +1020,10 @@ main {
   #composer-row { flex-wrap: wrap; }
   #input { flex-basis: 100%; }
   #send { flex: 1; height: 40px; min-width: 0; }
-  /* The readings a narrow screen can live without, dropped in the order they matter least;
-     the connection, the agent and the thinking level stay. */
-  #status-context { display: none; }
-  #status-tools { display: none; }
+  /* Nothing is dropped from the bar. The two readings that used to be hidden here were the
+     gateway and the model, and they are gone from the bar entirely -- what is left on the right
+     is the tool count and the context count, which are now the whole of that half. Dropping
+     them leaves it empty. The bar clips instead, and each item carries its own width bound. */
 }
 
 @media (prefers-color-scheme: dark) {
