@@ -240,12 +240,15 @@ main {
    takes a margin wide enough that the frame above it reads as a frame and this line as a note
    under one, which is the whole reason for moving it out. It also takes the bubble's own
    side inset, so the first character of the note lines up with the first character of the
-   text above rather than with the edge of the frame. */
+   text above rather than with the edge of the frame.
+   The gap is 4px rather than the 8px it started at: the line is 11px type in an 18px box, so
+   half of what the eye reads as gap is the leading inside the line box, not the margin. Eight
+   plus that leading put the note far enough down to look detached from the frame it belongs to. */
 .msg-foot {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
   padding: 0 18px;
 }
 /* The cost sits at the left end of the line and takes no room it does not need, so a message
