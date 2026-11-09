@@ -66,15 +66,13 @@ function attachUsageToOpenReply(payload) {
   const el = PU.currentAssistantEl;
   if (!el) return;
   el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
-  // The cost leads the footing and the controls follow it, the order `createMessage` builds for a
-  // turn drawn from the store. Inserting rather than appending is what makes the two paths agree:
-  // a live turn has already put the controls in the footing by this point, so an append here
-  // would put the cost after them and the same turn would read one way while streaming and
-  // another way after a reload.
+  // The footing carries the cost and nothing else, so it is the whole place for it to go, and
+  // the two paths -- a turn drawn from the store and a turn still streaming -- now agree because
+  // there is nothing left to order the line against. A live turn has no footing at all until
+  // this line is the reason for one; the bar of controls lives inside the bubble, out of the way.
   const foot = el.querySelector(".msg-foot");
-  const actions = foot && foot.querySelector(".msg-actions");
-  if (foot && actions) foot.insertBefore(usageLineNode(payload), actions);
-  else (foot || el).appendChild(usageLineNode(payload));
+  if (foot) foot.appendChild(usageLineNode(payload));
+  else el.appendChild(usageLineNode(payload));
 }
 
 // Draws one turn's usage in the panel and the bar, and the conversation's total under it. The

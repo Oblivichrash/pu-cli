@@ -257,72 +257,37 @@ main {
 }
 /* Both ends of the footing sit at the left, on the bubble's own side inset, so the first thing
    on the line shares a column with the first character of the text above it. Nothing is pushed
-   to the far edge: a cost at one end of a wide column and its controls at the other left a gap
-   of a hand's length between a message and what it had cost. */
+   to the far edge: a cost at one end of a wide column left a gap of a hand's length between a
+   message and what it had cost. */
 .msg-foot .msg-usage {
   flex: none;
   min-width: 0;
   margin-top: 0;
 }
-.msg-foot .msg-actions {
-  flex: none;
-  /* Drawn first, though built second. The controls are the only thing on this line a reader can
-     act on, so they take the position the eye lands on when it leaves the text, and they hold it:
-     the cost changes length with every turn and would otherwise shift them along. The order is
-     spent here rather than in the markup because the cost is the better thing to read first --
-     "what this cost, and what I may do about it" -- and the DOM keeps that order for a screen
-     reader while the eye gets the target where it can be hit. */
-  order: -1;
-}
-/* The controls are the message's answer to a reader who has arrived at it, not something to read
-   while passing: on a page of twenty turns a row of marks under every one of them is twenty rows
-   of furniture, and the eye that is reading the conversation has to step over each. So they wait
-   until the message is pointed at.
-   They are faded rather than removed. `visibility: hidden` would take the buttons out of the tab
-   order, so a keyboard reader would tab past a control that does not exist for them while the
-   pointer reader is offered it — and `:focus-within` below could never fire, since a box that is
-   hidden cannot be focused in the first place. At zero opacity the row is still a target and
-   still reachable; what it is not is visible, which is the whole of what was wanted.
-   `opacity` rather than `display` because the footing holds a column: removing the box would move
-   the cost up under the words and back down again on every hover, which is a flicker in place of
-   a hint.
-   The bubble is the target, not the message: the message is a container that draws nothing, and
-   its own box is a column the width of the column, so hovering well to the side of a short
-   remark would offer to copy it. `:focus-within` is the second way in. */
-.msg-foot .msg-actions {
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.msg:hover .msg-foot .msg-actions,
-.msg:focus-within .msg-foot .msg-actions {
-  opacity: 1;
-}
-/* A press that has just been confirmed is not a hover: "Copied" is the page telling the reader
-   something happened, and a confirmation that vanished because the pointer had meanwhile moved is
-   a press with no answer. It stays while it says anything. */
-.msg-foot .msg-actions:has(.said) {
-  opacity: 1;
-}
-/* A touch screen has no pointer to arrive with, so the reveal above would be a control that
-   cannot be reached at all. There the row is simply always there, which is what it was before
-   this rule existed. */
-@media (hover: none) {
-  .msg-foot .msg-actions {
-    opacity: 1;
-  }
-}
-/* Editing steps aside for the same reason it always did, and it is written last so that it wins
-   over the reveal and the confirmation: Copy would take the text as it was before the field
-   opened, and Edit is the thing already happening. Nothing here is pressed while the field is
-   open, so the row is unreachable as well as invisible. */
-.msg-foot.busy .msg-actions {
-  opacity: 0;
-  pointer-events: none;
+/* What a reader may do with a message is offered when they reach for the message, not under it
+   while it is at rest. On a page of twenty turns a row of marks under every one of them is
+   twenty rows of furniture the eye reading the conversation has to step over, so the controls
+   live in the bar a click opens: next to Save and Cancel for a turn of yours, and in a bar of
+   its own inside the bubble for a reply.
+   That leaves the footing holding one line of small print, and `nowrap` keeps a long cost from
+   folding onto a line of its own under a short reply. */
+.msg-foot {
+  white-space: nowrap;
 }
 .msg-actions {
   display: flex;
   gap: 8px;
   flex: none;
+  align-items: center;
+}
+/* The bar a reply opens on click. It sits at the bottom of the bubble, on the text's own left
+   edge, because the words above it are the thing it acts on and the click that opened it landed
+   somewhere in them. A hairline above it separates the marks from the last line of the reply
+   without drawing a second frame inside the bubble. */
+.msg-bubble > .msg-actions.reply-bar {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--border);
 }
 .msg-action {
   background: transparent;
@@ -397,11 +362,16 @@ main {
 
 .edit-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
 }
 
-.edit-actions button,
+/* The bar holds two kinds of button: the drawn marks, which are a shape and no frame, and the
+   two that end the edit, which are words in a box. The marks are excluded here rather than
+   given a frame of their own, so that the control a reader presses keeps the look it has
+   everywhere else on the page. */
+.edit-actions button:not(.msg-action),
 .edit-resend-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -413,9 +383,12 @@ main {
   letter-spacing: 0.05em;
   cursor: pointer;
 }
-.edit-actions button:hover,
+.edit-actions button:not(.msg-action):hover,
 .edit-resend-btn:hover { color: var(--accent); border-color: var(--accent); }
 .edit-save { color: var(--ink); }
+/* Save and Cancel are the end of the sentence; the marks are what may be done with it on the
+   way. Pushed to the far end they read as a group rather than as two more marks in a row. */
+.edit-actions .edit-save { margin-left: auto; }
 
 /* A saved edit sits in the transcript until it is sent: the store no longer holds it, so the
    one thing the page can offer is the one action that asks it again. */

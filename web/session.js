@@ -278,14 +278,16 @@ function beginEdit(el, event, fromButton) {
   field.className = "edit-field";
   field.value = original;
   container.replaceChildren(field);
-  // The footing under the bubble still names what may be done with the message, but Copy would
-  // copy the text as it was before the field opened and Edit is the thing already happening, so
-  // both step aside while it is open.
-  const head = el.querySelector(".msg-foot");
-  if (head) head.classList.add("busy");
-
+  // The bar under the field is where everything a reader may do with this message is offered at
+  // once: copy and edit, then the two that end the edit. They used to sit under the bubble at
+  // rest, which put a row of marks under every turn whether or not anyone meant to act on it.
+  // Copy stays here beside Save because the field holds the text as it is *now*: a reader who
+  // has just changed a sentence often wants the new words somewhere else, and taking them from
+  // the field is the only reading of "copy" that matches what is on screen.
   const actions = document.createElement("div");
   actions.className = "edit-actions";
+  actions.appendChild(messageActions(el, "user", turn, blocksOf(el)));
+
   const save = document.createElement("button");
   save.type = "button";
   save.className = "edit-save";
@@ -295,8 +297,8 @@ function beginEdit(el, event, fromButton) {
   cancel.className = "edit-cancel";
   cancel.textContent = "Cancel";
   actions.append(save, cancel);
-  // Inside the bubble, with the field: Save and Cancel belong to the sentence being changed, not
-  // to the line under it that says what may be done with a message at rest.
+  // Inside the bubble, with the field: these belong to the sentence being changed, not to the
+  // line under it that says what the turn cost.
   (el.querySelector(".msg-bubble") || el).appendChild(actions);
 
   // `value` is what the bubble says once the field is gone: `null` is a cancelled edit, which
@@ -307,8 +309,10 @@ function beginEdit(el, event, fromButton) {
     el.classList.remove("editing");
     el.title = "Click to edit this message";
     actions.remove();
-    if (head) head.classList.remove("busy");
     const text = value === null ? (el.dataset.text || "") : value;
+    // The bar offered a copy of the words as they were when it was built, and the field has
+    // since been edited past them: what the message carries now is what a copy should take.
+    el._puBlocks = [{ type: BLOCK_TYPES.TEXT, content: text }];
     renderBlocks([{ type: BLOCK_TYPES.TEXT, content: text }], container);
   };
 

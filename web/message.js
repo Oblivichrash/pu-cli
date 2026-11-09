@@ -156,10 +156,12 @@ function copyFallback(text) {
 }
 
 // The controls a message carries: copy on both sides, and edit only where a turn can be taken
-// back. They close the footing under the bubble, at its left end where the text above starts,
-// so everything a reader may do with a message is in one place and one reach from the words.
-// The row is only drawn when the message is pointed at or focused into; the stylesheet owns
-// that, so nothing here decides when a reader has arrived.
+// back. They live where the editor does, under the field, because a message has one moment at
+// which a reader acts on it and that is the moment they click it. Under the bubble they were
+// always there: on a page of twenty turns, twenty rows of marks the eye had to step over to
+// reach the next reply.
+// `Save` and `Cancel` are built by `beginEdit` and appended after this row, so the bar reads
+// copy, edit, then the two that end the edit.
 function messageActions(el, role, turn, blocks) {
   const actions = document.createElement("span");
   actions.className = "msg-actions";
@@ -183,9 +185,11 @@ function messageActions(el, role, turn, blocks) {
     edit.appendChild(controlIcon("edit"));
     edit.title = "Edit this message";
     edit.setAttribute("aria-label", "Edit this message");
+    // Already open is not a second edit: the bar the reader is pressing in is the sign that it
+    // happened, and reopening it would throw away what they had typed so far.
     edit.addEventListener("click", (event) => {
       event.stopPropagation();
-      beginEdit(el, event, true);
+      if (el.dataset.editing !== "1") beginEdit(el, event, true);
     });
     actions.appendChild(edit);
   }
@@ -196,6 +200,10 @@ function messageActions(el, role, turn, blocks) {
 function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
+  // The words as the store has them, not as the page drew them: the editor offers a copy from
+  // here, and a copy taken from the rendered DOM would flatten the reply's markdown back to
+  // plain text and paste as a different sentence from the one that was written.
+  el._puBlocks = blocks || [];
 
   // The bubble is what is drawn as a reply: the frame, the tint, and the room around the words.
   // It is a child of the message rather than the message itself so that the line under it can
@@ -210,37 +218,43 @@ function createMessage(role, blocks, turn, text, usage) {
 
   if (blocks) renderBlocks(blocks, container);
 
-  // The footing closes the message: what it cost, and what may be done with it, on one line
-  // under the words. It is outside the bubble, so the marked-up text and the note about the
-  // turn are two surfaces rather than one: everything inside the frame is what was said, and
-  // everything under it is what the reader may do about it.
+  // The footing closes the message: what it cost, on one line under the words. It is outside the
+  // bubble, so the marked-up text and the note about the turn are two surfaces rather than one:
+  // everything inside the frame is what was said, and everything under it is a fact about the
+  // turn rather than something to do with it.
   // Who spoke is not written here. The two backgrounds already tell the two sides apart, and a
   // name saying what a colour has said four times down the page is a caption on a caption.
   // A message the reader cannot act on still gets no footing at all: a system remark is the page
   // talking, and an error is already something to be read.
-  if (role === "user" || role === "assistant") {
+  // What a reader *may* do with the message is not here: copying and editing are offered when
+  // the bubble is clicked, in the same bar that carries Save and Cancel, so a reply at rest is
+  // its words and nothing else.
+  if (role === "assistant" && usage) {
     const foot = document.createElement("div");
     foot.className = "msg-foot";
-
-    // The cost goes into the footing before the controls, which is the order it is read in. The
-    // stylesheet lays the controls out to its left -- they are the only thing here that can be
-    // pressed -- so the markup keeps the reading order while the eye meets the target first.
-    if (role === "assistant" && usage) foot.appendChild(usageLineNode(usage));
-
-    foot.appendChild(messageActions(el, role, turn, blocks));
+    foot.appendChild(usageLineNode(usage));
     el.appendChild(foot);
   }
 
   // A turn of yours is a thing you may have meant differently, and its text carries the same
-  // affordance the Edit button offers: the bubble stays where it is and the words become
-  // editable in place. The row above is the named way to do it; the text is the way a reader
-  // reaches for without looking.
+  // affordance the editor offers: the bubble stays where it is and the words become editable in
+  // place. The editor is the named way to do it; the text is the way a reader reaches for
+  // without looking.
   if (role === "user" && typeof turn === "number" && turn > 0) {
     el.classList.add("editable");
     el.dataset.turn = String(turn);
     el.dataset.text = text || "";
     el.title = "Click to edit this message";
     el.addEventListener("click", (event) => beginEdit(el, event));
+  }
+
+  // A reply has nothing to change and no turn to take back, so clicking it opens the one bar of
+  // controls it has rather than an editor: a reader who wants the reply somewhere else has to
+  // ask for it, and asking for it is a click. Without this the reply would have no way to be
+  // copied at all, since its footing now carries only what the turn cost.
+  if (role === "assistant") {
+    el.classList.add("copyable");
+    el.addEventListener("click", (event) => toggleReplyControls(el, event));
   }
 
   // Read the position before the append, because the append itself moves the content
@@ -252,3 +266,61 @@ function createMessage(role, blocks, turn, text, usage) {
   if (wasAtBottom) scrollToBottom();
   return el;
 }
+
+// The block list a message was drawn from, kept on the element so the editor can offer a copy of
+// the words it is about to replace. It is read from the store the page already holds rather than
+// from the rendered DOM: a copy of a reply with its markdown flattened back to text would paste
+// as a different sentence from the one the model wrote.
+function blocksOf(el) {
+  const stored = el._puBlocks;
+  if (Array.isArray(stored)) return stored;
+  const text = el.dataset.text || "";
+  return text ? [{ type: BLOCK_TYPES.TEXT, content: text }] : [];
+}
+
+// A reply's controls are opened by a click and closed by the next one, or by a click anywhere
+// else on the page. It is one bar under a message that cannot be edited, so there is no field
+// for it to share a row with and nothing to save: copy is the whole of what a reply offers.
+// The bar goes inside the bubble rather than under it, in the space the reader's click opened.
+function toggleReplyControls(el, event) {
+  // A link inside the reply is the reader following the reply, not asking for its controls, and
+  // a selection is a reader taking part of it by hand.
+  if (event && event.target.closest("a, button")) return;
+  if (event && String(window.getSelection() || "").length > 0) return;
+
+  const open = el.querySelector(":scope > .msg-bubble > .msg-actions");
+  if (open) {
+    closeReplyControls(el);
+    return;
+  }
+  closeAllReplyControls(el);
+
+  const bar = messageActions(el, "assistant", undefined, blocksOf(el));
+  bar.classList.add("reply-bar");
+  (el.querySelector(".msg-bubble") || el).appendChild(bar);
+  el.classList.add("showing-controls");
+}
+
+function closeReplyControls(el) {
+  el.querySelectorAll(":scope > .msg-bubble > .msg-actions.reply-bar").forEach((bar) => bar.remove());
+  el.classList.remove("showing-controls");
+}
+
+function closeAllReplyControls(except) {
+  (PU.composer.messagesEl || document).querySelectorAll(".msg.assistant.showing-controls").forEach((other) => {
+    if (other !== except) closeReplyControls(other);
+  });
+}
+
+// One listener for the whole page rather than one per reply: a click that lands anywhere but on
+// a reply's controls is a reader moving on, and a bar left open behind them would be a message
+// still asking to be acted on after the attention went elsewhere. It runs in the capture phase
+// so a handler inside the page cannot stop it from being heard.
+document.addEventListener(
+  "click",
+  (event) => {
+    if (event.target.closest && event.target.closest(".msg.assistant")) return;
+    closeAllReplyControls(null);
+  },
+  true
+);
