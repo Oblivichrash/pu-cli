@@ -48,9 +48,15 @@ function usageLineNode(usage) {
 // controls are drawn rather than spelled, and the word they stand for stays as their accessible
 // name. The letter changed to "Copied" is the one place a word is still shown, because a copy
 // that says nothing looks exactly like a copy that failed.
+//
+// Both marks are a single weight of stroke with no interior detail, which is what survives being
+// drawn at 16px on a tinted background. The copy mark used to be U+2398, a dotted frame with an
+// arrow through it: four ideas in a box 16px wide is three too many, and at that size it read as
+// a smudge rather than as a sheet going somewhere. Two sheets offset from each other say "copy"
+// with nothing to spare, and the solid pencil keeps a fill where a hairline would vanish.
 const CONTROL_GLYPHS = {
-  copy: "\u2398",      // ⎘ -- a sheet going to another sheet
-  edit: "\u270E",      // ✎
+  copy: "\u2750",      // ❐ -- a sheet laid over another, the one behind it showing at two edges
+  edit: "\u270F",      // ✏
 };
 
 // The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool

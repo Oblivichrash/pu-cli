@@ -273,17 +273,19 @@ main {
 .msg-action {
   background: transparent;
   border: none;
-  /* A glyph 14px tall is a 14px target, which is well under what a pointer can be relied on to
+  /* A glyph 16px tall is a 16px target, which is well under what a pointer can be relied on to
      hit. The padding is the target and nothing else: the glyph itself stays the size it reads
      at, and `line-height` keeps the extra room from changing the footing's height. */
   padding: 2px 3px;
   margin: -2px -3px;
   color: var(--ink-light);
   font-family: inherit;
-  /* The glyphs are drawn smaller than a letter of the same size reads, so they take a step up
-     to sit level with the sender's name beside them, and a step beyond that to keep the thin
-     strokes of a dotted outline from closing up into a smudge. */
-  font-size: 14px;
+  /* Sixteen, not fourteen. These marks are a sheet and a pencil rather than letters, and at 14px
+     the pencil's fill and the sheet's second edge both came out a pixel wide and greyed into the
+     tint behind them. Two points more costs the footing a single pixel of height (18 to 19) and
+     is the difference between a mark a reader can name and a smudge they have to hover to
+     identify. */
+  font-size: 16px;
   line-height: 1;
   letter-spacing: 0;
   cursor: pointer;
