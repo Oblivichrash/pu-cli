@@ -11,11 +11,6 @@ function renderBlocks(blocks, container) {
   }
 }
 
-// Who a turn is from. The person at the page is "You".
-function roleLabel(role) {
-  return role === "user" ? "You" : "Assistant";
-}
-
 // What a turn cost, as one line: the counts always, a price only where the product reported
   // one. A turn the product did not price says "—" rather than "0", which would read as free.
 function usageLine(usage) {
@@ -161,25 +156,22 @@ function createMessage(role, blocks, turn, text, usage) {
 
   if (blocks) renderBlocks(blocks, container);
 
-  // The footing names the message and closes it: who spoke, what it cost, and what may be done
-  // with it, all on one line under the words. The bubble holds nothing but the words, so a
-  // message reads as what was said and the line under it as what the reader may do about it.
-  // Everything on that line is quiet, which is why it is one line: none of it is the message.
+  // The footing closes the message: what it cost, and what may be done with it, on one line
+  // under the words. The bubble holds nothing but the words, so a message reads as what was
+  // said and the line under it as what the reader may do about it. Everything on that line is
+  // quiet, which is why it is one line: none of it is the message.
+  // Who spoke is not written here. The two backgrounds already tell the two sides apart, and a
+  // name saying what a colour has said four times down the page is a caption on a caption.
   // A message the reader cannot act on still gets no footing at all: a system remark is the page
   // talking, and an error is already something to be read.
   if (role === "user" || role === "assistant") {
     const foot = document.createElement("div");
     foot.className = "msg-foot";
 
-    const label = document.createElement("span");
-    label.className = "role";
-    label.textContent = roleLabel(role);
-    foot.appendChild(label);
-
     if (role === "assistant" && usage) foot.appendChild(usageLineNode(usage));
 
-    // The controls go last and are pushed to the far edge, so the name and the cost read as one
-    // remark at the left and the things that can be pressed sit where a hand already is.
+    // The controls go last and are pushed to the far edge, so the cost reads as one remark at
+    // the left and the things that can be pressed sit where a hand already is.
     foot.appendChild(messageActions(el, role, turn, blocks));
     el.appendChild(foot);
   }

@@ -219,39 +219,26 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-/* The sender's name is no longer part of the bubble: it closes the message, sitting on the line
-   under it where it belongs to the whole message rather than to the first word of it. */
-.msg .role {
-  display: block;
-  flex: none;
-  font-size: 11px;
-  color: var(--ink-light);
-  margin-bottom: 0;
-  letter-spacing: 0.05em;
-  font-weight: 400;
-  text-transform: none;
-}
-
-/* The footing closes the message: the name, then what it cost, then what may be done with it.
-   One line, because none of it is the message and all of it is quiet. The name and cost run
-   together at the left; the controls take the far edge, where a hand already is. */
+/* The footing closes the message: what it cost, then what may be done with it. One line,
+   because none of it is the message and all of it is quiet. The cost runs at the left; the
+   controls take the far edge, where a hand already is. */
 .msg-foot {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin-top: 6px;
 }
-/* The cost follows the name directly rather than taking the room in between, so the two read as
-   one remark. `margin-right: auto` does the pushing instead, and only the controls feel it. */
+/* The cost sits at the left end of the line and takes no room it does not need, so a message
+   that reports a cost and a message that does not are laid out the same way. */
 .msg-foot .msg-usage {
   flex: none;
   min-width: 0;
   margin-top: 0;
-  margin-left: 2px;
 }
 .msg-foot .msg-actions {
-  /* Pushed away from the remark at the left, so the line has two ends and the gap between them
-     is whatever space the message did not need. */
+  /* Pushed away from the cost at the left, so the line has two ends and the gap between them
+     is whatever space the message did not need. A turn of yours has nothing at the left, so the
+     controls stand alone at the right, in the same place on every message. */
   margin-left: auto;
 }
 .msg-foot.busy .msg-actions { visibility: hidden; }
@@ -289,11 +276,12 @@ main {
 .msg-copy { min-width: 1em; text-align: center; }
 .msg-copy.said { min-width: 0; font-size: 11px; letter-spacing: 0.05em; }
 
-/* A turn of yours can be taken back, so the text is a second way in: the name turning accent
-   on hover, and the cursor becoming a text caret, are the only hints that clicking does
-   anything. The Edit control under the bubble is the named way to do the same thing. */
+/* A turn of yours can be taken back, so the text is a second way in. The cursor becoming a text
+   caret and the border warming to the accent are the hints that clicking does anything; the
+   Edit control under the bubble is the named way to do the same thing. The name used to carry
+   the hover, but a message no longer has one to colour, so the whole bubble answers instead. */
 .msg.user.editable { cursor: text; }
-.msg.user.editable:hover .role { color: var(--accent); }
+.msg.user.editable:hover { border-color: var(--accent); }
 .msg.user.editing { cursor: default; }
 
 /* The field is the bubble: it is sized to its own text and carries no frame of its own, so
