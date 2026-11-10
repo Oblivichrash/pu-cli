@@ -501,7 +501,16 @@ TEST_CASE("write_file refuses a path that only looks like the sandbox", "[bash]"
   // Built from the temp directory rather than spelled '/tmp/safe'. On Windows a leading '/'
   // is a drive-relative root, so '/tmp/safe-evil/x' would not be the sibling name this case
   // is about but an absolute path off whichever drive is current.
-  const std::filesystem::path sandbox = std::filesystem::temp_directory_path() / "pu-safe";
+  //
+  // Canonicalized the way the tool canonicalizes it, because the temp directory a machine
+  // hands back is not always the name the filesystem resolves it to: Windows returns an 8.3
+  // short path (`RUNNER~1`) where the resolved directory is the long one. The refusal names
+  // the resolved root, so the expectation has to be resolved the same way rather than being
+  // the string this test happened to build.
+  std::error_code ec;
+  const std::filesystem::path sandbox = std::filesystem::weakly_canonical(
+      std::filesystem::temp_directory_path() / "pu-safe", ec);
+  REQUIRE_FALSE(ec);
   policy.sandbox_root = sandbox.string();
   ToolContext ctx;
   ctx.security = &policy;
