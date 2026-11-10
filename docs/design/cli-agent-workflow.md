@@ -32,6 +32,12 @@ Still open, in the order I would take them: §2.4 and §2.7 (both small, and tog
 `pu ask` usable from a script without touching the workspace), then §1 and §2.5 together (they
 are one question: who may write the session).
 
+The `not done` rows were last checked against 0.7.0 by grepping the source rather than the
+binary: `--fresh` and a stdin prompt appear nowhere in `src/app/cli.cpp`, and
+`Runtime::Shutdown()` still calls `SaveCurrentSession()` with no condition. Re-derive them
+from the code, not from this table, once any of them is started — a status table is a claim
+about a moment.
+
 ---
 
 ## 1. The one design flaw underneath most of the symptoms

@@ -59,6 +59,59 @@ Editing `web/` after an install means installing again — the installed copy is
 a live link into the checkout, and a binary running against its own prefix serves
 the copy it was installed with.
 
+### From nothing to a first answer
+
+The build produces a binary that does nothing until it is told which model to talk to.
+Three steps, in this order, and the second is the one that always fails when it can be
+made to fail at all — so it comes before the one that costs money.
+
+**1. Point `pu` at a model.** A local Ollama needs no key:
+
+```bash
+mkdir -p .pu
+cat > .pu/agents.json <<'JSON'
+{
+  "default_agent": "local-assistant",
+  "agents": [
+    {
+      "name": "local-assistant",
+      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
+    }
+  ]
+}
+JSON
+```
+
+A hosted gateway takes the same shape with `"gateway": "openai"` (or another product this
+build carries) and a key in the environment rather than the file — see
+[Environment Variables](#environment-variables). `gateway` must name a product, not a
+protocol; naming a protocol is refused at load rather than guessed at.
+
+**2. Prove it resolves before spending a turn.** This reads the config, expands the
+environment references, and reaches the gateway's model list without running a
+conversation:
+
+```bash
+./build/pu check
+```
+
+A failure here is a config error, and it is much cheaper to read than a failure in the
+middle of a turn.
+
+**3. Ask one question.**
+
+```bash
+./build/pu ask --prompt "list the files here, one per line" --show-usage
+```
+
+`--show-usage` prints what the turn cost on stderr, so a first run tells you both that it
+worked and what it cost. Drop it when the answer is all you wanted.
+
+For a conversation instead of a single question, `./build/pu chat`. Both append to the same
+auto-saved session under `.pu/session.json`; there is no stateless mode yet, so an `ask`
+from a script joins the workspace's conversation rather than standing apart from it. See
+[Core Commands](#core-commands) for how to rewind or switch agent.
+
 ## Core Commands
 
 | Command | What it does |
@@ -128,12 +181,11 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 | [docs/security.md](docs/security.md) | The trust boundary, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
+| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, cancellation contract, and the handler rules |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
 | [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
-| [docs/design/bash-output-window.md](docs/design/bash-output-window.md) | The note paging shipped from: one window per tool call, and why |
-| [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
 | [docs/design/codebuddy-cloud-api.md](docs/design/codebuddy-cloud-api.md) | One gateway's wire format, and the two refusals it can answer |
-| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |
+| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | The CLI defects found by driving four agents from a shell, with the ones still open |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
 

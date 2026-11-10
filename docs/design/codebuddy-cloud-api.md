@@ -1,5 +1,11 @@
 # CodeBuddy cloud API
 
+> **Frozen record, observed 2026-11.** This is an outside service's wire format, not ours.
+> It is kept as measured rather than maintained: the shapes here cannot be re-derived from
+> this repository, and the account that answered them may not be available again. If the
+> gateway changes, add a dated section rather than editing what is written below — a record
+> that quietly follows the moving target tells you nothing about what used to be true.
+
 What a native `codebuddy` backend has to speak. Every fact here was observed, not
 inferred: the shapes come from the request the installed CodeBuddy client makes, and
 the responses were captured by calling the endpoint directly with a real account key.
@@ -186,8 +192,7 @@ read two fields out of it: `displayMsg` is written for a user and is what gets s
 A single `code` covers more than one cause — 11102 is raised both for a model that does
 not exist and for one this account may not use, told apart only by `msg`. A code seen once
 is not a list: the two this provider reads are the one above and `400 11150` for a model
-that reasons only when told to, described in
-[gateway-protocol-layout.md](gateway-protocol-layout.md).
+that reasons only when told to.
 
 What the provider does with a non-200 body: `displayMsg.en` becomes the error a user
 reads, and `msg`, `code` and `requestId` go to the log at warning. A body carrying no
