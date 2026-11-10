@@ -146,7 +146,8 @@ std::optional<Anchor> Anchor::Parse(std::string_view text) {
   return std::nullopt;
 }
 
-Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines) {
+Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines,
+          std::size_t max_bytes) {
   Page page;
   const std::size_t retained = buffer.lines();
   if (retained == 0 || lines == 0) return page;
@@ -159,7 +160,27 @@ Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines) {
   }
   if (start >= retained) return page;
 
-  const std::size_t end = std::min(retained, start + lines);
+  std::size_t end = std::min(retained, start + lines);
+
+  // A page is bounded by bytes as well as by lines, because the two are not proportional: a
+  // minified JSON document is one line of two megabytes, and a "page" of one such line is
+  // the whole context. The bound is applied by walking back from the line count when it
+  // would overshoot, so an ordinary page of logs is never affected and a page of packed
+  // machine output is cut to something a person could read on a screen.
+  if (max_bytes > 0) {
+    std::size_t bytes = 0;
+    std::size_t fitting = start;
+    while (fitting < end) {
+      const std::size_t width = buffer.line(fitting).size() + 1;
+      // A single line wider than a whole page is still shown: one line is the smallest thing
+      // a page can be, and a model that gets nothing cannot tell that from an empty result.
+      if (bytes + width > max_bytes && fitting > start) break;
+      bytes += width;
+      ++fitting;
+    }
+    end = fitting;
+  }
+
   // A page names lines of the command, not of the buffer, so a page of a kept end still
   // says where it sits in the output that was too large to keep.
   const std::size_t skipped = buffer.extent().skipped();
@@ -238,11 +259,19 @@ boost::json::object Envelope(const Buffer& buffer, const Page& page) {
       // Named `stored` and not `output`: a tool result already has an `output` field holding
       // the text, and the envelope's keys are merged over that result's own. The bytes are
       // one thing and the account of how many there were is another.
+      //
+      // Both counts are given because they answer different questions. A model reasons in
+      // lines -- a hit is followed up by line number, a log is read from its last line -- but
+      // a line is not a fixed size and "how much of my context did this spend" is a question
+      // only bytes answer. `kept_bytes` is the size of what the buffer holds, not the size of
+      // what this page showed.
       {"stored",
        boost::json::object{
            {"printed", printed},
            {"kept", kept},
            {"dropped", dropped},
+           {"printed_bytes", extent.bytes},
+           {"kept_bytes", buffer.bytes()},
            // Which part of the command's output the kept lines are: the start, or the end.
            // Naming it is what turns `dropped` into a decision -- dropped from the start
            // means the text still on file is the tail, and `grep` will not find a line that

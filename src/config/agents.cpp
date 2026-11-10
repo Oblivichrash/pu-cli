@@ -56,6 +56,8 @@ paging::Budget ParsePaging(const json::value& j) {
     budget.page_lines = boost::json::value_to<std::size_t>(j.at("page_lines"));
   if (json::HasKey(j, "max_lines") && j.at("max_lines").is_number())
     budget.max_lines = boost::json::value_to<std::size_t>(j.at("max_lines"));
+  if (json::HasKey(j, "page_bytes") && j.at("page_bytes").is_number())
+    budget.page_bytes = boost::json::value_to<std::size_t>(j.at("page_bytes"));
   if (json::HasKey(j, "capture_bytes") && j.at("capture_bytes").is_number())
     budget.capture_bytes = boost::json::value_to<std::size_t>(j.at("capture_bytes"));
   if (json::HasKey(j, "retain_bytes") && j.at("retain_bytes").is_number())
@@ -68,6 +70,8 @@ paging::Budget ParsePaging(const json::value& j) {
   // nothing cannot be paged at all.
   budget.page_lines = std::max<std::size_t>(1, budget.page_lines);
   budget.max_lines = std::max(budget.page_lines, budget.max_lines);
+  // A page bound of zero would make every page empty, which is not the same as unbounded.
+  budget.page_bytes = std::max<std::size_t>(1024, budget.page_bytes);
   budget.capture_bytes = std::max<std::size_t>(1024, budget.capture_bytes);
   budget.retain_bytes = std::max<std::size_t>(1024, budget.retain_bytes);
   budget.retain_buffers = std::max<std::size_t>(1, budget.retain_buffers);

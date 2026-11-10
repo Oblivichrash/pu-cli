@@ -20,8 +20,23 @@ namespace pu::paging {
 // how many commands stay readable. One struct, one owner — the pager — so a tool cannot
 // be asked for a page size the store it writes to does not agree with.
 struct Budget {
-  std::size_t page_lines = 120;
+  // A page is sized to what a person reads in a terminal window rather than to a token
+  // count: 80 lines is about two screens of scrollback, which is what a developer asks for
+  // when they say "show me the end of the log". `max_lines` is the ceiling a `limit` may
+  // reach, so a model that wants more can ask for up to five screens.
+  std::size_t page_lines = 80;
   std::size_t max_lines = 400;
+  // Lines are the unit a person reads, but a line is not a fixed size: a minified JSON
+  // document is one line of two megabytes. So a page is also bounded by bytes, and this is
+  // that bound. 16 KiB per page is roughly four times the text of 80 ordinary log lines,
+  // which is enough slack that a page of prose or source is never cut short, while a page of
+  // packed machine output is cut before it fills a context by itself.
+  std::size_t page_bytes = 16384;
+  // What one command may keep. Deliberately generous: the first look is the tail and the tail
+  // is what is kept, but `at: "head"` keeps the head instead, and a capture small enough to
+  // matter would make the same command readable from one end and truncated from the other.
+  // Page size is what bounds what a model spends; this bounds what can be read at all, and
+  // the cost of a large value is memory the pager already caps at `retain_bytes`.
   std::size_t capture_bytes = 262144;
   std::size_t retain_bytes = 4u << 20;
   std::size_t retain_buffers = 8;
@@ -102,7 +117,12 @@ struct Page {
   std::optional<Cursor> later;
 };
 
-Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines);
+// The lines `lines` from `anchor` began at, stopping early when the result would exceed
+// `max_bytes`. A page is bounded twice because lines and bytes do not track each other: an
+// ordinary page of logs is decided by the line count, and a page of one enormous line is
+// decided by the byte count. `max_bytes` of 0 removes the byte bound.
+Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines,
+          std::size_t max_bytes = 0);
 
 // Lines of a buffer containing `needle`, with `context` lines either side. Every match is
 // reported as a line number of the command's own output, so a hit can be followed up with

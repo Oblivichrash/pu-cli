@@ -11,7 +11,8 @@ model reads and one it does not:
 
 ```json
 "lines":  {"first": 3401, "last": 3520, "of": 3520},
-"stored": {"printed": 3520, "kept": 240, "dropped": 3280, "kept_from": "the end"},
+"stored": {"printed": 3520, "kept": 240, "dropped": 3280,
+           "printed_bytes": 148224, "kept_bytes": 9871, "kept_from": "the end"},
 "read_more": {"how": "call execute_bash again with at=<line number>, or with query=<text>...",
               "covered": {"first": 0, "last": 240}},
 "buffer": {"id": "o3f2a1c4-1", "source": "s3f2a1c4", "rank": 7}
@@ -25,6 +26,12 @@ model reads and one it does not:
   start or the end of the output. A lone `truncated: true` said that something was missing
   without saying whether it was worth going back for; three numbers say whether the text a
   model wants is gone rather than merely further down.
+- **`printed_bytes`/`kept_bytes`** are the same account in bytes. Both units are reported
+  because they answer different questions: a model reasons in lines — it follows a hit up
+  by line number and reads a log from its last line — but a line is not a fixed size, and
+  "how much context did this cost" is a question only bytes answer. A 200-line minified
+  JSON dump and a 200-line source file are the same `printed` and nothing alike in `bytes`.
+  `kept_bytes` is the size of the buffer, not of the page just shown.
 - **`read_more`** is absent when the whole output is in hand. When it is present it names
   the two ways to see more, and the range of lines they can reach.
 - **`buffer`** is for the machine, not the model. `id` names the run, `source` names the
@@ -34,9 +41,24 @@ model reads and one it does not:
   replaced this one; a model is never told to read it, and the tool description no longer
   names it.
 
-`at` says where to read: `head` (the default) or `tail` run the command; a line number reads
-the stored output without running anything. `query` searches that stored output. `limit`
-asks for a number of lines, clamped to `max_lines`.
+`at` says where to read: omitting it runs the command and starts at its last line, `head`
+runs it and starts at the first, and a line number reads the stored output without running
+anything. `query` searches that stored output. `limit` asks for a number of lines, clamped
+to `max_lines`.
+
+## A page is sized like a terminal window
+
+The page sizes are chosen to match what a person sees reading a command in a terminal, not
+to a token count: `page_lines = 80`, about two screens of scrollback, which is what a
+developer asks for when they say "show me the end of the log".
+
+A line count alone is not a size, though. A minified JSON document is one line of two
+megabytes, and a page of one such line is the whole context. So a page is bounded twice:
+by `page_lines` and by `page_bytes` (16 KiB, roughly four times the text of 80 ordinary log
+lines). The line bound decides an ordinary page of logs, and the byte bound decides a page
+of packed machine output. A single line wider than the byte bound is still shown — one line
+is the smallest page there is, and an empty page cannot be told from a command that printed
+nothing.
 
 ## Reading stored output needs no command
 

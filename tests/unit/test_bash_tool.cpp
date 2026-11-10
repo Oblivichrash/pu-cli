@@ -45,6 +45,14 @@ paging::Budget TinyCapture() {
   return budget;
 }
 
+// Pages of three lines each, but only 16 bytes: enough for two of the seven-byte lines this
+// file writes and not for a third, so a byte bound can be seen cutting a page short.
+paging::Budget NarrowPages() {
+  paging::Budget budget = SmallPages();
+  budget.page_bytes = 16;
+  return budget;
+}
+
 // The id of the run a receipt came from. Tests read it back rather than spelling it, because
 // the id also names the pager that wrote it and no test should have to know that mark.
 std::string IdOf(const boost::json::value& j) {
@@ -144,7 +152,7 @@ TEST_CASE("execute_bash enforces the maximum command length", "[bash]") {
           std::string::npos);
 }
 
-TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]") {
+TEST_CASE("execute_bash reads the end of an output one page at a time", "[bash]") {
   ScopedTempDir dir("pu_page");
   const auto file = LinesFile(dir.Path(), 10);
 
@@ -152,13 +160,16 @@ TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]
   BashTool tool(dir.Path().string(), pager);
   ToolContext ctx;
 
+  // Nobody reads a log from its first line: a command that printed ten lines and one that
+  // printed ten thousand both have their outcome at the end. So the first look is the tail.
   boost::json::value args{{"command", PrintFileCommand(file.string())}};
   auto first = boost::json::parse(tool.Execute(args, ctx));
   REQUIRE(first.at("success") == true);
-  REQUIRE(boost::json::value_to<std::string>(first.at("output")) == "line 1\nline 2\nline 3\n");
+  REQUIRE(boost::json::value_to<std::string>(first.at("output")) ==
+          "line 8\nline 9\nline 10\n");
 
-  REQUIRE(first.at("lines").at("first") == 1);
-  REQUIRE(first.at("lines").at("last") == 3);
+  REQUIRE(first.at("lines").at("first") == 8);
+  REQUIRE(first.at("lines").at("last") == 10);
   REQUIRE(first.at("lines").at("of") == 10);
 
   // The run is named for the machine, and nothing else is.
@@ -166,6 +177,10 @@ TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]
   REQUIRE(first.at("stored").at("printed") == 10);
   REQUIRE(first.at("stored").at("kept") == 10);
   REQUIRE(first.at("stored").at("dropped") == 0);
+  // Both counts are reported: the line count is what a follow-up read names, the byte count
+  // is what tells a model how much of its context the command spent.
+  REQUIRE(first.at("stored").at("printed_bytes").as_int64() > 0);
+  REQUIRE(first.at("stored").at("kept_bytes") == first.at("stored").at("printed_bytes"));
   REQUIRE(first.at("read_more").is_null());
 
   // A line number reads the same stored output, and the run is the newest one because a
@@ -176,7 +191,53 @@ TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]
   REQUIRE(second.at("lines").at("first") == 4);
 }
 
-TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
+TEST_CASE("execute_bash bounds a page by bytes as well as by lines", "[bash]") {
+  ScopedTempDir dir("pu_page_bytes");
+  const auto file = LinesFile(dir.Path(), 10);
+
+  paging::Pager pager(NarrowPages());
+  BashTool tool(dir.Path().string(), pager);
+  ToolContext ctx;
+
+  auto j = boost::json::parse(tool.Execute(
+      boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "head"}}, ctx));
+
+  REQUIRE(j.at("success") == true);
+  // Three lines were asked for, but two seven-byte lines are 14 bytes and a third would take
+  // the page past 16. Lines alone would let a page grow without bound on wide output, which
+  // is the case a byte bound exists for.
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 1\nline 2\n");
+  REQUIRE(j.at("lines").at("first") == 1);
+  REQUIRE(j.at("lines").at("last") == 2);
+  REQUIRE(j.at("lines").at("of") == 10);
+
+  // A model that wants the rest asks from the line after the last one it got.
+  auto next = boost::json::parse(tool.Execute(boost::json::value{{"at", LineRef(3)}}, ctx));
+  REQUIRE(next.at("success") == true);
+  REQUIRE(boost::json::value_to<std::string>(next.at("output")).rfind("line 3\n", 0) == 0);
+}
+
+TEST_CASE("a page shows one line even when that line exceeds the byte bound", "[bash]") {
+  ScopedTempDir dir("pu_page_wide");
+  const auto file = LinesFile(dir.Path(), 10);
+
+  // A single line is the smallest page there is: an empty page would be indistinguishable
+  // from a command that printed nothing.
+  paging::Budget tight = NarrowPages();
+  tight.page_bytes = 1;
+  paging::Pager pager(tight);
+  BashTool tool(dir.Path().string(), pager);
+  ToolContext ctx;
+
+  auto j = boost::json::parse(tool.Execute(
+      boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "head"}}, ctx));
+  REQUIRE(j.at("success") == true);
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 1\n");
+  REQUIRE(j.at("lines").at("first") == 1);
+  REQUIRE(j.at("lines").at("last") == 1);
+}
+
+TEST_CASE("execute_bash starts at the beginning when asked to", "[bash]") {
   ScopedTempDir dir("pu_tail");
   const auto file = LinesFile(dir.Path(), 10);
   paging::Pager pager(SmallPages());
@@ -184,11 +245,11 @@ TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
   ToolContext ctx;
 
   auto j = boost::json::parse(tool.Execute(
-      boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "tail"}}, ctx));
+      boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "head"}}, ctx));
 
-  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 8\nline 9\nline 10\n");
-  REQUIRE(j.at("lines").at("first") == 8);
-  REQUIRE(j.at("lines").at("last") == 10);
+  REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 1\nline 2\nline 3\n");
+  REQUIRE(j.at("lines").at("first") == 1);
+  REQUIRE(j.at("lines").at("last") == 3);
   REQUIRE(j.at("lines").at("of") == 10);
 }
 
@@ -199,8 +260,10 @@ TEST_CASE("execute_bash clamps a page to the configured ceiling", "[bash]") {
   BashTool tool(dir.Path().string(), pager);
   ToolContext ctx;
 
-  auto j = boost::json::parse(tool.Execute(
-      boost::json::value{{"command", PrintFileCommand(file.string())}, {"limit", 100}}, ctx));
+  auto j = boost::json::parse(tool.Execute(boost::json::value{{"command", PrintFileCommand(file.string())},
+                                            {"at", "head"},
+                                            {"limit", 100}},
+                                           ctx));
 
   REQUIRE(j.at("lines").at("last") == 5);
 }
@@ -328,10 +391,12 @@ TEST_CASE("execute_bash reports what a truncated capture did not keep", "[bash]"
   REQUIRE(j.at("stored").at("printed") == 200);
   REQUIRE(boost::json::value_to<std::size_t>(j.at("stored").at("kept")) < 200);
   REQUIRE(boost::json::value_to<std::size_t>(j.at("stored").at("dropped")) > 0);
-  REQUIRE(j.at("lines").at("first") == 1);
+  // The kept lines are the end of the output, because that is the end a first look reads and
+  // therefore the end worth spending the capture on.
+  REQUIRE(j.at("lines").at("last") == 200);
   // The dropped lines are named, so a model knows the text it wants may be gone rather than
   // further down, and is told how to look anyway.
-  REQUIRE(boost::json::value_to<std::string>(j.at("stored").at("kept_from")) == "the start");
+  REQUIRE(boost::json::value_to<std::string>(j.at("stored").at("kept_from")) == "the end");
   REQUIRE_FALSE(j.at("read_more").is_null());
 }
 

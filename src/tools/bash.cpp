@@ -18,13 +18,13 @@ std::string BashTool::Name() const { return "execute_bash"; }
 
 std::string BashTool::Description() const {
   return "Run a shell command, or read more of the last command's output.\n"
-         "Running: omit `at`, or set it to 'head' to start at the first line, or 'tail' to "
-         "start at the last, which is where a log or a build's failure is.\n"
+         "Running: omit `at` to start at the last line, which is where a log's outcome or a "
+         "build's failure is; set it to 'head' to start at the first line instead.\n"
          "Output too long to show is kept, and you can read the rest without running "
          "anything: call this tool again with `at` set to a line number to see those lines, "
          "or with `query` set to a word to get the lines that contain it. A result says how "
-         "many lines the command printed and how many were dropped, so you can tell when the "
-         "part you want is gone rather than merely further down.\n"
+         "many lines and bytes the command printed and how many were dropped, so you can "
+         "tell when the part you want is gone rather than merely further down.\n"
          "Reading never re-runs the command and never replaces what is stored. Only running "
          "a new command does that, so read as much of one command's output as you need "
          "before running the next.\n"
@@ -46,8 +46,9 @@ boost::json::value BashTool::ParametersSchema() const {
             boost::json::object{
                 {"type", "string"},
                 {"description",
-                 "'head' (default) or 'tail' run the command; a line number reads that line of "
-                 "the last command's output without running it."},
+                 "Omit to run the command and start at its last line, or set 'head' to start at "
+                 "the first. A line number reads that line of the last command's output without "
+                 "running it."},
             }},
            {"query",
             boost::json::object{
@@ -89,7 +90,7 @@ std::string BashTool::SourceKey(const std::string& command) const {
 
 std::string BashTool::PageResult(const paging::Buffer& buffer, const paging::Anchor& anchor,
                                  std::size_t lines) const {
-  const paging::Page page = paging::Read(buffer, anchor, lines);
+  const paging::Page page = paging::Read(buffer, anchor, lines, pager_.budget().page_bytes);
   const exec::Verdict& verdict = buffer.verdict();
   boost::json::object extra = paging::Envelope(buffer, page);
   return MakeToolResultJson(verdict.ok, page.text, verdict.error, verdict.exit_code, false,
@@ -173,7 +174,11 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
     return SearchStoredRun(query, context, lines);
   }
 
-  const std::string at = json::ValueOrDefault<std::string>(args, "at", "head");
+  // A command's interesting end is its last line: a failure is reported there, and a build
+  // log is read for the error that stopped it rather than the progress before it. So the
+  // first look is the tail, and `at: "head"` is the deliberate request for the other end.
+  // A command that printed little enough to fit is unaffected -- there is only one page.
+  const std::string at = json::ValueOrDefault<std::string>(args, "at", "tail");
   const auto anchor = paging::Anchor::Parse(at);
   if (!anchor) {
     return MakeRefusal("at must be 'head', 'tail', or a line number of the last command's "

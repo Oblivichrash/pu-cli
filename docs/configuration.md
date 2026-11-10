@@ -135,8 +135,9 @@ The shape a page takes is in [paging.md](paging.md).
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `page_lines` | `120` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1 |
+| `page_lines` | `80` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1. Chosen to match about two screens of terminal scrollback |
 | `max_lines` | `400` | The most lines one page may show — a larger `limit` is clamped to it. Raised to `page_lines` when set below it |
+| `page_bytes` | `16384` | Bytes one page may show. Lines and bytes do not track each other, so a page is bounded by both and a page of packed machine output is cut short by this. Raised to 1024 when set below it |
 | `capture_bytes` | `262144` | Bytes of one command's output kept for paging; beyond it the command still runs and the rest is counted rather than kept. Raised to 1024 when set below it |
 | `retain_bytes` | `4194304` | Bytes kept across all retained runs; the oldest are dropped first |
 | `retain_buffers` | `8` | Runs kept readable. A cursor whose run has been dropped is refused, not pointed at a neighbour |
