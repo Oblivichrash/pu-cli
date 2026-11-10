@@ -17,19 +17,19 @@ BashTool::BashTool(std::string sandbox_root, paging::Pager& pager)
 std::string BashTool::Name() const { return "execute_bash"; }
 
 std::string BashTool::Description() const {
-  return "Run a shell command and read one page of its output.\n"
-         "`at` says where to read. 'head' (the default) runs the command and starts at its "
-         "first line; 'tail' runs it and starts at its last, which is where a log or a "
-         "build's failure is; a cursor like 'o3:240' reads that page of output already "
-         "stored and runs nothing, so `command` is not needed with it.\n"
-         "Every page carries page.earlier and page.later, the cursors that reach its "
-         "neighbours. page.first and page.last are lines of the command's whole output, and "
-         "extent says how much of that output the buffer kept: when extent.truncated is "
-         "true, the rest of the output cannot be paged to and the command has to be run "
-         "again.\n"
-         "A page of a run the same command has since replaced comes back with an empty "
-         "output and superseded_by naming the newer run; read it again by its cursor if you "
-         "still need it.";
+  return "Run a shell command, or read more of the last command's output.\n"
+         "Running: omit `at`, or set it to 'head' to start at the first line, or 'tail' to "
+         "start at the last, which is where a log or a build's failure is.\n"
+         "Output too long to show is kept, and you can read the rest without running "
+         "anything: call this tool again with `at` set to a line number to see those lines, "
+         "or with `query` set to a word to get the lines that contain it. A result says how "
+         "many lines the command printed and how many were dropped, so you can tell when the "
+         "part you want is gone rather than merely further down.\n"
+         "Reading never re-runs the command and never replaces what is stored. Only running "
+         "a new command does that, so read as much of one command's output as you need "
+         "before running the next.\n"
+         "A result of a command that a later run of the same command has replaced comes back "
+         "empty, with `superseded_by` naming the newer run.";
 }
 
 boost::json::value BashTool::ParametersSchema() const {
@@ -40,14 +40,26 @@ boost::json::value BashTool::ParametersSchema() const {
            {"command",
             boost::json::object{
                 {"type", "string"},
-                {"description", "The shell command. Not needed when `at` names a cursor."},
+                {"description", "The shell command. Not needed when reading stored output."},
             }},
            {"at",
             boost::json::object{
                 {"type", "string"},
                 {"description",
-                 "Where to read: 'head' (default), 'tail', or a cursor taken from "
-                 "page.earlier or page.later."},
+                 "'head' (default) or 'tail' run the command; a line number reads that line of "
+                 "the last command's output without running it."},
+            }},
+           {"query",
+            boost::json::object{
+                {"type", "string"},
+                {"description",
+                 "Find the lines of the last command's output containing this text. Reads "
+                 "only; runs nothing."},
+            }},
+           {"context",
+            boost::json::object{
+                {"type", "integer"},
+                {"description", "Lines shown either side of a `query` match."},
             }},
            {"limit",
             boost::json::object{
@@ -87,11 +99,14 @@ std::string BashTool::PageResult(const paging::Buffer& buffer, const paging::Anc
 std::string BashTool::ReadAt(const paging::Cursor& cursor, std::size_t lines) {
   auto buffer = pager_.Find(cursor.buffer);
   if (!buffer) {
-    return MakeRefusal("no such page: " + cursor.buffer +
-                  " is no longer retained. Run the command again to read it.");
+    // The id is not repeated. It was never the model's to know, and naming it in a refusal
+    // invites the model to try again with a variation on a string it should never have held.
+    return MakeRefusal("that output is no longer stored. Run the command again to read it.");
   }
   if (cursor.line >= buffer->lines()) {
-    return MakeRefusal("cursor is past the end of " + cursor.buffer);
+    return MakeRefusal("line " + std::to_string(cursor.line + 1) + " is past the end of the " +
+                       "stored output, which has " + std::to_string(buffer->lines()) +
+                       " lines.");
   }
   return PageResult(*buffer, paging::Anchor::At(cursor), lines);
 }
@@ -114,15 +129,57 @@ std::string BashTool::RunAndPage(const std::string& command, const paging::Ancho
   return PageResult(*buffer, anchor, lines);
 }
 
+std::string BashTool::SearchStoredRun(std::string_view needle, std::size_t context,
+                                      std::size_t max_lines) const {
+  const std::shared_ptr<const paging::Buffer> buffer = pager_.Newest();
+  if (!buffer) {
+    return MakeRefusal("there is no stored output to search. Run a command first.");
+  }
+
+  const paging::Matches matches = paging::Search(*buffer, needle, context, max_lines);
+  const exec::Verdict& verdict = buffer->verdict();
+
+  boost::json::object extra = paging::Envelope(*buffer, paging::Page{});
+  // The page bounds a text read; a search has no page, so it reports its own counts and
+  // leaves `lines` naming the stored run as a whole. Without this a search result would
+  // claim to be showing lines 0 to 0.
+  extra["matches"] = boost::json::object{
+      {"found", matches.count},
+      {"shown", matches.shown},
+      {"truncated", matches.truncated},
+  };
+  if (matches.count == 0) {
+    return MakeToolResultJson(
+        verdict.ok,
+        "No line of the stored output contains '" + std::string(needle) + "'. The output that "
+        "was dropped is not searchable; if the text you want may be in it, run the command "
+        "again with a narrower one, such as a pipeline through grep.",
+        verdict.error, verdict.exit_code, false, Refusal::kNone, &extra);
+  }
+  return MakeToolResultJson(verdict.ok, matches.text, verdict.error, verdict.exit_code, false,
+                            Refusal::kNone, &extra);
+}
+
 std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
+  const std::size_t lines = PageLines(args);
+
+  // A search is a read. It happens before `at` is parsed, because `query` alone -- which is
+  // how a model asks "is it in there?" -- carries no `at` and would otherwise be read as a
+  // fresh run with no command.
+  const std::string query = json::ValueOrDefault<std::string>(args, "query", "");
+  if (!query.empty()) {
+    const std::size_t context =
+        json::OptionalOrDefault<std::size_t>(args, "context").value_or(2);
+    return SearchStoredRun(query, context, lines);
+  }
+
   const std::string at = json::ValueOrDefault<std::string>(args, "at", "head");
   const auto anchor = paging::Anchor::Parse(at);
   if (!anchor) {
-    return MakeRefusal("at must be 'head', 'tail', or a cursor from page.earlier/page.later, not '" +
+    return MakeRefusal("at must be 'head', 'tail', or a line number of the last command's "
+                  "output, not '" +
                   at + "'");
   }
-
-  const std::size_t lines = PageLines(args);
 
   // A page reads output this tool already holds, so it neither re-runs nor re-checks the
   // command: the policy answered for it when the output was produced.
@@ -132,7 +189,10 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
   if (args.is_object() && json::HasKey(args, "command")) {
     command = boost::json::value_to<std::string>(args.at("command"));
   }
-  if (command.empty()) return MakeRefusal("'command' is required unless 'at' names a cursor");
+  if (command.empty()) {
+    return MakeRefusal("'command' is required to run something. Set `at` to a line number or "
+                       "`query` to search only if you meant to read the last output.");
+  }
 
   if (ctx.security != nullptr && ctx.security->max_command_length > 0 &&
       command.size() > ctx.security->max_command_length) {

@@ -24,12 +24,6 @@ std::vector<std::size_t> IndexLines(std::string_view text) {
   return starts;
 }
 
-// Absent cursors are written as null rather than left out, so a reader can tell "no page
-// that way" from "a field this version does not send".
-boost::json::value CursorOrNull(const std::optional<Cursor>& cursor) {
-  return cursor ? boost::json::value(cursor->ToString()) : boost::json::value{};
-}
-
 // The mark of one pager, four hex digits. An id is read back by someone who did not write it —
 // a resumed transcript, another process's answer — and a bare `o1` would then name whatever this
 // stored first rather than the run the cursor meant. With the mark, a cursor from elsewhere
@@ -121,10 +115,34 @@ std::optional<Cursor> Cursor::Parse(std::string_view text) {
   return Cursor{std::string(text.substr(0, colon)), line};
 }
 
+namespace {
+
+// A bare number is a line of the newest run, not a cursor: the buffer a cursor names is a
+// thing the model never chose and cannot reason about, and requiring it taught the model a
+// vocabulary that only exists inside this process. A run names no buffer here, so `ReadAt`
+// resolves `kNewestBuffer` to whatever is stored now.
+std::optional<std::size_t> ParseLineNumber(std::string_view text) {
+  if (text.empty() || text.size() > 12) return std::nullopt;
+  std::size_t line = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') return std::nullopt;
+    line = line * 10 + static_cast<std::size_t>(c - '0');
+  }
+  return line;
+}
+
+}  // namespace
+
 std::optional<Anchor> Anchor::Parse(std::string_view text) {
   if (text == "head") return Head();
   if (text == "tail") return Tail();
+  // A cursor first: it carries its own buffer, so it answers without the newest-run rule.
   if (auto cursor = Cursor::Parse(text)) return At(std::move(*cursor));
+  // A bare line number is sent as 1-based, the way a line is printed by `grep -n` and by
+  // the page's own `first`/`last`, and is stored 0-based like every other cursor.
+  if (auto line = ParseLineNumber(text)) {
+    return At(Cursor{std::string(kNewestBuffer), *line > 0 ? *line - 1 : 0});
+  }
   return std::nullopt;
 }
 
@@ -159,30 +177,92 @@ Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines) {
   return page;
 }
 
+Matches Search(const Buffer& buffer, std::string_view needle, std::size_t context,
+               std::size_t max_lines) {
+  Matches result;
+  const std::size_t total = buffer.lines();
+  if (needle.empty() || total == 0 || max_lines == 0) return result;
+
+  const std::size_t skipped = buffer.extent().skipped();
+  std::size_t last_shown = 0;
+  bool have_shown = false;
+
+  for (std::size_t i = 0; i < total; ++i) {
+    if (buffer.line(i).find(needle) == std::string_view::npos) continue;
+    ++result.count;
+
+    // Context is emitted once per match, and the lines between two matches are shared rather
+    // than repeated: two hits twenty lines apart read as one block, which is what a person
+    // reading `grep -C` sees and what keeps a wall of repeats out of the transcript.
+    const std::size_t first = i >= context ? i - context : 0;
+    const std::size_t last = std::min(total - 1, i + context);
+    for (std::size_t line = first; line <= last; ++line) {
+      if (have_shown && line <= last_shown) continue;
+      if (result.shown >= max_lines) {
+        result.truncated = true;
+        return result;
+      }
+      // Prefixed with the command's own line number, so the model can ask for more of it by
+      // name rather than by counting from the top of the page.
+      result.text.append(std::to_string(line + 1 + skipped));
+      result.text.push_back(':');
+      result.text.append(buffer.line(line));
+      result.text.push_back('\n');
+      last_shown = line;
+      have_shown = true;
+    }
+    ++result.shown;
+  }
+  return result;
+}
+
 boost::json::object Envelope(const Buffer& buffer, const Page& page) {
   const exec::Extent& extent = buffer.extent();
 
-  // Three scopes, named: where this page sits, which run produced it, how much of the run
-  // survived. A single object holding all three is what makes a result hard to read.
+  // A result says three things a model needs and nothing about this process: which lines it
+  // is looking at, how much of the command's output survived, and how to see more. The
+  // readable fields are those three. The `buffer` block is the fourth, and it is not for the
+  // model: `OriginOf` and `TombstonedReceipt` read it to know which run this was and whether
+  // a newer one replaced it, so it cannot be dropped without silently disabling supersession.
+  // It is kept because a machine needs it, and the tool description stops teaching it.
+  const std::size_t printed = extent.lines;
+  const std::size_t kept = extent.retained;
+  const std::size_t dropped = printed > kept ? printed - kept : 0;
   return boost::json::object{
-      {"page",
+      {"lines",
        boost::json::object{
            {"first", page.first},
            {"last", page.last},
-           {"earlier", CursorOrNull(page.earlier)},
-           {"later", CursorOrNull(page.later)},
+           {"of", printed},
        }},
+      // Named `stored` and not `output`: a tool result already has an `output` field holding
+      // the text, and the envelope's keys are merged over that result's own. The bytes are
+      // one thing and the account of how many there were is another.
+      {"stored",
+       boost::json::object{
+           {"printed", printed},
+           {"kept", kept},
+           {"dropped", dropped},
+           // Which part of the command's output the kept lines are: the start, or the end.
+           // Naming it is what turns `dropped` into a decision -- dropped from the start
+           // means the text still on file is the tail, and `grep` will not find a line that
+           // was never kept.
+           {"kept_from", extent.from_end ? "the end" : "the start"},
+       }},
+      // More of this run is readable without running anything. Absent when the whole output
+      // is already in hand, so a model that has everything is never told to go looking.
+      {"read_more",
+       dropped == 0 ? boost::json::value{}
+                    : boost::json::value{boost::json::object{
+                          {"how", "call execute_bash again with at=<line number>, or "
+                                  "with query=<text> to find the lines containing it"},
+                          {"covered", boost::json::object{{"first", 0}, {"last", kept}}},
+                      }}},
       {"buffer",
        boost::json::object{
            {"id", buffer.id()},
            {"source", buffer.source()},
            {"rank", buffer.rank()},
-       }},
-      {"extent",
-       boost::json::object{
-           {"lines", extent.lines},
-           {"retained", extent.retained},
-           {"truncated", extent.truncated()},
        }},
   };
 }
@@ -278,8 +358,11 @@ std::string TombstonedReceipt(std::string_view receipt) {
     }
     tombstone["buffer"] = std::move(kept);
   }
-  if (const auto extent = held.find("extent"); extent != held.end() && extent->value().is_object()) {
-    tombstone["extent"] = extent->value();
+  // How much came out. `stored` is the current name; a receipt written by a build that sent
+  // `extent` still carries that, so both are lifted and either one survives.
+  for (const std::string_view key : {"stored", "extent"}) {
+    const auto found = held.find(key);
+    if (found != held.end() && found->value().is_object()) tombstone[key] = found->value();
   }
   // The command itself is the thing a model repeats, so it is carried in full even though it
   // is the biggest single field here. This is the argv axis, and it is the one axis this
@@ -297,13 +380,13 @@ std::string TombstonedReceipt(std::string_view receipt) {
   lift("command");
   lift("cwd");
 
-  // A conclusion is not a window. An answer that carries a `buffer` but no `page` and no
-  // `extent` has nothing to read back -- there is no cursor, and the run behind it is another
-  // agent's, which this conversation cannot page into. Compressing it would leave a receipt
-  // that names a question and can only be re-asked, at the price of the whole delegated turn.
-  // So it is kept whole: the budget buys back nothing here, and that is the cheaper mistake.
-  const bool conclusion = tombstone.contains("buffer") && !tombstone.contains("page") &&
-                          !tombstone.contains("extent");
+  // A conclusion is not a window. An answer that carries a `buffer` but nothing a reader can
+  // page into -- no `lines`, no `stored` -- has, and the run behind it is another agent's,
+  // which this conversation cannot page into. Compressing it would leave a receipt that names
+  // a question and can only be re-asked, at the price of the whole delegated turn. So it is
+  // kept whole: the budget buys back nothing here, and that is the cheaper mistake.
+  const bool conclusion = tombstone.contains("buffer") && !tombstone.contains("lines") &&
+                          !tombstone.contains("stored") && !tombstone.contains("extent");
   if (conclusion) return std::string(receipt);
 
   // What is gone, said plainly: a result that silently lost its body reads as a command that
@@ -354,10 +437,18 @@ std::shared_ptr<const Buffer> Pager::Store(exec::Captured captured, exec::Verdic
 
 std::shared_ptr<const Buffer> Pager::Find(std::string_view id) const {
   std::lock_guard<std::mutex> lock(mutex_);
+  // A bare line number names the newest run, and that is a rule about this store rather
+  // than about the cursor, so it is resolved here where the ordering is known.
+  if (id == kNewestBuffer) return buffers_.empty() ? nullptr : buffers_.back();
   for (const auto& buffer : buffers_) {
     if (buffer->id() == id) return buffer;
   }
   return nullptr;
+}
+
+std::shared_ptr<const Buffer> Pager::Newest() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return buffers_.empty() ? nullptr : buffers_.back();
 }
 
 std::shared_ptr<const Buffer> Pager::Record(std::string text, exec::Verdict verdict,

@@ -27,7 +27,7 @@ Four tiers, applied per node, monotone — a decision may only move down:
 |---|---|---|
 | T0 live | the whole text | newest run for its source, or a page read deliberately after |
 | T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
-| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `extent`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
+| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
 | T3 gone | nothing | not implemented; see §2 |
 
 T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
@@ -66,14 +66,16 @@ to preserve.
    different mechanism with a different subject: it bounds how many calls one turn may make,
    not how much history is re-sent. Nothing was removed from the history to achieve this — a
    receipt keeps its place and loses only the cursor.
-2. **`find` over a retained buffer.** `grep` today is a shell command, so searching means
-   *executing again*: it re-runs the build, its output can disagree with the page already in
-   hand, and the retained page is not searched at all. The same cursor space should answer two
-   access modes — `o17:400` (positional) and `o17 ? "error"` (predicate). Search results are
-   rows, not lines, so a noisy one needs a count-plus-range answer ("3000 matches, here are
-   20"), not a page.
+2. ~~**`find` over a retained buffer.**~~ Done. `execute_bash` takes `query`, which searches
+   the stored run without executing anything and reports each hit with its own line number so
+   it can be followed up with `at`. It is a substring search rather than the predicate form
+   sketched here, because a regex dialect inside a tool that already has a shell is a second
+   language with its own bugs; a model that wants a pattern can run `grep`. The count-plus-range
+   answer also landed: a search reports `found`/`shown`/`truncated` rather than pretending to be
+   a page, because a noisy match set is not a window onto anything.
 3. **`page` reaches the transcript a person reads.** `on_end` drops the envelope, so a page of
-   a 3500-line log looks exactly like a whole answer. The `extent` is what says which it is.
+   a 3500-line log looks exactly like a whole answer. The `stored` counts are what say which
+   it is.
 4. **T3: retire the oldest tool-call pairs.** The one pool still unbounded is scaffolding —
    `tool_calls[].id`, `.name` and especially `.arguments`. Twenty `write_file` calls of 200
    lines each are 4000 lines re-sent every turn. T3 removes whole pairs, oldest first, keeping

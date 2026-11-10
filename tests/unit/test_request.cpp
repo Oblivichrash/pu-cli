@@ -225,9 +225,9 @@ TEST_CASE("A page of an older run of one command is replaced by a receipt", "[re
   const boost::json::value older = boost::json::parse(messages[0].content);
   REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
   REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "o2");
-  // The page and the extent survive, so the model still knows how much it is not seeing.
-  REQUIRE(older.at("extent").at("lines") == 3);
-  REQUIRE(older.at("page").at("first") == 1);
+  // The counts survive, so the model still knows how much it is not seeing.
+  REQUIRE(older.at("stored").at("printed") == 3);
+  REQUIRE(older.at("lines").at("first") == 1);
 
   REQUIRE(messages[1].content.find("line 1 of run two") != std::string::npos);
 }
@@ -295,7 +295,7 @@ TEST_CASE("A tombstone keeps the verdict and drops the way to ask for more", "[r
   // The envelope a page is written as carries no verdict -- the command lives in the
   // conversation, not in the result -- so a tombstone keeps the parts a page does have:
   // which run it was and how much of it there was.
-  REQUIRE(kept.at("extent").at("lines") == 3);
+  REQUIRE(kept.at("stored").at("printed") == 3);
   REQUIRE(boost::json::value_to<std::string>(kept.at("buffer").at("id")) == "o1");
   REQUIRE(boost::json::value_to<std::string>(kept.at("buffer").at("source")) == "s1");
   // How to ask for it again does not: a cursor is a standing invitation to spend a turn.

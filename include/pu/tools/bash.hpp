@@ -44,6 +44,11 @@ class BashTool : public pu::Tool {
                          std::size_t lines, const pu::ToolContext& ctx);
   std::string ReadAt(const paging::Cursor& cursor, std::size_t lines);
 
+  // Finds lines of the newest stored run that contain `needle`, without running anything.
+  // A search is a read: it neither replaces the stored output nor spends a second command.
+  std::string SearchStoredRun(std::string_view needle, std::size_t context,
+                              std::size_t max_lines) const;
+
   std::string sandbox_root_;
   paging::Pager& pager_;
 };

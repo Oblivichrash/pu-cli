@@ -45,15 +45,15 @@ paging::Budget TinyCapture() {
   return budget;
 }
 
-std::string Page(boost::json::value& j, const char* field) {
-  return boost::json::value_to<std::string>(j.at("page").at(field));
-}
-
 // The id of the run a receipt came from. Tests read it back rather than spelling it, because
 // the id also names the pager that wrote it and no test should have to know that mark.
-std::string IdOf(boost::json::value& j) {
+std::string IdOf(const boost::json::value& j) {
   return boost::json::value_to<std::string>(j.at("buffer").at("id"));
 }
+
+// A line number of the stored run, as the tool takes it back. This is the whole of what a
+// model is told: a line, not a buffer and a line.
+std::string LineRef(std::size_t line) { return std::to_string(line); }
 
 }  // namespace
 
@@ -94,7 +94,8 @@ TEST_CASE("execute_bash needs a command unless it is reading a page", "[bash]") 
 
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("output") == "");
-  REQUIRE(j.at("error") == "'command' is required unless 'at' names a cursor");
+  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("'command' is required") !=
+          std::string::npos);
   REQUIRE(j.at("exit_code") == -1);
 }
 
@@ -156,23 +157,23 @@ TEST_CASE("execute_bash reads the head of an output one page at a time", "[bash]
   REQUIRE(first.at("success") == true);
   REQUIRE(boost::json::value_to<std::string>(first.at("output")) == "line 1\nline 2\nline 3\n");
 
-  REQUIRE(first.at("page").at("first") == 1);
-  REQUIRE(first.at("page").at("last") == 3);
-  REQUIRE(first.at("page").at("earlier").is_null());
-  const std::string id = IdOf(first);
-  REQUIRE(Page(first, "later") == id + ":3");
+  REQUIRE(first.at("lines").at("first") == 1);
+  REQUIRE(first.at("lines").at("last") == 3);
+  REQUIRE(first.at("lines").at("of") == 10);
 
-  // Three scopes, not one: where the page is, which run it came from, how much survived.
+  // The run is named for the machine, and nothing else is.
   REQUIRE(first.at("buffer").at("rank") == 1);
-  REQUIRE(first.at("extent").at("lines") == 10);
-  REQUIRE(first.at("extent").at("retained") == 10);
-  REQUIRE(first.at("extent").at("truncated") == false);
+  REQUIRE(first.at("stored").at("printed") == 10);
+  REQUIRE(first.at("stored").at("kept") == 10);
+  REQUIRE(first.at("stored").at("dropped") == 0);
+  REQUIRE(first.at("read_more").is_null());
 
-  auto second = boost::json::parse(tool.Execute(boost::json::value{{"at", id + ":3"}}, ctx));
+  // A line number reads the same stored output, and the run is the newest one because a
+  // bare number cannot name another.
+  auto second = boost::json::parse(tool.Execute(boost::json::value{{"at", LineRef(4)}}, ctx));
   REQUIRE(second.at("success") == true);
   REQUIRE(boost::json::value_to<std::string>(second.at("output")) == "line 4\nline 5\nline 6\n");
-  REQUIRE(Page(second, "earlier") == id + ":0");
-  REQUIRE(Page(second, "later") == id + ":6");
+  REQUIRE(second.at("lines").at("first") == 4);
 }
 
 TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
@@ -186,10 +187,9 @@ TEST_CASE("execute_bash starts at the end when asked to", "[bash]") {
       boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "tail"}}, ctx));
 
   REQUIRE(boost::json::value_to<std::string>(j.at("output")) == "line 8\nline 9\nline 10\n");
-  REQUIRE(j.at("page").at("first") == 8);
-  REQUIRE(j.at("page").at("last") == 10);
-  REQUIRE(Page(j, "earlier") == IdOf(j) + ":4");
-  REQUIRE(j.at("page").at("later").is_null());
+  REQUIRE(j.at("lines").at("first") == 8);
+  REQUIRE(j.at("lines").at("last") == 10);
+  REQUIRE(j.at("lines").at("of") == 10);
 }
 
 TEST_CASE("execute_bash clamps a page to the configured ceiling", "[bash]") {
@@ -202,7 +202,7 @@ TEST_CASE("execute_bash clamps a page to the configured ceiling", "[bash]") {
   auto j = boost::json::parse(tool.Execute(
       boost::json::value{{"command", PrintFileCommand(file.string())}, {"limit", 100}}, ctx));
 
-  REQUIRE(j.at("page").at("last") == 5);
+  REQUIRE(j.at("lines").at("last") == 5);
 }
 
 TEST_CASE("execute_bash refuses an `at` it does not define", "[bash]") {
@@ -227,24 +227,89 @@ TEST_CASE("a cursor reads a page with no command to repeat", "[bash]") {
 
   auto first = boost::json::parse(
       tool.Execute(boost::json::value{{"command", PrintFileCommand(file.string())}}, ctx));
-  const std::string cursor = Page(first, "later");
+  const std::string cursor = LineRef(4);
 
-  // The cursor names the run; restating a 200-character command to read page two is a
-  // second source of truth that can only disagree.
+  // A line number names the newest run; restating a 200-character command to read page two
+  // is a second source of truth that can only disagree.
   auto second = boost::json::parse(tool.Execute(boost::json::value{{"at", cursor}}, ctx));
   REQUIRE(second.at("success") == true);
   REQUIRE(boost::json::value_to<std::string>(second.at("output")) ==
           "line 4\nline 5\nline 6\n");
 }
 
-TEST_CASE("a cursor for a buffer the store dropped is refused", "[bash]") {
+TEST_CASE("a line number with no stored run is refused", "[bash]") {
   paging::Pager pager(SmallPages());
   BashTool tool(".", pager);
   ToolContext ctx;
 
-  auto j = boost::json::parse(tool.Execute(boost::json::value{{"at", "o99:0"}}, ctx));
+  auto j = boost::json::parse(tool.Execute(boost::json::value{{"at", LineRef(1)}}, ctx));
   REQUIRE(j.at("success") == false);
-  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("no longer retained") !=
+  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("no longer stored") !=
+          std::string::npos);
+}
+
+TEST_CASE("a query finds lines of the stored output without running anything", "[bash]") {
+  ScopedTempDir dir("pu_query");
+  const auto file = LinesFile(dir.Path(), 40);
+  paging::Pager pager(SmallPages());
+  BashTool tool(dir.Path().string(), pager);
+  ToolContext ctx;
+
+  auto first = boost::json::parse(
+      tool.Execute(boost::json::value{{"command", PrintFileCommand(file.string())}}, ctx));
+  const std::string id_before = IdOf(first);
+
+  // "line 7" matches line 7 alone; "line 3" would match 3, 30-39, so the needle is chosen
+  // to be unambiguous and the counts mean one thing.
+  auto found = boost::json::parse(
+      tool.Execute(boost::json::value{{"query", "line 7"}, {"context", 1}}, ctx));
+  REQUIRE(found.at("success") == true);
+  REQUIRE(found.at("matches").at("found") == 1);
+  REQUIRE(found.at("matches").at("shown") == 1);
+  REQUIRE(found.at("matches").at("truncated") == false);
+
+  // Reported with the command's own line numbers, so the hit can be followed up by `at`.
+  const std::string text = boost::json::value_to<std::string>(found.at("output"));
+  REQUIRE(text.find("6:line 6") != std::string::npos);
+  REQUIRE(text.find("7:line 7") != std::string::npos);
+  REQUIRE(text.find("8:line 8") != std::string::npos);
+
+  // A search is a read: the run it searched is still the run the store holds.
+  REQUIRE(IdOf(boost::json::parse(
+              tool.Execute(boost::json::value{{"at", LineRef(1)}}, ctx))) == id_before);
+}
+
+TEST_CASE("a query that finds nothing says so without replacing the output", "[bash]") {
+  ScopedTempDir dir("pu_query_miss");
+  const auto file = LinesFile(dir.Path(), 10);
+  paging::Pager pager(SmallPages());
+  BashTool tool(dir.Path().string(), pager);
+  ToolContext ctx;
+
+  auto first = boost::json::parse(
+      tool.Execute(boost::json::value{{"command", PrintFileCommand(file.string())}}, ctx));
+
+  auto miss = boost::json::parse(tool.Execute(boost::json::value{{"query", "nowhere"}}, ctx));
+  REQUIRE(miss.at("success") == true);
+  REQUIRE(miss.at("matches").at("found") == 0);
+  REQUIRE(boost::json::value_to<std::string>(miss.at("output")).find("dropped") !=
+          std::string::npos);
+
+  // The stored run survives a search that found nothing, so a miss costs a turn and nothing
+  // else.
+  auto again = boost::json::parse(tool.Execute(boost::json::value{{"at", LineRef(1)}}, ctx));
+  REQUIRE(again.at("success") == true);
+  REQUIRE(IdOf(again) == IdOf(first));
+}
+
+TEST_CASE("a query with no stored output is refused", "[bash]") {
+  paging::Pager pager(SmallPages());
+  BashTool tool(".", pager);
+  ToolContext ctx;
+
+  auto j = boost::json::parse(tool.Execute(boost::json::value{{"query", "error"}}, ctx));
+  REQUIRE(j.at("success") == false);
+  REQUIRE(boost::json::value_to<std::string>(j.at("error")).find("Run a command first") !=
           std::string::npos);
 }
 
@@ -260,13 +325,14 @@ TEST_CASE("execute_bash reports what a truncated capture did not keep", "[bash]"
       tool.Execute(boost::json::value{{"command", PrintFileCommand(file.string())}}, ctx));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("extent").at("truncated") == true);
-  REQUIRE(j.at("extent").at("lines") == 200);
-  REQUIRE(boost::json::value_to<std::size_t>(j.at("extent").at("retained")) < 200);
-  REQUIRE(j.at("page").at("first") == 1);
-  // The rest of the output is not reachable, and the extent is what says so: paging
-  // stops at extent.retained rather than at extent.lines.
-  REQUIRE(j.at("extent").at("truncated") == true);
+  REQUIRE(j.at("stored").at("printed") == 200);
+  REQUIRE(boost::json::value_to<std::size_t>(j.at("stored").at("kept")) < 200);
+  REQUIRE(boost::json::value_to<std::size_t>(j.at("stored").at("dropped")) > 0);
+  REQUIRE(j.at("lines").at("first") == 1);
+  // The dropped lines are named, so a model knows the text it wants may be gone rather than
+  // further down, and is told how to look anyway.
+  REQUIRE(boost::json::value_to<std::string>(j.at("stored").at("kept_from")) == "the start");
+  REQUIRE_FALSE(j.at("read_more").is_null());
 }
 
 TEST_CASE("execute_bash spends the budget on the end it was asked to read", "[bash]") {
@@ -281,11 +347,11 @@ TEST_CASE("execute_bash spends the budget on the end it was asked to read", "[ba
       boost::json::value{{"command", PrintFileCommand(file.string())}, {"at", "tail"}}, ctx));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("extent").at("truncated") == true);
-  REQUIRE(j.at("extent").at("lines") == 200);
+  REQUIRE(j.at("stored").at("printed") == 200);
   // A tail of a log that did not fit is still a tail of that log.
-  REQUIRE(j.at("page").at("last") == 200);
-  REQUIRE(boost::json::value_to<std::size_t>(j.at("page").at("first")) > 1);
+  REQUIRE(j.at("lines").at("last") == 200);
+  REQUIRE(boost::json::value_to<std::size_t>(j.at("lines").at("first")) > 1);
+  REQUIRE(boost::json::value_to<std::string>(j.at("stored").at("kept_from")) == "the end");
   REQUIRE(boost::json::value_to<std::string>(j.at("output")).find("line 200") !=
           std::string::npos);
 }
@@ -317,7 +383,7 @@ TEST_CASE("A cursor still pages after the tool is rebuilt on the same store", "[
                                       .Execute(boost::json::value{{"command",
                                                                    PrintFileCommand(file.string())}},
                                                ctx));
-  const std::string cursor = Page(first, "later");
+  const std::string cursor = LineRef(4);
 
   // A model switch rebuilds the toolbox: a fresh tool object, the store it was given.
   auto second = boost::json::parse(

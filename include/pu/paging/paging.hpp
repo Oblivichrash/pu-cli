@@ -36,6 +36,11 @@ struct Cursor {
   static std::optional<Cursor> Parse(std::string_view text);
 };
 
+// The buffer name a cursor carries when it was written as a bare line number. A caller that
+// knows which run it means resolves it before reading; one that does not gets the newest
+// run, which is the only one a model that just saw a truncated result can mean.
+inline constexpr std::string_view kNewestBuffer = "*";
+
 // Where a read starts. `head` and `tail` name a first look, and therefore a fresh run;
 // `at` names a page of a run already stored. One value in place of a view flag, a
 // cursor, and a rule about which of the two wins.
@@ -99,6 +104,24 @@ struct Page {
 
 Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines);
 
+// Lines of a buffer containing `needle`, with `context` lines either side. Every match is
+// reported as a line number of the command's own output, so a hit can be followed up with
+// `at=<line>`. The search is over the text that was kept: a line that was truncated away
+// cannot be found, and the caller is told how many matches it did not show.
+//
+// Substring, not regular expression. A model that wants a regex can run `grep` itself and
+// pay for the output it asks for; a search that has to agree on a dialect is a second
+// language in a tool that already has one.
+struct Matches {
+  std::string text;           // the matching lines, each with its context, ready to return
+  std::size_t count = 0;      // matches found in the kept text
+  std::size_t shown = 0;      // matches whose context fitted in the budget
+  bool truncated = false;     // matches existed that are not in `text`
+};
+
+Matches Search(const Buffer& buffer, std::string_view needle, std::size_t context,
+               std::size_t max_lines);
+
 // A page's wire form: the three scopes a result carries beside its text. `OriginOf` in
 // origin.hpp reads the origin back out of it, and `SupersededReceipt` rewrites it, so the
 // writer and the readers stay in one module even though the struct they share is in a header
@@ -159,6 +182,12 @@ class Pager {
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
+
+  // The run stored most recently, or nothing when none is left. This is what a bare line
+  // number means: a model that just read a truncated result has one run in mind, and it is
+  // this one. Resolving it here rather than in the tool keeps the "newest" rule beside the
+  // eviction that defines it.
+  std::shared_ptr<const Buffer> Newest() const;
 
   // A run that has no window to page: a delegated answer rather than a command's output. It is
   // stored like any other run -- it takes a rank, and the text stays readable -- and it keeps
