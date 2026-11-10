@@ -20,23 +20,15 @@ namespace pu::paging {
 // how many commands stay readable. One struct, one owner — the pager — so a tool cannot
 // be asked for a page size the store it writes to does not agree with.
 struct Budget {
-  // A page is sized to what a person reads in a terminal window rather than to a token
-  // count: 80 lines is about two screens of scrollback, which is what a developer asks for
-  // when they say "show me the end of the log". `max_lines` is the ceiling a `limit` may
-  // reach, so a model that wants more can ask for up to five screens.
+  // 80 lines: about two screens of scrollback. The reasoning, and the byte bound that
+  // accompanies it, are in docs/paging.md#a-page-is-sized-like-a-terminal-window.
   std::size_t page_lines = 80;
   std::size_t max_lines = 400;
-  // Lines are the unit a person reads, but a line is not a fixed size: a minified JSON
-  // document is one line of two megabytes. So a page is also bounded by bytes, and this is
-  // that bound. 16 KiB per page is roughly four times the text of 80 ordinary log lines,
-  // which is enough slack that a page of prose or source is never cut short, while a page of
-  // packed machine output is cut before it fills a context by itself.
+  // 16 KiB per page. A line count alone is not a size; see the same section.
   std::size_t page_bytes = 16384;
-  // What one command may keep. Deliberately generous: the first look is the tail and the tail
-  // is what is kept, but `at: "head"` keeps the head instead, and a capture small enough to
-  // matter would make the same command readable from one end and truncated from the other.
-  // Page size is what bounds what a model spends; this bounds what can be read at all, and
-  // the cost of a large value is memory the pager already caps at `retain_bytes`.
+  // 256 KiB per command. Deliberately larger than a page: `at: "head"` keeps the head, so a
+  // capture small enough to matter would make one command readable from one end and truncated
+  // from the other. Revisit only if the anchor stops following the kept end.
   std::size_t capture_bytes = 262144;
   std::size_t retain_bytes = 4u << 20;
   std::size_t retain_buffers = 8;

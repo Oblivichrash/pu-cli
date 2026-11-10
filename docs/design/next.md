@@ -1,8 +1,7 @@
 # What is left
 
-Seven design notes used to sit beside this one. Their reasoning is in the commits that wrote
-them; what remains here is the part that is still true about the code as it is, ordered, plus
-the list of things already decided against. Anything not mentioned was either built — paging,
+The work still open on this build, ordered, plus what has been decided against so it is not
+re-proposed. Everything else this document once described has either been built — paging,
 elision, a pager that outlives the toolbox — or turned out to describe a tool this build does
 not have.
 
@@ -126,10 +125,9 @@ because "page position" cannot come from Konsole and `capture-pane -e` gives the
 with colour — a user scrolled up 200 lines is the strongest intent signal available. A field
 with no reader is absent, not defaulted.
 
-None of this is scheduled. What it would need — pty capture, a tmux provider, a shell hook, a
-Konsole identity read — is in §4 of the commits that wrote it, and the plugin protocol drafted
-there (line-delimited JSON on stdio, closed field vocabulary, one snapshot per turn, merge by
-field) is where to resume rather than restart.
+None of this is scheduled. What it would need: pty capture, a tmux provider, a shell hook, a
+Konsole identity read. The protocol to resume from rather than restart is line-delimited JSON
+on stdio, a closed field vocabulary, one snapshot per turn, merged by field.
 
 ## 5. Not to build
 
