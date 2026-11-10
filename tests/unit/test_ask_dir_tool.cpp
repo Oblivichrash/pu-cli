@@ -153,11 +153,17 @@ TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
   pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
-  const std::string reply = tool.Execute(Ask("/etc", "hi"), ctx);
+  // An absolute path that is absolute on every platform. '/etc' is not one on Windows, where
+  // a leading '/' is a drive-relative root, so this case would pass by taking `/etc` as a
+  // relative name and failing somewhere else entirely.
+  const std::string absolute = fs::current_path().root_path().string();
+  REQUIRE(fs::path(absolute).is_absolute());
+
+  const std::string reply = tool.Execute(Ask(absolute, "hi"), ctx);
   REQUIRE(Says(reply, "relative"));
   // Which part to drop, rather than which rule was broken: the caller keeps the path it
   // meant and rewrites the one thing that is wrong with it.
-  REQUIRE(Says(reply, "leading '/'"));
+  REQUIRE(Says(reply, "leading '"));
 }
 
 TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]") {

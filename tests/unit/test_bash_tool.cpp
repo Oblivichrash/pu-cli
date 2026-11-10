@@ -498,11 +498,16 @@ TEST_CASE("write_file needs a path", "[bash]") {
 TEST_CASE("write_file refuses a path that only looks like the sandbox", "[bash]") {
   WriteFileTool tool;
   config::SecurityPolicy policy;
-  policy.sandbox_root = "/tmp/safe";
+  // Built from the temp directory rather than spelled '/tmp/safe'. On Windows a leading '/'
+  // is a drive-relative root, so '/tmp/safe-evil/x' would not be the sibling name this case
+  // is about but an absolute path off whichever drive is current.
+  const std::filesystem::path sandbox = std::filesystem::temp_directory_path() / "pu-safe";
+  policy.sandbox_root = sandbox.string();
   ToolContext ctx;
   ctx.security = &policy;
 
-  for (const char* path : {"../etc/passwd", "/tmp/safe-evil/x"}) {
+  const std::string sibling = (sandbox.parent_path() / "pu-safe-evil").string() + "/x";
+  for (const std::string& path : {std::string("../etc/passwd"), sibling}) {
     auto j = boost::json::parse(
         tool.Execute(boost::json::value{{"path", path}, {"content", "evil"}}, ctx));
     REQUIRE(j.at("success") == false);
@@ -510,7 +515,7 @@ TEST_CASE("write_file refuses a path that only looks like the sandbox", "[bash]"
     REQUIRE(error.find("traversal") != std::string::npos);
     // The root is the half of the answer a model cannot compute on its own: it has only the
     // path it wrote, and no way to tell which directory that path was measured from.
-    REQUIRE(error.find("/tmp/safe") != std::string::npos);
+    REQUIRE(error.find(sandbox.string()) != std::string::npos);
   }
 }
 

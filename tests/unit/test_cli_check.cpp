@@ -98,9 +98,13 @@ TEST_CASE("A sandbox root is printed as the directory it resolves to", "[check]"
 
   // "." is relative to the directory the run is about, which is what a reader cannot see in
   // the file. Naming it here rather than reading it back makes the check prove the workspace
-  // it was handed is the one it resolved against.
-  REQUIRE(capture.text().find("sandbox      " + workspace.root().string()) !=
-          std::string::npos);
+  // it was handed is the one it resolved against. Compared as a resolved path rather than as
+  // the root concatenated by hand: the print goes through `weakly_canonical`, which on Windows
+  // yields a different separator and a drive letter this test would otherwise have to guess.
+  std::error_code ec;
+  const fs::path printed = fs::weakly_canonical(workspace.root(), ec);
+  REQUIRE_FALSE(ec);
+  REQUIRE(capture.text().find("sandbox      " + printed.string()) != std::string::npos);
 }
 
 TEST_CASE("An api key that expanded to nothing is called out", "[check]") {
