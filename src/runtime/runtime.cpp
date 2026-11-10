@@ -13,11 +13,11 @@
 #include "pu/core/json.hpp"
 
 #include "pu/config/agents.hpp"
-#include "pu/config/peer.hpp"
-#include "pu/tools/peer_tool.hpp"
+#include "pu/tools/ask_dir_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/bash.hpp"
 #include "pu/tools/write_file.hpp"
@@ -149,19 +149,19 @@ void Runtime::Initialize(const std::string& config_path) {
   command_router_ = std::make_unique<CommandRouter>(*this);
 
   executor_ = std::make_unique<Executor>();
+  // The executor is the only place a turn spends its time, so it is the place that has to hear
+  // about a deadline: the token it already receives covers a caller that cancels, and this covers
+  // the two stops that have no token. A runtime that is never delegated leaves both unset, and
+  // then the check answers `ShutdownRequested()` alone, which is what it answered before.
+  executor_->SetStopCheck([this] { return StopRequested(); });
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
-
-  peer_config_ = config::FindPeerConfig();
-  if (peer_config_.has_value()) {
-    spdlog::info("Peer '{}' knows {} peer(s)",
-                 peer_config_->self_name.empty() ? "<unnamed>" : peer_config_->self_name,
-                 peer_config_->peers.size());
-  }
 
   RebuildToolbox(*default_entry);
 
+  // An ephemeral runtime wakes up with no past: a stored conversation belongs to the world
+  // that asked for it, and this one was asked to answer a question, not to continue one.
   const auto session_path = workspace_root_ / ".pu" / "session.json";
-  if (std::filesystem::exists(session_path)) {
+  if (!ephemeral_ && std::filesystem::exists(session_path)) {
     current_session_ = LoadSessionFromFile(session_path);
     // A page read before the restart keeps its place in the order, so the runs made after it
     // arrive behind it rather than at the front.
@@ -198,7 +198,7 @@ void Runtime::Shutdown() {
 }
 
 void Runtime::SaveCurrentSession() {
-  if (!current_session_) return;
+  if (!current_session_ || ephemeral_) return;
   auto path = workspace_root_ / ".pu" / "session.json";
   std::filesystem::create_directories(path.parent_path());
   std::ofstream file(path);
@@ -353,12 +353,19 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token,
-                                      const std::string& peer_origin) {
+                                      CancelToken command_stop_token) {
   ExecutionResult result;
   try {
     BeginRequest();
-    executor_->SetPeerOrigin(peer_origin);
+
+    // The tools were built before this turn existed, so the stop this turn was given has to be
+    // handed to them now: a page cancels a turn rather than a runtime, and a token captured at
+    // build time would be the previous turn's. Delegation is the one tool that outlives its own
+    // turn while it waits, which is why it is the one that needs the current token.
+    for (Tool* tool : toolbox_.Tools()) {
+      auto* asking = dynamic_cast<tools::AskDirTool*>(tool);
+      if (asking != nullptr) asking->SetCancelToken(cancel_token);
+    }
 
     auto session = DefaultSession();
 
@@ -393,19 +400,146 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   }
 }
 
+DelegationResult Runtime::Delegate(const Delegation& request) {
+  DelegationResult result;
+
+  const std::filesystem::path target =
+      request.dir.empty() ? workspace_root_ : request.dir;
+  const std::filesystem::path table = target / ".pu" / "agents.json";
+  const std::filesystem::path inherited = target / ".pu" / "agents";
+  std::error_code ec;
+  if (!std::filesystem::exists(table, ec) && !std::filesystem::is_directory(inherited, ec)) {
+    // The remedy rides with the refusal. A model that is told only what is missing asks the
+    // same question again, because "no table here" names no action it can take; the file it
+    // would have to write is the action, and it is one line of a shape it already knows.
+    result.error =
+        "'" + target.string() +
+        "' configures no agent: it has no .pu/agents.json. Write one with write_file, in the "
+        "shape of this workspace's own .pu/agents.json ({\"default_agent\": \"<name>\", "
+        "\"agents\": [{\"name\": \"<name>\", \"backend\": {\"gateway\": ..., \"model\": ...}}]}), "
+        "then ask again.";
+    return result;
+  }
+
+  try {
+    Runtime child;
+    child.workspace_root_ = target;
+    // Ephemeral on both sides: the other directory's stored conversation is neither read nor
+    // written, so the same question asked twice costs the same and means the same.
+    child.SetEphemeral();
+    if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
+    child.delegated_ = true;
+    // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
+    // waiting rather than in the one that has already handed the question over.
+    child.turn_cancel_ = request.cancel_token;
+    if (request.timeout.count() > 0) {
+      child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
+    }
+    child.Initialize();
+
+    bool is_command = false;
+    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command,
+                                                        request.cancel_token);
+    if (const auto session = child.DefaultSession()) result.usage = session->Usage().Total();
+    child.Shutdown();
+
+    // Read before the error branches: a stopped turn ends with no reply and no error, and the
+    // two refusals below would otherwise describe it as an empty answer.
+    result.stopped = request.cancel_token && request.cancel_token->load(std::memory_order_acquire);
+    if (result.stopped) {
+      result.error = "'" + target.string() +
+                     "' was still answering when the turn was stopped, so its answer was "
+                     "dropped. Ask again if the answer is still wanted";
+      return result;
+    }
+    if (child.turn_deadline_ != std::chrono::steady_clock::time_point{} &&
+        std::chrono::steady_clock::now() >= child.turn_deadline_) {
+      // Named as a ceiling rather than as a failure: the turn did nothing wrong, it ran out of
+      // the time it was given, and the number is what a caller changes.
+      result.error = "'" + target.string() + "' did not answer within " +
+                     std::to_string(request.timeout.count()) +
+                     "ms. Ask something smaller, or give it longer";
+      return result;
+    }
+
+    if (answered.has_error) {
+      result.error = answered.error_message.empty() ? answered.content : answered.error_message;
+      return result;
+    }
+    if (is_command) {
+      // A line the asking agent meant as a question, read as a command, is not an answer: the
+      // text it produced is a page of help or a setting, and handing it back as a conclusion
+      // would report something nobody asked for. Nothing was asked of a provider either, so
+      // this is a mistake in the call rather than a turn that went wrong. The prompt is
+      // therefore named as the thing to change, since it is the only input this call controls.
+      result.error = "the question began with '/' and was read as a pu command, not a question: "
+                     "'" + request.prompt +
+                     "'. Reword it so it does not start with a slash";
+      return result;
+    }
+    if (answered.content.empty()) {
+      // Not retried with the same words: an empty turn is a fact about the question or the
+      // provider, and the honest next move is to say more, not to say it again.
+      result.error = "'" + target.string() +
+                     "' answered with nothing. Ask again in more specific terms, or ask "
+                     "something smaller";
+      return result;
+    }
+    result.answer = answered.content;
+    return result;
+  } catch (const std::exception& e) {
+    result.error = std::string("could not ask '") + target.string() + "': " + e.what();
+    return result;
+  }
+}
+
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
+}
+
+bool Runtime::StopRequested() const {
+  // A delegated turn's stop is three things folded into one question. The caller's token is the
+  // one a person pressed a button for; the deadline is the one nobody pressed anything for; and a
+  // shutting-down process is a stop that was never asked for and cannot be reported to anybody,
+  // so it is answered here rather than surfacing as a failed turn in a log nobody reads.
+  if (turn_cancel_ && turn_cancel_->load(std::memory_order_acquire)) return true;
+  if (turn_deadline_ != std::chrono::steady_clock::time_point{} &&
+      std::chrono::steady_clock::now() >= turn_deadline_) {
+    return true;
+  }
+  return platform::ShutdownRequested();
 }
 
 void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   // The budget is the store's, and the tool reads it from there: one owner for the page
   // size and the retention, applied before the tool that will obey it is built.
   pager_.SetBudget(agent.paging);
-  toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
-      ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
-  toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
-  if (peer_config_.has_value() && !peer_config_->peers.empty()) {
-    toolbox_.RegisterTool(std::make_unique<tools::PeerTool>(*peer_config_, http_client_.get()));
+
+  // Which builtins this agent has. An empty list means every one of them, which is what a
+  // table written before the field existed meant and must keep meaning. A tool named here and
+  // not registered is the entry's mistake and `pu check` refuses it, so this reads the list
+  // rather than validating it a second time.
+  const auto has = [&](const char* name) {
+    if (agent.tools.empty()) return true;
+    return std::find(agent.tools.begin(), agent.tools.end(), name) != agent.tools.end();
+  };
+
+  if (has("bash")) {
+    toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+        ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
+  }
+  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+  // A runtime that is itself answering a delegated turn gets no way to ask one further: the
+  // chain that could grow is the one a tool starts, and this is where it does not start.
+  if (has("ask_dir") && !delegated_) {
+    // The turn's own stop is handed over per turn (see ProcessInput), since the toolbox outlives
+    // the turn that built it; a runtime with no turn in flight hands over nothing, and the
+    // delegate's deadline is what stops it then.
+    // The pager is this runtime's own, so an answer's rank continues the transcript's and a
+    // second answer to one question elides the first. Without it the answer went in as prose
+    // with no origin, and prose is the one thing the projection never compresses.
+    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates,
+                                                              &pager_, turn_cancel_));
   }
 }
 

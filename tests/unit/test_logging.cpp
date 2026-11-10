@@ -14,6 +14,7 @@
 
 using namespace pu;
 using pu::tests::ScopedEnvVar;
+using pu::tests::ScopedTempDir;
 
 namespace {
 
@@ -90,18 +91,18 @@ TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
 }
 
 TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
-  const auto scratch = std::filesystem::temp_directory_path() / "pu_log_dir_test";
-  std::filesystem::remove_all(scratch);
+  // A name of its own per process: catch_discover_tests runs cases in parallel, and a fixed
+  // name is a directory two of them write to at once.
+  const ScopedTempDir scratch("pu_log_dir_test_");
 
   REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
 
   {
-    ScopedEnvVar home("PU_HOME", scratch.string());
-    REQUIRE(pu::LogDir() == scratch / "logs");
+    ScopedEnvVar home("PU_HOME", scratch.Path().string());
+    REQUIRE(pu::LogDir() == scratch.Path() / "logs");
   }
 
   REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
-  std::filesystem::remove_all(scratch);
 }
 
 // InitLogging runs again for every Runtime in the process, so every async writer it builds has
@@ -109,9 +110,8 @@ TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
 // it posting to a queue that no longer exists. That is the shape of the crash a serve test hit
 // when a second Runtime started in the same process.
 TEST_CASE("InitLogging keeps the thread pool the loggers already use", "[logging]") {
-  const auto scratch = std::filesystem::temp_directory_path() / "pu_log_pool_test";
-  std::filesystem::remove_all(scratch);
-  ScopedEnvVar home("PU_HOME", scratch.string());
+  const ScopedTempDir scratch("pu_log_pool_test_");
+  ScopedEnvVar home("PU_HOME", scratch.Path().string());
 
   InitLogging("info");
   const auto first_pool = spdlog::thread_pool();
@@ -129,6 +129,6 @@ TEST_CASE("InitLogging keeps the thread pool the loggers already use", "[logging
 
   INFO("a later logger must not replace the pool an earlier logger still writes through");
   REQUIRE(spdlog::thread_pool().get() == first_pool.get());
-  REQUIRE(std::filesystem::exists(scratch / "logs" / "pu.log"));
+  REQUIRE(std::filesystem::exists(scratch.Path() / "logs" / "pu.log"));
 }
 

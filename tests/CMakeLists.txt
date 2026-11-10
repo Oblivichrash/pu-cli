@@ -17,12 +17,10 @@ add_executable(pu_tests
     unit/test_agents_summary.cpp
     unit/test_approval_gate.cpp
     unit/test_approval_refusal.cpp
+    unit/test_ask_dir_tool.cpp
     unit/test_backend_resolution.cpp
     unit/test_bash_tool.cpp
     unit/test_billing.cpp
-    unit/test_board.cpp
-    unit/test_board_http.cpp
-    unit/test_board_liveness.cpp
     unit/test_budget.cpp
     unit/test_capabilities.cpp
     unit/test_cli_check.cpp
@@ -36,6 +34,7 @@ add_executable(pu_tests
     unit/test_conversation.cpp
     unit/test_encoding.cpp
     unit/test_executor.cpp
+    unit/test_executor_stop.cpp
     unit/test_graph.cpp
     unit/test_http_deadline.cpp
     unit/test_http_errors.cpp
@@ -53,10 +52,6 @@ add_executable(pu_tests
     unit/test_openai_backend.cpp
     unit/test_options.cpp
     unit/test_paging.cpp
-    unit/test_peer_config.cpp
-    unit/test_peer_read.cpp
-    unit/test_peer_serve.cpp
-    unit/test_peer_tool.cpp
     unit/test_probe.cpp
     unit/test_project_rules.cpp
     unit/test_projection.cpp
@@ -105,8 +100,18 @@ target_link_libraries(pu_tests PRIVATE
     Catch2::Catch2WithMain
 )
 
+# The directory the fixtures make their files in. Naming it here rather than letting each
+# case use the system default does two things: everything lands under the build tree that
+# `git clean` and a rebuild already discard, and the property below is set once instead of
+# in every harness.
+set(PU_TEST_TMPDIR "${CMAKE_CURRENT_BINARY_DIR}/test-tmp")
+file(MAKE_DIRECTORY "${PU_TEST_TMPDIR}")
+
 include(Catch)
-catch_discover_tests(pu_tests)
+catch_discover_tests(pu_tests
+    PROPERTIES
+        ENVIRONMENT "TMPDIR=${PU_TEST_TMPDIR}"
+)
 
 # The page's transcript fold is plain JavaScript with no DOM in it, so its cases can be
 # checked without a browser. They are one file of input/output pairs; what runs them differs.

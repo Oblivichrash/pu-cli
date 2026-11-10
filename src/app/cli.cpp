@@ -94,9 +94,12 @@ config::Backend BackendFor(const std::string& gateway, const std::string& model,
 }  // namespace
 
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
-                           const std::function<int()>& body) {
+                           const std::function<int()>& body, bool ephemeral) {
   try {
     if (!agent.empty()) runtime.SetDefaultAgent(agent);
+    // Before Initialize, which is where a stored conversation is read: a flag set afterwards
+    // would arrive after the one decision it was meant to change.
+    if (ephemeral) runtime.SetEphemeral();
     runtime.Initialize();
     const int status = body();
     runtime.Shutdown();
@@ -139,6 +142,7 @@ CommandLine BuildCommandLine() {
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
+      {"delegate", "have another agent answer one question, in a turn of its own"},
       {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe",
        "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
@@ -166,6 +170,10 @@ CommandLine BuildCommandLine() {
   const std::vector<OptionSpec> global_options = {
       {"help,h", "show help message", false},
       {"version", "show version and exit", false},
+      // `git -C` spellt the same way, and for the same reason: a command that reads a directory
+      // can be run on one without leaving the one you are in. Every path the run touches
+      // resolves from here, so nothing is read from one tree and written to another.
+      {"directory,C", "run as if started in DIR", true},
       {"command", command_hint.c_str(), true},
   };
 
@@ -184,6 +192,10 @@ CommandLine BuildCommandLine() {
         agent_option,
         {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"chat", {agent_option}},
+      {"delegate",
+       {{"agent", "the agent to ask", true},
+        {"prompt", "the whole question", true},
+        {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"models",
        {agent_option, gateway_option, model_option,
         {"detail", "ids (default) for what you can pick, caps for the columns that decide "
@@ -251,9 +263,14 @@ CommandLine BuildCommandLine() {
   // a page leaves it out; --help and --version stay, since they are how a page is asked for.
   auto page = [&](const std::vector<OptionSpec>& own) {
     boost::program_options::options_description description("Global options");
-    auto copy = [&](const char* name) {
+    // A declared name may carry its short spelling — `directory,C` — and only the part before
+    // the comma is the long name the option object answers to. Matching the whole string
+    // would silently leave every such option off every page.
+    auto copy = [&](const char* declared_name) {
+      const std::string wanted =
+          std::string(declared_name).substr(0, std::string(declared_name).find(','));
       for (const auto& option : line.all.options()) {
-        if (option->long_name() == std::string(name)) {
+        if (option->long_name() == wanted) {
           description.add(option);
           return;
         }
@@ -318,25 +335,31 @@ std::string CommandList(const CommandLine& line) {
 
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
            bool show_usage) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    bool is_command = false;
-    ExecutionResult result =
-        runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {}, nullptr,
-                             platform::ShutdownToken());
-    PrintFailure(result);
-    if (!result.has_error) {
-      if (result.was_streamed) {
-        std::cout << "\n";
-      } else if (!result.content.empty()) {
-        std::cout << result.content << "\n";
-      } else if (!is_command) {
-        std::cout << "\n";
-      }
-    }
-    PrintNotice(result);
-    if (show_usage) PrintUsage(result);
-    return ExitCodeForAsk(result, is_command);
-  });
+  // The prompt is the whole of what this turn knows. `chat` and `serve` remember, and are
+  // where a conversation that continues belongs; an answer asked for once should not move the
+  // conversation the next `pu ask` inherits.
+  return WithInitializedRuntime(
+      agent, runtime,
+      [&] {
+        bool is_command = false;
+        ExecutionResult result =
+            runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {},
+                                 nullptr, platform::ShutdownToken());
+        PrintFailure(result);
+        if (!result.has_error) {
+          if (result.was_streamed) {
+            std::cout << "\n";
+          } else if (!result.content.empty()) {
+            std::cout << result.content << "\n";
+          } else if (!is_command) {
+            std::cout << "\n";
+          }
+        }
+        PrintNotice(result);
+        if (show_usage) PrintUsage(result);
+        return ExitCodeForAsk(result, is_command);
+      },
+      /*ephemeral=*/true);
 }
 
 int RunChat(const std::string& agent, Runtime& runtime) {
@@ -390,35 +413,16 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor(gateway, model, runtime);
-    // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
-    if (!listing && backend.model.empty()) {
-      throw GenericError("--gateway names a host, not a model: pass --model, or --listing to "
-                         "read the catalogue it offers");
-    }
-
-    if (listing) {
-      // A listing is one answer rather than a stream, so there is nothing to keep as raw
-      // bytes beyond the body the client already returned.
-      const llm::ListingReport report = llm::ProbeListing(backend, runtime.Http());
-      std::cout << "\n" << llm::FormatListingReport(report) << "\n";
-      return report.error.empty() ? kOk : kProvider;
-    }
-
-    std::optional<std::string> raw_path;
-    if (save) {
-      std::filesystem::create_directories(out_dir);
-      raw_path = (std::filesystem::path(out_dir) /
-                  (std::string(config::GatewayName(backend.gateway)) + ".raw"))
-                     .string();
-      std::cout << "raw stream: " << *raw_path << "\n";
-    }
-
-    const llm::ProbeReport report = llm::ProbeStream(backend, runtime.Http(), prompt, raw_path);
-    std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
-    // A capture that never parsed is a provider failure; one that parsed and merely lacks
-    // fields is the finding the probe was run for, so it succeeded.
-    return report.stream_parsed ? kOk : kProvider;
+    tools_cli::ProbeOptions options;
+    options.gateway = gateway;
+    options.model = model;
+    options.prompt = prompt;
+    options.out_dir = out_dir;
+    options.save = save;
+    options.listing = listing;
+    // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
+    // the agent's keys; the standalone tool builds the same table from its own config read.
+    return tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http());
   });
 }
 

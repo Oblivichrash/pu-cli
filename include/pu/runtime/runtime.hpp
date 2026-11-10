@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -12,7 +13,6 @@
 #include <vector>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/peer.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/runtime/executor.hpp"
@@ -72,6 +72,40 @@ class AgentManager {
 };
 
 
+// One turn asked of an agent, without a conversation either side can remember. The caller
+// states the whole question, because the agent it asks has no idea what this conversation has
+// said: that is the boundary, and what the turn reads on the way to its answer stays on the
+// other side of it.
+//
+// A delegated turn gets no `ask_dir` of its own, so a chain of them stops at one hop, and what
+// it cost comes back, so the turn that asked can account for what it spent.
+struct Delegation {
+  std::string agent;            // empty: the table's own default_agent
+  std::filesystem::path dir;    // empty: the asking runtime's workspace
+  std::string prompt;
+
+  // The asking turn's own stop, handed down rather than copied: the point is that a stop reaches
+  // the turn that is actually waiting, which is this one. Checked by the same code the asking
+  // turn checks its own token with, so a stop lands between rounds and between tool calls, and
+  // a provider read is abandoned at the next fragment.
+  CancelToken cancel_token;
+
+  // A ceiling on the whole delegated turn, since it may run several rounds and call tools that
+  // take minutes each. Zero means the ceiling the asking turn's own platform applies, which for
+  // a stream is an idle deadline per read rather than a cap on the reply.
+  std::chrono::milliseconds timeout{0};
+};
+
+struct DelegationResult {
+  std::string answer;
+  std::string error;                 // non-empty when the turn did not answer
+  session::SessionUsageTotal usage;  // what that turn cost, in its own account
+  // The turn was asked to stop by the caller rather than finished or failed. A tool has no
+  // vocabulary for "you were stopped", so this reads as an error naming the stop; it is kept
+  // apart from one so a caller that stopped deliberately does not read it as a fault.
+  bool stopped = false;
+};
+
 class Runtime {
  public:
   Runtime() = default;
@@ -80,7 +114,21 @@ class Runtime {
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
 
+  // The directory whose `.pu/` this runtime reads and writes: the agents table, the session
+  // and the sandbox all resolve from here. Set before Initialize, because Initialize is where
+  // the three are read. Defaults to the current directory, so a caller that never calls this
+  // gets the behaviour of a plain `cd`-then-run.
+  void SetWorkspaceRoot(std::filesystem::path root) { workspace_root_ = std::move(root); }
+
+  // A turn with no memory: Initialize does not load `.pu/session.json` and every save is a
+  // no-op. For a caller that supplies the whole context and wants only an answer — the
+  // delegated turn, and `pu ask`. A remembered conversation is what `chat` and `serve` are
+  // for; two ways to hold one would disagree about what a second run of the same prompt means.
+  void SetEphemeral(bool ephemeral = true) { ephemeral_ = ephemeral; }
+
   void Initialize(const std::string& config_path = "");
+
+  DelegationResult Delegate(const Delegation& request);
   void Shutdown();
 
   ExecutionResult ProcessInput(
@@ -88,13 +136,12 @@ class Runtime {
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,
-      CancelToken command_stop_token = nullptr,
-      // The peer this turn arrived from, empty for a turn the user started. A turn from a
-      // peer must not reach another one.
-      const std::string& peer_origin = {});
+      CancelToken command_stop_token = nullptr);
 
-  // What `.pu/peers.json` named, or nothing when this server is not part of a topology.
-  const std::optional<config::PeerConfig>& Peers() const { return peer_config_; }
+  // Whether this turn should stop now: the caller's token, the shutdown below, and the clock.
+  // The runtime owns the two things a caller cannot see, which is why it is the runtime that
+  // folds them into one answer rather than each round asking three times.
+  bool StopRequested() const;
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
@@ -127,13 +174,6 @@ class Runtime {
   }
   void ResolveApproval(bool allow, std::string note) {
     executor_->ResolveApproval(allow, std::move(note));
-  }
-
-  // What the runtime knows that the executor does not: here, what the task board owes this
-  // server. Asked for on every round of every turn, so it is always current.
-  void SetContextDigest(std::function<std::string()> digest) {
-    assert(is_initialized_ && "Initialize() must run before any digest");
-    executor_->context_digest = std::move(digest);
   }
 
   AgentManager& Agents() {
@@ -213,6 +253,15 @@ class Runtime {
   // readable across that.
   paging::Pager pager_;
   std::filesystem::path workspace_root_;
+  // Whether this runtime is itself answering a delegated turn. A delegated runtime registers no
+  // `ask_dir`, so a chain stops here rather than at a depth counter somebody has to carry.
+  bool delegated_ = false;
+  bool ephemeral_ = false;
+  // The stop the current turn answers to, when it is a delegated turn: the asking turn's token
+  // and the clock, folded into one by StopRequested(). Both are empty for an ordinary turn, whose
+  // caller passes its token to ProcessInput directly.
+  CancelToken turn_cancel_;
+  std::chrono::steady_clock::time_point turn_deadline_{};  // zero: no deadline
   std::shared_ptr<Session> current_session_;
   // Guards the session's overrides: a serve request sets them on one thread while a turn reads
   // them on another.
@@ -220,7 +269,6 @@ class Runtime {
 
 
   std::string default_agent_override_;
-  std::optional<config::PeerConfig> peer_config_;
   std::string config_path_;
 
   std::vector<std::shared_ptr<mcp::McpClient>> mcp_clients_;

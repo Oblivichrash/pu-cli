@@ -4,9 +4,74 @@ Notable changes, newest first. This file is a summary; a change's reasoning is i
 the commit that made it, and its current behaviour is in the relevant document
 (see [Where Things Live](CONTRIBUTING.md#where-things-live)).
 
-## Unreleased
+## 0.7.0
+
+### Changed
+
+- **`ask_dir` names who answers in one field, `ask`.** It used to take `agent` and `dir`
+  separately, and every caller had to know which of the two a question wanted — a pair that
+  could also contradict each other, since a named agent was only checked against `delegates`
+  after the directory had already been resolved. One field removes the choice: a name the
+  agent may reach is an agent, and anything else is a directory. The narrower reading wins on
+  a name that is both, so a table that lists an agent and a directory under the same word
+  still asks the agent, which is what it wrote down. A stored call that used the old pair is
+  still drawn as it was.
+
+- **`pu ask` no longer remembers anything.** It used to read `.pu/session.json` before the turn
+  and write it after, which made the same prompt mean two different things depending on what
+  had been typed earlier in that directory — and made the command unusable as a way to ask a
+  question whose whole context the caller supplies. A conversation that is kept is what `chat`
+  and `serve` are for. `ask` now sends the prompt and nothing else, and leaves the file alone.
+
+- **`ask_dir` is drawn as a subtask block rather than a tool call.** It arrives over the wire
+  as a tool call and still is one, but what it holds is a whole conversation elsewhere: drawn
+  as a step, the name or directory asked sat inside a collapsed block's argument JSON, and the
+  answer was easy to read as work this turn did. The block names the agent or directory and the
+  question in its header, repeats them with the answer in its body, and folds like any other
+  step. No protocol change accompanies it — the same `tool_call` record is read differently.
 
 ### Added
+
+- **`-C DIR` runs any command as if started in that directory.** A `.pu/` directory is a whole
+  world: its own agents table, its own session, its own sandbox root. Nothing tied those three
+  to one place before — `--config` moved the table alone, which is how a run could read one
+  tree's configuration and write another tree's history. `-C` moves the root, and the rest
+  follows from it, so a project with several directories configures a model per directory
+  without the directories learning about each other.
+
+- **`ask_dir` lets an agent ask another directory, and get back only its answer.** The turn
+  runs there in full — reading files, running commands, paging output — and none of that
+  reaches the asking conversation, which grows by one answer rather than by everything it took
+  to reach one. It is worth doing only when that directory can find things out for itself,
+  which is why it runs a whole runtime rather than sending a prompt to a model. The other
+  directory's session is neither read nor written, and a relative path may not climb out of
+  the asking directory.
+
+- **An agent can be a directory, and one agent can hand a turn to another.** A `.pu/agents/<name>/`
+  holds that agent's own table and, optionally, a `persona.md` whose text becomes its system
+  prompt — a document rather than a string, because a character worth describing takes more
+  than a line. `ask_dir` takes one `ask` field naming who answers, so the same question can be
+  put to a cheap reader and to a careful reviewer without a directory for each; `delegates`
+  names the agents an agent may reach and is the whole of what it may reach. `tools` narrows
+  which builtins an agent has, and absent means every one, so a reviewer meant to be read-only
+  has to say so. A delegated turn gets no `ask_dir` of its own, so a chain stops at one hop,
+  and its cost comes back to the turn that asked.
+
+- **`pu-sse` is a standalone tool, installed beside `pu`.** Reading a `text/event-stream`
+  needed an endpoint and nothing else, but the only way to reach the reader was through the
+  `pu` binary, which links a session, a pager and a tool box none of that work uses. The
+  reader now lives in a library of its own and both entry points call it, so a script that
+  only watches a feed runs without a workspace or a configuration file, and `pu sse` and
+  `pu-sse` cannot disagree about what an event looks like. `cmake --install` places both, so
+  one package still installs everything.
+
+- **`pu-probe` is a standalone tool, installed beside `pu`.** A probe asks what a gateway
+  sends, which is a question about a wire format and not about a conversation: the subcommand
+  could only be reached through a binary that links a session, a transcript and a pager.
+  The capture now lives beside the reader in the layer with no session of its own, and both
+  `pu probe` and `pu-probe` call it, so the field names one reports are the field names the
+  other reports. The tool reads `agents.json` to find a gateway, because a host and a key are
+  the one thing a probe cannot invent; it opens no session and keeps nothing between runs.
 
 - **`execute_bash` answers with one page of a command's output instead of all of it.** The
   output is kept in a store that belongs to the session, `at` says where to read (`head`,
@@ -17,6 +82,21 @@ the commit that made it, and its current behaviour is in the relevant document
   a page of a command that has since been run again is sent as a receipt naming the newer run,
   which is what keeps paging one log ten times down to one page. `paging` in `agents.json`
   sets the budget — see [docs/paging.md](docs/paging.md).
+
+### Removed
+
+- **Breaking** — **Peer messaging and the task board are gone.** Two `pu serve` instances could
+  declare each other in `.pu/peers.json`, exchange a shared token, and hand work across as a
+  job on the receiver's board: `send_to_peer`, `peers.json`, `PU_PEER_TOKEN`, the `/api/jobs`
+  verbs, `/api/peer/message`, `/api/board`, and the board panel in the page. The one thing it
+  offered that nothing else does is delegating across two machines, and the part worth having —
+  "let another directory answer, bring back only the answer" — is what `ask_dir` now does
+  inside one process: it runs the turn where the files are and returns the conclusion alone,
+  with no second server, no token, and no state to reconcile. A workspace that carries a
+  `peers.json` can delete it; nothing reads the file and no tool answers to it. A session whose
+  turns arrived from a peer keeps its messages as ordinary user turns, so no file has to be
+  rewritten — but `/api/history` no longer reports `from_peer`, and a cancelled turn is now
+  rewound like any other.
 
 ### Fixed
 
@@ -79,22 +159,31 @@ the commit that made it, and its current behaviour is in the relevant document
   list of the keys a file may hold, and `paging` was missing from it although the parser reads
   it, so the command advised deleting a budget that was in force. The block's own keys are now
   checked too: `page_line` for `page_lines` is named instead of being silently ignored.
+- **A test run no longer leaves roughly a hundred directories behind in the temp directory.**
+  Both server fixtures point `PU_HOME` at a directory of their own, and both kept that path
+  only for as long as the call that made it: the serve fixture held it inside the environment
+  block that restored it, and the peer fixture held it in a local. Neither destructor could
+  name the directory, so neither removed it, and every case left one behind. The path is now
+  a member and the slot each destructor already used removes it. The two logging cases that
+  named a fixed directory now use one of their own, so cases running in parallel no longer
+  write to the same one. `ctest` names the temp directory too, so a fixture that is ever
+  missed again leaves its files in the build tree rather than outside it.
 
-## 0.6.1
+## 0.6.0
 
 ### Breaking
 
-- **Breaking** — **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
+- **`--host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`.** `host` already
   names a backend's upstream address in this program, and `0.0.0.0` is a legal bind and never a
   destination; the two are not the same question. A script or unit file that passes `--host`
   stops with an unrecognised option rather than binding somewhere unexpected, and one that sets
   `PU_SERVE_HOST` falls back to `127.0.0.1`. `serve` in `agents.json` takes `bind` for the same
   reason.
-- **Breaking** — **`GET /api/history` answers an object, not an array.** Every route now answers
+- **`GET /api/history` answers an object, not an array.** Every route now answers
   one envelope with the payload under the key its row names, so the listing is
   `{"messages": [...], "success": true}`. A client that read the body as an array has to read
   `.messages`.
-- **Breaking** — **`GET /api/servers` describes other servers, not this one.** An entry is
+- **`GET /api/servers` describes other servers, not this one.** An entry is
   `{"name", "port"}`: a label rather than a filesystem path, and no `current` mark, because the
   server that answered is the page's own and is no longer in its own list. A client that read
   `directory`, `host` or `current` has to take the name from `/api/session` instead.
@@ -158,8 +247,6 @@ the commit that made it, and its current behaviour is in the relevant document
   process rather than by directory, so two servers on one workspace do not offer each other. A
   sibling's address is that port on the host the page already reached, since a registry `bind` is
   not a destination. The entry's shape is in **Breaking** above.
-
-## 0.6.0
 
 ### Added
 

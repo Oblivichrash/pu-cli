@@ -122,7 +122,7 @@ function renderAssistantBlocks(stickToBottom) {
 
 function handleToolStart(payload) {
   pushBlock({
-    type: BLOCK_TYPES.TOOL_CALL,
+    type: blockKindForTool(payload.name),
     id: payload.id,
     name: payload.name,
     args: payload.args,
@@ -135,13 +135,14 @@ function handleToolStart(payload) {
 
 function handleToolEnd(payload) {
   const block = PU.currentAssistantBlocks.find(
-      (b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === payload.id);
+      (b) => (b.type === BLOCK_TYPES.TOOL_CALL || b.type === BLOCK_TYPES.SUBTASK) &&
+          b.id === payload.id);
   if (!block) {
     // A page that reconnected mid-command is replayed the end without the start: the frames
     // before the reconnect were drawn and dropped. The result carries the call's own name and
     // arguments for that reason, so the block is drawn from the end rather than lost.
     pushBlock({
-      type: BLOCK_TYPES.TOOL_CALL,
+      type: blockKindForTool(payload.name),
       id: payload.id,
       name: payload.name || "",
       args: payload.args ?? null,

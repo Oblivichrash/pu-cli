@@ -50,7 +50,7 @@ function appendThinking(blocks, text) {
 function toolCallBlock(call, status) {
   const fn = call.function || {};
   return {
-    type: BLOCK_TYPES.TOOL_CALL,
+    type: blockKindForTool(fn.name),
     id: call.id || "unknown",
     name: fn.name || "unknown",
     args: parseToolArguments(fn.arguments),
@@ -63,7 +63,9 @@ function toolCallBlock(call, status) {
 
 // Parsed by the running turn; the raw content is what is left when it could not be.
 function applyToolResult(blocks, msg) {
-  const block = blocks.find((b) => b.type === BLOCK_TYPES.TOOL_CALL && b.id === msg.tool_call_id);
+  const block = blocks.find(
+      (b) => (b.type === BLOCK_TYPES.TOOL_CALL || b.type === BLOCK_TYPES.SUBTASK) &&
+          b.id === msg.tool_call_id);
   if (!block) return;
   block.output = typeof msg.output === "string" ? msg.output : (msg.content || "");
   block.error = msg.error || "";
@@ -91,7 +93,7 @@ function groupHistory(history) {
       turns.push({ role: "system", text: content });
     } else if (msg.role === "user") {
       closeReply();
-      turns.push({ role: "user", text: content, turn: msg.id, fromPeer: msg.from_peer });
+      turns.push({ role: "user", text: content, turn: msg.id });
     } else if (msg.role === "tool") {
       applyToolResult(currentReply().blocks, msg);
     } else if (msg.role === "assistant") {

@@ -83,6 +83,36 @@ TEST_CASE("A tool from a configured MCP server reaches the toolbox", "[mcp][runt
   REQUIRE(Offers(harness.RuntimeRef().Tools(), "execute_bash"));
 }
 
+TEST_CASE("An agent's tools list is what it is given, and an empty one is every builtin",
+          "[mcp][runtime][tools]") {
+  {
+    // Nothing said: the builtins a table written before the field existed had.
+    ServeHarness harness("ollama");
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "execute_bash"));
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "write_file"));
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "ask_dir"));
+  }
+  {
+    // A reader that said so is only a reader. This is the list the table asked for, and the
+    // one a document promising it used to be a promise nothing kept.
+    ServeHarness harness("ollama", 0, std::nullopt, {"bash"});
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "execute_bash"));
+    REQUIRE_FALSE(Offers(harness.RuntimeRef().Tools(), "write_file"));
+    REQUIRE_FALSE(Offers(harness.RuntimeRef().Tools(), "ask_dir"));
+  }
+  {
+    // A list that names no builtin leaves an agent with none of them, and MCP tools still
+    // arrive: they are the agent's own servers, not builtins.
+    McpToolServer mcp("search");
+    FakeHttpServer mcp_http(mcp.ToResponder());
+    ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_http.Port())},
+                         {"write_file"});
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "write_file"));
+    REQUIRE_FALSE(Offers(harness.RuntimeRef().Tools(), "execute_bash"));
+    REQUIRE(Offers(harness.RuntimeRef().Tools(), "mcp_files_search"));
+  }
+}
+
 TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "[mcp][runtime]") {
   int mcp_port = 0;
   {

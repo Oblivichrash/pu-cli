@@ -66,9 +66,9 @@ class TempWorkspace {
   fs::path root_;
 };
 
-int RunCheckOf(const fs::path& config) {
+int RunCheckOf(const fs::path& config, const fs::path& workspace) {
   CapturedStdout capture;
-  return pu::cli::RunCheck(config.string());
+  return pu::cli::RunCheck(config.string(), workspace);
 }
 
 }  // namespace
@@ -79,7 +79,7 @@ TEST_CASE("A gateway's host is printed as the value that will be used", "[check]
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"deepseek","model":"m"}}]})");
 
   CapturedStdout capture;
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   // The file names no host, so the printed one came from the gateway table; saying where it
@@ -94,11 +94,17 @@ TEST_CASE("A sandbox root is printed as the directory it resolves to", "[check]"
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"},"security":{"sandbox_root":"."}}]})");
 
   CapturedStdout capture;
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
-  // "." is relative to where the command runs, which is what a reader cannot see in the file.
-  REQUIRE(capture.text().find("sandbox      " + fs::current_path().string()) !=
-          std::string::npos);
+  // "." is relative to the directory the run is about, which is what a reader cannot see in
+  // the file. Naming it here rather than reading it back makes the check prove the workspace
+  // it was handed is the one it resolved against. Compared as a resolved path rather than as
+  // the root concatenated by hand: the print goes through `weakly_canonical`, which on Windows
+  // yields a different separator and a drive letter this test would otherwise have to guess.
+  std::error_code ec;
+  const fs::path printed = fs::weakly_canonical(workspace.root(), ec);
+  REQUIRE_FALSE(ec);
+  REQUIRE(capture.text().find("sandbox      " + printed.string()) != std::string::npos);
 }
 
 TEST_CASE("An api key that expanded to nothing is called out", "[check]") {
@@ -108,7 +114,7 @@ TEST_CASE("An api key that expanded to nothing is called out", "[check]") {
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m","api_key":"${PU_CHECK_UNSET_VARIABLE}"}}]})");
 
   CapturedStdout capture;
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("api_key      (empty)") != std::string::npos);
@@ -123,7 +129,7 @@ TEST_CASE("A field this build ignores is reported, and is not a failure", "[chec
 
   CapturedStdout capture;
   // A build may be older than the file, so an unread field is a warning: the config runs.
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("'mystery'") != std::string::npos);
@@ -160,7 +166,7 @@ TEST_CASE("A file that sets every field it can is called out for none of them", 
   })");
 
   CapturedStdout capture;
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   INFO(capture.text());
   REQUIRE(capture.text().find("not read by this build") == std::string::npos);
@@ -174,10 +180,83 @@ TEST_CASE("A misspelt paging field is reported, like any other unread field", "[
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"gateway":"ollama","host":"http://h:1","model":"m"},"paging":{"page_line":100}}]})");
 
   CapturedStdout capture;
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("'page_line' in a.paging is not read by this build") != std::string::npos);
+}
+
+
+TEST_CASE("A delegation nothing can answer is a failure, and names the chain", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["ghost"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kUsage);
+
+  REQUIRE(capture.text().find("delegates to 'ghost', which nothing configures") != std::string::npos);
+}
+
+TEST_CASE("An agent told it may ask itself is refused", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["a"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kUsage);
+  REQUIRE(capture.text().find("delegates to itself") != std::string::npos);
+}
+
+TEST_CASE("A circle in the delegation graph is drawn once", "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "delegates": ["b"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} },
+      { "name": "b", "delegates": ["a"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kUsage);
+
+  const std::string out = capture.text();
+  REQUIRE(out.find("goes round in a circle") != std::string::npos);
+  REQUIRE(out.find("a -> b -> a") != std::string::npos);
+}
+
+TEST_CASE("The tools an agent has are printed, and the default says it is the default",
+          "[check]") {
+  TempWorkspace workspace;
+  const fs::path config = workspace.Write(R"({
+    "default_agent": "a",
+    "agents": [
+      { "name": "a", "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} },
+      { "name": "b", "tools": ["bash"],
+        "backend": {"gateway": "ollama", "host": "http://h:1", "model": "m"} }
+    ]
+  })");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
+
+  const std::string out = capture.text();
+  // The default is every builtin, which is the thing a reader is most often wrong about.
+  REQUIRE(out.find("tools        all builtin (bash, write_file, ask_dir)") != std::string::npos);
+  REQUIRE(out.find("tools        bash") != std::string::npos);
 }
 
 TEST_CASE("A file this build cannot load exits 1", "[check]") {
@@ -186,7 +265,7 @@ TEST_CASE("A file this build cannot load exits 1", "[check]") {
   const fs::path config = workspace.Write(
       R"({"default_agent":"a","agents":[{"name":"a","backend":{"type":"ollama","model":"m"}}]})");
 
-  REQUIRE(RunCheckOf(config) == pu::cli::kUsage);
+  REQUIRE(RunCheckOf(config, workspace.root()) == pu::cli::kUsage);
 }
 
 TEST_CASE("A session naming an agent the file no longer has is reported", "[check]") {
@@ -200,9 +279,28 @@ TEST_CASE("A session naming an agent the file no longer has is reported", "[chec
   CapturedStdout capture;
   // The session outranks default_agent by design, so a stale name is a fact to print, not a
   // file to refuse: the exit code stays 0 and the names that do exist are listed.
-  REQUIRE(pu::cli::RunCheck(config.string()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunCheck(config.string(), workspace.root()) == pu::cli::kOk);
 
   const std::string out = capture.text();
   REQUIRE(out.find("names  gone, which this file does not configure") != std::string::npos);
   REQUIRE(out.find("configured: a") != std::string::npos);
+}
+
+// `-C` names the directory the run is about, so the check must look for a table there rather
+// than beside the process. Without this, `pu -C sub check` reports the caller's config and the
+// workspace option reads as ignored.
+TEST_CASE("A check given no config finds the one beside the directory it was handed", "[check]") {
+  TempWorkspace workspace;
+  workspace.Write(
+      R"({"default_agent":"only","agents":[{"name":"only","backend":{"gateway":"ollama","host":"http://h:1","model":"m"}}]})");
+
+  CapturedStdout capture;
+  REQUIRE(pu::cli::RunCheck("", workspace.root()) == pu::cli::kOk);
+
+  const std::string out = capture.text();
+  // The table it found is the one in the directory named, not the test process's.
+  REQUIRE(out.find("config  " + (workspace.root() / ".pu" / "agents.json").string()) !=
+          std::string::npos);
+  REQUIRE(out.find("workspace  " + workspace.root().string()) != std::string::npos);
+  REQUIRE(out.find("default    only") != std::string::npos);
 }

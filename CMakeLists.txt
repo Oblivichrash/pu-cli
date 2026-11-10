@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(pu-cli VERSION 0.6.1 LANGUAGES CXX)
+project(pu-cli VERSION 0.7.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -35,6 +35,50 @@ function(pu_configure_target target)
     endif()
 endfunction()
 
+# The layer with no dependencies of its own: an HTTP client, the SSE framing, the JSON and
+# text helpers, logging and the platform's token. A tool that talks to a server and prints
+# what it reads needs this and nothing else, which is why it is a target of its own rather
+# than the first entries of `pu_core`. A standalone tool links this; it does not link the
+# session, the pager or the tool box it has no use for.
+add_library(pu_core_util STATIC
+    src/core/beast_http_client.cpp
+    src/core/logging.cpp
+    src/core/platform.cpp
+    src/core/sse.cpp
+    src/tools_cli/sse.cpp
+)
+target_link_libraries(pu_core_util PUBLIC
+    spdlog::spdlog
+    Boost::json
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+if(WIN32)
+    target_link_libraries(pu_core_util PRIVATE crypt32)
+endif()
+pu_configure_target(pu_core_util)
+add_library(pu::core_util ALIAS pu_core_util)
+
+add_library(pu_config STATIC
+    src/config/agents.cpp
+    src/config/backend.cpp
+    src/config/gateway.cpp
+    src/config/serve_registry.cpp
+    src/llm/model_check.cpp
+    src/llm/model_listing.cpp
+    src/llm/ollama_provider.cpp
+    src/llm/openai_protocol.cpp
+    src/llm/openai_provider.cpp
+    src/llm/probe.cpp
+    src/llm/projection.cpp
+    src/llm/streaming_provider.cpp
+    src/tools_cli/probe.cpp
+)
+target_link_libraries(pu_config PUBLIC pu_core_util)
+pu_configure_target(pu_config)
+add_library(pu::config ALIAS pu_config)
+
 add_library(pu_core STATIC
     src/app/cli.cpp
     src/app/cli_agents.cpp
@@ -45,24 +89,7 @@ add_library(pu_core STATIC
     src/app/serve_runner.cpp
     src/app/serve_websocket.cpp
     src/config/agent_summary.cpp
-    src/config/agents.cpp
-    src/config/backend.cpp
-    src/config/gateway.cpp
-    src/config/peer.cpp
-    src/config/serve_registry.cpp
-    src/core/beast_http_client.cpp
-    src/core/logging.cpp
-    src/core/platform.cpp
-    src/core/sse.cpp
     src/exec/run.cpp
-    src/llm/model_check.cpp
-    src/llm/model_listing.cpp
-    src/llm/ollama_provider.cpp
-    src/llm/openai_protocol.cpp
-    src/llm/openai_provider.cpp
-    src/llm/probe.cpp
-    src/llm/projection.cpp
-    src/llm/streaming_provider.cpp
     src/mcp/client.cpp
     src/mcp/http_transport.cpp
     src/mcp/stdio_transport.cpp
@@ -70,32 +97,22 @@ add_library(pu_core STATIC
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
-    src/serve/board.cpp
-    src/serve/peer_read.cpp
     src/session/graph.cpp
     src/session/request.cpp
     src/session/session.cpp
     src/session/settings.cpp
     src/session/usage.cpp
     src/tools/bash.cpp
-    src/tools/peer_tool.cpp
+    src/tools/ask_dir_tool.cpp
     src/tools/policy.cpp
     src/tools/toolbox.cpp
     src/tools/write_file.cpp
 )
 target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC
-    spdlog::spdlog
-    Boost::json
-    Boost::system
+    pu_config
     Boost::program_options
-    OpenSSL::SSL
-    OpenSSL::Crypto
 )
-if(WIN32)
-    # The Windows root store, read to give OpenSSL the anchors this platform has.
-    target_link_libraries(pu_core PRIVATE crypt32)
-endif()
 pu_configure_target(pu_core)
 add_library(pu::core ALIAS pu_core)
 
@@ -104,6 +121,26 @@ add_executable(pu
 )
 target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
+
+# The standalone reader. It links the layer with no dependencies of its own, which is what
+# reading a feed needs: no session, no configuration, no pager. `pu sse` runs the same
+# implementation, so the two never disagree about what an event looks like.
+add_executable(pu-sse
+    src/tools_cli/sse_main.cpp
+)
+target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
+pu_configure_target(pu-sse)
+add_executable(pu::sse ALIAS pu-sse)
+
+# The standalone probe. It needs the agent table to find a gateway and nothing else: no
+# session, no transcript, no pager. `pu probe` runs the same implementation, so a field
+# name read by one is a field name read by the other.
+add_executable(pu-probe
+    src/tools_cli/probe_main.cpp
+)
+target_link_libraries(pu-probe PRIVATE pu_config Boost::program_options)
+pu_configure_target(pu-probe)
+add_executable(pu::probe ALIAS pu-probe)
 
 # The page is found relative to the executable, so a build tree without a sibling web/ serves
 # nothing. Copying it after every build keeps the binary runnable from where it was built; the
@@ -123,7 +160,9 @@ if(BUILD_TESTS)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS pu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# The tools go in beside the command that owns them: one package to install, and a reader who
+# has `pu` has `pu-sse`, whether they reach it as `pu sse` or as its own name.
+install(TARGETS pu pu-sse pu-probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(WIN32)
     # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
     # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.

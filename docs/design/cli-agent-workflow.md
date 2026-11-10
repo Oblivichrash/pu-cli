@@ -32,6 +32,12 @@ Still open, in the order I would take them: §2.4 and §2.7 (both small, and tog
 `pu ask` usable from a script without touching the workspace), then §1 and §2.5 together (they
 are one question: who may write the session).
 
+The `not done` rows were last checked against 0.7.0 by grepping the source rather than the
+binary: `--fresh` and a stdin prompt appear nowhere in `src/app/cli.cpp`, and
+`Runtime::Shutdown()` still calls `SaveCurrentSession()` with no condition. Re-derive them
+from the code, not from this table, once any of them is started — a status table is a claim
+about a moment.
+
 ---
 
 ## 1. The one design flaw underneath most of the symptoms
@@ -68,6 +74,10 @@ spec.agent_name = stored->name;      // ← the per-run flag becomes persistent 
 The second row is the sharp one: listing another agent's models silently changes which
 agent your session talks to. It is not obvious from `--agent`'s help text, and the
 session file is the only place it shows up.
+
+The first and third rows no longer apply to `ask`, which since 0.6.1 writes no session at
+all: it reads a stored conversation neither before nor after the turn. `models` is unchanged,
+so the second row — a read-only query re-pointing what the next turn runs on — still stands.
 
 ### The mirror-image problem
 

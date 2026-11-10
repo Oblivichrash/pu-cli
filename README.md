@@ -59,12 +59,66 @@ Editing `web/` after an install means installing again — the installed copy is
 a live link into the checkout, and a binary running against its own prefix serves
 the copy it was installed with.
 
+### From nothing to a first answer
+
+The build produces a binary that does nothing until it is told which model to talk to.
+Three steps, in this order, and the second is the one that always fails when it can be
+made to fail at all — so it comes before the one that costs money.
+
+**1. Point `pu` at a model.** A local Ollama needs no key:
+
+```bash
+mkdir -p .pu
+cat > .pu/agents.json <<'JSON'
+{
+  "default_agent": "local-assistant",
+  "agents": [
+    {
+      "name": "local-assistant",
+      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
+    }
+  ]
+}
+JSON
+```
+
+A hosted gateway takes the same shape with `"gateway": "openai"` (or another product this
+build carries) and a key in the environment rather than the file — see
+[Environment Variables](#environment-variables). `gateway` must name a product, not a
+protocol; naming a protocol is refused at load rather than guessed at.
+
+**2. Prove it resolves before spending a turn.** This reads the config, expands the
+environment references, and reaches the gateway's model list without running a
+conversation:
+
+```bash
+./build/pu check
+```
+
+A failure here is a config error, and it is much cheaper to read than a failure in the
+middle of a turn.
+
+**3. Ask one question.**
+
+```bash
+./build/pu ask --prompt "list the files here, one per line" --show-usage
+```
+
+`--show-usage` prints what the turn cost on stderr, so a first run tells you both that it
+worked and what it cost. Drop it when the answer is all you wanted.
+
+For a conversation instead of a single question, `./build/pu chat`. Both append to the same
+auto-saved session under `.pu/session.json`; there is no stateless mode yet, so an `ask`
+from a script joins the workspace's conversation rather than standing apart from it. See
+[Core Commands](#core-commands) for how to rewind or switch agent.
+
 ## Core Commands
 
 | Command | What it does |
 | --- | --- |
-| `pu ask [--agent NAME] "..."` | One turn in the workspace's conversation, printed to stdout |
-| `pu chat [--agent NAME]` | The same conversation, kept open, with `/commands` |
+| `pu ask [--agent NAME] "..."` | One turn with no memory: the prompt is the whole of what it knows |
+| `pu chat [--agent NAME]` | A conversation that is kept, with `/commands` |
+| `pu delegate --agent NAME "..."` | One question put to another agent, answered in a turn of its own |
 | `pu agents [--json]` | The configured agents, and which one answers |
 | `pu models [--agent NAME] [--gateway GW] [--model M] [--detail ids\|caps] [--entry ID] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` *(developer tool, not in `pu --help`)* | A gateway's raw stream, kept, and the field names it actually sent |
@@ -72,11 +126,44 @@ the copy it was installed with.
 | `pu serve` | The Web UI and its WebSocket |
 | `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
 
+Every command takes `-C DIR`, spelled and meant the same way as `git -C`: run as if started
+in that directory. A `.pu/` directory is a whole world — its own agents table, its own
+session, its own sandbox — so `-C` is how one directory asks another without either learning
+about the other.
+
+`pu delegate` is the same path a model takes when it hands a turn to another agent with
+`ask_dir`: the question is the whole of what that turn knows, and the answer comes back without
+the reading it took to reach one. A model may only hand a turn to an agent its own table lists
+in `delegates`; by hand you may name any of them, and `--show-usage` prints what the turn cost.
+Naming a directory instead works too, but only one that already carries its own `.pu/agents.json`
+— nothing creates it for you, so the first move is to write that file and the second is to ask.
+The delegated turn is one hop: it gets no `ask_dir` of its own.
+
 The three commands that read a provider answer different questions. `pu models` asks what a
 gateway offers and names the model to pick; `pu probe` asks what the answer is shaped like and
 keeps the bytes; `pu sse` asks nothing of a gateway at all — it is a plain client that sends the
 URL and headers it is given, reads no `agents.json`, and therefore reaches a feed that is not a
 chat turn.
+
+### The tools that ship beside `pu`
+
+Installing `pu` installs these too, in the same directory. Each is also a subcommand, and the
+two entry points run the same implementation — so an answer from `pu-sse` is an answer from
+`pu sse`.
+
+| Tool | Same as | What it needs |
+| --- | --- | --- |
+| `pu-sse URL [--format text\|json\|raw]` | `pu sse` | Nothing but the URL |
+| `pu-probe [--gateway G] [--model M]` | `pu probe` | `agents.json`, to find a gateway |
+
+`pu-sse` is the case the split exists for: reading a feed needs an endpoint, not a workspace,
+a session or a configuration file. A script that only wants to watch an event stream runs
+`pu-sse` without `pu` having been set up at all.
+
+`pu-probe` is the narrower one: it reads the agent table to find a host and a key, then sends
+one prompt and prints what came back. No session, no transcript, no pager — a question about
+a wire format does not need a conversation to answer it, and a ResponseShape for a new
+gateway is written from this capture rather than from a specification.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
@@ -87,20 +174,18 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-
 
 | Document | What it holds |
 |----------|---------------|
-| [docs/configuration.md](docs/configuration.md) | `agents.json`, `peers.json`, environment variables, logging |
+| [docs/configuration.md](docs/configuration.md) | `agents.json`, environment variables, logging |
 | [docs/web-api.md](docs/web-api.md) | `pu serve`: the WebSocket protocol and the REST endpoints |
 | [docs/web-ui.md](docs/web-ui.md) | The browser modules, and how the page is served |
 | [docs/paging.md](docs/paging.md) | `execute_bash` page by page: the envelope, cursors, and what a turn keeps |
-| [docs/peers-and-board.md](docs/peers-and-board.md) | Peer messaging, the task board, and their verbs |
-| [docs/security.md](docs/security.md) | The trust boundary, the peer token, loopback-only routes, sandbox and approval patterns |
+| [docs/security.md](docs/security.md) | The trust boundary, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
+| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, cancellation contract, and the handler rules |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
 | [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
-| [docs/design/bash-output-window.md](docs/design/bash-output-window.md) | The note paging shipped from: one window per tool call, and why |
-| [docs/design/gateway-protocol-layout.md](docs/design/gateway-protocol-layout.md) | Why a gateway is a table row rather than a file |
 | [docs/design/codebuddy-cloud-api.md](docs/design/codebuddy-cloud-api.md) | One gateway's wire format, and the two refusals it can answer |
-| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | What driving four agents from the command line broke, and what was built for it |
+| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | The CLI defects found by driving four agents from a shell, with the ones still open |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
 
@@ -129,6 +214,13 @@ fails on an orphan, so a new file is registered rather than left to be found.
 `gateway` is required and must name a product the build carries. A config that
 names a protocol instead is refused at load rather than guessed at.
 
+An agent can also live in its own directory — `.pu/agents/<name>/agents.json`, with a
+`persona.md` beside it that becomes its system prompt — and one agent can hand a turn to
+another with `delegates`. That is how several models share one conversation without sharing
+one context: the turn runs where the work is and comes back as an answer. The two forms, and
+what a persona is not for, are in
+[docs/configuration.md](docs/configuration.md#one-directory-per-agent).
+
 **Upgrading** — the keys that changed, and what a session saved by an older
 version does:
 
@@ -138,6 +230,7 @@ version does:
 | 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
 | 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
 | 0.6.1 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
+| 0.7.0 | `PU_ASK_DEPTH` no longer exists: a delegated turn gets no `ask_dir`, so it stops at one hop by construction. `ask_dir` takes one `ask` field naming who answers — an agent name from the table's `delegates`, or a directory relative to this one — rather than separate `agent` and `dir` fields; an agent that names no `delegates` may ask nobody. A table that relied on asking an agent by directory is unaffected; one that relied on a tool call spelling out `agent` and `dir` is not. Peer messaging and the task board are removed: `.pu/peers.json`, `PU_PEER_TOKEN`, `send_to_peer`, `/api/jobs`, `/api/peer/message` and `/api/board` no longer exist. Delete the file if a workspace has one; a tool that posted to a peer should use `ask_dir` or read the directory instead. `GET /api/history` no longer reports `from_peer`. |
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 

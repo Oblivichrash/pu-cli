@@ -5,8 +5,11 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/tools_cli/probe.hpp"
+#include "pu/tools_cli/sse.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <optional>
@@ -66,9 +69,10 @@ CommandLine BuildCommandLine();
 std::string CommandList(const CommandLine& line);
 
 // The frame every command that needs a Runtime runs inside; see
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside.
+// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside. `ephemeral` settles it before
+// Initialize, so it belongs to the command's signature rather than to its body.
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
-                           const std::function<int()>& body);
+                           const std::function<int()>& body, bool ephemeral = false);
 
 // `show_usage` moves what the turn cost onto stderr, off by default so that stdout stays the
 // answer alone.
@@ -93,26 +97,30 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);
 // docs/configuration.md#reading-it-back-pu-check
-int RunCheck(const std::string& config_path);
+// `workspace` is the directory the run is about — `-C` when one was given, the current
+// directory otherwise. It is passed rather than read here because a sandbox root is relative
+// to it and so is the search for an unset table, and a check that reported one directory
+// while the run used another would be the split `-C` exists to remove.
+int RunCheck(const std::string& config_path, const std::filesystem::path& workspace);
+
+// One turn taken by another agent, along the path a tool takes: the question is the whole of
+// what that turn knows, because the agent asked has no idea what this conversation has said.
+int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& runtime,
+                bool show_usage);
+
+// One turn taken by another agent, along the path a tool takes: the question is the whole of
+// what that turn knows, because the agent asked has no idea what this conversation has said.
+int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& runtime,
+                bool show_usage);
 // `as_json` prints the shape `GET /api/agents` answers with, from the same function.
 int RunAgents(Runtime& runtime, bool as_json);
 
-// What `sse` prints. The three shapes are exclusive: raw bytes, one JSON object per event, or
-// the event read as text -- so they are one choice rather than three flags that could be set
-// together and contradict each other.
-enum class SseFormat { kText, kJson, kRaw };
+// What `sse` prints, and the shape `pu sse` and the standalone `pu-sse` both read. Declared
+// in one place because the two binaries call the one implementation.
+using SseFormat = tools_cli::SseFormat;
+using SseOptions = tools_cli::SseOptions;
 
-struct SseOptions {
-  std::string url;
-  pu::http::HttpMethod method = pu::http::HttpMethod::kGet;
-  std::vector<std::string> headers;
-  std::optional<std::string> body;
-  SseFormat format = SseFormat::kText;
-  // Whether the `event:` and `id:` lines are printed beside the data in the text shape.
-  bool quiet = false;
-};
-
-int RunSse(const SseOptions& options, Runtime& runtime);
+int RunSse(const SseOptions& options, http::HttpClient& http);
 
 // docs/ARCHITECTURE.md#the-frame-every-command-runs-inside
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options);

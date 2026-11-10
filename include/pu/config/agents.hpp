@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,6 +23,16 @@ struct AgentEntry {
   std::vector<McpServerConfig> mcp_servers;
   // The tool-call budget for one turn. Absent: the executor's default applies.
   std::optional<int> tool_call_budget;
+  // Which agents this one may hand a turn to, by name. Empty means it may hand a turn to
+  // nobody, which is the answer a file that says nothing should get: a table that does not
+  // mention delegation cannot be used to reach an agent it does not mention.
+  std::vector<std::string> delegates;
+  // The builtin tools this one has, by name. Empty means every builtin, which is what a table
+  // written before this field existed meant and what it must keep meaning.
+  std::vector<std::string> tools;
+  // Where this entry was read from: the file's directory, which is what a `persona` and an
+  // `mcp_servers` path are relative to. Empty for an inline entry in the top-level table.
+  std::filesystem::path source_dir;
 };
 
 struct AgentsConfig {
@@ -61,6 +72,15 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
                                                     const std::string& agent_name);
 
 std::string FindConfigPath();
+
+// The directory an agent's own table lives in, beside the top-level `agents.json`: one
+// directory per agent, named after it, holding that agent's table and whatever its table
+// points at. An empty path when this build looks nowhere else, which it does not.
+std::filesystem::path AgentTableDir(const std::filesystem::path& config_path);
+
+// Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
+// one the runtime can register.
+const std::vector<std::string>& BuiltinToolNames();
 
 std::optional<ServeOptions> FindServeOptions();
 

@@ -29,9 +29,9 @@ async function loadHistory() {
         createSystemMessage(turn.text);
       } else if (turn.role === "user") {
         createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: turn.text }], turn.turn,
-                      turn.text, turn.fromPeer);
+                      turn.text);
       } else {
-        createMessage("assistant", turn.blocks, undefined, undefined, undefined, turn.usage);
+        createMessage("assistant", turn.blocks, undefined, undefined, turn.usage);
       }
     }
     PU.chainLength = history.length;
@@ -242,29 +242,170 @@ async function loadAgents() {
   }
 }
 
-// Steps the session back before `turn` and hands the text to the composer, so sending it
-// again replaces that turn.
-async function rewindToTurn(turn, text) {
+// Editing a turn of your own happens in the bubble that holds it: the words become a field, the
+// transcript is not rebuilt and the view does not jump to the composer. What a save cannot do is
+// keep what came after -- every later turn was an answer to this text -- so the session is
+// stepped back to just before it, and the field stays open in place of a reply that is no longer
+// coming. Sending then replaces the turn.
+//
+// Only the turn being edited is touched. A step back before turn N drops everything from N on,
+// and those bubbles are dropped here too, so the page and the store agree without a re-read.
+//
+// `fromButton` is set by the menu item, which is not a click on the bubble: the guards below
+// exist to keep a drag that left a selection, or a press that landed on a link or a fold, from
+// opening the field. The menu has already made those decisions before it drew itself, so its
+// word is taken rather than re-litigated.
+function beginEdit(el, event, fromButton) {
+  // Selecting text to copy it also clicks. A drag that leaves a selection is not a request to
+  // edit, and neither is a click that landed on a fold or a link inside the bubble.
+  if (!fromButton && event &&
+      event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking")) {
+    return;
+  }
+  const selection = window.getSelection();
+  if (selection && selection.toString().trim()) return;
+  if (el.dataset.editing === "1") return;
   if (PU.isStreaming) {
     createSystemMessage("Cannot edit while a reply is streaming.");
     return;
   }
-  const input = PU.composer.inputEl;
-  try {
-    const data = await postJson("/api/rewind", { turn });
-    if (!data.success) {
-      createSystemMessage("Could not step back: " + (data.error || "unknown error"));
+  const original = el.dataset.text || "";
+  el.dataset.editing = "1";
+  el.classList.add("editing");
+  el.title = "";
+  const container = el.querySelector(".blocks-container");
+  const field = document.createElement("textarea");
+  field.className = "edit-field";
+  field.value = original;
+  container.replaceChildren(field);
+  // The bar under the field holds the two ways out of the edit and nothing else. Copy moved to
+  // the menu, where it copies the message as the store holds it: a copy taken from the field
+  // would take the half-changed sentence in it, which is not yet a message.
+  const actions = document.createElement("div");
+  actions.className = "edit-actions";
+
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "edit-save";
+  save.textContent = "Save";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "edit-cancel";
+  cancel.textContent = "Cancel";
+  actions.append(save, cancel);
+  // Inside the bubble, with the field: these belong to the sentence being changed, not to the
+  // line under it that says what the turn cost.
+  (el.querySelector(".msg-bubble") || el).appendChild(actions);
+
+  // `value` is what the bubble says once the field is gone: `null` is a cancelled edit, which
+  // goes back to what it said before. Either way the sentence lands where the field was, so the
+  // reader is never left looking at a form for a message that is finished.
+  const close = (value) => {
+    delete el.dataset.editing;
+    el.classList.remove("editing");
+    actions.remove();
+    const text = value === null ? (el.dataset.text || "") : value;
+    // The bar offered a copy of the words as they were when it was built, and the field has
+    // since been edited past them: what the message carries now is what a copy should take.
+    el._puBlocks = [{ type: BLOCK_TYPES.TEXT, content: text }];
+    renderBlocks([{ type: BLOCK_TYPES.TEXT, content: text }], container);
+  };
+
+  // The field is the only thing in the bubble, so it grows with what is in it.
+  const fit = () => {
+    field.style.height = "auto";
+    field.style.height = field.scrollHeight + "px";
+  };
+  field.addEventListener("input", fit);
+  requestAnimationFrame(() => {
+    fit();
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  });
+
+  // Escape leaves the text as it was; Enter with the modifier that means a newline is not a save.
+  field.addEventListener("keydown", (keyEvent) => {
+    if (keyEvent.key === "Escape") {
+      keyEvent.preventDefault();
+      close(null);
+    } else if (keyEvent.key === "Enter" && !keyEvent.shiftKey && !keyEvent.isComposing) {
+      keyEvent.preventDefault();
+      save.click();
+    }
+  });
+  cancel.addEventListener("click", (clickEvent) => {
+    clickEvent.stopPropagation();
+    close(null);
+  });
+  save.addEventListener("click", async (clickEvent) => {
+    clickEvent.stopPropagation();
+    const text = field.value.trim();
+    if (!text) return;
+    if (text === original) {
+      close(null);
       return;
     }
-    PU.composer.messagesEl.replaceChildren();
-    await loadHistory();
-    scrollToBottom();
-    input.value = text;
-    input.focus();
-    input.style.height = "auto";
-    createSystemMessage("Editing turn " + turn +
-                        ". Sending replaces it; the turn it replaced is not kept.");
-  } catch (e) {
-    createSystemMessage("Could not step back: " + e.message);
-  }
+    // Everything after this bubble is the conversation the store is about to lose -- its own
+    // words if this turn is re-said, and the replies to turns that followed. The step back
+    // happens before the text is offered for sending, so the composer's turn number and the
+    // store's chain agree by the time a later send is made.
+    //
+    // The bubble being edited is the one that stays; it is this turn re-said rather than a new
+    // one, so the sweep starts after it and never takes it.
+    const dropped = [];
+    for (let node = el.nextElementSibling; node; node = node.nextElementSibling) {
+      dropped.push(node);
+    }
+    try {
+      const data = await postJson("/api/rewind", { turn });
+      if (!data.success) {
+        createSystemMessage("Could not step back: " + (data.error || "unknown error"));
+        return;
+      }
+    } catch (e) {
+      createSystemMessage("Could not step back: " + e.message);
+      return;
+    }
+    for (const node of dropped) node.remove();
+    // A reply still being written belonged to a turn just dropped: it must not keep drawing
+    // into a conversation that has been stepped back under it.
+    if (PU.currentAssistantEl && !PU.composer.messagesEl.contains(PU.currentAssistantEl)) {
+      PU.currentAssistantEl = null;
+      PU.currentAssistantBlocks = [];
+    }
+    el.dataset.text = text;
+    close(text);
+    await refreshChainLength();
+    offerResend(el, text);
+  });
+}
+
+// A saved edit is a turn of yours that has been said but not asked: the store was stepped back
+// to before it, so it is once again the newest thing you said. It keeps its place in the
+// transcript and grows one control, which is the only thing on the page that sends it.
+function offerResend(el, text) {
+  el.querySelectorAll(".edit-resend").forEach((old) => old.remove());
+  const bar = document.createElement("div");
+  bar.className = "edit-resend";
+  const note = document.createElement("span");
+  note.className = "edit-resend-note";
+  note.textContent = "Edited. The turns after this one were dropped.";
+  const send = document.createElement("button");
+  send.type = "button";
+  send.className = "edit-resend-btn";
+  send.textContent = "Send";
+  send.addEventListener("click", (event) => {
+    event.stopPropagation();
+    bar.remove();
+    if (!sendText(text, el)) {
+      // Nothing was sent, so the offer has to stay: losing it would leave a turn the store no
+      // longer holds and no way to ask it again except by retyping it.
+      offerResend(el, text);
+      return;
+    }
+  });
+  bar.append(note, send);
+  // The offer to re-send belongs to the turn that was just changed, so it stays inside the
+  // bubble rather than joining the footing, which describes a message that is settled.
+  (el.querySelector(".msg-bubble") || el).appendChild(bar);
 }

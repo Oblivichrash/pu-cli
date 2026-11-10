@@ -28,20 +28,20 @@ own name.
 | :--- | :--- |
 | `web/state.js` | The `PU` object, the page's own identity and the list of siblings, the writers for both (`setSelf`, `setOthers`, `siblingOrigin`), the connection dot's state |
 | `web/api.js` | The page's one way out: `fetchJson`/`postJson` over `PU.self.origin`, and `ApiError`, which keeps the status a refusal arrived with. A caller that cannot tell `403` from a dropped connection cannot say which happened |
-| `web/block-thinking.js`, `web/block-tool.js` | The three block custom elements and their own drawing |
+| `web/block-thinking.js`, `web/block-tool.js`, `web/block-subtask.js` | The block custom elements and their own drawing |
+| `web/blocks.js` | The block kinds, and which kind a tool call is drawn as |
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
 | `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the sidebar reads rather than chooses: backend label, context bar, tool list, and the spend total a finished turn brings with it |
-| `web/board.js` | The peer board's read-out over `/api/board`, and the three verbs the page writes: answering a blocked job, asking what is happening, and taking one back |
 | `web/servers.js` | The header's server strip: the workspace this page is attached to, the other servers over `/api/servers`, and the switch to one of them. The name comes from `/api/session`, never from the list, so a refused list leaves the name intact and the caret explains why it cannot be used |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
-| `web/composer.js` | Turning a press into a run, and a second press into a cancel |
+| `web/composer.js` | Turning a press into a run, and a second press into a stop |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
 A transcript block and its element are separate things: the block is plain data (`type`,
@@ -49,6 +49,13 @@ A transcript block and its element are separate things: the block is plain data 
 on connect. `sync(block)` is the only way in, so a patch and a first paint take the same
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
+
+**One button, one word.** While a turn is in flight the send button reads `Stop`, and reads
+`Stopping…` from the press until the server's `done` arrives. The frame it sends is `cancel`,
+which ends the turn and whatever command it is running; a reader who presses it means both, so
+splitting the label would offer a choice the protocol does not make. `renderSendButton` is the
+one place those three states are written, so a path that ends a turn cannot leave the button
+saying something the page is not doing.
 
 That re-render is deferred to the next animation frame, so a fast stream costs one paint
 rather than one per chunk — which makes the frame a thing that can be *owed*. Two rules

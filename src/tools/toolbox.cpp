@@ -60,6 +60,13 @@ std::vector<std::string> Toolbox::ToolNames() const {
   return names;
 }
 
+std::vector<Tool*> Toolbox::Tools() const {
+  std::vector<Tool*> found;
+  found.reserve(tools_.size());
+  for (const auto& [display_name, tool] : tools_) found.push_back(tool.get());
+  return found;
+}
+
 std::vector<ToolDefinition> Toolbox::ToolDefinitions() const {
   std::vector<ToolDefinition> defs;
   defs.reserve(tools_.size());

@@ -19,10 +19,8 @@
 #include <string_view>
 #include <thread>
 
-#include "pu/config/peer.hpp"
 #include "pu/core/base.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/serve/board.hpp"
 
 namespace pu::cli::detail {
 
@@ -41,32 +39,24 @@ std::string PeerAddress(tcp::socket& socket, beast::error_code& ec);
 bool IsLoopback(const std::string& address);
 
 // Who a route answers. A page presents no credential, so the address it arrived from is the one
-// it has; a peer presents the shared token. The route states which, so adding one answers the
-// question instead of leaving it to a comparison of path strings in the dispatcher.
-enum class Audience { kAnyone, kLoopback, kPeerToken };
+// it has. The route states which, so adding one answers the question instead of leaving it to a
+// comparison of path strings in the dispatcher.
+enum class Audience { kAnyone, kLoopback };
 
-// What an audience made of a caller. Three refusals rather than a bool, because they are not the
+// What an audience made of a caller. Two refusals rather than a bool, because they are not the
 // same problem and the caller is told which one it hit: this server does not answer this route
-// from that address, this server has no peer topology at all, or the token was not the one.
-enum class Admission { kAllowed, kNotFromHere, kNoTopology, kWrongToken };
+// from that address, or it answers this route nowhere.
+enum class Admission { kAllowed, kNotFromHere };
 
-// Whether this audience admits a caller. The peer table is handed in rather than reached for, so
-// a case can ask about any audience without a server, a socket or a configuration file.
-Admission Admit(Audience audience, const std::string& address, const std::string& token,
-                const std::optional<config::PeerConfig>& peers);
+// Whether this audience admits a caller.
+Admission Admit(Audience audience, const std::string& address);
 
 // What a handler computes against. Who called is a parameter like everything else, so a route
 // that only answers this machine cannot be written by forgetting to check.
 struct Call {
   Runtime& runtime;
-  // The board this server keeps, or nullptr when it keeps none.
-  serve::Board* board = nullptr;
-  // Null until this server can run a turn; only the peer endpoint needs one.
-  SessionRunner* runner = nullptr;
   // The address the request arrived from, empty when the socket could not name its peer.
   std::string address;
-  // The peer name the presented token speaks for, empty for a page.
-  std::string peer;
   bool loopback = false;
   // The port this server answers on, which is how it names itself to the page that reached it.
   std::uint16_t port = 0;
@@ -82,15 +72,9 @@ struct Route {
   Handler handler;
   std::string_view key;
   Audience audience;
-  // The status a success answers with: `202` for a turn that was accepted rather than answered.
+  // The status a success answers with.
   unsigned status;
   bool has_body;
-  // A route that reads or moves the board is answered `404` by a server that keeps none.
-  bool needs_board;
-  // A route that touches only the board. The board carries its own mutex and shares nothing with
-  // the conversation, so these are answered without the session's lock: a peer's poll behind that
-  // lock would be able to stop the page's turn.
-  bool board_only;
 };
 
 // The REST routes as the table that answers them: read by the dispatcher, and by the case that
@@ -101,8 +85,8 @@ std::span<const Route> HttpRoutes();
 // `peer` is the address the request came from, and `port` the one this server answers on: the two
 // facts a handler cannot read off the runtime, because they belong to the connection rather than
 // to the session. They are given here so no handler has to reach for the socket.
-void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex, SessionRunner* runner,
-                         serve::Board* board, http::request<http::string_body>&& req,
+void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
+                         http::request<http::string_body>&& req,
                          http::response<http::string_body>& res, const std::string& peer,
                          std::uint16_t port);
 
@@ -172,11 +156,6 @@ class SessionRunner {
   SessionRunner& operator=(const SessionRunner&) = delete;
 
   void Submit(std::string text, std::shared_ptr<WebSocketConnection> conn);
-  // A turn that arrived from a peer has no page to answer: its reply goes back through the
-  // send_to_peer tool, so the runner runs it without a connection. The turn id comes back so
-  // the acceptance can name the turn the sender should watch.
-  std::string SubmitFromPeer(std::string sender, std::string text, std::string job = {});
-  void AttachBoard(serve::Board* board) { board_ = board; }
   void Stop();
 
   void CancelTurn();
@@ -206,11 +185,8 @@ class SessionRunner {
   struct Job {
     std::string text;
     std::shared_ptr<WebSocketConnection> conn;
-    std::string peer_origin;
     // The turn this job runs, so its record can be found while it is still being written.
     std::string turn_id;
-    // The board job this turn answers, when a peer posted one. Closing it is this turn's job.
-    std::string board_job;
   };
   void WorkerMain();
   // One turn, run inside a boundary the worker puts around it: an error here ends the turn,
@@ -246,9 +222,6 @@ class SessionRunner {
   Tokens CurrentTokens() const;
 
   Runtime& runtime_;
-  serve::Board* board_ = nullptr;
-
-  void CloseBoardJob(const std::string& job_id, const ExecutionResult& result);
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<Job> jobs_;

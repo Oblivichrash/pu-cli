@@ -20,8 +20,15 @@ namespace pu::paging {
 // how many commands stay readable. One struct, one owner — the pager — so a tool cannot
 // be asked for a page size the store it writes to does not agree with.
 struct Budget {
-  std::size_t page_lines = 120;
+  // 80 lines: about two screens of scrollback. The reasoning, and the byte bound that
+  // accompanies it, are in docs/paging.md#a-page-is-sized-like-a-terminal-window.
+  std::size_t page_lines = 80;
   std::size_t max_lines = 400;
+  // 16 KiB per page. A line count alone is not a size; see the same section.
+  std::size_t page_bytes = 16384;
+  // 256 KiB per command. Deliberately larger than a page: `at: "head"` keeps the head, so a
+  // capture small enough to matter would make one command readable from one end and truncated
+  // from the other. Revisit only if the anchor stops following the kept end.
   std::size_t capture_bytes = 262144;
   std::size_t retain_bytes = 4u << 20;
   std::size_t retain_buffers = 8;
@@ -35,6 +42,11 @@ struct Cursor {
   std::string ToString() const;  // <buffer>:<line>
   static std::optional<Cursor> Parse(std::string_view text);
 };
+
+// The buffer name a cursor carries when it was written as a bare line number. A caller that
+// knows which run it means resolves it before reading; one that does not gets the newest
+// run, which is the only one a model that just saw a truncated result can mean.
+inline constexpr std::string_view kNewestBuffer = "*";
 
 // Where a read starts. `head` and `tail` name a first look, and therefore a fresh run;
 // `at` names a page of a run already stored. One value in place of a view flag, a
@@ -97,7 +109,30 @@ struct Page {
   std::optional<Cursor> later;
 };
 
-Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines);
+// The lines `lines` from `anchor` began at, stopping early when the result would exceed
+// `max_bytes`. A page is bounded twice because lines and bytes do not track each other: an
+// ordinary page of logs is decided by the line count, and a page of one enormous line is
+// decided by the byte count. `max_bytes` of 0 removes the byte bound.
+Page Read(const Buffer& buffer, const Anchor& anchor, std::size_t lines,
+          std::size_t max_bytes = 0);
+
+// Lines of a buffer containing `needle`, with `context` lines either side. Every match is
+// reported as a line number of the command's own output, so a hit can be followed up with
+// `at=<line>`. The search is over the text that was kept: a line that was truncated away
+// cannot be found, and the caller is told how many matches it did not show.
+//
+// Substring, not regular expression. A model that wants a regex can run `grep` itself and
+// pay for the output it asks for; a search that has to agree on a dialect is a second
+// language in a tool that already has one.
+struct Matches {
+  std::string text;           // the matching lines, each with its context, ready to return
+  std::size_t count = 0;      // matches found in the kept text
+  std::size_t shown = 0;      // matches whose context fitted in the budget
+  bool truncated = false;     // matches existed that are not in `text`
+};
+
+Matches Search(const Buffer& buffer, std::string_view needle, std::size_t context,
+               std::size_t max_lines);
 
 // A page's wire form: the three scopes a result carries beside its text. `OriginOf` in
 // origin.hpp reads the origin back out of it, and `SupersededReceipt` rewrites it, so the
@@ -108,6 +143,31 @@ boost::json::object Envelope(const Buffer& buffer, const Page& page);
 // A page of an older run: the verdict and the window stay, the text goes, and the run
 // that replaced it is named so the model can ask for this one back by its cursor.
 std::string SupersededReceipt(std::string_view receipt, std::string_view superseded_by);
+
+// A result compressed one tier further: what the command was, where it ran, whether it worked
+// and how much came out -- and nothing a caller could page back through.
+//
+// T2 exists for the things a model must remember it *tried*. A run elided to a superseded
+// receipt still holds a cursor, which is a standing invitation to spend a turn reading it
+// again; once the pool is over budget that invitation is exactly what must go, while the
+// verdict is what stops the same failing approach being attempted a fourth time.
+//
+// So the compression is along the body axis and never along the argv/verdict axis: the
+// command, its exit code, the line and byte counts and the buffer id stay, because they are
+// a sentence about what happened; the window, the text and the cursors go, because they are
+// a way to ask for more. `Error` is kept for the same reason its verdict is -- a refusal the
+// model cannot read is a refusal it will walk into again.
+//
+// The result is not a page and must not be read as one: `OriginOf` returns nothing for it, so
+// nothing downstream offers to page into a tombstone. A receipt that is not JSON at all is
+// returned unchanged, since a caller that never had an envelope has nothing here to keep.
+std::string TombstonedReceipt(std::string_view receipt);
+
+// The source id a question's runs are grouped under, derived from the key rather than counted.
+// Public because the id is a fact about a question and not about the store: a delegated answer
+// carries the same kind of origin and is never written into a pager, so whoever writes it down
+// has to be able to reach the same id.
+std::string SourceIdFor(std::string_view key);
 
 // The buffers a session can still read. A page in flight holds its buffer through the
 // shared_ptr, so eviction never pulls the text out from under it.
@@ -130,10 +190,24 @@ class Pager {
   // one question share a source id and keep separate buffer ids; the source is derived from
   // the key rather than counted, so a resumed transcript still reads a question as itself.
   // The buffer id names the run *and this pager*, so a cursor written elsewhere — by an
-  // earlier process, by a peer — finds nothing instead of finding a namesake.
+  // earlier process — finds nothing instead of finding a namesake.
   std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
+
+  // The run stored most recently, or nothing when none is left. This is what a bare line
+  // number means: a model that just read a truncated result has one run in mind, and it is
+  // this one. Resolving it here rather than in the tool keeps the "newest" rule beside the
+  // eviction that defines it.
+  std::shared_ptr<const Buffer> Newest() const;
+
+  // A run that has no window to page: a delegated answer rather than a command's output. It is
+  // stored like any other run -- it takes a rank, and the text stays readable -- and it keeps
+  // the source its key derives, which is what makes two answers to one question two runs of one
+  // source. It cannot be found by a cursor, because no cursor names it; what it buys is the
+  // rank, and the rank is what elides the older answer. `source_key` must not be empty.
+  std::shared_ptr<const Buffer> Record(std::string text, exec::Verdict verdict,
+                                       std::string source_key);
 
  private:
   mutable std::mutex mutex_;

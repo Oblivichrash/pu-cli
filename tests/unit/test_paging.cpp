@@ -185,7 +185,7 @@ TEST_CASE("A buffer is found by the id its cursor names", "[paging]") {
 
 TEST_CASE("An id written by another pager names nothing here", "[paging]") {
   // The id carries the mark of the pager that wrote it, so a cursor out of a resumed
-  // transcript — or out of a peer's answer — is refused instead of reading a namesake.
+  // transcript, or out of another process's answer — is refused instead of reading a namesake.
   // A bare `o1` would make the first run of every process the same run.
   Pager yesterday;
   Pager today;
@@ -237,6 +237,42 @@ TEST_CASE("Two runs of one command share a source and not a buffer", "[paging]")
   REQUIRE(first->source() == second->source());
   REQUIRE(first->id() != second->id());
   REQUIRE(elsewhere->source() != first->source());
+}
+
+TEST_CASE("An answer is recorded with a rank and a source, and no cursor", "[paging]") {
+  // A delegated answer is not a page: there is no window to read and no buffer to find. What
+  // it has is the pair the projection compares -- a source and a rank -- because that is what
+  // makes two answers to one question two runs of one source rather than two unrelated texts.
+  Pager pager;
+  const auto verdict = VerdictOf("ask_dir .");
+  const auto first = pager.Record("first answer\n", verdict, "dir\x1fwhat is it");
+  const auto second = pager.Record("second answer\n", verdict, "dir\x1fwhat is it");
+
+  // One question, two runs: the source is the question and the id is the run.
+  REQUIRE(first->source() == second->source());
+  REQUIRE(first->id() != second->id());
+  REQUIRE(first->source() == SourceIdFor("dir\x1fwhat is it"));
+
+  // The order is the pager's, so it continues a transcript's rather than starting over.
+  REQUIRE(second->rank() > first->rank());
+
+  // Nothing offers a cursor into an answer, so a write-only record is not a hidden page.
+  REQUIRE(pager.Find(first->id()) == nullptr);
+  // An answer is wholly kept: no second window means nothing reads it as truncated.
+  REQUIRE_FALSE(first->extent().truncated());
+}
+
+TEST_CASE("Two answers to different questions share no source", "[paging]") {
+  Pager pager;
+  const auto verdict = VerdictOf("ask_dir .");
+  // The directory is part of the question, as it is for a command: the same words asked of two
+  // places ask two different things, and only an answer can tell them apart.
+  const auto here = pager.Record("a\n", verdict, ".\x1f" "review");
+  const auto there = pager.Record("b\n", verdict, "other\x1f" "review");
+  const auto other_question = pager.Record("c\n", verdict, ".\x1f" "fix");
+
+  REQUIRE(here->source() != there->source());
+  REQUIRE(here->source() != other_question->source());
 }
 
 TEST_CASE("A run stored without a source has no source id", "[paging]") {

@@ -42,18 +42,6 @@ function renderStatusBar() {
   const thinking = settingValue("thinking");
   setText("status-thinking", thinking === null ? "—" : String(thinking));
 
-  const gateway = PU.gatewayShown;
-  const model = PU.backendModelShown;
-  setText("status-backend", gateway && model ? `${gateway} · ${model}` : (gateway || model));
-  // The host is a fact about the configuration rather than about this turn, and it is long
-  // enough to crowd the bar, so it rides where the rest of the address already does.
-  const backendEl = document.getElementById("status-backend");
-  if (backendEl) {
-    backendEl.title = PU.backendHostShown
-      ? `${gateway || "—"} · ${model || "—"}\n${PU.backendHostShown}`
-      : "The gateway and model";
-  }
-
   setText("status-context", PU.contextShown || "—");
 }
 
@@ -67,6 +55,31 @@ function tokenLine(prompt, cached) {
   return line;
 }
 
+// Puts the turn's cost beside the reply it paid for. A reload draws this line from the stored
+// turn through `createMessage`; a live turn never went through that path, so the same node is
+// added here, built by the same function, and the two cannot say different things.
+//
+// The bubble takes it only once: `usage` is sent once per turn, but a resync can replay it after
+// a reconnect has already redrawn the turn from the store.
+function attachUsageToOpenReply(payload) {
+  if (!Number.isFinite(Number(payload.prompt_tokens))) return;
+  const el = PU.currentAssistantEl;
+  if (!el) return;
+  el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
+  // The cost is the last line inside the bubble, and a live turn has none until this frame makes
+  // one: the two paths -- a turn drawn from the store and a turn still streaming -- agree because
+  // there is only one place for it to go. A bubble that already has the line from the store keeps
+  // it where it is rather than growing a second one.
+  const foot = el.querySelector(".msg-bubble > .msg-foot");
+  if (foot) foot.appendChild(usageLineNode(payload));
+  else {
+    const line = document.createElement("div");
+    line.className = "msg-foot";
+    line.appendChild(usageLineNode(payload));
+    (el.querySelector(".msg-bubble") || el).appendChild(line);
+  }
+}
+
 // Draws one turn's usage in the panel and the bar, and the conversation's total under it. The
 // socket sends both together because the turn that just ended is part of the total, so a frame
 // drawn without its total would answer a question the reader has already asked.
@@ -75,6 +88,10 @@ function showUsage(payload) {
   const fill = document.getElementById("context-fill");
   if (!el || !payload) return;
   if (payload.total) renderUsageTotal(payload.total);
+  // The frame arrives before the `done` that closes the bubble, so the reply on screen is still
+  // the live one. Without this the figure only appeared on reload, where the stored turn carries
+  // it into the replayed message -- a live turn read as if it had cost nothing.
+  attachUsageToOpenReply(payload);
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
   const cached = Number(payload.cached_tokens);

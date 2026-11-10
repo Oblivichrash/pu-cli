@@ -149,11 +149,14 @@ std::string Executor::BuildStaticSystemContext() const {
          "again. Paging reads what is already stored; grep runs again and finds a needle in "
          "what you have not stored.\n";
   oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
-
-  if (context_digest) {
-    const std::string digest = context_digest();
-    if (!digest.empty()) oss << digest;
-  }
+  // A delegated answer is already prose somebody finished writing. The one continuation this
+  // has to stop is the cheapest a model can make: reading a paragraph and then writing the
+  // same paragraph again. Stated here rather than in ask_dir's own description, because a
+  // description says what a tool is, while this says what to do with what came back.
+  oss << "5. When a tool returns a conclusion -- a delegated answer, a review, a summary -- pass "
+         "it on rather than restating it. Say in your own words only what is yours to add: the "
+         "question that was asked, what you did with the answer, what is still open. Never "
+         "repeat the answer's content back as if writing it out were the work.\n";
 
   return oss.str();
 }
@@ -190,24 +193,46 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
                                   ToolCallbacks tool_callbacks,
                                   TokenCallback reasoning_callback,
                                   CancelToken command_stop_token) {
-  // The turn keeps who asked. It is the one place the origin is known before the user message
-  // is written, and the page reads it back rather than inferring it from the text.
   ChatMessage user_turn;
   user_turn.role = session::kUserRole;
   user_turn.content = input;
-  user_turn.from_peer = peer_origin_;
   conversation.Append(user_turn);
 
+  // A turn's tally starts at nothing. What a tool spends on its behalf is added here, so a
+  // receipt can say what the call cost rather than only what the model that asked cost.
+  spent_by_tools_ = ToolContext::Spending{};
 
   const Turn turn{provider,          &toolbox,          std::move(content_callback),
                   std::move(tool_callbacks), std::move(reasoning_callback), cancel_token,
                   command_stop_token};
 
   ExecutionResult result = RunToolLoop(conversation, turn);
+  AddToolSpending(result);
   if (result.has_error) return result;
 
   if (!result.content.empty()) conversation.Append("assistant", result.content);
   return result;
+}
+
+void Executor::AddToolSpending(ExecutionResult& result) const {
+  const ToolContext::Spending& spent = spent_by_tools_;
+  if (spent.prompt_tokens == 0 && spent.completion_tokens == 0 && !spent.cost) return;
+  if (!result.usage) result.usage = TokenUsage{};
+  result.usage->prompt_tokens += spent.prompt_tokens;
+  result.usage->completion_tokens += spent.completion_tokens;
+  result.usage->cached_tokens += spent.cached_tokens;
+  // A price adds within one unit and is dropped across two. The turn's own price may already
+  // be absent for the same reason, and a mixed total would read as the turn's cost when it is
+  // only part of it.
+  if (spent.cost) {
+    if (!result.usage->cost) {
+      result.usage->cost = spent.cost;
+    } else if (result.usage->cost->unit == spent.cost->unit) {
+      result.usage->cost->amount += spent.cost->amount;
+    } else {
+      result.usage->cost.reset();
+    }
+  }
 }
 
 ToolContext Executor::BuildToolContext(const Turn& turn) {
@@ -227,11 +252,9 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
-
-  // Read here and cleared: a turn from a peer reaches the tool set once, and a later turn in
-  // the same session is the user's own.
-  tool_ctx.peer_origin = peer_origin_;
-  peer_origin_.clear();
+  // The tally belongs to the turn: a tool adds to it, and the turn reports it beside what its
+  // own model cost.
+  tool_ctx.spent = &spent_by_tools_;
 
   return tool_ctx;
 }
@@ -361,6 +384,12 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
       spdlog::debug("Turn cancelled before tool '{}' ran", call.name);
       break;
     }
+    // The same stop, one layer out: a deadline that passed while a tool was being called would
+    // otherwise only be noticed at the next round, after the tool had already run.
+    if (stop_check_ && stop_check_()) {
+      spdlog::debug("Turn stopped before tool '{}' ran", call.name);
+      break;
+    }
 
     ++result.tool_call_count;
 
@@ -430,7 +459,23 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
   bool wrap_up_asked = false;
   bool abandoned = false;
 
+  // The tool-call budget is what this loop counts, and the two stop checks inside it are what
+  // end it early; neither is a property of this loop, so both are read rather than held here.
   for (;;) {
+    // A round is counted when it opens rather than when its reply arrives: a turn stopped
+    // before asking the model did open that round and did nothing in it, and a count that
+    // skipped it would describe a turn shorter than the one the user stopped.
+    ++result.rounds;
+
+    // A delegated turn's stop is not one token: the runtime also holds a deadline and knows
+    // whether the process is going down, and neither of those has a token to cancel. Asked here
+    // so it lands between rounds, which is the only point where a turn can end cleanly.
+    if (stop_check_ && stop_check_()) {
+      spdlog::debug("Turn stopped before round {} asked anything", result.rounds);
+      conversation.SealInterruptedToolCalls();
+      return result;
+    }
+
     // The budget counts tool calls, not replies: one reply can carry several calls. The check
     // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
     // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
@@ -445,6 +490,14 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       // Rather than ending the turn with an error, spend one round on a wrap-up: the
       // model answers from what it has gathered, and the user reads an answer instead
       // of a refusal. A wrap-up that still calls a tool is answered no further.
+      //
+      // A wrap-up is a round like any other, so a stop that arrived while the last tools ran
+      // ends the turn here rather than buying one more reply the user no longer wants.
+      if (stop_check_ && stop_check_()) {
+        spdlog::debug("Turn stopped before the wrap-up round");
+        conversation.SealInterruptedToolCalls();
+        return result;
+      }
       ChatMessage wrap_up;
       wrap_up.role = session::kUserRole;
       wrap_up.content =
@@ -459,7 +512,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     bool failed = false;
     bool stopped = false;
-    ++result.rounds;
     ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
     if (failed) break;
     if (stopped) {

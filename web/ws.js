@@ -58,8 +58,11 @@ function handleBusy(payload) {
 }
 
 function toolIsRunning() {
+  // A subtask is a tool that happens to run a conversation elsewhere: it holds the
+  // socket open for as long as a command would, so it earns the same longer wait.
   return PU.currentAssistantBlocks.some(
-      (block) => block.type === BLOCK_TYPES.TOOL_CALL && block.status === "running");
+      (block) => (block.type === BLOCK_TYPES.TOOL_CALL || block.type === BLOCK_TYPES.SUBTASK) &&
+          block.status === "running");
 }
 
 // A turn that stops speaking without a close is indistinguishable from a hung socket, so

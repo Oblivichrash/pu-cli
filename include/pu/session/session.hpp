@@ -34,9 +34,6 @@ class Conversation {
   const session::MessageGraph& Graph() const { return graph_; }
 
   bool RewindBefore(size_t turn);
-  // Whether the turn at `turn` (1-based, as /api/rewind counts) was asked by a peer. Such a
-  // turn belongs to the conversation it arrived in and cannot be taken back from this page.
-  bool TurnCameFromPeer(size_t turn) const;
 
   void ClearHistory();
 

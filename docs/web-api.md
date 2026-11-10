@@ -143,43 +143,28 @@ decides, so two listings cannot drift into two shapes.
 dispatcher.** A row that does not state its audience does not compile. `anyone` means the
 bind address is the control, which is why the bind is the setting that matters;
 `loopback` means the answer is a fact about this machine and the route refuses a caller
-from anywhere else with `403`; `peer` means the shared token, and a caller without it is
-refused with `401`.
+from anywhere else with `403`.
 
 | Method | Path | Audience | Description |
 | :----- | :--- | :------- | :---------- |
 | `GET` | `/api/session` | anyone | Current session info (agent, gateway/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
-| `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed, and a user turn that arrived from a peer carries `from_peer` |
-| `GET` | `/api/agents` | anyone | `agents`: every available agent with its description |
+| `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed |
+| `GET` | `/api/agents` | anyone | `agents`: every available agent with its description, the `tools` it has and the `delegates` it may ask |
 | `POST` | `/api/agent/switch` | anyone | Switch to a different agent (`{"agent_name":"..."}`) |
 | `GET` | `/api/servers` | loopback | `servers`: the **other** servers on this machine, each with a `name` and a `port`. The one that answered is not in the list |
-| `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it. Refused for a turn a peer asked |
+| `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `GET` | `/api/settings` | anyone | Every setting this build knows, with the value in force and whether it came from this session or the agent |
 | `POST` | `/api/settings` | anyone | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | anyone | Drop every override and go back to the agent's configuration |
-| `GET` | `/api/board` | loopback | The board as the page draws it: the work still owed, the last few that settled, and the trail. No peers, no token |
-| `GET` | `/api/jobs` | peer | The board: every open job, every peer with its derived `online`, and the trail of what was settled. Reading it is how a peer is heard from |
-| `POST` | `/api/jobs` | peer | Offer a job to a peer (`{"to":"B","intent":"...","due":"30m"}`, `due` optional) |
-| `PATCH` | `/api/jobs` | peer | Move one (`{"job":"...","from":"B","state":"working"}`, plus `question`, `result`, `note`) |
-| `POST` | `/api/jobs/answer` | peer | Answer a blocked job's question (`{"job":"...","answer":"..."}`); the person's verb |
-| `POST` | `/api/jobs/chase` | peer | Ask a job that has not closed what is happening (`{"job":"...","note":"..."}`); the job stays where it is |
-| `POST` | `/api/jobs/drop` | peer | Take a job back before it finishes (`{"job":"...","note":"..."}`); it closes as `cancelled` |
-| `POST` | `/api/peer/message` | peer | Admit a message from a configured peer as a new turn (`{"from":"A","message":"...","job":"...","hop":0}`); answers `202` rather than a reply |
-
-
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that
 cannot serve it, such as a step back while a tool call is pending — `404` where a name or a
-route does not exist (including a peer route on a server with no `peers.json`), `401` for a
-peer route with no token or the wrong one, `403` for a route whose audience excludes the
-caller's address, and `500` where the operation failed. A refusal carries `success: false`
-and the reason in `error`.
+route does not exist, `403` for a route whose audience excludes the caller's address, and
+`500` where the operation failed. A refusal carries `success: false` and the reason in
+`error`.
 
-The three audience refusals are three different problems and are not interchangeable. `403`
-says the caller was identified and the route does not answer it from there. `401` says the
-caller never said who it was, and carries `WWW-Authenticate: Bearer`. A `404` from a peer
-route says the server has no topology at all, which is a fact about this build rather than
-about the request.
+`403` is the only audience refusal, and it says one thing: the route was answered by
+reaching this machine and this caller did not.
 
 ## The servers
 
@@ -200,7 +185,7 @@ workspace, which is legal.
 Entries carry a label rather than a path, but the route is still loopback only. What it
 answers is the shape of this machine — which projects it serves, and on which ports — and a
 list of that is a map of somebody's disk. So a server bound to another address still serves
-the page, the rest of the API and the board, but not the list. A page that reached one over
+the page and the rest of the API, but not the list. A page that reached one over
 the network gets `403`, keeps its own name from `/api/session`, and says in the header why it
 has nothing to offer.
 
@@ -211,79 +196,7 @@ legal address to dial, and a server behind a proxy would name one this page cann
 The page is one server per tab by nature — one socket, one transcript — but naming them is
 not: the header shows the workspace this page is talking to, and lists the others when there
 are any. Choosing one moves the page to it. Switching is deliberately light: the socket is
-closed and reopened against the chosen server, the transcript and the board are read again
+closed and reopened against the chosen server, the transcript is read again
 from it, and the server that was left keeps running the turn it was given. That is why a turn
 in progress holds the switcher: nothing here moves a running reply between servers, and
 pretending otherwise would be the one case where a reader loses work.
-
-## The board
-
-`GET /api/jobs` answers `{"jobs":[...],"peers":[...],"audit":[...]}`, and a call made with a
-peer's token adds `self` for whichever peer that token belongs to. A job carries `id`, `from`, `to`, `intent`, `state`,
-`created_at`, `updated_at`, `idle_seconds`, `closed`, and — each only when it has something to say —
-`due_at`, `overdue`, `question`, `result`, `note`, `chases`, `declined_by` and `declines`.
-A peer carries
-`name`, `state`, `last_seen`, `seen_seconds` and `online`.
-
-`overdue` and `online` are read from the clock each time the board is read and are never
-stored, so a job goes overdue and a peer goes offline on their own, without anyone having
-to write it down. `online` means the peer was heard from within 45 seconds.
-
-`POST /api/jobs` answers with the created job. `PATCH /api/jobs` answers with the updated
-job, plus an `outcome` when the move settled it. A move the job does not allow is refused
-with `400`: a move by a peer that does not hold it, a move on a job already settled,
-`blocked` without a `question`, an unknown `state`, or a `due` that is not a duration. A
-job name that is not on the board answers `404`. The board holds at most 32 open jobs.
-
-**Reading is being heard from.** Every board request presents `Authorization: Bearer` with
-the shared token, and the peer that token belongs to is recorded as heard from at the moment of
-the read. There is no separate heartbeat call: one request both says "still here" and answers
-with what the board holds, which is the same round trip. A request without the token is refused
-with `403`, because a liveness nobody can prove is not one.
-
-`POST /api/jobs/answer` takes `job` and `answer` and is the person's verb, not a peer's: it is
-how a `blocked` job gets unstuck. The answer is recorded as the job's `note`, the `question` is
-cleared, and the job returns to `working` for the peer that holds it. It is a separate call
-rather than a `PATCH` because a person has no name to present as `from`, and borrowing one
-would make the audit trail say a peer answered its own question. A job that is not blocked
-answers `400`; a job that is not on the board answers `404`.
-
-`POST /api/jobs/chase` and `POST /api/jobs/drop` are the person's other two verbs, and they are
-separate calls for the reason `answer` is: a person has no name to present as `from`. A chase
-records the note, clears any `question` (the holder was just asked directly, so the job is
-no longer blocked on silence) and counts a `chases`, leaving the state alone, because a job
-that is slow is not a job that moved. The holder reads both the count and the note in its
-digest. A drop closes the job as `cancelled`, the one state no peer can ask for: a peer that
-could say it would be able to end a job it was handed without doing it. Both refuse a job that
-has closed (`400`) and a job that is not on the board (`404`).
-
-**The page is shown a board it can draw, and is not being heard from.** `GET /api/board`
-answers `{"open":[...],"settled":[...],"audit":[...]}`, needs no token, and is refused with
-`403` to any request that does not come from `127.0.0.1` or `::1`. `open` is every job that has
-not closed, in the order it was posted; `settled` is the three that closed most recently, newest
-first. Which states count as settled is the board's to say, so the page draws a job it is given
-and never decides whether one still needs anything; a job carries `closed`, and the page hands
-only the open ones their verbs.
-
-A page has no secret to present, and a page polling says nothing about a peer, so the route
-records nothing about who is here and answers no `peers` — a liveness answer from a browser
-would read as a peer that never leaves. The board panel is its caller: it polls this route,
-answers blocked jobs from the sidebar, and takes a job back from it, which is why a peer's
-question is answerable without opening another terminal.
-
-The address is the whole of that credential, so a server bound to every interface serves the
-panel only on the machine it runs on: reach the page at `127.0.0.1` to see the board, and
-expect a page opened over the network to draw no panel at all — the read is refused, and a
-panel that cannot read the board draws nothing rather than an empty one. Chat, history and the
-rest of the page are unaffected, and the network exposure above is what governs those.
-
-When a peer message names a `job`, the receiver claims it before it queues the turn and
-answers with `from`, `turn`, `agent` and `model`; a job that is not on this board, or not this
-peer's to claim, is refused and no turn starts. The turn closes the job when it ends — `done`
-with the answer, `failed` with the error — so the sender learns the outcome from the board
-rather than by waiting on the peer.
-
-The board is also read directly by the model. Every round of every turn carries a digest of
-what the board owes this server, refreshed in place, so a peer learns that it was handed a job
-and learns its own outcome without a request. See "What the model is told, and when" in
-[ARCHITECTURE.md](./ARCHITECTURE.md).

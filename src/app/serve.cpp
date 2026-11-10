@@ -28,8 +28,6 @@
 #include "pu/config/serve_registry.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/serve/board.hpp"
-#include "pu/serve/peer_read.hpp"
 
 namespace pu::cli {
 namespace {
@@ -104,7 +102,6 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
   spdlog::info("Workspace: {}", runtime.WorkspaceRoot().string());
 
   std::mutex io_mutex;
-  serve::Board board;
   // The registry entry is written after the port is known and before the first request is
   // accepted: a server a page can reach is a server the page can list, and a server that
   // never got its port never claims one. The page reads the directory from here too, so the
@@ -116,24 +113,7 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
   serve_record.pid = platform::CurrentProcessId();
   serve_record.started = platform::ProcessStartToken(serve_record.pid);
   config::RegisterServeRecord(serve_record);
-  auto runner = std::make_shared<SessionRunner>(runtime);  // The runner closes the job a peer turn answers, so it needs the board the routes serve.
-  // It is handed over after both exist rather than through the constructor, which would
-  // otherwise pin the declaration order of two independent locals.
-  runner->AttachBoard(&board);
-  // The digest is the peers' own boards, pulled once per round. The pull is also what tells a
-  // peer this server is still working: it carries the token, and it is made on the thread that
-  // runs the turn, so a turn that stops being worked stops reading.
-  auto reader = std::make_shared<serve::BoardReader>(runtime.Peers().value_or(config::PeerConfig{}),
-                                                     runtime.SharedHttp().get());
-  runtime.SetContextDigest([&board, &runtime, reader] {
-    const auto& peers = runtime.Peers();
-    if (!peers.has_value()) return std::string();
-    const std::string own = board.Digest(peers->self_name);
-    const std::string theirs = reader->Describe(reader->PullAll());
-    if (own.empty()) return theirs;
-    if (theirs.empty()) return own;
-    return own + "\n" + theirs;
-  });
+  auto runner = std::make_shared<SessionRunner>(runtime);
 
   std::function<void(beast::error_code, tcp::socket)> do_accept = [&](beast::error_code ec,
                                                                       tcp::socket socket) {
@@ -161,8 +141,8 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
     // and its locals are gone.
     http::async_read(
         conn->mutable_socket(), *buffer, *req,
-        net::bind_executor(strand, [&runtime, &io_mutex, runner, &board, strand, conn, buffer,
-                                    req, header_timer, peer, bound_port](beast::error_code ec,
+        net::bind_executor(strand, [&runtime, &io_mutex, runner, strand, conn, buffer, req,
+                                    header_timer, peer, bound_port](beast::error_code ec,
                                                                          std::size_t) {
           header_timer->cancel();
           if (ec) {
@@ -178,8 +158,7 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
               return;
             }
             auto res = std::make_shared<http::response<http::string_body>>();
-            DispatchHttpRequest(runtime, io_mutex, runner.get(), &board, std::move(*req), *res,
-                                peer, bound_port);
+            DispatchHttpRequest(runtime, io_mutex, std::move(*req), *res, peer, bound_port);
             http::async_write(
                 conn->mutable_socket(), *res,
                 net::bind_executor(strand, [conn, res](beast::error_code write_ec, std::size_t) {

@@ -11,13 +11,6 @@ function renderBlocks(blocks, container) {
   }
 }
 
-// Who a turn is from. The person at the page is "You"; a message that arrived from another
-  // pu server is named after the peer that sent it, which the server records on the turn.
-function roleLabel(role, fromPeer) {
-  if (role !== "user") return "Assistant";
-  return fromPeer ? fromPeer : "You";
-}
-
 // What a turn cost, as one line: the counts always, a price only where the product reported
   // one. A turn the product did not price says "—" rather than "0", which would read as free.
 function usageLine(usage) {
@@ -37,52 +30,135 @@ function usageLine(usage) {
   if (Number.isFinite(Number(usage.rounds)) && Number(usage.rounds) > 1) {
     parts.push(`${Number(usage.rounds)} calls`);
   }
-  if (usage.model) parts.push(usage.model);
+  // No model name here. A turn's cost says what this reply spent; which model spent it is a fact
+  // about the session, held in the Backend panel, and appending it made the one line that is
+  // meant to be skimmed into the longest line in the footing.
   return parts.join("  ·  ");
 }
 
-// What a turn cost, as one quiet line under the reply. It is short enough to read in full,
-  // so there is nothing to fold away.
+// What a turn cost, as one quiet line. It is short enough to read in full, so there is nothing
+// to fold away.
 function usageLineNode(usage) {
-  const line = document.createElement("div");
+  const line = document.createElement("span");
   line.className = "msg-usage";
   line.textContent = usageLine(usage);
   return line;
 }
 
-function createMessage(role, blocks, turn, text, fromPeer, usage) {
+// The words a turn is made of, as one string. Only the prose blocks are here: a price, a tool
+// call and a thought are drawn around the sentence rather than being part of it, so a copy
+// that carried them would paste as a transcript of the machinery instead of what was said.
+function messageText(blocks) {
+  const parts = [];
+  for (const block of blocks || []) {
+    if (block.type !== BLOCK_TYPES.TEXT) continue;
+    const text = String(block.content || "").trim();
+    if (text) parts.push(text);
+  }
+  return parts.join("\n\n");
+}
+
+// Copy is a reading action, and the right button is where a reader already reaches for it. The
+// old control turned into the word "Copied" in place; the menu has no room for that, so the
+// confirmation is a line of system text the page already knows how to draw, and the menu closes
+// on the press as it does for any other row.
+function copyMessage(text) {
+  if (!text) return true;
+  // A page served over plain http has no clipboard API, so the older command is the fallback
+  // rather than a failure the reader cannot do anything about.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => copyFallback(text));
+    return true;
+  }
+  if (!copyFallback(text)) {
+    createSystemMessage("Could not copy: the clipboard is not reachable from this page.");
+    return false;
+  }
+  return true;
+}
+
+// A page served from an origin the clipboard API does not trust has no other way in: a field
+// off-screen, selected and asked for the selection, is the command the browser still honours.
+function copyFallback(text) {
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  }
+  field.remove();
+  return ok;
+}
+
+function createMessage(role, blocks, turn, text, usage) {
   const el = document.createElement("div");
   el.className = "msg " + role;
+  // The words as the store has them, not as the page drew them: the editor offers a copy from
+  // here, and a copy taken from the rendered DOM would flatten the reply's markdown back to
+  // plain text and paste as a different sentence from the one that was written.
+  el._puBlocks = blocks || [];
 
-  const label = document.createElement("span");
-  label.className = "role";
-  label.textContent = roleLabel(role, fromPeer);
-
-  // A turn a peer asked is not this page's to take back, so it carries no edit affordance.
-  // /api/rewind refuses it for the same reason.
-  if (role === "user" && typeof turn === "number" && turn > 0 && !fromPeer) {
-    const head = document.createElement("div");
-    head.className = "msg-head";
-    head.appendChild(label);
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "edit-btn";
-    editBtn.textContent = "edit";
-    editBtn.onclick = () => rewindToTurn(turn, text || "");
-    head.appendChild(editBtn);
-
-    el.appendChild(head);
-  } else {
-    el.appendChild(label);
-  }
+  // The bubble is what is drawn as a reply: the frame, the tint, and the room around the words.
+  // It is a child of the message rather than the message itself so that the line under it can
+  // sit outside it, on the page rather than on the paper -- see the footing below.
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+  el.appendChild(bubble);
 
   const container = document.createElement("div");
   container.className = "blocks-container";
-  el.appendChild(container);
+  bubble.appendChild(container);
 
   if (blocks) renderBlocks(blocks, container);
-  if (role === "assistant" && usage) el.appendChild(usageLineNode(usage));
+
+  // The cost of the turn closes the message from inside the bubble: it is the last line of what
+  // was said, in the paper's own side inset, and nothing sits under the frame. A line outside
+  // the frame had to be told apart from the message by its distance and its missing tint, and
+  // the eye read a reply as two things -- an answer and a footnote about it -- when it is one
+  // turn that happened to cost something.
+  // Who spoke is not written here. The two backgrounds already tell the two sides apart, and a
+  // name saying what a colour has said four times down the page is a caption on a caption.
+  // A message with nothing to report gets no line at all: a system remark is the page talking,
+  // and an error is already something to be read.
+  // What a reader *may* do with the message is not here: copying and editing are asked for with
+  // the right button, so a reply at rest is its words and what they cost.
+  if (role === "assistant" && usage) {
+    const foot = document.createElement("div");
+    foot.className = "msg-foot";
+    foot.appendChild(usageLineNode(usage));
+    bubble.appendChild(foot);
+  }
+
+  // A turn of yours carries the turn number and the words it was drawn from, because what may be
+  // done with it is asked for later: the right button reads these off the element, and `beginEdit`
+  // finds the same two on the way in.
+  if (role === "user" && typeof turn === "number" && turn > 0) {
+    el.dataset.turn = String(turn);
+    el.dataset.text = text || "";
+  }
+
+  // A menu behind the right button is a thing nobody is told about, and the only way to find one
+  // is to try. This is the telling. It goes on the bubble's top edge rather than on a line of its
+  // own, because a line would make every turn taller to carry a reminder: the note is positioned
+  // over the paper, so nothing moves when it appears and nothing moved to make room.
+  // It is text rather than a mark because the sentence is the point: a glyph would have to be
+  // learned, which is the problem it is meant to solve.
+  // Only messages the menu will open for get one. A system remark and an error have nothing to
+  // offer, and a hint of options that never arrive would be worse than no hint at all.
+  if (role === "user" || role === "assistant") {
+    const hint = document.createElement("span");
+    hint.className = "msg-hint";
+    hint.textContent = "right-click for options";
+    hint.setAttribute("aria-hidden", "true");
+    bubble.appendChild(hint);
+  }
 
   // Read the position before the append, because the append itself moves the content
   // the reader is measured against: appending grows the scroll height without firing a
@@ -93,3 +169,16 @@ function createMessage(role, blocks, turn, text, fromPeer, usage) {
   if (wasAtBottom) scrollToBottom();
   return el;
 }
+
+// The block list a message was drawn from, kept on the element so the editor can offer a copy of
+// the words it is about to replace. It is read from the store the page already holds rather than
+// from the rendered DOM: a copy of a reply with its markdown flattened back to text would paste
+// as a different sentence from the one the model wrote.
+function blocksOf(el) {
+  const stored = el._puBlocks;
+  if (Array.isArray(stored)) return stored;
+  const text = el.dataset.text || "";
+  return text ? [{ type: BLOCK_TYPES.TEXT, content: text }] : [];
+}
+
+

@@ -41,8 +41,6 @@ connectWebSocket();
   await loadSession();
 })();
 
-// The board is read on its own clock: it changes when a peer moves a job, which is not
-// something this page's socket reports. The servers list moves for the same reason, so it
-// keeps the same clock.
-startBoardPolling();
+// The servers list is read on its own clock: it changes when another server starts, which is
+// not something this page's socket reports.
 startServerPolling();

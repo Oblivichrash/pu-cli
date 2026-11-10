@@ -87,11 +87,17 @@ class Executor {
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
-  void SetPeerOrigin(std::string origin) { peer_origin_ = std::move(origin); }
 
   void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
+
+  // How the executor learns it should stop, beyond the token its caller passed. A token covers a
+  // caller that can press a button; the runtime also holds a deadline and knows whether the
+  // process is shutting down, and those two have no token to hand over. Asked at the top of every
+  // round and before every tool call, so a deadline lands between them rather than after the
+  // whole turn.
+  void SetStopCheck(std::function<bool()> check) { stop_check_ = std::move(check); }
 
   void EnableApprovalGate() { approval_asks_ = true; }
   void SetOnApprovalAsk(std::function<void(const std::string& command)> cb) {
@@ -116,10 +122,8 @@ class Executor {
                           CancelToken command_stop_token = nullptr);
 
   std::string BuildStaticSystemContext() const;
-
-  // A caller that knows more than the executor does about what the turn should read. The
-  // digest is asked for on every round, so it reflects the state the turn is actually in.
-  std::function<std::string()> context_digest;
+  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
+  void AddToolSpending(ExecutionResult& result) const;
 
  private:
   struct Turn {
@@ -149,7 +153,6 @@ class Executor {
   bool AskApproval(const std::string& command, std::string& note);
 
   std::string user_note_;
-  std::string peer_origin_;
 
   bool approval_asks_ = false;
   std::function<void(const std::string&)> on_approval_ask;
@@ -161,9 +164,14 @@ class Executor {
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
+  // What tools spent on the turn's behalf. Cleared at the start of a turn, and added to the
+  // provider's own count before the result is returned.
+  ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
 
   int tool_call_budget_ = kDefaultToolCallBudget;
+
+  std::function<bool()> stop_check_;
 
   ToolContext::Control control_;
   ToolContext::Approval approval_;

@@ -6,7 +6,7 @@
 // A connection forwards `run` here and forgets it. What happens next is a job on a worker
 // thread, a record of the frames it produced, and the rule that at most one turn runs at a
 // time. The record is why a page that reconnects mid-turn sees the reply instead of waiting
-// for a reload, and why a peer's turn -- which has no page at all -- can still be read.
+// for a reload.
 //
 
 #include "serve_internal.hpp"
@@ -22,7 +22,6 @@
 
 #include "pu/core/text.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/serve/board.hpp"
 
 namespace pu::cli::detail {
 
@@ -49,10 +48,9 @@ bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
     }
     if (current && current != conn) current->DetachFromPage();
     attached_ = conn;
-    // The turn may still be running for the socket that went away, or may have run while no
-    // page was open at all (a turn a peer asked). The page is handed the frames of the turn in
-    // flight so it joins in, and of the last finished one so a reply that arrived while nobody
-    // was watching is drawn without a reload.
+    // The turn may still be running for the socket that went away. The page is handed the
+    // frames of the turn in flight so it joins in, and of the last finished one so a reply that
+    // arrived while nobody was watching is drawn without a reload.
     pending = FramesForNextPage();
   }
   // Outside the lock: the old socket's teardown posts to its own strand and takes this mutex
@@ -99,8 +97,8 @@ void SessionRunner::AppendFrame(boost::json::value frame) {
     if (!turns_.empty()) turns_.back()->frames.push_back(text);
   }
   // A page that is here sees the turn as it happens. One that attaches later is handed the
-  // record instead, which is also what a subscriber reads: a turn that arrived from a peer has
-  // no page of its own, and waiting for a reload was the whole reason this record exists.
+  // record instead, which is also what a subscriber reads, and waiting for a reload was the
+  // whole reason this record exists.
   std::shared_ptr<WebSocketConnection> current;
   {
     std::lock_guard<std::mutex> lock(attach_mutex_);
@@ -129,17 +127,6 @@ void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection
     jobs_.push_back(std::move(job));
   }
   cv_.notify_one();
-}
-
-std::string SessionRunner::SubmitFromPeer(std::string sender, std::string text,
-                                          std::string job) {
-  std::string turn_id = session::NewMessageId();
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    jobs_.push_back(Job{std::move(text), nullptr, std::move(sender), turn_id, std::move(job)});
-  }
-  cv_.notify_one();
-  return turn_id;
 }
 
 void SessionRunner::Stop() {
@@ -187,7 +174,7 @@ void SessionRunner::WorkerMain() {
     }
     // A turn is the boundary an error stops at. Anything it throws is the turn's own failure,
     // and a worker that let it out would take the whole server with it -- including every
-    // page and every peer turn that had nothing to do with it.
+    // page that had nothing to do with it.
     try {
       RunJob(job);
     } catch (const std::exception& e) {
@@ -197,7 +184,7 @@ void SessionRunner::WorkerMain() {
   }
 }
 
-void SessionRunner::ReportFailedTurn(const Job& job, const std::string& reason) {
+void SessionRunner::ReportFailedTurn(const Job& /*job*/, const std::string& reason) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
@@ -208,13 +195,6 @@ void SessionRunner::ReportFailedTurn(const Job& job, const std::string& reason) 
     FinishTurn();
   } catch (const std::exception& e) {
     spdlog::error("could not report a failed turn: {}", e.what());
-  }
-  if (!job.board_job.empty()) {
-    try {
-      CloseBoardJob(job.board_job, ExecutionResult{});
-    } catch (const std::exception& e) {
-      spdlog::error("could not close the board job of a failed turn: {}", e.what());
-    }
   }
 }
 
@@ -229,7 +209,7 @@ void SessionRunner::RunJob(Job& job) {
     while (turns_.size() > kTurnsKept) turns_.pop_front();
   }
 
-  if (!job.conn && job.peer_origin.empty()) {
+  if (!job.conn) {
     std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
     return;
@@ -283,7 +263,7 @@ void SessionRunner::RunJob(Job& job) {
         if (thought.empty()) return;
         say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
       },
-      cancel, job.peer_origin);
+      cancel);
 
   const bool page_asked = cancel_requested_.exchange(false, std::memory_order_acq_rel);
   {
@@ -348,8 +328,6 @@ void SessionRunner::RunJob(Job& job) {
     say({{"type", "done"}, {"payload", {{"model", result.model}}}});
   }
 
-  CloseBoardJob(job.board_job, result);
-
   {
     std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
@@ -357,25 +335,6 @@ void SessionRunner::RunJob(Job& job) {
   // The record stays, finished: a page that attaches next is handed it rather than waiting
   // for a reload, and a subscriber that was mid-stream reads the end of it.
   FinishTurn();
-}
-
-void SessionRunner::CloseBoardJob(const std::string& job_id, const ExecutionResult& result) {
-  if (job_id.empty() || board_ == nullptr) return;
-  const auto& peers = runtime_.Peers();
-  const std::string self = peers.has_value() ? peers->self_name : std::string();
-  if (self.empty()) return;
-
-  serve::JobRequest close;
-  close.job = job_id;
-  close.from = self;
-  close.state = std::string{serve::JobStateName(result.has_error ? serve::JobState::kFailed
-                                                                : serve::JobState::kDone)};
-  close.result = result.has_error
-                     ? (!result.error_message.empty() ? result.error_message : result.content)
-                     : result.content;
-  if (!board_->Update(close).outcome.has_value()) {
-    spdlog::warn("Peer job '{}' could not be closed: it is no longer this server's", job_id);
-  }
 }
 
 std::deque<std::shared_ptr<const std::string>> SessionRunner::FramesForNextPage() const {

@@ -28,6 +28,9 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
 | `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
+| `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
+| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. A name nothing configures, this agent's own name, and a circle are all refused by `pu check` |
+| `persona` | Optional, in an agent's own directory only; a path to a file whose text becomes `backend.system_prompt`. Naming this and `backend.system_prompt` both is refused |
 
 **Backend fields**
 
@@ -42,6 +45,59 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
 | `context_window` | unset | How much context the model holds, in tokens. Advisory: nothing trims a prompt against it and no turn is refused for outgrowing it. It is the only figure the Web page's context bar measures the last reply against, so a model without it draws no fill and shows the count alone. `pu models --detail caps` prints what the gateway's own catalogue says, which is where a number to write here comes from |
 | `system_prompt` | unset | Merged with the injected context |
+
+### One directory per agent
+
+An agent can also be a directory of its own, beside the table that names it. The directory is
+named after the agent, so `ls .pu/agents/` is the list, and a table inside it that names itself
+something else is refused rather than renamed:
+
+```
+.pu/
+  agents.json              the default_agent, and any agent written inline
+  agents/
+    reviewer/
+      agents.json          this agent's backend, security, tools and delegates
+      persona.md           what it is, read into backend.system_prompt
+```
+
+The table inside a directory takes every agent field above except `name`, which the directory
+supplies. Paths in it — `persona`, and an `mcp_servers` command or url — resolve against that
+directory, not the workspace. Both forms may be used at once; two agents with one name are
+refused rather than merged.
+
+A persona is a document rather than a string because a character worth describing takes more
+than a line, and Markdown is what an editor can hold. Three things it is not:
+
+- **Not a place for environment.** The sandbox root, the forbidden commands and how the tools
+  are to be used are injected every turn from the configuration, and a persona that restates
+  them will eventually contradict them.
+- **Not trimmed.** Nothing measures it against `context_window`; a persona long enough to crowd
+  out the conversation will, and the conversation loses.
+- **Not the agent's only voice.** It is the `system` message's first half, beside the injected
+  environment — what it says is who the agent is, not where it is.
+
+### Asking a directory that is not an agent of yours
+
+`ask_dir` takes one `ask`: a name from the table's `delegates`, or a **directory relative to
+this one**. The second form reaches a `.pu/` this workspace does not own — its own agents table,
+its own session, its own sandbox — which is what makes it useful for a sub-agent created
+mid-conversation.
+
+Three things are true of it, and the first is the one that surprises:
+
+- **The directory must already carry its own `.pu/agents.json`.** Nothing creates it: a
+  directory without one is refused, not configured on the fly. The refusal names the file and
+  the shape to write, so the recovery is one `write_file` followed by the same question again.
+- **The path is under here.** It is resolved against this workspace's sandbox root and must
+  stay inside it; an absolute path is refused with the leading component it wants dropped,
+  since an absolute path is the shape of a mistake rather than a request.
+- **The turn is one hop.** The delegated agent has no `ask_dir` of its own, so a question
+  cannot travel further than the agent it was handed to. This is a property of the
+  configuration rather than a depth limit to tune.
+
+Its sandbox is its own, taken from its own table, so what it may read is decided there and not
+here; a sub-agent whose table is wider than the parent's is a decision its `.pu/` made.
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in
@@ -79,8 +135,9 @@ The shape a page takes is in [paging.md](paging.md).
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `page_lines` | `120` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1 |
+| `page_lines` | `80` | Lines a page shows when the call names no `limit`; a value below 1 is read as 1. Chosen to match about two screens of terminal scrollback |
 | `max_lines` | `400` | The most lines one page may show — a larger `limit` is clamped to it. Raised to `page_lines` when set below it |
+| `page_bytes` | `16384` | Bytes one page may show. Lines and bytes do not track each other, so a page is bounded by both and a page of packed machine output is cut short by this. Raised to 1024 when set below it |
 | `capture_bytes` | `262144` | Bytes of one command's output kept for paging; beyond it the command still runs and the rest is counted rather than kept. Raised to 1024 when set below it |
 | `retain_bytes` | `4194304` | Bytes kept across all retained runs; the oldest are dropped first |
 | `retain_buffers` | `8` | Runs kept readable. A cursor whose run has been dropped is refused, not pointed at a neighbour |
@@ -152,44 +209,6 @@ The command exits `1` only when the file cannot be loaded — which is what the 
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
 table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
 
-## `peers.json`
-
-Two `pu serve` instances can message each other: one agent calls `send_to_peer`, the
-other answers in a later turn. A server with no `.pu/peers.json` does not mount the
-endpoint and never registers the tool, so a single-server workspace needs nothing.
-
-```json
-{
-  "self": { "name": "A", "host": "127.0.0.1", "port": 8911 },
-  "token": "shared-secret",
-  "peers": [{ "name": "B", "url": "http://127.0.0.1:8912" }]
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `self.name` | This server's name, which the other side must list in its `peers` |
-| `self.host` / `self.port` | Informational; the listener's own flags still decide where it binds |
-| `token` | Shared secret every inbound message must present as `Authorization: Bearer` |
-| `peers[].name` | The name this server knows a peer by, matched against the sender's `from` |
-| `peers[].url` | Where that peer's `/api/peer/message` is posted |
-
-Both sides must agree on the token and on each other's names. A peer entry without a
-name and a `url` is skipped with a warning rather than trusted, and an undeclared
-`from` is refused before any turn starts.
-
-`send_to_peer` posts a job on the receiving server's board before it says anything, so
-the hand-off exists as an object before it exists as a message: the job names the peer it
-is for, the `intent` it was asked to do and an optional `due` duration, and the receiver
-claims it as it accepts the turn. A board that refuses the job stops the call, so work the
-receiver could not take on never arrives as a turn. When the turn ends the job closes with
-`done` and the answer, or `failed` and the error, which is how the sender's next turn — or a
-person reading `/api/jobs` — learns the outcome without polling the peer.
-
-The call returns as soon as the peer accepts rather than waiting for an answer, which
-arrives as a new turn. A turn that arrived from a peer may reply to that peer and to nobody
-else, so an A→B→A→B chain ends at the second hop by construction rather than by a counter.
-
 ## Environment Variables
 
 | Variable | Purpose |
@@ -201,7 +220,6 @@ else, so an A→B→A→B chain ends at the second hop by construction rather th
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
 | `PU_SERVE_BIND` | Overrides the Web server bind address for `pu serve` (default `127.0.0.1`) |
 | `PU_SERVE_PORT` | Overrides the Web server port for `pu serve` (default `8080`) |
-| `PU_PEER_TOKEN` | Overrides `token` in `peers.json`, so the secret can stay out of the file |
 
 ## Logging
 
