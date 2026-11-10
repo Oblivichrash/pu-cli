@@ -46,10 +46,12 @@ std::unordered_map<const MessageNode*, std::string> SupersededPages(
   return superseded_by;
 }
 
-// The newest turns always keep their tool results whole, however tight the budget: the turn
-// being reasoned about is the one whose output matters, and a projection that compressed it
-// would make the model ask for what it was just handed.
-constexpr std::size_t kKeepNewestResults = 6;
+// How many superseded receipts keep their cursor. A cursor is a standing invitation to spend a
+// turn reading a page, and that invitation is worth keeping while the run is still recent
+// enough to be argued from -- a plan-and-verify cycle is about six results long. Past that the
+// verdict is what stops a model repeating a failed approach, and the cursor is what makes it
+// pay to reread a result it has already been told the shape of.
+constexpr std::size_t kKeepNewestCursors = 6;
 
 // A result that is already a tombstone costs nothing to leave alone, and re-tombstoning it
 // would not make it smaller.
@@ -57,43 +59,45 @@ bool IsTombstone(std::string_view content) {
   return content.find("\"elided\":\"tombstone\"") != std::string_view::npos;
 }
 
-// Spends the budget from the end, compressing the oldest tool results until the total fits.
+// A receipt that has been superseded once: its text is gone and the run that replaced it is
+// named, but the cursor back into this run survives.
+bool IsSupersededReceipt(std::string_view content) {
+  return content.find("\"superseded_by\"") != std::string_view::npos;
+}
+
+// The second tier, entered by position in the chain of superseded receipts rather than by a
+// size. T1 keeps a cursor so the model can page back; T2 drops it, because the offer to
+// reread something six results old is a turn spent on history the conversation has already
+// moved past. What survives is the same either way: the command, the verdict and how much
+// there was -- the sentence about what happened, never a way to ask for more.
 //
-// Only tool results are candidates. A user turn is what somebody said; a reply is what the
-// model said. Neither can be restored from anywhere, and neither is re-sent in bulk by
-// accident -- a command's output is, because a page is a copy of a buffer that is still on
-// disk. So the compression runs along the axis that can be undone: the model is told the
-// command, the verdict and how much there was, and may page it back if it turns out to matter.
+// This is a count, not a byte budget, and deliberately so. A byte count cannot be turned into
+// tokens without the model's tokenizer, so any threshold expressed in bytes is a number nobody
+// can check against the window it is meant to protect. Six results is a fact about the shape of
+// a turn; 256 KiB is not.
 //
-// The walk goes newest to oldest, so what is nearest is the last thing to be compressed, and
-// a budget merely a little too small costs a little rather than everything. Nothing is
-// removed: the receipt stays where it was, which is what keeps each `tool_calls[].id` beside
-// the `tool_call_id` that answers it.
-void ToolBudget(std::vector<ChatMessage>& messages, std::size_t limit) {
-  std::vector<std::size_t> tool_at;
-  std::size_t total = 0;
+// Nothing is removed: the receipt stays where it was, which is what keeps each `tool_calls[].id`
+// beside the `tool_call_id` that answers it.
+void TombstoneOldReceipts(std::vector<ChatMessage>& messages) {
+  std::vector<std::size_t> superseded_at;
   for (std::size_t i = 0; i < messages.size(); ++i) {
     if (messages[i].role != kToolRole) continue;
-    total += messages[i].content.size();
-    tool_at.push_back(i);
+    const std::string_view content = messages[i].content;
+    if (IsTombstone(content) || !IsSupersededReceipt(content)) continue;
+    superseded_at.push_back(i);
   }
-  if (total <= limit || tool_at.empty()) return;
+  if (superseded_at.size() <= kKeepNewestCursors) return;
 
-  // The newest results are protected by position in the list of tool results, not by index in
-  // the transcript: a reply between them does not make one of them newer.
-  const std::size_t protected_from = tool_at.size() > kKeepNewestResults
-                                         ? tool_at.size() - kKeepNewestResults
-                                         : 0;
-  for (std::size_t k = protected_from; k-- > 0;) {
-    ChatMessage& msg = messages[tool_at[k]];
-    if (msg.content.size() <= 32 || IsTombstone(msg.content)) continue;
+  // The newest receipts keep their cursors by position in the list of superseded results, not
+  // by index in the transcript: a reply between them does not make one of them newer.
+  const std::size_t tombstone_before = superseded_at.size() - kKeepNewestCursors;
+  for (std::size_t k = 0; k < tombstone_before; ++k) {
+    ChatMessage& msg = messages[superseded_at[k]];
     const std::string smaller = paging::TombstonedReceipt(msg.content);
     // A body that does not parse gains nothing from the rewrite, and replacing one opaque
     // string with another only loses the field names a provider might still validate.
     if (smaller.size() >= msg.content.size()) continue;
-    total = total - msg.content.size() + smaller.size();
     msg.content = smaller;
-    if (total <= limit) return;
   }
 }
 
@@ -165,7 +169,7 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
     messages.push_back(std::move(msg));
   }
 
-  if (inputs.tool_bytes > 0) ToolBudget(messages, inputs.tool_bytes);
+  TombstoneOldReceipts(messages);
   return messages;
 }
 

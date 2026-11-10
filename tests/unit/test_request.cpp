@@ -328,11 +328,10 @@ TEST_CASE("A tombstone of something that is not an envelope is left alone", "[re
 namespace {
 
 // One assistant turn that calls a tool, and the receipt that answers it. Adding these in
-// pairs is what the budget must never break apart.
+// pairs is what a projection must never break apart.
 //
-// Each pair names its own `source`, so no page supersedes another and the budget is the only
-// thing acting on the results. Sharing one command would make the supersession rule elide
-// most of them first, and the test would pass without exercising the budget at all.
+// Every pair here names its own `source`, so nothing supersedes anything: these are the
+// results that stay live, and a test that wants a superseded one builds it separately.
 void AppendCallAndReceipt(session::MessageGraph& graph, int n, const std::string& output) {
   session::AssistantPayload assistant;
   assistant.content = "calling";
@@ -351,107 +350,135 @@ void AppendCallAndReceipt(session::MessageGraph& graph, int n, const std::string
   graph.AppendAfterLeaf(std::move(receipt));
 }
 
+// A run of one command, superseded by a later run of the same one: this is what produces a T1
+// receipt. `n` orders the runs of that one source, not the call ids.
+void AppendSupersedingRun(session::MessageGraph& graph, const std::string& source, int n,
+                          const std::string& output) {
+  session::AssistantPayload assistant;
+  assistant.content = "calling";
+  const std::string id = "call_" + source + "_" + std::to_string(n);
+  assistant.tool_calls.push_back(session::ToolCallRecord{id, "execute_bash", boost::json::parse(
+                                                                               R"({"command":"seq"})")});
+  graph.AppendAfterLeaf(std::move(assistant));
+
+  session::ToolPayload receipt;
+  receipt.tool_call_id = id;
+  receipt.tool_name = "execute_bash";
+  receipt.content = PageJson(source, "b" + std::to_string(n), output, static_cast<std::size_t>(n));
+  receipt.origin = paging::Origin{source, "b" + std::to_string(n), static_cast<std::size_t>(n)};
+  graph.AppendAfterLeaf(std::move(receipt));
+}
+
 std::string Wide(int lines) {
   std::string text;
   for (int i = 1; i <= lines; ++i) text += "line " + std::to_string(i) + " of the output\n";
   return text;
 }
 
+std::vector<std::size_t> ToolPositions(const std::vector<ChatMessage>& messages) {
+  std::vector<std::size_t> at;
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (messages[i].role == "tool") at.push_back(i);
+  }
+  return at;
+}
+
 }  // namespace
 
-TEST_CASE("A request with no budget is the request it would be without one", "[request]") {
+TEST_CASE("A request with no supersession is the transcript itself", "[request]") {
   session::MessageGraph graph;
   for (int i = 1; i <= 10; ++i) AppendCallAndReceipt(graph, i, Wide(40));
 
-  const std::vector<ChatMessage> unbounded =
-      session::BuildRequestPath(graph, session::RequestInputs{"prompt", "env", 0});
-  // One system message, then every node: a budget of zero is not a budget.
-  REQUIRE(unbounded.size() == graph.Size() + 1);
-  REQUIRE(unbounded.front().role == "system");
-}
-
-TEST_CASE("A tight budget tombstones the oldest results and leaves the pairs intact",
-          "[request]") {
-  session::MessageGraph graph;
-  for (int i = 1; i <= 12; ++i) AppendCallAndReceipt(graph, i, Wide(40));
-
-  session::RequestInputs inputs;
-  inputs.tool_bytes = 12000;
-  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
-
-  // Nothing is removed, so every call still has the receipt that names it. This is the one
-  // invariant a projection may not break: a `tool` message whose `tool_call_id` matches no
-  // call is rejected by every provider.
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  // Every node, and no system message because this call gave no prompt or environment.
+  // Nothing was superseded, so nothing was compressed: an exploration with no repeat is not a
+  // history that needs shrinking.
   REQUIRE(messages.size() == graph.Size());
   for (const ChatMessage& msg : messages) {
-    if (msg.role != "tool") continue;
-    bool answered = false;
-    for (const ChatMessage& call : messages) {
-      if (!call.HasToolCalls()) continue;
-      for (const auto& tc : call.tool_calls.as_array()) {
-        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
-      }
-    }
-    REQUIRE(answered);
+    REQUIRE(msg.content.find("tombstone") == std::string::npos);
   }
+}
 
+TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
+  // One command, run twelve times. Every run but the last is superseded, so eleven receipts
+  // enter T1; the five oldest of those fall to T2 because a cursor six results back is an
+  // invitation to spend a turn on history the conversation has moved past.
+  session::MessageGraph graph;
+  for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
-  std::size_t tool_total = 0;
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  REQUIRE(messages.size() == graph.Size());
+
+  const std::vector<std::size_t> tool_at = ToolPositions(messages);
+  REQUIRE(tool_at.size() == 12);
+
+  int superseded = 0;
   int tombstones = 0;
-  for (const ChatMessage& msg : messages) {
-    if (msg.role != "tool") continue;
-    tool_total += msg.content.size();
-    if (msg.content.find("\"elided\":\"tombstone\"") != std::string::npos) ++tombstones;
+  for (std::size_t i : tool_at) {
+    const std::string& content = messages[i].content;
+    const bool tombstone = content.find("\"elided\":\"tombstone\"") != std::string::npos;
+    const bool superseded_receipt = content.find("\"superseded_by\"") != std::string::npos;
+    if (tombstone) ++tombstones;
+    if (superseded_receipt) ++superseded;
+    // Never both: a receipt is in exactly one tier.
+    REQUIRE_FALSE((tombstone && superseded_receipt));
   }
-  // The budget is spent from the oldest end and stops as soon as it fits, so it comes out
-  // near the limit rather than far under it, and something really was compressed.
-  REQUIRE(tombstones > 0);
-  REQUIRE(tool_total <= 12000);
-  // Only as many as it took: the results near the end are kept whole because the budget
-  // allowed it, not because they were protected.
-  REQUIRE(tombstones < 12);
+  // Eleven superseded runs, of which six keep their cursor.
+  REQUIRE(superseded == 6);
+  REQUIRE(tombstones == 5);
 
-  // The newest results are whole: they are what the current turn is reasoning about.
-  const std::string& newest = messages.back().content;
-  REQUIRE(newest.find("line 40 of the output") != std::string::npos);
-  REQUIRE(newest.find("tombstone") == std::string::npos);
+  // The newest run was never superseded and is still whole.
+  REQUIRE(messages[tool_at.back()].content.find("line 40 of the output") != std::string::npos);
 }
 
-TEST_CASE("A budget the results already fit inside changes nothing", "[request]") {
+TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
+  // A superseded receipt still holds a `page`, which is a standing invitation to reread it. A
+  // tombstone holds what happened and no way to ask for more.
   session::MessageGraph graph;
-  for (int i = 1; i <= 4; ++i) AppendCallAndReceipt(graph, i, Wide(3));
+  for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
-  session::RequestInputs inputs;
-  inputs.tool_bytes = 1u << 20;
-  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
-  for (const ChatMessage& msg : messages) REQUIRE(msg.content.find("tombstone") == std::string::npos);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  const std::vector<std::size_t> tool_at = ToolPositions(messages);
+
+  const boost::json::object tombstone = boost::json::parse(messages[tool_at.front()].content).as_object();
+  REQUIRE(tombstone.contains("elided"));
+  REQUIRE(boost::json::value_to<std::string>(tombstone.at("elided")) == "tombstone");
+  // No cursor, and no page scope to page into.
+  REQUIRE_FALSE(tombstone.contains("page"));
+  REQUIRE_FALSE(tombstone.contains("superseded_by"));
+  // Still attributable: which run this was is a sentence about what happened.
+  REQUIRE(tombstone.contains("buffer"));
+  REQUIRE(tombstone.at("buffer").as_object().contains("source"));
+
+  // A receipt six results in still has its cursor, because six is the newest.
+  const auto kept_index = tool_at.size() - 6;
+  const boost::json::object kept = boost::json::parse(messages[tool_at[kept_index]].content).as_object();
+  REQUIRE(kept.contains("superseded_by"));
+  REQUIRE_FALSE(kept.contains("elided"));
 }
 
-TEST_CASE("A budget never tombstones a result of the newest few turns", "[request]") {
+TEST_CASE("A registry of six or fewer superseded results keeps every cursor", "[request]") {
+  // The floor is the whole rule: below it, nothing is tombstoned however large the results are.
   session::MessageGraph graph;
-  for (int i = 1; i <= 8; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+  for (int i = 1; i <= 7; ++i) AppendSupersedingRun(graph, "build", i, Wide(400));
 
-  session::RequestInputs inputs;
-  inputs.tool_bytes = 1;  // impossible to satisfy; the hold floor is what answers this
-  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
-
-  std::vector<std::size_t> tool_at;
-  for (std::size_t i = 0; i < messages.size(); ++i) {
-    if (messages[i].role == "tool") tool_at.push_back(i);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  for (std::size_t i : ToolPositions(messages)) {
+    REQUIRE(messages[i].content.find("tombstone") == std::string::npos);
   }
-  REQUIRE(tool_at.size() == 8);
+}
 
-  // The newest results are held regardless of the budget, because compressing the output the
-  // current turn just asked for would make the model ask for it again -- a saved token that
-  // costs a turn.
-  for (std::size_t k = tool_at.size() - 6; k < tool_at.size(); ++k) {
-    REQUIRE(messages[tool_at[k]].content.find("tombstone") == std::string::npos);
+TEST_CASE("A result that was never superseded is never tombstoned", "[request]") {
+  // The whole trigger is supersession. Ten distinct commands produce ten live results, and no
+  // amount of bulk makes the projection reach for one.
+  session::MessageGraph graph;
+  for (int i = 1; i <= 10; ++i) AppendCallAndReceipt(graph, i, Wide(400));
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  for (std::size_t i : ToolPositions(messages)) {
+    REQUIRE(messages[i].content.find("tombstone") == std::string::npos);
+    REQUIRE(messages[i].content.find("superseded_by") == std::string::npos);
   }
-  // Everything older than the newest six is fair game, and a budget that cannot be met spends
-  // all of it: the oldest result is a tombstone, not the text it started as.
-  const std::string& oldest = messages[tool_at.front()].content;
-  REQUIRE(oldest.find("\"elided\":\"tombstone\"") != std::string::npos);
-  REQUIRE(oldest.find("line 40 of the output") == std::string::npos);
 }
 
 namespace {
@@ -473,8 +500,17 @@ std::string AnswerJson(const std::string& source, const std::string& buffer, con
 
 void AppendAnswer(session::MessageGraph& graph, const std::string& source, const std::string& buffer,
                   const std::string& text, std::size_t rank) {
+  // The call that asked for the answer, so the receipt is not an orphan: a `tool` message whose
+  // `tool_call_id` names no call is rejected by every provider.
+  session::AssistantPayload assistant;
+  assistant.content = "asking";
+  const std::string id = "ask_" + source + "_" + std::to_string(rank);
+  assistant.tool_calls.push_back(session::ToolCallRecord{id, "ask_dir",
+                                                         boost::json::parse(R"({"ask":"other"})")});
+  graph.AppendAfterLeaf(std::move(assistant));
+
   session::ToolPayload receipt;
-  receipt.tool_call_id = "call";
+  receipt.tool_call_id = id;
   receipt.tool_name = "ask_dir";
   receipt.content = AnswerJson(source, buffer, text, rank);
   receipt.origin = paging::Origin{source, buffer, rank};
@@ -493,12 +529,15 @@ TEST_CASE("A second answer to one question replaces the first", "[request]") {
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
-  const boost::json::value older = boost::json::parse(messages[0].content);
+  const std::vector<std::size_t> tool_at = ToolPositions(messages);
+  REQUIRE(tool_at.size() == 2);
+
+  const boost::json::value older = boost::json::parse(messages[tool_at[0]].content);
   REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
   REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "a2");
 
   // The newer answer is the one the model reads in full.
-  REQUIRE(messages[1].content.find("the second answer") != std::string::npos);
+  REQUIRE(messages[tool_at[1]].content.find("the second answer") != std::string::npos);
 }
 
 TEST_CASE("Answers to two different questions do not replace each other", "[request]") {
@@ -508,35 +547,43 @@ TEST_CASE("Answers to two different questions do not replace each other", "[requ
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
-  REQUIRE(messages[0].content.find("answer about pricing") != std::string::npos);
-  REQUIRE(messages[1].content.find("answer about latency") != std::string::npos);
+  const std::vector<std::size_t> tool_at = ToolPositions(messages);
+  REQUIRE(tool_at.size() == 2);
+  REQUIRE(messages[tool_at[0]].content.find("answer about pricing") != std::string::npos);
+  REQUIRE(messages[tool_at[1]].content.find("answer about latency") != std::string::npos);
 }
 
-TEST_CASE("The budget compresses a command's output and never a conclusion", "[request]") {
+TEST_CASE("A superseded page is compressed but a conclusion never is", "[request]") {
   // Two ways a result stops being re-sent, and only one of them applies to an answer. A page is
   // a window onto output that is still on disk, so dropping its body costs a cursor. An answer
   // is not: there is no cursor into another agent's run, so a tombstoned answer could only be
-  // re-asked, at the price of the whole delegated turn. The budget spends on the pages.
+  // re-asked, at the price of the whole delegated turn. Supersession spends on the pages.
   session::MessageGraph graph;
-  // Twelve pages of 80 lines each is about 30 KiB, and the budget is a third of that: enough
-  // that the walk has to compress something, and far enough under the total that it does not
-  // have to compress everything.
-  for (int i = 1; i <= 12; ++i) AppendCallAndReceipt(graph, i, Wide(80));
+  for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(80));
   AppendAnswer(graph, "s9", "a9", "the conclusion this turn is about: " + Wide(10), 13);
 
-  session::RequestInputs inputs;
-  inputs.tool_bytes = 10000;
-  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
   // Every call still has the receipt that answers it: the projection never removes a message.
   REQUIRE(messages.size() == graph.Size());
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    bool answered = false;
+    for (const ChatMessage& call : messages) {
+      if (!call.HasToolCalls()) continue;
+      for (const auto& tc : call.tool_calls.as_array()) {
+        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
+      }
+    }
+    REQUIRE(answered);
+  }
 
   int tombstones = 0;
   for (const ChatMessage& msg : messages) {
     if (msg.role == "tool" && msg.content.find("\"elided\":\"tombstone\"") != std::string::npos) {
       ++tombstones;
     }
-    // Nothing that is an answer was compressed: each one still holds the text it answered with.
+    // Nothing that is an answer was compressed: it still holds the text it answered with.
     if (msg.role == "tool" && msg.content.find("the conclusion this turn is about") != std::string::npos) {
       REQUIRE(msg.content.find("tombstone") == std::string::npos);
     }

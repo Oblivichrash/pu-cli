@@ -12,21 +12,6 @@ namespace pu::session {
 struct RequestInputs {
   std::string system_prompt;  // the agent's configured prompt
   std::string environment;    // generated context: OS, policy, guidelines
-
-  // How much of the stored tool results the request may carry, in bytes. 0 means no bound,
-  // which is what every caller that has not thought about this gets: shrinking a history is
-  // a decision about a conversation, and one made by a default would be made by accident.
-  //
-  // This is a budget on the *scaffolding and observations* the turns re-send -- the outputs of
-  // commands already run -- and never on what a person said. Prose is what the conversation
-  // is; a tool result is what it cost to find out, and re-sending a page nobody asked for is
-  // the difference between a long exploration and a full context.
-  //
-  // The bound is spent from the newest end: the most recent tool results are kept whole,
-  // because they are the ones the current turn is reasoning about, and only the older ones can
-  // be compressed. It goes in whole tens -- see `ToolBudget` -- and compressing never removes
-  // a message, so a call is never separated from its receipt.
-  std::size_t tool_bytes = 0;
 };
 
 // One stored node as the provider sees it. Callers that need the node's own fields alongside

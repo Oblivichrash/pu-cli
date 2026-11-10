@@ -27,15 +27,25 @@ Four tiers, applied per node, monotone — a decision may only move down:
 |---|---|---|
 | T0 live | the whole text | newest run for its source, or a page read deliberately after |
 | T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
-| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `extent`, `buffer.{id,source}`, `elided` — no cursor | the pool is over budget and the pair is older than the newest K |
-| T3 gone | nothing | scaffolding is over budget |
+| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `extent`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
+| T3 gone | nothing | not implemented; see §2 |
 
-T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `ToolBudget` in
+T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
 `src/session/request.cpp`; T3 does not. T2 is worth its ~15 tokens because what stops a model
 repeating a failed approach is knowing it tried: **compress along the body axis, never along
 the argv/verdict axis.** T3 goes in whole pairs, oldest first, keeping the newest K (≈6 covers
 a plan-and-verify cycle), because a `tool` message whose `tool_call_id` names no call is
 invalid on every provider.
+
+The entry condition for each tier is **a count, not a size**. An earlier draft drove T2 from a
+byte budget (`256 KiB` of accumulated tool output). That was wrong twice over: a byte count
+cannot be turned into tokens without the model's tokenizer, so the threshold was a number
+nobody could check against the window it was meant to protect; and because the newest six
+results were held regardless, it was not a hard cap either — setting it to 4 KiB would have
+silently failed to take effect. Supersession is a fact about the conversation rather than a
+measurement of it, and "the newest six superseded receipts keep their cursor" is a rule that
+can be stated, tested and read back. Six is not a tuned number; it is the length of a
+plan-and-verify cycle, and the cost of being wrong is one round of rereading.
 
 The table first said `command` and `cwd` survive T2, and both are wrong as written: a paged
 result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
@@ -48,19 +58,14 @@ to preserve.
 
 ## 2. The queue
 
-1. ~~**A per-turn budget in the projection** (`request_bytes`, then `elided: "budget"`).~~ Done
-   as `RequestInputs::tool_bytes`, defaulting to 256 KiB in the executor. The projection is the
-   one place removal is provably safe, and it is already pure and rewind-safe. A running
-   *token* counter does not work: it has to guess which message is disposable and breaks the
-   call/result pairing. It spends from the oldest end, keeps the newest six results whole
-   whatever the budget, and never removes a message — only shrinks its body to a tombstone.
-   Two things the number still cannot do: it counts bytes rather than tokens, so the bound is
-   approximate; and a budget smaller than the newest six can never be met, which is a floor by
-   design rather than a bug, but means the setting is not a hard cap.
-1b. **Let the budget be configured.** `Executor::SetToolBytesBudget` exists and nothing calls
-   it: the bound is a fixed 256 KiB. Routing it through `session::InForce` beside
-   `tool_budget` is the remaining step, and it wants a decision first about whether a per-agent
-   setting belongs in the same file the paging budget already lives in.
+1. ~~**A per-turn budget in the projection** (`request_bytes`, then `elided: "budget"`).~~ Done,
+   then undone deliberately. The projection is the right place for this work — it is pure and
+   rewind-safe — and it is where the tiers now live. But the *budget* framing was removed: what
+   drives a receipt down a tier is supersession, not a byte count. See §1 for why a byte
+   threshold was the wrong measure, and note that the tool-call budget in the executor is a
+   different mechanism with a different subject: it bounds how many calls one turn may make,
+   not how much history is re-sent. Nothing was removed from the history to achieve this — a
+   receipt keeps its place and loses only the cursor.
 2. **`find` over a retained buffer.** `grep` today is a shell command, so searching means
    *executing again*: it re-runs the build, its output can disagree with the page already in
    hand, and the retained page is not searched at all. The same cursor space should answer two
@@ -69,10 +74,16 @@ to preserve.
    20"), not a page.
 3. **`page` reaches the transcript a person reads.** `on_end` drops the envelope, so a page of
    a 3500-line log looks exactly like a whole answer. The `extent` is what says which it is.
-4. **Large `arguments` stored by reference** into the pager, for the same reason results are.
+4. **T3: retire the oldest tool-call pairs.** The one pool still unbounded is scaffolding —
+   `tool_calls[].id`, `.name` and especially `.arguments`. Twenty `write_file` calls of 200
+   lines each are 4000 lines re-sent every turn. T3 removes whole pairs, oldest first, keeping
+   the newest six, because the protocol rejects an orphan `tool` message. This is the only
+   remaining unbounded pool and therefore the highest-value item here.
+5. **Large `arguments` stored by reference** into the pager, for the same reason results are.
 
-Ordering is not a preference: without elision, `find` results accumulate the way pages did.
-Every step is measured by `usage.prompt_tokens` per turn and `tool_call_count` per turn.
+Ordering is not a preference: §2.4 is where the remaining growth actually is, so it comes
+before the items that make reading history cheaper. Both are measured by `usage.prompt_tokens`
+per turn and `tool_call_count` per turn.
 
 ## 3. Two rungs further out
 
