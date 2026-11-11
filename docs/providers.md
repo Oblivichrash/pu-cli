@@ -131,9 +131,10 @@ that prints it: it is a record, not a feature.
 not a failure, since a gateway may add a field at will. The tests pinning a captured stream
 assert the set whole, so a new field on a gateway we hold a capture of fails the build. The
 comparison is one level deep: a key nested inside `choices` or `message` is not seen.
-`seen_fields` is the complement it is diffed against, and `missing_fields` is the third
-case: a name `ResponseShape` says this build reads that the reply never carried, which is
-what says a gateway stopped sending a field rather than that a field was added.
+`ChatResult::missing_fields` is the other case: a name `ResponseShape` says this build
+reads that the reply never carried, which is what says a gateway stopped sending a field
+rather than that a field was added. The names it was diffed against are recorded while the
+stream is read and never leave the provider.
 
 A count a backend does not report stays `0` rather than being derived. `total_tokens` in
 particular is the provider's own total: summing the two counts beside it would produce a
