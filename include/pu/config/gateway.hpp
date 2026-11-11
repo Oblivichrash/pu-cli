@@ -31,6 +31,17 @@ enum class GatewayId { kOllama, kOllamaCloud, kOpenAI, kDeepSeek, kNim, kCodeBud
 
 std::string DefaultHostFor(GatewayId id);
 
+// The wire format a product speaks. Two products sharing one protocol share its factories
+// and its reply shape, and differ in host, headers and catalogue. A value, not a string:
+// every reader of a protocol asks which one it is, and a spelling only ever goes wrong at
+// run time.
+enum class WireProtocol {
+  // `choices[0].delta` carries the reply, `usage` the counts.
+  kOpenAI,
+  // `message` is the reply, and the counts sit beside `done` on the frame itself.
+  kOllama,
+};
+
 // The path a chat turn is posted to, from the gateway table.
 std::string_view GatewayEndpointPath(GatewayId id);
 
@@ -76,9 +87,9 @@ struct Gateway {
   // The environment variable a turn reads its key from when the config names none, empty for
   // a gateway that needs no key. A probe of one gateway is then one word on the command line.
   std::string_view api_key_env;
-  // The wire format this product speaks: "openai" or "ollama". Two products sharing a
-  // protocol share its factories; they differ in host, headers and catalogue.
-  std::string_view protocol;
+  // The wire format this product speaks. Two products sharing a protocol share its
+  // factories and its reply shape; they differ in host, headers and catalogue.
+  WireProtocol protocol;
   // The path a chat turn is posted to. One fact per gateway, so a caller that posts
   // without a provider (the probe) reads it here rather than restating the providers'.
   std::string_view endpoint_path;
