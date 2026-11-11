@@ -124,3 +124,51 @@ TEST_CASE("every document is named by the index or by a document that links to i
   }());
   CHECK(orphans.empty());
 }
+
+TEST_CASE("no source, document or page carries a terminal escape sequence", "[rules][text]") {
+  // A shell's own bookkeeping (`ESC ] 633 ; ... BEL`) once survived a paste and was committed
+  // into docs/runtime.md, where it sat on the first line for months: invisible in every editor
+  // that renders it, and harmless until something else read the file as text. The same paste
+  // can also carry a colour code into a string literal, which changes what a terminal prints.
+  //
+  // A tab, a newline and a carriage return are the control characters these files may hold —
+  // everything else below 0x20, and DEL, is not. The escape byte itself is the check that
+  // matters, so the case names it rather than a list of the sequences built from it.
+  const fs::path root = kSourceDir;
+  const std::set<std::string> extensions{".md", ".cpp", ".hpp", ".js", ".css", ".html"};
+
+  std::vector<std::string> offenders;
+  for (const auto& entry : fs::recursive_directory_iterator(root)) {
+    if (!entry.is_regular_file()) continue;
+    const std::string ext = entry.path().extension().string();
+    if (extensions.count(ext) == 0) continue;
+
+    const fs::path relative = entry.path().lexically_relative(root);
+    // Build trees hold generated files and the project's own downloads; neither is ours to
+    // police, and the rule is about what a person committed.
+    bool generated = false;
+    for (const auto& part : relative) {
+      const std::string name = part.string();
+      if (name == "build" || name == ".git" || name == ".pu" || name == "node_modules") {
+        generated = true;
+        break;
+      }
+    }
+    if (generated) continue;
+
+    const std::string text = ReadFile(entry.path());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+      const auto c = static_cast<unsigned char>(text[i]);
+      if (c != 0x1b && (c >= 0x20 || c == '\t' || c == '\n' || c == '\r')) continue;
+      offenders.push_back(relative.string() + " at byte " + std::to_string(i));
+      break;
+    }
+  }
+
+  INFO("files carrying control characters: " << [&] {
+    std::string joined;
+    for (const std::string& name : offenders) joined += name + "; ";
+    return joined;
+  }());
+  CHECK(offenders.empty());
+}

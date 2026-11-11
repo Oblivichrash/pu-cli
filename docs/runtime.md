@@ -1,4 +1,4 @@
-]633;E;printf '%s\\n' '# Runtime, lifecycle, and cancellation' '' 'How one `Runtime` instance is built, kept alive, stopped, and shared between the' 'command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md)\x3b' 'it lives here because it is the half of the system a *maintainer* has to hold in' 'their head, while the rest of that document is what a contributor reads once.' '' 'The split is a reading aid, not a boundary: every claim below is still about the' 'same binary, and a change that moves work between `Runtime` and `Executor` belongs' 'in both files'"'"' vocabularies.' '';9ac79c07-acb2-4715-897b-dddcabfce472]633;C# Runtime, lifecycle, and cancellation
+# Runtime, lifecycle, and cancellation
 
 How one `Runtime` instance is built, kept alive, stopped, and shared between the
 command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md);
