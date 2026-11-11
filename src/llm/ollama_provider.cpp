@@ -126,12 +126,10 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
     // The cached prompt rides on the same line under Ollama's own name; without it the
     // count reads as a gateway that cached nothing.
     acc_.usage->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
-  }
 
-  // Ollama reports no usage object: the counts and durations ride on the final line,
-  // which is kept whole rather than filtered to a list of names -- a list is a name
-  // someone has to remember to add to, and `prompt_eval_cached_count` was missed by one.
-  if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
+    // Ollama reports no usage object: the counts and durations ride on the final line,
+    // which is kept whole rather than filtered to a list of names -- a list is a name
+    // someone has to remember to add to, and `prompt_eval_cached_count` was missed by one.
     acc_.raw_usage = j;
   }
 

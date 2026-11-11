@@ -68,6 +68,12 @@ class StreamingProvider : public LLMProvider {
     boost::json::value raw_usage;
     std::vector<std::string> unread_fields;
     bool inspected_frame = false;
+
+    // The turn as a caller sees it, moved out in one go. Written here rather than at the end
+    // of `Chat` so the two lists of names — what a turn accumulates and what a result
+    // carries — are one place, and a member added above is a member a compiler notices is
+    // unaccounted for here.
+    ChatResult IntoResult() &&;
   };
 
   Accumulators acc_;

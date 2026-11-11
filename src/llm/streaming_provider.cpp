@@ -69,8 +69,20 @@ void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
   }
 }
 
-ChatResult StreamingProvider::Chat(const ChatRequest& request) {
+ChatResult StreamingProvider::Accumulators::IntoResult() && {
   ChatResult result;
+  result.content = std::move(content);
+  result.tool_calls = std::move(tool_calls);
+  result.reasoning = std::move(reasoning);
+  result.usage = usage;
+  result.raw_usage = std::move(raw_usage);
+  result.unread_fields = std::move(unread_fields);
+  result.finish_reason = std::move(finish_reason);
+  result.model = std::move(response_model);
+  return result;
+}
+
+ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   acc_ = Accumulators{};
   ResetTurnState();
 
@@ -104,15 +116,7 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   parser.Finish();
   FinishStream(request);
 
-  result.content = std::move(acc_.content);
-  result.tool_calls = std::move(acc_.tool_calls);
-  result.reasoning = std::move(acc_.reasoning);
-  result.usage = acc_.usage;
-  result.raw_usage = std::move(acc_.raw_usage);
-  result.unread_fields = std::move(acc_.unread_fields);
-  result.finish_reason = std::move(acc_.finish_reason);
-  result.model = std::move(acc_.response_model);
-  return result;
+  return std::move(acc_).IntoResult();
 }
 
 }  // namespace pu
