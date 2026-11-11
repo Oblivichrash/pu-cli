@@ -53,8 +53,26 @@ TEST_CASE("[list_models] openai reads /models and the data array's ids", "[list_
   REQUIRE(mock->last_get_url == "https://x.example/v1/models");
 }
 
-TEST_CASE("[list_models] an api key rides the request as a bearer header", "[list_models]") {
+TEST_CASE("[list_models] a declared window is read when no capability field named one",
+          "[list_models]") {
   auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"data":[
+      {"id":"with-window","context_window":8192},
+      {"id":"without-window"}
+    ]})"};
+  };
+
+  const auto models = config::ListModels(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+  REQUIRE(models.size() == 2);
+  // A product that states a window declares the name in its shape; one that says nothing
+  // leaves the answer at zero rather than inventing a default.
+  REQUIRE(models[0].caps.max_input_tokens == 8192);
+  REQUIRE(models[1].caps.max_input_tokens == 0);
+}
+
+TEST_CASE("[list_models] an api key rides the request as a bearer header", "[list_models]") {  auto [http, mock] = MakeMockHttpClient();
   mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
     return pu::http::Response{200, R"({"data":[]})"};
   };

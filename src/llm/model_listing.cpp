@@ -2,8 +2,7 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
-#include "pu/llm/model_listing.hpp"
-#include "pu/llm/model_listing.hpp"
+#include "pu/config/backend.hpp"
 
 #include <boost/json.hpp>
 
@@ -119,9 +118,11 @@ std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const Catalog
     const std::string id = StringField(fields, shape.id_key);
     if (id.empty()) continue;
     Capabilities caps = ReadCapabilities(fields, shape);
-    // A window is not a capability a gateway promises, so no shape names it: several
-    // OpenAI-compatible products state it as `context_window` and the rest say nothing.
-    if (caps.max_input_tokens == 0) caps.max_input_tokens = IntField(fields, "context_window");
+    // A window is not a capability a gateway promises, so it is read only when no capability
+    // field named one: a product that states it says so in its shape, and the rest say nothing.
+    if (caps.max_input_tokens == 0) {
+      caps.max_input_tokens = IntField(fields, shape.context_window);
+    }
     models.push_back(ModelEntry{id, std::move(caps)});
   }
   return models;
@@ -199,6 +200,7 @@ const CatalogShape& OpenAIShape() {
       .path = "/models",
       .container = "data",
       .id_key = "id",
+      .context_window = "context_window",
   };
   return shape;
 }
@@ -222,14 +224,25 @@ const CatalogShape& CodeBuddyShape() {
 
 }  // namespace
 
-std::optional<ListingTarget> ListingTargetFor(std::string_view protocol, std::string_view gateway,
-                                              const std::string& host) {
-  if (protocol == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
-  if (protocol != "openai") return std::nullopt;
-  // One OpenAI-format product keeps its catalogue off the chat base's origin and describes a
-  // model with more than an id; the rest read `/models` and name what they can.
-  if (gateway == "codebuddy") return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+std::optional<ListingTarget> OllamaModelLister::Target(const std::string& host) const {
+  return ListingTarget{host + OllamaShape().path, OllamaShape()};
+}
+
+std::optional<ListingTarget> OpenAIModelLister::Target(const std::string& host) const {
   return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+}
+
+std::optional<ListingTarget> CodeBuddyModelLister::Target(const std::string& host) const {
+  return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+}
+
+std::optional<ListingTarget> ListingTargetForGateway(const config::Backend& backend) {
+  // The lister the gateway table names decides both where the catalogue lives and how it
+  // reads: a probe cannot disagree with a listing about either, because there is one answer.
+  const std::unique_ptr<pu::ModelLister> lister =
+      config::GatewayForId(backend.gateway).make_listing();
+  if (!lister) return std::nullopt;
+  return lister->Target(backend.host);
 }
 
 std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
