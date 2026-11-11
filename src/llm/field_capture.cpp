@@ -2,6 +2,7 @@
 #include "pu/llm/field_capture.hpp"
 
 #include "pu/core/base.hpp"
+#include "pu/core/json.hpp"
 #include "pu/core/sse.hpp"
 #include "pu/llm/openai_protocol.hpp"
 #include "pu/llm/projection.hpp"
@@ -62,9 +63,9 @@ template <typename Fn>
 void ForEachFrame(const std::string& raw, Fn&& on_frame) {
   core::SseParser parser([&](const core::SseEvent& event) {
     if (event.data.empty() || event.data == "[DONE]") return;
-    boost::system::error_code ec;
-    const boost::json::value parsed = boost::json::parse(event.data, ec);
-    if (!ec) on_frame(parsed);
+    if (std::optional<boost::json::value> parsed = json::TryParse(event.data)) {
+      on_frame(*parsed);
+    }
   });
   // A capture that carries no `data:` line is newline-delimited JSON, and the parser delivers
   // each of its lines as an event of its own.
@@ -101,7 +102,8 @@ FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient&
                   [&](char* ptr, size_t total) -> size_t {
                     raw.append(ptr, total);
                     return total;
-                  });
+                  },
+                  nullptr, &report.http_status);
   report.bytes = raw.size();
 
   if (raw_path && !raw_path->empty()) {
@@ -115,6 +117,13 @@ FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient&
     CollectReplyKeys(frame, protocol, report.keys);
   });
   report.stream_parsed = report.frames > 0;
+  if (!report.stream_parsed) {
+    // The one thing worth saying when nothing parsed: how much arrived, and whether the
+    // gateway even answered a stream. A 200 with an empty body and a 200 carrying one
+    // unreadable line are different findings.
+    report.error = raw.empty() ? "the gateway answered no bytes"
+                               : "no frame of " + std::to_string(raw.size()) + " bytes parsed";
+  }
   return report;
 }
 
@@ -153,13 +162,12 @@ ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient&
   report.http_status = response.status;
   report.bytes = response.body.size();
 
-  boost::json::value parsed;
-  try {
-    parsed = boost::json::parse(response.body);
-  } catch (const boost::system::system_error&) {
+  const std::optional<boost::json::value> answer = json::TryParse(response.body);
+  if (!answer) {
     report.error = "the answer does not parse as JSON";
     return report;
   }
+  const boost::json::value& parsed = *answer;
   report.parsed = true;
 
   // Every top-level key, then the first entry of whatever container the shape names, at the
@@ -262,10 +270,13 @@ std::string FormatFieldCapture(const FieldCapture& report) {
   std::ostringstream out;
   out << "gateway: " << report.gateway << "  host: " << report.host
       << "  model: " << report.model << "\n";
-  out << "bytes: " << report.bytes << "  frames parsed: " << report.frames << "\n";
+  // The code is printed whether or not frames arrived: "200 and nothing parsed" is the
+  // finding a capture is run for, and a probe that leaves it out asks the reader to guess.
+  out << "http " << report.http_status << "  bytes: " << report.bytes
+      << "  frames parsed: " << report.frames << "\n";
 
   if (!report.stream_parsed) {
-    out << "\nNo frame parsed. Raw stream follows:\n" << report.error << "\n";
+    out << "\n" << report.error << "\n";
     return out.str();
   }
 

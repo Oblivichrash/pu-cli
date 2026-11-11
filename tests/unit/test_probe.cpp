@@ -88,6 +88,30 @@ TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
 
   REQUIRE_FALSE(report.stream_parsed);
   REQUIRE(report.frames == 0);
+  // The code and the byte count are what tell "the gateway answered a page" apart from
+  // "the gateway answered a stream whose shape changed", which is the whole point of a
+  // capture run.
+  REQUIRE(report.http_status == 200);
+  REQUIRE(report.bytes == std::string("<html>gateway error</html>\n").size());
+  REQUIRE(report.error == "no frame of " + std::to_string(report.bytes) + " bytes parsed");
+
+  const std::string text = llm::FormatFieldCapture(report);
+  REQUIRE(text.find("http 200") != std::string::npos);
+  REQUIRE(text.find("bytes parsed") != std::string::npos);
+}
+
+TEST_CASE("[probe] an empty answer says the gateway sent nothing", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback) {};
+
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+                       "Say the single word: pong", std::nullopt);
+
+  REQUIRE(report.http_status == 200);
+  REQUIRE(report.bytes == 0);
+  REQUIRE(report.error == "the gateway answered no bytes");
 }
 
 TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {

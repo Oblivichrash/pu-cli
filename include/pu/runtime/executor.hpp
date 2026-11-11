@@ -51,8 +51,6 @@ struct ExecutionResult {
   // and the token counts are both their sum; without this the sum has no explanation.
   int rounds = 0;
   std::string notice;
-  // A shape change worth telling the user about, attached to `notice` rather than logged.
-  std::vector<std::string> shape_notes;
   std::string model;
   TurnOutcome outcome = TurnOutcome::kCompleted;
   bool has_error = false;

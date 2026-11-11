@@ -402,7 +402,8 @@ http::Response BeastHttpClient::Get(const std::string& url,
 void BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
                                    const std::string& body,
                                    const std::vector<std::string>& headers,
-                                   WriteCallback write_cb, CancelToken cancel_token) {
+                                   WriteCallback write_cb, CancelToken cancel_token,
+                                   unsigned* status_out) {
   const beast::http::verb verb =
       method == HttpMethod::kGet ? beast::http::verb::get : beast::http::verb::post;
   auto start = std::chrono::steady_clock::now();
@@ -473,11 +474,15 @@ void BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
     }
 
     if (status >= 400) {
+      // Handed over before the throw: a probe that only sees "HTTP error 401" can say what
+      // went wrong but not what the answer was, and the code is the part that travels.
+      if (status_out != nullptr) *status_out = status;
       std::string detail = "HTTP error " + std::to_string(status);
       const std::string summary = SummarizeErrorBody(error_body);
       if (!summary.empty()) detail += ": " + summary;
       throw HttpError(detail);
     }
+    if (status_out != nullptr) *status_out = status;
 
   } catch (const std::exception& e) {
     auto end = std::chrono::steady_clock::now();

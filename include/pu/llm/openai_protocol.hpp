@@ -39,13 +39,6 @@ struct ResponseShape {
   std::string_view finish_reason_field = "finish_reason";
 };
 
-// The shape's field names a reply never carried. `required_only` is what the runtime can act
-// on, since `content` and `reasoning_content` are legitimately absent from a tool-call reply
-// and from a model that does not reason; a capture asks about those too.
-std::vector<std::string> AbsentShapeFields(
-    const ResponseShape& shape, const std::function<bool(std::string_view)>& seen,
-    bool required_only);
-
 }  // namespace pu::llm
 
 namespace pu {
@@ -80,7 +73,7 @@ class OpenAIProtocol : public StreamingProvider {
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
   void ParseData(std::string_view data, const ChatRequest& request) override;
-  void ResetAccumulators() override;
+  void ResetTurnState() override;
   void FinishStream(const ChatRequest& request) override;
 
  private:
@@ -103,7 +96,7 @@ class OpenAIProtocol : public StreamingProvider {
   int reply_choice_index_ = -1;
   bool reported_extra_choice_ = false;
 
-  // The gateway's refusal text, kept apart from `content_` until the stream ends: a
+  // The gateway's refusal text, kept apart from the reply until the stream ends: a
   // reply can arrive with both, and folding one into the other mid-stream would make
   // the two indistinguishable.
   std::string refusal_;

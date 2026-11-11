@@ -27,7 +27,8 @@ class BeastHttpClient : public HttpClient {
 
   void StreamRequest(HttpMethod method, const std::string& url, const std::string& body,
                      const std::vector<std::string>& headers, WriteCallback write_cb,
-                     CancelToken cancel_token = nullptr) override;
+                     CancelToken cancel_token = nullptr,
+                     unsigned* status_out = nullptr) override;
 
   Response Get(const std::string& url, const std::vector<std::string>& headers) override;
 

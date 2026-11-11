@@ -16,7 +16,8 @@ class MockHttpClient : public pu::http::HttpClient {
   void StreamRequest(pu::http::HttpMethod method, const std::string& url,
                      const std::string& body, const std::vector<std::string>& headers,
                      pu::http::WriteCallback write_cb,
-                     pu::CancelToken cancel_token = nullptr) override {
+                     pu::CancelToken cancel_token = nullptr,
+                     unsigned* status_out = nullptr) override {
     last_method = method;
     last_url = url;
     last_body = body;
@@ -25,6 +26,8 @@ class MockHttpClient : public pu::http::HttpClient {
     if (simulate_response) {
       simulate_response(url, body, headers, write_cb);
     }
+    // The mock answers whatever it was told to; a test that cares about the code sets it.
+    if (status_out != nullptr) *status_out = simulated_status;
   }
 
   pu::http::Response Get(const std::string& url,
@@ -42,6 +45,9 @@ class MockHttpClient : public pu::http::HttpClient {
   std::vector<std::string> last_headers;
   pu::CancelToken last_cancel_token;
   std::string last_get_url;
+  // What a streamed request reports as its status. 200 is what every mock answers unless a
+  // test is about the code itself.
+  unsigned simulated_status = 200;
   std::function<pu::http::Response(const std::string&, const std::vector<std::string>&)>
       simulate_get;
   std::function<void(const std::string&, const std::string&, const std::vector<std::string>&,

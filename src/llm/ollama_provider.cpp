@@ -27,18 +27,6 @@ constexpr llm::ProviderCapabilities kCapabilities{
 
 }  // namespace
 
-void OllamaProvider::ResetAccumulators() {
-  content_.clear();
-  reasoning_.clear();
-  finish_reason_.clear();
-  response_model_.clear();
-  tool_calls_.clear();
-  usage_.reset();
-  raw_usage_ = nullptr;
-  unread_fields_.clear();
-  inspected_frame_ = false;
-}
-
 OllamaProvider::OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http)
     : StreamingProvider(config.host, config.api_key, std::move(http)),
       config_(std::move(config)) {}
@@ -112,10 +100,12 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
         if (json::HasKey(tc.at("function"), "arguments")) {
           const auto& args = tc.at("function").at("arguments");
           if (args.is_string()) {
-            try {
-              call.arguments = boost::json::parse(boost::json::value_to<std::string>(args));
-            } catch (const std::exception& e) {
-              spdlog::debug("Keeping non-JSON tool arguments as-is: {}", e.what());
+            std::optional<boost::json::value> parsed =
+                json::TryParse(boost::json::value_to<std::string>(args));
+            if (parsed) {
+              call.arguments = std::move(*parsed);
+            } else {
+              spdlog::debug("Keeping non-JSON tool arguments as-is");
               call.arguments = args;
             }
           } else if (args.is_object() || args.is_array()) {
@@ -130,27 +120,27 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
     // Named rather than positional: `TokenUsage` carries more than the two counts a daemon
     // reports, and a positional list would have to grow with it.
-    usage_ = TokenUsage{};
-    usage_->prompt_tokens = json::ValueOrDefault<int>(j, "prompt_eval_count", 0);
-    usage_->completion_tokens = json::ValueOrDefault<int>(j, "eval_count", 0);
+    acc_.usage = TokenUsage{};
+    acc_.usage->prompt_tokens = json::ValueOrDefault<int>(j, "prompt_eval_count", 0);
+    acc_.usage->completion_tokens = json::ValueOrDefault<int>(j, "eval_count", 0);
     // The cached prompt rides on the same line under Ollama's own name; without it the
     // count reads as a gateway that cached nothing.
-    usage_->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
+    acc_.usage->cached_tokens = json::ValueOrDefault<int>(j, "prompt_eval_cached_count", 0);
   }
 
   // Ollama reports no usage object: the counts and durations ride on the final line,
   // which is kept whole rather than filtered to a list of names -- a list is a name
   // someone has to remember to add to, and `prompt_eval_cached_count` was missed by one.
   if (json::HasKey(j, "prompt_eval_count") || json::HasKey(j, "eval_count")) {
-    raw_usage_ = j;
+    acc_.raw_usage = j;
   }
 
   if (json::HasKey(j, "done_reason") && j.at("done_reason").is_string()) {
-    finish_reason_ = boost::json::value_to<std::string>(j.at("done_reason"));
+    acc_.finish_reason = boost::json::value_to<std::string>(j.at("done_reason"));
   }
 
   if (json::HasKey(j, "model") && j.at("model").is_string()) {
-    response_model_ = boost::json::value_to<std::string>(j.at("model"));
+    acc_.response_model = boost::json::value_to<std::string>(j.at("model"));
   }
 }
 
@@ -158,14 +148,15 @@ void OllamaProvider::ParseData(std::string_view data, const ChatRequest& request
   // NDJSON frames nothing: a blank line is a blank line, and the frame is the payload the
   // parser handed over.
   if (text::Trim(data).empty()) return;
-  boost::json::value j;
-  try {
-    j = boost::json::parse(data);
-  } catch (const boost::system::system_error& e) {
-    spdlog::warn("Skipping invalid JSON line: {}", e.what());
+
+  const std::optional<boost::json::value> j = json::TryParse(data);
+  if (!j) {
+    // One lost line is one lost line: a daemon that writes a partial line at shutdown still
+    // delivered every frame before it.
+    spdlog::warn("Skipping invalid JSON line");
     return;
   }
-  HandleJsonToken(j, request);
+  HandleJsonToken(*j, request);
 }
 
 }  // namespace pu

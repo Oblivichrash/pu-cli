@@ -9,6 +9,7 @@
 #include <exception>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace pu {
 namespace json {
@@ -45,6 +46,16 @@ inline std::string ValueOrDefault(const value& j, boost::json::string_view key, 
 inline bool HasKey(const value& j, boost::json::string_view key) {
   const object* obj = j.if_object();
   return obj != nullptr && obj->contains(key);
+}
+
+// `text` as a value, or nothing when it is not one. The failure is the return value rather
+// than an exception, so what a malformed payload means stays with the caller: a stream skips
+// the frame and keeps the turn, a catalogue read has nothing to fall back on and reports it.
+inline std::optional<value> TryParse(std::string_view text) {
+  boost::system::error_code ec;
+  value parsed = boost::json::parse(text, ec);
+  if (ec) return std::nullopt;
+  return parsed;
 }
 
 // `j`'s member `key` as `T`, or nullopt when it is absent, null, or holds another type.

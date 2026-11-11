@@ -27,15 +27,6 @@ namespace pu {
 
 namespace {
 
-std::string JoinQuoted(const std::vector<std::string>& names) {
-  std::string joined;
-  for (const std::string& name : names) {
-    if (!joined.empty()) joined += ", ";
-    joined += "\"" + name + "\"";
-  }
-  return joined;
-}
-
 std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason.empty()) return "";
   if (finish_reason == "length") {
@@ -346,14 +337,6 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
                    boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
                                                              chat_result.unread_fields.end())));
     }
-    if (!chat_result.missing_fields.empty()) {
-      spdlog::warn("fields this build reads that the reply never sent: {}",
-                   boost::json::serialize(boost::json::array(chat_result.missing_fields.begin(),
-                                                             chat_result.missing_fields.end())));
-      result.shape_notes.emplace_back("the reply never carried " +
-                               JoinQuoted(chat_result.missing_fields) +
-                               "; this build reads a name the gateway no longer sends");
-    }
     return chat_result;
   } catch (const std::exception& e) {
     const bool cancelled =
@@ -585,11 +568,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
   if (result.content.empty() && result.tool_call_count > 0) {
     spdlog::info("Tool execution completed without a final text response - considered successful.");
-  }
-
-  for (const std::string& note : result.shape_notes) {
-    if (!result.notice.empty()) result.notice += "\n";
-    result.notice += note;
   }
 
   return result;

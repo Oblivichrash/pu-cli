@@ -2,6 +2,7 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
+#include "pu/core/json.hpp"
 #include "pu/config/backend.hpp"
 
 #include <boost/json.hpp>
@@ -64,11 +65,13 @@ boost::json::value ParseListing(const std::string& url, http::HttpClient& http,
                                 const std::vector<std::string>& headers) {
   const std::string body = http.Get(url, headers).body;
   if (body.empty()) return nullptr;
-  try {
-    return boost::json::parse(body);
-  } catch (const boost::system::system_error&) {
+  // A catalogue is read whole and once: nothing here can skip a bad answer and carry on,
+  // which is the difference between this call site and a stream frame.
+  std::optional<boost::json::value> parsed = json::TryParse(body);
+  if (!parsed) {
     throw GenericError("Model listing from " + url + " does not parse as JSON");
   }
+  return std::move(*parsed);
 }
 
 // So a shape that no longer matches never prints as "the account offers no model".

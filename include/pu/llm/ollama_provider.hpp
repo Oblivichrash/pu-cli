@@ -34,7 +34,6 @@ class OllamaProvider : public StreamingProvider {
   void ParseData(std::string_view data, const ChatRequest& request) override;
   // Ollama writes newline-delimited JSON: one object per line, and no event framing at all.
   bool FramesBareLines() const override { return true; }
-  void ResetAccumulators() override;
 
  private:
   void HandleJsonToken(const boost::json::value& j, const ChatRequest& request);

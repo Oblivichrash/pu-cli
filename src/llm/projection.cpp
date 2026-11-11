@@ -29,11 +29,11 @@ boost::json::value ProjectArguments(const boost::json::value& arguments,
                : arguments;
   }
   if (!arguments.is_string()) return arguments;
-  try {
-    return boost::json::parse(boost::json::value_to<std::string>(arguments));
-  } catch (const std::exception&) {
-    return arguments;
-  }
+  // A stored argument blob that is not JSON is echoed as the string it is: the gateway that
+  // wrote it is the one that will read it back.
+  std::optional<boost::json::value> parsed =
+      json::TryParse(boost::json::value_to<std::string>(arguments));
+  return parsed ? std::move(*parsed) : arguments;
 }
 
 boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,

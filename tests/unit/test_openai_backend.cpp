@@ -764,30 +764,8 @@ TEST_CASE("[openai] a reply that never carries finish_reason is reported, not as
   const ChatResult result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "hi");
+  // The reader takes only the name it was told to take: a rename leaves the reason empty
+  // rather than filling it from a field it does not read.
   REQUIRE(result.finish_reason.empty());
-  REQUIRE(std::find(result.missing_fields.begin(), result.missing_fields.end(),
-                    std::string{"finish_reason"}) != result.missing_fields.end());
 }
 
-TEST_CASE("[openai] a reply carrying every field the shape reads reports nothing missing",
-          "[openai]") {
-  auto config = RemoteConfig("m");
-  config.api_key = "k";
-
-  Harness harness(std::move(config));
-
-  harness.Mock().simulate_response = [](const std::string&, const std::string&,
-                                   const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    const std::string frame =
-        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}],"
-        "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2,"
-        "\"prompt_tokens_details\":{\"cached_tokens\":0}}}\n\n"
-        "data: [DONE]\n\n";
-    cb(const_cast<char*>(frame.data()), frame.size());
-  };
-
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
-  const ChatResult result = harness->Chat(ChatRequest(history, {}));
-
-  REQUIRE(result.missing_fields.empty());
-}

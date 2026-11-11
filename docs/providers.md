@@ -131,10 +131,12 @@ that prints it: it is a record, not a feature.
 not a failure, since a gateway may add a field at will. The tests pinning a captured stream
 assert the set whole, so a new field on a gateway we hold a capture of fails the build. The
 comparison is one level deep: a key nested inside `choices` or `message` is not seen.
-`ChatResult::missing_fields` is the other case: a name `ResponseShape` says this build
-reads that the reply never carried, which is what says a gateway stopped sending a field
-rather than that a field was added. The names it was diffed against are recorded while the
-stream is read and never leave the provider.
+
+The opposite direction — a name `ResponseShape` declares that a reply never carried — is not
+tracked. A gateway that renames a field leaves the field it was read into at its default,
+which shows up on the reply itself: an empty `finish_reason`, a missing `usage`. `pu-probe`
+is what tells that apart from a gateway that stopped sending the field at all, because it
+reports what a live stream actually contains.
 
 A count a backend does not report stays `0` rather than being derived. `total_tokens` in
 particular is the provider's own total: summing the two counts beside it would produce a

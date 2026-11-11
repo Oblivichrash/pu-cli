@@ -32,16 +32,21 @@ class HttpClient {
  public:
   virtual ~HttpClient() = default;
 
+  // `status_out`, when given, receives the response's status code. A stream is answered in
+  // pieces, so the code is not the return value: a probe wants to say "200 and no frames"
+  // as well as "this gateway refused".
   virtual void StreamRequest(HttpMethod method, const std::string& url, const std::string& body,
                              const std::vector<std::string>& headers, WriteCallback write_cb,
-                             CancelToken cancel_token = nullptr) = 0;
+                             CancelToken cancel_token = nullptr,
+                             unsigned* status_out = nullptr) = 0;
 
   // The one shape most callers want. Kept as a name rather than spelled at each call site so
   // a test that fakes the interface can still be driven by what the caller asked for.
   void PostStream(const std::string& url, const std::string& body,
                   const std::vector<std::string>& headers, WriteCallback write_cb,
-                  CancelToken cancel_token = nullptr) {
-    StreamRequest(HttpMethod::kPost, url, body, headers, std::move(write_cb), cancel_token);
+                  CancelToken cancel_token = nullptr, unsigned* status_out = nullptr) {
+    StreamRequest(HttpMethod::kPost, url, body, headers, std::move(write_cb), cancel_token,
+                  status_out);
   }
 
   // For a read that is answered in one piece rather than streamed. Throws HttpError

@@ -115,7 +115,6 @@ struct ChatResult {
   std::optional<TokenUsage> usage;
   boost::json::value raw_usage;
   std::vector<std::string> unread_fields;
-  std::vector<std::string> missing_fields;
   std::string finish_reason;
   std::string model;
 };
