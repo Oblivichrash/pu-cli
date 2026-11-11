@@ -308,6 +308,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
                                    const std::string& gateway = "ollama",
                                    const std::string& mcp_name = "",
                                    const std::string& mcp_url = "",
+                                   int mcp_timeout_ms = 0,
                                    const std::string& approval_pattern = "",
                                    const std::vector<std::string>& tools = {}) {
   std::error_code ec;
@@ -347,6 +348,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
     boost::json::object server;
     server["name"] = JsonStr(mcp_name);
     server["url"] = JsonStr(mcp_url);
+    if (mcp_timeout_ms > 0) server["timeout_ms"] = mcp_timeout_ms;
     agent["mcp_servers"] = boost::json::array{std::move(server)};
   }
 
@@ -434,6 +436,9 @@ class ServeHarness {
   struct McpServer {
     std::string name;
     std::string url;
+    // Zero means "write no timeout_ms at all", so the client falls back to its shipped default.
+    // A case that wants the deadline to fire quickly says so instead of waiting for it.
+    int timeout_ms = 0;
   };
 
   struct UnreachableBackend {};
@@ -540,7 +545,7 @@ class ServeHarness {
     backend_ = std::make_unique<FakeBackend>(backend_delay_ms);
 
     WriteAgentsFile(home_, backend_->Port(), gateway, mcp ? mcp->name : "",
-                    mcp ? mcp->url : "", "", tools);
+                    mcp ? mcp->url : "", mcp ? mcp->timeout_ms : 0, "", tools);
     {
       // Read back what was written, the way the runtime will. A config the harness cannot
       // round-trip here would surface deeper as an unrelated startup error.

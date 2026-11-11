@@ -110,6 +110,12 @@ std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
               ExpandEnvVars(boost::json::value_to<std::string>(kv.value()));
       }
     }
+    srv.timeout_ms = json::ValueOrDefault<int>(item, "timeout_ms", srv.timeout_ms);
+    if (srv.timeout_ms <= 0) {
+      spdlog::warn("MCP server '{}' asked for timeout_ms={}; using the default", srv.name,
+                   srv.timeout_ms);
+      srv.timeout_ms = config::McpServerConfig{}.timeout_ms;
+    }
 
     if (!srv.name.empty() && (!srv.command.empty() || !srv.url.empty()))
       servers.push_back(std::move(srv));

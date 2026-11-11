@@ -114,16 +114,23 @@ TEST_CASE("An agent's tools list is what it is given, and an empty one is every 
 }
 
 TEST_CASE("A rebuilt toolbox does not keep a tool from a server that is gone", "[mcp][runtime]") {
+  // The second runtime asks a port nothing is listening on any more. What the case is about is
+  // that the tool is gone from the rebuilt list, not how long the client spends discovering it,
+  // so the server table names a short budget: the connection is refused immediately and the
+  // handshake gives up a quarter of a second later instead of the shipped five seconds.
+  constexpr int kGoneServerBudgetMs = 250;
+
   int mcp_port = 0;
   {
     McpToolServer mcp("temporary");
     FakeHttpServer mcp_http(mcp.ToResponder());
     mcp_port = mcp_http.Port();
 
-    ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
+    ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port), 0});
     REQUIRE(Offers(harness.RuntimeRef().Tools(), "mcp_files_temporary"));
   }
 
-  ServeHarness harness("ollama", 0, ServeHarness::McpServer{"files", McpUrl(mcp_port)});
+  ServeHarness harness("ollama", 0,
+                       ServeHarness::McpServer{"files", McpUrl(mcp_port), kGoneServerBudgetMs});
   REQUIRE_FALSE(Offers(harness.RuntimeRef().Tools(), "mcp_files_temporary"));
 }

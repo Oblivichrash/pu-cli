@@ -150,11 +150,13 @@ class McpServer {
   Options options_;
 };
 
-pu::config::McpServerConfig ServerConfigAt(int port, std::map<std::string, std::string> headers = {}) {
+pu::config::McpServerConfig ServerConfigAt(int port, std::map<std::string, std::string> headers = {},
+                                          int timeout_ms = 5000) {
   pu::config::McpServerConfig config;
   config.name = "fake";
   config.url = "http://127.0.0.1:" + std::to_string(port) + "/mcp";
   config.headers = std::move(headers);
+  config.timeout_ms = timeout_ms;
   return config;
 }
 
@@ -326,10 +328,18 @@ TEST_CASE("A client that never connected reports that on every call", "[mcp][htt
 }
 
 TEST_CASE("A server that does not answer in time leaves the client unconnected", "[mcp][http]") {
-  McpServer server({});
-  pu::tests::FakeHttpServer http(server.ToResponder(), 6000);
+  // The point is that the deadline fires, not how long the deadline is: a server that answers
+  // after seven tenths of a second and a client that gives up after a quarter of one is the same
+  // statement as the shipped five seconds, and the case finishes before a person would notice it
+  // started. The server delay also bounds how long the transport's own worker stays busy when
+  // the client stops, so it is kept short rather than merely longer than the budget.
+  constexpr int kServerDelayMs = 700;
+  constexpr int kClientBudgetMs = 250;
 
-  pu::mcp::McpClient client(ServerConfigAt(http.Port()));
+  McpServer server({});
+  pu::tests::FakeHttpServer http(server.ToResponder(), kServerDelayMs);
+
+  pu::mcp::McpClient client(ServerConfigAt(http.Port(), {}, kClientBudgetMs));
   REQUIRE_FALSE(client.Connect());
   REQUIRE_FALSE(client.IsConnected());
 }

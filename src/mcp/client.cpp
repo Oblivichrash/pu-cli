@@ -139,8 +139,10 @@ boost::json::value McpClient::SendRequest(const std::string& method,
   if (!pimpl_->rpc) {
     throw GenericError("MCP client not connected");
   }
+  // A server that is known to be slow says so in its table; otherwise the default applies.
+  const int budget_ms = timeout_ms > 0 ? timeout_ms : pimpl_->config.timeout_ms;
   auto future = pimpl_->rpc->SendRequest(method, params);
-  auto status = future.wait_for(std::chrono::milliseconds(timeout_ms));
+  auto status = future.wait_for(std::chrono::milliseconds(budget_ms));
   if (status == std::future_status::timeout) {
     throw GenericError("MCP request timeout");
   }
