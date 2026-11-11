@@ -212,6 +212,38 @@ void AppendPage(session::MessageGraph& graph, const std::string& source, const s
   graph.AppendAfterLeaf(std::move(receipt));
 }
 
+// The smallest unit the projection may handle is a pair: the call and the receipt that answers
+// it. A `tool` message whose `tool_call_id` names no call is rejected by every provider, and a
+// call with no receipt leaves the model waiting for a result that never arrives. Every tier is
+// free to compress or remove whole pairs, so this invariant is checked from both directions
+// wherever a tier that removes something is exercised.
+void AssertPairsIntact(const std::vector<ChatMessage>& messages) {
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    bool answered = false;
+    for (const ChatMessage& call : messages) {
+      if (!call.HasToolCalls()) continue;
+      for (const auto& tc : call.tool_calls.as_array()) {
+        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
+      }
+    }
+    INFO("orphaned receipt: " << msg.tool_call_id);
+    REQUIRE(answered);
+  }
+  for (const ChatMessage& call : messages) {
+    if (!call.HasToolCalls()) continue;
+    for (const auto& tc : call.tool_calls.as_array()) {
+      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
+      bool answered = false;
+      for (const ChatMessage& msg : messages) {
+        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
+      }
+      INFO("orphaned call: " << id);
+      REQUIRE(answered);
+    }
+  }
+}
+
 }  // namespace
 
 TEST_CASE("A page of an older run of one command is replaced by a receipt", "[request]") {
@@ -575,32 +607,11 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
-  // Every call still has the receipt that answers it, and every receipt still has its call: the
-  // pair is the smallest unit the projection may handle. T3 does remove pairs, so the transcript
-  // is shorter than the graph, but it never removes half of one.
+  // Every call still has the receipt that answers it, and every receipt still has its call. T3
+  // does remove pairs, so the transcript is shorter than the graph, but it never removes half of
+  // one.
   REQUIRE(messages.size() < graph.Size());
-  for (const ChatMessage& msg : messages) {
-    if (msg.role != "tool") continue;
-    bool answered = false;
-    for (const ChatMessage& call : messages) {
-      if (!call.HasToolCalls()) continue;
-      for (const auto& tc : call.tool_calls.as_array()) {
-        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
-      }
-    }
-    REQUIRE(answered);
-  }
-  for (const ChatMessage& call : messages) {
-    if (!call.HasToolCalls()) continue;
-    for (const auto& tc : call.tool_calls.as_array()) {
-      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
-      bool answered = false;
-      for (const ChatMessage& msg : messages) {
-        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
-      }
-      REQUIRE(answered);
-    }
-  }
+  AssertPairsIntact(messages);
 
   int tombstones = 0;
   for (const ChatMessage& msg : messages) {
@@ -632,31 +643,7 @@ TEST_CASE("The oldest tool-call pairs are retired and no pair is ever split", "[
   REQUIRE(graph.Size() == 40);
   REQUIRE(messages.size() == 20);
 
-  // Every receipt still has the call it answers.
-  for (const ChatMessage& msg : messages) {
-    if (msg.role != "tool") continue;
-    bool answered = false;
-    for (const ChatMessage& call : messages) {
-      if (!call.HasToolCalls()) continue;
-      for (const auto& tc : call.tool_calls.as_array()) {
-        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
-      }
-    }
-    REQUIRE(answered);
-  }
-
-  // Every call still has its receipt, and none is orphaned in the other direction either.
-  for (const ChatMessage& call : messages) {
-    if (!call.HasToolCalls()) continue;
-    for (const auto& tc : call.tool_calls.as_array()) {
-      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
-      bool answered = false;
-      for (const ChatMessage& msg : messages) {
-        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
-      }
-      REQUIRE(answered);
-    }
-  }
+  AssertPairsIntact(messages);
 
   // It is the *oldest* that went: the newest run is still there, and the first run is not.
   REQUIRE(messages.back().content.find("line 4 of the output") != std::string::npos);
