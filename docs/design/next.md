@@ -27,14 +27,21 @@ Four tiers, applied per node, monotone — a decision may only move down:
 | T0 live | the whole text | newest run for its source, or a page read deliberately after |
 | T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
 | T2 tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
-| T3 gone | nothing | not implemented; see §2 |
+| T3 gone | nothing | it is one of everything but the newest ten tool-call pairs |
 
-T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
-`src/session/request.cpp`; T3 does not. T2 is worth its ~15 tokens because what stops a model
-repeating a failed approach is knowing it tried: **compress along the body axis, never along
-the argv/verdict axis.** T3 goes in whole pairs, oldest first, keeping the newest K (≈6 covers
-a plan-and-verify cycle), because a `tool` message whose `tool_call_id` names no call is
-invalid on every provider.
+All three exist. T2 is `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
+`src/session/request.cpp`; T3 is `RetireOldToolCalls` in the same file, and it runs last because
+it is the only tier that removes anything and every tier above it is expressed in terms of a
+call that is still there. T2 is worth its ~15 tokens because what stops a model repeating a
+failed approach is knowing it tried: **compress along the body axis, never along the
+argv/verdict axis.** T3 goes in whole pairs, oldest first, because a `tool` message whose
+`tool_call_id` names no call is invalid on every provider.
+
+T3 keeps ten pairs, not six, and the gap is load-bearing. T2 fires on a superseded receipt that
+is older than the newest six, so a T3 that also kept six would delete the receipts T2 was about
+to shrink and leave T2 with nothing to do: the two tiers would silently collapse into one. Four
+of headroom leaves two superseded receipts past the cursor floor in the common case, which is
+what keeps both tiers observable at once.
 
 The entry condition for each tier is **a count, not a size**. An earlier draft drove T2 from a
 byte budget (`256 KiB` of accumulated tool output). That was wrong twice over: a byte count
@@ -75,14 +82,13 @@ to preserve.
 3. **`page` reaches the transcript a person reads.** `on_end` drops the envelope, so a page of
    a 3500-line log looks exactly like a whole answer. The `stored` counts are what say which
    it is.
-4. **T3: retire the oldest tool-call pairs.** The one pool still unbounded is scaffolding —
-   `tool_calls[].id`, `.name` and especially `.arguments`. Twenty `write_file` calls of 200
-   lines each are 4000 lines re-sent every turn. T3 removes whole pairs, oldest first, keeping
-   the newest six, because the protocol rejects an orphan `tool` message. This is the only
-   remaining unbounded pool and therefore the highest-value item here.
+4. ~~**T3: retire the oldest tool-call pairs.**~~ Done. `RetireOldToolCalls` removes whole
+   pairs, oldest first, keeping the newest ten. The bound is ten rather than six so that T2
+   still has receipts to tombstone; see the note under the tier table. `stored` arguments are
+   still re-sent, which is item 5.
 5. **Large `arguments` stored by reference** into the pager, for the same reason results are.
 
-Ordering is not a preference: §2.4 is where the remaining growth actually is, so it comes
+Ordering is not a preference: §2.5 is where the remaining growth actually is, so it comes
 before the items that make reading history cheaper. Both are measured by `usage.prompt_tokens`
 per turn and `tool_call_count` per turn.
 

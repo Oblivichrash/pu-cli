@@ -4,6 +4,28 @@ Notable changes, newest first. This file is a summary; a change's reasoning is i
 the commit that made it, and its current behaviour is in the relevant document
 (see [Where Things Live](CONTRIBUTING.md#where-things-live)).
 
+## Unreleased
+
+### Added
+
+- **The oldest tool-call pairs are retired from the transcript.** Scaffolding was the one pool
+  still unbounded: every `execute_bash` the conversation had ever made was re-sent on every
+  turn, `tool_calls[].arguments` included, long after the result had been replaced and the
+  question had moved on. `RetireOldToolCalls` drops whole pairs — the assistant's call together
+  with the receipt that answered it — oldest first, keeping the newest ten. It never splits a
+  pair, because a `tool` message whose `tool_call_id` names no call is rejected by every
+  provider, and a call with no receipt leaves the model waiting for a result that never comes.
+  It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
+  that is still there.
+
+### Fixed
+
+- **The exit-status cases no longer read whatever `.pu/` the test process happened to sit in.**
+  `Runtime::Initialize` resolves `.pu/agents.json` against the current directory before it asks
+  `FindConfigPath`, so a runtime built outside its harness's workspace picked up the repository
+  root's config — which names a different set of agents than the harness promises. The working
+  directory is the isolation the runtime actually honours; `HOME` alone is not enough.
+
 ## 0.7.0
 
 ### Changed

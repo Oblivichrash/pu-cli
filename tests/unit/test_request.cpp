@@ -387,12 +387,13 @@ std::vector<std::size_t> ToolPositions(const std::vector<ChatMessage>& messages)
 
 TEST_CASE("A request with no supersession is the transcript itself", "[request]") {
   session::MessageGraph graph;
-  for (int i = 1; i <= 10; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+  // Six pairs is the point below which T3 does nothing, so what this case sees is the transcript
+  // whole: an exploration with no repeat is not a history that needs shrinking, and no amount of
+  // bulk inside one result makes the projection reach for a pair.
+  for (int i = 1; i <= 6; ++i) AppendCallAndReceipt(graph, i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   // Every node, and no system message because this call gave no prompt or environment.
-  // Nothing was superseded, so nothing was compressed: an exploration with no repeat is not a
-  // history that needs shrinking.
   REQUIRE(messages.size() == graph.Size());
   for (const ChatMessage& msg : messages) {
     REQUIRE(msg.content.find("tombstone") == std::string::npos);
@@ -400,17 +401,22 @@ TEST_CASE("A request with no supersession is the transcript itself", "[request]"
 }
 
 TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
-  // One command, run twelve times. Every run but the last is superseded, so eleven receipts
-  // enter T1; the five oldest of those fall to T2 because a cursor six results back is an
-  // invitation to spend a turn on history the conversation has moved past.
+  // One command, run twelve times, so eleven receipts of the twelve are superseded. Two tiers
+  // then act, in order. T3 retires whole call-and-receipt pairs, oldest first, and keeps ten of
+  // them -- four more than the cursor rule, so that T2 still has room to work. What is left is
+  // the newest nine runs: nine superseded receipts and the live one.
+  //
+  // T2 then keeps a cursor on the newest six of those nine, which leaves three older superseded
+  // receipts to tombstone. Both tiers remain visible, which is what the case is about: the
+  // newest run is whole, the newest six superseded receipts still page, and the oldest three
+  // carry a verdict with no way to ask for more.
   session::MessageGraph graph;
   for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
-  REQUIRE(messages.size() == graph.Size());
 
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
-  REQUIRE(tool_at.size() == 12);
+  REQUIRE(tool_at.size() == 10);
 
   int superseded = 0;
   int tombstones = 0;
@@ -423,9 +429,10 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
     // Never both: a receipt is in exactly one tier.
     REQUIRE_FALSE((tombstone && superseded_receipt));
   }
-  // Eleven superseded runs, of which six keep their cursor.
+  // Six superseded receipts keep a cursor, three fall to a tombstone, and the newest run is
+  // neither.
   REQUIRE(superseded == 6);
-  REQUIRE(tombstones == 5);
+  REQUIRE(tombstones == 3);
 
   // The newest run was never superseded and is still whole.
   REQUIRE(messages[tool_at.back()].content.find("line 40 of the output") != std::string::npos);
@@ -434,11 +441,15 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
 TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   // A superseded receipt still holds a `page`, which is a standing invitation to reread it. A
   // tombstone holds what happened and no way to ask for more.
+  //
+  // Twelve runs leave ten pairs after T3; T2 tombstones the three oldest of them and leaves the
+  // newest six superseded receipts paging.
   session::MessageGraph graph;
   for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
+  REQUIRE(tool_at.size() == 10);
 
   const boost::json::object tombstone = boost::json::parse(messages[tool_at.front()].content).as_object();
   REQUIRE(tombstone.contains("elided"));
@@ -450,11 +461,11 @@ TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   REQUIRE(tombstone.contains("buffer"));
   REQUIRE(tombstone.at("buffer").as_object().contains("source"));
 
-  // A receipt six results in still has its cursor, because six is the newest.
-  const auto kept_index = tool_at.size() - 6;
-  const boost::json::object kept = boost::json::parse(messages[tool_at[kept_index]].content).as_object();
-  REQUIRE(kept.contains("superseded_by"));
-  REQUIRE_FALSE(kept.contains("elided"));
+  // The newest run is whole, so the body it holds is readable.
+  const boost::json::object newest = boost::json::parse(messages[tool_at.back()].content).as_object();
+  REQUIRE_FALSE(newest.contains("elided"));
+  REQUIRE(boost::json::value_to<std::string>(newest.at("output"))
+              .find("line 40 of the output") != std::string::npos);
 }
 
 TEST_CASE("A registry of six or fewer superseded results keeps every cursor", "[request]") {
@@ -564,8 +575,10 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
-  // Every call still has the receipt that answers it: the projection never removes a message.
-  REQUIRE(messages.size() == graph.Size());
+  // Every call still has the receipt that answers it, and every receipt still has its call: the
+  // pair is the smallest unit the projection may handle. T3 does remove pairs, so the transcript
+  // is shorter than the graph, but it never removes half of one.
+  REQUIRE(messages.size() < graph.Size());
   for (const ChatMessage& msg : messages) {
     if (msg.role != "tool") continue;
     bool answered = false;
@@ -576,6 +589,17 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
       }
     }
     REQUIRE(answered);
+  }
+  for (const ChatMessage& call : messages) {
+    if (!call.HasToolCalls()) continue;
+    for (const auto& tc : call.tool_calls.as_array()) {
+      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
+      bool answered = false;
+      for (const ChatMessage& msg : messages) {
+        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
+      }
+      REQUIRE(answered);
+    }
   }
 
   int tombstones = 0;
@@ -588,5 +612,56 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
       REQUIRE(msg.content.find("tombstone") == std::string::npos);
     }
   }
+  // The pages that fell past the cursor floor are tombstoned; the answer is never one of them.
   REQUIRE(tombstones > 0);
+}
+
+TEST_CASE("The oldest tool-call pairs are retired and no pair is ever split", "[request]") {
+  // T3 is the only tier that takes messages out of the transcript, and the smallest thing it may
+  // take is a pair: the assistant's `tool_calls` and the receipts that answer them. A `tool`
+  // message whose `tool_call_id` names no call is rejected by every provider, and a call with no
+  // receipt leaves the model waiting for a result that will never arrive. So this case checks
+  // both directions, and it checks that the bound is a count rather than a size.
+  session::MessageGraph graph;
+  for (int i = 1; i <= 20; ++i) AppendSupersedingRun(graph, "build", i, Wide(4));
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+
+  // The graph holds twenty pairs; the projection keeps ten of them, so two hundred and twenty
+  // lines of re-sent output become a hundred and ten.
+  REQUIRE(graph.Size() == 40);
+  REQUIRE(messages.size() == 20);
+
+  // Every receipt still has the call it answers.
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    bool answered = false;
+    for (const ChatMessage& call : messages) {
+      if (!call.HasToolCalls()) continue;
+      for (const auto& tc : call.tool_calls.as_array()) {
+        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
+      }
+    }
+    REQUIRE(answered);
+  }
+
+  // Every call still has its receipt, and none is orphaned in the other direction either.
+  for (const ChatMessage& call : messages) {
+    if (!call.HasToolCalls()) continue;
+    for (const auto& tc : call.tool_calls.as_array()) {
+      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
+      bool answered = false;
+      for (const ChatMessage& msg : messages) {
+        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
+      }
+      REQUIRE(answered);
+    }
+  }
+
+  // It is the *oldest* that went: the newest run is still there, and the first run is not.
+  REQUIRE(messages.back().content.find("line 4 of the output") != std::string::npos);
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    REQUIRE_FALSE(msg.tool_call_id == "call_build_1");
+  }
 }

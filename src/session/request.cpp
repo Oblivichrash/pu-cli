@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/session/request.hpp"
 
+#include <algorithm>
 #include <unordered_map>
 #include <utility>
 
@@ -101,6 +102,85 @@ void TombstoneOldReceipts(std::vector<ChatMessage>& messages) {
   }
 }
 
+// How many tool calls a request keeps whole. T2 leaves the scaffolding of every call in place:
+// its `id`, its `name` and, above all, its `arguments`, none of which is ever elided. Twenty
+// `write_file` calls of two hundred lines each are four thousand lines re-sent every turn
+// forever, on the input side of a call whose *result* was already reduced to a tombstone on the
+// output side. That is the last pool with no bound, and it is the one nobody budgeted for.
+//
+// T3 is the only tier that removes anything, and it removes *pairs*. A `tool` message whose
+// `tool_call_id` names no call is rejected by every provider, so the smallest legal unit is the
+// assistant message's call together with the result that answered it. Six is the same length as
+// the cursor rule above and for the same reason: a plan-and-verify cycle is about six results,
+// and past that the conversation has moved to a different question.
+//
+// It must stay well *above* `kKeepNewestCursors`, though. T2 goes first and only fires on a
+// superseded receipt that is older than the newest six, so a T3 that kept six would delete the
+// very receipts T2 was about to shrink and leave T2 with nothing to do. Four of headroom leaves
+// two superseded receipts past the cursor floor in the common case, which is what keeps both
+// tiers observable at once.
+constexpr std::size_t kKeepNewestCalls = kKeepNewestCursors + 4;
+
+// The calls one assistant message makes, as the ids they will be answered by. A message may
+// carry several, and a parallel batch is retired as a unit or not at all -- dropping one arm of
+// a batch and keeping another would leave a `tool_call_id` with no call.
+std::vector<std::string> CallIds(const ChatMessage& msg) {
+  std::vector<std::string> ids;
+  if (msg.role != kAssistantRole) return ids;
+  const boost::json::array* calls = msg.tool_calls.if_array();
+  if (calls == nullptr) return ids;
+  for (const boost::json::value& call : *calls) {
+    const boost::json::object* fields = call.if_object();
+    if (fields == nullptr) continue;
+    const auto it = fields->find("id");
+    if (it == fields->end() || !it->value().is_string()) continue;
+    ids.push_back(boost::json::value_to<std::string>(it->value()));
+  }
+  return ids;
+}
+
+// The third tier: retire the oldest tool-call pairs, whole. Everything T0, T1 and T2 do leaves
+// the call in place and shrinks only what came back from it; this is the one place a message
+// leaves the request entirely, and it is why the pool it addresses is finally bounded.
+void RetireOldToolCalls(std::vector<ChatMessage>& messages) {
+  // Each assistant message that makes calls, in transcript order, with the ids it will be
+  // answered by. A call whose result never arrived (the turn was stopped, or the pair was
+  // already retired) still counts here: its arguments are the thing being removed.
+  struct CallSite {
+    std::size_t index = 0;
+    std::vector<std::string> ids;
+  };
+  std::vector<CallSite> sites;
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    std::vector<std::string> ids = CallIds(messages[i]);
+    if (!ids.empty()) sites.push_back(CallSite{i, std::move(ids)});
+  }
+  if (sites.size() <= kKeepNewestCalls) return;
+
+  // The newest sites keep everything, arguments and results alike; the older ones go, and the
+  // results that answered them go with them.
+  std::vector<bool> drop(messages.size(), false);
+  for (std::size_t k = 0; k + kKeepNewestCalls < sites.size(); ++k) {
+    const CallSite& site = sites[k];
+    drop[site.index] = true;
+    for (std::size_t j = site.index + 1; j < messages.size(); ++j) {
+      if (messages[j].role != kToolRole) continue;
+      const auto named = std::find(site.ids.begin(), site.ids.end(), messages[j].tool_call_id);
+      if (named != site.ids.end()) drop[j] = true;
+    }
+  }
+
+  // A message that keeps *some* of its calls but not all cannot be written: the call and its
+  // result are one unit. Such a site is kept whole, which is why the loop above marks a site's
+  // own message rather than individual entries of its array.
+  std::vector<ChatMessage> kept;
+  kept.reserve(messages.size());
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    if (!drop[i]) kept.push_back(std::move(messages[i]));
+  }
+  messages = std::move(kept);
+}
+
 }  // namespace
 
 ChatMessage RenderMessage(const session::MessageNode& node, int position) {
@@ -170,6 +250,9 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
   }
 
   TombstoneOldReceipts(messages);
+  // Last, because it is the only tier that removes anything and every tier above it is
+  // expressed in terms of a call that is still there.
+  RetireOldToolCalls(messages);
   return messages;
 }
 
