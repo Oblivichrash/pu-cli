@@ -28,6 +28,12 @@ struct FieldCapture {
   std::map<std::string, std::set<std::string>> keys;
 
   std::string error;
+
+  // Whether the probe found what it went for. A reply that parsed is a finding even when it
+  // carries names no shape reads: that is a gateway answering a shape this build does not
+  // know, which is what a capture is run to learn. Only a reply that never parsed means the
+  // run told nobody anything.
+  bool Succeeded() const { return stream_parsed; }
 };
 
 // Sends one single-token prompt as a stream, keeps every byte of the reply, and reads
@@ -58,6 +64,10 @@ struct ListingReport {
   std::vector<std::string> shape_fields_absent;
 
   std::string error;
+
+  // The same question as `FieldCapture::Succeeded`, asked of an object rather than a stream:
+  // an answer that parsed is a finding whatever it left out.
+  bool Succeeded() const { return parsed; }
 };
 
 // Reads the listing the gateway's own catalogue endpoint answers and collects what it named.

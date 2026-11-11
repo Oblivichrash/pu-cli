@@ -183,3 +183,52 @@ TEST_CASE("[probe] a listing that is not JSON says so rather than reporting an e
   REQUIRE(report.error.find("does not parse as JSON") != std::string::npos);
   REQUIRE(report.shape_fields_absent.empty());
 }
+
+TEST_CASE("[probe] both report types answer success by whether the answer parsed", "[probe]") {
+  // The two shapes differ — one describes a stream, the other an object — but the question a
+  // probe's exit code asks is the same, so it is asked of the report rather than spelled out
+  // at each call site where the two could drift apart.
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string frame =
+        "data: {\"choices\":[{\"delta\":{\"text\":\"hi\"},\"stop_reason\":\"stop\"}]}\n\n"
+        "data: [DONE]\n\n";
+    cb(const_cast<char*>(frame.data()), frame.size());
+  };
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"data":[{"id":"m"}]})"};
+  };
+
+  const llm::FieldCapture capture = llm::CaptureFields(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      std::nullopt);
+  const llm::ListingReport listing =
+      llm::ProbeListing(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE(capture.stream_parsed);
+  REQUIRE(capture.Succeeded());
+  REQUIRE(listing.parsed);
+  REQUIRE(listing.Succeeded());
+}
+
+TEST_CASE("[probe] a report of nothing that parsed is a failure on both paths", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string raw = "<html>gateway error</html>\n";
+    std::string copy = raw; cb(copy.data(), copy.size());
+  };
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, "not json either"};
+  };
+
+  const llm::FieldCapture capture = llm::CaptureFields(
+      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      std::nullopt);
+  const llm::ListingReport listing =
+      llm::ProbeListing(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE_FALSE(capture.Succeeded());
+  REQUIRE_FALSE(listing.Succeeded());
+}

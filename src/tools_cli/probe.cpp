@@ -26,7 +26,7 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
     // bytes beyond the body the client already returned.
     const llm::ListingReport report = llm::ProbeListing(backend, http);
     std::cout << "\n" << llm::FormatListingReport(report) << "\n";
-    return report.error.empty() ? kOk : kProvider;
+    return report.Succeeded() ? kOk : kProvider;
   }
 
   std::optional<std::string> raw_path;
@@ -46,9 +46,7 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
   const std::string prompt = options.prompt.empty() ? "say hi" : options.prompt;
   const llm::FieldCapture report = llm::CaptureFields(backend, http, prompt, raw_path);
   std::cout << "\n" << llm::FormatFieldCapture(report) << "\n";
-  // A capture that never parsed is a provider failure; one that parsed and merely lacks
-  // fields is the finding the probe was run for, so it succeeded.
-  return report.stream_parsed ? kOk : kProvider;
+  return report.Succeeded() ? kOk : kProvider;
 }
 
 }  // namespace pu::tools_cli
