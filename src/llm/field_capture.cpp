@@ -96,14 +96,14 @@ FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient&
   report.model = backend.model;
 
   std::string raw;
-  http.PostStream(backend.host + std::string(config::GatewayEndpointPath(backend.gateway)),
-                  ProbeBody(backend, prompt),
-                  ProbeHeaders(backend),
-                  [&](char* ptr, size_t total) -> size_t {
-                    raw.append(ptr, total);
-                    return total;
-                  },
-                  nullptr, &report.http_status);
+  report.http_status =
+      http.PostStream(backend.host + std::string(config::GatewayEndpointPath(backend.gateway)),
+                      ProbeBody(backend, prompt), ProbeHeaders(backend),
+                      [&](char* ptr, size_t total) -> size_t {
+                        raw.append(ptr, total);
+                        return total;
+                      },
+                      nullptr);
   report.bytes = raw.size();
 
   if (raw_path && !raw_path->empty()) {

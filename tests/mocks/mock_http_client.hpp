@@ -13,11 +13,10 @@ namespace pu::tests {
 
 class MockHttpClient : public pu::http::HttpClient {
  public:
-  void StreamRequest(pu::http::HttpMethod method, const std::string& url,
-                     const std::string& body, const std::vector<std::string>& headers,
-                     pu::http::WriteCallback write_cb,
-                     pu::CancelToken cancel_token = nullptr,
-                     unsigned* status_out = nullptr) override {
+  unsigned StreamRequest(pu::http::HttpMethod method, const std::string& url,
+                         const std::string& body, const std::vector<std::string>& headers,
+                         pu::http::WriteCallback write_cb,
+                         pu::CancelToken cancel_token = nullptr) override {
     last_method = method;
     last_url = url;
     last_body = body;
@@ -27,7 +26,7 @@ class MockHttpClient : public pu::http::HttpClient {
       simulate_response(url, body, headers, write_cb);
     }
     // The mock answers whatever it was told to; a test that cares about the code sets it.
-    if (status_out != nullptr) *status_out = simulated_status;
+    return simulated_status;
   }
 
   pu::http::Response Get(const std::string& url,
