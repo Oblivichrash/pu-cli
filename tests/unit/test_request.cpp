@@ -2,7 +2,7 @@
 #include "pu/llm/projection.hpp"
 #include <catch2/catch_test_macros.hpp>
 
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/session/request.hpp"
 
@@ -177,11 +177,11 @@ namespace {
 // cannot drift from the writer the projection reads.
 std::string PageJson(const std::string& source, const std::string& buffer,
                      const std::string& text, std::size_t rank) {
-  exec::Verdict verdict;
+  core::Verdict verdict;
   verdict.command = "seq 1 3";
   verdict.ok = true;
 
-  exec::Extent extent;
+  core::Extent extent;
   extent.lines = 3;
   extent.bytes = text.size();
   extent.retained = 3;

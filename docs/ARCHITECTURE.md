@@ -157,7 +157,7 @@ rather than the raw Boost call, so the fallbacks stay in one place.
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
 (`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
-API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
+API in `src/serve/serve_http_routes.cpp` and `src/serve/serve_websocket.cpp`.
 
 ---
 
@@ -220,7 +220,7 @@ printed. That shape is four nouns and a budget, in `include/pu/paging/paging.hpp
 | `Pager` | the buffers a session can still read, and the `Budget` that decides |
 | `Anchor` | where a read starts: `head`, `tail`, or a cursor |
 
-`exec::Run` (`include/pu/exec/run.hpp`) produces the other half: the text, an
+`core::Run` (`include/pu/core/process.hpp`) produces the other half: the text, an
 `Extent` saying how much of the stream survived, and the verdict. Output and verdict are
 one value because only the reader of the stream knows both — a reader that looked away
 has to say the command was stopped, and an exit code means nothing without that. The
@@ -499,17 +499,16 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/                  src/
-├── app/                     ├── app/                  # main, CLI parsing, serve
+├── app/                     ├── app/                  # main, CLI parsing
 ├── config/                  ├── config/               # agents.json, the backend model, the gateways
-├── core/                    ├── core/                 # logging, platform, HTTP client
-├── exec/                    ├── exec/                 # running a command, and its verdict
+├── core/                    ├── core/                 # logging, platform, HTTP client, running a command
 ├── llm/                     ├── llm/                  # protocols, providers, streaming parser
 ├── mcp/                     ├── mcp/                  # transports, JSON-RPC client
 ├── paging/                  ├── paging/               # the buffers a session can still read
 ├── runtime/                 ├── runtime/              # runtime, executor, command router
-│   ├── command_router.hpp   ├── session/              # Session, Conversation, message graph
-│   ├── executor.hpp         └── tools/                # Toolbox, tools
-│   └── runtime.hpp
+│   ├── command_router.hpp   ├── serve/                # `pu serve`: listener, REST routes, WebSocket
+│   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
+│   └── runtime.hpp          └── tools/                # Toolbox, tools
 ├── session/
 └── tools/
 ```

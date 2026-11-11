@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "pu/config/backend.hpp"
-#include "pu/llm/probe.hpp"
+#include "pu/llm/field_capture.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -44,8 +44,8 @@ TEST_CASE("[probe] an openai stream names its fields at each level", "[probe]") 
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "https://x.example/v1/chat/completions");
@@ -65,8 +65,8 @@ TEST_CASE("[probe] the shape diff names only what the stream never sent", "[prob
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   // content, reasoning, the cached count (nested), total and credit were all named;
@@ -87,8 +87,8 @@ TEST_CASE("[probe] a top-level cached count satisfies the nested field", "[probe
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
   REQUIRE(report.stream_parsed);
   REQUIRE(std::find(report.shape_fields_absent.begin(), report.shape_fields_absent.end(),
@@ -103,8 +103,8 @@ TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "http://localhost:11434/api/chat");
@@ -122,8 +122,8 @@ TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE_FALSE(report.stream_parsed);
@@ -142,7 +142,7 @@ TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {
   const auto path = std::filesystem::temp_directory_path() / "pu_probe_test.raw";
   std::filesystem::remove(path);
 
-  llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                    "Say the single word: pong", path.string());
 
   REQUIRE(std::filesystem::file_size(path) == std::string(kOpenAIStream).size());

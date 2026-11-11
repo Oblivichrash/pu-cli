@@ -9,7 +9,7 @@
 // transport it is, without the turn's states in between.
 //
 
-#include "serve_internal.hpp"
+#include "serve/serve_internal.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -25,7 +25,7 @@
 
 #include "pu/core/json.hpp"
 
-namespace pu::cli::detail {
+namespace pu::serve::detail {
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -218,4 +218,4 @@ void WebSocketConnection::Finish() {
   ws_.next_layer().close(ignore);
 }
 
-}  // namespace pu::cli::detail
+}  // namespace pu::serve::detail

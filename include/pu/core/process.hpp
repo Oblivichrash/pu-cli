@@ -7,7 +7,7 @@
 
 #include "pu/core/base.hpp"
 
-namespace pu::exec {
+namespace pu::core {
 
 // Which end of a stream a bounded capture keeps. A log is read from its end and a file
 // about to be edited from its start, so the budget follows the call rather than always
@@ -59,4 +59,4 @@ struct Ran {
 Ran Run(std::string_view command, const CancelToken& stop, std::string_view working_dir,
         std::size_t max_bytes, Keep keep = Keep::kHead);
 
-}  // namespace pu::exec
+}  // namespace pu::core

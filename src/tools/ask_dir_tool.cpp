@@ -2,7 +2,7 @@
 #include "pu/tools/ask_dir_tool.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/runtime/runtime.hpp"
 
@@ -146,7 +146,7 @@ std::string AskDirTool::Answer(const std::string& target, const std::string& pro
   key.push_back('\x1f');
   key.append(prompt);
 
-  exec::Verdict verdict;
+  core::Verdict verdict;
   verdict.command = "ask_dir " + target;
   verdict.ok = true;
 

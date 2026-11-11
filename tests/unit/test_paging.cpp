@@ -22,9 +22,9 @@ std::size_t CountLines(const std::string& text) {
   return text.back() == '\n' ? lines : lines + 1;
 }
 
-exec::Extent ExtentOf(const std::string& text, std::optional<std::size_t> printed = std::nullopt,
+core::Extent ExtentOf(const std::string& text, std::optional<std::size_t> printed = std::nullopt,
                       bool from_end = false) {
-  exec::Extent extent;
+  core::Extent extent;
   extent.bytes = text.size();
   extent.retained = CountLines(text);
   extent.lines = printed.value_or(extent.retained);
@@ -32,8 +32,8 @@ exec::Extent ExtentOf(const std::string& text, std::optional<std::size_t> printe
   return extent;
 }
 
-exec::Verdict VerdictOf(const std::string& command) {
-  exec::Verdict verdict;
+core::Verdict VerdictOf(const std::string& command) {
+  core::Verdict verdict;
   verdict.command = command;
   verdict.ok = true;
   return verdict;
@@ -174,7 +174,7 @@ TEST_CASE("An anchor is one value with three forms", "[paging]") {
 
 TEST_CASE("A buffer is found by the id its cursor names", "[paging]") {
   Pager pager;
-  const auto stored = pager.Store(exec::Captured{"a\nb\n", ExtentOf("a\nb\n")}, VerdictOf("ls"));
+  const auto stored = pager.Store(core::Captured{"a\nb\n", ExtentOf("a\nb\n")}, VerdictOf("ls"));
   REQUIRE(stored->id().front() == 'o');
 
   const auto found = pager.Find(stored->id());
@@ -190,8 +190,8 @@ TEST_CASE("An id written by another pager names nothing here", "[paging]") {
   Pager yesterday;
   Pager today;
 
-  const auto before = yesterday.Store(exec::Captured{"yesterday\n", {}}, VerdictOf("ls"));
-  const auto after = today.Store(exec::Captured{"today\n", {}}, VerdictOf("ls"));
+  const auto before = yesterday.Store(core::Captured{"yesterday\n", {}}, VerdictOf("ls"));
+  const auto after = today.Store(core::Captured{"today\n", {}}, VerdictOf("ls"));
 
   REQUIRE(before->id() != after->id());
   REQUIRE(today.Find(before->id()) == nullptr);
@@ -203,8 +203,8 @@ TEST_CASE("The pager drops the oldest buffer when the budget is spent", "[paging
   budget.retain_bytes = 16;
   Pager pager(budget);
 
-  auto first = pager.Store(exec::Captured{std::string(10, 'a'), {}}, VerdictOf("ls"));
-  auto second = pager.Store(exec::Captured{std::string(10, 'b'), {}}, VerdictOf("ls"));
+  auto first = pager.Store(core::Captured{std::string(10, 'a'), {}}, VerdictOf("ls"));
+  auto second = pager.Store(core::Captured{std::string(10, 'b'), {}}, VerdictOf("ls"));
 
   REQUIRE(pager.Find(first->id()) == nullptr);
   REQUIRE(pager.Find(second->id()) != nullptr);
@@ -216,7 +216,7 @@ TEST_CASE("The pager keeps the number of buffers its budget names", "[paging]") 
   Pager pager;
   std::vector<std::string> ids;
   for (std::size_t i = 0; i < pager.budget().retain_buffers + 2; ++i) {
-    ids.push_back(pager.Store(exec::Captured{"x" + std::to_string(i) + "\n", {}},
+    ids.push_back(pager.Store(core::Captured{"x" + std::to_string(i) + "\n", {}},
                               VerdictOf("ls"))
                       ->id());
   }
@@ -227,11 +227,11 @@ TEST_CASE("The pager keeps the number of buffers its budget names", "[paging]") 
 
 TEST_CASE("Two runs of one command share a source and not a buffer", "[paging]") {
   Pager pager;
-  auto first = pager.Store(exec::Captured{"build 1\n", {}}, VerdictOf("ninja -j8"),
+  auto first = pager.Store(core::Captured{"build 1\n", {}}, VerdictOf("ninja -j8"),
                            "ninja -j8\x1f/repo");
-  auto second = pager.Store(exec::Captured{"build 2\n", {}}, VerdictOf("ninja -j8"),
+  auto second = pager.Store(core::Captured{"build 2\n", {}}, VerdictOf("ninja -j8"),
                             "ninja -j8\x1f/repo");
-  auto elsewhere = pager.Store(exec::Captured{"other\n", {}}, VerdictOf("ninja -j8"),
+  auto elsewhere = pager.Store(core::Captured{"other\n", {}}, VerdictOf("ninja -j8"),
                                "ninja -j8\x1f/tmp");
 
   REQUIRE(first->source() == second->source());
@@ -277,7 +277,7 @@ TEST_CASE("Two answers to different questions share no source", "[paging]") {
 
 TEST_CASE("A run stored without a source has no source id", "[paging]") {
   Pager pager;
-  REQUIRE(pager.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->source().empty());
+  REQUIRE(pager.Store(core::Captured{"a\n", {}}, VerdictOf("ls"))->source().empty());
 }
 
 TEST_CASE("The id of a question survives the process that asked it", "[paging]") {
@@ -286,8 +286,8 @@ TEST_CASE("The id of a question survives the process that asked it", "[paging]")
   // one name, which is the one thing elision cannot survive.
   Pager before;
   Pager after;
-  const auto first = before.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
-  const auto again = after.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
+  const auto first = before.Store(core::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
+  const auto again = after.Store(core::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
 
   REQUIRE(first->source() == again->source());
   REQUIRE(first->source() != first->id());
@@ -297,7 +297,7 @@ TEST_CASE("A receipt the pager writes is one it can read back", "[paging]") {
   // The envelope has one definition, so the writer in the tool and the reader in the
   // projection cannot disagree about where a page came from.
   Pager pager;
-  auto buffer = pager.Store(exec::Captured{"one\ntwo\nthree\n", {}}, VerdictOf("seq 1 3"),
+  auto buffer = pager.Store(core::Captured{"one\ntwo\nthree\n", {}}, VerdictOf("seq 1 3"),
                             "seq 1 3\x1f/repo");
   const Page page = Read(*buffer, Anchor::Head(), 2);
 
@@ -340,10 +340,10 @@ TEST_CASE("A pager opening a transcript continues its ranking", "[paging]") {
   // the pages the transcript already holds; starting over would freeze elision for good.
   Pager pager;
   pager.ContinueRankingFrom(7);
-  REQUIRE(pager.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 8);
+  REQUIRE(pager.Store(core::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 8);
 
   // A transcript with no pages in it leaves the ranking where it was.
   Pager fresh;
   fresh.ContinueRankingFrom(0);
-  REQUIRE(fresh.Store(exec::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 1);
+  REQUIRE(fresh.Store(core::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 1);
 }

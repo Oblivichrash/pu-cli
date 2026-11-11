@@ -14,7 +14,7 @@ namespace pu::llm {
 // The field names one gateway actually sent, collected from a raw capture rather than
 // from a specification. A name missing from a level means the gateway did not send it;
 // a name here that no ResponseShape field reads is the one a new shape must add.
-struct ProbeReport {
+struct FieldCapture {
   std::string gateway;
   std::string host;
   std::string model;
@@ -37,16 +37,16 @@ struct ProbeReport {
 // Sends one single-token prompt as a stream, keeps every byte of the reply, and reads
 // the field names back out of it. `raw_path`, when set, receives the unmodified stream.
 // Uses the backend's own host, model and key, so nothing is retyped for a probe.
-ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& http,
+FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient& http,
                         const std::string& prompt, const std::optional<std::string>& raw_path);
 
 // The summary printed for a capture: what each level named and what the built-in shape
 // expected but did not see.
-std::string FormatProbeReport(const ProbeReport& report);
+std::string FormatFieldCapture(const FieldCapture& report);
 
 // The same questions asked of a model listing rather than of a stream: the keys the answer
 // carried at each level, and which of the names the catalogue shape reads it never sent.
-// Kept apart from ProbeReport because a listing is one object, not a stream of frames.
+// Kept apart from FieldCapture because a listing is one object, not a stream of frames.
 struct ListingReport {
   std::string gateway;
   std::string url;

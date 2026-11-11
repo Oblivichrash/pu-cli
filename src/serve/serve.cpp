@@ -10,7 +10,7 @@
 
 #include "pu/app/cli.hpp"
 
-#include "serve_internal.hpp"
+#include "serve/serve_internal.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -38,10 +38,10 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;
 using tcp = net::ip::tcp;
 
-using detail::DispatchHttpRequest;
-using detail::PeerAddress;
-using detail::SessionRunner;
-using detail::WebSocketConnection;
+using serve::detail::DispatchHttpRequest;
+using serve::detail::PeerAddress;
+using serve::detail::SessionRunner;
+using serve::detail::WebSocketConnection;
 
 // The address the banner may print. A listener bound to every interface answers on whatever
 // address the machine has, which this side cannot know, so the bind itself is not a destination:

@@ -65,12 +65,12 @@ add_library(pu_config STATIC
     src/config/backend.cpp
     src/config/gateway.cpp
     src/config/serve_registry.cpp
+    src/llm/field_capture.cpp
     src/llm/model_check.cpp
     src/llm/model_listing.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_protocol.cpp
     src/llm/openai_provider.cpp
-    src/llm/probe.cpp
     src/llm/projection.cpp
     src/llm/streaming_provider.cpp
     src/tools_cli/probe.cpp
@@ -84,12 +84,8 @@ add_library(pu_core STATIC
     src/app/cli_agents.cpp
     src/app/cli_check.cpp
     src/app/cli_sse.cpp
-    src/app/serve.cpp
-    src/app/serve_http_routes.cpp
-    src/app/serve_runner.cpp
-    src/app/serve_websocket.cpp
     src/config/agent_summary.cpp
-    src/exec/run.cpp
+    src/core/process.cpp
     src/mcp/client.cpp
     src/mcp/http_transport.cpp
     src/mcp/stdio_transport.cpp
@@ -102,13 +98,16 @@ add_library(pu_core STATIC
     src/session/session.cpp
     src/session/settings.cpp
     src/session/usage.cpp
+    src/serve/serve.cpp
+    src/serve/serve_http_routes.cpp
+    src/serve/serve_runner.cpp
+    src/serve/serve_websocket.cpp
     src/tools/bash.cpp
     src/tools/ask_dir_tool.cpp
     src/tools/policy.cpp
     src/tools/toolbox.cpp
     src/tools/write_file.cpp
 )
-target_include_directories(pu_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
 target_link_libraries(pu_core PUBLIC
     pu_config
     Boost::program_options

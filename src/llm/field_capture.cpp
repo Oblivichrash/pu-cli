@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/llm/probe.hpp"
+#include "pu/llm/field_capture.hpp"
 
 #include "pu/core/base.hpp"
 #include "pu/core/sse.hpp"
@@ -121,9 +121,9 @@ void CollectOpenAIShape(const boost::json::value& j,
 
 }  // namespace
 
-ProbeReport ProbeStream(const config::Backend& backend, pu::http::HttpClient& http,
+FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient& http,
                         const std::string& prompt, const std::optional<std::string>& raw_path) {
-  ProbeReport report;
+  FieldCapture report;
   report.gateway = config::GatewayName(backend.gateway);
   report.host = backend.host;
   report.model = backend.model;
@@ -321,7 +321,7 @@ std::string FormatListingReport(const ListingReport& report) {
   return out.str();
 }
 
-std::string FormatProbeReport(const ProbeReport& report) {
+std::string FormatFieldCapture(const FieldCapture& report) {
   std::ostringstream out;
   out << "gateway: " << report.gateway << "  host: " << report.host
       << "  model: " << report.model << "\n";

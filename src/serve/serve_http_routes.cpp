@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "serve_internal.hpp"
+#include "serve/serve_internal.hpp"
 
 #include <boost/beast.hpp>
 #include <boost/json.hpp>
@@ -34,7 +34,7 @@
 #include "pu/session/session.hpp"
 #include "pu/tools/tool.hpp"
 
-namespace pu::cli::detail {
+namespace pu::serve::detail {
 namespace {
 
 namespace beast = boost::beast;
@@ -483,4 +483,4 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
   res.prepare_payload();
 }
 
-}  // namespace pu::cli::detail
+}  // namespace pu::serve::detail

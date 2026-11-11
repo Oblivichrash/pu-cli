@@ -19,7 +19,7 @@
 #include "pu/runtime/command_router.hpp"
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/model_listing.hpp"
-#include "pu/llm/probe.hpp"
+#include "pu/llm/field_capture.hpp"
 #include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {

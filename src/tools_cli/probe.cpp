@@ -9,7 +9,7 @@
 #include <optional>
 
 #include "pu/core/text.hpp"
-#include "pu/llm/probe.hpp"
+#include "pu/llm/field_capture.hpp"
 
 namespace pu::tools_cli {
 
@@ -44,8 +44,8 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
   }
 
   const std::string prompt = options.prompt.empty() ? "say hi" : options.prompt;
-  const llm::ProbeReport report = llm::ProbeStream(backend, http, prompt, raw_path);
-  std::cout << "\n" << llm::FormatProbeReport(report) << "\n";
+  const llm::FieldCapture report = llm::CaptureFields(backend, http, prompt, raw_path);
+  std::cout << "\n" << llm::FormatFieldCapture(report) << "\n";
   // A capture that never parsed is a provider failure; one that parsed and merely lacks
   // fields is the finding the probe was run for, so it succeeded.
   return report.stream_parsed ? kOk : kProvider;

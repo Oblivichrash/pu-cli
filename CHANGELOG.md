@@ -18,6 +18,22 @@ the commit that made it, and its current behaviour is in the relevant document
   It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
   that is still there.
 
+### Changed
+
+- **Three names that described the wrong thing are gone.** None of them changes what the
+  program does; each one named a file or a module after something it was not.
+  - `src/exec/run.cpp` became `src/core/process.cpp` in namespace `pu::core`. It runs one
+    child process and reads its output; nothing about it is an executor, and the collision
+    with `src/runtime/executor.cpp` — the tool-call loop, which is — made both names
+    unreadable.
+  - `src/app/serve*` became `src/serve/` in namespace `pu::serve::detail`. Six of the ten
+    files in `src/app/` were the HTTP server, and they declared `pu::cli`, so neither the
+    directory nor the namespace said what they were.
+  - `llm/probe.*` became `llm/field_capture.*`, and `ProbeReport` / `ProbeStream` /
+    `FormatProbeReport` became `FieldCapture` / `CaptureFields` / `FormatFieldCapture`. It
+    collects the field names a gateway actually sent; it does not probe a gateway, which is
+    what `pu probe` does and what the name made people look for.
+
 ### Fixed
 
 - **The exit-status cases no longer read whatever `.pu/` the test process happened to sit in.**

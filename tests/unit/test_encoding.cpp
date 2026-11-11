@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "pu/core/platform.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/core/text.hpp"
 #include "pu/mcp/stdio_transport.hpp"
 #include "pu/tools/tool.hpp"
@@ -145,7 +145,7 @@ TEST_CASE("Tool results keep valid text byte for byte", "[tools][text]") {
 
 TEST_CASE("Run returns valid UTF-8 for localized shell output", "[exec][text]") {
   const std::string output =
-      pu::exec::Run("nonexistent_command_pu_encoding_test", pu::CancelToken{}, "", 0).captured.text;
+      pu::core::Run("nonexistent_command_pu_encoding_test", pu::CancelToken{}, "", 0).captured.text;
 
   REQUIRE_FALSE(output.empty());
   REQUIRE(text::IsValidUtf8(output));

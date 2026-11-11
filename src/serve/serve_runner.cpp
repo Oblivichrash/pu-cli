@@ -9,7 +9,7 @@
 // for a reload.
 //
 
-#include "serve_internal.hpp"
+#include "serve/serve_internal.hpp"
 
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
@@ -23,7 +23,7 @@
 #include "pu/core/text.hpp"
 #include "pu/runtime/runtime.hpp"
 
-namespace pu::cli::detail {
+namespace pu::serve::detail {
 
 SessionRunner::SessionRunner(Runtime& runtime) : runtime_(runtime) {
   worker_ = std::thread([this] { WorkerMain(); });
@@ -352,4 +352,4 @@ std::deque<std::shared_ptr<const std::string>> SessionRunner::FramesForNextPage(
   return frames;
 }
 
-}  // namespace pu::cli::detail
+}  // namespace pu::serve::detail

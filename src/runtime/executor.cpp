@@ -4,7 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -69,7 +69,7 @@ std::string WindowsKernelVersion() {
 
 #ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
-  std::string output = pu::exec::Run(cmd, pu::CancelToken{}, "", 0).captured.text;
+  std::string output = pu::core::Run(cmd, pu::CancelToken{}, "", 0).captured.text;
   while (!output.empty() && (output.back() == '\n' || output.back() == '\r' ||
                              output.back() == ' ' || output.back() == '\t')) {
     output.pop_back();

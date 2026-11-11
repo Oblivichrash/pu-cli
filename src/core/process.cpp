@@ -4,7 +4,7 @@
 // verdict as well as the bytes: it is the only party that knows whether the process it
 // was reading finished or was killed, and an exit code means nothing without that.
 
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -29,7 +29,7 @@
 #include <unistd.h>
 #endif
 
-namespace pu::exec {
+namespace pu::core {
 
 namespace {
 
@@ -289,4 +289,4 @@ Ran Run(std::string_view command, const CancelToken& stop_token, std::string_vie
 
 #endif
 
-}  // namespace pu::exec
+}  // namespace pu::core

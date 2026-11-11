@@ -22,7 +22,7 @@
 #include "pu/core/base.hpp"
 #include "pu/runtime/runtime.hpp"
 
-namespace pu::cli::detail {
+namespace pu::serve::detail {
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -240,4 +240,4 @@ class SessionRunner {
   std::atomic<bool> cancel_requested_{false};
 };
 
-}  // namespace pu::cli::detail
+}  // namespace pu::serve::detail
