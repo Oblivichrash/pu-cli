@@ -178,12 +178,7 @@ bool Executor::AskApproval(const std::string& command, std::string& note) {
 }
 
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
-                                  LLMProvider* provider, Toolbox& toolbox,
-                                  CancelToken cancel_token,
-                                  TokenCallback content_callback,
-                                  ToolCallbacks tool_callbacks,
-                                  TokenCallback reasoning_callback,
-                                  CancelToken command_stop_token) {
+                                  Turn turn) {
   ChatMessage user_turn;
   user_turn.role = session::kUserRole;
   user_turn.content = input;
@@ -192,10 +187,6 @@ ExecutionResult Executor::Execute(const std::string& input, Conversation& conver
   // A turn's tally starts at nothing. What a tool spends on its behalf is added here, so a
   // receipt can say what the call cost rather than only what the model that asked cost.
   spent_by_tools_ = ToolContext::Spending{};
-
-  const Turn turn{provider,          &toolbox,          std::move(content_callback),
-                  std::move(tool_callbacks), std::move(reasoning_callback), cancel_token,
-                  command_stop_token};
 
   ExecutionResult result = RunToolLoop(conversation, turn);
   AddToolSpending(result);
@@ -265,9 +256,8 @@ void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult&
   conversation.Append(assistant_msg);
 }
 
-ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
-                                  ExecutionResult& result, bool& failed, bool& stopped,
-                                  bool& abandoned) {
+ProviderCall Executor::CallProvider(Conversation& conversation, const Turn& turn,
+                                    ExecutionResult& result) {
   session::RequestInputs inputs;
   inputs.system_prompt = system_prompt_;
   inputs.environment = BuildStaticSystemContext();
@@ -337,24 +327,21 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
                    boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
                                                              chat_result.unread_fields.end())));
     }
-    return chat_result;
+    return {.reply = std::move(chat_result), .outcome = ProviderOutcome::kReplied};
   } catch (const std::exception& e) {
     const bool cancelled =
         turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire);
     if (cancelled) {
       spdlog::debug("Request stopped by the caller: {}", e.what());
-      stopped = true;
-      return {};
+      return {.reply = {}, .outcome = ProviderOutcome::kStopped};
     }
     if (platform::ShutdownRequested()) {
       spdlog::debug("Request abandoned as the process shut down: {}", e.what());
-      abandoned = true;
-      return {};
+      return {.reply = {}, .outcome = ProviderOutcome::kAbandoned};
     }
-    failed = true;
     result.has_error = true;
     result.error_message = "Request failed: " + text::ReadableError(e.what());
-    return {};
+    return {.reply = {}, .outcome = ProviderOutcome::kFailed};
   }
 }
 
@@ -438,9 +425,8 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
   ExecutionResult result;
-  bool budget_reached = false;
-  bool wrap_up_asked = false;
-  bool abandoned = false;
+    bool budget_reached = false;
+    bool wrap_up_asked = false;
 
   // The tool-call budget is what this loop counts, and the two stop checks inside it are what
   // end it early; neither is a property of this loop, so both are read rather than held here.
@@ -493,15 +479,16 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       break;
     }
 
-    bool failed = false;
-    bool stopped = false;
-    ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
-    if (failed) break;
-    if (stopped) {
+    ProviderCall call = CallProvider(conversation, turn, result);
+    if (call.outcome == ProviderOutcome::kFailed) break;
+    if (call.outcome == ProviderOutcome::kStopped) {
       conversation.SealInterruptedToolCalls();
       return result;
     }
-    if (abandoned) return result;
+    if (call.outcome == ProviderOutcome::kAbandoned) {
+      return result;
+    }
+    ChatResult& chat_result = call.reply;
 
     if (chat_result.tool_calls.empty()) {
       std::string response = chat_result.content;

@@ -386,9 +386,14 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     const config::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
-        executor_->Execute(input, session->Messages(), provider.get(), toolbox_,
-                           cancel_token, content_callback, tool_callbacks, reasoning_callback,
-                           command_stop_token);
+        executor_->Execute(input, session->Messages(),
+                           {.provider = provider.get(),
+                            .toolbox = &toolbox_,
+                            .content_callback = content_callback,
+                            .tool_callbacks = tool_callbacks,
+                            .reasoning_callback = reasoning_callback,
+                            .cancel_token = cancel_token,
+                            .command_stop_token = command_stop_token});
     result = std::move(exec_result);
     RecordTurnUsage(*session, result, backend);
     SaveCurrentSession();

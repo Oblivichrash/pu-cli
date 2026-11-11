@@ -42,6 +42,20 @@ enum class TurnOutcome {
   kToolBudgetReached,
 };
 
+// What one provider call did. The four states are exclusive, which is why they are one value
+// rather than three flags a caller would have to keep mutually exclusive by hand.
+enum class ProviderOutcome {
+  kReplied,
+  kFailed,
+  kStopped,
+  kAbandoned,
+};
+
+struct ProviderCall {
+  ChatResult reply;
+  ProviderOutcome outcome = ProviderOutcome::kReplied;
+};
+
 struct ExecutionResult {
   std::string content;
   bool was_streamed = false;
@@ -111,19 +125,10 @@ class Executor {
     approval_cv_.notify_all();
   }
 
-  ExecutionResult Execute(const std::string& input, Conversation& conversation,
-                          LLMProvider* provider, Toolbox& toolbox,
-                          CancelToken cancel_token = nullptr,
-                          TokenCallback content_callback = nullptr,
-                          ToolCallbacks tool_callbacks = {},
-                          TokenCallback reasoning_callback = nullptr,
-                          CancelToken command_stop_token = nullptr);
-
-  std::string BuildStaticSystemContext() const;
-  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
-  void AddToolSpending(ExecutionResult& result) const;
-
- private:
+  // Everything one turn needs beyond its input and the conversation it writes to. Named
+  // fields because half of these are callbacks and two of them share a type: a positional
+  // call site could not tell the two `TokenCallback`s apart. No default member initializers,
+  // so that a call site can name only the fields it sets.
   struct Turn {
     LLMProvider* provider;
     Toolbox* toolbox;
@@ -131,13 +136,21 @@ class Executor {
     ToolCallbacks tool_callbacks;
     TokenCallback reasoning_callback;
     CancelToken cancel_token;
+    // A second token, because a command kills its own turn without cancelling the turn that
+    // asked for it: `ask_dir` passes the asking turn's token here so a stop reaches the child.
     CancelToken command_stop_token;
   };
 
+  ExecutionResult Execute(const std::string& input, Conversation& conversation, Turn turn);
+
+  std::string BuildStaticSystemContext() const;
+  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
+  void AddToolSpending(ExecutionResult& result) const;
+
+ private:
   ExecutionResult RunToolLoop(Conversation& conversation, const Turn& turn);
 
-  ChatResult CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result,
-                          bool& failed, bool& stopped, bool& abandoned);
+  ProviderCall CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result);
 
   void RunToolCalls(Conversation& conversation, const Turn& turn,
                     const std::vector<ToolCall>& calls, ExecutionResult& result);
