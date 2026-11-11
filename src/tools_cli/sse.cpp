@@ -45,7 +45,7 @@ std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& option
   return out.str();
 }
 
-int RunSse(const SseOptions& options, http::HttpClient& http) {
+ExitCode RunSse(const SseOptions& options, http::HttpClient& http) {
   // The body is what the caller gave; a GET carries none, and the framing does not care.
   const std::string body = options.body.value_or("");
 
@@ -79,16 +79,16 @@ int RunSse(const SseOptions& options, http::HttpClient& http) {
         parser.Finish();
         std::cout << "\n";
       }
-      return kInterrupted;
+      return ExitCode::kInterrupted;
     }
     std::cerr << text::ReadableError(e.what()) << "\n";
-    return kProvider;
+    return ExitCode::kProvider;
   }
   if (options.format != SseFormat::kRaw) {
     parser.Finish();
     std::cout << "\n";
   }
-  return kOk;
+  return ExitCode::kOk;
 }
 
 }  // namespace pu::tools_cli

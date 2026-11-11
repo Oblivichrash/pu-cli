@@ -90,12 +90,12 @@ int main(int argc, char** argv) {
     po::notify(vm);
   } catch (const std::exception& e) {
     std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return ExitCode::kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   if (vm.count("help") > 0) {
     std::cout << options << "\n";
-    return ExitCode::kOk;
+    return static_cast<int>(ExitCode::kOk);
   }
 
   // A bare `pu-probe` would otherwise send a prompt to whatever agent happens to be the
@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
   // answer to "what does this do"; the help page is one flag away.
   if (argc == 1) {
     std::cout << options << "\n";
-    return ExitCode::kOk;
+    return static_cast<int>(ExitCode::kOk);
   }
 
   ProbeOptions probe;
@@ -118,9 +118,9 @@ int main(int argc, char** argv) {
   try {
     const pu::config::Backend backend = BackendFor(probe);
     pu::http::BeastHttpClient http;
-    return pu::tools_cli::RunProbe(probe, backend, http);
+    return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
   } catch (const std::exception& e) {
     std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return ExitCode::kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 }

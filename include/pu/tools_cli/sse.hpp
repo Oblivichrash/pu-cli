@@ -38,6 +38,6 @@ std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& option
 
 // Reads the stream to its end, printing as it goes. `http` is the only thing this needs from
 // the process that runs it: a session, a pager and a tool box are not part of reading a feed.
-int RunSse(const SseOptions& options, http::HttpClient& http);
+ExitCode RunSse(const SseOptions& options, http::HttpClient& http);
 
 }  // namespace pu::tools_cli

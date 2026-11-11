@@ -58,18 +58,18 @@ int main(int argc, char** argv) {
     po::notify(vm);
   } catch (const std::exception& e) {
     std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return ExitCode::kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   if (vm.count("help") > 0) {
     std::cout << options << "\n";
-    return ExitCode::kOk;
+    return static_cast<int>(ExitCode::kOk);
   }
 
   SseOptions sse;
   if (vm.count("url") == 0) {
     std::cerr << "a URL is needed: pu-sse <url> [options]\n";
-    return ExitCode::kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
   sse.url = vm["url"].as<std::string>();
 
@@ -95,10 +95,10 @@ int main(int argc, char** argv) {
     sse.format = SseFormat::kRaw;
   } else if (format != "text") {
     std::cerr << "--format is text, json or raw, not '" << format << "'\n";
-    return ExitCode::kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
   sse.quiet = vm.count("quiet") > 0;
 
   pu::http::BeastHttpClient http;
-  return pu::tools_cli::RunSse(sse, http);
+  return static_cast<int>(pu::tools_cli::RunSse(sse, http));
 }

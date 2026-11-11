@@ -13,12 +13,12 @@
 
 namespace pu::tools_cli {
 
-int RunProbe(const ProbeOptions& options, const config::Backend& backend,
-             http::HttpClient& http) {
+ExitCode RunProbe(const ProbeOptions& options, const config::Backend& backend,
+                  http::HttpClient& http) {
   // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
   if (!options.listing && backend.model.empty()) {
     std::cerr << "a probe needs a model: pass --model, or --listing to read the catalogue\n";
-    return kUsage;
+    return ExitCode::kUsage;
   }
 
   if (options.listing) {
@@ -26,7 +26,7 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
     // bytes beyond the body the client already returned.
     const llm::ListingReport report = llm::ProbeListing(backend, http);
     std::cout << "\n" << llm::FormatListingReport(report) << "\n";
-    return report.Succeeded() ? kOk : kProvider;
+    return report.Succeeded() ? ExitCode::kOk : ExitCode::kProvider;
   }
 
   std::optional<std::string> raw_path;
@@ -35,7 +35,7 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
     std::filesystem::create_directories(options.out_dir, ec);
     if (ec) {
       std::cerr << "cannot create " << options.out_dir << ": " << ec.message() << "\n";
-      return kUsage;
+      return ExitCode::kUsage;
     }
     raw_path = (std::filesystem::path(options.out_dir) /
                 (std::string(config::GatewayName(backend.gateway)) + ".raw"))
@@ -46,7 +46,7 @@ int RunProbe(const ProbeOptions& options, const config::Backend& backend,
   const std::string prompt = options.prompt.empty() ? "say hi" : options.prompt;
   const llm::FieldCapture report = llm::CaptureFields(backend, http, prompt, raw_path);
   std::cout << "\n" << llm::FormatFieldCapture(report) << "\n";
-  return report.Succeeded() ? kOk : kProvider;
+  return report.Succeeded() ? ExitCode::kOk : ExitCode::kProvider;
 }
 
 }  // namespace pu::tools_cli

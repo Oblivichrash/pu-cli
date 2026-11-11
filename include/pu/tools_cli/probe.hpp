@@ -25,7 +25,7 @@ struct ProbeOptions {
 // Runs the probe and prints its report. The backend is already resolved: who chose it —
 // a running session's config, or a standalone invocation's own config read — is not this
 // function's concern, and keeping it that way is what lets the tool skip the Runtime.
-int RunProbe(const ProbeOptions& options, const config::Backend& backend,
-             http::HttpClient& http);
+ExitCode RunProbe(const ProbeOptions& options, const config::Backend& backend,
+                    http::HttpClient& http);
 
 }  // namespace pu::tools_cli

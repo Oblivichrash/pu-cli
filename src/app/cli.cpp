@@ -70,17 +70,16 @@ void PrintFailure(const ExecutionResult& result) {
 int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
   // A person stopped the process, which is neither a failure to retry nor one to fix. The
   // token is global, so it is asked rather than threaded through every result.
-  if (platform::ShutdownRequested()) return kInterrupted;
-  if (is_command) return kOk;
+  if (platform::ShutdownRequested()) return static_cast<int>(ExitCode::kInterrupted);
+  if (is_command) return static_cast<int>(ExitCode::kOk);
   // The sandbox refused everything the turn tried. Retrying cannot help, but what has to
   // change differs: a command or a policy for one, a front end that cannot ask for the
   // other.
-  if (result.only_unaskable_calls) return kUsage;
-  if (result.only_blocked_calls) return kSandbox;
-  if (!result.has_error) return kOk;
-  return kProvider;
+  if (result.only_unaskable_calls) return static_cast<int>(ExitCode::kUsage);
+  if (result.only_blocked_calls) return static_cast<int>(ExitCode::kSandbox);
+  if (!result.has_error) return static_cast<int>(ExitCode::kOk);
+  return static_cast<int>(ExitCode::kProvider);
 }
-
 // The backend a read-only command reads. Naming a gateway builds one from the table and
 // never adopts it, so `pu models --gateway nim` leaves the session where it was.
 config::Backend BackendFor(const std::string& gateway, const std::string& model,
@@ -106,7 +105,7 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
     return status;
   } catch (const std::exception& e) {
     std::cerr << e.what() << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 }
 
@@ -402,7 +401,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
       }
     }
     std::cout << "\nGoodbye!\n";
-    return kOk;
+    return static_cast<int>(ExitCode::kOk);
   });
 }
 
@@ -422,7 +421,8 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
     options.listing = listing;
     // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
     // the agent's keys; the standalone tool builds the same table from its own config read.
-    return tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http());
+    return static_cast<int>(
+        tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http()));
   });
 }
 
@@ -448,7 +448,7 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
           config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
       if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
       std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
-      return kOk;
+      return static_cast<int>(ExitCode::kOk);
     }
 
     if (!verify) {
@@ -457,7 +457,7 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
                        shape == ModelShape::kCaps ? llm::ListingDetail::kCaps
                                                   : llm::ListingDetail::kIds)
                 << "\n";
-      return kOk;
+      return static_cast<int>(ExitCode::kOk);
     }
 
     const std::vector<llm::ModelCheck> checks =
@@ -476,7 +476,8 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
     std::cout << answered << " of " << checks.size() << " model(s) answered\n";
     // A verification that found a model down is the answer the caller asked for, and a
     // script needs to read it without parsing the text.
-    return answered == static_cast<int>(checks.size()) ? kOk : kProvider;
+    return answered == static_cast<int>(checks.size()) ? static_cast<int>(ExitCode::kOk)
+                                                       : static_cast<int>(ExitCode::kProvider);
   });
 }
 

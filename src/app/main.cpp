@@ -109,9 +109,9 @@ int main(int argc, char* argv[]) {
   // reader is on that page already, and the flags below the message are how it is corrected.
   // Written once because every usage error is that shape, and one of them printing a
   // different frame would read as a different kind of failure.
-  const auto usage_error = [&](const std::string& message) {
+  const auto usage_error = [&](const std::string& message) -> int {
     std::cerr << "Error: " << message << "\n\n" << line.HelpFor(cmd) << "\n";
-    return pu::cli::kUsage;
+    return static_cast<int>(pu::cli::ExitCode::kUsage);
   };
 
   // The parser had to accept every name to learn which command was typed; now that it is

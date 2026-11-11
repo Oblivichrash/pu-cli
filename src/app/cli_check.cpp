@@ -248,7 +248,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   if (path.empty()) {
     std::cerr << "No agents.json found: looked in " << (workspace / ".pu").string()
               << "/ and ~/.pu/.\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   std::cout << "config  " << path << "\n\n";
@@ -259,7 +259,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   } catch (const std::exception& e) {
     // A file this build cannot read is the invocation being wrong: fixing it is the remedy.
     std::cerr << "cannot load " << path << ": " << e.what() << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   std::cout << "workspace  " << workspace.string() << "\n";
@@ -387,8 +387,8 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   // A warning is not a failure: a file this build reads and an entry it can run is a pass,
   // and what it noticed is for a person to weigh. A delegation that names nothing runnable is
   // a failure, because the turn that reaches it fails with less to go on than this does.
-  if (!errors.empty()) return kUsage;
-  return kOk;
+  if (!errors.empty()) return static_cast<int>(ExitCode::kUsage);
+  return static_cast<int>(ExitCode::kOk);
 }
 
 }  // namespace pu::cli

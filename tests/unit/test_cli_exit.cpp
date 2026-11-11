@@ -37,7 +37,7 @@ constexpr int kClosedPort = 1;
 
 TEST_CASE("A turn that answered exits 0", "[cli][exit]") {
   pu::tests::ServeHarness harness;
-  REQUIRE(pu::cli::RunAsk("chat", "hello", harness.RuntimeRef()) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunAsk("chat", "hello", harness.RuntimeRef()) == static_cast<int>(pu::cli::ExitCode::kOk));
 }
 
 TEST_CASE("A provider that could not be reached exits 2", "[cli][exit]") {
@@ -52,7 +52,7 @@ TEST_CASE("A provider that could not be reached exits 2", "[cli][exit]") {
   // the runtime actually honours; `HOME` alone is not enough to supply one.
   pu::tests::ScopedWorkingDir in_workspace(harness.Home());
   pu::Runtime one_shot;
-  REQUIRE(pu::cli::RunAsk("chat", "hello", one_shot) == pu::cli::kProvider);
+  REQUIRE(pu::cli::RunAsk("chat", "hello", one_shot) == static_cast<int>(pu::cli::ExitCode::kProvider));
 }
 
 TEST_CASE("A command the router answered is not a provider failure", "[cli][exit]") {
@@ -60,7 +60,7 @@ TEST_CASE("A command the router answered is not a provider failure", "[cli][exit
   pu::tests::ScopedWorkingDir in_workspace(harness.Home());
   pu::Runtime one_shot;
   // `/help` is answered by the command router, so nothing was asked of a provider.
-  REQUIRE(pu::cli::RunAsk("chat", "/help", one_shot) == pu::cli::kOk);
+  REQUIRE(pu::cli::RunAsk("chat", "/help", one_shot) == static_cast<int>(pu::cli::ExitCode::kOk));
 }
 
 TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
@@ -73,6 +73,6 @@ TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
   const int status = pu::cli::RunAsk("chat", "hello", one_shot);
   pu::platform::ShutdownToken()->store(false, std::memory_order_release);
 
-  REQUIRE(status == pu::cli::kInterrupted);
+  REQUIRE(status == static_cast<int>(pu::cli::ExitCode::kInterrupted));
 }
 

@@ -34,14 +34,14 @@ int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& ru
       runtime.Initialize();
     } catch (const std::exception& e) {
       std::cerr << e.what() << "\n";
-      return kUsage;
+      return static_cast<int>(ExitCode::kUsage);
     }
     result = runtime.Delegate(request);
   }
 
   if (!result.error.empty()) {
     std::cerr << result.error << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
   std::cout << result.answer << "\n";
   if (show_usage) {
@@ -54,7 +54,7 @@ int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& ru
     }
     std::cerr << "\n";
   }
-  return kOk;
+  return static_cast<int>(ExitCode::kOk);
 }
 
 int RunAgents(Runtime& runtime, bool as_json) {
@@ -68,7 +68,7 @@ int RunAgents(Runtime& runtime, bool as_json) {
   } else {
     std::cout << config::FormatAgentTable(agents);
   }
-  return kOk;
+  return static_cast<int>(ExitCode::kOk);
 }
 
 }  // namespace pu::cli

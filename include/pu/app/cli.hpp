@@ -23,8 +23,10 @@ class Runtime;
 namespace cli {
 
 // The contract, and what a caller should do with each code, is in
-// docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints.
-enum ExitCode : int {
+// docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints. Scoped because a second
+// `ExitCode` names the same four values for the standalone tools, and both are visible to
+// whatever includes both headers.
+enum class ExitCode : int {
   kOk = 0,
   kUsage = 1,
   kProvider = 2,
