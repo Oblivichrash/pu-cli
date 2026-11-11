@@ -137,4 +137,77 @@ boost::json::array ProjectMessages(std::span<const ChatMessage> history,
   return messages;
 }
 
+namespace {
+
+using KeySink = std::function<void(std::string_view path, std::string_view key)>;
+
+void EmitKeys(const boost::json::object& object, std::string_view path, const KeySink& on_key) {
+  for (const auto& member : object) on_key(path, member.key());
+}
+
+void EmitKeys(const boost::json::object& object, std::string_view path, std::string_view member,
+              const KeySink& on_key) {
+  EmitKeys(object, std::string(path) + "." + std::string(member), on_key);
+}
+
+// OpenAI's reply: the frame carries `choices[0]`, whose `delta` (streaming) or `message`
+// (whole) holds the reply, and `usage` holds the counts. A nested usage member names a
+// second path, so `cached_tokens` is filed under `usage.prompt_tokens_details`.
+void WalkOpenAIReply(const boost::json::object& frame, const KeySink& on_key) {
+  EmitKeys(frame, "top-level", on_key);
+
+  const auto choices = frame.find("choices");
+  if (choices != frame.end() && choices->value().is_array() && !choices->value().as_array().empty()) {
+    if (const boost::json::object* choice = choices->value().as_array().at(0).if_object()) {
+      EmitKeys(*choice, "choice", on_key);
+      for (std::string_view container : {"delta", "message"}) {
+        const auto piece = choice->find(container);
+        if (piece != choice->end() && piece->value().is_object()) {
+          EmitKeys(piece->value().as_object(), "delta", on_key);
+          break;
+        }
+      }
+    }
+  }
+
+  const auto usage = frame.find("usage");
+  if (usage != frame.end() && usage->value().is_object()) {
+    for (const auto& member : usage->value().as_object()) {
+      on_key("usage", member.key());
+      if (member.value().is_object()) {
+        EmitKeys(member.value().as_object(), "usage", member.key(), on_key);
+      }
+    }
+  }
+}
+
+// Ollama's reply: every key is on the frame itself, and the reply rides in `message`. There
+// is no `choices` and no `usage`: counts sit beside `done` at the top, so they are filed at
+// the frame's own path along with everything else.
+void WalkOllamaReply(const boost::json::object& frame, const KeySink& on_key) {
+  EmitKeys(frame, "top-level", on_key);
+
+  const auto message = frame.find("message");
+  if (message != frame.end() && message->value().is_object()) {
+    EmitKeys(message->value().as_object(), "message", on_key);
+  }
+}
+
+}  // namespace
+
+void ForEachReplyKeyAtPath(const boost::json::value& j, config::WireProtocol protocol,
+                           const std::function<void(std::string_view, std::string_view)>& on_key) {
+  if (!on_key) return;
+  const boost::json::object* frame = j.if_object();
+  if (frame == nullptr) return;
+  switch (protocol) {
+    case config::WireProtocol::kOllama:
+      WalkOllamaReply(*frame, on_key);
+      return;
+    case config::WireProtocol::kOpenAI:
+      WalkOpenAIReply(*frame, on_key);
+      return;
+  }
+}
+
 }  // namespace pu::llm

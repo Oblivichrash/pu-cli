@@ -123,30 +123,11 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
   };
   NoteUnreadFields(j, kReadKeys);
 
-  const boost::json::object* frame = j.if_object();
-  if (frame != nullptr) {
-    for (const auto& member : *frame) NoteSeenField(member.key());
-    if (const auto it = frame->find("choices");
-        it != frame->end() && it->value().is_array() && !it->value().as_array().empty()) {
-      const boost::json::value& first = it->value().as_array().at(0);
-      if (const boost::json::object* choice = first.if_object()) {
-        for (const auto& member : *choice) NoteSeenField(member.key());
-        if (const auto delta = choice->find("delta");
-            delta != choice->end() && delta->value().is_object()) {
-          for (const auto& member : delta->value().as_object()) NoteSeenField(member.key());
-        }
-      }
-    }
-    if (const auto usage = frame->find("usage");
-        usage != frame->end() && usage->value().is_object()) {
-      for (const auto& member : usage->value().as_object()) {
-        NoteSeenField(member.key());
-        if (member.value().is_object()) {
-          for (const auto& nested : member.value().as_object()) NoteSeenField(nested.key());
-        }
-      }
-    }
-  }
+  // The same walk the probe reports from, so a name this reader keeps is a name a capture
+  // shows and the two cannot drift apart. This is the OpenAI walk because this is the
+  // OpenAI reader: the format is known here, not inferred from the frame.
+  llm::ForEachReplyKeyAtPath(j, config::WireProtocol::kOpenAI,
+                             [this](std::string_view, std::string_view key) { NoteSeenField(key); });
 
   if (json::HasKey(j, "error")) {
     throw GenericError("provider error: " + StreamErrorDetail(j.at("error")));

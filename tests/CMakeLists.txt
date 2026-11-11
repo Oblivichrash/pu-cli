@@ -55,6 +55,7 @@ add_executable(pu_tests
     unit/test_probe.cpp
     unit/test_project_rules.cpp
     unit/test_projection.cpp
+    unit/test_reply_keys.cpp
     unit/test_request.cpp
     unit/test_rewind.cpp
     unit/test_run.cpp

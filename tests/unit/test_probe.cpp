@@ -57,44 +57,6 @@ TEST_CASE("[probe] an openai stream names its fields at each level", "[probe]") 
   REQUIRE(report.keys.at("usage.prompt_tokens_details").count("cached_tokens") == 1);
 }
 
-TEST_CASE("[probe] the shape diff names only what the stream never sent", "[probe]") {
-  auto [http, mock] = MakeMockHttpClient();
-  mock->simulate_response = [](const std::string&, const std::string&,
-                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    const std::string raw = kOpenAIStream;
-    std::string copy = raw; cb(copy.data(), copy.size());
-  };
-
-  const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
-                       "Say the single word: pong", std::nullopt);
-
-  // content, reasoning, the cached count (nested), total and credit were all named;
-  // refusal and the completion count (which the split fragment's tail carried) were not.
-  REQUIRE(report.shape_fields_absent ==
-          std::vector<std::string>{"refusal", "completion_tokens"});
-}
-
-TEST_CASE("[probe] a top-level cached count satisfies the nested field", "[probe]") {
-  auto [http, mock] = MakeMockHttpClient();
-  mock->simulate_response = [](const std::string&, const std::string&,
-                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    const std::string raw =
-        "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}],"
-        "\"usage\":{\"prompt_tokens\":3,\"prompt_cache_hit_tokens\":2,"
-        "\"completion_tokens\":1,\"total_tokens\":4}}\n"
-        "\n";
-    std::string copy = raw; cb(copy.data(), copy.size());
-  };
-
-  const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
-                       "Say the single word: pong", std::nullopt);
-  REQUIRE(report.stream_parsed);
-  REQUIRE(std::find(report.shape_fields_absent.begin(), report.shape_fields_absent.end(),
-                    std::string{"cached_tokens"}) == report.shape_fields_absent.end());
-}
-
 TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
   auto [http, mock] = MakeMockHttpClient();
   mock->simulate_response = [](const std::string&, const std::string&,
@@ -110,8 +72,6 @@ TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
   REQUIRE(mock->last_url == "http://localhost:11434/api/chat");
   REQUIRE(report.frames == 1);
   REQUIRE(report.keys.at("message").count("content") == 1);
-  // No ResponseShape to diff against a wire format that is not OpenAI's.
-  REQUIRE(report.shape_fields_absent.empty());
 }
 
 TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
@@ -128,7 +88,6 @@ TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
 
   REQUIRE_FALSE(report.stream_parsed);
   REQUIRE(report.frames == 0);
-  REQUIRE(report.shape_fields_absent.empty());
 }
 
 TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {

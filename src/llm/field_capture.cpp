@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/sse.hpp"
 #include "pu/llm/openai_protocol.hpp"
+#include "pu/llm/projection.hpp"
 
 #include <boost/json.hpp>
 
@@ -15,16 +16,8 @@ namespace pu::llm {
 
 namespace {
 
-// A shape worth checking against only exists on the OpenAI-format gateways; Ollama's reply
-// is a different wire format with no ResponseShape to diff. Asked of the protocol rather
-// than of a list of ids, so a product added to the table is covered by being one.
-std::optional<llm::ResponseShape> ShapeFor(config::GatewayId id) {
-  if (config::GatewayForId(id).protocol == "openai") return llm::ResponseShape{};
-  return std::nullopt;
-}
-
-bool SpeaksOllama(config::GatewayId id) {
-  return config::GatewayForId(id).protocol == "ollama";
+config::WireProtocol ProtocolOf(const config::Backend& backend) {
+  return config::GatewayForId(backend.gateway).protocol;
 }
 
 // The gateway's own headers plus the bearer, which is what both probes send. A gateway that
@@ -44,7 +37,7 @@ std::vector<std::string> ProbeHeaders(const config::Backend& backend,
 }
 
 std::string ProbeBody(const config::Backend& backend, const std::string& prompt) {
-  if (SpeaksOllama(backend.gateway)) {
+  if (ProtocolOf(backend) == config::WireProtocol::kOllama) {
     boost::json::value req = {
         {"model", backend.model},
         {"stream", true},
@@ -80,43 +73,16 @@ void ForEachFrame(const std::string& raw, Fn&& on_frame) {
   parser.Finish();
 }
 
-void CollectKeys(const boost::json::value& j, const std::string& level,
-                 std::map<std::string, std::set<std::string>>& keys) {
-  const boost::json::object* obj = j.if_object();
-  if (obj == nullptr) return;
-  for (const auto& member : *obj) {
-    keys[level].insert(std::string(member.key()));
-  }
-}
-
-void CollectOpenAIShape(const boost::json::value& j,
-                        std::map<std::string, std::set<std::string>>& keys) {
-  CollectKeys(j, "top-level", keys);
-  const boost::json::object* obj = j.if_object();
-  if (obj == nullptr) return;
-  if (const auto it = obj->find("choices"); it != obj->end() && it->value().is_array() &&
-                                              !it->value().as_array().empty()) {
-    const boost::json::object& choice = it->value().as_array().at(0).as_object();
-    for (const auto& member : choice) keys["choice"].insert(std::string(member.key()));
-    if (const auto delta = choice.find("delta");
-        delta != choice.end() && delta->value().is_object()) {
-      for (const auto& member : delta->value().as_object()) {
-        keys["delta"].insert(std::string(member.key()));
-      }
-    }
-  }
-  if (const auto usage = obj->find("usage");
-      usage != obj->end() && usage->value().is_object()) {
-    const boost::json::object& u = usage->value().as_object();
-    for (const auto& member : u) {
-      keys["usage"].insert(std::string(member.key()));
-      if (member.value().is_object()) {
-        for (const auto& nested : member.value().as_object()) {
-          keys["usage." + std::string(member.key())].insert(std::string(nested.key()));
-        }
-      }
-    }
-  }
+// Every key one frame carries, filed under the wire path the gateway's own format reaches it
+// by: `usage.prompt_tokens_details` for an OpenAI nested member, `message` for Ollama's. The
+// format is the gateway's protocol, passed in rather than guessed from the frame.
+void CollectReplyKeys(const boost::json::value& frame, config::WireProtocol protocol,
+                      std::map<std::string, std::set<std::string>>& keys) {
+  ForEachReplyKeyAtPath(
+      frame, protocol,
+      [&keys](std::string_view path, std::string_view key) {
+        keys[std::string(path)].insert(std::string(key));
+      });
 }
 
 }  // namespace
@@ -143,40 +109,12 @@ FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient&
     out.write(raw.data(), static_cast<std::streamsize>(raw.size()));
   }
 
+  const config::WireProtocol protocol = ProtocolOf(backend);
   ForEachFrame(raw, [&](const boost::json::value& frame) {
     ++report.frames;
-    if (SpeaksOllama(backend.gateway)) {
-      CollectKeys(frame, "top-level", report.keys);
-      if (const boost::json::object* obj = frame.if_object()) {
-        if (const auto msg = obj->find("message"); msg != obj->end() && msg->value().is_object()) {
-          for (const auto& member : msg->value().as_object()) {
-            report.keys["message"].insert(std::string(member.key()));
-          }
-        }
-      }
-    } else {
-      CollectOpenAIShape(frame, report.keys);
-    }
+    CollectReplyKeys(frame, protocol, report.keys);
   });
   report.stream_parsed = report.frames > 0;
-
-  // An empty capture says the request failed before any shape was sent; diffing it against
-  // the defaults would report every field absent and say nothing useful.
-  if (report.stream_parsed) {
-    if (const std::optional<llm::ResponseShape> shape = ShapeFor(backend.gateway)) {
-      const auto present = [&report](std::string_view field) {
-        for (const auto& [level, names] : report.keys) {
-          if (std::any_of(names.begin(), names.end(),
-                          [field](const std::string& name) { return name == field; })) {
-            return true;
-          }
-        }
-        return false;
-      };
-      report.shape_fields_absent = llm::AbsentShapeFields(*shape, present, /*required_only=*/false);
-    }
-  }
-
   return report;
 }
 
@@ -204,8 +142,7 @@ ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient&
   ListingReport report;
   report.gateway = config::GatewayName(backend.gateway);
 
-  const std::optional<ListingTarget> target = ListingTargetFor(
-      config::GatewayForId(backend.gateway).protocol, report.gateway, backend.host);
+  const std::optional<ListingTarget> target = ListingTargetForGateway(backend);
   if (!target) {
     report.error = "no listing is known for gateway " + report.gateway;
     return report;
@@ -341,14 +278,6 @@ std::string FormatFieldCapture(const FieldCapture& report) {
       first = false;
     }
     out << "\n";
-  }
-
-  if (!report.shape_fields_absent.empty()) {
-    out << "\nfields the built-in ResponseShape reads that this stream never sent:\n";
-    for (const std::string& field : report.shape_fields_absent) {
-      out << "  " << field << "\n";
-    }
-    out << "an adapter for this gateway names these differently, or drops them\n";
   }
   return out.str();
 }

@@ -2,11 +2,14 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include <boost/json.hpp>
 
+#include "pu/config/gateway.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu::llm {
@@ -53,5 +56,17 @@ boost::json::value ProjectMessage(const ChatMessage& message,
 
 boost::json::array ProjectMessages(std::span<const ChatMessage> history,
                                    const ProviderCapabilities& capabilities);
+
+// The keys one reply frame carries, filed under the wire path that reaches them, so a key
+// is reported at the path a reader would look for it. Each wire format answers this for
+// itself: the shapes are different enough that one walk over both would have to guess which
+// one a frame is, and a guess is wrong exactly when a gateway misbehaves, which is when the
+// report matters.
+//
+// `protocol` selects the format. A caller that knows the gateway passes its protocol;
+// nothing is inferred from the frame.
+void ForEachReplyKeyAtPath(const boost::json::value& j, config::WireProtocol protocol,
+                           const std::function<void(std::string_view path, std::string_view key)>&
+                               on_key);
 
 }  // namespace pu::llm
