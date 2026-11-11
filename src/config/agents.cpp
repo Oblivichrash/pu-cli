@@ -31,39 +31,35 @@ std::string ExpandEnvVars(const std::string& input) {
   return result;
 }
 
+// The strings one array member holds, in order, skipping anything that is not a string. An
+// absent member and an empty one answer the same way: no entries.
+std::vector<std::string> StringList(const json::value& j, boost::json::string_view key) {
+  std::vector<std::string> entries;
+  for (const auto& item : json::ValueOrDefault<boost::json::array>(j, key, {})) {
+    if (item.is_string()) entries.push_back(boost::json::value_to<std::string>(item));
+  }
+  return entries;
+}
+
 SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   SecurityPolicy policy;
-  if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
-    policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
-  if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
-    policy.max_command_length = boost::json::value_to<std::size_t>(j.at("max_command_length"));
-  if (json::HasKey(j, "forbidden_patterns") && j.at("forbidden_patterns").is_array()) {
-    for (const auto& pat : j.at("forbidden_patterns").as_array())
-      if (pat.is_string())
-        policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
-  }
-  if (json::HasKey(j, "approval_patterns") && j.at("approval_patterns").is_array()) {
-    for (const auto& pat : j.at("approval_patterns").as_array())
-      if (pat.is_string())
-        policy.approval_patterns.push_back(boost::json::value_to<std::string>(pat));
-  }
+  policy.sandbox_root = json::ValueOrDefault<std::string>(j, "sandbox_root", policy.sandbox_root);
+  policy.max_command_length =
+      json::ValueOrDefault<std::size_t>(j, "max_command_length", policy.max_command_length);
+  policy.forbidden_patterns = StringList(j, "forbidden_patterns");
+  policy.approval_patterns = StringList(j, "approval_patterns");
   return policy;
 }
 
 paging::Budget ParsePaging(const json::value& j) {
   paging::Budget budget;
-  if (json::HasKey(j, "page_lines") && j.at("page_lines").is_number())
-    budget.page_lines = boost::json::value_to<std::size_t>(j.at("page_lines"));
-  if (json::HasKey(j, "max_lines") && j.at("max_lines").is_number())
-    budget.max_lines = boost::json::value_to<std::size_t>(j.at("max_lines"));
-  if (json::HasKey(j, "page_bytes") && j.at("page_bytes").is_number())
-    budget.page_bytes = boost::json::value_to<std::size_t>(j.at("page_bytes"));
-  if (json::HasKey(j, "capture_bytes") && j.at("capture_bytes").is_number())
-    budget.capture_bytes = boost::json::value_to<std::size_t>(j.at("capture_bytes"));
-  if (json::HasKey(j, "retain_bytes") && j.at("retain_bytes").is_number())
-    budget.retain_bytes = boost::json::value_to<std::size_t>(j.at("retain_bytes"));
-  if (json::HasKey(j, "retain_buffers") && j.at("retain_buffers").is_number())
-    budget.retain_buffers = boost::json::value_to<std::size_t>(j.at("retain_buffers"));
+  budget.page_lines = json::ValueOrDefault<std::size_t>(j, "page_lines", budget.page_lines);
+  budget.max_lines = json::ValueOrDefault<std::size_t>(j, "max_lines", budget.max_lines);
+  budget.page_bytes = json::ValueOrDefault<std::size_t>(j, "page_bytes", budget.page_bytes);
+  budget.capture_bytes = json::ValueOrDefault<std::size_t>(j, "capture_bytes", budget.capture_bytes);
+  budget.retain_bytes = json::ValueOrDefault<std::size_t>(j, "retain_bytes", budget.retain_bytes);
+  budget.retain_buffers =
+      json::ValueOrDefault<std::size_t>(j, "retain_buffers", budget.retain_buffers);
 
   // A page is a page: a request is clamped to `max_lines`, so a `page_lines` above it
   // would be silently narrowed. Nothing retained keeps nothing, and a store that keeps
