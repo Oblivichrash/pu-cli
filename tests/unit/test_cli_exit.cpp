@@ -45,12 +45,19 @@ TEST_CASE("A provider that could not be reached exits 2", "[cli][exit]") {
   // `RunAsk` builds its own runtime, so the config on disk is what carries the port.
   pu::tests::WriteAgentsFile(harness.Home(), kClosedPort, "ollama");
 
+  // `Runtime::Initialize` takes `.pu/agents.json` from the current directory before it asks
+  // `FindConfigPath`, so a runtime built outside this harness's workspace reads whatever
+  // `.pu/` the test process happens to be sitting in — on a machine with one, a table that
+  // names a different agent than this case asks for. The working directory is the isolation
+  // the runtime actually honours; `HOME` alone is not enough to supply one.
+  pu::tests::ScopedWorkingDir in_workspace(harness.Home());
   pu::Runtime one_shot;
   REQUIRE(pu::cli::RunAsk("chat", "hello", one_shot) == pu::cli::kProvider);
 }
 
 TEST_CASE("A command the router answered is not a provider failure", "[cli][exit]") {
   pu::tests::ServeHarness harness;
+  pu::tests::ScopedWorkingDir in_workspace(harness.Home());
   pu::Runtime one_shot;
   // `/help` is answered by the command router, so nothing was asked of a provider.
   REQUIRE(pu::cli::RunAsk("chat", "/help", one_shot) == pu::cli::kOk);
@@ -60,6 +67,7 @@ TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
   pu::tests::ServeHarness harness;
   // What SIGINT sets. The status is asked of the run rather than of a result field, because
   // the signal reaches the process and not the turn.
+  pu::tests::ScopedWorkingDir in_workspace(harness.Home());
   pu::platform::ShutdownToken()->store(true, std::memory_order_release);
   pu::Runtime one_shot;
   const int status = pu::cli::RunAsk("chat", "hello", one_shot);
