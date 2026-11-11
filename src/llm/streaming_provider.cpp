@@ -115,7 +115,6 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   result.usage = usage_;
   result.raw_usage = std::move(raw_usage_);
   result.unread_fields = std::move(unread_fields_);
-  result.seen_fields = std::move(seen_fields_);
   result.missing_fields = std::move(missing_fields_);
   result.finish_reason = std::move(finish_reason_);
   result.model = std::move(response_model_);

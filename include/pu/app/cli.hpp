@@ -80,7 +80,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
            bool show_usage = false);
 int RunChat(const std::string& agent, Runtime& runtime);
 // A developer tool, kept off the top-level listing: it captures a provider's raw bytes for
-// someone writing a `ResponseShape`, which is not a question `agents.json` has an answer to.
+// someone writing a gateway adapter, which is not a question `agents.json` has an answer to.
 // `gateway` reads a product without an agents.json entry; `listing` reads the catalogue where
 // `models` reads and prints it, and is kept for the raw report rather than the ids.
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,

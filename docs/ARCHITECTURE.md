@@ -154,6 +154,20 @@ it: `parse`, `serialize`, `ValueOrDefault`, `HasKey` and `PrettyPrint`. Each one
 carries its own contract where it is declared, and the helper is what to reach for
 rather than the raw Boost call, so the fallbacks stay in one place.
 
+Which one to reach for, when a member may be absent or of the wrong type:
+
+| Member | Answer for a member that is absent, null, or of another type |
+|---|---|
+| `HasKey(v, "k")` | `false` only for an absent name or a value that is not an object; a name holding `null` is still a key, so `true` |
+| `ValueOrDefault<T>(v, "k", fallback)` | `fallback` — for a value the caller can proceed without |
+| `OptionalOrDefault<T>(v, "k")` | `std::nullopt` — for a value whose absence means something, so a caller can tell "not sent" from "sent as zero" |
+
+`HasKey` is the right question only when the caller does its own type check; reach for it
+before `at()`, not instead of `ValueOrDefault`. Never read a member through `at()` without
+one of the three: an absent name throws, and a throw on a gateway field is a stream that
+stops instead of a default being taken. The rule applies to every JSON surface named below,
+so a config file missing a field degrades the same way a stream frame does.
+
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
 (`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST

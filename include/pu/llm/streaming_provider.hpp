@@ -65,9 +65,13 @@ class StreamingProvider : public LLMProvider {
   std::optional<TokenUsage> usage_;
   boost::json::value raw_usage_;
   std::vector<std::string> unread_fields_;
-  std::vector<std::string> seen_fields_;
   std::vector<std::string> missing_fields_;
   bool inspected_frame_ = false;
+
+  // The keys every frame named, in the order they were first seen. Read only by a
+  // subclass's FinishStream, when it reports which of its own shape's names never
+  // arrived; nothing above the provider reads it, so it is not on `ChatResult`.
+  std::vector<std::string> seen_fields_;
 
  private:
   std::string host_;

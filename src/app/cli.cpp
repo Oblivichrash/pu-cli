@@ -407,8 +407,8 @@ int RunChat(const std::string& agent, Runtime& runtime) {
 }
 
 // One probe run: a single-token prompt to the agent's backend, the raw stream kept,
-// and the field names the gateway actually sent read back out of it. A ResponseShape
-// for a new gateway is written from this capture rather than from a specification.
+// and the field names the gateway actually sent read back out of it. An adapter for a
+// new gateway is written from this capture rather than from a specification.
 int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime) {
