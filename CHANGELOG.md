@@ -57,8 +57,9 @@ the commit that made it, and its current behaviour is in the relevant document
   given. The third fact exposes a real difference in chat: `/unknown` used to come back as
   handled-and-empty, which the front end guessed was an unknown command by testing whether the
   error text was empty. It is now routed-and-failed with `Unknown command: /unknown` as its own
-  text, and the guess is gone. `pu ask "/unknown"` still exits 0, because a slash line did what
-  the router could — the exit status names the interruption, not the command.
+  text, and the guess is gone. `pu ask "/unknown"` still exits 0: a line the router answered
+  is not a provider failure, and the exit status names the interruption rather than the
+  command. A non-zero status for a failed command would be a separate decision.
 
 ### Fixed
 
