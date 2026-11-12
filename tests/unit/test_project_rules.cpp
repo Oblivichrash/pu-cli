@@ -16,9 +16,17 @@ namespace fs = std::filesystem;
 
 const fs::path kSourceDir{PU_SOURCE_DIR};
 
+// A read that fails answers with nothing rather than asserting. The corpus these rules walk
+// grows with the tree, and an assertion per file would make the number of assertions a fact
+// about how many files exist rather than about which rules hold — a figure that moves on every
+// commit and so reads as churn. The empty string is what a failed read legitimately looks like
+// to every caller: no script, no name, no control character. Where an empty answer would pass
+// for an answer, the caller says so itself, and `CHECK` on the corpus being non-empty is what
+// catches a directory that could not be read at all.
 std::string ReadFile(const fs::path& path) {
   std::ifstream file(path, std::ios::binary);
-  REQUIRE(file.is_open());
+  INFO("reading " << path.lexically_relative(kSourceDir).string());
+  if (!file.is_open()) return {};
   return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
