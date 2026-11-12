@@ -34,6 +34,41 @@ inline std::string ReadableError(std::string_view what) {
 
 inline constexpr std::string_view kUtf8ReplacementCharacter = "\xEF\xBF\xBD";  // U+FFFD
 
+// The names a reader is offered, in the order the table gives them, with one separator
+// between and none at either end. Every "here is the list of legal values" message in this
+// codebase is this function; written out by hand it is four lines that drift.
+//
+// `Render` turns an element into what the reader should see, which is where a quoted list
+// (`'a', 'b'`) and a bare one (`a, b`) differ. A single renderer rather than two functions
+// because the separator and the empty-list rule are the same in both.
+template <typename Range, typename Render>
+std::string Join(const Range& items, std::string_view separator, Render render) {
+  std::string out;
+  for (const auto& item : items) {
+    if (!out.empty()) out += separator;
+    out += render(item);
+  }
+  return out;
+}
+
+template <typename Range>
+std::string Join(const Range& items, std::string_view separator = ", ") {
+  return Join(items, separator,
+              [](const auto& item) { return std::string(std::string_view(item)); });
+}
+
+// A list of words quoted one by one: what a message names when the value is typed verbatim,
+// as a pattern or a tool name is.
+template <typename Range>
+std::string JoinQuoted(const Range& items, std::string_view separator = ", ") {
+  return Join(items, separator, [](const auto& item) {
+    std::string quoted("'");
+    quoted += item;
+    quoted += "'";
+    return quoted;
+  });
+}
+
 namespace detail {
 
 inline constexpr unsigned int kMaxCodePoint = 0x10FFFF;

@@ -3,6 +3,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 #include "pu/config/backend.hpp"
 
 #include <boost/json.hpp>
@@ -79,11 +80,10 @@ std::string TopLevelKeys(const boost::json::value& parsed) {
   const boost::json::object* obj = parsed.if_object();
   if (obj == nullptr) return "(not a JSON object)";
 
-  std::string keys;
-  for (const auto& member : *obj) {
-    if (!keys.empty()) keys += ", ";
-    keys += std::string(member.key());
-  }
+  const std::string keys = text::Join(*obj, ", ",
+                                      [](const boost::json::key_value_pair& member) {
+                                        return std::string(member.key());
+                                      });
   return keys.empty() ? "(an empty object)" : keys;
 }
 

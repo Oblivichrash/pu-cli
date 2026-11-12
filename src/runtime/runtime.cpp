@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <system_error>
 #include <variant>
 
@@ -15,6 +16,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/tools/ask_dir_tool.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/core/text.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/platform.hpp"
@@ -136,10 +138,12 @@ void Runtime::Initialize(const std::string& config_path) {
       std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
                    [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
   if (default_entry == agents_cfg.agents.end()) {
-    std::string known;
-    for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
+    const std::string known = text::Join(
+        std::views::transform(agents_cfg.agents,
+                              [](const config::AgentEntry& entry) { return entry.name; }),
+        " ");
     throw GenericError("Requested agent is not configured: " + active_agent +
-                (known.empty() ? " (no agents are configured)" : "; configured:" + known));
+                       (known.empty() ? " (no agents are configured)" : "; configured: " + known));
   }
 
   agent_manager_ = std::make_unique<AgentManager>();

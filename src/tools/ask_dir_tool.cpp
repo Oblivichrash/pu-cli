@@ -3,6 +3,7 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/process.hpp"
+#include "pu/core/text.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/runtime/runtime.hpp"
 
@@ -23,11 +24,7 @@ namespace {
 // slow into broken. It is a ceiling rather than a target, so the common turn never meets it.
 constexpr std::chrono::milliseconds kDelegatedTurnBudget{std::chrono::minutes(10)};
 
-std::string Listed(const std::vector<std::string>& names) {
-  std::string out;
-  for (const std::string& name : names) out += (out.empty() ? "" : ", ") + name;
-  return out;
-}
+std::string Listed(const std::vector<std::string>& names) { return text::Join(names); }
 
 // Whether `target` is `base` or sits under it. Compared a component at a time: a string prefix
 // would call `/a/pu-cli-old` a directory under `/a/pu-cli`, and a tool whose whole job is to

@@ -5,10 +5,12 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <ranges>
 #include <string_view>
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 namespace pu::session {
 
@@ -124,12 +126,8 @@ const Setting* FindSetting(std::string_view name) {
 }
 
 std::string KnownNames() {
-  std::string names;
-  for (const Setting& setting : Table()) {
-    if (!names.empty()) names += ", ";
-    names += setting.name;
-  }
-  return names;
+  return text::Join(
+      std::views::transform(Table(), [](const Setting& setting) { return setting.name; }));
 }
 
 }  // namespace

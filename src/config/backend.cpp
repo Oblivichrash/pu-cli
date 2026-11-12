@@ -4,9 +4,11 @@
 #include "pu/config/gateway.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/core/base.hpp"
+#include "pu/core/text.hpp"
 
 #include <cstdlib>
 #include <memory>
+#include <ranges>
 #include <utility>
 
 namespace pu::config {
@@ -35,12 +37,8 @@ std::string_view GatewayEndpointPath(GatewayId type) {
 const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data(); }
 
 std::string GatewayNames() {
-  std::string names;
-  for (const Gateway& gateway : Gateways()) {
-    if (!names.empty()) names += ", ";
-    names += gateway.name;
-  }
-  return names;
+  return text::Join(
+      std::views::transform(Gateways(), [](const Gateway& gateway) { return gateway.name; }));
 }
 
 std::string_view ApiKeyEnvFor(GatewayId id) { return GatewayForId(id).api_key_env; }

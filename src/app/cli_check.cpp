@@ -29,6 +29,7 @@
 #include "pu/config/backend.hpp"
 #include "pu/config/gateway.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 namespace pu::cli {
 
@@ -147,30 +148,18 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   }
   out << "  sandbox      " << SandboxState(entry.security, workspace, warnings) << "\n";
   if (!entry.security.forbidden_patterns.empty()) {
-    out << "  forbids      ";
-    for (std::size_t i = 0; i < entry.security.forbidden_patterns.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << "'" << entry.security.forbidden_patterns[i] << "'";
-    }
-    out << "\n";
+    out << "  forbids      " << text::JoinQuoted(entry.security.forbidden_patterns) << "\n";
   }
   if (!entry.security.approval_patterns.empty()) {
-    out << "  approval     ";
-    for (std::size_t i = 0; i < entry.security.approval_patterns.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << "'" << entry.security.approval_patterns[i] << "'";
-    }
-    out << "   (no channel to ask on from the CLI: such a command is refused)\n";
+    out << "  approval     " << text::JoinQuoted(entry.security.approval_patterns)
+        << "   (no channel to ask on from the CLI: such a command is refused)\n";
   }
   if (!entry.mcp_servers.empty()) {
-    out << "  mcp          ";
-    for (std::size_t i = 0; i < entry.mcp_servers.size(); ++i) {
-      if (i > 0) out << ", ";
-      const config::McpServerConfig& server = entry.mcp_servers[i];
-      out << server.name << " ("
-          << (server.url.empty() ? server.command : server.url) << ")";
-    }
-    out << "\n";
+    out << "  mcp          "
+        << text::Join(entry.mcp_servers, ", ", [](const config::McpServerConfig& server) {
+             return server.name + " (" + (server.url.empty() ? server.command : server.url) + ")";
+           })
+        << "\n";
   }
   if (entry.tool_call_budget) {
     out << "  tool budget  " << *entry.tool_call_budget << "\n";
@@ -181,19 +170,10 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   if (entry.tools.empty()) {
     out << "all builtin (bash, write_file, ask_dir)\n";
   } else {
-    for (std::size_t i = 0; i < entry.tools.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << entry.tools[i];
-    }
-    out << "\n";
+    out << text::Join(entry.tools) << "\n";
   }
   if (!entry.delegates.empty()) {
-    out << "  delegates to ";
-    for (std::size_t i = 0; i < entry.delegates.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << entry.delegates[i];
-    }
-    out << "\n";
+    out << "  delegates to " << text::Join(entry.delegates) << "\n";
     // A delegation is reached through `ask_dir`, and one whose `tools` list leaves that out
     // names a relationship nothing can use. Not an error — the table is legal — but the one
     // thing a reader would not see from either field alone.

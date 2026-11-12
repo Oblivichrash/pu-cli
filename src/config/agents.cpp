@@ -3,6 +3,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <regex>
 #include <sstream>
 
@@ -481,10 +483,11 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
       std::find_if(result.agents.begin(), result.agents.end(),
                    [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end()) {
-    std::string known;
-    for (const AgentEntry& entry : result.agents) known += (known.empty() ? "" : ", ") + entry.name;
-    throw pu::GenericError("default_agent does not match any configured agent (have: " + known +
-                           ")");
+    throw pu::GenericError(
+        "default_agent does not match any configured agent (have: " +
+        text::Join(std::views::transform(result.agents,
+                                         [](const AgentEntry& entry) { return entry.name; })) +
+        ")");
   }
   return result;
 }
