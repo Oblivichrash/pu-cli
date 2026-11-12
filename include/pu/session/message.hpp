@@ -150,9 +150,4 @@ inline constexpr const char* kCancelledReceipt =
     "The user cancelled the turn before this call ran, so it produced no result. Wait for the "
     "user's next message before deciding whether this call is still worth making";
 
-inline constexpr const char* kCommandStoppedReceipt =
-    "The user stopped this command while it was running. The turn is still going, so the rest of "
-    "your plan is unaffected. Do not repeat this command unchanged; either adjust it or continue "
-    "with something else";
-
 }  // namespace pu::session

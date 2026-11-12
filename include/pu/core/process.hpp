@@ -39,6 +39,14 @@ struct Verdict {
   bool stopped = false;
 };
 
+// What the model is told about a command a person stopped while it ran. It lives beside
+// `Verdict::error`, which is where it is written: the words are the executor's to hand
+// the model, not the transcript's, and nothing in `session` reads them.
+inline constexpr const char* kCommandStoppedReceipt =
+    "The user stopped this command while it was running. The turn is still going, so the rest of "
+    "your plan is unaffected. Do not repeat this command unchanged; either adjust it or continue "
+    "with something else";
+
 // A command's output as it was kept.
 struct Captured {
   std::string text;

@@ -18,7 +18,6 @@
 
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
-#include "pu/session/message.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -121,7 +120,7 @@ void Settle(Verdict& verdict, bool stopped, int exit_code) {
   verdict.exit_code = exit_code;
   verdict.ok = exit_code == 0 && !stopped;
   if (stopped) {
-    verdict.error = session::kCommandStoppedReceipt;
+    verdict.error = kCommandStoppedReceipt;
   } else if (exit_code != 0 && exit_code != -1) {
     verdict.error = "Command failed (exit " + std::to_string(exit_code) + ")";
   }
