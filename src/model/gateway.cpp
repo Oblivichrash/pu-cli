@@ -2,199 +2,33 @@
 #include "pu/model/gateway.hpp"
 
 #include "pu/model/backend.hpp"
-#include "pu/core/base.hpp"
+#include "pu/core/text.hpp"
 
-#include "pu/llm/model_listing.hpp"
-#include "pu/llm/ollama_provider.hpp"
-#include "pu/llm/openai_provider.hpp"
-
-#include <array>
-#include <memory>
 #include <string>
-#include <utility>
-#include <vector>
+#include <string_view>
 
+// Only the facts about a product live here: the name, the host, the protocol it speaks and how
+// it bills. Which provider a row opens is `llm`'s answer, so the table of rows is written there
+// and handed back through `InstallGatewayTable` — this file only reads it. That is what lets
+// `model` be looked up from below `llm` while the factories it names stay above.
 namespace pu::model {
 
-OpenAIProvider::Config OpenAIConfig(const Backend& cfg);
+std::string DefaultHostFor(GatewayId id) { return std::string(GatewayForId(id).default_host); }
 
-namespace {
+std::string_view GatewayEndpointPath(GatewayId id) { return GatewayForId(id).endpoint_path; }
 
-template <typename Config>
-void FillProtocolConfig(Config& protocol, const Backend& cfg) {
-  protocol.host = cfg.host;
-  protocol.model = cfg.model;
-  protocol.temperature = cfg.temperature;
-  protocol.api_key = cfg.api_key.value_or("");
-  protocol.thinking = cfg.thinking;
+const char* GatewayName(GatewayId id) { return GatewayForId(id).name.data(); }
+
+std::string GatewayNames() {
+  return text::Join(Gateways(), ", ", [](const Gateway& gateway) { return gateway.name; });
 }
 
-std::unique_ptr<pu::LLMProvider> MakeOllamaProvider(const Backend& cfg,
-                                                    std::shared_ptr<pu::http::HttpClient> http) {
-  OllamaProvider::Config protocol;
-  FillProtocolConfig(protocol, cfg);
-  return std::make_unique<OllamaProvider>(std::move(protocol), std::move(http));
+std::optional<GatewayId> ParseGatewayId(std::string_view name) {
+  const Gateway* gateway = FindGateway(name);
+  if (gateway == nullptr) return std::nullopt;
+  return gateway->id;
 }
 
-std::unique_ptr<pu::ModelLister> MakeOllamaListing() {
-  return std::make_unique<llm::OllamaModelLister>();
-}
-
-std::unique_ptr<pu::LLMProvider> MakeOpenAIProvider(const Backend& cfg,
-                                                    std::shared_ptr<pu::http::HttpClient> http) {
-  return std::make_unique<OpenAIProvider>(OpenAIConfig(cfg), std::move(http));
-}
-
-std::unique_ptr<pu::ModelLister> MakeOpenAIListing() {
-  return std::make_unique<llm::OpenAIModelLister>();
-}
-
-std::string CodeBuddyConversationId() { return uuid::Generate(); }
-
-std::vector<std::string> CodeBuddyHeaders(const std::string& conversation_id) {
-  constexpr const char* kClientVersion = "1.0.7";
-  const std::string version = kClientVersion;
-  const auto hex_id = [] {
-    std::string hex;
-    hex.reserve(32);
-    for (const char c : uuid::Generate()) {
-      if (c != '-') hex += c;
-    }
-    return hex;
-  };
-  return {
-      "X-Requested-With: XMLHttpRequest",
-      "X-Domain: www.codebuddy.ai",
-      "X-Product: SaaS",
-      "X-Agent-Intent: craft",
-      "X-IDE-Type: CLI",
-      "X-IDE-Name: CLI",
-      "X-IDE-Version: " + version,
-      "User-Agent: CLI/" + version + " CodeBuddy/" + version,
-      "X-Conversation-ID: " + conversation_id,
-      "X-Conversation-Request-ID: " + hex_id(),
-      "X-Conversation-Message-ID: " + hex_id(),
-      "X-Request-ID: " + hex_id(),
-      "X-User-Id: " + uuid::Generate(),
-      "x-stainless-lang: js",
-      "x-stainless-package-version: 5.10.1",
-      "x-stainless-runtime: node",
-  };
-}
-
-std::unique_ptr<pu::LLMProvider> MakeCodeBuddyProvider(const Backend& cfg,
-                                                       std::shared_ptr<pu::http::HttpClient> http) {
-  OpenAIProvider::Config protocol = OpenAIConfig(cfg);
-  const std::string conversation_id = CodeBuddyConversationId();
-  protocol.extra_headers = [conversation_id] { return CodeBuddyHeaders(conversation_id); };
-  return std::make_unique<OpenAIProvider>(std::move(protocol), std::move(http));
-}
-
-std::unique_ptr<pu::ModelLister> MakeCodeBuddyListing() {
-  return std::make_unique<llm::CodeBuddyModelLister>(CodeBuddyHeaders(CodeBuddyConversationId()));
-}
-
-std::vector<std::string> CodeBuddyListingHeaders() {
-  return CodeBuddyHeaders(CodeBuddyConversationId());
-}
-
-std::vector<std::string> NoListingHeaders() { return {}; }
-
-}  // namespace
-
-OpenAIProvider::Config OpenAIConfig(const Backend& cfg) {
-  OpenAIProvider::Config protocol;
-  FillProtocolConfig(protocol, cfg);
-  protocol.max_tokens = cfg.max_tokens;
-  // How this product prices a call is the product's own fact, and the provider is the one
-  // reading the answer: it is told here rather than guessing from the wire.
-  protocol.billing = GatewayForId(cfg.gateway).billing;
-  return protocol;
-}
-
-namespace {
-
-// A product that speaks the OpenAI wire format and needs nothing of its own: the three
-// factories are the protocol's, and the entry differs from its siblings in the id, the name,
-// the host and the key variable only.
-Gateway OpenAiProduct(GatewayId id, std::string_view name, std::string_view host,
-                      std::string_view key_env) {
-  return Gateway{
-      .id = id,
-      .name = name,
-      .default_host = host,
-      .api_key_env = key_env,
-      .protocol = WireProtocol::kOpenAI,
-      .endpoint_path = "/chat/completions",
-      .make_provider = &MakeOpenAIProvider,
-      .make_listing = &MakeOpenAIListing,
-      .listing_headers = &NoListingHeaders,
-  };
-}
-
-// The table, one row per product. A row that needs its own factories or headers is written
-// out in full below rather than forced through the helper above.
-const std::array<Gateway, 6> kGateways = {
-    Gateway{
-        .id = GatewayId::kOllama,
-        .name = "ollama",
-        .default_host = "http://localhost:11434",
-        .api_key_env = "",
-        .protocol = WireProtocol::kOllama,
-        .endpoint_path = "/api/chat",
-        .make_provider = &MakeOllamaProvider,
-        .make_listing = &MakeOllamaListing,
-        .listing_headers = &NoListingHeaders,
-    },
-    // The cloud service answers both wires: `/api/tags` describes each model in more detail and
-    // `/v1/models` is the OpenAI route. This row is the OpenAI one. The native route is not a
-    // gateway here — nothing in this build claims it, and a name a table does not carry is
-    // refused at load.
-    OpenAiProduct(GatewayId::kOllamaCloud, "ollama-cloud", "https://ollama.com/v1",
-                  "OLLAMA_API_KEY"),
-    OpenAiProduct(GatewayId::kOpenAI, "openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),
-    OpenAiProduct(GatewayId::kDeepSeek, "deepseek", "https://api.deepseek.com/v1",
-                  "DEEPSEEK_API_KEY"),
-    OpenAiProduct(GatewayId::kNim, "nim", "https://integrate.api.nvidia.com/v1",
-                  "NVIDIA_API_KEY"),
-    Gateway{
-        .id = GatewayId::kCodeBuddy,
-        .name = "codebuddy",
-        .default_host = "https://copilot.tencent.com/v2",
-        .api_key_env = "CODEBUDDY_API_KEY",
-        .protocol = WireProtocol::kOpenAI,
-        .endpoint_path = "/chat/completions",
-        .make_provider = &MakeCodeBuddyProvider,
-        .make_listing = &MakeCodeBuddyListing,
-        .listing_headers = &CodeBuddyListingHeaders,
-        // The one product that says what a call cost. `credit` is the amount of this call,
-        // not an account balance, and it is denominated in the product's own credits.
-        .billing = {BillingKind::kReported, "credit", "credits"},
-    },
-};
-
-}  // namespace
-
-namespace {
-
-std::span<const Gateway> Table() { return kGateways; }
-
-}  // namespace
-
-std::span<const Gateway> Gateways() { return Table(); }
-
-const Gateway* FindGateway(std::string_view name) {
-  for (const Gateway& gateway : Table()) {
-    if (gateway.name == name) return &gateway;
-  }
-  return nullptr;
-}
-
-const Gateway& GatewayForId(GatewayId id) {
-  for (const Gateway& gateway : Table()) {
-    if (gateway.id == id) return gateway;
-  }
-  throw GenericError("No gateway answers for " + std::to_string(static_cast<int>(id)));
-}
+std::string_view ApiKeyEnvFor(GatewayId id) { return GatewayForId(id).api_key_env; }
 
 }  // namespace pu::model

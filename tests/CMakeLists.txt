@@ -12,6 +12,7 @@ if(MSVC)
 endif()
 
 add_executable(pu_tests
+    unit/test_main.cpp
     unit/test_agent_config.cpp
     unit/test_agent_manager.cpp
     unit/test_agents_summary.cpp
@@ -98,7 +99,7 @@ add_dependencies(pu_tests pu_echo_server)
 
 target_link_libraries(pu_tests PRIVATE
     pu_core
-    Catch2::Catch2WithMain
+    Catch2::Catch2
 )
 
 # The directory the fixtures make their files in. Naming it here rather than letting each

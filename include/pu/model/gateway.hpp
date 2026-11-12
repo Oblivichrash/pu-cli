@@ -106,7 +106,12 @@ struct Gateway {
   Billing billing{};
 };
 
-// Adding a gateway is a line in the gateway table in config/gateway.cpp. There is no file per
+// The rows are written where the factories they name are visible — `llm/gateway_table.cpp` —
+// and installed through `InstallGatewayTable` before anything looks a gateway up. A program
+// does that once, from its own entry point, and the reader below then has a table to read.
+void InstallGatewayTable();
+
+// Adding a gateway is a line in the table in src/llm/gateway_table.cpp. There is no file per
 // gateway: the table holds every one, which is what keeps a gateway's name, host and
 // provider in one place instead of one place each.
 std::span<const Gateway> Gateways();

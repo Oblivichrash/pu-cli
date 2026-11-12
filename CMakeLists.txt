@@ -66,6 +66,7 @@ add_library(pu::core_util ALIAS pu_core_util)
 # box, so it sits below the modules that own those.
 add_library(pu_llm STATIC
     src/llm/field_capture.cpp
+    src/llm/gateway_table.cpp
     src/llm/model_check.cpp
     src/llm/model_factory.cpp
     src/llm/model_listing.cpp
@@ -79,16 +80,25 @@ target_link_libraries(pu_llm PUBLIC pu_core_util)
 pu_configure_target(pu_llm)
 add_library(pu::llm ALIAS pu_llm)
 
-# The agent table, the gateways it names and the model catalogues they serve. It links `pu_llm`
-# because a gateway entry is a way to make a provider, and asks it for one by name.
+# What a gateway is: the products `agents.json` may name, the host each answers on, the wire it
+# speaks and how it bills. No factories here — the row that says which provider a gateway opens
+# is written in `pu_llm`, which is why `pu_llm` is linked in.
+add_library(pu_model STATIC
+    src/model/backend.cpp
+    src/model/gateway.cpp
+)
+target_link_libraries(pu_model PUBLIC pu_llm)
+pu_configure_target(pu_model)
+add_library(pu::model ALIAS pu_model)
+
+# The agent table, the list of servers a turn may reach and the probe. It links `pu_model`
+# because that is where a gateway's fact lives and `pu_llm` because the probe reads one.
 add_library(pu_config STATIC
     src/config/agents.cpp
     src/config/serve_registry.cpp
-    src/model/backend.cpp
-    src/model/gateway.cpp
     src/tools_cli/probe.cpp
 )
-target_link_libraries(pu_config PUBLIC pu_llm)
+target_link_libraries(pu_config PUBLIC pu_model)
 pu_configure_target(pu_config)
 add_library(pu::config ALIAS pu_config)
 
