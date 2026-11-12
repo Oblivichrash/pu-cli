@@ -103,12 +103,15 @@ pu_configure_target(pu_config)
 add_library(pu::config ALIAS pu_config)
 
 add_library(pu_core STATIC
+    src/app/ask.cpp
     src/app/cli.cpp
     src/app/cli_agents.cpp
     src/app/cli_check.cpp
     src/app/cli_output.cpp
     src/app/cli_serve.cpp
     src/app/cli_sse.cpp
+    src/app/models.cpp
+    src/app/probe.cpp
     src/config/agent_summary.cpp
     src/core/process.cpp
     src/mcp/client.cpp
