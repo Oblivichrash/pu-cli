@@ -3,9 +3,14 @@
 //
 // `pu serve`: the listener, the accept loop, and what each accepted request is handed to.
 //
-// What a connection does with a frame lives in serve_websocket.cpp, and what a turn does with a
-// job in serve_runner.cpp. What is left here is neither: opening the socket, claiming the port,
-// and sending each request to the WebSocket upgrade or to the REST dispatcher.
+// What a connection does with a frame lives in serve/serve_websocket.cpp, what a turn does with
+// a job in serve/serve_runner.cpp, and what each REST route answers in
+// serve/serve_http_routes.cpp. What is left here is neither: opening the socket, claiming the
+// port, and sending each request to the WebSocket upgrade or to the REST dispatcher.
+//
+// This file is the command, not the server. It sits in `app` because it is one of the entry
+// points `include/pu/app/cli.hpp` declares, beside `cli.cpp` and `cli_agents.cpp`; the server
+// itself keeps to `serve/` and knows nothing about the command line.
 //
 
 #include "pu/app/cli.hpp"

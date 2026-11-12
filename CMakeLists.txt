@@ -84,6 +84,7 @@ add_library(pu_core STATIC
     src/app/cli_agents.cpp
     src/app/cli_check.cpp
     src/app/cli_output.cpp
+    src/app/cli_serve.cpp
     src/app/cli_sse.cpp
     src/config/agent_summary.cpp
     src/core/process.cpp
@@ -99,7 +100,6 @@ add_library(pu_core STATIC
     src/session/session.cpp
     src/session/settings.cpp
     src/session/usage.cpp
-    src/serve/serve.cpp
     src/serve/serve_http_routes.cpp
     src/serve/serve_runner.cpp
     src/serve/serve_websocket.cpp
