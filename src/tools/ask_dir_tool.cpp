@@ -5,7 +5,7 @@
 #include "pu/core/process.hpp"
 #include "pu/core/text.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/tools/delegation.hpp"
 
 #include <boost/json.hpp>
 
@@ -183,8 +183,7 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   if (named != allowed_.end()) {
     request.agent = ask;
     request.dir = root_;
-    Runtime runtime;
-    const DelegationResult result = runtime.Delegate(request);
+    const DelegationResult result = RunDelegatedTurn(request);
     if (!result.error.empty()) return MakeRefusal(result.error, true);
     return Answer(request.dir.string(), prompt, result, ctx);
   }
@@ -220,8 +219,9 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   }
   request.dir = target;
 
-  Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
-  const DelegationResult result = runtime.Delegate(request);
+  // The turn runs a whole runtime of its own, which is what reads the files; the runtime is
+  // the one that builds it, so this tool asks for the turn rather than starting one.
+  const DelegationResult result = RunDelegatedTurn(request);
   if (!result.error.empty()) return MakeRefusal(result.error, true);
   return Answer(target.string(), prompt, result, ctx);
 }

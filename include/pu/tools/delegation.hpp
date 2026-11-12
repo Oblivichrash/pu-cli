@@ -5,9 +5,15 @@
 // One agent asking another, as data.
 //
 // The request and the answer are plain structures because more than one side has to name them:
-// the runtime that carries the turn out, and the tool that asks for it. Keeping them here rather
-// than beside the runtime means a tool can describe what it wants without including the thing
-// that runs turns — the tool states the question, the runtime is what knows how to answer it.
+// the runtime that carries the turn out, and the tool that asks for it. They live here, beside
+// the tool, rather than beside the runtime, so the tool states the question without including
+// the thing that runs turns — and a module that lays out a tool box never has to reach up to
+// the orchestration layer to name one.
+//
+// `RunDelegatedTurn` is the seam that keeps the direction one-way. The tool calls it; `runtime`
+// is what defines it, and a program that links the runtime gets that definition. A program that
+// links only the tools — the tests that check what a refusal says — links a fallback that says
+// no turn can run, which is the truthful answer where no runtime was built.
 //
 
 #include <chrono>
@@ -52,5 +58,10 @@ struct DelegationResult {
   // apart from one so a caller that stopped deliberately does not read it as a fault.
   bool stopped = false;
 };
+
+// Carries out one delegated turn. Declared here so the tool can call it, defined in the runtime
+// that knows how to build and drive one. A build without that runtime links the fallback in
+// `src/tools/delegation.cpp`, which answers that no turn ran rather than pretending one did.
+DelegationResult RunDelegatedTurn(const Delegation& request);
 
 }  // namespace pu

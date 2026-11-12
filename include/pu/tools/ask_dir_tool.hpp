@@ -8,7 +8,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/runtime/delegation.hpp"
+#include "pu/tools/delegation.hpp"
 #include "pu/tools/tool.hpp"
 
 namespace pu::tools {

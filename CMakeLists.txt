@@ -128,6 +128,7 @@ add_library(pu_core STATIC
     src/serve/serve_websocket.cpp
     src/tools/bash.cpp
     src/tools/ask_dir_tool.cpp
+    src/tools/delegation.cpp
     src/tools/policy.cpp
     src/tools/toolbox.cpp
     src/tools/write_file.cpp

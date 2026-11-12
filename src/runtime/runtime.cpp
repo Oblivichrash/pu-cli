@@ -492,6 +492,14 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
   }
 }
 
+// The definition the tool calls through. It builds the runtime a delegated turn needs and asks
+// it for the turn, so a tool that states a question links nothing above itself: the tools say
+// what they want and this says how it is done.
+DelegationResult RunDelegatedTurn(const Delegation& request) {
+  Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
+  return runtime.Delegate(request);
+}
+
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
   default_agent_override_ = agent_name;
 }
