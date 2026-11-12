@@ -62,7 +62,8 @@ int RunAgents(Runtime& runtime, bool as_json) {
   std::string active;
   if (runtime.DefaultSession()) active = runtime.DefaultSession()->Spec().agent_name;
 
-  const std::vector<config::AgentSummary> agents = config::SummarizeAgents(runtime, active);
+  const std::vector<config::AgentSummary> agents =
+      config::SummarizeAgents(runtime.Agents(), active);
   if (as_json) {
     std::cout << boost::json::serialize(config::AgentsAsJson(agents)) << "\n";
   } else {

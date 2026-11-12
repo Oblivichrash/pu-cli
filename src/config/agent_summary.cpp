@@ -4,18 +4,19 @@
 #include <algorithm>
 #include <sstream>
 
+#include "pu/config/agent_manager.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/config/gateway.hpp"
-#include "pu/runtime/runtime.hpp"
 
 namespace pu::config {
 
-std::vector<AgentSummary> SummarizeAgents(const Runtime& runtime, const std::string& active) {
-  std::vector<AgentSummary> agents;
-  const std::vector<std::string> names = runtime.Agents().AgentNames();
-  agents.reserve(names.size());
+std::vector<AgentSummary> SummarizeAgents(const AgentManager& agents,
+                                         const std::string& active) {
+  std::vector<AgentSummary> out;
+  const std::vector<std::string> names = agents.AgentNames();
+  out.reserve(names.size());
   for (const std::string& name : names) {
-    const AgentEntry* entry = runtime.Agents().AgentConfig(name);
+    const AgentEntry* entry = agents.AgentConfig(name);
     AgentSummary summary;
     summary.name = name;
     if (entry != nullptr) {
@@ -25,9 +26,9 @@ std::vector<AgentSummary> SummarizeAgents(const Runtime& runtime, const std::str
       summary.delegates = entry->delegates;
     }
     summary.active = (name == active);
-    agents.push_back(std::move(summary));
+    out.push_back(std::move(summary));
   }
-  return agents;
+  return out;
 }
 
 boost::json::value AgentsAsJson(const std::vector<AgentSummary>& agents) {

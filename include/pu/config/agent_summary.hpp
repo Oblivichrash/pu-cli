@@ -17,7 +17,7 @@
 
 namespace pu {
 
-class Runtime;
+class AgentManager;
 
 namespace config {
 
@@ -36,9 +36,10 @@ struct AgentSummary {
 };
 
 // Every configured agent, in configuration order, with `active` set on the one the session
-// names. The session's answer is passed rather than read: the chat and the CLI learn it from
-// different places, and this is about the list, not about who is asking.
-std::vector<AgentSummary> SummarizeAgents(const Runtime& runtime, const std::string& active);
+// names. The agent index is passed rather than a `Runtime`: this reads the configuration and
+// nothing else, and asking for the whole runtime to reach two of its lookups would make the
+// formatting layer depend on the layer that runs turns.
+std::vector<AgentSummary> SummarizeAgents(const AgentManager& agents, const std::string& active);
 
 // The shape `GET /api/agents` answers with, and the one `pu agents --json` prints: a JSON
 // array of `{name, description, gateway, model, active}`. One function so the two cannot

@@ -199,7 +199,8 @@ CommandReply CommandRouter::HandleAgents(Args, Session& session) {
   // The same table `pu agents` prints: the chat is not a second place to learn who is
   // configured, and two renderings of one list drift.
   return Replied(
-      config::FormatAgentTable(config::SummarizeAgents(runtime_, session.Spec().agent_name)));
+      config::FormatAgentTable(
+          config::SummarizeAgents(runtime_.Agents(), session.Spec().agent_name)));
 }
 
 CommandReply CommandRouter::HandleRewind(Args args, Session& session) {

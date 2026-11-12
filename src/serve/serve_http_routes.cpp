@@ -321,7 +321,7 @@ boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
   Runtime& runtime = call.runtime;
   const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
                                                       : std::string();
-  return config::AgentsAsJson(config::SummarizeAgents(runtime, active));
+  return config::AgentsAsJson(config::SummarizeAgents(runtime.Agents(), active));
 }
 
 boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& body) {
