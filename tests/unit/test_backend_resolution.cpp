@@ -76,29 +76,29 @@ class BackendSourceFixture {
 }  // namespace
 
 TEST_CASE("A backend keeps a thinking level through a round trip", "[backend]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kOpenAI;
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kOpenAI;
   cfg.host = "http://127.0.0.1:1";
   cfg.model = "test-model";
   cfg.thinking = ThinkingLevel::kHigh;
 
-  const config::Backend read =
-      boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
+  const model::Backend read =
+      boost::json::value_to<model::Backend>(boost::json::value_from(cfg));
 
   REQUIRE(read.thinking == ThinkingLevel::kHigh);
   REQUIRE(read.model == "test-model");
 }
 
 TEST_CASE("A backend keeps its type through a round trip", "[backend]") {
-  for (const config::GatewayId type : {config::GatewayId::kOllama, config::GatewayId::kOpenAI,
-                                         config::GatewayId::kCodeBuddy}) {
-    config::Backend cfg;
+  for (const model::GatewayId type : {model::GatewayId::kOllama, model::GatewayId::kOpenAI,
+                                         model::GatewayId::kCodeBuddy}) {
+    model::Backend cfg;
     cfg.gateway = type;
     cfg.host = "https://example.invalid/v1";
     cfg.model = "test-model";
 
-    const config::Backend read =
-        boost::json::value_to<config::Backend>(boost::json::value_from(cfg));
+    const model::Backend read =
+        boost::json::value_to<model::Backend>(boost::json::value_from(cfg));
 
     REQUIRE(read.gateway == type);
   }
@@ -108,7 +108,7 @@ TEST_CASE("A stored backend naming a gateway this build has not got is refused",
   const boost::json::value stored = {
       {"gateway", "some-gateway"}, {"host", "https://example.invalid/v1"}, {"model", "test-model"}};
 
-  REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
+  REQUIRE_THROWS_AS(boost::json::value_to<model::Backend>(stored), pu::GenericError);
 }
 
 TEST_CASE("A stored backend naming no gateway is refused rather than defaulted", "[backend]") {
@@ -119,17 +119,17 @@ TEST_CASE("A stored backend naming no gateway is refused rather than defaulted",
         boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
                            {"model", "test-model"}},
         boost::json::value{{"gateway", ""}, {"model", "test-model"}}}) {
-    REQUIRE_THROWS_AS(boost::json::value_to<config::Backend>(stored), pu::GenericError);
+    REQUIRE_THROWS_AS(boost::json::value_to<model::Backend>(stored), pu::GenericError);
   }
 }
 
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
-  REQUIRE(config::ParseGatewayId("codebuddy") == config::GatewayId::kCodeBuddy);
-  REQUIRE(config::ParseGatewayId("openai") == config::GatewayId::kOpenAI);
-  REQUIRE(config::ParseGatewayId("ollama") == config::GatewayId::kOllama);
-  REQUIRE_FALSE(config::ParseGatewayId("gpt").has_value());
+  REQUIRE(model::ParseGatewayId("codebuddy") == model::GatewayId::kCodeBuddy);
+  REQUIRE(model::ParseGatewayId("openai") == model::GatewayId::kOpenAI);
+  REQUIRE(model::ParseGatewayId("ollama") == model::GatewayId::kOllama);
+  REQUIRE_FALSE(model::ParseGatewayId("gpt").has_value());
 
-  REQUIRE(std::string(config::GatewayName(config::GatewayId::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "codebuddy");
 }
 
 TEST_CASE("A session spec carries only the agent and the thinking override", "[backend]") {
@@ -181,7 +181,7 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
   const auto names_before = runtime.Agents().AgentNames();
 
-  config::Backend replacement = runtime.CurrentBackend();
+  model::Backend replacement = runtime.CurrentBackend();
   replacement.temperature = 1.5f;
   runtime.SwitchBackend(replacement);
 
@@ -302,27 +302,27 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
 
 TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
   for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nim", "codebuddy"}) {
-    const std::optional<config::GatewayId> id = config::ParseGatewayId(name);
+    const std::optional<model::GatewayId> id = model::ParseGatewayId(name);
     REQUIRE(id.has_value());
-    REQUIRE(std::string(config::GatewayName(*id)) == name);
-    REQUIRE_FALSE(config::DefaultHostFor(*id).empty());
+    REQUIRE(std::string(model::GatewayName(*id)) == name);
+    REQUIRE_FALSE(model::DefaultHostFor(*id).empty());
   }
 }
 
 TEST_CASE("Naming a gateway reaches it without an agents.json entry", "[backend]") {
-  const config::Backend nim = config::BackendForGateway("nim");
-  REQUIRE(nim.gateway == config::GatewayId::kNim);
+  const model::Backend nim = model::BackendForGateway("nim");
+  REQUIRE(nim.gateway == model::GatewayId::kNim);
   REQUIRE(nim.host == "https://integrate.api.nvidia.com/v1");
 
   // Two products on one protocol keep their own hosts, which is why the gateway names the
   // product and not the wire format.
-  REQUIRE(config::BackendForGateway("deepseek").host == "https://api.deepseek.com/v1");
-  REQUIRE(config::BackendForGateway("openai").host == "https://api.openai.com/v1");
+  REQUIRE(model::BackendForGateway("deepseek").host == "https://api.deepseek.com/v1");
+  REQUIRE(model::BackendForGateway("openai").host == "https://api.openai.com/v1");
 }
 
 TEST_CASE("Naming a gateway this build has not got says which it has", "[backend]") {
   try {
-    (void)config::BackendForGateway("frobnicate");
+    (void)model::BackendForGateway("frobnicate");
     FAIL("a gateway this build has not got was accepted");
   } catch (const pu::GenericError& e) {
     const std::string message = e.what();

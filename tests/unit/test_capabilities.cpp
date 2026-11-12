@@ -26,7 +26,7 @@ std::string CodeBuddyBody() {
   return body;
 }
 
-std::vector<llm::ModelEntry> ListCodeBuddy(const std::string& body, MockHttpClient& mock) {
+std::vector<model::ModelEntry> ListCodeBuddy(const std::string& body, MockHttpClient& mock) {
   mock.simulate_get = [body](const std::string&, const std::vector<std::string>&) {
     return pu::http::Response{200, body};
   };
@@ -39,7 +39,7 @@ std::vector<llm::ModelEntry> ListCodeBuddy(const std::string& body, MockHttpClie
 TEST_CASE("[capabilities] a codebuddy entry carries what the host says about it",
           "[capabilities]") {
   auto [http, mock] = MakeMockHttpClient();
-  const std::vector<llm::ModelEntry> models = ListCodeBuddy(CodeBuddyBody(), *mock);
+  const std::vector<model::ModelEntry> models = ListCodeBuddy(CodeBuddyBody(), *mock);
 
   REQUIRE(models.size() == 2);
   REQUIRE(models[0].id == "glm-5.1");
@@ -64,7 +64,7 @@ TEST_CASE("[capabilities] a listing naming only an id reports no capability",
   };
 
   const llm::OpenAIModelLister lister;
-  const std::vector<llm::ModelEntry> models =
+  const std::vector<model::ModelEntry> models =
       lister.ListModels("https://x.example/v1", "", *mock);
 
   REQUIRE(models.size() == 2);
@@ -83,7 +83,7 @@ TEST_CASE("[capabilities] an ollama name is the id and carries no capability",
   };
 
   const llm::OllamaModelLister lister;
-  const std::vector<llm::ModelEntry> models =
+  const std::vector<model::ModelEntry> models =
       lister.ListModels("http://localhost:11434", "", *mock);
 
   REQUIRE(models.size() == 1);
@@ -96,7 +96,7 @@ TEST_CASE("[capabilities] an id an agent names but the catalogue does not still 
   auto [http, mock] = MakeMockHttpClient();
   const std::string body = "{\"code\":0,\"data\":{\"agents\":[{\"models\":[\"orphan\"]}],\"models\":[]}}";
 
-  const std::vector<llm::ModelEntry> models = ListCodeBuddy(body, *mock);
+  const std::vector<model::ModelEntry> models = ListCodeBuddy(body, *mock);
 
   REQUIRE(models.size() == 1);
   REQUIRE(models[0].id == "orphan");

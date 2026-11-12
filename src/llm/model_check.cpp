@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/llm_provider.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/llm/model_factory.hpp"
+#include "pu/model/backend.hpp"
 
 #include <boost/json.hpp>
 
@@ -25,7 +26,7 @@ bool SendsNoLevel(ThinkingLevel level) {
   return level == ThinkingLevel::kNone || level == ThinkingLevel::kServerDefault;
 }
 
-std::string MissingLevelReason(const ModelEntry& entry) {
+std::string MissingLevelReason(const model::ModelEntry& entry) {
   std::string reason =
       "this model is answered only with a reasoning level and this backend sends none; "
       "set thinking to low, medium or high";
@@ -37,8 +38,8 @@ std::string MissingLevelReason(const ModelEntry& entry) {
 
 }  // namespace
 
-std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
-                                     const std::vector<ModelEntry>& models,
+std::vector<ModelCheck> VerifyModels(const model::Backend& cfg,
+                                     const std::vector<model::ModelEntry>& models,
                                      std::shared_ptr<http::HttpClient> http) {
   std::vector<ModelCheck> checks;
   checks.reserve(models.size());
@@ -48,7 +49,7 @@ std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
   ping.content = "ping";
   const std::span<const ChatMessage> history(&ping, 1);
 
-  for (const ModelEntry& entry : models) {
+  for (const model::ModelEntry& entry : models) {
     ModelCheck check;
     check.model = entry.id;
 
@@ -60,12 +61,12 @@ std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
       continue;
     }
 
-    config::Backend probe = cfg;
+    model::Backend probe = cfg;
     probe.model = entry.id;
     probe.max_tokens = kProbeMaxTokens;
 
     try {
-      std::unique_ptr<LLMProvider> provider = config::CreateBackend(probe, http);
+      std::unique_ptr<LLMProvider> provider = llm::CreateBackend(probe, http);
       provider->Chat(ProbeRequest(history));
       check.answered = true;
     } catch (const std::exception& e) {

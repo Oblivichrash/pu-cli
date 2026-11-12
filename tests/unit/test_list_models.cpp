@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -20,10 +21,10 @@ bool HasHeader(const std::vector<std::string>& headers, const std::string& name)
   });
 }
 
-std::vector<std::string> IdsOf(const std::vector<llm::ModelEntry>& entries) {
+std::vector<std::string> IdsOf(const std::vector<model::ModelEntry>& entries) {
   std::vector<std::string> ids;
   ids.reserve(entries.size());
-  for (const llm::ModelEntry& entry : entries) ids.push_back(entry.id);
+  for (const model::ModelEntry& entry : entries) ids.push_back(entry.id);
   return ids;
 }
 
@@ -35,8 +36,8 @@ TEST_CASE("[list_models] ollama reads /api/tags and the models' names", "[list_m
     return pu::http::Response{200, R"({"models":[{"name":"gpt-oss:20b"},{"name":"q:2b"}]})"};
   };
 
-  const auto models = config::ListModels(
-      BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock);
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(IdsOf(models) == std::vector<std::string>{"gpt-oss:20b", "q:2b"});
   REQUIRE(mock->last_get_url == "http://localhost:11434/api/tags");
 }
@@ -47,8 +48,8 @@ TEST_CASE("[list_models] openai reads /models and the data array's ids", "[list_
     return pu::http::Response{200, R"({"data":[{"id":"org/one"},{"id":"org/two"}]})"};
   };
 
-  const auto models = config::ListModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
   REQUIRE(IdsOf(models) == std::vector<std::string>{"org/one", "org/two"});
   REQUIRE(mock->last_get_url == "https://x.example/v1/models");
 }
@@ -63,8 +64,8 @@ TEST_CASE("[list_models] a declared window is read when no capability field name
     ]})"};
   };
 
-  const auto models = config::ListModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
   REQUIRE(models.size() == 2);
   // A product that states a window declares the name in its shape; one that says nothing
   // leaves the answer at zero rather than inventing a default.
@@ -77,8 +78,8 @@ TEST_CASE("[list_models] an api key rides the request as a bearer header", "[lis
     return pu::http::Response{200, R"({"data":[]})"};
   };
 
-  (void)config::ListModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1", "nvapi-secret"),
+  (void)llm::ListModels(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1", "nvapi-secret"),
       *mock);
   REQUIRE(mock->last_headers.size() == 1);
   REQUIRE(mock->last_headers[0] == "Authorization: Bearer nvapi-secret");
@@ -91,8 +92,8 @@ TEST_CASE("[list_models] a listing that names no model is empty, not an error",
     return pu::http::Response{200, R"({"models": null})"};
   };
 
-  const auto models = config::ListModels(
-      BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock);
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kOllama, "http://localhost:11434"), *mock);
   REQUIRE(models.empty());
 }
 
@@ -103,8 +104,8 @@ TEST_CASE("[list_models] a body that does not parse is an Error, not a crash",
     return pu::http::Response{200, "404 page not found"};
   };
 
-  REQUIRE_THROWS_AS(config::ListModels(
-                        BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
+  REQUIRE_THROWS_AS(llm::ListModels(
+                        BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"),
                         *mock),
                     pu::GenericError);
 }
@@ -120,9 +121,9 @@ TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
     return pu::http::Response{200, body};
   };
 
-  const std::string host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
+  const std::string host = model::DefaultHostFor(model::GatewayId::kCodeBuddy);
   const auto models =
-      config::ListModels(BackendOfType(config::GatewayId::kCodeBuddy, host), *mock);
+      llm::ListModels(BackendOfType(model::GatewayId::kCodeBuddy, host), *mock);
 
   REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
   REQUIRE(IdsOf(models) == std::vector<std::string>{"glm-5.2", "hy3"});
@@ -137,8 +138,8 @@ TEST_CASE("[list_models] a codebuddy key rides the config read too", "[list_mode
     return pu::http::Response{200, body};
   };
 
-  (void)config::ListModels(
-      BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2", "ck_x"),
+  (void)llm::ListModels(
+      BackendOfType(model::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2", "ck_x"),
       *mock);
   REQUIRE(HasHeader(mock->last_headers, "Authorization"));
 }
@@ -152,11 +153,11 @@ TEST_CASE("[list_models] a container the answer does not carry is a refusal nami
   };
 
   REQUIRE_THROWS_AS(
-      config::ListModels(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock),
+      llm::ListModels(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock),
       pu::GenericError);
 
   try {
-    (void)config::ListModels(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
+    (void)llm::ListModels(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"),
                              *mock);
   } catch (const pu::GenericError& e) {
     const std::string message = e.what();
@@ -172,7 +173,7 @@ TEST_CASE("[list_models] a container holding null is an empty listing, not a mis
     return pu::http::Response{200, R"({"data":null})"};
   };
 
-  const auto models = config::ListModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
   REQUIRE(models.empty());
 }

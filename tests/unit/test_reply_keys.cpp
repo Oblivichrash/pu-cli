@@ -9,7 +9,7 @@
 #include "pu/llm/projection.hpp"
 
 using namespace pu::llm;
-using pu::config::WireProtocol;
+using pu::model::WireProtocol;
 
 namespace {
 

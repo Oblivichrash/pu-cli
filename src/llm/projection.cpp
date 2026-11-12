@@ -195,16 +195,16 @@ void WalkOllamaReply(const boost::json::object& frame, const KeySink& on_key) {
 
 }  // namespace
 
-void ForEachReplyKeyAtPath(const boost::json::value& j, config::WireProtocol protocol,
+void ForEachReplyKeyAtPath(const boost::json::value& j, model::WireProtocol protocol,
                            const std::function<void(std::string_view, std::string_view)>& on_key) {
   if (!on_key) return;
   const boost::json::object* frame = j.if_object();
   if (frame == nullptr) return;
   switch (protocol) {
-    case config::WireProtocol::kOllama:
+    case model::WireProtocol::kOllama:
       WalkOllamaReply(*frame, on_key);
       return;
-    case config::WireProtocol::kOpenAI:
+    case model::WireProtocol::kOpenAI:
       WalkOpenAIReply(*frame, on_key);
       return;
   }

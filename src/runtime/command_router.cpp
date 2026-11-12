@@ -4,8 +4,9 @@
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
 #include "pu/config/agent_summary.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/runtime/runtime.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/llm/model_listing.hpp"
 
 #include <sstream>
@@ -129,8 +130,8 @@ std::string CommandRouter::Help() {
 
 CommandReply CommandRouter::HandleBackend(Args args) {
   if (args.empty()) {
-    const config::Backend cfg = runtime_.CurrentBackend();
-    return Replied("Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
+    const model::Backend cfg = runtime_.CurrentBackend();
+    return Replied("Current backend: " + std::string(model::GatewayName(cfg.gateway)) +
                    " (model: " + cfg.model + ", host: " + cfg.host + ")");
   }
 
@@ -142,7 +143,7 @@ CommandReply CommandRouter::HandleBackend(Args args) {
       return Failed(DescribeError(e));
     }
     return Replied("Switched to agent: " + args[0] + " (" +
-                   std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
+                   std::string(model::GatewayName(agent_config->backend.gateway)) + "/" +
                    agent_config->backend.model + ")");
   }
 
@@ -157,16 +158,16 @@ CommandReply CommandRouter::HandleBackend(Args args) {
     return Failed("Usage: /backend <type> <model> [host]. A key is set in agents.json, not here.");
   }
 
-  const auto type = config::ParseGatewayId(args[0]);
+  const auto type = model::ParseGatewayId(args[0]);
   if (!type) {
-    return Failed("Unknown type: " + args[0] + ". Use " + config::GatewayNames() + ".");
+    return Failed("Unknown type: " + args[0] + ". Use " + model::GatewayNames() + ".");
   }
 
-  config::Backend new_cfg;
+  model::Backend new_cfg;
   new_cfg.gateway = *type;
   new_cfg.model = args[1];
   if (args.size() > 2) new_cfg.host = args[2];
-  if (new_cfg.host.empty()) new_cfg.host = config::DefaultHostFor(*type);
+  if (new_cfg.host.empty()) new_cfg.host = model::DefaultHostFor(*type);
 
   try {
     runtime_.SwitchBackend(new_cfg);
@@ -185,11 +186,11 @@ CommandReply CommandRouter::HandleModels(Args args) {
   return ReportModels(agent_config->backend);
 }
 
-CommandReply CommandRouter::ReportModels(const config::Backend& cfg) {
+CommandReply CommandRouter::ReportModels(const model::Backend& cfg) {
   try {
-    const std::vector<llm::ModelEntry> models = config::ListModels(cfg, runtime_.Http());
+    const std::vector<model::ModelEntry> models = llm::ListModels(cfg, runtime_.Http());
     return Replied(
-        llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model));
+        llm::FormatModelList(models, model::GatewayName(cfg.gateway), cfg.host, cfg.model));
   } catch (const std::exception& e) {
     return Failed(DescribeError(e));
   }

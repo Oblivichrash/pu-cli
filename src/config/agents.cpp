@@ -76,9 +76,9 @@ paging::Budget ParsePaging(const json::value& j) {
   return budget;
 }
 
-Backend ParseBackend(const json::value& j) {
-  Backend cfg;
-  ReadBackendFields(cfg, j);
+model::Backend ParseBackend(const json::value& j) {
+  model::Backend cfg;
+  model::ReadBackendFields(cfg, j);
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
   cfg.model = ExpandEnvVars(cfg.model);
@@ -130,7 +130,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::GenericError("Missing backend field");
   entry.backend = ParseBackend(j.at("backend"));
-  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+  if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
   if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
@@ -175,7 +175,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
 namespace {
 
 // A proxy gateway's name belongs in the identifier; a vendor's own API leaves the model id.
-std::string AgentNameFor(const llm::ModelEntry& model, const std::string& gateway) {
+std::string AgentNameFor(const model::ModelEntry& model, const std::string& gateway) {
   if (gateway == "codebuddy") return gateway + "-" + model.id;
   return model.id;
 }
@@ -188,7 +188,7 @@ std::string StringMember(const boost::json::object& object, const char* key) {
 
 }  // unnamed namespace
 
-std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source) {
+std::string FormatAgentEntry(const model::ModelEntry& model, const boost::json::value& source) {
   const boost::json::object* src = source.if_object();
   if (src == nullptr) throw GenericError("Cannot render an entry from something that is not an object");
 
@@ -473,7 +473,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
         server.command = ResolveAgainst(table.parent_path(), server.command);
         for (std::string& arg : server.args) arg = ResolveAgainst(table.parent_path(), arg);
       }
-      if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+      if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
       if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
       result.agents.push_back(std::move(entry));
     }

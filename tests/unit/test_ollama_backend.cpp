@@ -2,7 +2,7 @@
 
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/projection.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "tests/mocks/provider_harness.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -42,7 +42,7 @@ TEST_CASE("OllamaProvider request building", "[ollama]") {
 
 TEST_CASE("Backend leaves the token cap unset until it is asked for", "[config]") {
   const auto config_from = [](const char* text) {
-    return boost::json::value_to<pu::config::Backend>(boost::json::parse(text));
+    return boost::json::value_to<pu::model::Backend>(boost::json::parse(text));
   };
 
   REQUIRE_FALSE(config_from(R"({"gateway":"ollama","model":"m"})").max_tokens.has_value());

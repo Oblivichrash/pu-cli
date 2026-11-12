@@ -9,6 +9,7 @@
 #include "pu/core/http_client.hpp"
 #include "pu/core/text.hpp"
 #include "pu/llm/llm_provider.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/paging/origin.hpp"
 #include "pu/session/request.hpp"
 
@@ -174,8 +175,8 @@ void Session::SetAgent(const std::string& agent_name) {
 }
 
 std::unique_ptr<LLMProvider> Session::CreateProvider(
-    const config::Backend& backend, std::shared_ptr<pu::http::HttpClient> http) const {
-  return config::CreateBackend(backend, std::move(http));
+    const model::Backend& backend, std::shared_ptr<pu::http::HttpClient> http) const {
+  return llm::CreateBackend(backend, std::move(http));
 }
 
 boost::json::value Session::Serialize() const {

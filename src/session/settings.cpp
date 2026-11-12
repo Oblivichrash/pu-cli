@@ -19,7 +19,7 @@ namespace {
 namespace json = pu::json;
 
 using Reader = std::function<boost::json::value(const boost::json::value&)>;
-using Writer = std::function<boost::json::value(const config::Backend&, int)>;
+using Writer = std::function<boost::json::value(const model::Backend&, int)>;
 using Applier = std::function<void(InForce&, const boost::json::value&)>;
 
 // One setting: its name, the type a page draws it as, how a value is read, what the agent's
@@ -87,14 +87,14 @@ boost::json::value ReadToolBudget(const boost::json::value& raw) {
 const std::array<Setting, 4>& Table() {
   static const std::array<Setting, 4> kSettings{{
       {"thinking", "enum", &ReadThinking,
-       [](const config::Backend& backend, int) {
+       [](const model::Backend& backend, int) {
          return boost::json::value(ThinkingName(backend.thinking));
        },
        [](InForce& in_force, const boost::json::value& value) {
          in_force.backend.thinking = ParseThinkingLevel(boost::json::value_to<std::string>(value));
        }},
       {"temperature", "float", &ReadTemperature,
-       [](const config::Backend& backend, int) {
+       [](const model::Backend& backend, int) {
          return boost::json::value(static_cast<double>(backend.temperature));
        },
        [](InForce& in_force, const boost::json::value& value) {
@@ -103,14 +103,14 @@ const std::array<Setting, 4>& Table() {
                                             : static_cast<float>(value.as_int64());
        }},
       {"max_tokens", "int", &ReadMaxTokens,
-       [](const config::Backend& backend, int) {
+       [](const model::Backend& backend, int) {
          return backend.max_tokens ? boost::json::value(*backend.max_tokens) : boost::json::value();
        },
        [](InForce& in_force, const boost::json::value& value) {
          in_force.backend.max_tokens = static_cast<int>(value.as_int64());
        }},
       {"tool_budget", "int", &ReadToolBudget,
-       [](const config::Backend&, int budget) { return boost::json::value(budget); },
+       [](const model::Backend&, int budget) { return boost::json::value(budget); },
        [](InForce& in_force, const boost::json::value& value) {
          in_force.tool_budget = static_cast<int>(value.as_int64());
        }},
@@ -141,7 +141,7 @@ boost::json::value ParseSetting(const std::string& name, const boost::json::valu
   return setting->read(raw);
 }
 
-std::vector<SettingView> ViewSettings(const config::Backend& agent_backend, int agent_tool_budget,
+std::vector<SettingView> ViewSettings(const model::Backend& agent_backend, int agent_tool_budget,
                                       const Overrides& overrides) {
   std::vector<SettingView> views;
   for (const Setting& setting : Table()) {
@@ -162,7 +162,7 @@ std::vector<SettingView> ViewSettings(const config::Backend& agent_backend, int 
   return views;
 }
 
-InForce InForce::Resolve(const config::Backend& agent_backend, int agent_tool_budget,
+InForce InForce::Resolve(const model::Backend& agent_backend, int agent_tool_budget,
                          const Overrides& overrides) {
   InForce in_force{agent_backend, agent_tool_budget};
   for (const Setting& setting : Table()) {

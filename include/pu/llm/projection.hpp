@@ -9,7 +9,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/config/gateway.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/llm/llm_types.hpp"
 
 namespace pu::llm {
@@ -65,7 +65,7 @@ boost::json::array ProjectMessages(std::span<const ChatMessage> history,
 //
 // `protocol` selects the format. A caller that knows the gateway passes its protocol;
 // nothing is inferred from the frame.
-void ForEachReplyKeyAtPath(const boost::json::value& j, config::WireProtocol protocol,
+void ForEachReplyKeyAtPath(const boost::json::value& j, model::WireProtocol protocol,
                            const std::function<void(std::string_view path, std::string_view key)>&
                                on_key);
 

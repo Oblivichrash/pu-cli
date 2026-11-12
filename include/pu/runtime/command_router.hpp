@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/session/session.hpp"
 
 namespace pu {
@@ -62,7 +62,7 @@ class CommandRouter {
 
   CommandReply HandleBackend(Args args);
   CommandReply HandleModels(Args args);
-  CommandReply ReportModels(const config::Backend& cfg);
+  CommandReply ReportModels(const model::Backend& cfg);
   CommandReply HandleAgents(Args args, Session& session);
   CommandReply HandleRewind(Args args, Session& session);
   CommandReply HandleThinking(Args args);

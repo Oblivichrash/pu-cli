@@ -62,11 +62,12 @@ add_library(pu::core_util ALIAS pu_core_util)
 
 add_library(pu_config STATIC
     src/config/agents.cpp
-    src/config/backend.cpp
-    src/config/gateway.cpp
+    src/model/backend.cpp
+    src/model/gateway.cpp
     src/config/serve_registry.cpp
     src/llm/field_capture.cpp
     src/llm/model_check.cpp
+    src/llm/model_factory.cpp
     src/llm/model_listing.cpp
     src/llm/ollama_provider.cpp
     src/llm/openai_protocol.cpp

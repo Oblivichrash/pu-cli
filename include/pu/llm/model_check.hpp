@@ -26,8 +26,8 @@ struct ModelCheck {
 // job is to report every model, and a credential the host rejects fails all of them.
 // A model the catalogue says is answered only with a reasoning level is not asked at all
 // when the backend sends none, since that request cannot succeed.
-std::vector<ModelCheck> VerifyModels(const config::Backend& cfg,
-                                     const std::vector<ModelEntry>& models,
+std::vector<ModelCheck> VerifyModels(const model::Backend& cfg,
+                                     const std::vector<model::ModelEntry>& models,
                                      std::shared_ptr<http::HttpClient> http);
 
 }  // namespace pu::llm

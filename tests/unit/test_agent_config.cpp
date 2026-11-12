@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/model_factory.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <fstream>
@@ -49,7 +51,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
     item.as_object()["security"] = security;
 
     json::value backend = {
-        {"gateway", (entry.backend.gateway == config::GatewayId::kOpenAI) ? "openai" : "ollama"},
+        {"gateway", (entry.backend.gateway == model::GatewayId::kOpenAI) ? "openai" : "ollama"},
         {"host", entry.backend.host},
         {"model", entry.backend.model},
         {"temperature", entry.backend.temperature},
@@ -259,9 +261,9 @@ TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
     REQUIRE(cfg.default_agent == "chat");
     REQUIRE(cfg.agents.size() == 2);
     REQUIRE(cfg.agents[0].name == "chat");
-    REQUIRE(cfg.agents[0].backend.gateway == config::GatewayId::kOllama);
+    REQUIRE(cfg.agents[0].backend.gateway == model::GatewayId::kOllama);
     REQUIRE(cfg.agents[1].name == "bash");
-    REQUIRE(cfg.agents[1].backend.gateway == config::GatewayId::kOpenAI);
+    REQUIRE(cfg.agents[1].backend.gateway == model::GatewayId::kOpenAI);
     REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
     REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
   }
@@ -604,7 +606,7 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   config::AgentEntry entry;
   entry.name = "test";
   entry.description = "desc";
-  entry.backend.gateway = config::GatewayId::kOpenAI;
+  entry.backend.gateway = model::GatewayId::kOpenAI;
   entry.backend.host = "https://api.test.com";
   entry.backend.model = "test-model";
   entry.backend.api_key = "secret";
@@ -616,33 +618,33 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   REQUIRE(loaded.default_agent == "test");
   REQUIRE(loaded.agents.size() == 1);
   REQUIRE(loaded.agents[0].name == "test");
-  REQUIRE(loaded.agents[0].backend.gateway == config::GatewayId::kOpenAI);
+  REQUIRE(loaded.agents[0].backend.gateway == model::GatewayId::kOpenAI);
   REQUIRE(loaded.agents[0].backend.host == "https://api.test.com");
   REQUIRE(loaded.agents[0].backend.api_key == "secret");
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kOllama;
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kOllama;
   cfg.host = "http://localhost:11434";
   cfg.model = "llama3.2";
   cfg.temperature = 0.5f;
   cfg.system_prompt = "Be helpful.";
 
   auto mock_http = std::make_shared<MockHttpClient>();
-  auto backend = config::CreateBackend(cfg, std::move(mock_http));
+  auto backend = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
 
 TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kOpenAI;
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kOpenAI;
   cfg.host = "https://api.openai.com/v1";
   cfg.model = "gpt-4o-mini";
   cfg.api_key = "key";
 
   auto mock_http = std::make_shared<MockHttpClient>();
-  auto backend = config::CreateBackend(cfg, std::move(mock_http));
+  auto backend = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(backend != nullptr);
 }
 
@@ -746,7 +748,7 @@ TEST_CASE("Agents config writer round-trips a thinking level", "[agent_config]")
   original.default_agent = "deepseek";
   config::AgentEntry entry;
   entry.name = "deepseek";
-  entry.backend.gateway = config::GatewayId::kOpenAI;
+  entry.backend.gateway = model::GatewayId::kOpenAI;
   entry.backend.host = "https://api.deepseek.com/v1";
   entry.backend.model = "deepseek-reasoner";
   entry.backend.thinking = ThinkingLevel::kMedium;
@@ -777,7 +779,7 @@ TEST_CASE("A rendered entry copies the file's own surroundings and expands nothi
     "tool_call_budget": 100
   })");
 
-  llm::ModelEntry model{"glm-5.3-flash", {}};
+  model::ModelEntry model{"glm-5.3-flash", {}};
   model.caps.credits = "x0.06 credits";
 
   const std::string rendered = config::FormatAgentEntry(model, source);
@@ -801,7 +803,7 @@ TEST_CASE("A rendered entry names a level a reasoning-only model cannot run with
     "backend": {"gateway": "codebuddy", "model": "some-model", "api_key": "${K}"}
   })");
 
-  llm::ModelEntry model{"glm-5.1", {}};
+  model::ModelEntry model{"glm-5.1", {}};
   model.caps.only_reasoning = true;
   model.caps.default_effort = "medium";
 
@@ -816,7 +818,7 @@ TEST_CASE("A rendered entry leaves a model that does not require a level alone",
     "backend": {"gateway": "openai", "host": "https://api.deepseek.com/v1", "model": "m"}
   })");
 
-  const std::string rendered = config::FormatAgentEntry(llm::ModelEntry{"plain", {}}, source);
+  const std::string rendered = config::FormatAgentEntry(model::ModelEntry{"plain", {}}, source);
   REQUIRE(rendered.find("thinking") == std::string::npos);
   // The vendor's own gateway leaves the model id as the name.
   REQUIRE(rendered.find("\"name\": \"plain\"") != std::string::npos);

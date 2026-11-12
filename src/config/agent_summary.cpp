@@ -5,8 +5,8 @@
 #include <sstream>
 
 #include "pu/config/agent_manager.hpp"
-#include "pu/config/backend.hpp"
-#include "pu/config/gateway.hpp"
+#include "pu/model/backend.hpp"
+#include "pu/model/gateway.hpp"
 
 namespace pu::config {
 

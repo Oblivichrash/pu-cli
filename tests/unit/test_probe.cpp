@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/llm/field_capture.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -45,7 +45,7 @@ TEST_CASE("[probe] an openai stream names its fields at each level", "[probe]") 
   };
 
   const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "https://x.example/v1/chat/completions");
@@ -66,7 +66,7 @@ TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
   };
 
   const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock,
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOllama, "http://localhost:11434"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "http://localhost:11434/api/chat");
@@ -83,7 +83,7 @@ TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
   };
 
   const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE_FALSE(report.stream_parsed);
@@ -106,7 +106,7 @@ TEST_CASE("[probe] an empty answer says the gateway sent nothing", "[probe]") {
                                const std::vector<std::string>&, pu::http::WriteCallback) {};
 
   const llm::FieldCapture report =
-      llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(report.http_status == 200);
@@ -125,7 +125,7 @@ TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {
   const auto path = std::filesystem::temp_directory_path() / "pu_probe_test.raw";
   std::filesystem::remove(path);
 
-  llm::CaptureFields(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                    "Say the single word: pong", path.string());
 
   REQUIRE(std::filesystem::file_size(path) == std::string(kOpenAIStream).size());
@@ -143,7 +143,7 @@ TEST_CASE("[probe] a listing is walked the way its shape reads it", "[probe]") {
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE(report.parsed);
   REQUIRE(report.http_status == 200);
@@ -162,7 +162,7 @@ TEST_CASE("[probe] a listing is asked for the names its shape reads", "[probe]")
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   // The OpenAI shape names no capability field, so nothing is reported absent: a shape that
   // does not ask is not a gateway that dropped anything.
@@ -177,7 +177,7 @@ TEST_CASE("[probe] a listing that is not JSON says so rather than reporting an e
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE_FALSE(report.parsed);
   REQUIRE(report.error.find("does not parse as JSON") != std::string::npos);
@@ -201,10 +201,10 @@ TEST_CASE("[probe] both report types answer success by whether the answer parsed
   };
 
   const llm::FieldCapture capture = llm::CaptureFields(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
       std::nullopt);
   const llm::ListingReport listing =
-      llm::ProbeListing(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      llm::ProbeListing(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE(capture.stream_parsed);
   REQUIRE(capture.Succeeded());
@@ -224,10 +224,10 @@ TEST_CASE("[probe] a report of nothing that parsed is a failure on both paths", 
   };
 
   const llm::FieldCapture capture = llm::CaptureFields(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
       std::nullopt);
   const llm::ListingReport listing =
-      llm::ProbeListing(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      llm::ProbeListing(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE_FALSE(capture.Succeeded());
   REQUIRE_FALSE(listing.Succeeded());

@@ -13,7 +13,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/llm/llm_types.hpp"
 
 namespace pu::session {
@@ -40,10 +40,10 @@ using Overrides = boost::json::object;
 // applied. One value rather than one per setting, because a caller that reads two of them
 // apart can be given two answers that were true a moment apart.
 struct InForce {
-  config::Backend backend;
+  model::Backend backend;
   int tool_budget = 0;
 
-  static InForce Resolve(const config::Backend& agent_backend, int agent_tool_budget,
+  static InForce Resolve(const model::Backend& agent_backend, int agent_tool_budget,
                          const Overrides& overrides);
 };
 
@@ -54,7 +54,7 @@ boost::json::value ParseSetting(const std::string& name, const boost::json::valu
 
 // Every setting this build knows, with the value in force: the session's override where there
 // is one, and the agent's own configuration otherwise.
-std::vector<SettingView> ViewSettings(const config::Backend& agent_backend,
+std::vector<SettingView> ViewSettings(const model::Backend& agent_backend,
                                       int agent_tool_budget, const Overrides& overrides);
 
 }  // namespace pu::session

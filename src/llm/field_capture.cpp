@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/llm/model_listing.hpp"
 #include "pu/llm/openai_protocol.hpp"
 #include "pu/llm/projection.hpp"
 
@@ -17,16 +18,16 @@ namespace pu::llm {
 
 namespace {
 
-config::WireProtocol ProtocolOf(const config::Backend& backend) {
-  return config::GatewayForId(backend.gateway).protocol;
+model::WireProtocol ProtocolOf(const model::Backend& backend) {
+  return model::GatewayForId(backend.gateway).protocol;
 }
 
 // The gateway's own headers plus the bearer, which is what both probes send. A gateway that
 // names none still gets the content type a POST needs.
-std::vector<std::string> ProbeHeaders(const config::Backend& backend,
+std::vector<std::string> ProbeHeaders(const model::Backend& backend,
                                      const std::vector<std::string>& extra = {}) {
   std::vector<std::string> headers = extra;
-  if (headers.empty()) headers = config::GatewayForId(backend.gateway).listing_headers();
+  if (headers.empty()) headers = model::GatewayForId(backend.gateway).listing_headers();
   if (std::none_of(headers.begin(), headers.end(), [](const std::string& h) {
         return h.rfind("Content-Type:", 0) == 0;
       })) {
@@ -37,8 +38,8 @@ std::vector<std::string> ProbeHeaders(const config::Backend& backend,
   return headers;
 }
 
-std::string ProbeBody(const config::Backend& backend, const std::string& prompt) {
-  if (ProtocolOf(backend) == config::WireProtocol::kOllama) {
+std::string ProbeBody(const model::Backend& backend, const std::string& prompt) {
+  if (ProtocolOf(backend) == model::WireProtocol::kOllama) {
     boost::json::value req = {
         {"model", backend.model},
         {"stream", true},
@@ -77,7 +78,7 @@ void ForEachFrame(const std::string& raw, Fn&& on_frame) {
 // Every key one frame carries, filed under the wire path the gateway's own format reaches it
 // by: `usage.prompt_tokens_details` for an OpenAI nested member, `message` for Ollama's. The
 // format is the gateway's protocol, passed in rather than guessed from the frame.
-void CollectReplyKeys(const boost::json::value& frame, config::WireProtocol protocol,
+void CollectReplyKeys(const boost::json::value& frame, model::WireProtocol protocol,
                       std::map<std::string, std::set<std::string>>& keys) {
   ForEachReplyKeyAtPath(
       frame, protocol,
@@ -88,16 +89,16 @@ void CollectReplyKeys(const boost::json::value& frame, config::WireProtocol prot
 
 }  // namespace
 
-FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient& http,
+FieldCapture CaptureFields(const model::Backend& backend, pu::http::HttpClient& http,
                         const std::string& prompt, const std::optional<std::string>& raw_path) {
   FieldCapture report;
-  report.gateway = config::GatewayName(backend.gateway);
+  report.gateway = model::GatewayName(backend.gateway);
   report.host = backend.host;
   report.model = backend.model;
 
   std::string raw;
   report.http_status =
-      http.PostStream(backend.host + std::string(config::GatewayEndpointPath(backend.gateway)),
+      http.PostStream(backend.host + std::string(model::GatewayEndpointPath(backend.gateway)),
                       ProbeBody(backend, prompt), ProbeHeaders(backend),
                       [&](char* ptr, size_t total) -> size_t {
                         raw.append(ptr, total);
@@ -111,7 +112,7 @@ FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient&
     out.write(raw.data(), static_cast<std::streamsize>(raw.size()));
   }
 
-  const config::WireProtocol protocol = ProtocolOf(backend);
+  const model::WireProtocol protocol = ProtocolOf(backend);
   ForEachFrame(raw, [&](const boost::json::value& frame) {
     ++report.frames;
     CollectReplyKeys(frame, protocol, report.keys);
@@ -147,11 +148,11 @@ void CollectListingKeys(const boost::json::value& entry, std::map<std::string, s
 
 }  // namespace
 
-ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http) {
+ListingReport ProbeListing(const model::Backend& backend, pu::http::HttpClient& http) {
   ListingReport report;
-  report.gateway = config::GatewayName(backend.gateway);
+  report.gateway = model::GatewayName(backend.gateway);
 
-  const std::optional<ListingTarget> target = ListingTargetForGateway(backend);
+  const std::optional<model::ListingTarget> target = ListingTargetForGateway(backend);
   if (!target) {
     report.error = "no listing is known for gateway " + report.gateway;
     return report;

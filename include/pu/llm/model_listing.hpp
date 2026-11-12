@@ -8,54 +8,15 @@
 #include <vector>
 
 #include "pu/core/http_client.hpp"
+#include "pu/model/listing.hpp"
+
 namespace pu {
 
-namespace config {
+namespace model {
 struct Backend;
 }
 
 }  // namespace pu
-
-namespace pu::llm {
-
-struct Capabilities {
-  bool supports_tools = false;
-  bool supports_images = false;
-  bool supports_reasoning = false;
-  // Measured: a request that carries no effort is answered 400 `11150`.
-  bool only_reasoning = false;
-  std::string default_effort;
-  int max_input_tokens = 0;
-  // The gateway's own price coefficient, the one number deciding between two models that work.
-  std::string credits;
-};
-
-struct ModelEntry {
-  std::string id;
-  Capabilities caps;
-};
-
-// How a gateway's catalogue is shaped, as the lister that reads it declares: which member
-// holds the entries, which key of an entry is its id, and what a model says about itself.
-struct CatalogShape {
-  std::string path{};
-  std::string container;
-  std::string id_key;
-  std::string nested{};  std::string supports_tools{};
-  std::string supports_images{};
-  std::string supports_reasoning{};
-  std::string only_reasoning{};
-  // One level: the parent object and the field under it.
-  std::string effort_parent{};
-  std::string effort_field{};
-  std::string max_input_tokens{};
-  // The window a model declares rather than a capability it promises: read when no capability
-  // field named one, because several products state it and none of them promise it.
-  std::string context_window{};
-  std::string credits{};
-};
-
-}  // namespace pu::llm
 
 namespace pu::llm {
 
@@ -81,21 +42,21 @@ class LLMProvider;
 // does and diff the bytes against the same names, rather than restating either.
 struct ListingTarget {
   std::string url;
-  llm::CatalogShape shape;
+  model::CatalogShape shape;
 };
 
 class ModelLister {
  public:
   virtual ~ModelLister() = default;
 
-  virtual std::vector<llm::ModelEntry> ListModels(const std::string& host,
+  virtual std::vector<model::ModelEntry> ListModels(const std::string& host,
                                                   const std::string& api_key,
                                                   http::HttpClient& http) const = 0;
 
   // The target this lister would read for `host`, or nothing for a lister that has no
   // catalogue to describe. A probe asks the lister rather than matching on a gateway's name,
   // so a gateway added with its own catalogue is probed the moment it is listed.
-  virtual std::optional<ListingTarget> Target(const std::string& /*host*/) const {
+  virtual std::optional<model::ListingTarget> Target(const std::string& /*host*/) const {
     return std::nullopt;
   }
 };
@@ -112,7 +73,7 @@ enum class ListingDetail { kIds, kCaps };
 
 // Renders a listing as both the `models` command and the `/models` command print it. An
 // empty listing says so rather than printing a heading over nothing.
-std::string FormatModelList(const std::vector<ModelEntry>& models,
+std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
                             std::string_view active_model,
@@ -120,18 +81,18 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
 
 class OllamaModelLister final : public pu::ModelLister {
  public:
-  std::vector<llm::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
+  std::vector<model::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
                                           http::HttpClient& http) const override;
 
-  std::optional<pu::ListingTarget> Target(const std::string& host) const override;
+  std::optional<model::ListingTarget> Target(const std::string& host) const override;
 };
 
 class OpenAIModelLister final : public pu::ModelLister {
  public:
-  std::vector<llm::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
+  std::vector<model::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
                                           http::HttpClient& http) const override;
 
-  std::optional<pu::ListingTarget> Target(const std::string& host) const override;
+  std::optional<model::ListingTarget> Target(const std::string& host) const override;
 };
 
 // Read from `{origin}/v3/config`; `/models` is not a route there. The headers are the
@@ -140,10 +101,10 @@ class CodeBuddyModelLister final : public pu::ModelLister {
  public:
   explicit CodeBuddyModelLister(std::vector<std::string> headers = {});
 
-  std::vector<llm::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
+  std::vector<model::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
                                           http::HttpClient& http) const override;
 
-  std::optional<pu::ListingTarget> Target(const std::string& host) const override;
+  std::optional<model::ListingTarget> Target(const std::string& host) const override;
 
  private:
   std::vector<std::string> headers_;
@@ -152,6 +113,6 @@ class CodeBuddyModelLister final : public pu::ModelLister {
 // The target a backend's own lister would read, taken from the gateway table rather than from
 // the gateway's name: a product that brings its own catalogue is probed through the same
 // declaration that lists it. Nothing comes back when the table names no lister for it.
-std::optional<pu::ListingTarget> ListingTargetForGateway(const config::Backend& backend);
+std::optional<model::ListingTarget> ListingTargetForGateway(const model::Backend& backend);
 
 }  // namespace pu::llm

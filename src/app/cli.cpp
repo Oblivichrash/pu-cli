@@ -14,12 +14,13 @@
 #include <spdlog/spdlog.h>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/runtime/command_router.hpp"
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/field_capture.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/runtime/runtime.hpp"
 
 #include "app/cli_output.hpp"
@@ -30,10 +31,10 @@ namespace {
 
 // The backend a read-only command reads. Naming a gateway builds one from the table and
 // never adopts it, so `pu models --gateway nim` leaves the session where it was.
-config::Backend BackendFor(const std::string& gateway, const std::string& model,
+model::Backend BackendFor(const std::string& gateway, const std::string& model,
                            Runtime& runtime) {
   if (gateway.empty()) return runtime.CurrentBackend();
-  config::Backend backend = config::BackendForGateway(gateway);
+  model::Backend backend = model::BackendForGateway(gateway);
   if (!model.empty()) backend.model = model;
   return backend;
 }
@@ -370,16 +371,16 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor(gateway, model, runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
+    const model::Backend backend = BackendFor(gateway, model, runtime);
+    const std::vector<model::ModelEntry> models = llm::ListModels(backend, runtime.Http());
 
     // The listing is read once for every shape. Two of them ask nothing else of the network,
     // and the third only adds a token request per model.
     if (shape == ModelShape::kEntry) {
       // A model outside the listing is exactly the one being written for, so a missing id is
       // an empty entry rather than an error.
-      llm::ModelEntry wanted{entry_id, {}};
-      for (const llm::ModelEntry& listed : models) {
+      model::ModelEntry wanted{entry_id, {}};
+      for (const model::ModelEntry& listed : models) {
         if (listed.id == entry_id) {
           wanted = listed;
           break;
@@ -394,7 +395,7 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
 
     if (!verify) {
       std::cout << llm::FormatModelList(
-                       models, config::GatewayName(backend.gateway), backend.host, backend.model,
+                       models, model::GatewayName(backend.gateway), backend.host, backend.model,
                        shape == ModelShape::kCaps ? llm::ListingDetail::kCaps
                                                   : llm::ListingDetail::kIds)
                 << "\n";

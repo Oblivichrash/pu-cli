@@ -158,7 +158,7 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
   reply = f.Route("/backend codebuddy deepseek-v4-flash");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find(config::DefaultHostFor(config::GatewayId::kCodeBuddy)) != std::string::npos);
+  REQUIRE(output.find(model::DefaultHostFor(model::GatewayId::kCodeBuddy)) != std::string::npos);
 
   reply = f.Route("/backend ollama llama3");
   REQUIRE(reply.ok);

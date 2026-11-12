@@ -8,7 +8,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/session/graph.hpp"
 #include "pu/session/settings.hpp"
 #include "pu/session/usage.hpp"
@@ -117,7 +117,7 @@ class Session {
 
   bool HasPendingToolCalls() const { return conversation_->HasPendingToolCalls(); }
 
-  std::unique_ptr<LLMProvider> CreateProvider(const config::Backend& backend,
+  std::unique_ptr<LLMProvider> CreateProvider(const model::Backend& backend,
                                               std::shared_ptr<http::HttpClient> http) const;
 
   boost::json::value Serialize() const;

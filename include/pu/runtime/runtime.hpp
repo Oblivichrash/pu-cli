@@ -65,7 +65,7 @@ class Runtime {
 
   void SetDefaultAgent(const std::string& agent_name);
   void SwitchAgent(const config::AgentEntry& new_agent);
-  void SwitchBackend(const config::Backend& backend);
+  void SwitchBackend(const model::Backend& backend);
 
   std::filesystem::path WorkspaceRoot() const { return workspace_root_; }
   // The file Initialize() loaded.
@@ -122,7 +122,7 @@ class Runtime {
 
   bool RewindBefore(size_t turn);
 
-  config::Backend CurrentBackend() const;
+  model::Backend CurrentBackend() const;
 
   ThinkingLevel CurrentThinkingLevel() const;
   // How much context the active model holds, from the file's own `context_window`, or `0` when
@@ -148,7 +148,7 @@ class Runtime {
   void ClearSettings();
 
  private:
-  config::Backend ConfiguredBackend() const;
+  model::Backend ConfiguredBackend() const;
   // The budget the agent's configuration names, which is what a cleared override returns to.
   int ConfiguredToolBudget() const;
   // Pushes the budget in force into the executor, after an override changed or an agent switch.

@@ -4,7 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 
 #include <boost/json.hpp>
 
@@ -37,8 +37,8 @@ int IntField(const boost::json::object& object, const std::string& name) {
   return value != nullptr && value->is_int64() ? static_cast<int>(value->as_int64()) : 0;
 }
 
-Capabilities ReadCapabilities(const boost::json::object& entry, const CatalogShape& shape) {
-  Capabilities caps;
+model::Capabilities ReadCapabilities(const boost::json::object& entry, const model::CatalogShape& shape) {
+  model::Capabilities caps;
   caps.supports_tools = BoolField(entry, shape.supports_tools);
   caps.supports_images = BoolField(entry, shape.supports_images);
   caps.supports_reasoning = BoolField(entry, shape.supports_reasoning);
@@ -109,29 +109,29 @@ std::optional<boost::json::array> ContainerOr(const boost::json::value& parsed,
                      "\" array; its top-level keys were: " + TopLevelKeys(parsed));
 }
 
-std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape,
+std::vector<model::ModelEntry> ReadFlat(const boost::json::value& parsed, const model::CatalogShape& shape,
                                  const std::string& url) {
   const std::optional<boost::json::array> container =
       ContainerOr(parsed, shape.container, url.c_str());
 
-  std::vector<ModelEntry> models;
+  std::vector<model::ModelEntry> models;
   for (const auto& entry : *container) {
     if (!entry.is_object()) continue;
     const auto& fields = entry.as_object();
     const std::string id = StringField(fields, shape.id_key);
     if (id.empty()) continue;
-    Capabilities caps = ReadCapabilities(fields, shape);
+    model::Capabilities caps = ReadCapabilities(fields, shape);
     // A window is not a capability a gateway promises, so it is read only when no capability
     // field named one: a product that states it says so in its shape, and the rest say nothing.
     if (caps.max_input_tokens == 0) {
       caps.max_input_tokens = IntField(fields, shape.context_window);
     }
-    models.push_back(ModelEntry{id, std::move(caps)});
+    models.push_back(model::ModelEntry{id, std::move(caps)});
   }
   return models;
 }
 
-std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape,
+std::vector<model::ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const model::CatalogShape& shape,
                                      const std::string& url) {
   const boost::json::object* top = parsed.if_object();
   const boost::json::value* payload = nullptr;
@@ -157,9 +157,9 @@ std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const Ca
     }
   }
 
-  std::vector<ModelEntry> models;
+  std::vector<model::ModelEntry> models;
   for (const std::string& id : ids) {
-    ModelEntry entry;
+    model::ModelEntry entry;
     entry.id = id;
     if (const boost::json::array* catalogue = ArrayAt(*payload, shape.id_key);
         catalogue != nullptr) {
@@ -189,8 +189,8 @@ boost::json::value FetchListing(std::string_view url, const std::string& api_key
 
 namespace {
 
-const CatalogShape& OllamaShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& OllamaShape() {
+  static const model::CatalogShape shape = {
       .path = "/api/tags",
       .container = "models",
       .id_key = "name",
@@ -198,8 +198,8 @@ const CatalogShape& OllamaShape() {
   return shape;
 }
 
-const CatalogShape& OpenAIShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& OpenAIShape() {
+  static const model::CatalogShape shape = {
       .path = "/models",
       .container = "data",
       .id_key = "id",
@@ -208,8 +208,8 @@ const CatalogShape& OpenAIShape() {
   return shape;
 }
 
-const CatalogShape& CodeBuddyShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& CodeBuddyShape() {
+  static const model::CatalogShape shape = {
       .container = "agents",
       .id_key = "models",
       .nested = "models",
@@ -227,35 +227,35 @@ const CatalogShape& CodeBuddyShape() {
 
 }  // namespace
 
-std::optional<ListingTarget> OllamaModelLister::Target(const std::string& host) const {
-  return ListingTarget{host + OllamaShape().path, OllamaShape()};
+std::optional<model::ListingTarget> OllamaModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OllamaShape().path, OllamaShape()};
 }
 
-std::optional<ListingTarget> OpenAIModelLister::Target(const std::string& host) const {
-  return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+std::optional<model::ListingTarget> OpenAIModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OpenAIShape().path, OpenAIShape()};
 }
 
-std::optional<ListingTarget> CodeBuddyModelLister::Target(const std::string& host) const {
-  return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+std::optional<model::ListingTarget> CodeBuddyModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
 }
 
-std::optional<ListingTarget> ListingTargetForGateway(const config::Backend& backend) {
+std::optional<model::ListingTarget> ListingTargetForGateway(const model::Backend& backend) {
   // The lister the gateway table names decides both where the catalogue lives and how it
   // reads: a probe cannot disagree with a listing about either, because there is one answer.
   const std::unique_ptr<pu::ModelLister> lister =
-      config::GatewayForId(backend.gateway).make_listing();
+      model::GatewayForId(backend.gateway).make_listing();
   if (!lister) return std::nullopt;
   return lister->Target(backend.host);
 }
 
-std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
+std::vector<model::ModelEntry> OllamaModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
   const std::string url = host + OllamaShape().path;
   return ReadFlat(FetchListing(url, api_key, {}, http), OllamaShape(), url);
 }
 
-std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
+std::vector<model::ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
   const std::string url = host + OpenAIShape().path;
@@ -265,7 +265,7 @@ std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
 CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
     : headers_(std::move(headers)) {}
 
-std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
+std::vector<model::ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
                                                          const std::string& api_key,
                                                          http::HttpClient& http) const {
   const std::string url = CodeBuddyCatalogUrl(host);
@@ -277,7 +277,7 @@ namespace {
 // The columns that decide between two models a reader has already narrowed to. Each says what
 // it knows and nothing where it was told nothing: a blank column is "this gateway did not say"
 // rather than "no".
-std::string CapabilityLine(const Capabilities& caps) {
+std::string CapabilityLine(const model::Capabilities& caps) {
   std::ostringstream line;
   auto flag = [&](bool set, const char* name) {
     if (!set) return;
@@ -303,7 +303,7 @@ std::string CapabilityLine(const Capabilities& caps) {
 
 }  // namespace
 
-std::string FormatModelList(const std::vector<ModelEntry>& models,
+std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
                             std::string_view active_model,
@@ -312,7 +312,7 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   // the running model is named rather than dropped from the one row that matters.
   const bool active_listed =
       std::any_of(models.begin(), models.end(),
-                  [&](const ModelEntry& model) { return model.id == active_model; });
+                  [&](const model::ModelEntry& model) { return model.id == active_model; });
 
   if (models.empty())
     return "No models reported by " + std::string(gateway) + " at " + std::string(host);
@@ -320,12 +320,12 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   // The id column is as wide as the longest id, so the columns beside it line up: a table
   // whose columns move per row is one a reader has to parse twice.
   std::size_t width = 0;
-  for (const ModelEntry& model : models) width = std::max(width, model.id.size());
+  for (const model::ModelEntry& model : models) width = std::max(width, model.id.size());
   width += std::string(" (active)").size();
 
   std::ostringstream oss;
   oss << models.size() << " model(s) reported by " << gateway << " at " << host << ":\n";
-  for (const ModelEntry& model : models) {
+  for (const model::ModelEntry& model : models) {
     std::ostringstream left;
     left << model.id;
     if (model.id == active_model) left << " (active)";

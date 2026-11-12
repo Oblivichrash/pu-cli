@@ -18,9 +18,10 @@
 namespace {
 
 namespace llm = pu::llm;
+namespace model = pu::model;
 
-llm::ModelEntry ModelWith(const std::string& id, const llm::Capabilities& caps) {
-  llm::ModelEntry entry;
+model::ModelEntry ModelWith(const std::string& id, const model::Capabilities& caps) {
+  model::ModelEntry entry;
   entry.id = id;
   entry.caps = caps;
   return entry;
@@ -29,7 +30,7 @@ llm::ModelEntry ModelWith(const std::string& id, const llm::Capabilities& caps) 
 }  // namespace
 
 TEST_CASE("A capabilities row says what the model accepts and where it must be told", "[caps]") {
-  llm::Capabilities caps;
+  model::Capabilities caps;
   caps.supports_tools = true;
   caps.supports_images = true;
   caps.supports_reasoning = true;
@@ -40,7 +41,7 @@ TEST_CASE("A capabilities row says what the model accepts and where it must be t
   caps.max_input_tokens = 200000;
   caps.credits = "x0.17 credits";
 
-  const std::vector<llm::ModelEntry> models = {ModelWith("deepseek-v4-pro", caps)};
+  const std::vector<model::ModelEntry> models = {ModelWith("deepseek-v4-pro", caps)};
   const std::string rendered =
       llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "deepseek-v4-pro",
                            llm::ListingDetail::kCaps);
@@ -56,7 +57,7 @@ TEST_CASE("A capabilities row says what the model accepts and where it must be t
 
 TEST_CASE("A column the gateway said nothing about is absent, not empty", "[caps]") {
   // Every field defaulted: this is a gateway that reports ids and nothing else.
-  const std::vector<llm::ModelEntry> models = {ModelWith("plain", {})};
+  const std::vector<model::ModelEntry> models = {ModelWith("plain", {})};
   const std::string rendered = llm::FormatModelList(models, "ollama", "http://127.0.0.1:1",
                                                     "plain", llm::ListingDetail::kCaps);
 
@@ -68,10 +69,10 @@ TEST_CASE("A column the gateway said nothing about is absent, not empty", "[caps
 }
 
 TEST_CASE("The id list is unchanged by the capability renderer", "[caps]") {
-  llm::Capabilities caps;
+  model::Capabilities caps;
   caps.supports_tools = true;
   caps.credits = "x0.06 credits";
-  const std::vector<llm::ModelEntry> models = {ModelWith("cheap", caps)};
+  const std::vector<model::ModelEntry> models = {ModelWith("cheap", caps)};
 
   const std::string ids =
       llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "cheap");
@@ -88,9 +89,9 @@ TEST_CASE("The id list is unchanged by the capability renderer", "[caps]") {
 }
 
 TEST_CASE("The active marker is the same column in both renderings", "[caps]") {
-  llm::Capabilities caps;
+  model::Capabilities caps;
   caps.supports_tools = true;
-  const std::vector<llm::ModelEntry> models = {ModelWith("a", {}), ModelWith("the-active", caps)};
+  const std::vector<model::ModelEntry> models = {ModelWith("a", {}), ModelWith("the-active", caps)};
 
   const std::string with_caps = llm::FormatModelList(models, "openai", "https://x.invalid/v1",
                                                      "the-active", llm::ListingDetail::kCaps);

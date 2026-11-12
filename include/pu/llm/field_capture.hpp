@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 
 namespace pu::llm {
 
@@ -39,7 +39,7 @@ struct FieldCapture {
 // Sends one single-token prompt as a stream, keeps every byte of the reply, and reads
 // the field names back out of it. `raw_path`, when set, receives the unmodified stream.
 // Uses the backend's own host, model and key, so nothing is retyped for a probe.
-FieldCapture CaptureFields(const config::Backend& backend, pu::http::HttpClient& http,
+FieldCapture CaptureFields(const model::Backend& backend, pu::http::HttpClient& http,
                         const std::string& prompt, const std::optional<std::string>& raw_path);
 
 // The summary printed for a capture: what each level named.
@@ -72,7 +72,7 @@ struct ListingReport {
 
 // Reads the listing the gateway's own catalogue endpoint answers and collects what it named.
 // Uses the backend's host and key, so nothing is retyped for a probe.
-ListingReport ProbeListing(const config::Backend& backend, pu::http::HttpClient& http);
+ListingReport ProbeListing(const model::Backend& backend, pu::http::HttpClient& http);
 
 std::string FormatListingReport(const ListingReport& report);
 

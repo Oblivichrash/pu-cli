@@ -177,7 +177,7 @@ void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequ
     // The product says which field carries a price, if it carries one at all. Two products
     // share this parser and only one reports a price; reading a name that is not there would
     // turn "this product says nothing" into "this call was free".
-    if (config_.billing.kind == config::BillingKind::kReported &&
+    if (config_.billing.kind == model::BillingKind::kReported &&
         !config_.billing.field.empty()) {
       if (json::HasKey(usage, config_.billing.field)) {
         const boost::json::value& price = usage.at(config_.billing.field);

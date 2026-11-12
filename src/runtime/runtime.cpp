@@ -234,7 +234,7 @@ const config::AgentEntry& Runtime::ActiveAgent() const {
   return *agent_manager_->AgentConfig(agent_manager_->ActiveAgentName());
 }
 
-config::Backend Runtime::ConfiguredBackend() const {
+model::Backend Runtime::ConfiguredBackend() const {
   if (current_session_) {
     const auto& spec = current_session_->Spec();
     if (const auto* configured = agent_manager_->AgentConfig(spec.agent_name)) {
@@ -245,8 +245,8 @@ config::Backend Runtime::ConfiguredBackend() const {
   return ActiveAgent().backend;
 }
 
-config::Backend Runtime::CurrentBackend() const {
-  const config::Backend backend = ConfiguredBackend();
+model::Backend Runtime::CurrentBackend() const {
+  const model::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
   return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
 }
@@ -325,7 +325,7 @@ namespace {
 // stand behind it. A turn that produced no assistant node — an error, a command — spent
 // nothing worth a line.
 void RecordTurnUsage(Session& session, const ExecutionResult& result,
-                     const config::Backend& backend) {
+                     const model::Backend& backend) {
   if (!result.usage) return;
   std::string last_assistant;
   for (const session::MessageNode* node : session.Messages().Chain()) {
@@ -341,7 +341,7 @@ void RecordTurnUsage(Session& session, const ExecutionResult& result,
   usage.cached_tokens = result.usage->cached_tokens;
   usage.cost = result.usage->cost;
   usage.model = result.model;
-  usage.gateway = config::GatewayName(backend.gateway);
+  usage.gateway = model::GatewayName(backend.gateway);
   session.Usage().Record(usage);
 }
 
@@ -378,7 +378,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
       return result;
     }
 
-    const config::Backend backend = CurrentBackend();
+    const model::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
         executor_->Execute(input, session->Messages(),
@@ -600,9 +600,9 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   Activate(new_agent);
 }
 
-void Runtime::SwitchBackend(const config::Backend& backend) {
+void Runtime::SwitchBackend(const model::Backend& backend) {
   config::AgentEntry transient = ActiveAgent();
-  transient.name = config::GatewayName(backend.gateway);
+  transient.name = model::GatewayName(backend.gateway);
   transient.backend = backend;
   transient.description.clear();
 

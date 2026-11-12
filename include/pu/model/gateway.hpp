@@ -8,11 +8,12 @@
 #include <string_view>
 #include <vector>
 
-#include "pu/llm/model_listing.hpp"
+#include "pu/model/listing.hpp"
 
 namespace pu {
 
 class LLMProvider;
+class ModelLister;
 
 namespace http {
 class HttpClient;
@@ -20,7 +21,7 @@ class HttpClient;
 
 }  // namespace pu
 
-namespace pu::config {
+namespace pu::model {
 
 struct Backend;
 
@@ -114,4 +115,4 @@ const Gateway* FindGateway(std::string_view name);
 
 const Gateway& GatewayForId(GatewayId id);
 
-}  // namespace pu::config
+}  // namespace pu::model

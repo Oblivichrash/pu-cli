@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/config/gateway.hpp"
+#include "pu/model/gateway.hpp"
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/core/base.hpp"
 
 #include "pu/llm/model_listing.hpp"
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace pu::config {
+namespace pu::model {
 
 OpenAIProvider::Config OpenAIConfig(const Backend& cfg);
 
@@ -197,4 +197,4 @@ const Gateway& GatewayForId(GatewayId id) {
   throw GenericError("No gateway answers for " + std::to_string(static_cast<int>(id)));
 }
 
-}  // namespace pu::config
+}  // namespace pu::model

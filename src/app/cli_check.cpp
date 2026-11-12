@@ -26,8 +26,8 @@
 #include <vector>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
-#include "pu/config/gateway.hpp"
+#include "pu/model/backend.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
 
@@ -78,7 +78,7 @@ void WarnIgnoredKeys(const boost::json::object& object, const std::set<std::stri
   }
 }
 
-std::string ApiKeyState(const config::Backend& backend, const boost::json::value& raw_backend,
+std::string ApiKeyState(const model::Backend& backend, const boost::json::value& raw_backend,
                         std::vector<std::string>& warnings) {
   if (!backend.api_key) return "(none)";
   if (backend.api_key->empty()) {
@@ -123,7 +123,7 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   out << "\n";
 
   if (!entry.description.empty()) out << "  description  " << entry.description << "\n";
-  out << "  gateway      " << config::GatewayName(entry.backend.gateway) << "\n";
+  out << "  gateway      " << model::GatewayName(entry.backend.gateway) << "\n";
   out << "  host         " << entry.backend.host;
   // A host the file did not name came from the gateway's own default, which is worth
   // saying: it is the value a wrong gateway name silently produces.

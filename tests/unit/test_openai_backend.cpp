@@ -602,7 +602,7 @@ TEST_CASE("OpenAIProvider reads the counts a cached prompt is billed with", "[op
   auto config = RemoteConfig("gpt-4o-mini");
   // What the product says a call costs, and where: the provider is told by the gateway that
   // built it, because the wire does not say whether a price is there or what it is in.
-  config.billing = {pu::config::BillingKind::kReported, "credit", "credits"};
+  config.billing = {pu::model::BillingKind::kReported, "credit", "credits"};
 
   Harness harness(std::move(config));
 

@@ -10,13 +10,14 @@
 
 #include <boost/json.hpp>
 
-#include "pu/config/gateway.hpp"
+#include "pu/llm/llm_types.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/core/http_client.hpp"
 #include "pu/core/json.hpp"
-#include "pu/llm/model_listing.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/model/listing.hpp"
 
-namespace pu::config {
+
+namespace pu::model {
 
 struct Backend {
   GatewayId gateway = GatewayId::kOllama;
@@ -93,17 +94,19 @@ inline Backend tag_invoke(boost::json::value_to_tag<Backend>,
   return ReadBackend(j);
 }
 
-std::unique_ptr<pu::LLMProvider> CreateBackend(const Backend& cfg,
-                                               std::shared_ptr<pu::http::HttpClient> http);
+// The gateway entry a backend names, with the one check every caller needs: an empty host means
+// the config wrote `"host": ""` rather than that the gateway has none, and a backend that got
+// here without its host filled in is a configuration the caller should hear about by name.
+inline const Gateway& GatewayForConfig(const Backend& cfg) {
+  if (cfg.host.empty()) {
+    throw GenericError("Missing host for gateway: " + std::string(GatewayName(cfg.gateway)));
+  }
+  return GatewayForId(cfg.gateway);
+}
 
 // A backend built from a gateway name alone: its host and its key come from the table and
 // the environment the table names, so one word on the command line reaches a product. A
 // gateway whose key variable is unset is reached without a key rather than with a literal.
 Backend BackendForGateway(std::string_view gateway);
 
-// Reads the model listing the backend's host reports, with what the host says about each
-// model. The gateway answers where that listing lives. A listing that names no model is an
-// empty vector, not an error. Throws HttpError on a failed read.
-std::vector<llm::ModelEntry> ListModels(const Backend& cfg, pu::http::HttpClient& http);
-
-}  // namespace pu::config
+}  // namespace pu::model

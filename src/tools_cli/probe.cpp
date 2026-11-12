@@ -13,7 +13,7 @@
 
 namespace pu::tools_cli {
 
-ExitCode RunProbe(const ProbeOptions& options, const config::Backend& backend,
+ExitCode RunProbe(const ProbeOptions& options, const model::Backend& backend,
                   http::HttpClient& http) {
   // A catalogue read names no model; a turn does, and a gateway alone cannot say which.
   if (!options.listing && backend.model.empty()) {
@@ -38,7 +38,7 @@ ExitCode RunProbe(const ProbeOptions& options, const config::Backend& backend,
       return ExitCode::kUsage;
     }
     raw_path = (std::filesystem::path(options.out_dir) /
-                (std::string(config::GatewayName(backend.gateway)) + ".raw"))
+                (std::string(model::GatewayName(backend.gateway)) + ".raw"))
                    .string();
     std::cout << "raw stream: " << *raw_path << "\n";
   }

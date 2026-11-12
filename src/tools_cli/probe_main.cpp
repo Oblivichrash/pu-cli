@@ -20,7 +20,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/text.hpp"
 
@@ -51,8 +51,9 @@ po::options_description Options() {
 // The backend a standalone probe reads. Without a session there is nothing to adopt, so a
 // named gateway builds one from the table; an unnamed one takes the entry the agent table
 // calls its default, which is the backend `pu probe` would have called its current one.
-pu::config::Backend BackendFor(const ProbeOptions& options) {
+pu::model::Backend BackendFor(const ProbeOptions& options) {
   using namespace pu::config;
+  using namespace pu::model;
   const AgentsConfig agents = LoadAgentsConfig(FindConfigPath());
 
   if (!options.gateway.empty()) {
@@ -116,7 +117,7 @@ int main(int argc, char** argv) {
   probe.listing = vm.count("listing") > 0;
 
   try {
-    const pu::config::Backend backend = BackendFor(probe);
+    const pu::model::Backend backend = BackendFor(probe);
     pu::http::BeastHttpClient http;
     return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
   } catch (const std::exception& e) {

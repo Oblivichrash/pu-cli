@@ -7,7 +7,7 @@
 
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/llm_types.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -30,9 +30,9 @@ void AnswerWithContent(MockHttpClient& mock, const std::string& content) {
 
 // A catalogue entry that carries no capability, which is what a listing naming only an id
 // reports.
-std::vector<llm::ModelEntry> EntriesOf(std::initializer_list<const char*> ids) {
-  std::vector<llm::ModelEntry> entries;
-  for (const char* id : ids) entries.push_back(llm::ModelEntry{id, {}});
+std::vector<model::ModelEntry> EntriesOf(std::initializer_list<const char*> ids) {
+  std::vector<model::ModelEntry> entries;
+  for (const char* id : ids) entries.push_back(model::ModelEntry{id, {}});
   return entries;
 }
 
@@ -44,7 +44,7 @@ TEST_CASE("[model_check] a model that answers is reported as answered",
   AnswerWithContent(*mock, "p");
 
   const auto checks = llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"),
       EntriesOf({"m-one", "m-two"}), http);
 
   REQUIRE(checks.size() == 2);
@@ -61,7 +61,7 @@ TEST_CASE("[model_check] the probe names the model under test, not the active on
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"org/two"}),
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"org/two"}),
       http);
 
   REQUIRE(mock->last_body.find("\"model\":\"org/two\"") != std::string::npos);
@@ -81,7 +81,7 @@ TEST_CASE("[model_check] a refusal is a result, not a throw, and the loop goes o
   };
 
   const auto checks = llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"),
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"),
       EntriesOf({"dead", "live"}), http);
 
   REQUIRE(checks.size() == 2);
@@ -96,7 +96,7 @@ TEST_CASE("[model_check] one token is asked for, and it rides the probe",
   AnswerWithContent(*mock, "p");
 
   (void)llm::VerifyModels(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"m"}), http);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), EntriesOf({"m"}), http);
 
   REQUIRE(mock->last_body.find("\"max_tokens\":1") != std::string::npos);
 }
@@ -113,18 +113,18 @@ TEST_CASE("[model_check] a model the catalogue needs a level for is not asked wi
     write_cb(const_cast<char*>(frame.data()), frame.size());
   };
 
-  llm::ModelEntry needs_level{"glm-5.1", {}};
+  model::ModelEntry needs_level{"glm-5.1", {}};
   needs_level.caps.only_reasoning = true;
   needs_level.caps.default_effort = "medium";
 
   // Both values a backend can hold that put no level on the wire: unset, and disabled.
   for (const ThinkingLevel level : {ThinkingLevel::kServerDefault, ThinkingLevel::kNone}) {
     calls = 0;
-    config::Backend cfg =
-        BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
+    model::Backend cfg =
+        BackendOfType(model::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
     cfg.thinking = level;
 
-    const auto checks = llm::VerifyModels(cfg, {needs_level, llm::ModelEntry{"m-one", {}}}, http);
+    const auto checks = llm::VerifyModels(cfg, {needs_level, model::ModelEntry{"m-one", {}}}, http);
 
     REQUIRE(checks.size() == 2);
     REQUIRE(checks[0].model == "glm-5.1");
@@ -141,11 +141,11 @@ TEST_CASE("[model_check] a level the backend sets is what the probe carries",
   auto [http, mock] = MakeMockHttpClient();
   AnswerWithContent(*mock, "p");
 
-  config::Backend cfg =
-      BackendOfType(config::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
+  model::Backend cfg =
+      BackendOfType(model::GatewayId::kCodeBuddy, "https://copilot.tencent.com/v2");
   cfg.thinking = ThinkingLevel::kMedium;
 
-  llm::ModelEntry needs_level{"glm-5.1", {}};
+  model::ModelEntry needs_level{"glm-5.1", {}};
   needs_level.caps.only_reasoning = true;
 
   const auto checks = llm::VerifyModels(cfg, {needs_level}, http);
@@ -156,7 +156,7 @@ TEST_CASE("[model_check] a level the backend sets is what the probe carries",
 
 TEST_CASE("[model_check] the listing is rendered the one way, whichever command asked",
           "[model_check]") {
-  const std::vector<llm::ModelEntry> models = EntriesOf({"alpha", "the-active-model", "beta"});
+  const std::vector<model::ModelEntry> models = EntriesOf({"alpha", "the-active-model", "beta"});
 
   const std::string rendered =
       llm::FormatModelList(models, "openai", "https://example.invalid/v1", "the-active-model");
@@ -181,7 +181,7 @@ TEST_CASE("[model_check] a model outside the listing is still named as the activ
 }
 
 TEST_CASE("[model_check] a listing carrying a price says so beside the model", "[model_check]") {
-  std::vector<llm::ModelEntry> models = EntriesOf({"cheap"});
+  std::vector<model::ModelEntry> models = EntriesOf({"cheap"});
   models[0].caps.credits = "x0.06 credits";
 
   const std::string rendered =
