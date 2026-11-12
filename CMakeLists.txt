@@ -102,6 +102,30 @@ target_link_libraries(pu_config PUBLIC pu_model)
 pu_configure_target(pu_config)
 add_library(pu::config ALIAS pu_config)
 
+# What a page is and when it is elided: a budget, a rank and the rule that a second answer to
+# one question replaces the first. It reads `core`'s JSON and nothing else, so it sits at the
+# bottom beside `core_util` — every layer that holds a transcript links it.
+add_library(pu_paging STATIC
+    src/paging/paging.cpp
+)
+target_link_libraries(pu_paging PUBLIC pu_core_util)
+pu_configure_target(pu_paging)
+add_library(pu::paging ALIAS pu_paging)
+
+# The conversation itself: what a message is, what a request carries, the graph of turns and
+# what one cost. It reads `llm` for the wire vocabulary it stores and `model` for the gateway a
+# request names, and it knows nothing about how a turn is run.
+add_library(pu_session STATIC
+    src/session/graph.cpp
+    src/session/request.cpp
+    src/session/session.cpp
+    src/session/settings.cpp
+    src/session/usage.cpp
+)
+target_link_libraries(pu_session PUBLIC pu_config pu_paging)
+pu_configure_target(pu_session)
+add_library(pu::session ALIAS pu_session)
+
 add_library(pu_core STATIC
     src/app/ask.cpp
     src/app/cli.cpp
@@ -117,15 +141,9 @@ add_library(pu_core STATIC
     src/mcp/client.cpp
     src/mcp/http_transport.cpp
     src/mcp/stdio_transport.cpp
-    src/paging/paging.cpp
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
-    src/session/graph.cpp
-    src/session/request.cpp
-    src/session/session.cpp
-    src/session/settings.cpp
-    src/session/usage.cpp
     src/serve/serve_http_routes.cpp
     src/serve/serve_runner.cpp
     src/serve/serve_websocket.cpp
@@ -137,7 +155,7 @@ add_library(pu_core STATIC
     src/tools/write_file.cpp
 )
 target_link_libraries(pu_core PUBLIC
-    pu_config
+    pu_session
     Boost::program_options
 )
 pu_configure_target(pu_core)
