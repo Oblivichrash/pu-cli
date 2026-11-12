@@ -126,6 +126,34 @@ target_link_libraries(pu_session PUBLIC pu_config pu_paging)
 pu_configure_target(pu_session)
 add_library(pu::session ALIAS pu_session)
 
+# The client for a server a turn may reach: the transports that carry the protocol, and the
+# tools it publishes read back as the shape a provider already speaks. It links `config` for
+# the server entry it is handed and nothing above it.
+add_library(pu_mcp STATIC
+    src/mcp/client.cpp
+    src/mcp/http_transport.cpp
+    src/mcp/stdio_transport.cpp
+)
+target_link_libraries(pu_mcp PUBLIC pu_config)
+pu_configure_target(pu_mcp)
+add_library(pu::mcp ALIAS pu_mcp)
+
+# What a turn may call: the builtins, the policy that refuses a call, and the box that holds
+# them. `ask_dir` is here because it states a question, and reaches the runtime that answers one
+# through `RunDelegatedTurn` rather than by linking it — which is what keeps this layer below
+# the runtime that builds it.
+add_library(pu_tools STATIC
+    src/tools/ask_dir_tool.cpp
+    src/tools/bash.cpp
+    src/tools/delegation.cpp
+    src/tools/policy.cpp
+    src/tools/toolbox.cpp
+    src/tools/write_file.cpp
+)
+target_link_libraries(pu_tools PUBLIC pu_mcp pu_session)
+pu_configure_target(pu_tools)
+add_library(pu::tools ALIAS pu_tools)
+
 add_library(pu_core STATIC
     src/app/ask.cpp
     src/app/cli.cpp
@@ -138,24 +166,15 @@ add_library(pu_core STATIC
     src/app/probe.cpp
     src/config/agent_summary.cpp
     src/core/process.cpp
-    src/mcp/client.cpp
-    src/mcp/http_transport.cpp
-    src/mcp/stdio_transport.cpp
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
     src/serve/serve_http_routes.cpp
     src/serve/serve_runner.cpp
     src/serve/serve_websocket.cpp
-    src/tools/bash.cpp
-    src/tools/ask_dir_tool.cpp
-    src/tools/delegation.cpp
-    src/tools/policy.cpp
-    src/tools/toolbox.cpp
-    src/tools/write_file.cpp
 )
 target_link_libraries(pu_core PUBLIC
-    pu_session
+    pu_tools
     Boost::program_options
 )
 pu_configure_target(pu_core)
