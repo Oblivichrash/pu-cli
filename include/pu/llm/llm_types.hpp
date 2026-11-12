@@ -25,6 +25,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/tool_types.hpp"
 
 namespace pu {
 
@@ -99,23 +100,6 @@ struct ChatMessage {
     const boost::json::array* calls = tool_calls.if_array();
     return calls != nullptr && !calls->empty();
   }
-};
-
-struct ToolDefinition {
-  std::string name;
-  std::string description;
-  boost::json::value parameters;
-
-  const boost::json::value& Parameters() const {
-    static const boost::json::value kEmpty = boost::json::object{};
-    return parameters.is_object() ? parameters : kEmpty;
-  }
-};
-
-struct ToolCall {
-  std::string id;
-  std::string name;
-  boost::json::value arguments;
 };
 
 struct Cost {
