@@ -234,11 +234,6 @@ const config::AgentEntry& Runtime::ActiveAgent() const {
   return *agent_manager_->AgentConfig(agent_manager_->ActiveAgentName());
 }
 
-std::string Runtime::HelpText() {
-  assert(command_router_ && "Initialize() must run before any help query");
-  return command_router_->Help();
-}
-
 config::Backend Runtime::ConfiguredBackend() const {
   if (current_session_) {
     const auto& spec = current_session_->Spec();

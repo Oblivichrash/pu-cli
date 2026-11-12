@@ -198,8 +198,6 @@ class Runtime {
   }
   std::shared_ptr<Session> DefaultSession();
 
-  std::string HelpText();
-
   const config::AgentEntry& ActiveAgent() const;
 
   bool RewindBefore(size_t turn);
