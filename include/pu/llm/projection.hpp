@@ -10,7 +10,7 @@
 #include <boost/json.hpp>
 
 #include "pu/config/gateway.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 
 namespace pu::llm {
 

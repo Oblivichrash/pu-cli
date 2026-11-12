@@ -13,7 +13,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 
 namespace pu {
 

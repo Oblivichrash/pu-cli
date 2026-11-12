@@ -3,7 +3,7 @@
 #pragma once
 
 #include "tests/mocks/mock_http_client.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 
 #include <boost/json.hpp>
 #include <catch2/catch_test_macros.hpp>

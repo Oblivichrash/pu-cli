@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "pu/llm/model_check.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 #include "pu/config/backend.hpp"
 #include "pu/core/base.hpp"
 #include "tests/mocks/mock_http_client.hpp"

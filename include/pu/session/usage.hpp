@@ -3,7 +3,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 
 #include <map>
 #include <optional>

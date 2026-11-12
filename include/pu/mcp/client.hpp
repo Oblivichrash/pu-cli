@@ -11,7 +11,7 @@
 #include <boost/json.hpp>
 
 #include "pu/config/mcp_server.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 #include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
