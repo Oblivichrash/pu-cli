@@ -67,11 +67,11 @@ void PrintFailure(const ExecutionResult& result) {
 
 // The exit status a finished turn answers with. A command the router answered is not a
 // provider failure: `pu ask "/help"` did what it was asked.
-int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
+int ExitCodeForAsk(const ExecutionResult& result) {
   // A person stopped the process, which is neither a failure to retry nor one to fix. The
   // token is global, so it is asked rather than threaded through every result.
   if (platform::ShutdownRequested()) return static_cast<int>(ExitCode::kInterrupted);
-  if (is_command) return static_cast<int>(ExitCode::kOk);
+  if (result.was_command) return static_cast<int>(ExitCode::kOk);
   // The sandbox refused everything the turn tried. Retrying cannot help, but what has to
   // change differs: a command or a policy for one, a front end that cannot ask for the
   // other.
@@ -340,9 +340,8 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
   return WithInitializedRuntime(
       agent, runtime,
       [&] {
-        bool is_command = false;
         ExecutionResult result =
-            runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {},
+            runtime.ProcessInput(prompt, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
         PrintFailure(result);
         if (!result.has_error) {
@@ -350,13 +349,13 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
             std::cout << "\n";
           } else if (!result.content.empty()) {
             std::cout << result.content << "\n";
-          } else if (!is_command) {
+          } else if (!result.was_command) {
             std::cout << "\n";
           }
         }
         PrintNotice(result);
         if (show_usage) PrintUsage(result);
-        return ExitCodeForAsk(result, is_command);
+        return ExitCodeForAsk(result);
       },
       /*ephemeral=*/true);
 }
@@ -376,12 +375,11 @@ int RunChat(const std::string& agent, Runtime& runtime) {
       if (input == "/exit" || input == "/quit") break;
 
       try {
-        bool is_command = false;
         ExecutionResult result =
-            runtime.ProcessInput(input, is_command, platform::ShutdownToken(), nullptr, {},
+            runtime.ProcessInput(input, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
         if (result.has_error) {
-          if (is_command && result.error_message.empty()) {
+          if (result.was_command && result.error_message.empty()) {
             std::cout << "Unknown command. ";
             PrintChatHelp(runtime);
           } else {
@@ -390,7 +388,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
         } else if (!result.was_streamed) {
           if (!result.content.empty()) {
             std::cout << result.content << "\n";
-          } else if (!is_command) {
+          } else if (!result.was_command) {
             std::cout << "\n";
           }
         }

@@ -83,6 +83,11 @@ struct ExecutionResult {
   bool only_blocked_calls = false;
   // Those refusals were all of the unaskable kind: nothing is wrong with the command.
   bool only_unaskable_calls = false;
+  // The line was a command the router answered, so no provider was called and `content` is the
+  // command's own output. A fact about this turn like `has_error` is, and carried here for the
+  // same reason: the caller that prints the answer and the caller that picks an exit status
+  // both need it, and neither should have to be handed a second out-parameter to get it.
+  bool was_command = false;
 };
 
 class Executor {

@@ -256,10 +256,9 @@ TEST_CASE("A turn after an agent switch reaches an initialized registry", "[back
   runtime.SwitchAgent(*coder);
   REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
 
-  bool is_command = false;
-  const ExecutionResult result = runtime.ProcessInput("hello", is_command);
+  const ExecutionResult result = runtime.ProcessInput("hello");
 
-  REQUIRE(is_command == false);
+  REQUIRE(result.was_command == false);
   REQUIRE(result.has_error);
 
   runtime.Shutdown();

@@ -132,7 +132,7 @@ class Runtime {
   void Shutdown();
 
   ExecutionResult ProcessInput(
-      const std::string& input, bool& is_command, CancelToken cancel_token = nullptr,
+      const std::string& input, CancelToken cancel_token = nullptr,
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,

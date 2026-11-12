@@ -352,8 +352,7 @@ void RecordTurnUsage(Session& session, const ExecutionResult& result,
 
 }  // namespace
 
-ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
-                                      CancelToken cancel_token,
+ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
@@ -374,18 +373,16 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     auto session = DefaultSession();
 
     if (!input.empty() && input[0] == '/') {
-      is_command = true;
       std::string output;
-      bool ok = command_router_->Route(input, *session, output);
+      const bool ok = command_router_->Route(input, *session, output);
       result.content = output;
+      result.was_command = true;
       result.was_streamed = false;
       result.has_error = !ok;
       if (!ok) result.error_message = output;
       SaveCurrentSession();
       return result;
     }
-
-    is_command = false;
 
     const config::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
@@ -446,9 +443,8 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     }
     child.Initialize();
 
-    bool is_command = false;
-    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command,
-                                                        request.cancel_token);
+    const ExecutionResult answered =
+        child.ProcessInput(request.prompt, request.cancel_token);
     if (const auto session = child.DefaultSession()) result.usage = session->Usage().Total();
     child.Shutdown();
 
@@ -475,7 +471,7 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       result.error = answered.error_message.empty() ? answered.content : answered.error_message;
       return result;
     }
-    if (is_command) {
+    if (answered.was_command) {
       // A line the asking agent meant as a question, read as a command, is not an answer: the
       // text it produced is a page of help or a setting, and handing it back as a conclusion
       // would report something nobody asked for. Nothing was asked of a provider either, so

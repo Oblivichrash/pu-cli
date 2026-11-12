@@ -227,7 +227,6 @@ void SessionRunner::RunJob(Job& job) {
     cancel_requested_.store(false, std::memory_order_release);
   }
 
-  bool is_command = false;
   ToolCallbacks tool_cb;
   tool_cb.on_start = [&](const std::string& id, const std::string& name,
                          const boost::json::value& args) {
@@ -253,7 +252,7 @@ void SessionRunner::RunJob(Job& job) {
   }
 
   ExecutionResult result = runtime_.ProcessInput(
-      job.text, is_command, cancel,
+      job.text, cancel,
       [&](std::string_view chunk) {
         if (chunk.empty()) return;
         say({{"type", "chunk"}, {"payload", {{"text", std::string(chunk)}}}});
