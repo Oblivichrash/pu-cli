@@ -531,8 +531,12 @@ A header lives in its module's directory; `include/pu/runtime/` holds the
 orchestration layer (`Runtime`, `Executor`, `CommandRouter`). A header whose
 module has no directory of its own stays beside the sources that include it.
 
-The build is one static library, `pu_core` (everything but `main.cpp`), and the
-`pu` executable links it.
+The build is a chain of static libraries, one per layer, each linking only the ones below it:
+`pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_llm` and
+`pu_model` sit on it, `pu_config` on those, and `pu_core` — the module sources — on top. The
+`pu` executable links `pu_core`. The split is what makes the layering a fact the linker
+checks rather than a habit the includes happen to keep: a module that reaches upwards fails
+to link, and the failure names the symbol.
 
 `web/` is the page the server mounts, served straight from the directory the server resolved,
 so adding a module means adding the file and its `<script>` tag and nothing else. A target that
@@ -542,15 +546,22 @@ split is described in [web-ui.md](web-ui.md).
 ### Gates, protocols and providers
 
 Three facts about a vendor that look alike are three different things: a **protocol** is
-*how to talk*, a **gateway** is *which product*, and a connection is *where*. `config/gateway.hpp`
+*how to talk*, a **gateway** is *which product*, and a connection is *where*. `model/gateway.hpp`
 holds the middle one: `GatewayId` names the gateways a build carries, `Gateway` is
-`{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
-/ `GatewayForId()` answer from one explicit table (`kGateways`) in that file. Every gateway
-lives in `src/config/gateway.cpp` with its neighbours: a gateway is mostly a table row plus
+`{id, name, default_host, api_key_env, protocol, endpoint_path, make_provider, make_listing,
+listing_headers, billing}`, and `Gateways()` / `FindGateway()`
+/ `GatewayForId()` answer from one explicit table. Every gateway
+lives in `src/llm/gateway_table.cpp` with its neighbours: a gateway is mostly a table row plus
 the mapping from the backend config to its protocol's config, and those mappings are only
 readable as a set — side by side, a field one gateway fills and another drops is visible, and
 in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
 `FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
+
+The table is written where the factories it names are visible — above `model`, in `llm` — and
+the reader below lives in `model`. A program therefore installs the table once, from its own
+entry point, with `model::InstallGatewayTable()`: `main.cpp` and the test runner both do, and
+a lookup made before that falls back to the one `llm` wrote, so the install is an
+optimisation of the direction rather than a trap.
 
 Billing follows the same split. What a call costs is read in the protocol layer, through
 `ResponseShape`: one gateway names the field `credit`, another names nothing at all, and the
@@ -591,7 +602,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/config/gateway.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
+- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/llm/gateway_table.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
