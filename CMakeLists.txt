@@ -60,11 +60,11 @@ endif()
 pu_configure_target(pu_core_util)
 add_library(pu::core_util ALIAS pu_core_util)
 
-add_library(pu_config STATIC
-    src/config/agents.cpp
-    src/model/backend.cpp
-    src/model/gateway.cpp
-    src/config/serve_registry.cpp
+# Everything that talks to a model: the providers, the protocols that frame a request, the
+# projection that reads a reply back, and the factory that picks one from a gateway. It reads
+# the wire vocabulary out of `llm_types` and knows nothing about a session, a turn or a tool
+# box, so it sits below the modules that own those.
+add_library(pu_llm STATIC
     src/llm/field_capture.cpp
     src/llm/model_check.cpp
     src/llm/model_factory.cpp
@@ -74,9 +74,21 @@ add_library(pu_config STATIC
     src/llm/openai_provider.cpp
     src/llm/projection.cpp
     src/llm/streaming_provider.cpp
+)
+target_link_libraries(pu_llm PUBLIC pu_core_util)
+pu_configure_target(pu_llm)
+add_library(pu::llm ALIAS pu_llm)
+
+# The agent table, the gateways it names and the model catalogues they serve. It links `pu_llm`
+# because a gateway entry is a way to make a provider, and asks it for one by name.
+add_library(pu_config STATIC
+    src/config/agents.cpp
+    src/config/serve_registry.cpp
+    src/model/backend.cpp
+    src/model/gateway.cpp
     src/tools_cli/probe.cpp
 )
-target_link_libraries(pu_config PUBLIC pu_core_util)
+target_link_libraries(pu_config PUBLIC pu_llm)
 pu_configure_target(pu_config)
 add_library(pu::config ALIAS pu_config)
 
