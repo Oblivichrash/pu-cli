@@ -19,45 +19,12 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/mcp/client.hpp"
 #include "pu/runtime/command_router.hpp"
+#include "pu/runtime/delegation.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/toolbox.hpp"
 
 namespace pu {
-
-// One turn asked of an agent, without a conversation either side can remember. The caller
-// states the whole question, because the agent it asks has no idea what this conversation has
-// said: that is the boundary, and what the turn reads on the way to its answer stays on the
-// other side of it.
-//
-// A delegated turn gets no `ask_dir` of its own, so a chain of them stops at one hop, and what
-// it cost comes back, so the turn that asked can account for what it spent.
-struct Delegation {
-  std::string agent;            // empty: the table's own default_agent
-  std::filesystem::path dir;    // empty: the asking runtime's workspace
-  std::string prompt;
-
-  // The asking turn's own stop, handed down rather than copied: the point is that a stop reaches
-  // the turn that is actually waiting, which is this one. Checked by the same code the asking
-  // turn checks its own token with, so a stop lands between rounds and between tool calls, and
-  // a provider read is abandoned at the next fragment.
-  CancelToken cancel_token;
-
-  // A ceiling on the whole delegated turn, since it may run several rounds and call tools that
-  // take minutes each. Zero means the ceiling the asking turn's own platform applies, which for
-  // a stream is an idle deadline per read rather than a cap on the reply.
-  std::chrono::milliseconds timeout{0};
-};
-
-struct DelegationResult {
-  std::string answer;
-  std::string error;                 // non-empty when the turn did not answer
-  session::SessionUsageTotal usage;  // what that turn cost, in its own account
-  // The turn was asked to stop by the caller rather than finished or failed. A tool has no
-  // vocabulary for "you were stopped", so this reads as an error naming the stop; it is kept
-  // apart from one so a caller that stopped deliberately does not read it as a fault.
-  bool stopped = false;
-};
 
 class Runtime {
  public:
