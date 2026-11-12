@@ -532,11 +532,19 @@ orchestration layer (`Runtime`, `Executor`, `CommandRouter`). A header whose
 module has no directory of its own stays beside the sources that include it.
 
 The build is a chain of static libraries, one per layer, each linking only the ones below it:
-`pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_llm` and
-`pu_model` sit on it, `pu_config` on those, and `pu_core` — the module sources — on top. The
+`pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_paging`
+beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_session`, `pu_mcp`, `pu_tools`,
+`pu_runtime` and `pu_serve`, with `pu_core` on top holding only the command layer. The
 `pu` executable links `pu_core`. The split is what makes the layering a fact the linker
 checks rather than a habit the includes happen to keep: a module that reaches upwards fails
 to link, and the failure names the symbol.
+
+One link goes the other way on purpose, and only one. `pu_tools` calls `RunDelegatedTurn`,
+declared in `tools/delegation.hpp` and defined in `runtime.cpp`, so `pu_tools` links a weak
+fallback that answers "no turn can run here" and `pu_runtime` links the definition that
+replaces it. A tool states a question; the layer that can answer one supplies the answer.
+Without that seam `ask_dir` would have to construct a `Runtime`, which is the one upward
+dependency the tools would otherwise carry.
 
 `web/` is the page the server mounts, served straight from the directory the server resolved,
 so adding a module means adding the file and its `<script>` tag and nothing else. A target that
