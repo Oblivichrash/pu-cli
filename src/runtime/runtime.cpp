@@ -373,13 +373,12 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
     auto session = DefaultSession();
 
     if (!input.empty() && input[0] == '/') {
-      std::string output;
-      const bool ok = command_router_->Route(input, *session, output);
-      result.content = output;
+      const CommandReply reply = command_router_->Route(input, *session);
+      result.content = reply.text;
       result.was_command = true;
       result.was_streamed = false;
-      result.has_error = !ok;
-      if (!ok) result.error_message = output;
+      result.has_error = !reply.ok;
+      if (!reply.ok) result.error_message = reply.text;
       SaveCurrentSession();
       return result;
     }

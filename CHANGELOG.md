@@ -34,6 +34,32 @@ the commit that made it, and its current behaviour is in the relevant document
     collects the field names a gateway actually sent; it does not probe a gateway, which is
     what `pu probe` does and what the name made people look for.
 
+- **Four interfaces that reported one fact through two channels now report it through one.**
+  None of these changes what the program does. Each replaced a parameter whose only job was to
+  be written into, or a literal whose meaning was its position, with a value that says what it
+  is — so a caller cannot pass the wrong thing without the compiler saying so.
+  - `runtime::Turn` is a public aggregate instead of seven numbered arguments, and a provider
+    call's fate is `ProviderOutcome` (`kReplied` / `kFailed` / `kStopped` / `kAbandoned`)
+    rather than a cross-round `bool abandoned` the loop had to keep alive between rounds.
+  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools_cli/exit_code.hpp`, which
+    exposed two functions that had been declared `int` while returning an exit status:
+    `RunProbe` and `RunSse` return `ExitCode` now, and only the two `main`s convert.
+  - `text::Join` / `text::JoinQuoted` in `core/text.hpp` are the one way this codebase joins a
+    list. Nine hand-written separator loops became calls to it; the empty-range result is a
+    property of the helper rather than of each caller's accumulator.
+  - `ExecutionResult::was_command` replaces `ProcessInput`'s `bool& is_command`. It sits beside
+    `has_error` and `was_streamed`, which the same callers already read from the result;
+    `ExitCodeForAsk` lost its second parameter with it.
+- **`CommandRouter::Route` answers with a value, and an unknown command is now a failure.**
+  It returned `bool` and wrote the text through a `std::string&`, so it could say "not a
+  command" and "a command that failed" but not which. `CommandReply` carries `text`, `routed`
+  and `ok` separately, and handlers return it instead of writing into a parameter they were
+  given. The third fact exposes a real difference in chat: `/unknown` used to come back as
+  handled-and-empty, which the front end guessed was an unknown command by testing whether the
+  error text was empty. It is now routed-and-failed with `Unknown command: /unknown` as its own
+  text, and the guess is gone. `pu ask "/unknown"` still exits 0, because a slash line did what
+  the router could — the exit status names the interruption, not the command.
+
 ### Fixed
 
 - **The exit-status cases no longer read whatever `.pu/` the test process happened to sit in.**

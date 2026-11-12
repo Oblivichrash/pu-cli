@@ -26,13 +26,22 @@ std::string DescribeError(const std::exception& e) {
 
 }  // namespace
 
-bool CommandRouter::RequireMinArgs(Args args, size_t min, const std::string& usage,
-                                   Output output) const {
-  if (args.size() < min) {
-    output = usage;
-    return true;
-  }
-  return false;
+CommandReply CommandRouter::Replied(std::string text) {
+  return {.text = std::move(text), .routed = true, .ok = true};
+}
+
+CommandReply CommandRouter::Failed(std::string text) {
+  return {.text = std::move(text), .routed = true, .ok = false};
+}
+
+CommandReply CommandRouter::NotACommand() { return {}; }
+
+// A usage line is a failure like any other: the caller printed it instead of an answer. Returning
+// it rather than writing it means a handler that forgets this check cannot report success having
+// said nothing, which is the pair of return values the old signature allowed.
+CommandReply CommandRouter::RequireMinArgs(Args args, size_t min, const std::string& usage) const {
+  if (args.size() < min) return Failed(usage);
+  return Replied("");
 }
 
 std::string CommandRouter::FormatUsage(const std::string& cmd, const std::string& usage) const {
@@ -50,50 +59,41 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
   commands_ = {
       {"/help",
        {"  /help                  Show this help message\n",
-        [this](Args, Session&, Output output) {
-          output = Help();
-          return true;
-        }}},
+        [this](Args, Session&) { return Replied(Help()); }}},
       {"/backend",
-       {kBackendHelp,
-        [this](Args args, Session&, Output output) { return HandleBackend(args, output); }}},
+       {kBackendHelp, [this](Args args, Session&) { return HandleBackend(args); }}},
       {"/agents",
        {"  /agents                List available agents\n",
-        [this](Args args, Session& session, Output output) {
-          return HandleAgents(args, session, output);
-        }}},
+        [this](Args args, Session& session) { return HandleAgents(args, session); }}},
       {"/models",
        {"  /models                List the models the active agent's backend reports\n"
         "  /models <agent>        List the models a named agent's backend reports\n",
-        [this](Args args, Session&, Output output) { return HandleModels(args, output); }}},
+        [this](Args args, Session&) { return HandleModels(args); }}},
       {"/clear",
        {"  /clear                 Clear conversation history\n",
-        [](Args, Session& session, Output output) {
+        [](Args, Session& session) {
           session.Messages().ClearHistory();
-          output = "Conversation history cleared.";
-          return true;
+          return Replied("Conversation history cleared.");
         }}},
       {"/rewind",
        {"  /rewind <turn>         Step back to before a turn; the next message replaces it\n",
-        [this](Args args, Session& session, Output output) {
-          return HandleRewind(args, session, output);
-        }}},
+        [this](Args args, Session& session) { return HandleRewind(args, session); }}},
       {"/thinking",
        {"  /thinking              Show the thinking level this session asks for\n"
         "  /thinking <level>      none, low, medium, high, or default (the backend decides)\n"
         "  /thinking auto         Follow the agent's configuration again\n",
-        [this](Args args, Session&, Output output) { return HandleThinking(args, output); }}},
+        [this](Args args, Session&) { return HandleThinking(args); }}},
   };
 }
 
-bool CommandRouter::Route(const std::string& input, Session& session, std::string& output) {
+CommandReply CommandRouter::Route(const std::string& input, Session& session) {
   const std::string trimmed(text::Trim(input));
 
-  if (trimmed.empty() || trimmed[0] != '/') return false;
+  if (trimmed.empty() || trimmed[0] != '/') return NotACommand();
 
-  size_t space = trimmed.find(' ');
-  std::string cmd = space == std::string::npos ? trimmed : trimmed.substr(0, space);
-  std::string args_str = space == std::string::npos ? "" : trimmed.substr(space + 1);
+  const size_t space = trimmed.find(' ');
+  const std::string cmd = space == std::string::npos ? trimmed : trimmed.substr(0, space);
+  const std::string args_str = space == std::string::npos ? "" : trimmed.substr(space + 1);
 
   std::vector<std::string> args;
   if (!args_str.empty()) {
@@ -105,15 +105,16 @@ bool CommandRouter::Route(const std::string& input, Session& session, std::strin
   }
 
   if (const auto it = commands_.find(cmd); it != commands_.end()) {
-    return it->second.run(args, session, output);
+    return it->second.run(args, session);
   }
 
-  if (cmd == "/exit" || cmd == "/quit") {
-    output = "";
-    return true;
-  }
+  // Nothing to show, but a command: the chat reads this as "leave", and a caller that wanted
+  // an answer gets an empty one rather than being told the line was not a command.
+  if (cmd == "/exit" || cmd == "/quit") return Replied("");
 
-  return false;
+  // A slash line no handler answered. It is a command -- the router was asked and said the
+  // name means nothing -- so the text the chat prints is the remedy, not a provider's turn.
+  return Failed("Unknown command: " + cmd);
 }
 
 std::string CommandRouter::Help() {
@@ -126,42 +127,39 @@ std::string CommandRouter::Help() {
   return oss.str();
 }
 
-bool CommandRouter::HandleBackend(Args args, Output output) {
+CommandReply CommandRouter::HandleBackend(Args args) {
   if (args.empty()) {
     const config::Backend cfg = runtime_.CurrentBackend();
-    output = "Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
-             " (model: " + cfg.model + ", host: " + cfg.host + ")";
-    return true;
+    return Replied("Current backend: " + std::string(config::GatewayName(cfg.gateway)) +
+                   " (model: " + cfg.model + ", host: " + cfg.host + ")");
   }
 
   const config::AgentEntry* agent_config = runtime_.Agents().AgentConfig(args[0]);
   if (agent_config) {
     try {
       runtime_.SwitchAgent(*agent_config);
-      output = "Switched to agent: " + args[0] + " (" +
-               std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
-               agent_config->backend.model + ")";
     } catch (const std::exception& e) {
-      output = DescribeError(e);
+      return Failed(DescribeError(e));
     }
-    return true;
+    return Replied("Switched to agent: " + args[0] + " (" +
+                   std::string(config::GatewayName(agent_config->backend.gateway)) + "/" +
+                   agent_config->backend.model + ")");
   }
 
-  if (RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host]"), output)) return true;
+  const CommandReply enough =
+      RequireMinArgs(args, 2, FormatUsage("/backend", "<type> <model> [host]"));
+  if (!enough.text.empty()) return enough;
 
   // A key typed at a slash prompt is written into the scrollback and into whatever records
   // that terminal, so the command does not take one. An endpoint that needs a key is named
   // in agents.json, where it can come from the environment and stay out of the transcript.
   if (args.size() > 3) {
-    output =
-        "Usage: /backend <type> <model> [host]. A key is set in agents.json, not here.";
-    return true;
+    return Failed("Usage: /backend <type> <model> [host]. A key is set in agents.json, not here.");
   }
 
   const auto type = config::ParseGatewayId(args[0]);
   if (!type) {
-    output = "Unknown type: " + args[0] + ". Use " + config::GatewayNames() + ".";
-    return true;
+    return Failed("Unknown type: " + args[0] + ". Use " + config::GatewayNames() + ".");
   }
 
   config::Backend new_cfg;
@@ -172,99 +170,87 @@ bool CommandRouter::HandleBackend(Args args, Output output) {
 
   try {
     runtime_.SwitchBackend(new_cfg);
-    output = "Switched backend to: " + args[0] + " (model: " + new_cfg.model +
-             ", host: " + new_cfg.host + ")";
   } catch (const std::exception& e) {
-    output = DescribeError(e);
+    return Failed(DescribeError(e));
   }
-  return true;
+  return Replied("Switched backend to: " + args[0] + " (model: " + new_cfg.model +
+                 ", host: " + new_cfg.host + ")");
 }
 
-bool CommandRouter::HandleModels(Args args, Output output) {
-  if (args.empty()) {
-    return ReportModels(runtime_.CurrentBackend(), output);
-  }
+CommandReply CommandRouter::HandleModels(Args args) {
+  if (args.empty()) return ReportModels(runtime_.CurrentBackend());
+
   const config::AgentEntry* agent_config = runtime_.Agents().AgentConfig(args[0]);
-  if (!agent_config) {
-    output = "Unknown agent: " + args[0];
-    return true;
-  }
-  return ReportModels(agent_config->backend, output);
+  if (!agent_config) return Failed("Unknown agent: " + args[0]);
+  return ReportModels(agent_config->backend);
 }
 
-bool CommandRouter::ReportModels(const config::Backend& cfg, Output output) {
+CommandReply CommandRouter::ReportModels(const config::Backend& cfg) {
   try {
-    const std::vector<llm::ModelEntry> models =
-        config::ListModels(cfg, runtime_.Http());
-    output = llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model);
+    const std::vector<llm::ModelEntry> models = config::ListModels(cfg, runtime_.Http());
+    return Replied(
+        llm::FormatModelList(models, config::GatewayName(cfg.gateway), cfg.host, cfg.model));
   } catch (const std::exception& e) {
-    output = DescribeError(e);
+    return Failed(DescribeError(e));
   }
-  return true;
 }
 
-bool CommandRouter::HandleAgents(Args, Session& session, Output output) {
+CommandReply CommandRouter::HandleAgents(Args, Session& session) {
   // The same table `pu agents` prints: the chat is not a second place to learn who is
   // configured, and two renderings of one list drift.
-  output = config::FormatAgentTable(
-      config::SummarizeAgents(runtime_, session.Spec().agent_name));
-  return true;
+  return Replied(
+      config::FormatAgentTable(config::SummarizeAgents(runtime_, session.Spec().agent_name)));
 }
 
-bool CommandRouter::HandleRewind(Args args, Session& session, Output output) {
-  if (RequireMinArgs(args, 1, FormatUsage("/rewind", "<turn>"), output)) return true;
+CommandReply CommandRouter::HandleRewind(Args args, Session& session) {
+  const CommandReply enough = RequireMinArgs(args, 1, FormatUsage("/rewind", "<turn>"));
+  if (!enough.text.empty()) return enough;
 
   size_t turn = 0;
   try {
     turn = static_cast<size_t>(std::stoul(args[0]));
   } catch (const std::exception&) {
-    output = "Usage: /rewind <turn> (a positive number)";
-    return true;
+    return Failed("Usage: /rewind <turn> (a positive number)");
   }
 
+  bool rewound = false;
   try {
-    if (!session.Messages().RewindBefore(turn)) {
-      output = "There is no turn " + args[0] + " in this conversation.";
-      return true;
-    }
-    output = "Stepped back to before turn " + args[0] +
-             ". The next message replaces it; the turns after it stay in the file until one does.";
+    rewound = session.Messages().RewindBefore(turn);
   } catch (const std::exception& e) {
-    output = DescribeError(e);
+    return Failed(DescribeError(e));
   }
-  return true;
+  if (!rewound) return Failed("There is no turn " + args[0] + " in this conversation.");
+
+  return Replied("Stepped back to before turn " + args[0] +
+                 ". The next message replaces it; the turns after it stay in the file until "
+                 "one does.");
 }
 
-bool CommandRouter::HandleThinking(Args args, Output output) {
+CommandReply CommandRouter::HandleThinking(Args args) {
+  const auto current = [&] {
+    return std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
+  };
+
   if (args.empty()) {
-    output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel()));
-    output += runtime_.ThinkingOverride() ? " (set for this session)"
-                                             : " (from the agent's configuration)";
-    return true;
+    return Replied("Thinking: " + current() + (runtime_.ThinkingOverride()
+                                                   ? " (set for this session)"
+                                                   : " (from the agent's configuration)"));
   }
 
-  if (args.size() > 1) {
-    output = FormatUsage("/thinking", "[level|auto]");
-    return true;
-  }
+  if (args.size() > 1) return Failed(FormatUsage("/thinking", "[level|auto]"));
 
   if (args[0] == "auto") {
     runtime_.SetThinkingLevel(std::nullopt);
-    output = "Thinking follows the agent's configuration again (" +
-             std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) + ").";
-    return true;
+    return Replied("Thinking follows the agent's configuration again (" + current() + ").");
   }
 
   if (args[0] != "default" && ParseThinkingLevel(args[0]) == ThinkingLevel::kServerDefault) {
-    output =
-        "Unknown thinking level: " + args[0] + ". Use none, low, medium, high, default or auto.";
-    return true;
+    return Failed("Unknown thinking level: " + args[0] +
+                  ". Use none, low, medium, high, default or auto.");
   }
 
   runtime_.SetThinkingLevel(ParseThinkingLevel(args[0]));
-  output = "Thinking: " + std::string(ThinkingLevelName(runtime_.CurrentThinkingLevel())) +
-           " for this session.";
-  return true;
+  return Replied("Thinking: " + current() + " for this session.");
 }
 
 }  // namespace pu

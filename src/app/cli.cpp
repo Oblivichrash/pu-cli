@@ -26,8 +26,6 @@ namespace pu::cli {
 
 namespace {
 
-void PrintChatHelp(Runtime& runtime) { std::cout << runtime.HelpText() << "\n"; }
-
 // Notices are diagnostics, so they go to stderr: stdout carries what was asked for and
 // nothing else, which is what keeps `pu ask "..." | ...` usable.
 void PrintNotice(const ExecutionResult& result) {
@@ -379,12 +377,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
             runtime.ProcessInput(input, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
         if (result.has_error) {
-          if (result.was_command && result.error_message.empty()) {
-            std::cout << "Unknown command. ";
-            PrintChatHelp(runtime);
-          } else {
-            PrintFailure(result);
-          }
+          PrintFailure(result);
         } else if (!result.was_streamed) {
           if (!result.content.empty()) {
             std::cout << result.content << "\n";

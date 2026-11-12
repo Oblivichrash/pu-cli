@@ -36,8 +36,8 @@ struct RouterFixture {
     router = std::make_unique<CommandRouter>(runtime);
   }
 
-  bool Route(const std::string& input, std::string& output) {
-    return router->Route(input, *runtime.DefaultSession(), output);
+  CommandReply Route(const std::string& input) {
+    return router->Route(input, *runtime.DefaultSession());
   }
 
  private:
@@ -69,17 +69,24 @@ struct RouterFixture {
 
 TEST_CASE("CommandRouter dispatches registered commands through the registry", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
-  REQUIRE(f.Route("/help", output));
+  reply = f.Route("/help");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("/help") != std::string::npos);
   REQUIRE(output.find("/backend") != std::string::npos);
   REQUIRE(output.find("/exit, /quit") != std::string::npos);
 
-  REQUIRE(f.Route("/clear", output));
+  reply = f.Route("/clear");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output == "Conversation history cleared.");
 
-  REQUIRE(f.Route("/agents", output));
+  reply = f.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("chat") != std::string::npos);
   REQUIRE(output.find("coder") != std::string::npos);
 }
@@ -89,135 +96,192 @@ TEST_CASE("CommandRouter routes through the instance that was built last", "[rou
   // through itself. A table shared across instances calls through the first one.
   {
     RouterFixture first;
+    CommandReply reply;
     std::string output;
-    REQUIRE(first.Route("/help", output));
+    reply = first.Route("/help");
+    REQUIRE(reply.ok);
+    output = reply.text;
     REQUIRE(output.find("/help") != std::string::npos);
   }
 
   RouterFixture second;
+  CommandReply reply;
   std::string output;
-  REQUIRE(second.Route("/help", output));
+  reply = second.Route("/help");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("/help") != std::string::npos);
-  REQUIRE(second.Route("/agents", output));
+  reply = second.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("chat") != std::string::npos);
 }
 
 TEST_CASE("CommandRouter handles /exit and /quit outside the registry", "[router]") {
   RouterFixture f;
-  std::string output;
 
-  REQUIRE(f.Route("/exit", output));
-  REQUIRE(output.empty());
-  REQUIRE(f.Route("/quit", output));
-  REQUIRE(output.empty());
+  for (const char* leaving : {"/exit", "/quit"}) {
+    const CommandReply reply = f.Route(leaving);
+    REQUIRE(reply.routed);
+    REQUIRE(reply.ok);
+    // Nothing to say, but not a refusal: leaving is what was asked for.
+    REQUIRE(reply.text.empty());
+  }
 }
 
-TEST_CASE("CommandRouter rejects unknown and non-command input", "[router]") {
+TEST_CASE("CommandRouter distinguishes a failed command from a line that is not one",
+          "[router]") {
   RouterFixture f;
-  std::string output;
 
-  REQUIRE_FALSE(f.Route("/definitely-not-a-command", output));
-  REQUIRE_FALSE(f.Route("just a message", output));
-  REQUIRE_FALSE(f.Route("", output));
-  REQUIRE_FALSE(f.Route("   ", output));
-}
+  // Routed, and answered with the reason it could not run.
+  for (const char* unknown : {"/definitely-not-a-command", "/unknown",
+                              "/unknown add remember this", "/unknown show"}) {
+    const CommandReply reply = f.Route(unknown);
+    REQUIRE(reply.routed);
+    REQUIRE_FALSE(reply.ok);
+    REQUIRE(reply.text.find("Unknown command") != std::string::npos);
+  }
 
-TEST_CASE("CommandRouter rejects a command it does not have", "[router]") {
-  RouterFixture f;
-  std::string output;
-
-  REQUIRE_FALSE(f.Route("/unknown", output));
-  REQUIRE_FALSE(f.Route("/unknown add remember this", output));
-  REQUIRE_FALSE(f.Route("/unknown show", output));
+  // Not routed at all: this is a message for the provider, not a command that failed.
+  for (const char* message : {"just a message", "", "   "}) {
+    const CommandReply reply = f.Route(message);
+    REQUIRE_FALSE(reply.routed);
+    REQUIRE(reply.text.empty());
+  }
 }
 
 TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
-  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find(config::DefaultHostFor(config::GatewayId::kCodeBuddy)) != std::string::npos);
 
-  REQUIRE(f.Route("/backend ollama llama3", output));
+  reply = f.Route("/backend ollama llama3");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("http://localhost:11434") != std::string::npos);
 
-  REQUIRE(f.Route("/backend gpt whatever", output));
+  // Was a command, and said so as its answer: a bad type is the command's failure, not a
+  // refusal to route. `ok` names only the second thing, so this reads false.
+  reply = f.Route("/backend gpt whatever");
+  REQUIRE(reply.routed);
+  REQUIRE_FALSE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Unknown type") != std::string::npos);
 }
 
 TEST_CASE("CommandRouter will not take a key at the prompt", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
   // A key typed here lands in the scrollback, in the terminal's own history, and in
   // whatever captures a screen, which is the opposite of what docs/security.md promises.
-  REQUIRE(f.Route("/backend ollama llama3 http://localhost:11434 sk-secret", output));
+  // Refusing the argument must not half-apply it: the active agent is where it started.
+  // Typed with too many words, the command is refused, which is what `ok` reports.
+  reply = f.Route("/backend ollama llama3 http://localhost:11434 sk-secret");
+  REQUIRE(reply.routed);
+  REQUIRE_FALSE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("agents.json") != std::string::npos);
   REQUIRE(output.find("sk-secret") == std::string::npos);
 
   // Refusing the argument must not half-apply it: the active agent is where it started.
-  REQUIRE(f.Route("/backend", output));
+  reply = f.Route("/backend");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("chat-model") != std::string::npos);
 
   // Three arguments are still a host, and still accepted.
-  REQUIRE(f.Route("/backend ollama llama3 http://localhost:11500", output));
+  reply = f.Route("/backend ollama llama3 http://localhost:11500");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched backend to") != std::string::npos);
   REQUIRE(output.find("http://localhost:11500") != std::string::npos);
 }
 
 TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
-  REQUIRE(f.Route("/agents", output));
+  reply = f.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("chat (active)") != std::string::npos);
 
-  REQUIRE(f.Route("/backend codebuddy deepseek-v4-flash", output));
+  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("codebuddy") != std::string::npos);
 
-  REQUIRE(f.Route("/agents", output));
+  reply = f.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("codebuddy (active)") != std::string::npos);
 
-  REQUIRE(f.Route("/backend", output));
+  reply = f.Route("/backend");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("codebuddy") != std::string::npos);
 
-  REQUIRE(f.Route("/backend coder", output));
+  reply = f.Route("/backend coder");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched to agent: coder") != std::string::npos);
 
-  REQUIRE(f.Route("/agents", output));
+  reply = f.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("coder (active)") != std::string::npos);
   REQUIRE(output.find("chat (active)") == std::string::npos);
 }
 
 TEST_CASE("CommandRouter names an adopted agent after switching to it", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
   // Adopting a backend puts a transient entry in the manager; switching to that entry
   // by name walks the same path a configured agent does.
-  REQUIRE(f.Route("/backend ollama llama3", output));
+  reply = f.Route("/backend ollama llama3");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched backend to") != std::string::npos);
 
-  REQUIRE(f.Route("/backend ollama", output));
+  reply = f.Route("/backend ollama");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched to agent: ollama") != std::string::npos);
   REQUIRE(output.find("llama3") != std::string::npos);
 
-  REQUIRE(f.Route("/agents", output));
+  reply = f.Route("/agents");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("ollama (active)") != std::string::npos);
 }
 
 TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "[router]") {
   RouterFixture f;
+  CommandReply reply;
   std::string output;
 
-  REQUIRE(f.Route("/backend ollama llama3", output));
+  reply = f.Route("/backend ollama llama3");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched backend to") != std::string::npos);
 
   const auto* chat = f.runtime.Agents().AgentConfig("chat");
   REQUIRE(chat != nullptr);
   REQUIRE(chat->backend.model == "chat-model");
 
-  REQUIRE(f.Route("/backend chat", output));
+  reply = f.Route("/backend chat");
+  REQUIRE(reply.ok);
+  output = reply.text;
   REQUIRE(output.find("Switched to agent: chat") != std::string::npos);
   REQUIRE(output.find("chat-model") != std::string::npos);
 }
