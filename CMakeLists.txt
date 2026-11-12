@@ -44,6 +44,7 @@ add_library(pu_core_util STATIC
     src/core/beast_http_client.cpp
     src/core/logging.cpp
     src/core/platform.cpp
+    src/core/process.cpp
     src/core/sse.cpp
     src/tools_cli/sse.cpp
 )
@@ -154,6 +155,19 @@ target_link_libraries(pu_tools PUBLIC pu_mcp pu_session)
 pu_configure_target(pu_tools)
 add_library(pu::tools ALIAS pu_tools)
 
+# The turn: the router that reads a slash line, the executor that runs the loop, and the runtime
+# that owns a workspace, a backend and a tool box. It sits above `tools` because it builds the
+# box — and `tools` reaches back into it only through `RunDelegatedTurn`, whose definition lives
+# in `runtime.cpp`, so the link direction stays the one the includes already have.
+add_library(pu_runtime STATIC
+    src/runtime/command_router.cpp
+    src/runtime/executor.cpp
+    src/runtime/runtime.cpp
+)
+target_link_libraries(pu_runtime PUBLIC pu_tools)
+pu_configure_target(pu_runtime)
+add_library(pu::runtime ALIAS pu_runtime)
+
 add_library(pu_core STATIC
     src/app/ask.cpp
     src/app/cli.cpp
@@ -165,16 +179,12 @@ add_library(pu_core STATIC
     src/app/models.cpp
     src/app/probe.cpp
     src/config/agent_summary.cpp
-    src/core/process.cpp
-    src/runtime/command_router.cpp
-    src/runtime/executor.cpp
-    src/runtime/runtime.cpp
     src/serve/serve_http_routes.cpp
     src/serve/serve_runner.cpp
     src/serve/serve_websocket.cpp
 )
 target_link_libraries(pu_core PUBLIC
-    pu_tools
+    pu_runtime
     Boost::program_options
 )
 pu_configure_target(pu_core)
