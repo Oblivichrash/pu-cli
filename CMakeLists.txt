@@ -168,6 +168,18 @@ target_link_libraries(pu_runtime PUBLIC pu_tools)
 pu_configure_target(pu_runtime)
 add_library(pu::runtime ALIAS pu_runtime)
 
+# The server: the routes, the runner and the socket that keeps a turn's output in order. It
+# serves a runtime rather than owning one, so it sits above `runtime` and is linked only by the
+# programs that actually listen.
+add_library(pu_serve STATIC
+    src/serve/serve_http_routes.cpp
+    src/serve/serve_runner.cpp
+    src/serve/serve_websocket.cpp
+)
+target_link_libraries(pu_serve PUBLIC pu_runtime)
+pu_configure_target(pu_serve)
+add_library(pu::serve ALIAS pu_serve)
+
 add_library(pu_core STATIC
     src/app/ask.cpp
     src/app/cli.cpp
@@ -179,12 +191,9 @@ add_library(pu_core STATIC
     src/app/models.cpp
     src/app/probe.cpp
     src/config/agent_summary.cpp
-    src/serve/serve_http_routes.cpp
-    src/serve/serve_runner.cpp
-    src/serve/serve_websocket.cpp
 )
 target_link_libraries(pu_core PUBLIC
-    pu_runtime
+    pu_serve
     Boost::program_options
 )
 pu_configure_target(pu_core)
