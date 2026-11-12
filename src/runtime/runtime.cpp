@@ -134,9 +134,9 @@ void Runtime::Initialize(const std::string& config_path) {
 
   const std::string active_agent =
       default_agent_override_.empty() ? agents_cfg.default_agent : default_agent_override_;
-  const auto default_entry =
-      std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
-                   [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
+  const auto default_entry = std::ranges::find_if(
+      agents_cfg.agents,
+      [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
   if (default_entry == agents_cfg.agents.end()) {
     const std::string known = text::Join(
         std::views::transform(agents_cfg.agents,
