@@ -69,7 +69,12 @@ int ExitCodeForAsk(const ExecutionResult& result) {
   // A person stopped the process, which is neither a failure to retry nor one to fix. The
   // token is global, so it is asked rather than threaded through every result.
   if (platform::ShutdownRequested()) return static_cast<int>(ExitCode::kInterrupted);
-  if (result.was_command) return static_cast<int>(ExitCode::kOk);
+  // A command is answered without asking a provider, so its failure is not a provider
+  // failure either -- it is the line itself, which the caller typed. `kUsage` is the status
+  // that names a mistake in the input; `kOk` is the one that says the router answered.
+  if (result.was_command) {
+    return static_cast<int>(result.has_error ? ExitCode::kUsage : ExitCode::kOk);
+  }
   // The sandbox refused everything the turn tried. Retrying cannot help, but what has to
   // change differs: a command or a policy for one, a front end that cannot ask for the
   // other.

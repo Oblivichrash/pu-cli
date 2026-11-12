@@ -63,6 +63,17 @@ TEST_CASE("A command the router answered is not a provider failure", "[cli][exit
   REQUIRE(pu::cli::RunAsk("chat", "/help", one_shot) == static_cast<int>(pu::cli::ExitCode::kOk));
 }
 
+TEST_CASE("A command the router refused exits 1, not 2", "[cli][exit]") {
+  pu::tests::ServeHarness harness;
+  pu::tests::ScopedWorkingDir in_workspace(harness.Home());
+  pu::Runtime one_shot;
+  // The router did answer -- it said the command does not exist -- so this is not a provider
+  // failure, whatever else it is. The line was typed wrong, which is the one thing `kUsage`
+  // means.
+  REQUIRE(pu::cli::RunAsk("chat", "/definitely-not-a-command", one_shot) ==
+          static_cast<int>(pu::cli::ExitCode::kUsage));
+}
+
 TEST_CASE("A person stopping the process exits 4", "[cli][exit]") {
   pu::tests::ServeHarness harness;
   // What SIGINT sets. The status is asked of the run rather than of a result field, because
