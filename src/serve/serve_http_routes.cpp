@@ -298,7 +298,7 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
       item.as_object()["reasoning"] = llm::ProjectReasoning(msg.reasoning);
     }
 
-    if (msg.role == session::kToolRole) {
+    if (msg.role == kToolRole) {
       const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
       item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
       item.as_object()["error"] = parsed.error;

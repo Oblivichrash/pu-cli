@@ -12,6 +12,7 @@
 
 #include "pu/core/json.hpp"
 #include "pu/core/base.hpp"
+#include "pu/llm/llm_types.hpp"
 #include "pu/paging/origin.hpp"
 
 namespace pu::session {
@@ -20,10 +21,9 @@ using MessageId = std::string;
 
 inline MessageId NewMessageId() { return uuid::Generate(); }
 
-inline constexpr const char* kUserRole = "user";
-inline constexpr const char* kAssistantRole = "assistant";
-inline constexpr const char* kSystemRole = "system";
-inline constexpr const char* kToolRole = "tool";
+// The role names a message carries are the wire's vocabulary and live in `llm_types`, so a
+// provider can read them without naming a session. They are in `pu`, which this namespace is
+// nested in, so a transcript header sees them without a using-declaration.
 
 struct Reasoning {
   std::string text;

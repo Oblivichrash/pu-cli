@@ -57,7 +57,7 @@ TEST_CASE("Rewinding is refused while a tool call is pending", "[session][rewind
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = session::kAssistantRole;
+  assistant.role = kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
   session.Messages().Append(assistant);
@@ -72,7 +72,7 @@ TEST_CASE("Sealing an interrupted turn lets a rewind through again", "[session][
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = session::kAssistantRole;
+  assistant.role = kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}},)"
       R"({"id":"call_2","type":"function","function":{"name":"write_file","arguments":{}}}])");
@@ -92,7 +92,7 @@ TEST_CASE("Sealing an interrupted turn hands the model a receipt for every call 
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = session::kAssistantRole;
+  assistant.role = kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}},)"
       R"({"id":"call_2","type":"function","function":{"name":"write_file","arguments":{}}}])");
@@ -105,15 +105,15 @@ TEST_CASE("Sealing an interrupted turn hands the model a receipt for every call 
 
   size_t receipts = 0;
   for (const ChatMessage& message : history) {
-    if (message.role == session::kToolRole) {
+    if (message.role == kToolRole) {
       REQUIRE(message.content == session::kCancelledReceipt);
       ++receipts;
     }
   }
   REQUIRE(receipts == 2);
   REQUIRE(history[1].tool_calls.as_array().size() == 2);
-  REQUIRE(history[2].role == session::kToolRole);
-  REQUIRE(history[3].role == session::kToolRole);
+  REQUIRE(history[2].role == kToolRole);
+  REQUIRE(history[3].role == kToolRole);
 }
 
 TEST_CASE("An interrupted turn survives a save and a load as interrupted",
@@ -122,7 +122,7 @@ TEST_CASE("An interrupted turn survives a save and a load as interrupted",
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = session::kAssistantRole;
+  assistant.role = kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
   session.Messages().Append(assistant);
@@ -142,7 +142,7 @@ TEST_CASE("An untouched pending call still reads as pending after a save and a l
   session.Messages().Append("user", "one");
 
   ChatMessage assistant;
-  assistant.role = session::kAssistantRole;
+  assistant.role = kAssistantRole;
   assistant.tool_calls = boost::json::parse(
       R"([{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{}}}])");
   session.Messages().Append(assistant);

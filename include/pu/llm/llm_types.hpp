@@ -69,6 +69,14 @@ inline ThinkingLevel ReadThinkingLevel(const boost::json::value& j) {
   return ThinkingLevel::kServerDefault;
 }
 
+// Who a message in a conversation is from. The four names are the wire's, not the session's:
+// a provider reads them verbatim out of every request, so they are part of what is asked rather
+// than of how a transcript is stored.
+inline constexpr const char* kUserRole = "user";
+inline constexpr const char* kAssistantRole = "assistant";
+inline constexpr const char* kSystemRole = "system";
+inline constexpr const char* kToolRole = "tool";
+
 // A stretch of the model thinking aloud, kept with the signature that lets a provider verify it
 // on a later turn rather than take the transcript's word for it.
 struct ReasoningBlock {

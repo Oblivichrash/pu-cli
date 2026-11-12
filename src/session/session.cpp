@@ -25,7 +25,7 @@ namespace pu {
 namespace {
 
 session::MessagePayload ToPayload(const ChatMessage& msg) {
-  if (msg.role == session::kAssistantRole) {
+  if (msg.role == kAssistantRole) {
     session::AssistantPayload assistant;
     assistant.content = msg.content;
     for (const ReasoningBlock& block : msg.reasoning) {
@@ -40,7 +40,7 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
     return assistant;
   }
 
-  if (msg.role == session::kToolRole) {
+  if (msg.role == kToolRole) {
     session::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
@@ -51,7 +51,7 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
     return receipt;
   }
 
-  if (msg.role == session::kSystemRole) {
+  if (msg.role == kSystemRole) {
     session::SystemPayload system;
     system.content = msg.content;
     return system;
@@ -109,7 +109,7 @@ std::vector<ChatMessage> Conversation::History() const {
   // skips it.
   for (const session::MessageNode* node : graph_.Chain()) {
     const ChatMessage rendered = session::RenderMessage(*node, static_cast<int>(history.size()) + 1);
-    if (rendered.role == session::kToolRole && !rendered.tool_call_id.empty() &&
+    if (rendered.role == kToolRole && !rendered.tool_call_id.empty() &&
         !std::any_of(history.begin(), history.end(), [&](const ChatMessage& earlier) {
           if (!earlier.HasToolCalls()) return false;
           for (const boost::json::value& call : earlier.tool_calls.as_array()) {

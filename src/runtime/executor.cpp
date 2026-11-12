@@ -180,7 +180,7 @@ bool Executor::AskApproval(const std::string& command, std::string& note) {
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
                                   Turn turn) {
   ChatMessage user_turn;
-  user_turn.role = session::kUserRole;
+  user_turn.role = kUserRole;
   user_turn.content = input;
   conversation.Append(user_turn);
 
@@ -249,7 +249,7 @@ void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult&
   }
 
   ChatMessage assistant_msg;
-  assistant_msg.role = session::kAssistantRole;
+  assistant_msg.role = kAssistantRole;
   assistant_msg.content = chat_result.content;
   assistant_msg.reasoning = chat_result.reasoning;
   assistant_msg.tool_calls = std::move(calls);
@@ -468,7 +468,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
         return result;
       }
       ChatMessage wrap_up;
-      wrap_up.role = session::kUserRole;
+      wrap_up.role = kUserRole;
       wrap_up.content =
           "[system] The tool-call budget for this turn is exhausted. Do not call any "
           "more tools; answer now from what you have gathered so far.";

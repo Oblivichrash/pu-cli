@@ -2,16 +2,29 @@
 #include "pu/llm/projection.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/session/message.hpp"
+#include "pu/llm/llm_types.hpp"
 
 namespace pu::llm {
 
 namespace {
 
-using session::kAssistantRole;
-using session::kSystemRole;
-using session::kToolRole;
-using session::kUserRole;
+// A tool call as a request carries it: an id, a name and the arguments blob, with no status.
+// The session's record adds where the call got to, which is not a thing a provider is told.
+struct RequestToolCall {
+  std::string id;
+  std::string name;
+  boost::json::value arguments;
+};
+
+RequestToolCall ReadRequestToolCall(const boost::json::value& call) {
+  RequestToolCall out;
+  out.id = json::ValueOrDefault<std::string>(call, "id", "");
+  const boost::json::value& function = call.at("function");
+  out.name = json::ValueOrDefault<std::string>(function, "name", "");
+  out.arguments =
+      json::ValueOrDefault<boost::json::value>(function, "arguments", boost::json::object{});
+  return out;
+}
 
 std::string ProjectRole(const std::string& role, RoleNaming naming) {
   if (naming == RoleNaming::kAsStored) return role;
@@ -44,7 +57,7 @@ boost::json::value ProjectToolCalls(const boost::json::value& tool_calls,
       projected.push_back(call);
       continue;
     }
-    const session::ToolCallRecord record = session::ToolCallFromJson(call);
+    const RequestToolCall record = ReadRequestToolCall(call);
 
     boost::json::value entry = boost::json::object{};
     if (json::HasKey(call, "id")) entry.as_object()["id"] = call.at("id");

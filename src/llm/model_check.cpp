@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 #include "pu/llm/model_factory.hpp"
 #include "pu/model/backend.hpp"
 
 #include <boost/json.hpp>
-
-#include "pu/session/message.hpp"
 
 namespace pu::llm {
 
@@ -45,7 +44,7 @@ std::vector<ModelCheck> VerifyModels(const model::Backend& cfg,
   checks.reserve(models.size());
 
   ChatMessage ping;
-  ping.role = session::kUserRole;
+  ping.role = kUserRole;
   ping.content = "ping";
   const std::span<const ChatMessage> history(&ping, 1);
 
