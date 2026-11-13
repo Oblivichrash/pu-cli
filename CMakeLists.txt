@@ -92,16 +92,25 @@ target_link_libraries(pu_model PUBLIC pu_llm)
 pu_configure_target(pu_model)
 add_library(pu::model ALIAS pu_model)
 
-# The agent table, the list of servers a turn may reach and the probe. It links `pu_model`
-# because that is where a gateway's fact lives and `pu_llm` because the probe reads one.
+# The agent table and the list of servers a turn may reach. It links `pu_model` because that is
+# where a gateway's fact lives, and nothing above it.
 add_library(pu_config STATIC
     src/config/agents.cpp
     src/config/serve_registry.cpp
-    src/tools_cli/probe.cpp
 )
 target_link_libraries(pu_config PUBLIC pu_model)
 pu_configure_target(pu_config)
 add_library(pu::config ALIAS pu_config)
+
+# One probe run, and the two reports it prints. It reads a provider's raw bytes through `llm`
+# and names a gateway through `model`; it wants no session, no transcript and no pager, which
+# is why it is its own target rather than a file in `config`. `pu probe` and the standalone
+# `pu-probe` both call this one implementation, so a field is captured the same way twice.
+add_library(pu_probe STATIC
+    src/tools_cli/probe.cpp
+)
+target_link_libraries(pu_probe PUBLIC pu_config)
+pu_configure_target(pu_probe)
 
 # What a page is and when it is elided: a budget, a rank and the rule that a second answer to
 # one question replaces the first. It reads `core`'s JSON and nothing else, so it sits at the
@@ -194,6 +203,7 @@ add_library(pu_core STATIC
 )
 target_link_libraries(pu_core PUBLIC
     pu_serve
+    pu_probe
     Boost::program_options
 )
 pu_configure_target(pu_core)
@@ -221,7 +231,7 @@ add_executable(pu::sse ALIAS pu-sse)
 add_executable(pu-probe
     src/tools_cli/probe_main.cpp
 )
-target_link_libraries(pu-probe PRIVATE pu_config Boost::program_options)
+target_link_libraries(pu-probe PRIVATE pu_probe Boost::program_options)
 pu_configure_target(pu-probe)
 add_executable(pu::probe ALIAS pu-probe)
 
