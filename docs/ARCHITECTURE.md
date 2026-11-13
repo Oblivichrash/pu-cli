@@ -533,11 +533,16 @@ module has no directory of its own stays beside the sources that include it.
 
 The build is a chain of static libraries, one per layer, each linking only the ones below it:
 `pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_paging`
-beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_session`, `pu_mcp`, `pu_tools`,
-`pu_runtime` and `pu_serve`, with `pu_core` on top holding only the command layer. The
-`pu` executable links `pu_core`. The split is what makes the layering a fact the linker
+beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_probe`, `pu_session`, `pu_mcp`,
+`pu_tools`, `pu_runtime` and `pu_serve`, with `pu_core` on top holding only the command layer.
+The `pu` executable links `pu_core`. The split is what makes the layering a fact the linker
 checks rather than a habit the includes happen to keep: a module that reaches upwards fails
 to link, and the failure names the symbol.
+
+`pu_config` answers what `agents.json` says — the agent table and the list of servers a turn
+may reach — and with `pu_probe` carved out it no longer reaches a provider at all. The probe
+is a layer of its own because it reads one: one capture, two reports, and no session,
+transcript or pager in sight.
 
 One link goes the other way on purpose, and only one. `pu_tools` calls `RunDelegatedTurn`,
 declared in `tools/delegation.hpp` and defined in `runtime.cpp`, so `pu_tools` links a weak
