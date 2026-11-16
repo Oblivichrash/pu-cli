@@ -155,6 +155,7 @@ two entry points run the same implementation — so an answer from `pu-sse` is a
 | --- | --- | --- |
 | `pu-sse URL [--format text\|json\|raw]` | `pu sse` | Nothing but the URL |
 | `pu-probe [--gateway G] [--model M]` | `pu probe` | `agents.json`, to find a gateway |
+| `pu-models [--gateway G] [--detail ids\|caps] [--entry ID] [--verify]` | `pu models` | `agents.json`, to find a gateway |
 
 `pu-sse` is the case the split exists for: reading a feed needs an endpoint, not a workspace,
 a session or a configuration file. A script that only wants to watch an event stream runs
@@ -164,6 +165,18 @@ a session or a configuration file. A script that only wants to watch an event st
 one prompt and prints what came back. No session, no transcript, no pager — a question about
 a wire format does not need a conversation to answer it, and a ResponseShape for a new
 gateway is written from this capture rather than from a specification.
+
+`pu-models` answers the third question of the three: which models this gateway offers, without
+opening a conversation to find out. Its `--entry` shape prints an `agents.json` entry ready to
+paste, built from the same table `pu models --entry` reads, so a model added by hand and a model
+added from a script describe themselves the same way. `--verify` asks each listed model for one
+token and exits non-zero if any stays silent, which is what makes it usable as a pre-flight
+check in a script rather than only as something to read.
+
+The three side-tools share a rule rather than a code path: each reads `agents.json` only to
+learn which gateway it is talking to, and none of them opens the workspace's session. That is
+why they are separate binaries at all — `pu models`, `pu probe` and `pu sse` behind a session
+would make "what can I pick" cost the same as "say this", and it does not.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).

@@ -533,16 +533,23 @@ module has no directory of its own stays beside the sources that include it.
 
 The build is a chain of static libraries, one per layer, each linking only the ones below it:
 `pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_paging`
-beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_probe`, `pu_session`, `pu_mcp`,
-`pu_tools`, `pu_runtime` and `pu_serve`, with `pu_core` on top holding only the command layer.
-The `pu` executable links `pu_core`. The split is what makes the layering a fact the linker
-checks rather than a habit the includes happen to keep: a module that reaches upwards fails
-to link, and the failure names the symbol.
+beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_probe`, `pu_models`, `pu_session`,
+`pu_mcp`, `pu_tools`, `pu_runtime` and `pu_serve`, with `pu_core` on top holding only the
+command layer. The `pu` executable links `pu_core`. The split is what makes the layering a fact
+the linker checks rather than a habit the includes happen to keep: a module that reaches
+upwards fails to link, and the failure names the symbol.
 
 `pu_config` answers what `agents.json` says — the agent table and the list of servers a turn
-may reach — and with `pu_probe` carved out it no longer reaches a provider at all. The probe
-is a layer of its own because it reads one: one capture, two reports, and no session,
-transcript or pager in sight.
+may reach — and with the provider-reading layers carved out it no longer reaches a provider at
+all. It also holds the one rule for how a session-free tool picks a gateway, because that rule
+is a reading of the table rather than of a turn, and the two binaries that read a provider
+without a session would otherwise each carry their own answer to the same question.
+
+`pu_probe` and `pu_models` are layers of their own because each reads a provider: one capture
+and two reports from the probe, one catalogue and the entry it would write from the models
+layer, and no session, transcript or pager in sight in either. They sit beside `pu_config`
+rather than above it, because neither needs to know what a turn is — and they are siblings, so
+a helper both of them want belongs in `pu_config`, not in one of the two.
 
 One link goes the other way on purpose, and only one. `pu_tools` calls `RunDelegatedTurn`,
 declared in `tools/delegation.hpp` and defined in `runtime.cpp`, so `pu_tools` links a weak
