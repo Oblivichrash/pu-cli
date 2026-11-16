@@ -17,6 +17,10 @@ namespace pu {
 std::filesystem::path LogDir();
 
 void InitLogging(const std::string& log_level = "");
+// True once any Runtime in this process has installed a logger. A nested Runtime built for
+// a delegated turn asks this before calling InitLogging: the process has one log destination
+// and one level, and whoever installed it first owns both.
+bool IsLoggingInitialized();
 void FlushLogging();
 
 void BeginRequest();

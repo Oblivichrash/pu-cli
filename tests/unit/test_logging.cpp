@@ -132,3 +132,20 @@ TEST_CASE("InitLogging keeps the thread pool the loggers already use", "[logging
   REQUIRE(std::filesystem::exists(scratch.Path() / "logs" / "pu.log"));
 }
 
+// IsLoggingInitialized answers for the process, not for this Runtime: a caller that has not
+// run InitLogging yet still reads a usable logger. Both sides are checked because a predicate
+// that only ever says true is indistinguishable from one that never reads the logger at all.
+TEST_CASE("IsLoggingInitialized follows the default logger", "[logging]") {
+  auto saved = spdlog::default_logger();
+  auto& registry = spdlog::details::registry::instance();
+
+  registry.set_default_logger(nullptr);
+  INFO("no logger installed yet");
+  REQUIRE_FALSE(IsLoggingInitialized());
+
+  InitLogging("info");
+  INFO("InitLogging installed one");
+  REQUIRE(IsLoggingInitialized());
+
+  registry.set_default_logger(saved);
+}
