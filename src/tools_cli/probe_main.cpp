@@ -21,9 +21,10 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend_from_table.hpp"
-#include "pu/model/backend.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/text.hpp"
+#include "pu/model/backend.hpp"
 
 namespace po = boost::program_options;
 
@@ -96,6 +97,11 @@ int main(int argc, char** argv) {
     const pu::model::Backend backend = BackendFor(probe);
     pu::http::BeastHttpClient http;
     return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
+    // As in `pu-models`: an unreachable provider is the case a retry can fix, so it is not
+    // reported as a usage error.
+  } catch (const pu::HttpError& e) {
+    std::cerr << pu::text::ReadableError(e.what()) << "\n";
+    return static_cast<int>(ExitCode::kProvider);
   } catch (const std::exception& e) {
     std::cerr << pu::text::ReadableError(e.what()) << "\n";
     return static_cast<int>(ExitCode::kUsage);

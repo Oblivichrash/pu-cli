@@ -21,6 +21,7 @@
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend_from_table.hpp"
+#include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/text.hpp"
 #include "pu/model/backend.hpp"
@@ -122,6 +123,11 @@ int main(int argc, char** argv) {
     }
 
     return static_cast<int>(pu::tools_cli::RunModels(models, backend, *http, http, agents));
+    // A provider that refused or could not be reached is not a bad invocation: the same
+    // command may work on a retry, and the status is what says so.
+  } catch (const pu::HttpError& e) {
+    std::cerr << pu::text::ReadableError(e.what()) << "\n";
+    return static_cast<int>(ExitCode::kProvider);
   } catch (const std::exception& e) {
     std::cerr << pu::text::ReadableError(e.what()) << "\n";
     return static_cast<int>(ExitCode::kUsage);
