@@ -20,6 +20,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
+#include "pu/config/backend_from_table.hpp"
 #include "pu/model/backend.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/text.hpp"
@@ -48,37 +49,12 @@ po::options_description Options() {
   return options;
 }
 
-// The backend a standalone probe reads. Without a session there is nothing to adopt, so a
-// named gateway builds one from the table; an unnamed one takes the entry the agent table
-// calls its default, which is the backend `pu probe` would have called its current one.
+// The backend a standalone probe reads, from the table alone: there is no session to adopt, so
+// the agent the table names is the one `pu probe` would have called its current one. The rule
+// lives in `backend_from_table`, where `pu-models` reads it too.
 pu::model::Backend BackendFor(const ProbeOptions& options) {
-  using namespace pu::config;
-  using namespace pu::model;
-  const AgentsConfig agents = LoadAgentsConfig(FindConfigPath());
-
-  if (!options.gateway.empty()) {
-    Backend backend = BackendForGateway(options.gateway);
-    if (!options.model.empty()) backend.model = options.model;
-    return backend;
-  }
-
-  const std::string wanted = options.agent.empty() ? agents.default_agent : options.agent;
-  const auto entry = std::find_if(
-      agents.agents.begin(), agents.agents.end(),
-      [&](const AgentEntry& candidate) { return candidate.name == wanted; });
-  if (entry == agents.agents.end()) {
-    std::string known;
-    for (const AgentEntry& candidate : agents.agents) known += " " + candidate.name;
-    throw std::runtime_error("agent is not configured: " + wanted +
-                             (known.empty() ? " (no agents are configured)"
-                                            : "; configured:" + known));
-  }
-
-  // The entry's backend already carries the agent's model, so only an explicit --model
-  // overrides it, the way it does for a named gateway.
-  Backend backend = entry->backend;
-  if (!options.model.empty()) backend.model = options.model;
-  return backend;
+  return pu::config::BackendFromTable(options.gateway, options.model, options.agent,
+                                      pu::config::FindConfigPath());
 }
 
 }  // namespace

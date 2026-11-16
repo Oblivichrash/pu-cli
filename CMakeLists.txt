@@ -93,9 +93,13 @@ pu_configure_target(pu_model)
 add_library(pu::model ALIAS pu_model)
 
 # The agent table and the list of servers a turn may reach. It links `pu_model` because that is
-# where a gateway's fact lives, and nothing above it.
+# where a gateway's fact lives, and nothing above it. The rule for which of those gateways a
+# session-free tool reads belongs here too: it is a reading of the table, and the two binaries
+# that read a provider without a session (`pu-probe`, `pu-models`) would otherwise each carry
+# their own answer to the same question.
 add_library(pu_config STATIC
     src/config/agents.cpp
+    src/config/backend_from_table.cpp
     src/config/serve_registry.cpp
 )
 target_link_libraries(pu_config PUBLIC pu_model)
@@ -111,6 +115,17 @@ add_library(pu_probe STATIC
 )
 target_link_libraries(pu_probe PUBLIC pu_config)
 pu_configure_target(pu_probe)
+
+# What a gateway offers, and the entry a file would write for one model. It reads `llm` for the
+# listing and `config` for the table an entry is copied from, and it wants no session and no
+# transcript: a catalogue is not a conversation. `pu models` and the standalone `pu-models` both
+# call this one implementation, so a column printed by one is a column printed by the other.
+add_library(pu_models STATIC
+    src/tools_cli/agents_source.cpp
+    src/tools_cli/models.cpp
+)
+target_link_libraries(pu_models PUBLIC pu_config)
+pu_configure_target(pu_models)
 
 # What a page is and when it is elided: a budget, a rank and the rule that a second answer to
 # one question replaces the first. It reads `core`'s JSON and nothing else, so it sits at the
@@ -204,6 +219,7 @@ add_library(pu_core STATIC
 target_link_libraries(pu_core PUBLIC
     pu_serve
     pu_probe
+    pu_models
     Boost::program_options
 )
 pu_configure_target(pu_core)
@@ -235,6 +251,15 @@ target_link_libraries(pu-probe PRIVATE pu_probe Boost::program_options)
 pu_configure_target(pu-probe)
 add_executable(pu::probe ALIAS pu-probe)
 
+# The standalone catalogue reader. Like the probe it needs the agent table to find a gateway and
+# nothing above it: no session, no transcript, no pager. `pu models` runs the same implementation,
+# so an entry written by one is an entry written by the other.
+add_executable(pu-models
+    src/tools_cli/models_main.cpp
+)
+target_link_libraries(pu-models PRIVATE pu_models Boost::program_options)
+pu_configure_target(pu-models)
+
 # The page is found relative to the executable, so a build tree without a sibling web/ serves
 # nothing. Copying it after every build keeps the binary runnable from where it was built; the
 # install rule below places the same files where a packaged layout expects them.
@@ -255,7 +280,7 @@ endif()
 include(GNUInstallDirs)
 # The tools go in beside the command that owns them: one package to install, and a reader who
 # has `pu` has `pu-sse`, whether they reach it as `pu sse` or as its own name.
-install(TARGETS pu pu-sse pu-probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS pu pu-sse pu-probe pu-models RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(WIN32)
     # A packaged Windows binary needs the DLLs it was linked against beside it: spdlog and the
     # Boost libraries are on PATH for a build tree, not for a layout that was unzipped.

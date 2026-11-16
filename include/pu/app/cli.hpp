@@ -5,6 +5,7 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
+#include "pu/tools_cli/models.hpp"
 #include "pu/tools_cli/probe.hpp"
 #include "pu/tools_cli/sse.hpp"
 
@@ -92,8 +93,9 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 // listing, so they are one choice rather than three flags that could be set together: `kIds`
 // answers "what can I pick", `kCaps` "which of these two", and `kEntry` "how do I write this
 // one into agents.json". `verify` is separate because it is the only shape that asks a
-// provider instead of reading a catalogue.
-enum class ModelShape { kIds, kCaps, kEntry };
+// provider instead of reading a catalogue. Declared in one place because `pu models` and the
+// standalone `pu-models` call the one implementation.
+using ModelShape = tools_cli::ModelShape;
 
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
@@ -104,11 +106,6 @@ int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runti
 // to it and so is the search for an unset table, and a check that reported one directory
 // while the run used another would be the split `-C` exists to remove.
 int RunCheck(const std::string& config_path, const std::filesystem::path& workspace);
-
-// One turn taken by another agent, along the path a tool takes: the question is the whole of
-// what that turn knows, because the agent asked has no idea what this conversation has said.
-int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& runtime,
-                bool show_usage);
 
 // One turn taken by another agent, along the path a tool takes: the question is the whole of
 // what that turn knows, because the agent asked has no idea what this conversation has said.

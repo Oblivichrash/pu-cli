@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Which gateway a standalone tool reads, resolved from the agent table rather than from a
+// session. `pu-probe` and `pu-models` both ask this and nothing above it, so the rule that a
+// named gateway wins over an agent's own is stated once. The `pu` command frame does not use
+// it: there the answer is the running session's backend, which is a different question.
+#pragma once
+
+#include <string>
+
+#include "pu/config/agents.hpp"
+#include "pu/model/backend.hpp"
+
+namespace pu::config {
+
+// A named gateway is built from the table and never adopted. An unnamed one is the agent the
+// table names, or its `default_agent` when none was named. `model` overrides the agent's own,
+// which is the one thing a caller gets to say about a table it did not write.
+model::Backend BackendFromTable(const std::string& gateway, const std::string& model,
+                                const std::string& agent, const config::AgentsConfig& agents);
+
+// The same, reading the table itself. Throws when the table names no such agent, since the
+// caller asked for one by name and a silently different gateway would be the wrong answer to
+// the wrong question.
+model::Backend BackendFromTable(const std::string& gateway, const std::string& model,
+                                const std::string& agent, const std::string& config_path);
+
+}  // namespace pu::config
