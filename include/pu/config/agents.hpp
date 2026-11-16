@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,20 @@ std::filesystem::path AgentTableDir(const std::filesystem::path& config_path);
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.
 const std::vector<std::string>& BuiltinToolNames();
+
+// The keys an agents.json entry has, split the way the file splits them. These live beside the
+// parsers rather than beside the command that reports on them: a list kept anywhere else is a
+// second account of what the parser reads, and the two drift the first time a field is added —
+// the parser learns it and the list does not, so a file that uses it is told the field is never
+// read. `ParseAgentEntry` and `pu check` both ask these, which is what keeps them one answer.
+//
+// A key here is one the parser looks at, not one this build acts on: `max_tokens` is read and
+// carried even though no limit is enforced, so it is not reported as unknown.
+const std::set<std::string>& ReadAgentKeys();
+const std::set<std::string>& ReadBackendKeys();
+const std::set<std::string>& ReadSecurityKeys();
+const std::set<std::string>& ReadPagingKeys();
+const std::set<std::string>& ReadMcpServerKeys();
 
 std::optional<ServeOptions> FindServeOptions();
 

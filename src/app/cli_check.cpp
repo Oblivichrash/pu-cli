@@ -39,31 +39,9 @@ namespace fs = std::filesystem;
 
 // Everything ParseAgentEntry reads. A key outside this set is read by nothing, which is the
 // one mistake a file cannot show by running: the field is simply not there any more.
-const std::set<std::string>& ReadAgentKeys() {
-  static const std::set<std::string> keys{"name",     "description",    "backend", "security",
-                                          "paging",   "mcp_servers",    "tool_call_budget",
-                                          "delegates", "tools",         "persona"};
-  return keys;
-}
-
-const std::set<std::string>& ReadBackendKeys() {
-  static const std::set<std::string> keys{"gateway",      "host",           "model",
-                                          "api_key",      "temperature",    "system_prompt",
-                                          "max_tokens",   "thinking",       "context_window"};
-  return keys;
-}
-
-const std::set<std::string>& ReadSecurityKeys() {
-  static const std::set<std::string> keys{"sandbox_root", "max_command_length",
-                                          "forbidden_patterns", "approval_patterns"};
-  return keys;
-}
-
-const std::set<std::string>& ReadPagingKeys() {
-  static const std::set<std::string> keys{"page_lines", "max_lines", "capture_bytes",
-                                          "retain_bytes", "retain_buffers"};
-  return keys;
-}
+//
+// The lists themselves live in `config/agents.cpp`, beside the parsers they describe, so a
+// parser that learns a field and a report that does not is one edit rather than two files.
 
 // A key the parser never looks at. Reported rather than refused: this build may be older
 // than the file, and a warning is right when the user cannot tell which.
@@ -188,21 +166,34 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   }
   if (!entry.source_dir.empty()) out << "  table        " << entry.source_dir.string() << "\n";
 
-  if (raw_agent != nullptr) WarnIgnoredKeys(*raw_agent, ReadAgentKeys(), entry.name, warnings);
+  if (raw_agent != nullptr) WarnIgnoredKeys(*raw_agent, config::ReadAgentKeys(), entry.name,
+                                            warnings);
   if (raw_agent != nullptr && raw_agent->contains("backend") &&
       raw_agent->at("backend").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("backend").as_object(), ReadBackendKeys(),
+    WarnIgnoredKeys(raw_agent->at("backend").as_object(), config::ReadBackendKeys(),
                     entry.name + ".backend", warnings);
   }
   if (raw_agent != nullptr && raw_agent->contains("security") &&
       raw_agent->at("security").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("security").as_object(), ReadSecurityKeys(),
+    WarnIgnoredKeys(raw_agent->at("security").as_object(), config::ReadSecurityKeys(),
                     entry.name + ".security", warnings);
   }
   if (raw_agent != nullptr && raw_agent->contains("paging") &&
       raw_agent->at("paging").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("paging").as_object(), ReadPagingKeys(),
+    WarnIgnoredKeys(raw_agent->at("paging").as_object(), config::ReadPagingKeys(),
                     entry.name + ".paging", warnings);
+  }
+  // Each server is its own object, so each is read for its own keys: a field named on one
+  // server and not another is a fact about that one entry, and the index is how the report
+  // says which.
+  if (raw_agent != nullptr && raw_agent->contains("mcp_servers") &&
+      raw_agent->at("mcp_servers").is_array()) {
+    const boost::json::array& servers = raw_agent->at("mcp_servers").as_array();
+    for (std::size_t i = 0; i < servers.size(); ++i) {
+      if (!servers[i].is_object()) continue;
+      WarnIgnoredKeys(servers[i].as_object(), config::ReadMcpServerKeys(),
+                      entry.name + ".mcp_servers[" + std::to_string(i) + "]", warnings);
+    }
   }
   return out.str();
 }

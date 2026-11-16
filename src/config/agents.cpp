@@ -14,6 +14,7 @@
 #include <iostream>
 #include <ranges>
 #include <regex>
+#include <set>
 #include <sstream>
 
 namespace pu::config {
@@ -490,6 +491,45 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
         ")");
   }
   return result;
+}
+
+// One key per field a parser above reads. A field added to a parser and not to its list here is
+// the one mistake this arrangement can still make, so each list is written directly under its
+// parser: the edit that adds a field is an edit to a parser, and the list is what the reader of
+// that function checks against.
+const std::set<std::string>& ReadAgentKeys() {
+  static const std::set<std::string> keys{"name",      "description", "backend",
+                                          "security",  "paging",      "mcp_servers",
+                                          "tool_call_budget", "delegates", "tools",
+                                          "persona"};
+  return keys;
+}
+
+const std::set<std::string>& ReadBackendKeys() {
+  // `ReadBackendFields` in `model::Backend` is what reads these; the system prompt is added by
+  // `ParseBackend`, which is why it is here rather than there.
+  static const std::set<std::string> keys{"gateway",    "host",        "model",
+                                          "api_key",    "temperature", "system_prompt",
+                                          "max_tokens", "thinking",    "context_window"};
+  return keys;
+}
+
+const std::set<std::string>& ReadSecurityKeys() {
+  static const std::set<std::string> keys{"sandbox_root", "max_command_length",
+                                          "forbidden_patterns", "approval_patterns"};
+  return keys;
+}
+
+const std::set<std::string>& ReadPagingKeys() {
+  static const std::set<std::string> keys{"page_lines", "max_lines", "page_bytes",
+                                          "capture_bytes", "retain_bytes", "retain_buffers"};
+  return keys;
+}
+
+const std::set<std::string>& ReadMcpServerKeys() {
+  static const std::set<std::string> keys{"name", "command", "args", "url", "headers",
+                                          "timeout_ms"};
+  return keys;
 }
 
 }  // namespace pu::config
