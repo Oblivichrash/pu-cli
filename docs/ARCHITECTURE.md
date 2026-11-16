@@ -645,7 +645,6 @@ that pulled the whole transport layer into any header naming a `Tool`.
   used the same unit, and only if every turn was priced: one unpriced turn or two units make the
   total carry no price at all, because a number that covers part of the session reads as the
   whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
-- **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error. Tool output is the one thing that is bounded up front: `execute_bash` returns a page and leaves the rest in the pager.
 - **A cursor does not outlive its buffer.** The pager keeps the last 8 buffers within 4 MiB; a page for one already dropped is refused rather than answered from another command's output, so the model runs the command again. A cursor names its own run, so the other half of that risk does not exist: a page request cannot reach a different command's output and does not have to restate the command to prove it.
 - **On Windows a silent command cannot be stopped.** `exec::Run`'s Windows reader is a blocking `popen` read and notices the stop token only between two reads, so a command that prints nothing runs to its own end there. The POSIX reader waits in `poll` and kills the process group, which stops the same command on Linux and macOS.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
@@ -661,6 +660,12 @@ that pulled the whole transport layer into any header naming a `Tool`.
   delegate to is trusted as far as its own `agents.json` allows. Both are deliberate: a
   child that inherited the parent's policy would turn that file into a suggestion instead
   of the boundary.
+- **A delegated directory's table is a conversation artifact, not a reviewed one.**
+  In the intended use the calling model writes `.pu/agents.json` into the child directory and then
+  asks it, so the child's persona, tools, model and sandbox are the caller's text. That is
+  deliberately allowed — it is how a purpose-built expert is created mid-turn — but the child's file
+  then carries no more trust than the turn that wrote it: configuration for one conversation, not a
+  policy anyone reviewed. [runtime.md](runtime.md) owns the mechanics of the handoff.
 - **A stopped or overlong delegated turn is reported, not resumed.** Its answer is
   dropped, and the asking model reads a note saying so; the work the child did is still in
   the child's own turn, which the parent never sees.

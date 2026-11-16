@@ -158,7 +158,6 @@ std::string AskDirTool::Answer(const std::string& target, const std::string& pro
 }
 
 std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
-  (void)ctx;
   const std::string ask = json::ValueOrDefault<std::string>(args, "ask", "");
   const std::string prompt = json::ValueOrDefault<std::string>(args, "prompt", "");
 
@@ -174,6 +173,11 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   // read; a turn may make many, and each one may be a tool running for minutes, so without a
   // figure here the only stop is the process.
   request.timeout = kDelegatedTurnBudget;
+  // The chain of workspaces this question has already been asked in, carried down from the turn
+  // asking. Empty on the first ask; on a delegated ask it already names where the question came
+  // from, which is what turns a table pointing back at an ancestor into a refusal rather than a
+  // wait for an answer that is already being worked on.
+  request.visited = ctx.delegated_visited;
 
   // One field names who answers, and which of the two it is is read rather than declared: a
   // name this agent may reach is an agent, and anything else is a directory to look for. The

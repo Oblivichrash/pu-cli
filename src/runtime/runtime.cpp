@@ -109,8 +109,13 @@ void Runtime::Initialize(const std::string& config_path) {
 
   if (workspace_root_.empty()) workspace_root_ = std::filesystem::current_path();
 
-  std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
-  pu::InitLogging(log_level);
+  // A Runtime is constructed in place for a delegated turn, so this runs more than once per
+  // process. The first caller sets the destination and the level; a child cannot lower the
+  // parent's verbosity or reopen the log file under it.
+  if (!pu::IsLoggingInitialized()) {
+    std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
+    pu::InitLogging(log_level);
+  }
 
   std::string cfg_path =
       config_path.empty() ? (workspace_root_ / ".pu" / "agents.json").string() : config_path;
@@ -400,11 +405,48 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
   }
 }
 
+namespace {
+
+// The workspace the same path should compare as, on both sides of the chain. `weakly_canonical`
+// resolves `..` and symlinks without requiring the path to exist, so a table that reached a
+// directory by two spellings is still recognised as one place. A path it cannot resolve is its
+// own answer rather than an error: a cycle that cannot be named is no reason to refuse a call.
+std::filesystem::path AsOnePlace(const std::filesystem::path& where) {
+  if (where.empty()) return where;
+  std::error_code ec;
+  const std::filesystem::path resolved = std::filesystem::weakly_canonical(where, ec);
+  return ec ? where : resolved;
+}
+
+}  // namespace
+
+// Hands the chain this runtime is already answering inside to the executor, so a tool that
+// receives it can tell a directory it is already in from one it has never asked.
+void Runtime::ApplyDelegatedChain() { executor_->SetDelegatedChain(delegated_visited_); }
+
 DelegationResult Runtime::Delegate(const Delegation& request) {
   DelegationResult result;
 
   const std::filesystem::path target =
       request.dir.empty() ? workspace_root_ : request.dir;
+  // A question that has already been asked there is the same question: the answer it would work
+  // towards is one being worked towards further up the chain, so a second pass can only end at
+  // the ceiling with nothing to show for it. Checked before anything is built, because the cost
+  // of finding out by asking is a whole turn. An empty table means this call is the top of the
+  // chain and nothing can be behind it.
+  {
+    const std::filesystem::path sees = AsOnePlace(target);
+    for (const auto& before : request.visited) {
+      if (AsOnePlace(before) == sees) {
+        result.error = "'" + target.string() +
+                       "' is already answering this question further up the chain, so asking "
+                       "it again would only wait for the answer that is already being worked "
+                       "on. Ask it something else, or ask the agent that sent you here";
+        return result;
+      }
+    }
+  }
+
   const std::filesystem::path table = target / ".pu" / "agents.json";
   const std::filesystem::path inherited = target / ".pu" / "agents";
   std::error_code ec;
@@ -429,6 +471,10 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     child.SetEphemeral();
     if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
     child.delegated_ = true;
+    // The chain so far, plus the workspace answering this one: a child that is asked something
+    // new can then tell whether it was here already.
+    child.delegated_visited_ = request.visited;
+    child.delegated_visited_.push_back(AsOnePlace(target));
     // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
     // waiting rather than in the one that has already handed the question over.
     child.turn_cancel_ = request.cancel_token;
@@ -436,6 +482,10 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
     }
     child.Initialize();
+    // Initialize rebuilds the toolbox before any of the above is set, so the chain reaches the
+    // executor here -- after the runtime exists, before it answers. Nothing else carries it: a
+    // child that never ran this line would hold an empty chain and refuse no re-entry at all.
+    child.ApplyDelegatedChain();
 
     const ExecutionResult answered =
         child.ProcessInput(request.prompt, request.cancel_token);

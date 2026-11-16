@@ -194,3 +194,28 @@ TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
   REQUIRE(Says(tool.Execute(Ask("somewhere", ""), ctx), "required"));
   REQUIRE(Says(tool.Execute(Ask("", ""), ctx), "required"));
 }
+
+TEST_CASE("ask_dir refuses a directory this question is already being asked in", "[ask_dir]") {
+  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::ToolContext ctx;
+  // The chain is read before anything is looked for, so the target needs no table: the refusal
+  // below is the chain's, and a case that had to build one first would be testing the table.
+  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
+
+  const std::string reply = tool.Execute(Ask("elsewhere", "hi"), ctx);
+  REQUIRE(Says(reply, "already answering"));
+  REQUIRE(Says(reply, "further up the chain"));
+}
+
+TEST_CASE("ask_dir looks at the chain before it decides a directory has no table", "[ask_dir]") {
+  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::ToolContext ctx;
+  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
+
+  // A cycle check that matches too eagerly answers "already answering" here and never looks at
+  // the target at all. The chain names a different place, so this one is refused for the reason
+  // it would have been refused with no chain: it has no table.
+  const std::string reply = tool.Execute(Ask("another-place", "hi"), ctx);
+  REQUIRE(Says(reply, "no .pu/agents.json"));
+  REQUIRE_FALSE(Says(reply, "already answering"));
+}

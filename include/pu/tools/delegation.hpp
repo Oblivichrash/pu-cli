@@ -19,6 +19,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "pu/core/base.hpp"
 #include "pu/session/usage.hpp"
@@ -31,7 +32,11 @@ namespace pu {
 // other side of it.
 //
 // A delegated turn gets no `ask_dir` of its own, so a chain of them stops at one hop, and what
-// it cost comes back, so the turn that asked can account for what it spent.
+// it cost comes back, so the turn that asked can account for what it spent. The one hop is a
+// property of the tool box a child is built with, not a depth counter, so it is not by itself a
+// guard against a cycle: a table that names B, and B's directory naming the workspace that
+// asked, would keep handing the same question round and only the ten-minute ceiling would end
+// it. `visited` below is what closes that, carried down rather than inferred.
 struct Delegation {
   std::string agent;            // empty: the table's own default_agent
   std::filesystem::path dir;    // empty: the asking runtime's workspace
@@ -47,6 +52,12 @@ struct Delegation {
   // take minutes each. Zero means the ceiling the asking turn's own platform applies, which for
   // a stream is an idle deadline per read rather than a cap on the reply.
   std::chrono::milliseconds timeout{0};
+
+  // The workspaces this same question has already been asked in, oldest first, ending with the
+  // one asking now. Empty means the top of a chain. A target that appears here is refused: the
+  // answer it would work towards is one that is already being worked towards further up, so
+  // asking again can only end at the ceiling with nothing to show for it.
+  std::vector<std::filesystem::path> visited;
 };
 
 struct DelegationResult {
