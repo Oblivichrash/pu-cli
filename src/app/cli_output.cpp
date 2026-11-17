@@ -75,8 +75,8 @@ namespace pu::cli {
 
 model::Backend ReadOnlyBackend(const std::string& gateway, const std::string& model,
                                Runtime& runtime) {
-  if (gateway.empty()) return runtime.CurrentBackend();
-  model::Backend backend = model::BackendForGateway(gateway);
+  model::Backend backend =
+      gateway.empty() ? runtime.CurrentBackend() : model::BackendForGateway(gateway);
   if (!model.empty()) backend.model = model;
   return backend;
 }

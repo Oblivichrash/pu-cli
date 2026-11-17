@@ -333,3 +333,28 @@ TEST_CASE("Naming a gateway this build has not got says which it has", "[backend
     REQUIRE(message.find("codebuddy") != std::string::npos);
   }
 }
+
+TEST_CASE("A read-only command reads the session's backend until a gateway is named",
+          "[backend]") {
+  BackendSourceFixture fixture;
+  ScopedWorkingDir in_workspace(fixture.root());
+  Runtime runtime;
+  runtime.Initialize();
+
+  // No gateway, no model: the session's own backend, which is what `pu models` and
+  // `pu probe` read when a caller names neither.
+  const model::Backend inherited = cli::ReadOnlyBackend("", "", runtime);
+  REQUIRE(inherited.gateway == runtime.CurrentBackend().gateway);
+
+  // A named gateway is built from the table and never adopted.
+  const model::Backend before = runtime.CurrentBackend();
+  const model::Backend named = cli::ReadOnlyBackend("nim", "", runtime);
+  REQUIRE(named.gateway == model::GatewayId::kNim);
+  REQUIRE(runtime.CurrentBackend().gateway == before.gateway);
+  REQUIRE(runtime.CurrentBackend().model == before.model);
+
+  // `--model` is honoured in both branches. It used to be read only when a gateway
+  // was named, so `pu probe --model X` silently kept the agent's model.
+  REQUIRE(cli::ReadOnlyBackend("", "chosen", runtime).model == "chosen");
+  REQUIRE(cli::ReadOnlyBackend("nim", "chosen", runtime).model == "chosen");
+}
