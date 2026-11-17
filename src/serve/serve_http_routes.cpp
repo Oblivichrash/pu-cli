@@ -302,6 +302,8 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
       const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
       item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
       item.as_object()["error"] = parsed.error;
+      // The same field the live frame carries, so a reloaded turn draws a page as a page.
+      if (parsed.valid && !parsed.page.is_null()) item.as_object()["page"] = parsed.page;
     }
 
     // What this turn cost, beside it rather than inside it. Absent for a turn that recorded

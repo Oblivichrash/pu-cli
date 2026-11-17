@@ -383,6 +383,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   std::vector<boost::json::value> ended_args;
   std::vector<std::string> ended_outputs;
   std::vector<std::string> ended_errors;
+  std::vector<boost::json::value> ended_pages;
 
   ToolCallbacks cb;
   cb.on_start = [&](const std::string& id, const std::string& name,
@@ -393,12 +394,13 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   };
   cb.on_end = [&](const std::string& id, const std::string& name,
                   const boost::json::value& args, const std::string& output,
-                  const std::string& error) {
+                  const std::string& error, const boost::json::value& page) {
     ended_ids.push_back(id);
     ended_names.push_back(name);
     ended_args.push_back(args);
     ended_outputs.push_back(output);
     ended_errors.push_back(error);
+    ended_pages.push_back(page);
   };
 
   Conversation ws;
@@ -430,6 +432,9 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
 
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
+  // A result that is not a page hands on no envelope: absent is what says "this is the whole
+  // output", and an empty object here would draw an extent of zero lines.
+  REQUIRE(ended_pages[0].is_null());
 
   bool found_paired_tool_msg = false;
   for (const auto& msg : ws.History()) {

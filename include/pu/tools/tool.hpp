@@ -88,6 +88,11 @@ struct ToolResult {
   std::string output;    // everything the command itself printed, merged stream
   std::string error;     // the tool layer's verdict: why it failed or was refused
   int exit_code = 0;     // the command's own exit code, or -1 when it never ran
+  // The paging envelope a page carries beside its text, verbatim, or null when the result is
+  // not a page. Read by whoever draws the result to a person: a page of a 3500-line log and a
+  // whole answer are the same string of text, and these are the only fields that say which is
+  // which. Not read by the model, which is told the same facts in prose by `read_more`.
+  boost::json::value page;
 };
 
 inline std::string MakeToolResultJson(bool success, const std::string& output,
@@ -146,6 +151,18 @@ inline ToolResult ParseToolResult(const std::string& raw) {
       r.output = json::ValueOrDefault<std::string>(j, "output", "");
       r.error = json::ValueOrDefault<std::string>(j, "error", "");
       r.exit_code = json::ValueOrDefault<int>(j, "exit_code", 0);
+      // Kept whole rather than parsed into fields: `lines`, `stored`, `read_more` and `buffer`
+      // are one shape with one producer, and a reader that wants a field names it. A result
+      // that is not a page carries neither key, and an empty object would read as a page with
+      // nothing in it.
+      const boost::json::object& obj = j.as_object();
+      if (obj.contains("lines") || obj.contains("stored")) {
+        boost::json::object page;
+        for (const char* key : {"lines", "stored", "read_more", "buffer"}) {
+          if (obj.contains(key)) page[key] = obj.at(key);
+        }
+        r.page = std::move(page);
+      }
     }
   } catch (const std::exception& e) {
     spdlog::debug("Tool result is not structured JSON: {}", e.what());

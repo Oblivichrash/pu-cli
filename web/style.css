@@ -537,6 +537,16 @@ main {
 }
 .tool-status:empty { display: none; }
 
+/* A page's extent, quieter than the status it sits beside: it is a reading of the result, not a
+   verdict on the call, and most results are not pages and have nothing here at all. */
+.tool-page {
+  font-size: 11px;
+  color: var(--ink-light);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tool-page:empty { display: none; }
+
 .tool-args,
 .tool-result { margin: 4px 0; }
 .tool-args pre,

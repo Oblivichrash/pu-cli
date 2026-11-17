@@ -414,10 +414,16 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     }
 
     if (turn.tool_callbacks.on_end) {
+      // The envelope travels beside the text rather than inside it: `output` is what the
+      // command printed and `page` is how much of it this result is showing, so a reader that
+      // only wants the text is not made to unwrap a shape it does not read.
+      const boost::json::value page = parsed.valid ? parsed.page : boost::json::value{};
       if (parsed.valid) {
-        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error);
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error,
+                                   page);
       } else {
-        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, tool_result, "");
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, tool_result, "",
+                                   boost::json::value{});
       }
     }
 

@@ -28,9 +28,14 @@ struct ToolCallbacks {
   // The name and arguments ride with the result as well as with the call: a page that
   // reconnected mid-command receives the end without the start, and what it draws has to
   // come from the end itself.
+  //
+  // `page` is the paging envelope the result carried, or null for a result that was not a
+  // page. It is here rather than folded into `output` because the two answer different
+  // questions: `output` is what the command printed, `page` is how much of that survived and
+  // where the rest is. Without it a page of a 3500-line log draws exactly like a whole reply.
   std::function<void(const std::string& id, const std::string& name,
                      const boost::json::value& args, const std::string& output,
-                     const std::string& error)>
+                     const std::string& error, const boost::json::value& page)>
       on_end;
 };
 

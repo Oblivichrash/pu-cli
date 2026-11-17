@@ -234,10 +234,14 @@ void SessionRunner::RunJob(Job& job) {
   };
   tool_cb.on_end = [&](const std::string& id, const std::string& name,
                        const boost::json::value& args, const std::string& output,
-                       const std::string& error) {
-    say({{"type", "tool_end"},
-         {"payload",
-          {{"id", id}, {"name", name}, {"args", args}, {"output", output}, {"error", error}}}});
+                       const std::string& error, const boost::json::value& page) {
+    boost::json::object payload{
+        {"id", id}, {"name", name}, {"args", args}, {"output", output}, {"error", error}};
+    // Sent only for a result that was a page: absent says "this was the whole output", which
+    // is what every result said before this field existed, so a page that ignores it draws
+    // what it drew before.
+    if (!page.is_null()) payload["page"] = page;
+    say({{"type", "tool_end"}, {"payload", std::move(payload)}});
   };
 
   runtime_.EnableApprovalGate();

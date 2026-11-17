@@ -209,6 +209,48 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   REQUIRE(j.as_array().size() == 3);
   REQUIRE(j.as_array()[2].at("output") == "plain text from a tool");
   REQUIRE(j.as_array()[2].at("error") == "");
+  // Not a page, so no envelope: absent is what every result said before the field existed.
+  REQUIRE_FALSE(j.as_array()[2].as_object().contains("page"));
+}
+
+TEST_CASE("serve API /api/history replays a page as a page", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->Messages();
+  conversation.Append("user", "show the log");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{boost::json::object{
+      {"id", "call_1"},
+      {"type", "function"},
+      {"function", boost::json::object{{"name", "execute_bash"},
+                                       {"arguments", boost::json::object{{"command", "cat log"}}}}}}};
+  conversation.Append(assistant);
+
+  // The shape `execute_bash` writes for a run it had to page: the text, then the envelope
+  // beside it. A reloaded turn has to draw this as a page rather than as a whole answer.
+  pu::ChatMessage receipt;
+  receipt.role = "tool";
+  receipt.tool_call_id = "call_1";
+  receipt.tool_name = "execute_bash";
+  receipt.content =
+      R"({"success":true,"blocked":false,"output":"one\ntwo","error":"","exit_code":0,)"
+      R"("lines":{"first":1,"last":2,"of":3500},)"
+      R"("stored":{"printed":3500,"kept":80,"dropped":3420,"printed_bytes":200000,)"
+      R"("kept_bytes":5000,"kept_from":"the end"},)"
+      R"("buffer":{"id":"b1","source":"cat log","rank":0}})";
+  conversation.Append(receipt);
+
+  auto j = HistoryOf(client);
+  const auto& turn = j.as_array()[2].as_object();
+  REQUIRE(turn.at("output") == "one\ntwo");
+  REQUIRE(turn.contains("page"));
+  REQUIRE(turn.at("page").at("lines").at("of").as_int64() == 3500);
+  REQUIRE(turn.at("page").at("stored").at("dropped").as_int64() == 3420);
 }
 
 TEST_CASE("serve API /api/agents", "[serve][api]") {

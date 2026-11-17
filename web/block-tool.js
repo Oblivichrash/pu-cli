@@ -26,6 +26,25 @@ function summarizeArgs(args) {
   return count === 0 ? "" : count + " args";
 }
 
+// A page's account of itself, in the one line a collapsed card has room for: which lines of the
+// command's output these are, and how much of it the command printed. Empty for a result that is
+// not a page -- the whole output is in hand, and saying so would be noise on every ordinary call.
+function pageSummary(page) {
+  if (!page || typeof page !== "object") return "";
+  const lines = page.lines;
+  const stored = page.stored;
+  if (!lines || !stored) return "";
+  const shown = `${lines.first}\u2013${lines.last}`;
+  const of = Number(lines.of) || 0;
+  const kept = Number(stored.kept) || 0;
+  const dropped = Number(stored.dropped) || 0;
+  if (dropped === 0 && of === kept) return `lines ${shown} of ${of}`;
+  // Dropped lines are only interesting where they came from: a tail that starts mid-output is
+  // a different reading from a head that stops early, and `kept_from` is what says which.
+  const where = stored.kept_from === "the end" ? "first " : "last ";
+  return `lines ${shown} of ${of}, ${where}${kept} kept`;
+}
+
 function oneLine(text) {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > SUMMARY_MAX ? flat.slice(0, SUMMARY_MAX) + "…" : flat;
@@ -57,8 +76,10 @@ class ToolBlock extends HTMLElement {
     this.summaryEl.className = "tool-summary";
     this.statusEl = document.createElement("span");
     this.statusEl.className = "tool-status";
+    this.pageEl = document.createElement("span");
+    this.pageEl.className = "tool-page";
 
-    header.append(this.nameEl, this.summaryEl, this.statusEl);
+    header.append(this.nameEl, this.summaryEl, this.statusEl, this.pageEl);
     buildCollapsible(this, header);
     if (this._block) this.sync(this._block);
   }
@@ -71,6 +92,9 @@ class ToolBlock extends HTMLElement {
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
     this.statusEl.textContent = this.#statusText(block);
+    const page = pageSummary(block.page);
+    this.pageEl.textContent = page;
+    this.pageEl.hidden = !page;
     syncCollapsible(this, block);
     this.#fillBody(block);
   }

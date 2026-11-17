@@ -69,6 +69,8 @@ function applyToolResult(blocks, msg) {
   if (!block) return;
   block.output = typeof msg.output === "string" ? msg.output : (msg.content || "");
   block.error = msg.error || "";
+  // Carried through the replay so a reloaded turn draws its pages the way the live turn did.
+  block.page = msg.page ?? null;
   block.status = "done";
 }
 

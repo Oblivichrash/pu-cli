@@ -79,7 +79,7 @@ and a reconnect are recognisably the same page.
 {"type":"chunk","payload":{"text":"token part"}}
 {"type":"thinking","payload":{"text":"reasoning part"}}
 {"type":"tool_start","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"}}}
-{"type":"tool_end","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"},"output":"...","error":""}}
+{"type":"tool_end","payload":{"id":"call_1","name":"execute_bash","args":{"command":"ls"},"output":"...","error":"","page":{"lines":{"first":1,"last":80,"of":3500},"stored":{"printed":3500,"kept":2048,"dropped":1452,"printed_bytes":200000,"kept_bytes":120000,"kept_from":"the end"},"read_more":{"how":"call execute_bash again with at=<line number>, or with query=<text> to find the lines containing it","covered":{"first":0,"last":2048}},"buffer":{"id":"b1","source":"ls","rank":0}}}}
 {"type":"notice","payload":{"text":"the reply stopped at the token limit..."}}
 {"type":"usage","payload":{"prompt_tokens":48213,"completion_tokens":312,"cached_tokens":41000,"rounds":2,"model":"gpt-4o-mini-2024-07-18","gateway":"","total":{"turns":7,"rounds":11,"prompt_tokens":290144,"completion_tokens":2210,"cached_tokens":241000,"priced_turns":0}}}
 {"type":"busy","payload":{"text":"This session is already open in another page."}}
@@ -105,6 +105,15 @@ known, so a page that has just watched a turn does not have to ask again to draw
 its call. The end carries the call's `name` and `args` as well, because a page
 that reconnected mid-command is replayed the end without the start: what it draws
 has to come from the end itself.
+
+`tool_end` carries `page` when the result was a page, and omits it when it was not.
+The field holds the paging envelope the tool result itself carried -- `lines`,
+`stored`, `read_more`, `buffer` -- because a page of a 3500-line log and a whole
+answer are the same string of text, and the envelope is the only thing that says
+which is which. Absent means the whole output is in hand, which is what every
+result said before the field existed, so a page that ignores it draws what it
+drew before. `/api/history` replays the same field on a finished turn's `tool`
+message, so a reloaded page draws its pages the way the live turn did.
 
 `note` delivers words without stopping anything, which the executor appends beside
 the next tool result. A running command is stopped by `cancel`, which stops the turn
