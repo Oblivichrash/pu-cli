@@ -405,21 +405,6 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
   }
 }
 
-namespace {
-
-// The workspace the same path should compare as, on both sides of the chain. `weakly_canonical`
-// resolves `..` and symlinks without requiring the path to exist, so a table that reached a
-// directory by two spellings is still recognised as one place. A path it cannot resolve is its
-// own answer rather than an error: a cycle that cannot be named is no reason to refuse a call.
-std::filesystem::path AsOnePlace(const std::filesystem::path& where) {
-  if (where.empty()) return where;
-  std::error_code ec;
-  const std::filesystem::path resolved = std::filesystem::weakly_canonical(where, ec);
-  return ec ? where : resolved;
-}
-
-}  // namespace
-
 // Hands the chain this runtime is already answering inside to the executor, so a tool that
 // receives it can tell a directory it is already in from one it has never asked.
 void Runtime::ApplyDelegatedChain() { executor_->SetDelegatedChain(delegated_visited_); }
@@ -429,22 +414,12 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
 
   const std::filesystem::path target =
       request.dir.empty() ? workspace_root_ : request.dir;
-  // A question that has already been asked there is the same question: the answer it would work
-  // towards is one being worked towards further up the chain, so a second pass can only end at
-  // the ceiling with nothing to show for it. Checked before anything is built, because the cost
-  // of finding out by asking is a whole turn. An empty table means this call is the top of the
-  // chain and nothing can be behind it.
-  {
-    const std::filesystem::path sees = AsOnePlace(target);
-    for (const auto& before : request.visited) {
-      if (AsOnePlace(before) == sees) {
-        result.error = "'" + target.string() +
-                       "' is already answering this question further up the chain, so asking "
-                       "it again would only wait for the answer that is already being worked "
-                       "on. Ask it something else, or ask the agent that sent you here";
-        return result;
-      }
-    }
+  // Checked before anything is built, because the cost of finding out by asking is a whole
+  // turn. The rule itself lives beside the request it reads, where it can be stated and
+  // checked without a runtime.
+  if (const std::string refused = RefusedReEntry(target, request.visited); !refused.empty()) {
+    result.error = refused;
+    return result;
   }
 
   const std::filesystem::path table = target / ".pu" / "agents.json";

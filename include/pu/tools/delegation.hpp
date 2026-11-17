@@ -70,6 +70,22 @@ struct DelegationResult {
   bool stopped = false;
 };
 
+// The workspace a path should compare as, on both sides of a chain. `weakly_canonical` resolves
+// `..` and symlinks without requiring the path to exist, so a table that reached a directory by
+// two spellings is still recognised as one place. A path it cannot resolve is its own answer
+// rather than an error: a cycle that cannot be named is no reason to refuse a call.
+std::filesystem::path AsOnePlace(const std::filesystem::path& where);
+
+// Why `target` may not be asked, or an empty string when it may. The answer is about the chain
+// alone: it needs no runtime, no provider and no table, which is what lets it be checked before
+// anything is built — the cost of finding out by asking is a whole turn.
+//
+// An empty `visited` means this call is the top of a chain and nothing can be behind it. The
+// entries are compared already-resolved, because a caller that recorded them through
+// `AsOnePlace` while building the chain would otherwise pay for the same syscalls twice here.
+std::string RefusedReEntry(const std::filesystem::path& target,
+                           const std::vector<std::filesystem::path>& visited);
+
 // Carries out one delegated turn. Declared here so the tool can call it, defined in the runtime
 // that knows how to build and drive one. A build without that runtime links the fallback in
 // `src/tools/delegation.cpp`, which answers that no turn ran rather than pretending one did.
