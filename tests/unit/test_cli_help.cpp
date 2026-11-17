@@ -136,7 +136,7 @@ TEST_CASE("The commands named without one are the commands this build has", "[op
 
 TEST_CASE("The list says what each command answers", "[options]") {
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
-  const std::string printed = pu::cli::CommandList(line);
+  const std::string printed = pu::cli::TopLevelPage(line);
 
   // A name with no sentence after it is a name a reader still has to look up. A developer tool
   // is named and described but kept off the page, so the two claims are made separately: it has
@@ -184,7 +184,7 @@ TEST_CASE("A hint belongs to its command's page and nowhere else", "[options]") 
   // Nothing outside a command's own page prints it: the top-level listing is written from
   // `summary` alone, and a hint leaking into it would be a second sentence in a one-line map.
   // An empty hint is skipped, since the empty string is found in every line.
-  const std::string printed = pu::cli::CommandList(line);
+  const std::string printed = pu::cli::TopLevelPage(line);
   for (const auto& command : line.commands) {
     const std::string hint = line.HintFor(command.name);
     if (hint.empty()) continue;
@@ -223,5 +223,32 @@ TEST_CASE("The page with no command names only what every command answers", "[op
   // The page is shorter than the whole line by a wide margin, which is the point: it is a map,
   // and a map that is the territory is not a map.
   REQUIRE(line.global.options().size() < line.all.options().size() / 2);
+}
+
+TEST_CASE("The top-level page is one string, not two a caller joins", "[options]") {
+  // Both `pu --help` and a bare `pu` show this page, and they used to assemble it separately.
+  // A command added to the listing but not to the flags, or the other way round, would have
+  // been a difference nobody noticed; one function is what makes the two shows the same show.
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+  const std::string printed = pu::cli::TopLevelPage(line);
+
+  // The listing, then the flags, in that order: a reader who has not picked a command reads
+  // down until they recognise one.
+  const std::size_t commands_at = printed.find("commands:");
+  const std::size_t first_command = printed.find("  " + line.commands.front().name);
+  const std::size_t flags_at = printed.find("show help message");
+  REQUIRE(commands_at != std::string::npos);
+  REQUIRE(first_command != std::string::npos);
+  REQUIRE(flags_at != std::string::npos);
+  REQUIRE(commands_at < first_command);
+  REQUIRE(first_command < flags_at);
+
+  // It holds exactly `global`'s flags and no others — that is the whole reason it takes the
+  // CommandLine rather than building a page of its own.
+  for (const auto& option : line.global.options()) {
+    INFO(option->long_name());
+    REQUIRE(printed.find(option->long_name()) != std::string::npos);
+  }
+  REQUIRE(printed.find("--bind") == std::string::npos);
 }
 

@@ -69,8 +69,10 @@ struct CommandLine {
 
 CommandLine BuildCommandLine();
 
-std::string CommandList(const CommandLine& line);
-
+// The page a caller arrives at with no command chosen: the list of commands, then the flags
+// every command answers. One function rather than two strings a caller concatenates, because
+// the two places that show this page — `pu --help` and a bare `pu` — must not drift apart.
+std::string TopLevelPage(const CommandLine& line);
 // The frame every command that needs a Runtime runs inside; see
 // docs/ARCHITECTURE.md#the-frame-every-command-runs-inside. `ephemeral` settles it before
 // Initialize, so it belongs to the command's signature rather than to its body.

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "pu/core/platform.hpp"
+#include "pu/runtime/answer.hpp"
 
 namespace pu::cli::detail {
 
@@ -40,11 +41,11 @@ void PrintUsage(const ExecutionResult& result) {
 }
 
 // The failed turn's message, printed once. The executor records it rather than logging it,
-// so the front end decides whether it is a line here or a field somewhere else.
-void PrintFailure(const ExecutionResult& result) {
-  if (!result.has_error) return;
-  std::cerr << (result.error_message.empty() ? "Request failed" : result.error_message) << "\n";
-}
+// so the front end decides whether it is a line here or a field somewhere else. The wording
+// is `pu::PrintFailure`'s, which is where the rule that stdout carries the answer and stderr
+// the rest is already written down; the qualification is required, not decoration — an
+// unqualified call here would reach this function again and recurse.
+void PrintFailure(const ExecutionResult& result) { ::pu::PrintFailure(result, std::cerr); }
 
 // The exit status a finished turn answers with. A command the router answered is not a
 // provider failure: `pu ask "/help"` did what it was asked.

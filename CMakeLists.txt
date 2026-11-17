@@ -184,6 +184,7 @@ add_library(pu::tools ALIAS pu_tools)
 # box — and `tools` reaches back into it only through `RunDelegatedTurn`, whose definition lives
 # in `runtime.cpp`, so the link direction stays the one the includes already have.
 add_library(pu_runtime STATIC
+    src/runtime/answer.cpp
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp

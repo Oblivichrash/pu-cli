@@ -93,20 +93,21 @@ int main(int argc, char* argv[]) {
     // the one `--help` is for, and the flags below only answer a question they have not
     // reached yet.
     const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
+    if (named.empty()) {
+      std::cout << pu::cli::TopLevelPage(line) << "\n";
+      return 0;
+    }
     // A note about how this command differs from its nearest neighbour belongs to its page,
     // above the flags: someone reading the page has already paid for the choice, and a
     // choice taken wrongly is the thing the note prevents.
-    const std::string hint = named.empty() ? std::string() : line.HintFor(named);
-    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string());
+    const std::string hint = line.HintFor(named);
     if (!hint.empty()) std::cout << hint << "\n\n";
-    // No command named is the top-level page, and the flags it lists are the four that every
-    // command answers. A command's own page is `HelpFor`, which adds that command's flags.
-    std::cout << (named.empty() ? line.global : line.HelpFor(named)) << "\n";
+    std::cout << line.HelpFor(named) << "\n";
     return 0;
   }
 
   if (!vm.count("command")) {
-    std::cout << pu::cli::CommandList(line) << "\n\n" << line.global << "\n";
+    std::cout << pu::cli::TopLevelPage(line) << "\n";
     return 0;
   }
 

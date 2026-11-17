@@ -197,57 +197,67 @@ CommandLine BuildCommandLine() {
     }
   }
 
-  // A page is a copy of the option objects `all` declared, so the page and the parser cannot
-  // disagree about a flag's wording. `--command` is the positional that named the command, so
-  // a page leaves it out; --help and --version stay, since they are how a page is asked for.
-  auto page = [&](const std::vector<OptionSpec>& own) {
-    boost::program_options::options_description description("Global options");
-    // A declared name may carry its short spelling — `directory,C` — and only the part before
-    // the comma is the long name the option object answers to. Matching the whole string
-    // would silently leave every such option off every page.
-    auto copy = [&](const char* declared_name) {
-      const std::string wanted =
-          std::string(declared_name).substr(0, std::string(declared_name).find(','));
-      for (const auto& option : line.all.options()) {
-        if (option->long_name() == wanted) {
-          description.add(option);
-          return;
-        }
-      }
-    };
-    // --help is how this page was asked for, so it stays on one; --command is the
-    // positional that named the command being described.
-    copy("help");
-    for (const OptionSpec& option : global_options) {
-      if (std::string(option.name) != "command" && std::string(option.name) != "help,h") {
-        copy(option.name);
-      }
-    }
-    for (const OptionSpec& option : own) copy(option.name);
-    return description;
+  // The long name an option object answers to. A declared name may carry its short spelling —
+  // `directory,C` — and only the part before the comma is that long name. Matching the whole
+  // string would silently leave every such option off every page.
+  auto long_name_of = [](const std::string& declared_name) {
+    return declared_name.substr(0, declared_name.find(','));
   };
 
-  // The page `pu --help` prints. It is the same four names every command answers, and no
-  // others: everything else in `all` belongs to one command, and a reader arriving with no
-  // command is not choosing between `--bind` and `--verify`. Built from `global_options`
-  // rather than from `all`, so a flag added to a command cannot appear here by accident.
-  for (const OptionSpec& option : global_options) {
-    if (std::string(option.name) == "command") continue;
-    const std::string wanted = std::string(option.name).substr(0, std::string(option.name).find(','));
-    for (const auto& declared_option : line.all.options()) {
-      if (declared_option->long_name() == wanted) {
-        line.global.add(declared_option);
-        break;
+  // A page is a copy of the option objects `all` declared, so the page and the parser cannot
+  // disagree about a flag's wording. Built from a list of names and never from `all` by
+  // filtering: a flag added to a command must not appear on a page by accident, which is what
+  // a filter gets wrong the first time a name is a prefix of another.
+  //
+  // It takes the caption rather than returning one: `options_description` keeps a const
+  // member, so it cannot be assigned and therefore cannot be a return value either.
+  auto fill_page = [&](boost::program_options::options_description& description,
+                       std::vector<std::string> wanted) {
+    // `--help` comes first on every page: it is how the page was asked for, and a reader who
+    // is lost reads the top line. Done here rather than remembered at each call site, which
+    // is how the top-level page and the command pages came to order it differently.
+    wanted.insert(wanted.begin(), "help");
+    for (const std::string& name : wanted) {
+      for (const auto& option : line.all.options()) {
+        if (option->long_name() == name) {
+          description.add(option);
+          break;
+        }
       }
     }
+  };
+
+  // The names every command answers — minus `command`, the positional that named the command
+  // being described, and minus `help`, which is a page's own way of being asked for and is
+  // added below. One list, so the page `pu --help` prints and the page each command prints
+  // cannot come to hold different flags.
+  std::vector<std::string> shared_names;
+  for (const OptionSpec& option : global_options) {
+    const std::string name = long_name_of(option.name);
+    if (name != "command" && name != "help") shared_names.push_back(name);
   }
 
   // One page per name the table declares, so a command added to the table cannot be left
   // without one: a page that is missing does not fail, it falls back to `all`, and a reader
   // asking `pu <cmd> --help` would be shown every flag the line has.
+  //
+  // Built in place with its caption rather than default-constructed and filled: the caption is
+  // a const member, so a page made the other way prints the bibliographic default and says
+  // "Options" where the top-level page says "Global options".
   for (const auto& [command, options] : option_table) {
-    line.per_command.emplace(command, page(options));
+    std::vector<std::string> names = shared_names;
+    for (const OptionSpec& option : options) names.push_back(long_name_of(option.name));
+    auto [it, inserted] =
+        line.per_command.try_emplace(command, boost::program_options::options_description{
+                                                  "Global options"});
+    (void)inserted;
+    fill_page(it->second, std::move(names));
   }
+
+  // The page `pu --help` prints: the same shared names, and no others. Everything else in
+  // `all` belongs to one command, and a reader arriving with no command is not choosing
+  // between `--bind` and `--verify`.
+  fill_page(line.global, std::move(shared_names));
 
   boost::program_options::positional_options_description positional;
   positional.add("command", 1);
@@ -274,6 +284,11 @@ std::string CommandLine::HintFor(const std::string& command) const {
   return "";
 }
 
+namespace {
+
+// The listing on its own, without the flags under it. File-local: the only page a caller
+// outside this file sees is `TopLevelPage`, so there is no second caller left to disagree
+// about the shape of the list.
 std::string CommandList(const CommandLine& line) {
   std::ostringstream printed;
   printed << "commands:\n";
@@ -284,6 +299,14 @@ std::string CommandList(const CommandLine& line) {
     printed << command.summary << "\n";
   }
   printed << "\npu <command> --help names the flags that command takes.";
+  return printed.str();
+}
+
+}  // namespace
+
+std::string TopLevelPage(const CommandLine& line) {
+  std::ostringstream printed;
+  printed << CommandList(line) << "\n\n" << line.global;
   return printed.str();
 }
 

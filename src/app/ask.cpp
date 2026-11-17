@@ -14,6 +14,7 @@
 #include <spdlog/spdlog.h>
 
 #include "pu/core/platform.hpp"
+#include "pu/runtime/answer.hpp"
 #include "pu/runtime/runtime.hpp"
 
 #include "app/cli_output.hpp"
@@ -31,16 +32,8 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
         ExecutionResult result =
             runtime.ProcessInput(prompt, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
+        PrintAnswer(result, std::cout);
         detail::PrintFailure(result);
-        if (!result.has_error) {
-          if (result.was_streamed) {
-            std::cout << "\n";
-          } else if (!result.content.empty()) {
-            std::cout << result.content << "\n";
-          } else if (!result.was_command) {
-            std::cout << "\n";
-          }
-        }
         detail::PrintNotice(result);
         if (show_usage) detail::PrintUsage(result);
         return static_cast<int>(detail::ExitCodeForAsk(result));
@@ -66,16 +59,8 @@ int RunChat(const std::string& agent, Runtime& runtime) {
         ExecutionResult result =
             runtime.ProcessInput(input, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
-        if (result.has_error) {
-          detail::PrintFailure(result);
-        } else if (!result.was_streamed) {
-          if (!result.content.empty()) {
-            std::cout << result.content << "\n";
-          } else if (!result.was_command) {
-            std::cout << "\n";
-          }
-        }
-
+        PrintAnswer(result, std::cout);
+        detail::PrintFailure(result);
         detail::PrintNotice(result);
       } catch (const std::exception& e) {
         std::cerr << e.what() << "\n";
