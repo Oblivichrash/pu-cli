@@ -121,6 +121,89 @@ void TombstoneOldReceipts(std::vector<ChatMessage>& messages) {
 // tiers observable at once.
 constexpr std::size_t kKeepNewestCalls = kKeepNewestCursors + 4;
 
+// How large an argument body may be before it is replaced with a stand-in. Sixteen kilobytes is
+// the page size, and the coincidence is the point: an argument is the *input* half of the same
+// exchange a page bounds on the output side, so a call that carries more than a screen's worth
+// is the one that costs a turn its budget. Below this a `write_file` of a small file costs
+// nothing extra to re-send and reads better whole.
+constexpr std::size_t kMaxArgumentBytes = 16384;
+
+// The one key holding nearly all of a call's bytes, or empty when the body is spread around.
+// Named rather than positional because the stand-in has to say *which* argument it replaced --
+// an elision that leaves the reader unable to tell what went is worse than the tokens it saved.
+std::string DominantArgumentKey(const boost::json::object& fields) {
+  std::string biggest;
+  std::size_t biggest_size = 0;
+  std::size_t total = 0;
+  for (const auto& field : fields) {
+    if (!field.value().is_string()) continue;
+    const std::size_t size = field.value().as_string().size();
+    total += size;
+    if (size > biggest_size) {
+      biggest_size = size;
+      biggest = std::string(field.key());
+    }
+  }
+  // Three quarters is "nearly all of it": a body split evenly across two large keys is not one
+  // argument that went missing, and naming either would be a half-truth.
+  return (biggest_size > 0 && biggest_size * 4 >= total * 3) ? biggest : std::string{};
+}
+
+// The fourth tier: an argument body too large to re-send, replaced in place.
+//
+// This is not T3. T3 removes a call and its receipt together because a `tool` message whose id
+// names no call is invalid; here the call stays, its result stays, and only the input it carried
+// is replaced. That is legal on every provider -- the assistant message is exactly as valid with
+// a smaller argument object -- and it is the *only* thing that bounds the pool T3 leaves open:
+// the ten pairs T3 keeps still re-send their arguments on every turn, forever.
+//
+// Applied newest-last so that the calls a reader is most likely to be looking at keep their
+// text, and applied by identity: a record that already carries an elision is left alone rather
+// than re-measured, since re-encoding a stand-in would shrink it a second time for no reason.
+std::size_t ElideLargeArguments(std::vector<ChatMessage>& messages) {
+  std::size_t elided = 0;
+  for (ChatMessage& msg : messages) {
+    if (msg.role != kAssistantRole) continue;
+    boost::json::array* calls = msg.tool_calls.if_array();
+    if (calls == nullptr) continue;
+    for (boost::json::value& call : *calls) {
+      boost::json::object* call_fields = call.if_object();
+      if (call_fields == nullptr) continue;
+      auto fn = call_fields->find("function");
+      if (fn == call_fields->end()) continue;
+      boost::json::object* function = fn->value().if_object();
+      if (function == nullptr) continue;
+      auto args = function->find("arguments");
+      if (args == function->end()) continue;
+      boost::json::object* body = args->value().if_object();
+      if (body == nullptr) continue;
+      // Already a stand-in: nothing left to take, and re-eliding would lose the counts.
+      if (body->contains("elided")) continue;
+
+      const std::size_t bytes = boost::json::serialize(args->value()).size();
+      if (bytes <= kMaxArgumentBytes) continue;
+
+      ElidedArguments replacement;
+      replacement.bytes = bytes;
+      replacement.path = DominantArgumentKey(*body);
+      // Every key stays; only the dominant one's text goes. A `write_file` keeps its `path`,
+      // so the model can still see which file it wrote even after the content is gone.
+      for (const auto& field : *body) {
+        if (!replacement.path.empty() && field.key() == replacement.path) {
+          const boost::json::string& text = field.value().as_string();
+          replacement.lines = static_cast<std::size_t>(
+              std::count(text.begin(), text.end(), '\n') + (text.empty() ? 0 : 1));
+          continue;
+        }
+        replacement.fields[field.key()] = field.value();
+      }
+      args->value() = ElidedArgumentsAsJson(replacement);
+      ++elided;
+    }
+  }
+  return elided;
+}
+
 // The calls one assistant message makes, as the ids they will be answered by. A message may
 // carry several, and a parallel batch is retired as a unit or not at all -- dropping one arm of
 // a batch and keeping another would leave a `tool_call_id` with no call.
@@ -253,6 +336,11 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
   // Last, because it is the only tier that removes anything and every tier above it is
   // expressed in terms of a call that is still there.
   RetireOldToolCalls(messages);
+  // After T3 rather than before: T3 removes whole pairs, so eliding the arguments of a call
+  // that is about to be dropped would spend work on a message that leaves anyway. What is left
+  // here is exactly the calls T3 keeps, which are the ones that re-send their arguments on
+  // every turn from now on.
+  ElideLargeArguments(messages);
   return messages;
 }
 
