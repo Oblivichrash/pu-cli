@@ -166,7 +166,8 @@ add_library(pu::mcp ALIAS pu_mcp)
 # What a turn may call: the builtins, the policy that refuses a call, and the box that holds
 # them. `ask_dir` is here because it states a question, and reaches the runtime that answers one
 # through `RunDelegatedTurn` rather than by linking it — which is what keeps this layer below
-# the runtime that builds it.
+# the runtime that builds it. It links `session` and not `mcp`: a tool a server publishes is a
+# join of the two, and that join is written in `runtime` rather than here.
 add_library(pu_tools STATIC
     src/tools/ask_dir_tool.cpp
     src/tools/bash.cpp
@@ -175,21 +176,22 @@ add_library(pu_tools STATIC
     src/tools/toolbox.cpp
     src/tools/write_file.cpp
 )
-target_link_libraries(pu_tools PUBLIC pu_mcp pu_session)
+target_link_libraries(pu_tools PUBLIC pu_session)
 pu_configure_target(pu_tools)
 add_library(pu::tools ALIAS pu_tools)
 
 # The turn: the router that reads a slash line, the executor that runs the loop, and the runtime
 # that owns a workspace, a backend and a tool box. It sits above `tools` because it builds the
 # box — and `tools` reaches back into it only through `RunDelegatedTurn`, whose definition lives
-# in `runtime.cpp`, so the link direction stays the one the includes already have.
+# in `runtime.cpp`, so the link direction stays the one the includes already have. It links `mcp`
+# because it is where a published tool is made into a callable one.
 add_library(pu_runtime STATIC
     src/runtime/answer.cpp
     src/runtime/command_router.cpp
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
 )
-target_link_libraries(pu_runtime PUBLIC pu_tools)
+target_link_libraries(pu_runtime PUBLIC pu_tools pu_mcp)
 pu_configure_target(pu_runtime)
 add_library(pu::runtime ALIAS pu_runtime)
 

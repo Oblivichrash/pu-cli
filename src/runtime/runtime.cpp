@@ -23,7 +23,7 @@
 #include "pu/session/session.hpp"
 #include "pu/tools/bash.hpp"
 #include "pu/tools/write_file.hpp"
-#include "pu/tools/mcp_tool.hpp"
+#include "pu/runtime/mcp_tool.hpp"
 
 namespace pu {
 namespace {
@@ -589,7 +589,7 @@ void Runtime::RegisterMcpTools() {
     }
 
     for (const auto& t : tools) {
-      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, server_name);
+      auto mcp_tool = std::make_unique<runtime::McpTool>(client, t, server_name);
       if (!toolbox_.RegisterTool(std::move(mcp_tool))) {
         spdlog::warn("Skipping MCP tool '{}' from '{}' - the server reported no name", t.name,
                      server_name);
