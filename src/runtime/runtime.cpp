@@ -612,6 +612,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
+  executor_->SetAgentIdentity(agent.name, agent.description);
   ApplyToolBudget();
   agent_manager_->SetActiveAgent(agent.name);
 }

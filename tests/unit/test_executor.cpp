@@ -87,7 +87,9 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
-  REQUIRE(msg.find("step-by-step plan") != std::string::npos);
+  // The plan is asked for in reasoning rather than in the reply: stating it in the reply
+  // competes with the parallel-call guideline below, and costs a round the user did not ask for.
+  REQUIRE(msg.find("Plan before you act, in your reasoning") != std::string::npos);
   // Which end a read starts at is the model's call, so the prompt names both ends — and
   // names them the way the tool's schema does, since a name the schema does not carry
   // comes back as a refusal.
@@ -103,6 +105,41 @@ TEST_CASE("What the environment probe found reaches the request", "[executor]") 
   REQUIRE(context.find("=== Environment ===") != std::string::npos);
   REQUIRE(context.find("OS: \n") == std::string::npos);
   REQUIRE(context.find("Kernel: \n") == std::string::npos);
+}
+
+TEST_CASE("The tool-call budget is stated before the first call", "[executor]") {
+  Executor executor;
+  REQUIRE(executor.BuildStaticSystemContext().find(
+              "Tool-call budget for this turn: 100 calls") != std::string::npos);
+
+  executor.SetToolCallBudget(7);
+  REQUIRE(executor.BuildStaticSystemContext().find(
+              "Tool-call budget for this turn: 7 calls") != std::string::npos);
+}
+
+TEST_CASE("The exit code table reaches the model", "[executor]") {
+  Executor executor;
+  const std::string context = executor.BuildStaticSystemContext();
+
+  REQUIRE(context.find("=== Exit Codes ===") != std::string::npos);
+  // Every code is named, because a model that knows only the ones it has met infers the rest.
+  for (const char* code : {"0 ok", "1 the invocation", "2 a provider refused", "3 the sandbox",
+                           "4 a person stopped it"}) {
+    INFO(code);
+    REQUIRE(context.find(code) != std::string::npos);
+  }
+}
+
+TEST_CASE("An agent's identity reaches the model", "[executor]") {
+  Executor executor;
+  // Absent when the entry named nothing: a heading with no name under it is not a fact.
+  REQUIRE(executor.BuildStaticSystemContext().find("=== Identity ===") == std::string::npos);
+
+  executor.SetAgentIdentity("review", "Reviews a diff and reports what is wrong with it");
+  const std::string context = executor.BuildStaticSystemContext();
+  REQUIRE(context.find("=== Identity ===") != std::string::npos);
+  REQUIRE(context.find("Agent: review") != std::string::npos);
+  REQUIRE(context.find("Role: Reviews a diff") != std::string::npos);
 }
 
 namespace {

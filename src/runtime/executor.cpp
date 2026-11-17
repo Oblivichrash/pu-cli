@@ -101,9 +101,22 @@ void Executor::ProbeStaticEnvironment() {
 std::string Executor::BuildStaticSystemContext() const {
   std::ostringstream oss;
 
+  // First, because every section below is read as this agent's view of the machine. Left out
+  // when the entry named nothing: a heading with no name under it is a line the model spends
+  // reasoning about rather than a fact.
+  if (!agent_name_.empty() || !agent_description_.empty()) {
+    oss << "=== Identity ===\n";
+    if (!agent_name_.empty()) oss << "Agent: " << agent_name_ << "\n";
+    if (!agent_description_.empty()) oss << "Role: " << agent_description_ << "\n";
+  }
+
   oss << "=== Environment ===\n";
   oss << "OS: " << static_env_info_.os_name << "\n";
   oss << "Kernel: " << static_env_info_.kernel_version << "\n";
+  // Stated up front rather than only when it runs out. A budget the model learns about at the
+  // last call is a budget it cannot plan against: the exhaustion notice already arrives after
+  // there is nothing left to spend it on.
+  oss << "Tool-call budget for this turn: " << tool_call_budget_ << " calls\n";
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -129,9 +142,17 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << ".\n";
   }
 
+  oss << "=== Exit Codes ===\n";
+  oss << "0 ok, 1 the invocation or its configuration was wrong, 2 a provider refused or was "
+         "unreachable, 3 the sandbox refused every call the turn tried, 4 a person stopped it. "
+         "A `bash` result carries the command's own exit code, which is whatever the command "
+         "meant by it; these four are what this program exits with.\n";
+
   oss << "=== Tool Use Guidelines ===\n";
-  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after "
-         "stating the plan.\n";
+  // Not "state the plan before every call": that competes with the parallel-call guideline
+  // below, and a round spent on a plan the user did not ask for is a round not spent working.
+  oss << "1. Plan before you act, in your reasoning. Write a plan into your reply only when its "
+         "steps tell the user something they could not read off the work itself.\n";
   oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
          "read from its head (the default), and a log, a build's output, or a failure is read "
          "from its tail with at='tail'.\n";

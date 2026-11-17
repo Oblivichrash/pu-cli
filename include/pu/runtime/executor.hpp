@@ -108,6 +108,15 @@ class Executor {
 
   void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
+  // Who is answering this turn, in the runtime's own words. Carried into the static context
+  // because a prompt a person wrote says what an agent is for, and an agent that has been
+  // switched to mid-session otherwise answers as whichever agent the model last heard about.
+  // Set beside the system prompt, which is the same part of the same entry.
+  void SetAgentIdentity(std::string name, std::string description) {
+    agent_name_ = std::move(name);
+    agent_description_ = std::move(description);
+  }
+
   // The workspaces the question this turn is answering has already been asked in. Empty for an
   // ordinary turn; set by the runtime on a delegated one, which is how a tool that asks another
   // workspace learns where the question came from. Refreshed on every toolbox rebuild, so a turn
@@ -189,6 +198,8 @@ class Executor {
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
+  std::string agent_name_;
+  std::string agent_description_;
   // What tools spent on the turn's behalf. Cleared at the start of a turn, and added to the
   // provider's own count before the result is returned.
   ToolContext::Spending spent_by_tools_;
