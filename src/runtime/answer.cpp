@@ -7,7 +7,7 @@
 
 #include "pu/core/text.hpp"
 
-namespace pu {
+namespace pu::runtime {
 
 void PrintAnswer(const ExecutionResult& result, std::ostream& out) {
   if (result.has_error) return;
@@ -25,4 +25,4 @@ void PrintFailure(const ExecutionResult& result, std::ostream& err) {
   err << text::ReadableError(result.error_message) << "\n";
 }
 
-}  // namespace pu
+}  // namespace pu::runtime

@@ -36,7 +36,7 @@ TEST_CASE("An answer ends on its own line", "[answer]") {
   // what keeps one answer from running into the next.
   {
     std::ostringstream out;
-    pu::PrintAnswer(MakeResult("hello", false), out);
+    pu::runtime::PrintAnswer(MakeResult("hello", false), out);
     REQUIRE(out.str() == "hello\n");
   }
 
@@ -44,7 +44,7 @@ TEST_CASE("An answer ends on its own line", "[answer]") {
   // the line ending — not the text again, which would double it.
   {
     std::ostringstream out;
-    pu::PrintAnswer(MakeResult("hello", true), out);
+    pu::runtime::PrintAnswer(MakeResult("hello", true), out);
     REQUIRE(out.str() == "\n");
   }
 
@@ -52,7 +52,7 @@ TEST_CASE("An answer ends on its own line", "[answer]") {
   // by the next prompt would otherwise read as one line.
   {
     std::ostringstream out;
-    pu::PrintAnswer(MakeResult("", false), out);
+    pu::runtime::PrintAnswer(MakeResult("", false), out);
     REQUIRE(out.str() == "\n");
   }
 }
@@ -64,14 +64,14 @@ TEST_CASE("A command's own output is printed once and unspaced", "[answer]") {
   result.was_command = true;
 
   std::ostringstream out;
-  pu::PrintAnswer(result, out);
+  pu::runtime::PrintAnswer(result, out);
   REQUIRE(out.str() == "commands:\n  ask  ...\n");
 
   // An empty answer from a command is not a blank line: the command was asked and answered,
   // and there is nothing to report.
   std::ostringstream empty_out;
   result.content.clear();
-  pu::PrintAnswer(result, empty_out);
+  pu::runtime::PrintAnswer(result, empty_out);
   REQUIRE(empty_out.str().empty());
 }
 
@@ -84,11 +84,11 @@ TEST_CASE("A failed turn prints nothing on the answer stream", "[answer]") {
   result.error_message = "provider refused";
 
   std::ostringstream out;
-  pu::PrintAnswer(result, out);
+  pu::runtime::PrintAnswer(result, out);
   REQUIRE(out.str().empty());
 
   std::ostringstream err;
-  pu::PrintFailure(result, err);
+  pu::runtime::PrintFailure(result, err);
   REQUIRE(err.str() == "provider refused\n");
 }
 
@@ -99,6 +99,6 @@ TEST_CASE("A turn that did not fail says nothing on the error stream", "[answer]
   result.error_message = "a message nobody should print";
 
   std::ostringstream err;
-  pu::PrintFailure(result, err);
+  pu::runtime::PrintFailure(result, err);
   REQUIRE(err.str().empty());
 }

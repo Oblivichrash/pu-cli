@@ -17,7 +17,7 @@
 
 #include "pu/runtime/executor.hpp"
 
-namespace pu {
+namespace pu::runtime {
 
 // The turn's answer, on `out`. A streamed answer already reached the caller a token at a
 // time and wants only its closing newline; a command's own output is the answer and wants
@@ -29,4 +29,4 @@ void PrintAnswer(const ExecutionResult& result, std::ostream& out);
 // as a notice is not repeated here.
 void PrintFailure(const ExecutionResult& result, std::ostream& err);
 
-}  // namespace pu
+}  // namespace pu::runtime

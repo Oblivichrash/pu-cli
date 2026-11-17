@@ -32,7 +32,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
         ExecutionResult result =
             runtime.ProcessInput(prompt, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
-        PrintAnswer(result, std::cout);
+        ::pu::runtime::PrintAnswer(result, std::cout);
         detail::PrintFailure(result);
         detail::PrintNotice(result);
         if (show_usage) detail::PrintUsage(result);
@@ -59,7 +59,7 @@ int RunChat(const std::string& agent, Runtime& runtime) {
         ExecutionResult result =
             runtime.ProcessInput(input, platform::ShutdownToken(), nullptr, {},
                                  nullptr, platform::ShutdownToken());
-        PrintAnswer(result, std::cout);
+        ::pu::runtime::PrintAnswer(result, std::cout);
         detail::PrintFailure(result);
         detail::PrintNotice(result);
       } catch (const std::exception& e) {
