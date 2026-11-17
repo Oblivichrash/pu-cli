@@ -11,20 +11,16 @@
 
 #include <boost/program_options.hpp>
 
-#include <algorithm>
-#include <exception>
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend_from_table.hpp"
-#include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
-#include "pu/core/text.hpp"
 #include "pu/model/backend.hpp"
+#include "pu/tools_cli/entry_point.hpp"
 
 namespace po = boost::program_options;
 
@@ -62,74 +58,51 @@ pu::model::Backend BackendFor(const ModelsOptions& options, const std::string& c
 }  // namespace
 
 int main(int argc, char** argv) {
-  po::options_description options = Options();
-  po::variables_map vm;
-  try {
-    po::store(po::command_line_parser(argc, argv).options(options).run(), vm);
-    po::notify(vm);
-  } catch (const std::exception& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kUsage);
-  }
-
-  if (vm.count("help") > 0) {
-    std::cout << options << "\n";
-    return static_cast<int>(ExitCode::kOk);
-  }
-
-  // A bare `pu-models` would otherwise read whatever agent happens to be the default, which is
-  // a network call nobody asked for. Saying what the tool takes is the answer to "what does
-  // this do"; the help page is one flag away.
-  if (argc == 1) {
-    std::cout << options << "\n";
-    return static_cast<int>(ExitCode::kOk);
-  }
-
+  // `--detail` and `--entry` are filled in before the run rather than inside it, so a shape
+  // named wrongly is refused before the agent table is read: a mistyped flag is not a reason
+  // to open a file.
   ModelsOptions models;
-  if (vm.count("gateway") > 0) models.gateway = vm["gateway"].as<std::string>();
-  if (vm.count("model") > 0) models.model = vm["model"].as<std::string>();
-  models.verify = vm.count("verify") > 0;
 
-  const std::string detail = vm["detail"].as<std::string>();
-  if (detail == "caps") {
-    models.shape = ModelShape::kCaps;
-  } else if (detail == "ids") {
-    models.shape = ModelShape::kIds;
-  } else {
-    std::cerr << "--detail is ids or caps, not '" << detail << "'\n";
-    return static_cast<int>(ExitCode::kUsage);
-  }
-  if (vm.count("entry") > 0) {
-    models.entry_id = vm["entry"].as<std::string>();
-    models.shape = ModelShape::kEntry;
-  }
+  return pu::tools_cli::RunEntryPoint(
+      argc, argv, Options(), pu::tools_cli::BareInvocation::kPrintHelp,
+      [&models](const po::variables_map& vm) -> std::optional<int> {
+        if (vm.count("gateway") > 0) models.gateway = vm["gateway"].as<std::string>();
+        if (vm.count("model") > 0) models.model = vm["model"].as<std::string>();
+        models.verify = vm.count("verify") > 0;
 
-  try {
-    const std::string config_path = vm.count("config") > 0 ? vm["config"].as<std::string>()
-                                                           : pu::config::FindConfigPath();
-    // Which agent the entry is copied from: a named one, or the table's own default.
-    const pu::config::AgentsConfig table = pu::config::LoadAgentsConfig(config_path);
-    const std::string agent_name =
-        vm.count("agent") > 0 ? vm["agent"].as<std::string>() : table.default_agent;
+        const std::string detail = vm["detail"].as<std::string>();
+        if (detail == "caps") {
+          models.shape = ModelShape::kCaps;
+        } else if (detail == "ids") {
+          models.shape = ModelShape::kIds;
+        } else {
+          std::cerr << "--detail is ids or caps, not '" << detail << "'\n";
+          return static_cast<int>(ExitCode::kUsage);
+        }
+        if (vm.count("entry") > 0) {
+          models.entry_id = vm["entry"].as<std::string>();
+          models.shape = ModelShape::kEntry;
+        }
+        return std::nullopt;
+      },
+      [&models](const po::variables_map& vm) {
+        const std::string config_path = vm.count("config") > 0 ? vm["config"].as<std::string>()
+                                                               : pu::config::FindConfigPath();
+        // Which agent the entry is copied from: a named one, or the table's own default.
+        const pu::config::AgentsConfig table = pu::config::LoadAgentsConfig(config_path);
+        const std::string agent_name =
+            vm.count("agent") > 0 ? vm["agent"].as<std::string>() : table.default_agent;
 
-    const pu::model::Backend backend = BackendFor(models, config_path, agent_name);
-    auto http = std::make_shared<pu::http::BeastHttpClient>();
+        const pu::model::Backend backend = BackendFor(models, config_path, agent_name);
+        auto http = std::make_shared<pu::http::BeastHttpClient>();
 
-    // An entry report reads the file a second time, through the same function `pu models`
-    // uses, so the two print the same text for the same table.
-    std::optional<AgentsSource> agents;
-    if (models.shape == ModelShape::kEntry) {
-      agents = pu::tools_cli::ReadAgentsSource(config_path, agent_name);
-    }
+        // An entry report reads the file a second time, through the same function
+        // `pu models` uses, so the two print the same text for the same table.
+        std::optional<AgentsSource> agents;
+        if (models.shape == ModelShape::kEntry) {
+          agents = pu::tools_cli::ReadAgentsSource(config_path, agent_name);
+        }
 
-    return static_cast<int>(pu::tools_cli::RunModels(models, backend, *http, http, agents));
-    // A provider that refused or could not be reached is not a bad invocation: the same
-    // command may work on a retry, and the status is what says so.
-  } catch (const pu::HttpError& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kProvider);
-  } catch (const std::exception& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kUsage);
-  }
+        return static_cast<int>(pu::tools_cli::RunModels(models, backend, *http, http, agents));
+      });
 }

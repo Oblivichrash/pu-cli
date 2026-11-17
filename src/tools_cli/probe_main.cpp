@@ -13,18 +13,14 @@
 
 #include <boost/program_options.hpp>
 
-#include <algorithm>
-#include <exception>
-#include <iostream>
-#include <stdexcept>
+#include <optional>
 #include <string>
 
 #include "pu/config/agents.hpp"
 #include "pu/config/backend_from_table.hpp"
-#include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
-#include "pu/core/text.hpp"
 #include "pu/model/backend.hpp"
+#include "pu/tools_cli/entry_point.hpp"
 
 namespace po = boost::program_options;
 
@@ -61,49 +57,23 @@ pu::model::Backend BackendFor(const ProbeOptions& options) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  po::options_description options = Options();
-  po::variables_map vm;
-  try {
-    po::store(po::command_line_parser(argc, argv).options(options).run(), vm);
-    po::notify(vm);
-  } catch (const std::exception& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kUsage);
-  }
+  return pu::tools_cli::RunEntryPoint(
+      argc, argv, Options(), pu::tools_cli::BareInvocation::kPrintHelp,
+      // Nothing to check before running: `pu-probe` reads the table for a gateway and
+      // accepts a prompt it will not send unless asked to.
+      [](const po::variables_map&) -> std::optional<int> { return std::nullopt; },
+      [](const po::variables_map& vm) {
+        ProbeOptions probe;
+        if (vm.count("gateway") > 0) probe.gateway = vm["gateway"].as<std::string>();
+        if (vm.count("model") > 0) probe.model = vm["model"].as<std::string>();
+        if (vm.count("agent") > 0) probe.agent = vm["agent"].as<std::string>();
+        probe.prompt = vm["prompt"].as<std::string>();
+        probe.out_dir = vm["out-dir"].as<std::string>();
+        probe.save = vm.count("save") > 0;
+        probe.listing = vm.count("listing") > 0;
 
-  if (vm.count("help") > 0) {
-    std::cout << options << "\n";
-    return static_cast<int>(ExitCode::kOk);
-  }
-
-  // A bare `pu-probe` would otherwise send a prompt to whatever agent happens to be the
-  // default, which is a network call nobody asked for. Saying what the tool takes is the
-  // answer to "what does this do"; the help page is one flag away.
-  if (argc == 1) {
-    std::cout << options << "\n";
-    return static_cast<int>(ExitCode::kOk);
-  }
-
-  ProbeOptions probe;
-  if (vm.count("gateway") > 0) probe.gateway = vm["gateway"].as<std::string>();
-  if (vm.count("model") > 0) probe.model = vm["model"].as<std::string>();
-  if (vm.count("agent") > 0) probe.agent = vm["agent"].as<std::string>();
-  probe.prompt = vm["prompt"].as<std::string>();
-  probe.out_dir = vm["out-dir"].as<std::string>();
-  probe.save = vm.count("save") > 0;
-  probe.listing = vm.count("listing") > 0;
-
-  try {
-    const pu::model::Backend backend = BackendFor(probe);
-    pu::http::BeastHttpClient http;
-    return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
-    // As in `pu-models`: an unreachable provider is the case a retry can fix, so it is not
-    // reported as a usage error.
-  } catch (const pu::HttpError& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kProvider);
-  } catch (const std::exception& e) {
-    std::cerr << pu::text::ReadableError(e.what()) << "\n";
-    return static_cast<int>(ExitCode::kUsage);
-  }
+        const pu::model::Backend backend = BackendFor(probe);
+        pu::http::BeastHttpClient http;
+        return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
+      });
 }
