@@ -15,20 +15,6 @@
 
 namespace pu::cli {
 
-namespace {
-
-// The backend a read-only command reads. Naming a gateway builds one from the table and
-// never adopts it, so `pu probe --gateway nim` leaves the session where it was.
-model::Backend BackendFor(const std::string& gateway, const std::string& model,
-                          Runtime& runtime) {
-  if (gateway.empty()) return runtime.CurrentBackend();
-  model::Backend backend = model::BackendForGateway(gateway);
-  if (!model.empty()) backend.model = model;
-  return backend;
-}
-
-}  // namespace
-
 // One probe run: a single-token prompt to the agent's backend, the raw stream kept,
 // and the field names the gateway actually sent read back out of it. An adapter for a
 // new gateway is written from this capture rather than from a specification.
@@ -46,7 +32,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
     // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
     // the agent's keys; the standalone tool builds the same table from its own config read.
     return static_cast<int>(
-        tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http()));
+        tools_cli::RunProbe(options, ReadOnlyBackend(gateway, model, runtime), runtime.Http()));
   });
 }
 }  // namespace pu::cli

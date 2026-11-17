@@ -9,6 +9,7 @@
 #include <iterator>
 #include <string>
 
+#include "pu/app/cli.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"

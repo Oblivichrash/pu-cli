@@ -13,7 +13,6 @@
 #include "pu/runtime/executor.hpp"
 
 namespace pu::cli::detail {
-
 // A diagnostic the turn produced (a retry, a notice), on stderr.
 void PrintNotice(const ExecutionResult& result);
 

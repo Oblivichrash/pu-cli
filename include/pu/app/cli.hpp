@@ -99,6 +99,15 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 // standalone `pu-models` call the one implementation.
 using ModelShape = tools_cli::ModelShape;
 
+// The backend a read-only command reads — `models` and `probe`, the two that ask a product
+// something without taking a turn. A named gateway is built from the table and never adopted,
+// so asking what one offers leaves the session where it was; an unnamed one is the agent's
+// own backend, which is the one a turn would use. Stated once because it was written twice,
+// byte for byte, and two answers to "which gateway did this read" is the drift that only
+// shows up when they disagree.
+model::Backend ReadOnlyBackend(const std::string& gateway, const std::string& model,
+                               Runtime& runtime);
+
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime);
 int RunServe(const std::string& bind_address, std::uint16_t port, Runtime& runtime);

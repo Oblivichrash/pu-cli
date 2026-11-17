@@ -6,7 +6,9 @@
 #include <string>
 
 #include "pu/core/platform.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/runtime/answer.hpp"
+#include "pu/runtime/runtime.hpp"
 
 namespace pu::cli::detail {
 
@@ -68,3 +70,15 @@ ExitCode ExitCodeForAsk(const ExecutionResult& result) {
 }
 
 }  // namespace pu::cli::detail
+
+namespace pu::cli {
+
+model::Backend ReadOnlyBackend(const std::string& gateway, const std::string& model,
+                               Runtime& runtime) {
+  if (gateway.empty()) return runtime.CurrentBackend();
+  model::Backend backend = model::BackendForGateway(gateway);
+  if (!model.empty()) backend.model = model;
+  return backend;
+}
+
+}  // namespace pu::cli

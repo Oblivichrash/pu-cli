@@ -21,21 +21,6 @@
 
 namespace pu::cli {
 
-namespace {
-
-// Which gateway this run reads. A named one is built from the table and never adopted, so
-// asking what a product offers leaves the session where it was; an unnamed one is the agent's
-// own backend, which is the one a turn would use.
-model::Backend BackendFor(const std::string& gateway, const std::string& model,
-                          Runtime& runtime) {
-  if (gateway.empty()) return runtime.CurrentBackend();
-  model::Backend backend = model::BackendForGateway(gateway);
-  if (!model.empty()) backend.model = model;
-  return backend;
-}
-
-}  // namespace
-
 int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
               ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
@@ -57,7 +42,8 @@ int RunModels(const std::string& agent, const std::string& gateway, const std::s
       agents->entry = config::FindRawAgentEntry(agents->config_path, agents->agent_name);
     }
 
-    return static_cast<int>(tools_cli::RunModels(options, BackendFor(gateway, model, runtime),
+    return static_cast<int>(tools_cli::RunModels(
+        options, ReadOnlyBackend(gateway, model, runtime),
                                                  runtime.Http(), runtime.SharedHttp(), agents));
   });
 }
