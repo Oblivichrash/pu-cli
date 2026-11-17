@@ -208,6 +208,7 @@ pu_configure_target(pu_serve)
 add_library(pu::serve ALIAS pu_serve)
 
 add_library(pu_core STATIC
+    src/app/agent_summary.cpp
     src/app/ask.cpp
     src/app/cli.cpp
     src/app/cli_agents.cpp
@@ -217,7 +218,6 @@ add_library(pu_core STATIC
     src/app/cli_sse.cpp
     src/app/models.cpp
     src/app/probe.cpp
-    src/config/agent_summary.cpp
 )
 target_link_libraries(pu_core PUBLIC
     pu_serve

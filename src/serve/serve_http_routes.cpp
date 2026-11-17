@@ -22,7 +22,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-#include "pu/config/agent_summary.hpp"
+#include "pu/app/agent_summary.hpp"
 #include "pu/config/agents.hpp"
 #include "pu/config/serve_registry.hpp"
 #include "pu/core/platform.hpp"
@@ -321,7 +321,7 @@ boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
   Runtime& runtime = call.runtime;
   const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
                                                       : std::string();
-  return config::AgentsAsJson(config::SummarizeAgents(runtime.Agents(), active));
+  return app::AgentsAsJson(app::SummarizeAgents(runtime.Agents(), active));
 }
 
 boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& body) {

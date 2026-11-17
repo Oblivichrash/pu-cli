@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/config/agent_summary.hpp"
+#include "pu/app/agent_summary.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -8,7 +8,7 @@
 #include "pu/model/backend.hpp"
 #include "pu/model/gateway.hpp"
 
-namespace pu::config {
+namespace pu::app {
 
 std::vector<AgentSummary> SummarizeAgents(const AgentManager& agents,
                                          const std::string& active) {
@@ -16,12 +16,12 @@ std::vector<AgentSummary> SummarizeAgents(const AgentManager& agents,
   const std::vector<std::string> names = agents.AgentNames();
   out.reserve(names.size());
   for (const std::string& name : names) {
-    const AgentEntry* entry = agents.AgentConfig(name);
+    const config::AgentEntry* entry = agents.AgentConfig(name);
     AgentSummary summary;
     summary.name = name;
     if (entry != nullptr) {
       summary.description = entry->description;
-      summary.gateway = GatewayName(entry->backend.gateway);
+      summary.gateway = model::GatewayName(entry->backend.gateway);
       summary.model = entry->backend.model;
       summary.delegates = entry->delegates;
     }
@@ -71,4 +71,4 @@ std::string FormatAgentTable(const std::vector<AgentSummary>& agents) {
   return out.str();
 }
 
-}  // namespace pu::config
+}  // namespace pu::app

@@ -15,15 +15,15 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/agent_summary.hpp"
+#include "pu/app/agent_summary.hpp"
 #include "pu/core/json.hpp"
 
 namespace {
 
-pu::config::AgentSummary AgentOf(const std::string& name, const std::string& description,
+pu::app::AgentSummary AgentOf(const std::string& name, const std::string& description,
                                  const std::string& gateway, const std::string& model,
                                  bool active) {
-  pu::config::AgentSummary agent;
+  pu::app::AgentSummary agent;
   agent.name = name;
   agent.description = description;
   agent.gateway = gateway;
@@ -35,12 +35,12 @@ pu::config::AgentSummary AgentOf(const std::string& name, const std::string& des
 }  // namespace
 
 TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
-  const std::vector<pu::config::AgentSummary> agents = {
+  const std::vector<pu::app::AgentSummary> agents = {
       AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
       AgentOf("strong", "", "openai", "pro", false),
   };
 
-  const boost::json::value json = pu::config::AgentsAsJson(agents);
+  const boost::json::value json = pu::app::AgentsAsJson(agents);
   REQUIRE(json.is_array());
   REQUIRE(json.as_array().size() == 2);
 
@@ -59,12 +59,12 @@ TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
 }
 
 TEST_CASE("The table marks the active agent and says what each one is", "[agents]") {
-  const std::vector<pu::config::AgentSummary> agents = {
+  const std::vector<pu::app::AgentSummary> agents = {
       AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
       AgentOf("strong-name", "", "openai", "pro", false),
   };
 
-  const std::string table = pu::config::FormatAgentTable(agents);
+  const std::string table = pu::app::FormatAgentTable(agents);
   REQUIRE(table.find("2 agent(s) configured") != std::string::npos);
   REQUIRE(table.find("fast (active)") != std::string::npos);
   // Only the active one is marked, or the marker says nothing.
@@ -77,6 +77,6 @@ TEST_CASE("The table marks the active agent and says what each one is", "[agents
 
 TEST_CASE("An empty configuration says so instead of printing nothing", "[agents]") {
   // A blank answer reads as a broken command; the words say what is missing.
-  REQUIRE(pu::config::FormatAgentTable({}) == "No agents are configured.\n");
-  REQUIRE(pu::config::AgentsAsJson({}).as_array().empty());
+  REQUIRE(pu::app::FormatAgentTable({}) == "No agents are configured.\n");
+  REQUIRE(pu::app::AgentsAsJson({}).as_array().empty());
 }

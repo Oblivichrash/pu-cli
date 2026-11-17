@@ -19,7 +19,7 @@ namespace pu {
 
 class AgentManager;
 
-namespace config {
+namespace app {
 
 // One agent as a reader needs it: what to type, what it is for, which product answers it, and
 // which model. A surface that wants less leaves fields out of what it prints; none of them
@@ -49,5 +49,5 @@ boost::json::value AgentsAsJson(const std::vector<AgentSummary>& agents);
 // The table a reader sees: the name, a marker on the active one, and its description.
 std::string FormatAgentTable(const std::vector<AgentSummary>& agents);
 
-}  // namespace config
+}  // namespace app
 }  // namespace pu

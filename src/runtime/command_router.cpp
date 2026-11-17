@@ -3,7 +3,7 @@
 #include "pu/session/session.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/text.hpp"
-#include "pu/config/agent_summary.hpp"
+#include "pu/app/agent_summary.hpp"
 #include "pu/llm/model_factory.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/model/backend.hpp"
@@ -200,8 +200,8 @@ CommandReply CommandRouter::HandleAgents(Args, Session& session) {
   // The same table `pu agents` prints: the chat is not a second place to learn who is
   // configured, and two renderings of one list drift.
   return Replied(
-      config::FormatAgentTable(
-          config::SummarizeAgents(runtime_.Agents(), session.Spec().agent_name)));
+      app::FormatAgentTable(
+          app::SummarizeAgents(runtime_.Agents(), session.Spec().agent_name)));
 }
 
 CommandReply CommandRouter::HandleRewind(Args args, Session& session) {
