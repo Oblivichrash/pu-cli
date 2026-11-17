@@ -64,6 +64,12 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Fixed
 
+- **`pu probe --model X` and `pu models --model X` use the model X.** The rule that picks a
+  backend for the two read-only commands returned the session's own backend as soon as no
+  gateway was named, before it looked at `--model`. Both flags are accepted independently, so
+  the model the agent was configured with was read instead and nothing said the flag had been
+  ignored. The override now applies after the gateway choice rather than inside one branch of
+  it, so neither flag can outrank the other silently.
 - **The exit-status cases no longer read whatever `.pu/` the test process happened to sit in.**
   `Runtime::Initialize` resolves `.pu/agents.json` against the current directory before it asks
   `FindConfigPath`, so a runtime built outside its harness's workspace picked up the repository
