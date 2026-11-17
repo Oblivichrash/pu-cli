@@ -99,12 +99,14 @@ int main(int argc, char* argv[]) {
     const std::string hint = named.empty() ? std::string() : line.HintFor(named);
     std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string());
     if (!hint.empty()) std::cout << hint << "\n\n";
-    std::cout << line.HelpFor(named) << "\n";
+    // No command named is the top-level page, and the flags it lists are the four that every
+    // command answers. A command's own page is `HelpFor`, which adds that command's flags.
+    std::cout << (named.empty() ? line.global : line.HelpFor(named)) << "\n";
     return 0;
   }
 
   if (!vm.count("command")) {
-    std::cout << pu::cli::CommandList(line) << "\n\n" << all << "\n";
+    std::cout << pu::cli::CommandList(line) << "\n\n" << line.global << "\n";
     return 0;
   }
 

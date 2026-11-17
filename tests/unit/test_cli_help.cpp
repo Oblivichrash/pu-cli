@@ -169,12 +169,17 @@ TEST_CASE("A hint belongs to its command's page and nowhere else", "[options]") 
   REQUIRE(line.HintFor("probe").find("agents.json") != std::string::npos);
   REQUIRE(line.HintFor("sse").find("agents.json") != std::string::npos);
 
-  // A hint that named every command would make the two above true for the wrong reason.
+  // `delegate` earns one for a different reason: it is the twin of `ask`, and the page has to
+  // say which one a reader wants before they spend a turn finding out.
+  REQUIRE_FALSE(line.HintFor("delegate").empty());
+  REQUIRE(line.HintFor("delegate").find("pu ask") != std::string::npos);
+
+  // A hint that named every command would make the assertions above true for the wrong reason.
   std::size_t hinted = 0;
   for (const auto& command : line.commands) {
     if (!line.HintFor(command.name).empty()) ++hinted;
   }
-  REQUIRE(hinted == 2);
+  REQUIRE(hinted == 3);
 
   // Nothing outside a command's own page prints it: the top-level listing is written from
   // `summary` alone, and a hint leaking into it would be a second sentence in a one-line map.
@@ -190,3 +195,33 @@ TEST_CASE("A hint belongs to its command's page and nowhere else", "[options]") 
   REQUIRE(line.HintFor("").empty());
   REQUIRE(line.HintFor("definitely-not-a-command").empty());
 }
+
+TEST_CASE("The page with no command names only what every command answers", "[options]") {
+  // `pu --help` is read by someone who has not picked a command, so the flags under it are
+  // the ones they can use whatever they pick. Printing `all` there instead would list every
+  // flag of every command -- `--bind` beside `--verify` beside `--body` -- and turn the one
+  // page written for an undecided reader into the whole manual.
+  const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
+
+  REQUIRE(Names(line.global, "help"));
+  REQUIRE(Names(line.global, "version"));
+  REQUIRE(Names(line.global, "directory"));
+
+  // Flags that belong to one command, and to a reader choosing that command. `--config` is
+  // here rather than global: only `check` reads it, so a reader of `pu --help` has no use for
+  // it yet.
+  for (const char* own : {"bind", "port", "verify", "entry", "header", "body", "prompt",
+                          "config", "agent", "show-usage", "listing", "out"}) {
+    INFO(own);
+    REQUIRE_FALSE(Names(line.global, own));
+  }
+
+  // `--command` is how the parser learned which command was named, so it is not a flag the
+  // top-level page should suggest anyone types.
+  REQUIRE_FALSE(Names(line.global, "command"));
+
+  // The page is shorter than the whole line by a wide margin, which is the point: it is a map,
+  // and a map that is the territory is not a map.
+  REQUIRE(line.global.options().size() < line.all.options().size() / 2);
+}
+

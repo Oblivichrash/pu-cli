@@ -180,7 +180,9 @@ would make "what can I pick" cost the same as "say this", and it does not.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
-`pu --help` names every command with the one line that says what it answers.
+`pu --help` names every command with the one line that says what it answers, and lists only the
+flags that every command takes — `--bind` and `--verify` belong to one command each, so they are
+on that command's page rather than in the map a reader arrives at with no command chosen.
 `pu <command> --help` prints that command's own page.
 
 ## Docs

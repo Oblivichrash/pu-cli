@@ -76,7 +76,12 @@ CommandLine BuildCommandLine() {
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
-      {"delegate", "have another agent answer one question, in a turn of its own"},
+      {"delegate",
+       "have another agent answer one question, in a turn of its own", false,
+       "Offered by hand so that a delegation a model made can be reproduced: without it, the "
+       "only way to repeat one is to read a log and guess. For an ordinary question about "
+       "this workspace, `pu ask` is the command -- this one names an agent that must exist "
+       "and spends a turn of its own."},
       {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe",
        "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
@@ -221,6 +226,21 @@ CommandLine BuildCommandLine() {
     for (const OptionSpec& option : own) copy(option.name);
     return description;
   };
+
+  // The page `pu --help` prints. It is the same four names every command answers, and no
+  // others: everything else in `all` belongs to one command, and a reader arriving with no
+  // command is not choosing between `--bind` and `--verify`. Built from `global_options`
+  // rather than from `all`, so a flag added to a command cannot appear here by accident.
+  for (const OptionSpec& option : global_options) {
+    if (std::string(option.name) == "command") continue;
+    const std::string wanted = std::string(option.name).substr(0, std::string(option.name).find(','));
+    for (const auto& declared_option : line.all.options()) {
+      if (declared_option->long_name() == wanted) {
+        line.global.add(declared_option);
+        break;
+      }
+    }
+  }
 
   // One page per name the table declares, so a command added to the table cannot be left
   // without one: a page that is missing does not fail, it falls back to `all`, and a reader
