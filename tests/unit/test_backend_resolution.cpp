@@ -128,9 +128,11 @@ TEST_CASE("A type is named the same way in configuration and in an answer", "[ba
   REQUIRE(model::ParseGatewayId("codebuddy") == model::GatewayId::kCodeBuddy);
   REQUIRE(model::ParseGatewayId("openai") == model::GatewayId::kOpenAI);
   REQUIRE(model::ParseGatewayId("ollama") == model::GatewayId::kOllama);
+  REQUIRE(model::ParseGatewayId("anthropic") == model::GatewayId::kAnthropic);
   REQUIRE_FALSE(model::ParseGatewayId("gpt").has_value());
 
   REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(model::GatewayName(model::GatewayId::kAnthropic)) == "anthropic");
 }
 
 TEST_CASE("A session spec carries only the agent and the thinking override", "[backend]") {

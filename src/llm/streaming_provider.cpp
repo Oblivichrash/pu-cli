@@ -112,7 +112,7 @@ void StreamingProvider::Attempt(const ChatRequest& request) {
     // what the end of the stream does, once, below. Doing it here as well ran the flush twice
     // and appended what it folded in twice.
     if (event.data.empty() || event.data == "[DONE]") return;
-    ParseData(event.data, request);
+    ParseData(event.event, event.data, request);
   });
   parser.SetBareLinesAreEvents(FramesBareLines());
 

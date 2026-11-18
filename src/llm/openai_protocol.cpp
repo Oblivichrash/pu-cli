@@ -55,6 +55,21 @@ std::string OpenAIProtocol::BuildRequest(std::span<const ChatMessage> history,
       {"temperature", config_.temperature},
   };
   if (config_.max_tokens) req.as_object()["max_tokens"] = *config_.max_tokens;
+  // Sampling knobs are sent only when a config named one. Pinning a default here would
+  // narrow a product whose own default is not the same number, and nothing in this tree
+  // chose it.
+  if (config_.top_p) req.as_object()["top_p"] = *config_.top_p;
+  if (config_.seed) req.as_object()["seed"] = *config_.seed;
+  if (!config_.stop.empty()) req.as_object()["stop"] = boost::json::value_from(config_.stop);
+  // A schema turns the reply into a contract the gateway enforces, so a malformed argument
+  // is refused rather than parsed and discovered later. `strict` is stated because the
+  // field is what makes a gateway check it rather than merely prefer it.
+  if (config_.response_schema) {
+    req.as_object()["response_format"] = boost::json::value{
+        {"type", "json_schema"},
+        {"json_schema", {{"name", "reply"}, {"schema", *config_.response_schema}, {"strict", true}}},
+    };
+  }
 
   if (config_.thinking == ThinkingLevel::kNone) {
     boost::json::value extra_body = {{"thinking", {{"type", "disabled"}}}};
@@ -225,7 +240,11 @@ void OpenAIProtocol::FlushPendingToolCalls(const ChatRequest& request) {
   pending_tools_.clear();
 }
 
-void OpenAIProtocol::ParseData(std::string_view data, const ChatRequest& request) {
+void OpenAIProtocol::ParseData(std::string_view event, std::string_view data,
+                               const ChatRequest& request) {
+  // The event name is not read: OpenAI names its frames nothing that the payload does not
+  // already state, and a `type` that repeated the name would be a second copy of it.
+  (void)event;
   // What arrives is one event's payload: the blank-line framing, the `data:` prefix and the
   // joining of a payload split over several lines are the format's, and `core::SseParser`
   // does them. The sentinel is handled by the caller that owns the stream's end.

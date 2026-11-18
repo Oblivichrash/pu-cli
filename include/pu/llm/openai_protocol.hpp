@@ -56,6 +56,14 @@ class OpenAIProtocol : public StreamingProvider {
     float temperature = 0.7f;
     std::string api_key;
     std::optional<int> max_tokens;
+    // Sent only when set: an absent value leaves the product's own default in place.
+    std::optional<float> top_p;
+    std::optional<int> seed;
+    // The sequences that end a reply early, sent as `stop`. Empty sends none.
+    std::vector<std::string> stop;
+    // A schema the reply must satisfy, sent as `response_format`. Absent leaves the reply
+    // prose, which is what a turn with no schema asked for.
+    std::optional<boost::json::value> response_schema;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
     std::function<std::vector<std::string>()> extra_headers;
     llm::ResponseShape shape;
@@ -72,7 +80,8 @@ class OpenAIProtocol : public StreamingProvider {
 
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
-  void ParseData(std::string_view data, const ChatRequest& request) override;
+  void ParseData(std::string_view event, std::string_view data,
+                 const ChatRequest& request) override;
   void ResetTurnState() override;
   void FinishStream(const ChatRequest& request) override;
 

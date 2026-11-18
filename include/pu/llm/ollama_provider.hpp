@@ -5,7 +5,9 @@
 #include "pu/llm/streaming_provider.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include <boost/json.hpp>
 
@@ -20,6 +22,11 @@ class OllamaProvider : public StreamingProvider {
     std::string api_key;
     std::string keep_alive = "30m";  // keep the model loaded so the prompt KV cache persists
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
+    // Sent only when set: an absent value leaves the product's own default in place.
+    std::optional<float> top_p;
+    std::optional<int> seed;
+    // The sequences that end a reply early, sent as `stop`. Empty sends none.
+    std::vector<std::string> stop;
   };
 
   explicit OllamaProvider(Config config, std::shared_ptr<pu::http::HttpClient> http);
@@ -31,7 +38,8 @@ class OllamaProvider : public StreamingProvider {
 
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
-  void ParseData(std::string_view data, const ChatRequest& request) override;
+  void ParseData(std::string_view event, std::string_view data,
+                 const ChatRequest& request) override;
   // Ollama writes newline-delimited JSON: one object per line, and no event framing at all.
   bool FramesBareLines() const override { return true; }
 

@@ -28,7 +28,7 @@ struct Backend;
 // A stored agents.json names one of these, and the spelling is what the file carries. One
 // value is one product: `openai` and `deepseek` speak the same protocol and are still two
 // entries, because a host is a property of the product rather than of the caller.
-enum class GatewayId { kOllama, kOllamaCloud, kOpenAI, kDeepSeek, kNim, kCodeBuddy };
+enum class GatewayId { kOllama, kOllamaCloud, kOpenAI, kDeepSeek, kNim, kCodeBuddy, kAnthropic };
 
 std::string DefaultHostFor(GatewayId id);
 
@@ -41,6 +41,9 @@ enum class WireProtocol {
   kOpenAI,
   // `message` is the reply, and the counts sit beside `done` on the frame itself.
   kOllama,
+  // Blocks arrive as `content_block_delta` events named by the frame's `event:`, and the
+  // counts are split across `message_start` and `message_delta`.
+  kAnthropic,
 };
 
 // The path a chat turn is posted to, from the gateway table.
@@ -104,6 +107,12 @@ struct Gateway {
   // How a call's price arrives, or that none does. A gateway that prices a call fills this
   // in; one that says nothing leaves it `kNone`.
   Billing billing{};
+  // Whether a catalogue id is this product's name for it rather than the model's own name.
+  // An id behind a proxy is only unique within that proxy, so the product's name goes in
+  // front of it; a vendor's own API is the one place the id is globally meaningful, and it is
+  // left alone. Both were a comparison on the gateway's spelling before this field existed,
+  // which put one product's presentation rule in the layer that reads every one.
+  bool prefixes_agent_name = false;
 };
 
 // The rows are written where the factories they name are visible — `llm/gateway_table.cpp` —

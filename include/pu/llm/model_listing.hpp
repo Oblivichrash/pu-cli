@@ -110,6 +110,16 @@ class CodeBuddyModelLister final : public pu::ModelLister {
   std::vector<std::string> headers_;
 };
 
+// The catalogue answers the OpenAI shape, but the request carries `x-api-key` and the version
+// header rather than a bearer, so the key is handed in as a header like CodeBuddy's are.
+class AnthropicModelLister final : public pu::ModelLister {
+ public:
+  std::vector<model::ModelEntry> ListModels(const std::string& host, const std::string& api_key,
+                                          http::HttpClient& http) const override;
+
+  std::optional<model::ListingTarget> Target(const std::string& host) const override;
+};
+
 // The target a backend's own lister would read, taken from the gateway table rather than from
 // the gateway's name: a product that brings its own catalogue is probed through the same
 // declaration that lists it. Nothing comes back when the table names no lister for it.

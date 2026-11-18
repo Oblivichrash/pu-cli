@@ -58,6 +58,7 @@ pu_configure_target(pu_core_util)
 add_library(pu::core_util ALIAS pu_core_util)
 
 add_library(pu_llm STATIC
+    src/llm/anthropic_provider.cpp
     src/llm/field_capture.cpp
     src/llm/gateway_table.cpp
     src/llm/model_check.cpp

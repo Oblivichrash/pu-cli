@@ -176,8 +176,11 @@ AgentEntry ParseAgentEntry(const json::value& j) {
 namespace {
 
 // A proxy gateway's name belongs in the identifier; a vendor's own API leaves the model id.
+// Which product that is, is the table's fact rather than this file's: the row says so, and a
+// gateway added tomorrow gets the right answer without a line here.
 std::string AgentNameFor(const model::ModelEntry& model, const std::string& gateway) {
-  if (gateway == "codebuddy") return gateway + "-" + model.id;
+  const model::Gateway* row = model::FindGateway(gateway);
+  if (row != nullptr && row->prefixes_agent_name) return gateway + "-" + model.id;
   return model.id;
 }
 

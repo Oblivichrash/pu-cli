@@ -206,6 +206,25 @@ void WalkOllamaReply(const boost::json::object& frame, const KeySink& on_key) {
   }
 }
 
+// Anthropic's reply: which keys are meaningful depends on which event the frame is, since the
+// reply, the counts and the block metadata never share a frame. Each branch files the object
+// it read under the name that says which event it came from.
+void WalkAnthropicReply(const boost::json::object& frame, const KeySink& on_key) {
+  EmitKeys(frame, "top-level", on_key);
+
+  const auto filed = [&](const char* name) {
+    const auto member = frame.find(name);
+    if (member != frame.end() && member->value().is_object()) {
+      EmitKeys(member->value().as_object(), name, on_key);
+    }
+  };
+  filed("message");
+  filed("delta");
+  filed("content_block");
+  filed("usage");
+  filed("error");
+}
+
 }  // namespace
 
 void ForEachReplyKeyAtPath(const boost::json::value& j, model::WireProtocol protocol,
@@ -219,6 +238,9 @@ void ForEachReplyKeyAtPath(const boost::json::value& j, model::WireProtocol prot
       return;
     case model::WireProtocol::kOpenAI:
       WalkOpenAIReply(*frame, on_key);
+      return;
+    case model::WireProtocol::kAnthropic:
+      WalkAnthropicReply(*frame, on_key);
       return;
   }
 }

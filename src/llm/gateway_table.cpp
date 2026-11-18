@@ -4,6 +4,7 @@
 #include "pu/model/backend.hpp"
 #include "pu/core/base.hpp"
 
+#include "pu/llm/anthropic_provider.hpp"
 #include "pu/llm/model_listing.hpp"
 #include "pu/llm/ollama_provider.hpp"
 #include "pu/llm/openai_provider.hpp"
@@ -26,6 +27,9 @@ namespace {
 
 OpenAIProvider::Config OpenAIConfig(const model::Backend& cfg);
 
+// Anthropic's config has no `seed`: this API does not accept one, and a field that would be
+// silently dropped at the wire is not filled in here. Every other product does, so it is set
+// by each caller rather than by this filler.
 template <typename Config>
 void FillProtocolConfig(Config& protocol, const model::Backend& cfg) {
   protocol.host = cfg.host;
@@ -33,12 +37,15 @@ void FillProtocolConfig(Config& protocol, const model::Backend& cfg) {
   protocol.temperature = cfg.temperature;
   protocol.api_key = cfg.api_key.value_or("");
   protocol.thinking = cfg.thinking;
+  protocol.top_p = cfg.top_p;
+  protocol.stop = cfg.stop;
 }
 
 std::unique_ptr<pu::LLMProvider> MakeOllamaProvider(const model::Backend& cfg,
                                                     std::shared_ptr<pu::http::HttpClient> http) {
   OllamaProvider::Config protocol;
   FillProtocolConfig(protocol, cfg);
+  protocol.seed = cfg.seed;
   return std::make_unique<OllamaProvider>(std::move(protocol), std::move(http));
 }
 
@@ -106,10 +113,36 @@ std::vector<std::string> CodeBuddyListingHeaders() {
 
 std::vector<std::string> NoListingHeaders() { return {}; }
 
+std::unique_ptr<pu::LLMProvider> MakeAnthropicProvider(const model::Backend& cfg,
+                                                       std::shared_ptr<pu::http::HttpClient> http) {
+  AnthropicProvider::Config protocol;
+  FillProtocolConfig(protocol, cfg);
+  // This API states a cap that thinking must fit inside; the backend's own cap is that cap.
+  // The backend's field is optional and this route's is required, so an absent one takes the
+  // default the provider states rather than sending nothing to a route that refuses it.
+  protocol.max_tokens = cfg.max_tokens.value_or(protocol.max_tokens);
+  return std::make_unique<AnthropicProvider>(std::move(protocol), std::move(http));
+}
+
+std::unique_ptr<pu::ModelLister> MakeAnthropicListing() {
+  return std::make_unique<AnthropicModelLister>();
+}
+
+// A catalogue read needs the version header every route requires. The key is not closed over
+// here: `listing_headers` is a signature without an argument, and the key is already handed to
+// the listing fetch separately, where the lister puts it under `x-api-key`.
+std::vector<std::string> AnthropicListingHeaders() {
+  return {std::string("anthropic-version: ") + AnthropicProvider::kApiVersion};
+}
+
 OpenAIProvider::Config OpenAIConfig(const model::Backend& cfg) {
   OpenAIProvider::Config protocol;
   FillProtocolConfig(protocol, cfg);
   protocol.max_tokens = cfg.max_tokens;
+  // A schema is a wire fact here rather than a protocol one: Ollama has no `response_format`,
+  // so it is filled in for the products that do rather than in the filler both share.
+  protocol.response_schema = cfg.response_schema;
+  protocol.seed = cfg.seed;
   // How this product prices a call is the product's own fact, and the provider is the one
   // reading the answer: it is told here rather than guessing from the wire.
   protocol.billing = model::GatewayForId(cfg.gateway).billing;
@@ -136,7 +169,7 @@ model::Gateway OpenAiProduct(model::GatewayId id, std::string_view name, std::st
 
 // The table, one row per product. A row that needs its own factories or headers is written
 // out in full below rather than forced through the helper above.
-const std::array<model::Gateway, 6> kGateways = {
+const std::array<model::Gateway, 7> kGateways = {
     model::Gateway{
         .id = model::GatewayId::kOllama,
         .name = "ollama",
@@ -173,6 +206,23 @@ const std::array<model::Gateway, 6> kGateways = {
         // The one product that says what a call cost. `credit` is the amount of this call,
         // not an account balance, and it is denominated in the product's own credits.
         .billing = {model::BillingKind::kReported, "credit", "credits"},
+        // A catalogue id here is unique inside this proxy, not across products, so the
+        // product's name goes in front of it.
+        .prefixes_agent_name = true,
+    },
+    // The one row here whose wire format is not OpenAI's, and the one whose content is a
+    // block list rather than a string. It is a full entry rather than a helper call for that
+    // reason: the host, the path, the version header and the shape are all its own.
+    model::Gateway{
+        .id = model::GatewayId::kAnthropic,
+        .name = "anthropic",
+        .default_host = "https://api.anthropic.com/v1",
+        .api_key_env = "ANTHROPIC_API_KEY",
+        .protocol = model::WireProtocol::kAnthropic,
+        .endpoint_path = "/messages",
+        .make_provider = &MakeAnthropicProvider,
+        .make_listing = &MakeAnthropicListing,
+        .listing_headers = &AnthropicListingHeaders,
     },
 };
 

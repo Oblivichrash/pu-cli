@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
+#include "pu/llm/anthropic_provider.hpp"
 #include "pu/model/backend.hpp"
 
 #include <boost/json.hpp>
@@ -179,9 +180,12 @@ std::vector<model::ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, c
 
 boost::json::value FetchListing(std::string_view url, const std::string& api_key,
                                 const std::vector<std::string>& headers,
-                                http::HttpClient& http) {
+                                http::HttpClient& http, bool bearer = true) {
   std::vector<std::string> all = headers;
-  if (!api_key.empty()) all.push_back(http::BearerHeader(api_key));
+  // A catalogue read authenticates the way its product's chat endpoint does. Anthropic reads
+  // `x-api-key` and refuses a bearer, so the key header is the caller's to choose rather than
+  // this function's to assume.
+  if (!api_key.empty() && bearer) all.push_back(http::BearerHeader(api_key));
   return ParseListing(std::string(url), http, all);
 }
 
@@ -239,6 +243,10 @@ std::optional<model::ListingTarget> CodeBuddyModelLister::Target(const std::stri
   return model::ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
 }
 
+std::optional<model::ListingTarget> AnthropicModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+}
+
 std::optional<model::ListingTarget> ListingTargetForGateway(const model::Backend& backend) {
   // The lister the gateway table names decides both where the catalogue lives and how it
   // reads: a probe cannot disagree with a listing about either, because there is one answer.
@@ -260,6 +268,19 @@ std::vector<model::ModelEntry> OpenAIModelLister::ListModels(const std::string& 
                                                       http::HttpClient& http) const {
   const std::string url = host + OpenAIShape().path;
   return ReadFlat(FetchListing(url, api_key, {}, http), OpenAIShape(), url);
+}
+
+std::vector<model::ModelEntry> AnthropicModelLister::ListModels(const std::string& host,
+                                                         const std::string& api_key,
+                                                         http::HttpClient& http) const {
+  // `GET /v1/models` answers the same `{"data":[{"id":...}]}` shape the OpenAI catalogue does,
+  // so the same reader is used; what differs is the headers the request must carry and that a
+  // key sent as a bearer is not the header this API reads.
+  const std::string url = host + OpenAIShape().path;
+  std::vector<std::string> headers;
+  if (!api_key.empty()) headers.push_back("x-api-key: " + api_key);
+  headers.push_back(std::string("anthropic-version: ") + AnthropicProvider::kApiVersion);
+  return ReadFlat(FetchListing(url, api_key, headers, http, false), OpenAIShape(), url);
 }
 
 CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)

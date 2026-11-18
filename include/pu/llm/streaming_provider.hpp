@@ -31,7 +31,13 @@ class StreamingProvider : public LLMProvider {
   virtual std::string LogTag() const = 0;
   // One event's payload. The framing — which lines are data, where an event ends — belongs to
   // the format, and `core::SseParser` owns it; a provider reads payloads.
-  virtual void ParseData(std::string_view data, const ChatRequest& request) = 0;
+  //
+  // `event` is the frame's own `event:` name, empty when it carried none. OpenAI and Ollama
+  // name nothing and read only the payload; a protocol that dispatches on the event name —
+  // Anthropic sends `message_start`, `content_block_delta` and the rest — reads it here rather
+  // than sniffing the JSON for a `type` field that repeats what the frame already said.
+  virtual void ParseData(std::string_view event, std::string_view data,
+                         const ChatRequest& request) = 0;
 
   // Whether this gateway frames events or writes one JSON object per line. The parser is told,
   // so a stream that carries no `data:` prefix is still read as the format it is.

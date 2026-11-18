@@ -32,6 +32,22 @@ struct Backend {
   // caps on its own would otherwise be second-guessed by a default nobody chose.
   std::optional<int> max_tokens;
   ThinkingLevel thinking = ThinkingLevel::kServerDefault;
+  // The nucleus sampler. Absent means "send none", which leaves the provider's own default in
+  // place rather than pinning 1.0: a product whose default is not 1.0 would otherwise be
+  // silently narrowed by a number nobody chose.
+  std::optional<float> top_p;
+  // Makes two turns with the same prompt repeatable where a provider honours it. Absent for
+  // the same reason as `top_p`.
+  std::optional<int> seed;
+  // Sequences that end the reply early, sent as the wire's `stop`. Empty means none: a
+  // provider that defaults to something of its own is not overridden by an empty list.
+  std::vector<std::string> stop;
+  // A JSON schema the reply must satisfy, sent as the wire's `response_format`. Absent means
+  // the reply is prose, which is what every caller that does not name one wants. Present, a
+  // gateway that honours it either answers conforming JSON or refuses the request, and the
+  // second is the outcome worth having: a malformed tool argument discovered here is a
+  // refused turn rather than a parse failure two layers up.
+  std::optional<boost::json::value> response_schema;
   // How much context the model holds, when the file says so. Advisory: nothing trims a prompt
   // against it and nothing refuses a turn that outgrows it, because a gateway that truncates
   // silently would turn a wrong number into a bug nobody could see. Named here it outranks
@@ -64,6 +80,10 @@ inline void ReadBackendFields(Backend& cfg, const boost::json::value& j) {
   }
   cfg.temperature = json::ValueOrDefault<float>(j, "temperature", 0.7f);
   cfg.max_tokens = json::OptionalOrDefault<int>(j, "max_tokens");
+  cfg.top_p = json::OptionalOrDefault<float>(j, "top_p");
+  cfg.seed = json::OptionalOrDefault<int>(j, "seed");
+  cfg.stop = json::StringArrayOrEmpty(j, "stop");
+  if (json::HasKey(j, "response_schema")) cfg.response_schema = j.at("response_schema");
   cfg.context_window = json::OptionalOrDefault<int>(j, "context_window");
   cfg.thinking = ReadThinkingLevel(j);
 }
@@ -86,6 +106,10 @@ inline void tag_invoke(boost::json::value_from_tag, boost::json::value& j,
       {"thinking", ThinkingLevelName(cfg.thinking)},
   };
   if (cfg.max_tokens) j.as_object()["max_tokens"] = *cfg.max_tokens;
+  if (cfg.top_p) j.as_object()["top_p"] = *cfg.top_p;
+  if (cfg.seed) j.as_object()["seed"] = *cfg.seed;
+  if (!cfg.stop.empty()) j.as_object()["stop"] = boost::json::value_from(cfg.stop);
+  if (cfg.response_schema) j.as_object()["response_schema"] = *cfg.response_schema;
   if (cfg.context_window) j.as_object()["context_window"] = *cfg.context_window;
 }
 

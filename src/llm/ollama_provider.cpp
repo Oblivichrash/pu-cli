@@ -44,6 +44,13 @@ std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
     req.as_object()["think"] = llm::OllamaThinkValue(config_.thinking);
   }
 
+  // Sampling and stop are `options` members here rather than top-level ones, which is the
+  // one place Ollama's body differs from the OpenAI wire beyond its endpoint.
+  boost::json::object& options = req.as_object()["options"].as_object();
+  if (config_.top_p) options["top_p"] = *config_.top_p;
+  if (config_.seed) options["seed"] = *config_.seed;
+  if (!config_.stop.empty()) options["stop"] = boost::json::value_from(config_.stop);
+
   req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
 
   if (!tools.empty()) {
@@ -142,7 +149,10 @@ void OllamaProvider::HandleJsonToken(const boost::json::value& j, const ChatRequ
   }
 }
 
-void OllamaProvider::ParseData(std::string_view data, const ChatRequest& request) {
+void OllamaProvider::ParseData(std::string_view event, std::string_view data,
+                               const ChatRequest& request) {
+  // Ollama frames nothing, so there is never an event name to read.
+  (void)event;
   // NDJSON frames nothing: a blank line is a blank line, and the frame is the payload the
   // parser handed over.
   if (text::Trim(data).empty()) return;
