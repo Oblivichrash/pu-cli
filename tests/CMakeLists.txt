@@ -58,6 +58,7 @@ add_executable(pu_tests
     unit/test_reply_keys.cpp
     unit/test_request.cpp
     unit/test_rewind.cpp
+    unit/test_retry.cpp
     unit/test_run.cpp
     unit/test_serve_api.cpp
     unit/test_serve_registry.cpp

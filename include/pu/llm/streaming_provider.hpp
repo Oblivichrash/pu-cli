@@ -12,6 +12,7 @@
 #include <boost/json.hpp>
 
 #include "pu/core/http_client.hpp"
+#include "pu/core/retry.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu {
@@ -43,6 +44,12 @@ class StreamingProvider : public LLMProvider {
   virtual void FinishStream(const ChatRequest& request) { (void)request; }
 
   virtual std::vector<std::string> Headers() const;
+
+  // How a turn is asked again when the gateway answers something transient. The default is
+  // the policy a caller expects of a model endpoint; a caller with a reason to differ — a
+  // test, a probe — sets its own before the turn.
+  void SetRetryPolicy(core::RetryPolicy policy) { retry_ = policy; }
+  const core::RetryPolicy& RetryPolicyForTurn() const { return retry_; }
 
   void AppendContent(std::string_view text, const ChatRequest& request);
   void AppendReasoning(std::string_view text, const ChatRequest& request, std::string signature = {},
@@ -79,9 +86,14 @@ class StreamingProvider : public LLMProvider {
   Accumulators acc_;
 
  private:
+  // One attempt: build, post, parse, finish. `Chat` calls this and decides whether to call it
+  // again, so a retry rebuilds the turn from scratch rather than resuming half of one.
+  void Attempt(const ChatRequest& request);
+
   std::string host_;
   std::string api_key_;
   std::shared_ptr<pu::http::HttpClient> http_;
+  core::RetryPolicy retry_;
 };
 
 }  // namespace pu

@@ -40,6 +40,7 @@ add_library(pu_core_util STATIC
     src/core/logging.cpp
     src/core/platform.cpp
     src/core/process.cpp
+    src/core/retry.cpp
     src/core/sse.cpp
     src/tools_cli/sse.cpp
 )

@@ -83,6 +83,19 @@ ChatResult StreamingProvider::Accumulators::IntoResult() && {
 }
 
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
+  // A retry rebuilds the turn from nothing: the accumulators are the half-reply a failed
+  // attempt left behind, and resuming it would append a second answer to the first. The
+  // callbacks are the caller's, so a turn that reaches them twice shows the retry.
+  //
+  // Nothing here yet counts the bytes an attempt delivered, so a stream that broke after the
+  // first token is retried and the caller sees the prefix twice. Retrying only a failure that
+  // arrived before any content is the fix; until then this is a known defect rather than a
+  // guarantee, and `docs/providers.md` says so.
+  core::WithRetry(retry_, nullptr, [this, &request] { Attempt(request); });
+  return std::move(acc_).IntoResult();
+}
+
+void StreamingProvider::Attempt(const ChatRequest& request) {
   acc_ = Accumulators{};
   ResetTurnState();
 
@@ -115,8 +128,6 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   // without one is still the end: the close terminates the last line.
   parser.Finish();
   FinishStream(request);
-
-  return std::move(acc_).IntoResult();
 }
 
 }  // namespace pu
