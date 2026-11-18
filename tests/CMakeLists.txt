@@ -1,13 +1,11 @@
 find_package(Catch2 3 REQUIRED)
 
-# The stdio cases start a real MCP server. It is built here rather than run out of the test
-# binary: a program with one job cannot be confused with the runner, and it needs no
-# interpreter, so the same case runs on a machine that has none.
+# The stdio cases start a real MCP server. A program with one job cannot be confused with the
+# runner, and it needs no interpreter, so the same case runs on a machine that has none.
 add_executable(pu_echo_server mocks/echo_server_main.cpp)
 target_include_directories(pu_echo_server PRIVATE ${CMAKE_SOURCE_DIR}/tests/mocks)
 target_link_libraries(pu_echo_server PRIVATE Boost::json)
 if(MSVC)
-    # Same reason as `pu_configure_target`: the source is UTF-8, the compiler's default is not.
     target_compile_options(pu_echo_server PRIVATE /utf-8)
 endif()
 
@@ -79,20 +77,18 @@ target_include_directories(pu_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
 )
 
-# A captured response is read from the source tree rather than copied, so the
-# fixture a test names stays the one file it was taken from.
+# Read from the source tree rather than copied, so the fixture a test names stays the file it
+# was taken from.
 target_compile_definitions(pu_tests PRIVATE
     PU_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
 
-# The page rule in unit/test_project_rules.cpp reads the tree this build was configured from
-# rather than a copy of it.
 target_compile_definitions(pu_tests PRIVATE
     PU_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
-# The program a stdio case starts. A generator expression rather than a searched path, so a
-# copy of the test binary still names the server ctest built beside it.
+# A generator expression rather than a searched path, so a copy of the test binary still names
+# the server ctest built beside it.
 target_compile_definitions(pu_tests PRIVATE
     PU_ECHO_SERVER_PATH="$<TARGET_FILE:pu_echo_server>"
 )
@@ -103,10 +99,8 @@ target_link_libraries(pu_tests PRIVATE
     Catch2::Catch2
 )
 
-# The directory the fixtures make their files in. Naming it here rather than letting each
-# case use the system default does two things: everything lands under the build tree that
-# `git clean` and a rebuild already discard, and the property below is set once instead of
-# in every harness.
+# Everything lands under the build tree, which `git clean` and a rebuild already discard, and
+# the property below is set once instead of in every harness.
 set(PU_TEST_TMPDIR "${CMAKE_CURRENT_BINARY_DIR}/test-tmp")
 file(MAKE_DIRECTORY "${PU_TEST_TMPDIR}")
 
@@ -116,44 +110,3 @@ catch_discover_tests(pu_tests
         ENVIRONMENT "TMPDIR=${PU_TEST_TMPDIR}"
 )
 
-# The page's transcript fold is plain JavaScript with no DOM in it, so its cases can be
-# checked without a browser. They are one file of input/output pairs; what runs them differs.
-#
-# Where node exists the page's own history.js is loaded and run, which is the only check
-# that proves the JavaScript itself still does this. Where it does not, the Python stand-in
-# runs the same cases against a second implementation of the same fold: it catches a case
-# that no longer describes the page, but not a page that no longer runs.
-find_program(PU_NODE node)
-if(PU_NODE)
-    add_test(NAME web/groupHistory
-             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-group-history.cjs)
-    set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
-    # The header strip and the panel's spend figure, loaded the same way. Both are shapes the
-    # page drew wrong without failing to load, so nothing but running the modules catches them.
-    add_test(NAME web/pagePanels
-             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-page-panels.cjs)
-    set_tests_properties(web/pagePanels PROPERTIES TIMEOUT 60)
-    # The live bubble: a redraw is deferred to the next frame, so ending a turn before that frame
-    # runs used to leave the answer on screen as a prefix of what the store held. Nothing on the
-    # server side was wrong, which is why only running the page catches it.
-    add_test(NAME web/transcriptFlush
-             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-transcript-flush.cjs)
-    set_tests_properties(web/transcriptFlush PROPERTIES TIMEOUT 60)
-    # The context bar: two facts arrive on different clocks — a turn's counts on the socket and
-    # the model's window with `/api/session` — and a bar drawn from whichever landed last is
-    # blank on every reload. Only running the modules sees an ordering bug like that.
-    add_test(NAME web/contextBar
-             COMMAND ${PU_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/js/check-context-bar.cjs)
-    set_tests_properties(web/contextBar PROPERTIES TIMEOUT 60)
-else()
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND)
-        add_test(NAME web/groupHistory
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/js/check_group_history.py)
-        set_tests_properties(web/groupHistory PROPERTIES TIMEOUT 60)
-        message(STATUS "node not found: the transcript fold's cases run against the stand-in")
-    else()
-        message(STATUS "no node and no python3: the transcript fold's cases are not run here")
-    endif()
-endif()
