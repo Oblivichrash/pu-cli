@@ -354,6 +354,104 @@
           }
         }
       ]
+    },
+    {
+      "name": "a page a call wrote is carried through, and one it did not is not",
+      "history": [
+        {
+          "id": "u1",
+          "role": "user",
+          "content": "read the log"
+        },
+        {
+          "id": "a1",
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": "{\"command\":\"cat big.log\"}"
+              }
+            },
+            {
+              "id": "call_2",
+              "type": "function",
+              "function": {
+                "name": "execute_bash",
+                "arguments": "{\"command\":\"ls\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": "t1",
+          "role": "tool",
+          "tool_call_id": "call_1",
+          "content": "line one\nline two",
+          "page": {
+            "stored": "/tmp/pu_page_1.txt",
+            "lines": 2
+          }
+        },
+        {
+          "id": "t2",
+          "role": "tool",
+          "tool_call_id": "call_2",
+          "content": "a.txt"
+        },
+        {
+          "id": "a2",
+          "role": "assistant",
+          "content": "both read"
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "read the log",
+          "turn": "u1"
+        },
+        {
+          "role": "assistant",
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "call_1",
+              "name": "execute_bash",
+              "args": {
+                "command": "cat big.log"
+              },
+              "output": "line one\nline two",
+              "error": "",
+              "status": "done",
+              "collapsed": true,
+              "page": {
+                "stored": "/tmp/pu_page_1.txt",
+                "lines": 2
+              }
+            },
+            {
+              "type": "tool_call",
+              "id": "call_2",
+              "name": "execute_bash",
+              "args": {
+                "command": "ls"
+              },
+              "output": "a.txt",
+              "error": "",
+              "status": "done",
+              "collapsed": true
+            },
+            {
+              "type": "text",
+              "content": "both read"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

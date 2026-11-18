@@ -96,6 +96,38 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
 
 ### Fixed
 
+- **Six gateway accessors were defined twice, and only MSVC said so.** `GatewayName`,
+  `GatewayNames`, `ParseGatewayId`, `DefaultHostFor`, `GatewayEndpointPath` and `ApiKeyEnvFor`
+  each had an identical definition in both `src/model/backend.cpp` and `src/model/gateway.cpp`.
+  GNU ld keeps the first one it finds and links; MSVC reports `LNK2005` and links nothing, so
+  the Windows build of `pu_tests` had never linked on this branch. The definitions now live
+  only in `gateway.cpp`, which is the file that exists for them.
+
+- **A weak symbol the tools can do without is no longer emitted where it cannot be weak.**
+  `RunDelegatedTurn` has a fallback in `src/tools/delegation.cpp` so a build that links the
+  tools without the runtime can still refuse a delegated turn, and a real definition in
+  `src/runtime/runtime.cpp` that replaces it. That replacement relied on
+  `__attribute__((weak))`, which MSVC does not have: on Windows the two were two strong
+  definitions, another `LNK2005`. The fallback is now compiled only where the attribute
+  exists. A Windows build that links the tools without the runtime no longer links at all,
+  which is the honest outcome — the fallback exists to be replaced, and that is not something
+  MSVC can express.
+
+- **A replayed tool block carries `page` only when there is a page.** `web/history.js` wrote
+  `block.page = msg.page ?? null` for every tool result, so a replayed turn put a `page: null`
+  on calls that never paged — a different shape from the live turn, which omits the field, and
+  from what the server sends (`serve_http_routes.cpp` writes it under
+  `!parsed.page.is_null()`). The key is now written only when a page is present.
+
+- **The rule against terminal escapes no longer walks a Boost tarball.** The case scans the
+  source tree for control characters, and it skipped a hard-coded list of directory names —
+  `build`, `.git`, `.pu`, `node_modules`. The Linux job unpacks Boost 1.86 at the top of the
+  checkout, so `boost_1_86_0/libs/regex/test/regress/test_perl_ex.cpp` — a file in a regex
+  test suite, which carries an escape sequence on purpose — was read as an offence and the
+  case failed on CI while passing here. The scan now walks a closed list of the directories
+  that belong to the project, plus files at the top of the tree, so a vendor drop beside the
+  repository is not its business.
+
 - **`pu probe --model X` and `pu models --model X` use the model X.** The rule that picks a
   backend for the two read-only commands returned the session's own backend as soon as no
   gateway was named, before it looked at `--model`. Both flags are accepted independently, so

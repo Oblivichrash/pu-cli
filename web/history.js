@@ -70,7 +70,10 @@ function applyToolResult(blocks, msg) {
   block.output = typeof msg.output === "string" ? msg.output : (msg.content || "");
   block.error = msg.error || "";
   // Carried through the replay so a reloaded turn draws its pages the way the live turn did.
-  block.page = msg.page ?? null;
+  // Set only when there is a page to carry: the server omits the field for a call that never
+  // paged (`serve_http_routes.cpp` writes it under `!parsed.page.is_null()`), and a replayed
+  // block that always carried `page: null` would be a different shape from a live one.
+  if (msg.page) block.page = msg.page;
   block.status = "done";
 }
 

@@ -65,6 +65,12 @@ def apply_tool_result(blocks, msg):
         if block["type"] == BLOCK["TOOL_CALL"] and block["id"] == msg.get("tool_call_id"):
             block["output"] = msg["output"] if isinstance(msg.get("output"), str) else (msg.get("content") or "")
             block["error"] = msg.get("error") or ""
+            # Only when there is a page to carry. The server omits the field for a call that
+            # never paged, so a block that always carried it would be a different shape from
+            # the one a live turn drew. This was missing here while history.js had it, which is
+            # exactly the drift this stand-in cannot catch on its own.
+            if msg.get("page"):
+                block["page"] = msg["page"]
             block["status"] = "done"
             return
 

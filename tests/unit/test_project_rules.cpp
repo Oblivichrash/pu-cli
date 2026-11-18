@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <regex>
 #include <set>
 #include <string>
@@ -145,24 +146,28 @@ TEST_CASE("no source, document or page carries a terminal escape sequence", "[ru
   const fs::path root = kSourceDir;
   const std::set<std::string> extensions{".md", ".cpp", ".hpp", ".js", ".css", ".html"};
 
+  // The rule is about what a person committed, so it walks the project's own directories rather
+  // than the checkout. A build tree, a vendor drop and the source tarball a CI runner unpacks
+  // beside the repository are all inside `kSourceDir` on some machines and none of them is ours:
+  // an enterprising `tar xf boost.tar.bz2` at the top of the tree once put Boost's own test
+  // suite -- which carries escape sequences on purpose, because it tests a regex engine -- in
+  // front of this case. Naming the directories that are ours is a closed list; naming the ones
+  // that are not was an open one, and it lost.
+  const std::set<std::string> owned{"docs", "include", "src", "tests", "web", "cmake",
+                                    ".github"};
   std::vector<std::string> offenders;
   for (const auto& entry : fs::recursive_directory_iterator(root)) {
+    const fs::path relative = entry.path().lexically_relative(root);
+    if (relative.empty()) continue;
+    const std::string top = relative.begin()->string();
+    // A file at the top of the tree is ours (README.md, CMakeLists.txt) but a directory there
+    // is not walked unless it is named above.
+    const bool at_top = std::next(relative.begin()) == relative.end();
+    if (!at_top && owned.count(top) == 0) continue;
+
     if (!entry.is_regular_file()) continue;
     const std::string ext = entry.path().extension().string();
     if (extensions.count(ext) == 0) continue;
-
-    const fs::path relative = entry.path().lexically_relative(root);
-    // Build trees hold generated files and the project's own downloads; neither is ours to
-    // police, and the rule is about what a person committed.
-    bool generated = false;
-    for (const auto& part : relative) {
-      const std::string name = part.string();
-      if (name == "build" || name == ".git" || name == ".pu" || name == "node_modules") {
-        generated = true;
-        break;
-      }
-    }
-    if (generated) continue;
 
     const std::string text = ReadFile(entry.path());
     for (std::size_t i = 0; i < text.size(); ++i) {

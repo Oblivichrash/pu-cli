@@ -681,14 +681,19 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Known Limitations
 
-- **The browser modules are not executed by any test.** Nothing in `web/` is parsed or run by
-  `ctest`: this repository has no JavaScript runtime in its toolchain, so a change there is
-  checked by reading it and by testing the wire form it consumes, not by running it. What is
-  covered is the contract underneath — a serve-stack test asserts the `page` envelope a
-  replayed turn receives — and what is not is everything above it: a syntax error, a renamed
-  function or a wrong DOM selector ships. The field names a module reads can be traced to their
-  writer in `src/`, which is what caught the mismatches so far, but a reader doing that trace
-  is the entire gate.
+- **The browser modules run only where `node` exists, and the fallback does not run them.**
+  `tests/CMakeLists.txt` looks for `node` and, finding it, runs four `tests/js/*.cjs` cases
+  that load the page's own modules in a `vm` context. Where it is absent, `web/groupHistory`
+  runs `tests/js/check_group_history.py` instead — a second implementation of the same fold
+  in Python, checked against the same `tests/fixtures/group_history.json`. That stand-in
+  catches a case file that no longer describes the page; it cannot catch the page disagreeing
+  with it, and it has already drifted from `web/history.js` once, on the `page` field, which
+  the JavaScript carried and the stand-in did not. A toolchain without `node` therefore tests
+  the contract and not the code, and the gap is invisible from the passing result.
+- **Nothing checks that the C library symbols in a static archive are unique.** Two
+  translation units in `pu_model` defined `GatewayName`, `ParseGatewayId` and four others
+  identically. GNU ld resolves that silently; MSVC reports `LNK2005` and links nothing. The
+  local gate could not have seen it, and until CI ran on Windows nothing did.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
