@@ -3,36 +3,17 @@
 
 #include "pu/model/gateway.hpp"
 #include "pu/core/base.hpp"
-#include "pu/core/text.hpp"
 
 #include <cstdlib>
 #include <memory>
-#include <ranges>
 #include <utility>
 
 namespace pu::model {
 
-std::string DefaultHostFor(GatewayId type) {
-  return std::string(GatewayForId(type).default_host);
-}
-
-std::string_view GatewayEndpointPath(GatewayId type) {
-  return GatewayForId(type).endpoint_path;
-}
-
-const char* GatewayName(GatewayId type) { return GatewayForId(type).name.data(); }
-
-std::string GatewayNames() {
-  return text::Join(
-      std::views::transform(Gateways(), [](const Gateway& gateway) { return gateway.name; }));
-}
-
-std::string_view ApiKeyEnvFor(GatewayId id) { return GatewayForId(id).api_key_env; }
-
-std::optional<GatewayId> ParseGatewayId(std::string_view name) {
-  if (const Gateway* gateway = FindGateway(name); gateway != nullptr) return gateway->id;
-  return std::nullopt;
-}
+// The table's own accessors -- `DefaultHostFor`, `GatewayName`, `ParseGatewayId` and the rest --
+// are defined once, in gateway.cpp, which is the file that exists for them. They were defined
+// here as well, identically, and GNU ld silently picked one of the two; MSVC reports LNK2005
+// instead.
 
 Backend BackendForGateway(std::string_view gateway) {
   const std::optional<GatewayId> id = ParseGatewayId(gateway);
