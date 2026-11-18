@@ -279,6 +279,54 @@ end.
 layer: a matching command is rejected with a JSON error. The policy fields live in
 [configuration.md](configuration.md#agentsjson).
 
+### Paging and the request view
+
+`BuildRequestPath` reads the graph and writes the message list. Nothing it does is stored:
+a rewind, a reload or a second reader sees the graph as it was, which is what lets four
+tiers apply to the same transcript without any of them being a fact about it. The tiers are
+applied per node, monotone — a decision may only move a message down, never back up:
+
+| Tier | What survives | Enters when |
+|---|---|---|
+| live | the whole text | newest run for its source, or a page read deliberately after |
+| receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
+| tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
+| gone | nothing | it is one of everything but the newest ten tool-call pairs |
+| arguments | every argument key, with one text replaced by `bytes`, `lines`, `omitted` | the call survived the previous tier and its serialised arguments exceed 16 KiB |
+
+The last two are the ones that remove anything, and their order is load-bearing: the tier
+that drops pairs runs first, so the tier that shrinks arguments spends its work only on the
+calls that reach the next turn. Working on a pair that is about to be deleted would be work
+done for a message that never leaves.
+
+**Retiring pairs.** A `tool` message whose `tool_call_id` names no call is rejected by every
+provider, and a call with no receipt leaves the model waiting for a result that never comes,
+so this tier removes a call and its receipt together or not at all. Ten survive rather than
+six because the tombstone tier fires on a superseded receipt older than the newest six; a
+retirement that also kept six would delete exactly the receipts the tombstone was about to
+shrink and leave it nothing to do.
+
+**Shrinking arguments.** An argument body is the input half of the exchange whose output half
+the tiers above already compress, and it is the one part of a surviving call that can be
+large. A `write_file` of a thousand lines costs its content in tokens on every request for as
+long as it is retained, while the confirmation it produced was reduced to a verdict long
+before. The stand-in keeps every key and takes only the text of the one that dominates —
+three quarters of the string bytes — so a `write_file` still says which file it wrote and a
+`bash` call still says what it ran. Only the largest text goes, and only when it does not
+leave the call ambiguous.
+
+Two things this tier does *not* do. It does not touch `arguments` in the record: the
+substitution happens in `ToolCallToJson`, which is what builds the provider's view, so the
+session still holds the text the provider was told and a reader of the graph sees the real
+call. And it does not store the body in the pager, although `pu_session` can reach it. A
+pager evicts under the output budget, and a body evicted from it would take the command a
+model needs to repeat — the argv axis, which every tier here is written not to touch.
+
+The thresholds differ in kind on purpose. The two tiers that remove work are driven by a
+count, because a count is what the transcript naturally has. The argument tier is driven by
+bytes, because what it removes is a literal string re-sent verbatim and the unit of that harm
+is the length of the string; it is not a claim about how much context the model has left.
+
 ---
 
 ## Runtime
@@ -630,6 +678,17 @@ that pulled the whole transport layer into any header naming a `Tool`.
 ---
 
 ## Known Limitations
+
+## Known Limitations
+
+- **The browser modules are not executed by any test.** Nothing in `web/` is parsed or run by
+  `ctest`: this repository has no JavaScript runtime in its toolchain, so a change there is
+  checked by reading it and by testing the wire form it consumes, not by running it. What is
+  covered is the contract underneath — a serve-stack test asserts the `page` envelope a
+  replayed turn receives — and what is not is everything above it: a syntax error, a renamed
+  function or a wrong DOM selector ships. The field names a module reads can be traced to their
+  writer in `src/`, which is what caught the mismatches so far, but a reader doing that trace
+  is the entire gate.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.

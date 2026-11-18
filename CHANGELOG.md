@@ -18,6 +18,38 @@ the commit that made it, and its current behaviour is in the relevant document
   It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
   that is still there.
 
+- **A large argument body is no longer re-sent on every turn.** The retirement above bounded
+  how many calls survive, but not how big each one is: a `write_file` of a thousand lines kept
+  its whole content in `tool_calls[].arguments` for as long as it was one of the ten, so its
+  tokens were paid again on every request even though the confirmation it produced was already
+  reduced to a verdict. `ElideLargeArguments` replaces a body over 16 KiB with a stand-in that
+  keeps every argument key and states what went — `elided`, `bytes`, `lines`, and which
+  argument carried it. A `write_file` still says which file it wrote; only the text is gone. It
+  runs after the retirement tier, so it spends its work only on the calls that survive.
+
+- **The model is told what it is spending, and who it is.** Three facts that were only in the
+  source or only in the documentation now reach the model on every turn, because a model that
+  cannot see them makes avoidable mistakes rather than avoiding them.
+  - The tool-call budget for the turn is stated up front. It was enforced before and only
+    reported once it ran out, which is the one moment a model cannot do anything about it.
+  - The five exit codes `pu` uses — success, bad invocation, provider refusal, sandbox
+    refusal, and stopped by a person — are listed with the distinction from a shell's own
+    `exit_code` made explicit, so a command that exited non-zero and a run that was refused
+    are not read as the same outcome.
+  - An agent's name and description are part of the system context, so a switch to another
+    agent mid-session stops answering as the previous one.
+
+- **A page looks like a page in the transcript a person reads.** A page of a 3500-line log was
+  drawn exactly like a whole answer, because the envelope was dropped when the turn ended.
+  `block-tool.js` now says `lines A–B of N` and, when something was dropped, which end was
+  kept; a replayed turn carries `page` through `history.js`, so it draws the same as a live
+  one. The field names were traced from the writer to the reader and the wire form is covered
+  by a test against the real serve stack, but the front end itself is not executed by any
+  test — this repository has no JavaScript runtime in its toolchain.
+
+The transcript is now bounded on four axes rather than three. All four are described together
+in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
+
 ### Changed
 
 - **Three names that described the wrong thing are gone.** None of them changes what the
