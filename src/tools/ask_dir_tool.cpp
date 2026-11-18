@@ -2,9 +2,10 @@
 #include "pu/tools/ask_dir_tool.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
+#include "pu/core/text.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/runtime/runtime.hpp"
+#include "pu/tools/delegation.hpp"
 
 #include <boost/json.hpp>
 
@@ -23,11 +24,7 @@ namespace {
 // slow into broken. It is a ceiling rather than a target, so the common turn never meets it.
 constexpr std::chrono::milliseconds kDelegatedTurnBudget{std::chrono::minutes(10)};
 
-std::string Listed(const std::vector<std::string>& names) {
-  std::string out;
-  for (const std::string& name : names) out += (out.empty() ? "" : ", ") + name;
-  return out;
-}
+std::string Listed(const std::vector<std::string>& names) { return text::Join(names); }
 
 // Whether `target` is `base` or sits under it. Compared a component at a time: a string prefix
 // would call `/a/pu-cli-old` a directory under `/a/pu-cli`, and a tool whose whole job is to
@@ -146,7 +143,7 @@ std::string AskDirTool::Answer(const std::string& target, const std::string& pro
   key.push_back('\x1f');
   key.append(prompt);
 
-  exec::Verdict verdict;
+  core::Verdict verdict;
   verdict.command = "ask_dir " + target;
   verdict.ok = true;
 
@@ -161,7 +158,6 @@ std::string AskDirTool::Answer(const std::string& target, const std::string& pro
 }
 
 std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext& ctx) {
-  (void)ctx;
   const std::string ask = json::ValueOrDefault<std::string>(args, "ask", "");
   const std::string prompt = json::ValueOrDefault<std::string>(args, "prompt", "");
 
@@ -177,6 +173,11 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   // read; a turn may make many, and each one may be a tool running for minutes, so without a
   // figure here the only stop is the process.
   request.timeout = kDelegatedTurnBudget;
+  // The chain of workspaces this question has already been asked in, carried down from the turn
+  // asking. Empty on the first ask; on a delegated ask it already names where the question came
+  // from, which is what turns a table pointing back at an ancestor into a refusal rather than a
+  // wait for an answer that is already being worked on.
+  request.visited = ctx.delegated_visited;
 
   // One field names who answers, and which of the two it is is read rather than declared: a
   // name this agent may reach is an agent, and anything else is a directory to look for. The
@@ -186,8 +187,7 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   if (named != allowed_.end()) {
     request.agent = ask;
     request.dir = root_;
-    Runtime runtime;
-    const DelegationResult result = runtime.Delegate(request);
+    const DelegationResult result = RunDelegatedTurn(request);
     if (!result.error.empty()) return MakeRefusal(result.error, true);
     return Answer(request.dir.string(), prompt, result, ctx);
   }
@@ -223,8 +223,9 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   }
   request.dir = target;
 
-  Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
-  const DelegationResult result = runtime.Delegate(request);
+  // The turn runs a whole runtime of its own, which is what reads the files; the runtime is
+  // the one that builds it, so this tool asks for the turn rather than starting one.
+  const DelegationResult result = RunDelegatedTurn(request);
   if (!result.error.empty()) return MakeRefusal(result.error, true);
   return Answer(target.string(), prompt, result, ctx);
 }

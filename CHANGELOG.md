@@ -4,6 +4,180 @@ Notable changes, newest first. This file is a summary; a change's reasoning is i
 the commit that made it, and its current behaviour is in the relevant document
 (see [Where Things Live](CONTRIBUTING.md#where-things-live)).
 
+## Unreleased
+
+### Added
+
+- **Anthropic is a gateway of its own, not an OpenAI row with a different host.**
+  `anthropic` speaks the Messages wire format, which differs from the OpenAI one in
+  four ways that are not renamings: content is a list of blocks rather than a string
+  beside a `tool_calls` array, the reply is dispatched on the SSE `event:` name that
+  OpenAI never sets, the system prompt is a top-level field rather than a message,
+  and `max_tokens` is required rather than optional. `AnthropicProvider` builds the
+  block list from the message the session stores and folds the block events back
+  into the string and call list it stores, which makes it the one file where the two
+  representations meet. Key in `ANTHROPIC_API_KEY`, read from `x-api-key` rather
+  than a bearer, with `anthropic-version: 2023-06-01` on every route. A `tool`
+  message becomes a `tool_result` block on a user turn because this API has no role
+  for one; a text block is refused beside thinking, so `temperature` is dropped when
+  a level is set. The catalogue answers the OpenAI `{"data":[{"id":...}]}` shape, so
+  the same reader lists it.
+
+- **A transient failure is retried, and a permanent one is not.** `core::WithRetry`
+  and `RetryPolicy` now sit between `StreamingProvider::Chat` and one attempt, so
+  every gateway gets the same behaviour from one place. A 408, 429 or 5xx doubles
+  from 500 ms to an 8 s ceiling; a `Retry-After` header outranks that guess up to
+  30 s, and a value that is not a whole number of seconds is ignored rather than
+  guessed at. `HttpError` carries the status it was refused with and says whether
+  it is transient, so the decision is made from the failure rather than from a
+  string. **Known defect:** a retry after output has started replays that output
+  into a caller whose `on_content` already fired; only a failure before the first
+  byte is safe to repeat, and this build does not yet distinguish the two.
+
+- **Sampling knobs and structured output reach the wire.** `top_p`, `seed` and
+  `stop` are backend fields that are sent only when set, so an absent one leaves
+  the provider's own default in place rather than substituting this build's.
+  `response_schema` is sent as OpenAI's `response_format` with `strict: true`;
+  Ollama has no such field and drops it. Each product spells them its own way —
+  `stop` for OpenAI, `stop_sequences` for Anthropic, `options.stop` for Ollama.
+
+- **Whether a gateway prefixes its catalogue ids with its own name is a row in the
+  table, not a string comparison.** `Gateway::prefixes_agent_name` replaces the
+  `gateway == "codebuddy"` test in `AgentNameFor`, so the next product whose ids are
+  unique only inside its own catalogue declares it where it declares its host.
+
+- **The oldest tool-call pairs are retired from the transcript.** Scaffolding was the one pool
+  still unbounded: every `execute_bash` the conversation had ever made was re-sent on every
+  turn, `tool_calls[].arguments` included, long after the result had been replaced and the
+  question had moved on. `RetireOldToolCalls` drops whole pairs — the assistant's call together
+  with the receipt that answered it — oldest first, keeping the newest ten. It never splits a
+  pair, because a `tool` message whose `tool_call_id` names no call is rejected by every
+  provider, and a call with no receipt leaves the model waiting for a result that never comes.
+  It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
+  that is still there.
+
+- **A large argument body is no longer re-sent on every turn.** The retirement above bounded
+  how many calls survive, but not how big each one is: a `write_file` of a thousand lines kept
+  its whole content in `tool_calls[].arguments` for as long as it was one of the ten, so its
+  tokens were paid again on every request even though the confirmation it produced was already
+  reduced to a verdict. `ElideLargeArguments` replaces a body over 16 KiB with a stand-in that
+  keeps every argument key and states what went — `elided`, `bytes`, `lines`, and which
+  argument carried it. A `write_file` still says which file it wrote; only the text is gone. It
+  runs after the retirement tier, so it spends its work only on the calls that survive.
+
+- **The model is told what it is spending, and who it is.** Three facts that were only in the
+  source or only in the documentation now reach the model on every turn, because a model that
+  cannot see them makes avoidable mistakes rather than avoiding them.
+  - The tool-call budget for the turn is stated up front. It was enforced before and only
+    reported once it ran out, which is the one moment a model cannot do anything about it.
+  - The five exit codes `pu` uses — success, bad invocation, provider refusal, sandbox
+    refusal, and stopped by a person — are listed with the distinction from a shell's own
+    `exit_code` made explicit, so a command that exited non-zero and a run that was refused
+    are not read as the same outcome.
+  - An agent's name and description are part of the system context, so a switch to another
+    agent mid-session stops answering as the previous one.
+
+- **A page looks like a page in the transcript a person reads.** A page of a 3500-line log was
+  drawn exactly like a whole answer, because the envelope was dropped when the turn ended.
+  `block-tool.js` now says `lines A–B of N` and, when something was dropped, which end was
+  kept; a replayed turn carries `page` through `history.js`, so it draws the same as a live
+  one. The field names were traced from the writer to the reader and the wire form is covered
+  by a test against the real serve stack, but the front end itself is not executed by any
+  test — this repository has no JavaScript runtime in its toolchain.
+
+The transcript is now bounded on four axes rather than three. All four are described together
+in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
+
+### Changed
+
+- **Three names that described the wrong thing are gone.** None of them changes what the
+  program does; each one named a file or a module after something it was not.
+  - `src/exec/run.cpp` became `src/core/process.cpp` in namespace `pu::core`. It runs one
+    child process and reads its output; nothing about it is an executor, and the collision
+    with `src/runtime/executor.cpp` — the tool-call loop, which is — made both names
+    unreadable.
+  - `src/app/serve*` became `src/serve/` in namespace `pu::serve::detail`. Six of the ten
+    files in `src/app/` were the HTTP server, and they declared `pu::cli`, so neither the
+    directory nor the namespace said what they were.
+  - `llm/probe.*` became `llm/field_capture.*`, and `ProbeReport` / `ProbeStream` /
+    `FormatProbeReport` became `FieldCapture` / `CaptureFields` / `FormatFieldCapture`. It
+    collects the field names a gateway actually sent; it does not probe a gateway, which is
+    what `pu probe` does and what the name made people look for.
+
+- **Four interfaces that reported one fact through two channels now report it through one.**
+  None of these changes what the program does. Each replaced a parameter whose only job was to
+  be written into, or a literal whose meaning was its position, with a value that says what it
+  is — so a caller cannot pass the wrong thing without the compiler saying so.
+  - `runtime::Turn` is a public aggregate instead of seven numbered arguments, and a provider
+    call's fate is `ProviderOutcome` (`kReplied` / `kFailed` / `kStopped` / `kAbandoned`)
+    rather than a cross-round `bool abandoned` the loop had to keep alive between rounds.
+  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools_cli/exit_code.hpp`, which
+    exposed two functions that had been declared `int` while returning an exit status:
+    `RunProbe` and `RunSse` return `ExitCode` now, and only the two `main`s convert.
+  - `text::Join` / `text::JoinQuoted` in `core/text.hpp` are the one way this codebase joins a
+    list. Nine hand-written separator loops became calls to it; the empty-range result is a
+    property of the helper rather than of each caller's accumulator.
+  - `ExecutionResult::was_command` replaces `ProcessInput`'s `bool& is_command`. It sits beside
+    `has_error` and `was_streamed`, which the same callers already read from the result;
+    `ExitCodeForAsk` lost its second parameter with it.
+- **`CommandRouter::Route` answers with a value, and an unknown command is now a failure.**
+  It returned `bool` and wrote the text through a `std::string&`, so it could say "not a
+  command" and "a command that failed" but not which. `CommandReply` carries `text`, `routed`
+  and `ok` separately, and handlers return it instead of writing into a parameter they were
+  given. The third fact exposes a real difference in chat: `/unknown` used to come back as
+  handled-and-empty, which the front end guessed was an unknown command by testing whether the
+  error text was empty. It is now routed-and-failed with `Unknown command: /unknown` as its own
+  text, and the guess is gone. `pu ask "/unknown"` now exits 1: the router did answer, so the
+  provider never ran and `kProvider` would name a failure that did not happen, but the line
+  the caller typed was wrong, and `kUsage` is the status that says so. A command the router
+  answered successfully still exits 0.
+
+### Fixed
+
+- **Six gateway accessors were defined twice, and only MSVC said so.** `GatewayName`,
+  `GatewayNames`, `ParseGatewayId`, `DefaultHostFor`, `GatewayEndpointPath` and `ApiKeyEnvFor`
+  each had an identical definition in both `src/model/backend.cpp` and `src/model/gateway.cpp`.
+  GNU ld keeps the first one it finds and links; MSVC reports `LNK2005` and links nothing, so
+  the Windows build of `pu_tests` had never linked on this branch. The definitions now live
+  only in `gateway.cpp`, which is the file that exists for them.
+
+- **A weak symbol the tools can do without is no longer emitted where it cannot be weak.**
+  `RunDelegatedTurn` has a fallback in `src/tools/delegation.cpp` so a build that links the
+  tools without the runtime can still refuse a delegated turn, and a real definition in
+  `src/runtime/runtime.cpp` that replaces it. That replacement relied on
+  `__attribute__((weak))`, which MSVC does not have: on Windows the two were two strong
+  definitions, another `LNK2005`. The fallback is now compiled only where the attribute
+  exists. A Windows build that links the tools without the runtime no longer links at all,
+  which is the honest outcome — the fallback exists to be replaced, and that is not something
+  MSVC can express.
+
+- **A replayed tool block carries `page` only when there is a page.** `web/history.js` wrote
+  `block.page = msg.page ?? null` for every tool result, so a replayed turn put a `page: null`
+  on calls that never paged — a different shape from the live turn, which omits the field, and
+  from what the server sends (`serve_http_routes.cpp` writes it under
+  `!parsed.page.is_null()`). The key is now written only when a page is present.
+
+- **The rule against terminal escapes no longer walks a Boost tarball.** The case scans the
+  source tree for control characters, and it skipped a hard-coded list of directory names —
+  `build`, `.git`, `.pu`, `node_modules`. The Linux job unpacks Boost 1.86 at the top of the
+  checkout, so `boost_1_86_0/libs/regex/test/regress/test_perl_ex.cpp` — a file in a regex
+  test suite, which carries an escape sequence on purpose — was read as an offence and the
+  case failed on CI while passing here. The scan now walks a closed list of the directories
+  that belong to the project, plus files at the top of the tree, so a vendor drop beside the
+  repository is not its business.
+
+- **`pu probe --model X` and `pu models --model X` use the model X.** The rule that picks a
+  backend for the two read-only commands returned the session's own backend as soon as no
+  gateway was named, before it looked at `--model`. Both flags are accepted independently, so
+  the model the agent was configured with was read instead and nothing said the flag had been
+  ignored. The override now applies after the gateway choice rather than inside one branch of
+  it, so neither flag can outrank the other silently.
+- **The exit-status cases no longer read whatever `.pu/` the test process happened to sit in.**
+  `Runtime::Initialize` resolves `.pu/agents.json` against the current directory before it asks
+  `FindConfigPath`, so a runtime built outside its harness's workspace picked up the repository
+  root's config — which names a different set of agents than the harness promises. The working
+  directory is the isolation the runtime actually honours; `HOME` alone is not enough.
+
 ## 0.7.0
 
 ### Changed

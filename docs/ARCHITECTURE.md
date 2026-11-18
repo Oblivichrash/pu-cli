@@ -154,10 +154,24 @@ it: `parse`, `serialize`, `ValueOrDefault`, `HasKey` and `PrettyPrint`. Each one
 carries its own contract where it is declared, and the helper is what to reach for
 rather than the raw Boost call, so the fallbacks stay in one place.
 
+Which one to reach for, when a member may be absent or of the wrong type:
+
+| Member | Answer for a member that is absent, null, or of another type |
+|---|---|
+| `HasKey(v, "k")` | `false` only for an absent name or a value that is not an object; a name holding `null` is still a key, so `true` |
+| `ValueOrDefault<T>(v, "k", fallback)` | `fallback` — for a value the caller can proceed without |
+| `OptionalOrDefault<T>(v, "k")` | `std::nullopt` — for a value whose absence means something, so a caller can tell "not sent" from "sent as zero" |
+
+`HasKey` is the right question only when the caller does its own type check; reach for it
+before `at()`, not instead of `ValueOrDefault`. Never read a member through `at()` without
+one of the three: an absent name throws, and a throw on a gateway field is a stream that
+stops instead of a default being taken. The rule applies to every JSON surface named below,
+so a config file missing a field degrades the same way a stream frame does.
+
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
 (`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
-API in `src/app/serve_http_routes.cpp` and `src/app/serve_websocket.cpp`.
+API in `src/serve/serve_http_routes.cpp` and `src/serve/serve_websocket.cpp`.
 
 ---
 
@@ -220,7 +234,7 @@ printed. That shape is four nouns and a budget, in `include/pu/paging/paging.hpp
 | `Pager` | the buffers a session can still read, and the `Budget` that decides |
 | `Anchor` | where a read starts: `head`, `tail`, or a cursor |
 
-`exec::Run` (`include/pu/exec/run.hpp`) produces the other half: the text, an
+`core::Run` (`include/pu/core/process.hpp`) produces the other half: the text, an
 `Extent` saying how much of the stream survived, and the verdict. Output and verdict are
 one value because only the reader of the stream knows both — a reader that looked away
 has to say the command was stopped, and an exit code means nothing without that. The
@@ -264,6 +278,54 @@ end.
 **Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
 layer: a matching command is rejected with a JSON error. The policy fields live in
 [configuration.md](configuration.md#agentsjson).
+
+### Paging and the request view
+
+`BuildRequestPath` reads the graph and writes the message list. Nothing it does is stored:
+a rewind, a reload or a second reader sees the graph as it was, which is what lets four
+tiers apply to the same transcript without any of them being a fact about it. The tiers are
+applied per node, monotone — a decision may only move a message down, never back up:
+
+| Tier | What survives | Enters when |
+|---|---|---|
+| live | the whole text | newest run for its source, or a page read deliberately after |
+| receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
+| tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
+| gone | nothing | it is one of everything but the newest ten tool-call pairs |
+| arguments | every argument key, with one text replaced by `bytes`, `lines`, `omitted` | the call survived the previous tier and its serialised arguments exceed 16 KiB |
+
+The last two are the ones that remove anything, and their order is load-bearing: the tier
+that drops pairs runs first, so the tier that shrinks arguments spends its work only on the
+calls that reach the next turn. Working on a pair that is about to be deleted would be work
+done for a message that never leaves.
+
+**Retiring pairs.** A `tool` message whose `tool_call_id` names no call is rejected by every
+provider, and a call with no receipt leaves the model waiting for a result that never comes,
+so this tier removes a call and its receipt together or not at all. Ten survive rather than
+six because the tombstone tier fires on a superseded receipt older than the newest six; a
+retirement that also kept six would delete exactly the receipts the tombstone was about to
+shrink and leave it nothing to do.
+
+**Shrinking arguments.** An argument body is the input half of the exchange whose output half
+the tiers above already compress, and it is the one part of a surviving call that can be
+large. A `write_file` of a thousand lines costs its content in tokens on every request for as
+long as it is retained, while the confirmation it produced was reduced to a verdict long
+before. The stand-in keeps every key and takes only the text of the one that dominates —
+three quarters of the string bytes — so a `write_file` still says which file it wrote and a
+`bash` call still says what it ran. Only the largest text goes, and only when it does not
+leave the call ambiguous.
+
+Two things this tier does *not* do. It does not touch `arguments` in the record: the
+substitution happens in `ToolCallToJson`, which is what builds the provider's view, so the
+session still holds the text the provider was told and a reader of the graph sees the real
+call. And it does not store the body in the pager, although `pu_session` can reach it. A
+pager evicts under the output budget, and a body evicted from it would take the command a
+model needs to repeat — the argv axis, which every tier here is written not to touch.
+
+The thresholds differ in kind on purpose. The two tiers that remove work are driven by a
+count, because a count is what the transcript naturally has. The argument tier is driven by
+bytes, because what it removes is a literal string re-sent verbatim and the unit of that harm
+is the length of the string; it is not a claim about how much context the model has left.
 
 ---
 
@@ -499,17 +561,16 @@ the root of `include/pu/` and `src/`.
 
 ```
 include/pu/                  src/
-├── app/                     ├── app/                  # main, CLI parsing, serve
+├── app/                     ├── app/                  # main, CLI parsing
 ├── config/                  ├── config/               # agents.json, the backend model, the gateways
-├── core/                    ├── core/                 # logging, platform, HTTP client
-├── exec/                    ├── exec/                 # running a command, and its verdict
+├── core/                    ├── core/                 # logging, platform, HTTP client, running a command
 ├── llm/                     ├── llm/                  # protocols, providers, streaming parser
 ├── mcp/                     ├── mcp/                  # transports, JSON-RPC client
 ├── paging/                  ├── paging/               # the buffers a session can still read
 ├── runtime/                 ├── runtime/              # runtime, executor, command router
-│   ├── command_router.hpp   ├── session/              # Session, Conversation, message graph
-│   ├── executor.hpp         └── tools/                # Toolbox, tools
-│   └── runtime.hpp
+│   ├── command_router.hpp   ├── serve/                # `pu serve`: listener, REST routes, WebSocket
+│   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
+│   └── runtime.hpp          └── tools/                # Toolbox, tools
 ├── session/
 └── tools/
 ```
@@ -518,8 +579,32 @@ A header lives in its module's directory; `include/pu/runtime/` holds the
 orchestration layer (`Runtime`, `Executor`, `CommandRouter`). A header whose
 module has no directory of its own stays beside the sources that include it.
 
-The build is one static library, `pu_core` (everything but `main.cpp`), and the
-`pu` executable links it.
+The build is a chain of static libraries, one per layer, each linking only the ones below it:
+`pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom, `pu_paging`
+beside it, then `pu_llm`, `pu_model`, `pu_config`, `pu_probe`, `pu_models`, `pu_session`,
+`pu_mcp`, `pu_tools`, `pu_runtime` and `pu_serve`, with `pu_core` on top holding only the
+command layer. The `pu` executable links `pu_core`. The split is what makes the layering a fact
+the linker checks rather than a habit the includes happen to keep: a module that reaches
+upwards fails to link, and the failure names the symbol.
+
+`pu_config` answers what `agents.json` says — the agent table and the list of servers a turn
+may reach — and with the provider-reading layers carved out it no longer reaches a provider at
+all. It also holds the one rule for how a session-free tool picks a gateway, because that rule
+is a reading of the table rather than of a turn, and the two binaries that read a provider
+without a session would otherwise each carry their own answer to the same question.
+
+`pu_probe` and `pu_models` are layers of their own because each reads a provider: one capture
+and two reports from the probe, one catalogue and the entry it would write from the models
+layer, and no session, transcript or pager in sight in either. They sit beside `pu_config`
+rather than above it, because neither needs to know what a turn is — and they are siblings, so
+a helper both of them want belongs in `pu_config`, not in one of the two.
+
+One link goes the other way on purpose, and only one. `pu_tools` calls `RunDelegatedTurn`,
+declared in `tools/delegation.hpp` and defined in `runtime.cpp`, so `pu_tools` links a weak
+fallback that answers "no turn can run here" and `pu_runtime` links the definition that
+replaces it. A tool states a question; the layer that can answer one supplies the answer.
+Without that seam `ask_dir` would have to construct a `Runtime`, which is the one upward
+dependency the tools would otherwise carry.
 
 `web/` is the page the server mounts, served straight from the directory the server resolved,
 so adding a module means adding the file and its `<script>` tag and nothing else. A target that
@@ -529,15 +614,22 @@ split is described in [web-ui.md](web-ui.md).
 ### Gates, protocols and providers
 
 Three facts about a vendor that look alike are three different things: a **protocol** is
-*how to talk*, a **gateway** is *which product*, and a connection is *where*. `config/gateway.hpp`
+*how to talk*, a **gateway** is *which product*, and a connection is *where*. `model/gateway.hpp`
 holds the middle one: `GatewayId` names the gateways a build carries, `Gateway` is
-`{id, name, default_host, make_provider, make_listing}`, and `Gateways()` / `FindGateway()`
-/ `GatewayForId()` answer from one explicit table (`kGateways`) in that file. Every gateway
-lives in `src/config/gateway.cpp` with its neighbours: a gateway is mostly a table row plus
+`{id, name, default_host, api_key_env, protocol, endpoint_path, make_provider, make_listing,
+listing_headers, billing}`, and `Gateways()` / `FindGateway()`
+/ `GatewayForId()` answer from one explicit table. Every gateway
+lives in `src/llm/gateway_table.cpp` with its neighbours: a gateway is mostly a table row plus
 the mapping from the backend config to its protocol's config, and those mappings are only
 readable as a set — side by side, a field one gateway fills and another drops is visible, and
 in one file per gateway it is not. `MakeOpenAIProvider` and `MakeOllamaProvider` share
 `FillProtocolConfig`, which is why the Ollama mapping cannot drift from the OpenAI one.
+
+The table is written where the factories it names are visible — above `model`, in `llm` — and
+the reader below lives in `model`. A program therefore installs the table once, from its own
+entry point, with `model::InstallGatewayTable()`: `main.cpp` and the test runner both do, and
+a lookup made before that falls back to the one `llm` wrote, so the install is an
+optimisation of the direction rather than a trap.
 
 Billing follows the same split. What a call costs is read in the protocol layer, through
 `ResponseShape`: one gateway names the field `credit`, another names nothing at all, and the
@@ -553,11 +645,28 @@ resolves the name.
 A protocol stays what it was — the implementation of how a gateway talks. `openai` is split into
 `llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
 host with one set of headers), because a change to the SSE parse and a change to a gateway's
-headers are different changes; `ollama` keeps protocol and provider in one class. The gateway
+headers are different changes; `ollama` keeps protocol and provider in one class. `anthropic`
+is a third protocol rather than a variant of `openai`: the text arrives as a list of content
+blocks rather than one string, the frame type is named by the SSE `event:` field rather than a
+field inside the JSON, the system prompt is a request field rather than a message, and the key
+travels in `x-api-key` rather than a bearer. `AnthropicProvider` is therefore the one place in
+the layer where two representations of a message meet, and it is the file to read first when
+that translation goes wrong. The gateway
 abstraction stops short of one thing the design chose not to build yet: a gateway offering more
 than one protocol, which would need an `entry` between the gateway and the protocol. Every gateway
 measured so far speaks exactly one, so that layer is deferred rather than carried as unused
 state.
+
+### Retries
+
+A transient provider failure is retried below the turn, not above it. `core/retry.hpp` holds
+`RetryPolicy` and `WithRetry`; `StreamingProvider::Chat` wraps the single attempt in it, so a
+caller reading a reply never sees a `429` or a `503` that would have succeeded on a second
+try. The classification lives with the error: `HttpError` carries the status and marks itself
+transient at the one place that knows — a `408`, `429` or `5xx` is, a refusal is not — rather
+than a list of codes in the retry loop. A mid-stream failure is the known exception: content
+has already been handed to `on_content`, so a retry there would repeat it, and the guard for
+that is still to be written. [providers.md](providers.md) gives the statuses and the delays.
 
 ### Dependency direction
 
@@ -578,7 +687,7 @@ that pulled the whole transport layer into any header naming a `Tool`.
 
 ## Extension Points
 
-- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/config/gateway.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
+- **New gateway**: Add a `Make<Name>Provider`, a `Make<Name>Listing`, a `<Name>Gateway()` and a table row in `src/llm/gateway_table.cpp`, stating the name, the default host, how to build the gateway's provider, and how to build its catalogue read; then add the pointer to `kGateways`. A gateway that speaks an existing protocol reuses its provider and inherits `StreamingProvider`; one that does not supplies its own. Removing a gateway is the same in reverse - the four fragments and its line.
 - **New tool**: Inherit `pu::Tool`, implement methods, register in `Runtime::RegisterBuiltinTools()`.
 - **New command**: Add handler in `CommandRouter`, route, update help.
 - **External tool (no C++)**: Add an `mcp_servers` entry to `agents.json` — tools are discovered automatically when the agent becomes active.
@@ -586,6 +695,21 @@ that pulled the whole transport layer into any header naming a `Tool`.
 ---
 
 ## Known Limitations
+
+## Known Limitations
+
+- **The browser modules are not executed by any test.** Nothing in `web/` is parsed or run by
+  `ctest`: this repository has no JavaScript runtime in its toolchain, so a change there is
+  checked by reading it and by testing the wire form it consumes, not by running it. What is
+  covered is the contract underneath — a serve-stack test asserts the `page` envelope a
+  replayed turn receives — and what is not is everything above it: a syntax error, a renamed
+  function or a wrong DOM selector ships. The field names a module reads can be traced to their
+  writer in `src/`, which is what caught the mismatches so far, but a reader doing that trace
+  is the entire gate.
+- **Nothing checks that the C library symbols in a static archive are unique.** Two
+  translation units in `pu_model` defined `GatewayName`, `ParseGatewayId` and four others
+  identically. GNU ld resolves that silently; MSVC reports `LNK2005` and links nothing. The
+  local gate could not have seen it, and until CI ran on Windows nothing did.
 
 - MCP requests time out after a fixed 5 seconds.
 - Environment probing can come up empty: an absent `uname` on POSIX yields nothing, and a failed Windows kernel API falls back to `"unknown"`.
@@ -601,7 +725,6 @@ that pulled the whole transport layer into any header naming a `Tool`.
   used the same unit, and only if every turn was priced: one unpriced turn or two units make the
   total carry no price at all, because a number that covers part of the session reads as the
   whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
-- **Nothing enforces a token budget, by design.** `ChatResult::usage` carries what the provider counted, and the executor logs it at `debug`, but no limit is compared against it, so a conversation still grows until the provider refuses it and the refusal reaches the user as an HTTP error. Tool output is the one thing that is bounded up front: `execute_bash` returns a page and leaves the rest in the pager.
 - **A cursor does not outlive its buffer.** The pager keeps the last 8 buffers within 4 MiB; a page for one already dropped is refused rather than answered from another command's output, so the model runs the command again. A cursor names its own run, so the other half of that risk does not exist: a page request cannot reach a different command's output and does not have to restate the command to prove it.
 - **On Windows a silent command cannot be stopped.** `exec::Run`'s Windows reader is a blocking `popen` read and notices the stop token only between two reads, so a command that prints nothing runs to its own end there. The POSIX reader waits in `poll` and kills the process group, which stops the same command on Linux and macOS.
 - **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply stops mid-argument, so the call never completed and its text is not a usable argument; the provider raises rather than keeping the fragment. A `finish_reason` other than `length` leaves a non-JSON argument as it stands.
@@ -617,6 +740,12 @@ that pulled the whole transport layer into any header naming a `Tool`.
   delegate to is trusted as far as its own `agents.json` allows. Both are deliberate: a
   child that inherited the parent's policy would turn that file into a suggestion instead
   of the boundary.
+- **A delegated directory's table is a conversation artifact, not a reviewed one.**
+  In the intended use the calling model writes `.pu/agents.json` into the child directory and then
+  asks it, so the child's persona, tools, model and sandbox are the caller's text. That is
+  deliberately allowed — it is how a purpose-built expert is created mid-turn — but the child's file
+  then carries no more trust than the turn that wrote it: configuration for one conversation, not a
+  policy anyone reviewed. [runtime.md](runtime.md) owns the mechanics of the handoff.
 - **A stopped or overlong delegated turn is reported, not resumed.** Its answer is
   dropped, and the asking model reads a note saying so; the work the child did is still in
   the child's own turn, which the parent never sees.

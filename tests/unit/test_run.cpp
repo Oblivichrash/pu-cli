@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/core/platform.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,7 +13,7 @@
 #include <string>
 #include <thread>
 
-using namespace pu::exec;
+using namespace pu::core;
 
 namespace {
 

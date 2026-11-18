@@ -1,4 +1,4 @@
-]633;E;printf '%s\\n' '# Runtime, lifecycle, and cancellation' '' 'How one `Runtime` instance is built, kept alive, stopped, and shared between the' 'command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md)\x3b' 'it lives here because it is the half of the system a *maintainer* has to hold in' 'their head, while the rest of that document is what a contributor reads once.' '' 'The split is a reading aid, not a boundary: every claim below is still about the' 'same binary, and a change that moves work between `Runtime` and `Executor` belongs' 'in both files'"'"' vocabularies.' '';9ac79c07-acb2-4715-897b-dddcabfce472]633;C# Runtime, lifecycle, and cancellation
+# Runtime, lifecycle, and cancellation
 
 How one `Runtime` instance is built, kept alive, stopped, and shared between the
 command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md);
@@ -32,7 +32,7 @@ Key responsibilities:
 ### Web server lifecycle
 
 `pu serve` runs the same `Runtime` instance behind a Boost.Beast front-end
-(`RunServe` in `src/app/serve.cpp`), on the host and port that the command line, the
+(`RunServe` in `src/serve/serve.cpp`), on the host and port that the command line, the
 environment, or the workspace's own `serve` block names:
 
 1. `Runtime::Initialize()` loads `agents.json` and restores the session, then the
@@ -114,7 +114,7 @@ persists neither, because it does not.
 
 ### HTTP handler contract
 
-`DispatchHttpRequest` (`src/app/serve_http_routes.cpp`) does all the work a handler
+`DispatchHttpRequest` (`src/serve/serve_http_routes.cpp`) does all the work a handler
 should not have to: it finds the row for the request, asks `Admit` whether this caller may
 read it, parses the body once for routes that take one, takes the `io_mutex` for the
 duration of the call, wraps whatever the handler returned in the envelope that row names,

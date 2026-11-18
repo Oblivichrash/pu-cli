@@ -9,6 +9,8 @@
 #include <exception>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace pu {
 namespace json {
@@ -47,6 +49,16 @@ inline bool HasKey(const value& j, boost::json::string_view key) {
   return obj != nullptr && obj->contains(key);
 }
 
+// `text` as a value, or nothing when it is not one. The failure is the return value rather
+// than an exception, so what a malformed payload means stays with the caller: a stream skips
+// the frame and keeps the turn, a catalogue read has nothing to fall back on and reports it.
+inline std::optional<value> TryParse(std::string_view text) {
+  boost::system::error_code ec;
+  value parsed = boost::json::parse(text, ec);
+  if (ec) return std::nullopt;
+  return parsed;
+}
+
 // `j`'s member `key` as `T`, or nullopt when it is absent, null, or holds another type.
 // For a setting where "absent" must stay distinguishable from any value of `T` — an
 // absent token cap is not the same as a cap of zero.
@@ -58,6 +70,22 @@ std::optional<T> OptionalOrDefault(const value& j, boost::json::string_view key)
   } catch (const std::exception&) {
     return std::nullopt;
   }
+}
+
+// `j`'s member `key` as the strings of its array, skipping anything that is not one. An
+// absent key, a value that is not an array, and an array of nothing but non-strings all
+// yield the empty list: the caller is asking which sequences to stop on, and a list it
+// cannot read is a list that names none.
+inline std::vector<std::string> StringArrayOrEmpty(const value& j, boost::json::string_view key) {
+  std::vector<std::string> out;
+  if (!HasKey(j, key)) return out;
+  const array* items = j.at(key).if_array();
+  if (items == nullptr) return out;
+  out.reserve(items->size());
+  for (const value& item : *items) {
+    if (item.is_string()) out.push_back(boost::json::value_to<std::string>(item));
+  }
+  return out;
 }
 
 // `error` as text or object, else a top-level `message` or `msg` (CodeBuddy's name).

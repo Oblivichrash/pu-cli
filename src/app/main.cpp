@@ -4,6 +4,7 @@
 #include "pu/config/agents.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/runtime/runtime.hpp"
 
 #include <boost/program_options.hpp>
@@ -41,6 +42,10 @@ std::optional<std::string> EnvOr(const char* name) {
 
 int main(int argc, char* argv[]) {
   pu::platform::SetupSignalHandler();
+
+  // The rows that name a provider are written in `pu_llm`, above the module that reads them.
+  // Installing them here, once, is what lets a lookup below `llm` find a table at all.
+  pu::model::InstallGatewayTable();
 
   const pu::cli::CommandLine line = pu::cli::BuildCommandLine();
   const po::options_description& all = line.all;
@@ -88,18 +93,21 @@ int main(int argc, char* argv[]) {
     // the one `--help` is for, and the flags below only answer a question they have not
     // reached yet.
     const std::string named = vm.count("command") ? vm["command"].as<std::string>() : "";
+    if (named.empty()) {
+      std::cout << pu::cli::TopLevelPage(line) << "\n";
+      return 0;
+    }
     // A note about how this command differs from its nearest neighbour belongs to its page,
     // above the flags: someone reading the page has already paid for the choice, and a
     // choice taken wrongly is the thing the note prevents.
-    const std::string hint = named.empty() ? std::string() : line.HintFor(named);
-    std::cout << (named.empty() ? pu::cli::CommandList(line) + "\n\n" : std::string());
+    const std::string hint = line.HintFor(named);
     if (!hint.empty()) std::cout << hint << "\n\n";
     std::cout << line.HelpFor(named) << "\n";
     return 0;
   }
 
   if (!vm.count("command")) {
-    std::cout << pu::cli::CommandList(line) << "\n\n" << all << "\n";
+    std::cout << pu::cli::TopLevelPage(line) << "\n";
     return 0;
   }
 
@@ -109,9 +117,9 @@ int main(int argc, char* argv[]) {
   // reader is on that page already, and the flags below the message are how it is corrected.
   // Written once because every usage error is that shape, and one of them printing a
   // different frame would read as a different kind of failure.
-  const auto usage_error = [&](const std::string& message) {
+  const auto usage_error = [&](const std::string& message) -> int {
     std::cerr << "Error: " << message << "\n\n" << line.HelpFor(cmd) << "\n";
-    return pu::cli::kUsage;
+    return static_cast<int>(pu::cli::ExitCode::kUsage);
   };
 
   // The parser had to accept every name to learn which command was typed; now that it is

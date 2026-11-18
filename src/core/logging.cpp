@@ -194,6 +194,8 @@ void InitLogging(const std::string& log_level) {
   if (previous != logger) KeepAlive(std::move(previous));
 }
 
+bool IsLoggingInitialized() { return spdlog::default_logger_raw() != nullptr; }
+
 void FlushLogging() {
   if (auto logger = spdlog::default_logger()) logger->flush();
 }

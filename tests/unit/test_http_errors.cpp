@@ -154,6 +154,41 @@ TEST_CASE("A success response still streams to the consumer", "[http][errors]") 
   REQUIRE(received == "streamed content");
 }
 
+TEST_CASE("A stream reports the status it was answered with", "[http][errors]") {
+  // The code is what a probe has to say "200 and not one frame" with; a stream that threw
+  // would carry it in the message instead, so the two paths are checked apart.
+  pu::tests::FakeHttpServer server(200, "streamed content");
+  pu::http::BeastHttpClient client;
+
+  std::string received;
+  const std::string url = "http://127.0.0.1:" + std::to_string(server.Port()) + "/v1/chat";
+  const unsigned status = client.PostStream(
+      url, "{}", {"Content-Type: application/json"},
+      [&received](char* data, size_t size) {
+        received.append(data, size);
+        return size;
+      });
+
+  REQUIRE(status == 200);
+  REQUIRE(received == "streamed content");
+}
+
+TEST_CASE("A status a stream was refused with reaches the caller as an exception",
+          "[http][errors]") {
+  // The return value only describes a stream that was read; a refusal has no stream, so the
+  // code has to survive in the error itself.
+  pu::tests::FakeHttpServer server(401, R"({"error":"bad key"})");
+  pu::http::BeastHttpClient client;
+
+  std::string received;
+  try {
+    Post(client, server.Port(), received);
+    FAIL("expected HttpError");
+  } catch (const pu::HttpError& e) {
+    REQUIRE(std::string(e.what()).find("HTTP error 401") != std::string::npos);
+  }
+}
+
 TEST_CASE("A GET is read into one body", "[http][errors]") {
   pu::tests::FakeHttpServer server(200, R"({"data":[{"id":"m","context_window":131072}]})");
   pu::http::BeastHttpClient client;

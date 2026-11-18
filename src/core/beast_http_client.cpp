@@ -138,13 +138,18 @@ constexpr std::chrono::seconds kReadIdleBudget{30};
 
 // What a missed deadline is called. `timeout` is the timer firing; anything else is asio's own
 // reason and is passed through unchanged.
+//
+// Every failure this reports is a transport one — a timer, a reset socket, a refused connection
+// — and none of them says the request was wrong, so each is marked retryable. The exception is
+// the one case where the request itself is unreadable, and that never reaches here.
 [[noreturn]] inline void ThrowDeadline(const beast::error_code& ec, const char* what,
                                        std::chrono::seconds budget) {
-  if (ec == beast::error::timeout) {
-    throw HttpError(std::string("HTTP ") + what + " timed out after " +
-                    std::to_string(budget.count()) + "s");
-  }
-  throw HttpError(std::string("HTTP ") + what + " error: " + ec.message());
+  HttpError error(ec == beast::error::timeout
+                      ? std::string("HTTP ") + what + " timed out after " +
+                            std::to_string(budget.count()) + "s"
+                      : std::string("HTTP ") + what + " error: " + ec.message());
+  error.MarkTransient();
+  throw error;
 }
 
 // Starts one asynchronous operation and runs the context until it has nothing left to do.
@@ -393,16 +398,16 @@ http::Response BeastHttpClient::Get(const std::string& url,
     std::string detail = "HTTP error " + std::to_string(status);
     const std::string summary = SummarizeErrorBody(res.body());
     if (!summary.empty()) detail += ": " + summary;
-    throw HttpError(detail);
+    throw HttpError(detail, status);
   }
 
   return Response{status, std::move(res.body())};
 }
 
-void BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
-                                   const std::string& body,
-                                   const std::vector<std::string>& headers,
-                                   WriteCallback write_cb, CancelToken cancel_token) {
+unsigned BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
+                                     const std::string& body,
+                                     const std::vector<std::string>& headers,
+                                     WriteCallback write_cb, CancelToken cancel_token) {
   const beast::http::verb verb =
       method == HttpMethod::kGet ? beast::http::verb::get : beast::http::verb::post;
   auto start = std::chrono::steady_clock::now();
@@ -473,11 +478,14 @@ void BeastHttpClient::StreamRequest(HttpMethod method, const std::string& url,
     }
 
     if (status >= 400) {
+      // The code travels on the exception's own text; a stream that ended early is the only
+      // thing the return value would have described, and there is no such stream here.
       std::string detail = "HTTP error " + std::to_string(status);
       const std::string summary = SummarizeErrorBody(error_body);
       if (!summary.empty()) detail += ": " + summary;
-      throw HttpError(detail);
+      throw HttpError(detail, status);
     }
+    return status;
 
   } catch (const std::exception& e) {
     auto end = std::chrono::steady_clock::now();

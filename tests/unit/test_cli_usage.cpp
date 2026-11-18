@@ -49,7 +49,7 @@ TEST_CASE("The usage flag writes the cost to stderr and leaves stdout to the ans
   const int status =
       pu::cli::RunAsk("chat", "hello", harness.RuntimeRef(), /*show_usage=*/true);
 
-  REQUIRE(status == pu::cli::kOk);
+  REQUIRE(status == static_cast<int>(pu::cli::ExitCode::kOk));
   REQUIRE(err.text().find("usage:") != std::string::npos);
   // The counts the backend reported, named in the order a reader expects.
   REQUIRE(err.text().find("prompt") != std::string::npos);
@@ -66,6 +66,6 @@ TEST_CASE("Without the flag the cost is not printed at all", "[cli][usage]") {
   const int status =
       pu::cli::RunAsk("chat", "hello", harness.RuntimeRef(), /*show_usage=*/false);
 
-  REQUIRE(status == pu::cli::kOk);
+  REQUIRE(status == static_cast<int>(pu::cli::ExitCode::kOk));
   REQUIRE(err.text().find("usage:") == std::string::npos);
 }

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <system_error>
 #include <variant>
 
@@ -15,13 +16,14 @@
 #include "pu/config/agents.hpp"
 #include "pu/tools/ask_dir_tool.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/core/text.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
 #include "pu/tools/bash.hpp"
 #include "pu/tools/write_file.hpp"
-#include "pu/tools/mcp_tool.hpp"
+#include "pu/runtime/mcp_tool.hpp"
 
 namespace pu {
 namespace {
@@ -107,8 +109,13 @@ void Runtime::Initialize(const std::string& config_path) {
 
   if (workspace_root_.empty()) workspace_root_ = std::filesystem::current_path();
 
-  std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
-  pu::InitLogging(log_level);
+  // A Runtime is constructed in place for a delegated turn, so this runs more than once per
+  // process. The first caller sets the destination and the level; a child cannot lower the
+  // parent's verbosity or reopen the log file under it.
+  if (!pu::IsLoggingInitialized()) {
+    std::string log_level = std::getenv("PU_LOG_LEVEL") ? std::getenv("PU_LOG_LEVEL") : "";
+    pu::InitLogging(log_level);
+  }
 
   std::string cfg_path =
       config_path.empty() ? (workspace_root_ / ".pu" / "agents.json").string() : config_path;
@@ -132,14 +139,16 @@ void Runtime::Initialize(const std::string& config_path) {
 
   const std::string active_agent =
       default_agent_override_.empty() ? agents_cfg.default_agent : default_agent_override_;
-  const auto default_entry =
-      std::find_if(agents_cfg.agents.begin(), agents_cfg.agents.end(),
-                   [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
+  const auto default_entry = std::ranges::find_if(
+      agents_cfg.agents,
+      [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
   if (default_entry == agents_cfg.agents.end()) {
-    std::string known;
-    for (const auto& entry : agents_cfg.agents) known += " " + entry.name;
+    const std::string known = text::Join(
+        std::views::transform(agents_cfg.agents,
+                              [](const config::AgentEntry& entry) { return entry.name; }),
+        " ");
     throw GenericError("Requested agent is not configured: " + active_agent +
-                (known.empty() ? " (no agents are configured)" : "; configured:" + known));
+                       (known.empty() ? " (no agents are configured)" : "; configured: " + known));
   }
 
   agent_manager_ = std::make_unique<AgentManager>();
@@ -230,12 +239,7 @@ const config::AgentEntry& Runtime::ActiveAgent() const {
   return *agent_manager_->AgentConfig(agent_manager_->ActiveAgentName());
 }
 
-std::string Runtime::HelpText() {
-  assert(command_router_ && "Initialize() must run before any help query");
-  return command_router_->Help();
-}
-
-config::Backend Runtime::ConfiguredBackend() const {
+model::Backend Runtime::ConfiguredBackend() const {
   if (current_session_) {
     const auto& spec = current_session_->Spec();
     if (const auto* configured = agent_manager_->AgentConfig(spec.agent_name)) {
@@ -246,8 +250,8 @@ config::Backend Runtime::ConfiguredBackend() const {
   return ActiveAgent().backend;
 }
 
-config::Backend Runtime::CurrentBackend() const {
-  const config::Backend backend = ConfiguredBackend();
+model::Backend Runtime::CurrentBackend() const {
+  const model::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
   return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
 }
@@ -326,7 +330,7 @@ namespace {
 // stand behind it. A turn that produced no assistant node — an error, a command — spent
 // nothing worth a line.
 void RecordTurnUsage(Session& session, const ExecutionResult& result,
-                     const config::Backend& backend) {
+                     const model::Backend& backend) {
   if (!result.usage) return;
   std::string last_assistant;
   for (const session::MessageNode* node : session.Messages().Chain()) {
@@ -342,14 +346,13 @@ void RecordTurnUsage(Session& session, const ExecutionResult& result,
   usage.cached_tokens = result.usage->cached_tokens;
   usage.cost = result.usage->cost;
   usage.model = result.model;
-  usage.gateway = config::GatewayName(backend.gateway);
+  usage.gateway = model::GatewayName(backend.gateway);
   session.Usage().Record(usage);
 }
 
 }  // namespace
 
-ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command,
-                                      CancelToken cancel_token,
+ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken cancel_token,
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
@@ -370,25 +373,27 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
     auto session = DefaultSession();
 
     if (!input.empty() && input[0] == '/') {
-      is_command = true;
-      std::string output;
-      bool ok = command_router_->Route(input, *session, output);
-      result.content = output;
+      const CommandReply reply = command_router_->Route(input, *session);
+      result.content = reply.text;
+      result.was_command = true;
       result.was_streamed = false;
-      result.has_error = !ok;
-      if (!ok) result.error_message = output;
+      result.has_error = !reply.ok;
+      if (!reply.ok) result.error_message = reply.text;
       SaveCurrentSession();
       return result;
     }
 
-    is_command = false;
-
-    const config::Backend backend = CurrentBackend();
+    const model::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
-        executor_->Execute(input, session->Messages(), provider.get(), toolbox_,
-                           cancel_token, content_callback, tool_callbacks, reasoning_callback,
-                           command_stop_token);
+        executor_->Execute(input, session->Messages(),
+                           {.provider = provider.get(),
+                            .toolbox = &toolbox_,
+                            .content_callback = content_callback,
+                            .tool_callbacks = tool_callbacks,
+                            .reasoning_callback = reasoning_callback,
+                            .cancel_token = cancel_token,
+                            .command_stop_token = command_stop_token});
     result = std::move(exec_result);
     RecordTurnUsage(*session, result, backend);
     SaveCurrentSession();
@@ -400,11 +405,23 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, bool& is_command
   }
 }
 
+// Hands the chain this runtime is already answering inside to the executor, so a tool that
+// receives it can tell a directory it is already in from one it has never asked.
+void Runtime::ApplyDelegatedChain() { executor_->SetDelegatedChain(delegated_visited_); }
+
 DelegationResult Runtime::Delegate(const Delegation& request) {
   DelegationResult result;
 
   const std::filesystem::path target =
       request.dir.empty() ? workspace_root_ : request.dir;
+  // Checked before anything is built, because the cost of finding out by asking is a whole
+  // turn. The rule itself lives beside the request it reads, where it can be stated and
+  // checked without a runtime.
+  if (const std::string refused = RefusedReEntry(target, request.visited); !refused.empty()) {
+    result.error = refused;
+    return result;
+  }
+
   const std::filesystem::path table = target / ".pu" / "agents.json";
   const std::filesystem::path inherited = target / ".pu" / "agents";
   std::error_code ec;
@@ -429,6 +446,10 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     child.SetEphemeral();
     if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
     child.delegated_ = true;
+    // The chain so far, plus the workspace answering this one: a child that is asked something
+    // new can then tell whether it was here already.
+    child.delegated_visited_ = request.visited;
+    child.delegated_visited_.push_back(AsOnePlace(target));
     // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
     // waiting rather than in the one that has already handed the question over.
     child.turn_cancel_ = request.cancel_token;
@@ -436,10 +457,13 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
     }
     child.Initialize();
+    // Initialize rebuilds the toolbox before any of the above is set, so the chain reaches the
+    // executor here -- after the runtime exists, before it answers. Nothing else carries it: a
+    // child that never ran this line would hold an empty chain and refuse no re-entry at all.
+    child.ApplyDelegatedChain();
 
-    bool is_command = false;
-    const ExecutionResult answered = child.ProcessInput(request.prompt, is_command,
-                                                        request.cancel_token);
+    const ExecutionResult answered =
+        child.ProcessInput(request.prompt, request.cancel_token);
     if (const auto session = child.DefaultSession()) result.usage = session->Usage().Total();
     child.Shutdown();
 
@@ -466,7 +490,7 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       result.error = answered.error_message.empty() ? answered.content : answered.error_message;
       return result;
     }
-    if (is_command) {
+    if (answered.was_command) {
       // A line the asking agent meant as a question, read as a command, is not an answer: the
       // text it produced is a page of help or a setting, and handing it back as a conclusion
       // would report something nobody asked for. Nothing was asked of a provider either, so
@@ -491,6 +515,14 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     result.error = std::string("could not ask '") + target.string() + "': " + e.what();
     return result;
   }
+}
+
+// The definition the tool calls through. It builds the runtime a delegated turn needs and asks
+// it for the turn, so a tool that states a question links nothing above itself: the tools say
+// what they want and this says how it is done.
+DelegationResult RunDelegatedTurn(const Delegation& request) {
+  Runtime runtime;  // The turn runs a whole runtime of its own, which is what reads the files.
+  return runtime.Delegate(request);
 }
 
 void Runtime::SetDefaultAgent(const std::string& agent_name) {
@@ -557,7 +589,7 @@ void Runtime::RegisterMcpTools() {
     }
 
     for (const auto& t : tools) {
-      auto mcp_tool = std::make_unique<tools::McpTool>(client, t, server_name);
+      auto mcp_tool = std::make_unique<runtime::McpTool>(client, t, server_name);
       if (!toolbox_.RegisterTool(std::move(mcp_tool))) {
         spdlog::warn("Skipping MCP tool '{}' from '{}' - the server reported no name", t.name,
                      server_name);
@@ -580,6 +612,7 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   security.sandbox_root = ResolveWorkspacePath(workspace_root_, security.sandbox_root).string();
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
+  executor_->SetAgentIdentity(agent.name, agent.description);
   ApplyToolBudget();
   agent_manager_->SetActiveAgent(agent.name);
 }
@@ -601,9 +634,9 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
   Activate(new_agent);
 }
 
-void Runtime::SwitchBackend(const config::Backend& backend) {
+void Runtime::SwitchBackend(const model::Backend& backend) {
   config::AgentEntry transient = ActiveAgent();
-  transient.name = config::GatewayName(backend.gateway);
+  transient.name = model::GatewayName(backend.gateway);
   transient.backend = backend;
   transient.description.clear();
 

@@ -93,11 +93,24 @@ Three things are true of it, and the first is the one that surprises:
   stay inside it; an absolute path is refused with the leading component it wants dropped,
   since an absolute path is the shape of a mistake rather than a request.
 - **The turn is one hop.** The delegated agent has no `ask_dir` of its own, so a question
-  cannot travel further than the agent it was handed to. This is a property of the
-  configuration rather than a depth limit to tune.
+  cannot travel further than the agent it was handed to. This is the current implementation
+  rather than a depth limit to tune: the child's toolbox simply never registers the tool, so
+  nothing would carry over to a second hop.
+- **A tool that needs approval fails inside a child.** A delegated `Runtime` has no approval
+  gate, so any call its own `approval_patterns` cover comes back `kNobodyToAsk` even with a
+  user at the page: the gate belongs to the parent's toolbox. A tool you expect to be approved
+  is not available to a sub-agent, and there is no flag that changes that. See
+  [ARCHITECTURE.md](ARCHITECTURE.md) for why the boundary is drawn there.
 
 Its sandbox is its own, taken from its own table, so what it may read is decided there and not
 here; a sub-agent whose table is wider than the parent's is a decision its `.pu/` made.
+
+The `.pu/agents.json` a sub-agent reads is written by the conversation that asks it, which is the
+point of the tool and also what its trust is worth: it is a file for this conversation, not a
+reviewed policy. It is created by `write_file` and means nothing outside the turn that wrote it, so
+do not treat a child's file as evidence that a repository agreed to anything. It is also not covered
+by the built-in `agents.json` checks that `pu` runs against the workspace's own table, so a
+malformed child file fails at the refusal, not at load.
 
 `codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in

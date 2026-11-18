@@ -23,7 +23,7 @@ std::vector<std::string> StreamingProvider::Headers() const {
 
 void StreamingProvider::AppendContent(std::string_view text, const ChatRequest& request) {
   if (text.empty()) return;
-  content_ += text;
+  acc_.content += text;
   if (request.on_content) request.on_content(text);
 }
 
@@ -32,52 +32,72 @@ void StreamingProvider::AppendReasoning(std::string_view text, const ChatRequest
   if (text.empty()) return;
 
   const bool starts_block = !signature.empty() || !raw.is_null();
-  if (reasoning_.empty() || starts_block) {
+  if (acc_.reasoning.empty() || starts_block) {
     ReasoningBlock block;
     block.signature = std::move(signature);
     if (!raw.is_null()) block.raw = std::move(raw);
-    reasoning_.push_back(std::move(block));
+    acc_.reasoning.push_back(std::move(block));
   }
 
-  ReasoningBlock& block = reasoning_.back();
+  ReasoningBlock& block = acc_.reasoning.back();
   block.text.append(text);
 
   if (request.on_reasoning) request.on_reasoning(text);
 }
 
 void StreamingProvider::AppendToolCall(ToolCall call, const ChatRequest& request) {
-  tool_calls_.push_back(std::move(call));
-  if (request.on_tool_call) request.on_tool_call(tool_calls_.back());
+  acc_.tool_calls.push_back(std::move(call));
+  if (request.on_tool_call) request.on_tool_call(acc_.tool_calls.back());
 }
 
 void StreamingProvider::NoteUnreadFields(const boost::json::value& j,
                                          std::span<const std::string_view> read_keys) {
   // One frame is enough: a stream repeats its shape, and walking every one of 300 frames
   // would put this on the hot path to learn what the first already said.
-  if (inspected_frame_) return;
+  if (acc_.inspected_frame) return;
 
   const boost::json::object* obj = j.if_object();
   if (obj == nullptr) return;
-  inspected_frame_ = true;
+  acc_.inspected_frame = true;
 
   for (const auto& member : *obj) {
     const std::string_view key = member.key();
     const bool read = std::any_of(read_keys.begin(), read_keys.end(), [key](std::string_view name) {
       return name == key;
     });
-    if (!read) unread_fields_.emplace_back(key);
+    if (!read) acc_.unread_fields.emplace_back(key);
   }
 }
 
-void StreamingProvider::NoteSeenField(std::string_view key) {
-  if (std::find(seen_fields_.begin(), seen_fields_.end(), key) == seen_fields_.end()) {
-    seen_fields_.emplace_back(key);
-  }
+ChatResult StreamingProvider::Accumulators::IntoResult() && {
+  ChatResult result;
+  result.content = std::move(content);
+  result.tool_calls = std::move(tool_calls);
+  result.reasoning = std::move(reasoning);
+  result.usage = usage;
+  result.raw_usage = std::move(raw_usage);
+  result.unread_fields = std::move(unread_fields);
+  result.finish_reason = std::move(finish_reason);
+  result.model = std::move(response_model);
+  return result;
 }
 
 ChatResult StreamingProvider::Chat(const ChatRequest& request) {
-  ChatResult result;
-  ResetAccumulators();
+  // A retry rebuilds the turn from nothing: the accumulators are the half-reply a failed
+  // attempt left behind, and resuming it would append a second answer to the first. The
+  // callbacks are the caller's, so a turn that reaches them twice shows the retry.
+  //
+  // Nothing here yet counts the bytes an attempt delivered, so a stream that broke after the
+  // first token is retried and the caller sees the prefix twice. Retrying only a failure that
+  // arrived before any content is the fix; until then this is a known defect rather than a
+  // guarantee, and `docs/providers.md` says so.
+  core::WithRetry(retry_, nullptr, [this, &request] { Attempt(request); });
+  return std::move(acc_).IntoResult();
+}
+
+void StreamingProvider::Attempt(const ChatRequest& request) {
+  acc_ = Accumulators{};
+  ResetTurnState();
 
   const std::string body = BuildRequest(request.history, request.tools);
   // The body itself is the conversation, which session.json already carries; logging
@@ -92,7 +112,7 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
     // what the end of the stream does, once, below. Doing it here as well ran the flush twice
     // and appended what it folded in twice.
     if (event.data.empty() || event.data == "[DONE]") return;
-    ParseData(event.data, request);
+    ParseData(event.event, event.data, request);
   });
   parser.SetBareLinesAreEvents(FramesBareLines());
 
@@ -108,18 +128,6 @@ ChatResult StreamingProvider::Chat(const ChatRequest& request) {
   // without one is still the end: the close terminates the last line.
   parser.Finish();
   FinishStream(request);
-
-  result.content = std::move(content_);
-  result.tool_calls = std::move(tool_calls_);
-  result.reasoning = std::move(reasoning_);
-  result.usage = usage_;
-  result.raw_usage = std::move(raw_usage_);
-  result.unread_fields = std::move(unread_fields_);
-  result.seen_fields = std::move(seen_fields_);
-  result.missing_fields = std::move(missing_fields_);
-  result.finish_reason = std::move(finish_reason_);
-  result.model = std::move(response_model_);
-  return result;
 }
 
 }  // namespace pu

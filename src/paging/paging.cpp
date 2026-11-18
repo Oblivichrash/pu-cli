@@ -79,8 +79,8 @@ std::string SourceIdFor(std::string_view key) {
   return id;
 }
 
-Buffer::Buffer(std::string id, std::string source, exec::Verdict verdict, std::string text,
-               exec::Extent extent, std::size_t rank)
+Buffer::Buffer(std::string id, std::string source, core::Verdict verdict, std::string text,
+               core::Extent extent, std::size_t rank)
     : id_(std::move(id)),
       source_(std::move(source)),
       verdict_(std::move(verdict)),
@@ -238,7 +238,7 @@ Matches Search(const Buffer& buffer, std::string_view needle, std::size_t contex
 }
 
 boost::json::object Envelope(const Buffer& buffer, const Page& page) {
-  const exec::Extent& extent = buffer.extent();
+  const core::Extent& extent = buffer.extent();
 
   // A result says three things a model needs and nothing about this process: which lines it
   // is looking at, how much of the command's output survived, and how to see more. The
@@ -441,7 +441,7 @@ void Pager::ContinueRankingFrom(std::size_t last_rank) {
   next_rank_ = std::max(next_rank_, last_rank + 1);
 }
 
-std::shared_ptr<const Buffer> Pager::Store(exec::Captured captured, exec::Verdict verdict,
+std::shared_ptr<const Buffer> Pager::Store(core::Captured captured, core::Verdict verdict,
                                            std::string source_key) {
   std::lock_guard<std::mutex> lock(mutex_);
   const std::string id = "o" + generation_ + "-" + std::to_string(next_ordinal_++);
@@ -480,7 +480,7 @@ std::shared_ptr<const Buffer> Pager::Newest() const {
   return buffers_.empty() ? nullptr : buffers_.back();
 }
 
-std::shared_ptr<const Buffer> Pager::Record(std::string text, exec::Verdict verdict,
+std::shared_ptr<const Buffer> Pager::Record(std::string text, core::Verdict verdict,
                                             std::string source_key) {
   std::lock_guard<std::mutex> lock(mutex_);
   const std::string id = "a" + generation_ + "-" + std::to_string(next_ordinal_++);
@@ -489,7 +489,7 @@ std::shared_ptr<const Buffer> Pager::Record(std::string text, exec::Verdict verd
 
   // The extent is the answer's own: what it is, and all of it retained. There is no second
   // window onto it, so `retained == lines` and nothing downstream reads it as truncated.
-  exec::Extent extent;
+  core::Extent extent;
   extent.lines = 1;
   extent.bytes = text.size();
   extent.retained = 1;

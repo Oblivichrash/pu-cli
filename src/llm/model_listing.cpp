@@ -2,8 +2,10 @@
 #include "pu/llm/model_listing.hpp"
 
 #include "pu/core/base.hpp"
-#include "pu/llm/model_listing.hpp"
-#include "pu/llm/model_listing.hpp"
+#include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
+#include "pu/llm/anthropic_provider.hpp"
+#include "pu/model/backend.hpp"
 
 #include <boost/json.hpp>
 
@@ -36,8 +38,8 @@ int IntField(const boost::json::object& object, const std::string& name) {
   return value != nullptr && value->is_int64() ? static_cast<int>(value->as_int64()) : 0;
 }
 
-Capabilities ReadCapabilities(const boost::json::object& entry, const CatalogShape& shape) {
-  Capabilities caps;
+model::Capabilities ReadCapabilities(const boost::json::object& entry, const model::CatalogShape& shape) {
+  model::Capabilities caps;
   caps.supports_tools = BoolField(entry, shape.supports_tools);
   caps.supports_images = BoolField(entry, shape.supports_images);
   caps.supports_reasoning = BoolField(entry, shape.supports_reasoning);
@@ -65,11 +67,13 @@ boost::json::value ParseListing(const std::string& url, http::HttpClient& http,
                                 const std::vector<std::string>& headers) {
   const std::string body = http.Get(url, headers).body;
   if (body.empty()) return nullptr;
-  try {
-    return boost::json::parse(body);
-  } catch (const boost::system::system_error&) {
+  // A catalogue is read whole and once: nothing here can skip a bad answer and carry on,
+  // which is the difference between this call site and a stream frame.
+  std::optional<boost::json::value> parsed = json::TryParse(body);
+  if (!parsed) {
     throw GenericError("Model listing from " + url + " does not parse as JSON");
   }
+  return std::move(*parsed);
 }
 
 // So a shape that no longer matches never prints as "the account offers no model".
@@ -77,11 +81,10 @@ std::string TopLevelKeys(const boost::json::value& parsed) {
   const boost::json::object* obj = parsed.if_object();
   if (obj == nullptr) return "(not a JSON object)";
 
-  std::string keys;
-  for (const auto& member : *obj) {
-    if (!keys.empty()) keys += ", ";
-    keys += std::string(member.key());
-  }
+  const std::string keys = text::Join(*obj, ", ",
+                                      [](const boost::json::key_value_pair& member) {
+                                        return std::string(member.key());
+                                      });
   return keys.empty() ? "(an empty object)" : keys;
 }
 
@@ -107,27 +110,29 @@ std::optional<boost::json::array> ContainerOr(const boost::json::value& parsed,
                      "\" array; its top-level keys were: " + TopLevelKeys(parsed));
 }
 
-std::vector<ModelEntry> ReadFlat(const boost::json::value& parsed, const CatalogShape& shape,
+std::vector<model::ModelEntry> ReadFlat(const boost::json::value& parsed, const model::CatalogShape& shape,
                                  const std::string& url) {
   const std::optional<boost::json::array> container =
       ContainerOr(parsed, shape.container, url.c_str());
 
-  std::vector<ModelEntry> models;
+  std::vector<model::ModelEntry> models;
   for (const auto& entry : *container) {
     if (!entry.is_object()) continue;
     const auto& fields = entry.as_object();
     const std::string id = StringField(fields, shape.id_key);
     if (id.empty()) continue;
-    Capabilities caps = ReadCapabilities(fields, shape);
-    // A window is not a capability a gateway promises, so no shape names it: several
-    // OpenAI-compatible products state it as `context_window` and the rest say nothing.
-    if (caps.max_input_tokens == 0) caps.max_input_tokens = IntField(fields, "context_window");
-    models.push_back(ModelEntry{id, std::move(caps)});
+    model::Capabilities caps = ReadCapabilities(fields, shape);
+    // A window is not a capability a gateway promises, so it is read only when no capability
+    // field named one: a product that states it says so in its shape, and the rest say nothing.
+    if (caps.max_input_tokens == 0) {
+      caps.max_input_tokens = IntField(fields, shape.context_window);
+    }
+    models.push_back(model::ModelEntry{id, std::move(caps)});
   }
   return models;
 }
 
-std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const CatalogShape& shape,
+std::vector<model::ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const model::CatalogShape& shape,
                                      const std::string& url) {
   const boost::json::object* top = parsed.if_object();
   const boost::json::value* payload = nullptr;
@@ -153,9 +158,9 @@ std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const Ca
     }
   }
 
-  std::vector<ModelEntry> models;
+  std::vector<model::ModelEntry> models;
   for (const std::string& id : ids) {
-    ModelEntry entry;
+    model::ModelEntry entry;
     entry.id = id;
     if (const boost::json::array* catalogue = ArrayAt(*payload, shape.id_key);
         catalogue != nullptr) {
@@ -175,9 +180,12 @@ std::vector<ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, const Ca
 
 boost::json::value FetchListing(std::string_view url, const std::string& api_key,
                                 const std::vector<std::string>& headers,
-                                http::HttpClient& http) {
+                                http::HttpClient& http, bool bearer = true) {
   std::vector<std::string> all = headers;
-  if (!api_key.empty()) all.push_back(http::BearerHeader(api_key));
+  // A catalogue read authenticates the way its product's chat endpoint does. Anthropic reads
+  // `x-api-key` and refuses a bearer, so the key header is the caller's to choose rather than
+  // this function's to assume.
+  if (!api_key.empty() && bearer) all.push_back(http::BearerHeader(api_key));
   return ParseListing(std::string(url), http, all);
 }
 
@@ -185,8 +193,8 @@ boost::json::value FetchListing(std::string_view url, const std::string& api_key
 
 namespace {
 
-const CatalogShape& OllamaShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& OllamaShape() {
+  static const model::CatalogShape shape = {
       .path = "/api/tags",
       .container = "models",
       .id_key = "name",
@@ -194,17 +202,18 @@ const CatalogShape& OllamaShape() {
   return shape;
 }
 
-const CatalogShape& OpenAIShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& OpenAIShape() {
+  static const model::CatalogShape shape = {
       .path = "/models",
       .container = "data",
       .id_key = "id",
+      .context_window = "context_window",
   };
   return shape;
 }
 
-const CatalogShape& CodeBuddyShape() {
-  static const CatalogShape shape = {
+const model::CatalogShape& CodeBuddyShape() {
+  static const model::CatalogShape shape = {
       .container = "agents",
       .id_key = "models",
       .nested = "models",
@@ -222,34 +231,62 @@ const CatalogShape& CodeBuddyShape() {
 
 }  // namespace
 
-std::optional<ListingTarget> ListingTargetFor(std::string_view protocol, std::string_view gateway,
-                                              const std::string& host) {
-  if (protocol == "ollama") return ListingTarget{host + OllamaShape().path, OllamaShape()};
-  if (protocol != "openai") return std::nullopt;
-  // One OpenAI-format product keeps its catalogue off the chat base's origin and describes a
-  // model with more than an id; the rest read `/models` and name what they can.
-  if (gateway == "codebuddy") return ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
-  return ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+std::optional<model::ListingTarget> OllamaModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OllamaShape().path, OllamaShape()};
 }
 
-std::vector<ModelEntry> OllamaModelLister::ListModels(const std::string& host,
+std::optional<model::ListingTarget> OpenAIModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+}
+
+std::optional<model::ListingTarget> CodeBuddyModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{CodeBuddyCatalogUrl(host), CodeBuddyShape()};
+}
+
+std::optional<model::ListingTarget> AnthropicModelLister::Target(const std::string& host) const {
+  return model::ListingTarget{host + OpenAIShape().path, OpenAIShape()};
+}
+
+std::optional<model::ListingTarget> ListingTargetForGateway(const model::Backend& backend) {
+  // The lister the gateway table names decides both where the catalogue lives and how it
+  // reads: a probe cannot disagree with a listing about either, because there is one answer.
+  const std::unique_ptr<pu::ModelLister> lister =
+      model::GatewayForId(backend.gateway).make_listing();
+  if (!lister) return std::nullopt;
+  return lister->Target(backend.host);
+}
+
+std::vector<model::ModelEntry> OllamaModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
   const std::string url = host + OllamaShape().path;
   return ReadFlat(FetchListing(url, api_key, {}, http), OllamaShape(), url);
 }
 
-std::vector<ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
+std::vector<model::ModelEntry> OpenAIModelLister::ListModels(const std::string& host,
                                                       const std::string& api_key,
                                                       http::HttpClient& http) const {
   const std::string url = host + OpenAIShape().path;
   return ReadFlat(FetchListing(url, api_key, {}, http), OpenAIShape(), url);
 }
 
+std::vector<model::ModelEntry> AnthropicModelLister::ListModels(const std::string& host,
+                                                         const std::string& api_key,
+                                                         http::HttpClient& http) const {
+  // `GET /v1/models` answers the same `{"data":[{"id":...}]}` shape the OpenAI catalogue does,
+  // so the same reader is used; what differs is the headers the request must carry and that a
+  // key sent as a bearer is not the header this API reads.
+  const std::string url = host + OpenAIShape().path;
+  std::vector<std::string> headers;
+  if (!api_key.empty()) headers.push_back("x-api-key: " + api_key);
+  headers.push_back(std::string("anthropic-version: ") + AnthropicProvider::kApiVersion);
+  return ReadFlat(FetchListing(url, api_key, headers, http, false), OpenAIShape(), url);
+}
+
 CodeBuddyModelLister::CodeBuddyModelLister(std::vector<std::string> headers)
     : headers_(std::move(headers)) {}
 
-std::vector<ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
+std::vector<model::ModelEntry> CodeBuddyModelLister::ListModels(const std::string& host,
                                                          const std::string& api_key,
                                                          http::HttpClient& http) const {
   const std::string url = CodeBuddyCatalogUrl(host);
@@ -261,7 +298,7 @@ namespace {
 // The columns that decide between two models a reader has already narrowed to. Each says what
 // it knows and nothing where it was told nothing: a blank column is "this gateway did not say"
 // rather than "no".
-std::string CapabilityLine(const Capabilities& caps) {
+std::string CapabilityLine(const model::Capabilities& caps) {
   std::ostringstream line;
   auto flag = [&](bool set, const char* name) {
     if (!set) return;
@@ -287,7 +324,7 @@ std::string CapabilityLine(const Capabilities& caps) {
 
 }  // namespace
 
-std::string FormatModelList(const std::vector<ModelEntry>& models,
+std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view gateway,
                             std::string_view host,
                             std::string_view active_model,
@@ -296,7 +333,7 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   // the running model is named rather than dropped from the one row that matters.
   const bool active_listed =
       std::any_of(models.begin(), models.end(),
-                  [&](const ModelEntry& model) { return model.id == active_model; });
+                  [&](const model::ModelEntry& model) { return model.id == active_model; });
 
   if (models.empty())
     return "No models reported by " + std::string(gateway) + " at " + std::string(host);
@@ -304,12 +341,12 @@ std::string FormatModelList(const std::vector<ModelEntry>& models,
   // The id column is as wide as the longest id, so the columns beside it line up: a table
   // whose columns move per row is one a reader has to parse twice.
   std::size_t width = 0;
-  for (const ModelEntry& model : models) width = std::max(width, model.id.size());
+  for (const model::ModelEntry& model : models) width = std::max(width, model.id.size());
   width += std::string(" (active)").size();
 
   std::ostringstream oss;
   oss << models.size() << " model(s) reported by " << gateway << " at " << host << ":\n";
-  for (const ModelEntry& model : models) {
+  for (const model::ModelEntry& model : models) {
     std::ostringstream left;
     left << model.id;
     if (model.id == active_model) left << " (active)";

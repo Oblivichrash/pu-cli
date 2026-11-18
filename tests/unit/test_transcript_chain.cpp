@@ -26,7 +26,7 @@ constexpr const char* kCallId = "call_1";
 
 void AppendAssistantAskingFor(pu::Conversation& conversation, const std::string& call_id) {
   pu::ChatMessage assistant;
-  assistant.role = pu::session::kAssistantRole;
+  assistant.role = pu::kAssistantRole;
   assistant.tool_calls = boost::json::array{boost::json::object{
       {"id", call_id},
       {"type", "function"},
@@ -37,7 +37,7 @@ void AppendAssistantAskingFor(pu::Conversation& conversation, const std::string&
 
 void AppendStoredToolResult(pu::Conversation& conversation, const std::string& call_id) {
   pu::ChatMessage receipt;
-  receipt.role = pu::session::kToolRole;
+  receipt.role = pu::kToolRole;
   receipt.tool_call_id = call_id;
   receipt.tool_name = "execute_bash";
   receipt.content = boost::json::serialize(boost::json::object{{"success", true},
@@ -52,7 +52,7 @@ void AppendStoredToolResult(pu::Conversation& conversation, const std::string& c
 // like once the store has it.
 pu::Conversation TurnWithOneCall() {
   pu::Conversation conversation;
-  conversation.Append(pu::session::kUserRole, "list the files");
+  conversation.Append(pu::kUserRole, "list the files");
   AppendAssistantAskingFor(conversation, kCallId);
   AppendStoredToolResult(conversation, kCallId);
   return conversation;
@@ -70,20 +70,20 @@ TEST_CASE("A turn that ran a tool is three stored nodes, and the page folds it i
   REQUIRE(history.size() == 3);
   REQUIRE(history[0].content == "list the files");
   REQUIRE(history[1].HasToolCalls());
-  REQUIRE(history[2].role == pu::session::kToolRole);
+  REQUIRE(history[2].role == pu::kToolRole);
   REQUIRE(history[2].tool_call_id == kCallId);
 }
 
 TEST_CASE("A receipt whose call left the chain is not a message of its own", "[transcript]") {
   pu::Conversation conversation;
-  conversation.Append(pu::session::kUserRole, "list the files");
+  conversation.Append(pu::kUserRole, "list the files");
   AppendStoredToolResult(conversation, "call_that_left");
 
   // Nothing asked for it, so nothing can answer it. A page that drew it would put a result
   // beside a turn that never made the call, which is a second copy on every refresh.
   const std::vector<pu::ChatMessage> history = conversation.History();
   REQUIRE(history.size() == 1);
-  REQUIRE(history[0].role == pu::session::kUserRole);
+  REQUIRE(history[0].role == pu::kUserRole);
 }
 
 TEST_CASE("A turn survives a save and a load without gaining a copy", "[transcript]") {
@@ -91,7 +91,7 @@ TEST_CASE("A turn survives a save and a load without gaining a copy", "[transcri
   REQUIRE(restored != nullptr);
   REQUIRE(restored->History().size() == 3);
 
-  restored->Append(pu::session::kUserRole, "and again");
+  restored->Append(pu::kUserRole, "and again");
   REQUIRE(restored->History().size() == 4);
 }
 

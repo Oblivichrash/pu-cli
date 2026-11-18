@@ -26,9 +26,10 @@
 #include <vector>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
-#include "pu/config/gateway.hpp"
+#include "pu/model/backend.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 namespace pu::cli {
 
@@ -38,31 +39,9 @@ namespace fs = std::filesystem;
 
 // Everything ParseAgentEntry reads. A key outside this set is read by nothing, which is the
 // one mistake a file cannot show by running: the field is simply not there any more.
-const std::set<std::string>& ReadAgentKeys() {
-  static const std::set<std::string> keys{"name",     "description",    "backend", "security",
-                                          "paging",   "mcp_servers",    "tool_call_budget",
-                                          "delegates", "tools",         "persona"};
-  return keys;
-}
-
-const std::set<std::string>& ReadBackendKeys() {
-  static const std::set<std::string> keys{"gateway",      "host",           "model",
-                                          "api_key",      "temperature",    "system_prompt",
-                                          "max_tokens",   "thinking",       "context_window"};
-  return keys;
-}
-
-const std::set<std::string>& ReadSecurityKeys() {
-  static const std::set<std::string> keys{"sandbox_root", "max_command_length",
-                                          "forbidden_patterns", "approval_patterns"};
-  return keys;
-}
-
-const std::set<std::string>& ReadPagingKeys() {
-  static const std::set<std::string> keys{"page_lines", "max_lines", "capture_bytes",
-                                          "retain_bytes", "retain_buffers"};
-  return keys;
-}
+//
+// The lists themselves live in `config/agents.cpp`, beside the parsers they describe, so a
+// parser that learns a field and a report that does not is one edit rather than two files.
 
 // A key the parser never looks at. Reported rather than refused: this build may be older
 // than the file, and a warning is right when the user cannot tell which.
@@ -77,7 +56,7 @@ void WarnIgnoredKeys(const boost::json::object& object, const std::set<std::stri
   }
 }
 
-std::string ApiKeyState(const config::Backend& backend, const boost::json::value& raw_backend,
+std::string ApiKeyState(const model::Backend& backend, const boost::json::value& raw_backend,
                         std::vector<std::string>& warnings) {
   if (!backend.api_key) return "(none)";
   if (backend.api_key->empty()) {
@@ -122,7 +101,7 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   out << "\n";
 
   if (!entry.description.empty()) out << "  description  " << entry.description << "\n";
-  out << "  gateway      " << config::GatewayName(entry.backend.gateway) << "\n";
+  out << "  gateway      " << model::GatewayName(entry.backend.gateway) << "\n";
   out << "  host         " << entry.backend.host;
   // A host the file did not name came from the gateway's own default, which is worth
   // saying: it is the value a wrong gateway name silently produces.
@@ -147,30 +126,18 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   }
   out << "  sandbox      " << SandboxState(entry.security, workspace, warnings) << "\n";
   if (!entry.security.forbidden_patterns.empty()) {
-    out << "  forbids      ";
-    for (std::size_t i = 0; i < entry.security.forbidden_patterns.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << "'" << entry.security.forbidden_patterns[i] << "'";
-    }
-    out << "\n";
+    out << "  forbids      " << text::JoinQuoted(entry.security.forbidden_patterns) << "\n";
   }
   if (!entry.security.approval_patterns.empty()) {
-    out << "  approval     ";
-    for (std::size_t i = 0; i < entry.security.approval_patterns.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << "'" << entry.security.approval_patterns[i] << "'";
-    }
-    out << "   (no channel to ask on from the CLI: such a command is refused)\n";
+    out << "  approval     " << text::JoinQuoted(entry.security.approval_patterns)
+        << "   (no channel to ask on from the CLI: such a command is refused)\n";
   }
   if (!entry.mcp_servers.empty()) {
-    out << "  mcp          ";
-    for (std::size_t i = 0; i < entry.mcp_servers.size(); ++i) {
-      if (i > 0) out << ", ";
-      const config::McpServerConfig& server = entry.mcp_servers[i];
-      out << server.name << " ("
-          << (server.url.empty() ? server.command : server.url) << ")";
-    }
-    out << "\n";
+    out << "  mcp          "
+        << text::Join(entry.mcp_servers, ", ", [](const config::McpServerConfig& server) {
+             return server.name + " (" + (server.url.empty() ? server.command : server.url) + ")";
+           })
+        << "\n";
   }
   if (entry.tool_call_budget) {
     out << "  tool budget  " << *entry.tool_call_budget << "\n";
@@ -181,19 +148,10 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   if (entry.tools.empty()) {
     out << "all builtin (bash, write_file, ask_dir)\n";
   } else {
-    for (std::size_t i = 0; i < entry.tools.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << entry.tools[i];
-    }
-    out << "\n";
+    out << text::Join(entry.tools) << "\n";
   }
   if (!entry.delegates.empty()) {
-    out << "  delegates to ";
-    for (std::size_t i = 0; i < entry.delegates.size(); ++i) {
-      if (i > 0) out << ", ";
-      out << entry.delegates[i];
-    }
-    out << "\n";
+    out << "  delegates to " << text::Join(entry.delegates) << "\n";
     // A delegation is reached through `ask_dir`, and one whose `tools` list leaves that out
     // names a relationship nothing can use. Not an error — the table is legal — but the one
     // thing a reader would not see from either field alone.
@@ -208,21 +166,34 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   }
   if (!entry.source_dir.empty()) out << "  table        " << entry.source_dir.string() << "\n";
 
-  if (raw_agent != nullptr) WarnIgnoredKeys(*raw_agent, ReadAgentKeys(), entry.name, warnings);
+  if (raw_agent != nullptr) WarnIgnoredKeys(*raw_agent, config::ReadAgentKeys(), entry.name,
+                                            warnings);
   if (raw_agent != nullptr && raw_agent->contains("backend") &&
       raw_agent->at("backend").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("backend").as_object(), ReadBackendKeys(),
+    WarnIgnoredKeys(raw_agent->at("backend").as_object(), config::ReadBackendKeys(),
                     entry.name + ".backend", warnings);
   }
   if (raw_agent != nullptr && raw_agent->contains("security") &&
       raw_agent->at("security").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("security").as_object(), ReadSecurityKeys(),
+    WarnIgnoredKeys(raw_agent->at("security").as_object(), config::ReadSecurityKeys(),
                     entry.name + ".security", warnings);
   }
   if (raw_agent != nullptr && raw_agent->contains("paging") &&
       raw_agent->at("paging").is_object()) {
-    WarnIgnoredKeys(raw_agent->at("paging").as_object(), ReadPagingKeys(),
+    WarnIgnoredKeys(raw_agent->at("paging").as_object(), config::ReadPagingKeys(),
                     entry.name + ".paging", warnings);
+  }
+  // Each server is its own object, so each is read for its own keys: a field named on one
+  // server and not another is a fact about that one entry, and the index is how the report
+  // says which.
+  if (raw_agent != nullptr && raw_agent->contains("mcp_servers") &&
+      raw_agent->at("mcp_servers").is_array()) {
+    const boost::json::array& servers = raw_agent->at("mcp_servers").as_array();
+    for (std::size_t i = 0; i < servers.size(); ++i) {
+      if (!servers[i].is_object()) continue;
+      WarnIgnoredKeys(servers[i].as_object(), config::ReadMcpServerKeys(),
+                      entry.name + ".mcp_servers[" + std::to_string(i) + "]", warnings);
+    }
   }
   return out.str();
 }
@@ -248,7 +219,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   if (path.empty()) {
     std::cerr << "No agents.json found: looked in " << (workspace / ".pu").string()
               << "/ and ~/.pu/.\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   std::cout << "config  " << path << "\n\n";
@@ -259,7 +230,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   } catch (const std::exception& e) {
     // A file this build cannot read is the invocation being wrong: fixing it is the remedy.
     std::cerr << "cannot load " << path << ": " << e.what() << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 
   std::cout << "workspace  " << workspace.string() << "\n";
@@ -387,8 +358,8 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   // A warning is not a failure: a file this build reads and an entry it can run is a pass,
   // and what it noticed is for a person to weigh. A delegation that names nothing runnable is
   // a failure, because the turn that reaches it fails with less to go on than this does.
-  if (!errors.empty()) return kUsage;
-  return kOk;
+  if (!errors.empty()) return static_cast<int>(ExitCode::kUsage);
+  return static_cast<int>(ExitCode::kOk);
 }
 
 }  // namespace pu::cli

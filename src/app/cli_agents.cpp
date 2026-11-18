@@ -15,7 +15,7 @@
 #include <iostream>
 #include <string>
 
-#include "pu/config/agent_summary.hpp"
+#include "pu/app/agent_summary.hpp"
 #include "pu/runtime/runtime.hpp"
 
 namespace pu::cli {
@@ -34,14 +34,14 @@ int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& ru
       runtime.Initialize();
     } catch (const std::exception& e) {
       std::cerr << e.what() << "\n";
-      return kUsage;
+      return static_cast<int>(ExitCode::kUsage);
     }
     result = runtime.Delegate(request);
   }
 
   if (!result.error.empty()) {
     std::cerr << result.error << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
   std::cout << result.answer << "\n";
   if (show_usage) {
@@ -54,7 +54,7 @@ int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& ru
     }
     std::cerr << "\n";
   }
-  return kOk;
+  return static_cast<int>(ExitCode::kOk);
 }
 
 int RunAgents(Runtime& runtime, bool as_json) {
@@ -62,13 +62,14 @@ int RunAgents(Runtime& runtime, bool as_json) {
   std::string active;
   if (runtime.DefaultSession()) active = runtime.DefaultSession()->Spec().agent_name;
 
-  const std::vector<config::AgentSummary> agents = config::SummarizeAgents(runtime, active);
+  const std::vector<app::AgentSummary> agents =
+      app::SummarizeAgents(runtime.Agents(), active);
   if (as_json) {
-    std::cout << boost::json::serialize(config::AgentsAsJson(agents)) << "\n";
+    std::cout << boost::json::serialize(app::AgentsAsJson(agents)) << "\n";
   } else {
-    std::cout << config::FormatAgentTable(agents);
+    std::cout << app::FormatAgentTable(agents);
   }
-  return kOk;
+  return static_cast<int>(ExitCode::kOk);
 }
 
 }  // namespace pu::cli

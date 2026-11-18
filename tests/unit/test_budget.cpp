@@ -98,7 +98,7 @@ TEST_CASE("A turn that reaches its tool budget is asked to wrap up and does", "[
   ScriptedLLM model(/*calling_rounds=*/2, "wrapped up");
   Conversation conversation;
 
-  const ExecutionResult result = f.executor.Execute("go", conversation, &model, f.toolbox);
+  const ExecutionResult result = f.executor.Execute("go", conversation, {.provider = &model, .toolbox = &f.toolbox});
 
   CHECK_FALSE(result.has_error);
   CHECK(result.content == "wrapped up");
@@ -117,7 +117,7 @@ TEST_CASE("A wrap-up that still calls a tool ends the turn instead of looping", 
   ScriptedLLM model(/*calling_rounds=*/5, "never reached");
   Conversation conversation;
 
-  const ExecutionResult result = f.executor.Execute("go", conversation, &model, f.toolbox);
+  const ExecutionResult result = f.executor.Execute("go", conversation, {.provider = &model, .toolbox = &f.toolbox});
 
   CHECK(result.has_error);
   CHECK(result.outcome == TurnOutcome::kToolBudgetReached);
@@ -136,7 +136,7 @@ TEST_CASE("A turn inside its budget never sees the wrap-up", "[budget]") {
   ScriptedLLM model(/*calling_rounds=*/1, "finished");
   Conversation conversation;
 
-  const ExecutionResult result = f.executor.Execute("go", conversation, &model, f.toolbox);
+  const ExecutionResult result = f.executor.Execute("go", conversation, {.provider = &model, .toolbox = &f.toolbox});
 
   CHECK_FALSE(result.has_error);
   CHECK(result.content == "finished");
@@ -154,7 +154,7 @@ TEST_CASE("A budget of two allows two calls", "[budget]") {
   ScriptedLLM model(/*calling_rounds=*/1, "after two");
   Conversation conversation;
 
-  const ExecutionResult result = f.executor.Execute("go", conversation, &model, f.toolbox);
+  const ExecutionResult result = f.executor.Execute("go", conversation, {.provider = &model, .toolbox = &f.toolbox});
 
   CHECK(result.tool_call_count == 1);  // one round, one call
   CHECK(model.calls == 2);

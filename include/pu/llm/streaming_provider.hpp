@@ -12,6 +12,7 @@
 #include <boost/json.hpp>
 
 #include "pu/core/http_client.hpp"
+#include "pu/core/retry.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu {
@@ -30,17 +31,31 @@ class StreamingProvider : public LLMProvider {
   virtual std::string LogTag() const = 0;
   // One event's payload. The framing — which lines are data, where an event ends — belongs to
   // the format, and `core::SseParser` owns it; a provider reads payloads.
-  virtual void ParseData(std::string_view data, const ChatRequest& request) = 0;
+  //
+  // `event` is the frame's own `event:` name, empty when it carried none. OpenAI and Ollama
+  // name nothing and read only the payload; a protocol that dispatches on the event name —
+  // Anthropic sends `message_start`, `content_block_delta` and the rest — reads it here rather
+  // than sniffing the JSON for a `type` field that repeats what the frame already said.
+  virtual void ParseData(std::string_view event, std::string_view data,
+                         const ChatRequest& request) = 0;
 
   // Whether this gateway frames events or writes one JSON object per line. The parser is told,
   // so a stream that carries no `data:` prefix is still read as the format it is.
   virtual bool FramesBareLines() const { return false; }
   virtual std::string BuildRequest(std::span<const ChatMessage> history,
                                    std::span<const ToolDefinition> tools) const = 0;
-  virtual void ResetAccumulators() {}
+  // A subclass's own per-turn state, which `Chat` cannot know about. The shared accumulators
+  // are rebuilt by `Chat` itself, so they are not a subclass's to clear.
+  virtual void ResetTurnState() {}
   virtual void FinishStream(const ChatRequest& request) { (void)request; }
 
   virtual std::vector<std::string> Headers() const;
+
+  // How a turn is asked again when the gateway answers something transient. The default is
+  // the policy a caller expects of a model endpoint; a caller with a reason to differ — a
+  // test, a probe — sets its own before the turn.
+  void SetRetryPolicy(core::RetryPolicy policy) { retry_ = policy; }
+  const core::RetryPolicy& RetryPolicyForTurn() const { return retry_; }
 
   void AppendContent(std::string_view text, const ChatRequest& request);
   void AppendReasoning(std::string_view text, const ChatRequest& request, std::string signature = {},
@@ -53,26 +68,38 @@ class StreamingProvider : public LLMProvider {
   // A gateway names a field once per stream, so a stream's frames are not walked twice.
   void NoteUnreadFields(const boost::json::value& j, std::span<const std::string_view> read_keys);
 
-  // The other half of NoteUnreadFields: a gateway that renamed `content` would otherwise
-  // answer with an empty reply and no complaint.
-  void NoteSeenField(std::string_view key);
+  // Everything a turn accumulates, as one value. A turn begins by assigning a default one,
+  // so a member added here is cleared by construction rather than by someone remembering to
+  // add a line to a reset list.
+  struct Accumulators {
+    std::string content;
+    std::vector<ReasoningBlock> reasoning;
+    std::vector<ToolCall> tool_calls;
+    std::string finish_reason;
+    std::string response_model;
+    std::optional<TokenUsage> usage;
+    boost::json::value raw_usage;
+    std::vector<std::string> unread_fields;
+    bool inspected_frame = false;
 
-  std::string content_;
-  std::vector<ReasoningBlock> reasoning_;
-  std::vector<ToolCall> tool_calls_;
-  std::string finish_reason_;
-  std::string response_model_;
-  std::optional<TokenUsage> usage_;
-  boost::json::value raw_usage_;
-  std::vector<std::string> unread_fields_;
-  std::vector<std::string> seen_fields_;
-  std::vector<std::string> missing_fields_;
-  bool inspected_frame_ = false;
+    // The turn as a caller sees it, moved out in one go. Written here rather than at the end
+    // of `Chat` so the two lists of names — what a turn accumulates and what a result
+    // carries — are one place, and a member added above is a member a compiler notices is
+    // unaccounted for here.
+    ChatResult IntoResult() &&;
+  };
+
+  Accumulators acc_;
 
  private:
+  // One attempt: build, post, parse, finish. `Chat` calls this and decides whether to call it
+  // again, so a retry rebuilds the turn from scratch rather than resuming half of one.
+  void Attempt(const ChatRequest& request);
+
   std::string host_;
   std::string api_key_;
   std::shared_ptr<pu::http::HttpClient> http_;
+  core::RetryPolicy retry_;
 };
 
 }  // namespace pu

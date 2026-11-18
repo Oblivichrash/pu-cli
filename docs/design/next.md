@@ -27,16 +27,31 @@ Four tiers, applied per node, monotone — a decision may only move down:
 | T0 live | the whole text | newest run for its source, or a page read deliberately after |
 | T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
 | T2 tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
-| T3 gone | nothing | not implemented; see §2 |
+| T3 gone | nothing | it is one of everything but the newest ten tool-call pairs |
+| T4 arguments | every argument key, with the dominant one's text replaced by `bytes`, `lines`, `omitted` | the call survives T3 and its serialised arguments exceed 16 KiB |
 
-T0 and T1 exist. T2 exists as `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
-`src/session/request.cpp`; T3 does not. T2 is worth its ~15 tokens because what stops a model
-repeating a failed approach is knowing it tried: **compress along the body axis, never along
-the argv/verdict axis.** T3 goes in whole pairs, oldest first, keeping the newest K (≈6 covers
-a plan-and-verify cycle), because a `tool` message whose `tool_call_id` names no call is
-invalid on every provider.
+All four exist. T2 is `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
+`src/session/request.cpp`; T3 is `RetireOldToolCalls` in the same file, and it runs before T4
+because it is the only tier that removes anything and every tier above it is expressed in terms
+of a call that is still there. T4 is `ElideLargeArguments`, last, so that it spends its work
+only on the calls T3 keeps — which are precisely the ones that re-send their arguments forever.
+T2 is worth its ~15 tokens because what stops a model repeating a failed approach is knowing it
+tried: **compress along the body axis, never along the argv/verdict axis.** T3 goes in whole
+pairs, oldest first, because a `tool` message whose `tool_call_id` names no call is invalid on
+every provider. T4 follows the same rule from the other side: it keeps every argument key and
+takes only the text of the one that dominates, so a `write_file` still says which file it
+wrote.
 
-The entry condition for each tier is **a count, not a size**. An earlier draft drove T2 from a
+T3 keeps ten pairs, not six, and the gap is load-bearing. T2 fires on a superseded receipt that
+is older than the newest six, so a T3 that also kept six would delete the receipts T2 was about
+to shrink and leave T2 with nothing to do: the two tiers would silently collapse into one. Four
+of headroom leaves two superseded receipts past the cursor floor in the common case, which is
+what keeps both tiers observable at once.
+
+The entry condition for each tier is **a count, not a size**, with one deliberate exception.
+T4 is driven by a byte threshold, because what it removes is a literal string re-sent verbatim
+and the unit of that harm is the length of the string; it is not a model-facing measurement of
+context, which is what made the byte budget below wrong. An earlier draft drove T2 from a
 byte budget (`256 KiB` of accumulated tool output). That was wrong twice over: a byte count
 cannot be turned into tokens without the model's tokenizer, so the threshold was a number
 nobody could check against the window it was meant to protect; and because the newest six
@@ -72,17 +87,29 @@ to preserve.
    language with its own bugs; a model that wants a pattern can run `grep`. The count-plus-range
    answer also landed: a search reports `found`/`shown`/`truncated` rather than pretending to be
    a page, because a noisy match set is not a window onto anything.
-3. **`page` reaches the transcript a person reads.** `on_end` drops the envelope, so a page of
-   a 3500-line log looks exactly like a whole answer. The `stored` counts are what say which
-   it is.
-4. **T3: retire the oldest tool-call pairs.** The one pool still unbounded is scaffolding —
-   `tool_calls[].id`, `.name` and especially `.arguments`. Twenty `write_file` calls of 200
-   lines each are 4000 lines re-sent every turn. T3 removes whole pairs, oldest first, keeping
-   the newest six, because the protocol rejects an orphan `tool` message. This is the only
-   remaining unbounded pool and therefore the highest-value item here.
-5. **Large `arguments` stored by reference** into the pager, for the same reason results are.
+3. ~~**`page` reaches the transcript a person reads.**~~ Done. `on_end` drops the envelope, so
+   a page of a 3500-line log looked exactly like a whole answer; `block-tool.js` now renders
+   `lines A–B of N` and, when something was dropped, which end was kept, and `history.js`
+   carries `page` through replay so a replayed turn draws like a live one. The JavaScript
+   itself is unverified: this machine has no JS runtime, so the field names were traced from
+   `paging.cpp` to `block-tool.js` by hand and the wire contract is covered by a serve-stack
+   test, but nothing has parsed or executed the front end.
+4. ~~**T3: retire the oldest tool-call pairs.**~~ Done. `RetireOldToolCalls` removes whole
+   pairs, oldest first, keeping the newest ten. The bound is ten rather than six so that T2
+   still has receipts to tombstone; see the note under the tier table.
+5. ~~**Large `arguments` stored by reference** into the pager, for the same reason results
+   are.~~ Done, though not by reference into the pager. `ElideLargeArguments` replaces an
+   oversized argument body in place with a stand-in that keeps every key and states `bytes`,
+   `lines` and which argument carried them, and substitutes it only when building the request,
+   so the record keeps the text the provider was told. The pager was rejected because an
+   argument body evicted under the output budget would lose the command a model needs to
+   repeat, and because `arguments` is the input half of the exchange whose output half the
+   other tiers already compress — a stand-in on the same axis is the consistent move. It runs
+   after T3, so it touches exactly the calls T3 keeps. The threshold is measured in bytes
+   rather than tokens for a reason §1 does not cover: what is re-sent is a literal string, and
+   the cost is the length of that string, not a model-facing measurement of context.
 
-Ordering is not a preference: §2.4 is where the remaining growth actually is, so it comes
+Ordering is not a preference: §2.5 was where the remaining growth actually is, so it came
 before the items that make reading history cheaper. Both are measured by `usage.prompt_tokens`
 per turn and `tool_call_count` per turn.
 

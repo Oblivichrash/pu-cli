@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "pu/session/graph.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/llm_types.hpp"
 
 namespace pu::session {
 

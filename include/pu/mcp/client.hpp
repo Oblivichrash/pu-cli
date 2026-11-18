@@ -11,7 +11,7 @@
 #include <boost/json.hpp>
 
 #include "pu/config/mcp_server.hpp"
-#include "pu/llm/llm_provider.hpp"
+#include "pu/core/tool_types.hpp"
 #include "pu/mcp/transport.hpp"
 
 namespace pu::mcp {
@@ -52,8 +52,10 @@ class McpClient {
 
  private:
   bool Handshake();
+  // A zero budget means "whatever this server's table says"; anything else overrides it for one
+  // request.
   boost::json::value SendRequest(const std::string& method, const boost::json::value& params = {},
-                                 int timeout_ms = 5000);
+                                 int timeout_ms = 0);
 
   struct Impl;
   std::unique_ptr<Impl> pimpl_;

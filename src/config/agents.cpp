@@ -3,6 +3,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/text.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -11,7 +12,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <regex>
+#include <set>
 #include <sstream>
 
 namespace pu::config {
@@ -31,39 +34,35 @@ std::string ExpandEnvVars(const std::string& input) {
   return result;
 }
 
+// The strings one array member holds, in order, skipping anything that is not a string. An
+// absent member and an empty one answer the same way: no entries.
+std::vector<std::string> StringList(const json::value& j, boost::json::string_view key) {
+  std::vector<std::string> entries;
+  for (const auto& item : json::ValueOrDefault<boost::json::array>(j, key, {})) {
+    if (item.is_string()) entries.push_back(boost::json::value_to<std::string>(item));
+  }
+  return entries;
+}
+
 SecurityPolicy ParseSecurityPolicy(const json::value& j) {
   SecurityPolicy policy;
-  if (json::HasKey(j, "sandbox_root") && j.at("sandbox_root").is_string())
-    policy.sandbox_root = boost::json::value_to<std::string>(j.at("sandbox_root"));
-  if (json::HasKey(j, "max_command_length") && j.at("max_command_length").is_number())
-    policy.max_command_length = boost::json::value_to<std::size_t>(j.at("max_command_length"));
-  if (json::HasKey(j, "forbidden_patterns") && j.at("forbidden_patterns").is_array()) {
-    for (const auto& pat : j.at("forbidden_patterns").as_array())
-      if (pat.is_string())
-        policy.forbidden_patterns.push_back(boost::json::value_to<std::string>(pat));
-  }
-  if (json::HasKey(j, "approval_patterns") && j.at("approval_patterns").is_array()) {
-    for (const auto& pat : j.at("approval_patterns").as_array())
-      if (pat.is_string())
-        policy.approval_patterns.push_back(boost::json::value_to<std::string>(pat));
-  }
+  policy.sandbox_root = json::ValueOrDefault<std::string>(j, "sandbox_root", policy.sandbox_root);
+  policy.max_command_length =
+      json::ValueOrDefault<std::size_t>(j, "max_command_length", policy.max_command_length);
+  policy.forbidden_patterns = StringList(j, "forbidden_patterns");
+  policy.approval_patterns = StringList(j, "approval_patterns");
   return policy;
 }
 
 paging::Budget ParsePaging(const json::value& j) {
   paging::Budget budget;
-  if (json::HasKey(j, "page_lines") && j.at("page_lines").is_number())
-    budget.page_lines = boost::json::value_to<std::size_t>(j.at("page_lines"));
-  if (json::HasKey(j, "max_lines") && j.at("max_lines").is_number())
-    budget.max_lines = boost::json::value_to<std::size_t>(j.at("max_lines"));
-  if (json::HasKey(j, "page_bytes") && j.at("page_bytes").is_number())
-    budget.page_bytes = boost::json::value_to<std::size_t>(j.at("page_bytes"));
-  if (json::HasKey(j, "capture_bytes") && j.at("capture_bytes").is_number())
-    budget.capture_bytes = boost::json::value_to<std::size_t>(j.at("capture_bytes"));
-  if (json::HasKey(j, "retain_bytes") && j.at("retain_bytes").is_number())
-    budget.retain_bytes = boost::json::value_to<std::size_t>(j.at("retain_bytes"));
-  if (json::HasKey(j, "retain_buffers") && j.at("retain_buffers").is_number())
-    budget.retain_buffers = boost::json::value_to<std::size_t>(j.at("retain_buffers"));
+  budget.page_lines = json::ValueOrDefault<std::size_t>(j, "page_lines", budget.page_lines);
+  budget.max_lines = json::ValueOrDefault<std::size_t>(j, "max_lines", budget.max_lines);
+  budget.page_bytes = json::ValueOrDefault<std::size_t>(j, "page_bytes", budget.page_bytes);
+  budget.capture_bytes = json::ValueOrDefault<std::size_t>(j, "capture_bytes", budget.capture_bytes);
+  budget.retain_bytes = json::ValueOrDefault<std::size_t>(j, "retain_bytes", budget.retain_bytes);
+  budget.retain_buffers =
+      json::ValueOrDefault<std::size_t>(j, "retain_buffers", budget.retain_buffers);
 
   // A page is a page: a request is clamped to `max_lines`, so a `page_lines` above it
   // would be silently narrowed. Nothing retained keeps nothing, and a store that keeps
@@ -78,9 +77,9 @@ paging::Budget ParsePaging(const json::value& j) {
   return budget;
 }
 
-Backend ParseBackend(const json::value& j) {
-  Backend cfg;
-  ReadBackendFields(cfg, j);
+model::Backend ParseBackend(const json::value& j) {
+  model::Backend cfg;
+  model::ReadBackendFields(cfg, j);
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
   cfg.model = ExpandEnvVars(cfg.model);
@@ -110,6 +109,12 @@ std::vector<McpServerConfig> ParseMcpServers(const json::value& j) {
               ExpandEnvVars(boost::json::value_to<std::string>(kv.value()));
       }
     }
+    srv.timeout_ms = json::ValueOrDefault<int>(item, "timeout_ms", srv.timeout_ms);
+    if (srv.timeout_ms <= 0) {
+      spdlog::warn("MCP server '{}' asked for timeout_ms={}; using the default", srv.name,
+                   srv.timeout_ms);
+      srv.timeout_ms = config::McpServerConfig{}.timeout_ms;
+    }
 
     if (!srv.name.empty() && (!srv.command.empty() || !srv.url.empty()))
       servers.push_back(std::move(srv));
@@ -126,7 +131,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
     throw pu::GenericError("Missing backend field");
   entry.backend = ParseBackend(j.at("backend"));
-  if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+  if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
   if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend");
 
   if (json::HasKey(j, "security") && j.at("security").is_object())
@@ -171,8 +176,11 @@ AgentEntry ParseAgentEntry(const json::value& j) {
 namespace {
 
 // A proxy gateway's name belongs in the identifier; a vendor's own API leaves the model id.
-std::string AgentNameFor(const llm::ModelEntry& model, const std::string& gateway) {
-  if (gateway == "codebuddy") return gateway + "-" + model.id;
+// Which product that is, is the table's fact rather than this file's: the row says so, and a
+// gateway added tomorrow gets the right answer without a line here.
+std::string AgentNameFor(const model::ModelEntry& model, const std::string& gateway) {
+  const model::Gateway* row = model::FindGateway(gateway);
+  if (row != nullptr && row->prefixes_agent_name) return gateway + "-" + model.id;
   return model.id;
 }
 
@@ -184,7 +192,7 @@ std::string StringMember(const boost::json::object& object, const char* key) {
 
 }  // unnamed namespace
 
-std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source) {
+std::string FormatAgentEntry(const model::ModelEntry& model, const boost::json::value& source) {
   const boost::json::object* src = source.if_object();
   if (src == nullptr) throw GenericError("Cannot render an entry from something that is not an object");
 
@@ -469,7 +477,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
         server.command = ResolveAgainst(table.parent_path(), server.command);
         for (std::string& arg : server.args) arg = ResolveAgainst(table.parent_path(), arg);
       }
-      if (entry.backend.host.empty()) entry.backend.host = DefaultHostFor(entry.backend.gateway);
+      if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
       if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
       result.agents.push_back(std::move(entry));
     }
@@ -479,12 +487,52 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
       std::find_if(result.agents.begin(), result.agents.end(),
                    [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
   if (default_agent == result.agents.end()) {
-    std::string known;
-    for (const AgentEntry& entry : result.agents) known += (known.empty() ? "" : ", ") + entry.name;
-    throw pu::GenericError("default_agent does not match any configured agent (have: " + known +
-                           ")");
+    throw pu::GenericError(
+        "default_agent does not match any configured agent (have: " +
+        text::Join(std::views::transform(result.agents,
+                                         [](const AgentEntry& entry) { return entry.name; })) +
+        ")");
   }
   return result;
+}
+
+// One key per field a parser above reads. A field added to a parser and not to its list here is
+// the one mistake this arrangement can still make, so each list is written directly under its
+// parser: the edit that adds a field is an edit to a parser, and the list is what the reader of
+// that function checks against.
+const std::set<std::string>& ReadAgentKeys() {
+  static const std::set<std::string> keys{"name",      "description", "backend",
+                                          "security",  "paging",      "mcp_servers",
+                                          "tool_call_budget", "delegates", "tools",
+                                          "persona"};
+  return keys;
+}
+
+const std::set<std::string>& ReadBackendKeys() {
+  // `ReadBackendFields` in `model::Backend` is what reads these; the system prompt is added by
+  // `ParseBackend`, which is why it is here rather than there.
+  static const std::set<std::string> keys{"gateway",    "host",        "model",
+                                          "api_key",    "temperature", "system_prompt",
+                                          "max_tokens", "thinking",    "context_window"};
+  return keys;
+}
+
+const std::set<std::string>& ReadSecurityKeys() {
+  static const std::set<std::string> keys{"sandbox_root", "max_command_length",
+                                          "forbidden_patterns", "approval_patterns"};
+  return keys;
+}
+
+const std::set<std::string>& ReadPagingKeys() {
+  static const std::set<std::string> keys{"page_lines", "max_lines", "page_bytes",
+                                          "capture_bytes", "retain_bytes", "retain_buffers"};
+  return keys;
+}
+
+const std::set<std::string>& ReadMcpServerKeys() {
+  static const std::set<std::string> keys{"name", "command", "args", "url", "headers",
+                                          "timeout_ms"};
+  return keys;
 }
 
 }  // namespace pu::config

@@ -11,7 +11,7 @@
 
 namespace pu::tools_cli {
 
-enum ExitCode : int {
+enum class ExitCode : int {
   kOk = 0,
   kUsage = 1,
   kProvider = 2,

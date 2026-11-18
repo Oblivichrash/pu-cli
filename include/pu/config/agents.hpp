@@ -4,10 +4,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/config/mcp_server.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/config/security_policy.hpp"
@@ -17,7 +18,7 @@ namespace pu::config {
 struct AgentEntry {
   std::string name;
   std::string description;
-  Backend backend;
+  model::Backend backend;
   SecurityPolicy security;
   paging::Budget paging;
   std::vector<McpServerConfig> mcp_servers;
@@ -65,7 +66,7 @@ ListenOptions ResolveListenOptions(const std::optional<std::string>& flag_bind,
 // Renders one agents.json entry for `model` from `source`, which is the file's text and not a
 // parsed entry: a parsed `api_key` is the expanded secret. A reasoning-only model gets the
 // catalogue's effort; a request carrying none is answered 400 `11150`.
-std::string FormatAgentEntry(const llm::ModelEntry& model, const boost::json::value& source);
+std::string FormatAgentEntry(const model::ModelEntry& model, const boost::json::value& source);
 
 // The entry as the file spells it, before `${ENV}` expansion and before `host` is filled in.
 std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_path,
@@ -81,6 +82,20 @@ std::filesystem::path AgentTableDir(const std::filesystem::path& config_path);
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.
 const std::vector<std::string>& BuiltinToolNames();
+
+// The keys an agents.json entry has, split the way the file splits them. These live beside the
+// parsers rather than beside the command that reports on them: a list kept anywhere else is a
+// second account of what the parser reads, and the two drift the first time a field is added —
+// the parser learns it and the list does not, so a file that uses it is told the field is never
+// read. `ParseAgentEntry` and `pu check` both ask these, which is what keeps them one answer.
+//
+// A key here is one the parser looks at, not one this build acts on: `max_tokens` is read and
+// carried even though no limit is enforced, so it is not reported as unknown.
+const std::set<std::string>& ReadAgentKeys();
+const std::set<std::string>& ReadBackendKeys();
+const std::set<std::string>& ReadSecurityKeys();
+const std::set<std::string>& ReadPagingKeys();
+const std::set<std::string>& ReadMcpServerKeys();
 
 std::optional<ServeOptions> FindServeOptions();
 

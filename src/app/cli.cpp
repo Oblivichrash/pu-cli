@@ -14,84 +14,18 @@
 #include <spdlog/spdlog.h>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/runtime/command_router.hpp"
 #include "pu/llm/model_check.hpp"
 #include "pu/llm/model_listing.hpp"
-#include "pu/llm/probe.hpp"
+#include "pu/llm/field_capture.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/runtime/runtime.hpp"
 
+#include "app/cli_output.hpp"
+
 namespace pu::cli {
-
-namespace {
-
-void PrintChatHelp(Runtime& runtime) { std::cout << runtime.HelpText() << "\n"; }
-
-// Notices are diagnostics, so they go to stderr: stdout carries what was asked for and
-// nothing else, which is what keeps `pu ask "..." | ...` usable.
-void PrintNotice(const ExecutionResult& result) {
-  if (result.notice.empty()) return;
-  if (result.was_streamed) std::cerr << "\n";
-  std::cerr << result.notice << "\n";
-}
-
-// What the turn cost, for a caller that asked. Written on stderr with the other diagnostics:
-// stdout is the answer, and a number beside it would make the answer the second field of a
-// record nobody agreed to.
-void PrintUsage(const ExecutionResult& result) {
-  if (!result.usage) return;
-  const TokenUsage& usage = *result.usage;
-
-  std::ostringstream line;
-  line << "usage: " << usage.prompt_tokens << " prompt, " << usage.completion_tokens
-       << " completion";
-  if (usage.cached_tokens > 0) line << ", " << usage.cached_tokens << " cached";
-  if (usage.total_tokens > 0) line << ", " << usage.total_tokens << " total";
-  // A price only where the product reported one, and named in that product's unit: two
-  // products' units are not comparable, so the unit is printed rather than assumed.
-  if (usage.cost) {
-    line << ", " << usage.cost->amount;
-    if (!usage.cost->unit.empty()) line << " " << usage.cost->unit;
-  }
-  if (result.rounds > 1) line << " over " << result.rounds << " provider calls";
-  std::cerr << line.str() << "\n";
-}
-
-// The failed turn's message, printed once. The executor records it rather than logging it,
-// so the front end decides whether it is a line here or a field somewhere else.
-void PrintFailure(const ExecutionResult& result) {
-  if (!result.has_error) return;
-  std::cerr << (result.error_message.empty() ? "Request failed" : result.error_message) << "\n";
-}
-
-// The exit status a finished turn answers with. A command the router answered is not a
-// provider failure: `pu ask "/help"` did what it was asked.
-int ExitCodeForAsk(const ExecutionResult& result, bool is_command) {
-  // A person stopped the process, which is neither a failure to retry nor one to fix. The
-  // token is global, so it is asked rather than threaded through every result.
-  if (platform::ShutdownRequested()) return kInterrupted;
-  if (is_command) return kOk;
-  // The sandbox refused everything the turn tried. Retrying cannot help, but what has to
-  // change differs: a command or a policy for one, a front end that cannot ask for the
-  // other.
-  if (result.only_unaskable_calls) return kUsage;
-  if (result.only_blocked_calls) return kSandbox;
-  if (!result.has_error) return kOk;
-  return kProvider;
-}
-
-// The backend a read-only command reads. Naming a gateway builds one from the table and
-// never adopts it, so `pu models --gateway nim` leaves the session where it was.
-config::Backend BackendFor(const std::string& gateway, const std::string& model,
-                           Runtime& runtime) {
-  if (gateway.empty()) return runtime.CurrentBackend();
-  config::Backend backend = config::BackendForGateway(gateway);
-  if (!model.empty()) backend.model = model;
-  return backend;
-}
-
-}  // namespace
 
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
                            const std::function<int()>& body, bool ephemeral) {
@@ -106,7 +40,7 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
     return status;
   } catch (const std::exception& e) {
     std::cerr << e.what() << "\n";
-    return kUsage;
+    return static_cast<int>(ExitCode::kUsage);
   }
 }
 
@@ -142,7 +76,12 @@ CommandLine BuildCommandLine() {
       {"ask", "send one prompt to an agent and print the answer"},
       {"chat", "hold a conversation: one turn per line, until you leave"},
       {"check", "read agents.json and report what it resolves to, without asking a provider"},
-      {"delegate", "have another agent answer one question, in a turn of its own"},
+      {"delegate",
+       "have another agent answer one question, in a turn of its own", false,
+       "Offered by hand so that a delegation a model made can be reproduced: without it, the "
+       "only way to repeat one is to read a log and guess. For an ordinary question about "
+       "this workspace, `pu ask` is the command -- this one names an agent that must exist "
+       "and spends a turn of its own."},
       {"models", "list the models a gateway offers, or one agents.json entry for one of them"},
       {"probe",
        "capture a gateway's raw stream and summarise the fields it sent (developer tool)", true,
@@ -258,42 +197,67 @@ CommandLine BuildCommandLine() {
     }
   }
 
+  // The long name an option object answers to. A declared name may carry its short spelling —
+  // `directory,C` — and only the part before the comma is that long name. Matching the whole
+  // string would silently leave every such option off every page.
+  auto long_name_of = [](const std::string& declared_name) {
+    return declared_name.substr(0, declared_name.find(','));
+  };
+
   // A page is a copy of the option objects `all` declared, so the page and the parser cannot
-  // disagree about a flag's wording. `--command` is the positional that named the command, so
-  // a page leaves it out; --help and --version stay, since they are how a page is asked for.
-  auto page = [&](const std::vector<OptionSpec>& own) {
-    boost::program_options::options_description description("Global options");
-    // A declared name may carry its short spelling — `directory,C` — and only the part before
-    // the comma is the long name the option object answers to. Matching the whole string
-    // would silently leave every such option off every page.
-    auto copy = [&](const char* declared_name) {
-      const std::string wanted =
-          std::string(declared_name).substr(0, std::string(declared_name).find(','));
+  // disagree about a flag's wording. Built from a list of names and never from `all` by
+  // filtering: a flag added to a command must not appear on a page by accident, which is what
+  // a filter gets wrong the first time a name is a prefix of another.
+  //
+  // It takes the caption rather than returning one: `options_description` keeps a const
+  // member, so it cannot be assigned and therefore cannot be a return value either.
+  auto fill_page = [&](boost::program_options::options_description& description,
+                       std::vector<std::string> wanted) {
+    // `--help` comes first on every page: it is how the page was asked for, and a reader who
+    // is lost reads the top line. Done here rather than remembered at each call site, which
+    // is how the top-level page and the command pages came to order it differently.
+    wanted.insert(wanted.begin(), "help");
+    for (const std::string& name : wanted) {
       for (const auto& option : line.all.options()) {
-        if (option->long_name() == wanted) {
+        if (option->long_name() == name) {
           description.add(option);
-          return;
+          break;
         }
       }
-    };
-    // --help is how this page was asked for, so it stays on one; --command is the
-    // positional that named the command being described.
-    copy("help");
-    for (const OptionSpec& option : global_options) {
-      if (std::string(option.name) != "command" && std::string(option.name) != "help,h") {
-        copy(option.name);
-      }
     }
-    for (const OptionSpec& option : own) copy(option.name);
-    return description;
   };
+
+  // The names every command answers — minus `command`, the positional that named the command
+  // being described, and minus `help`, which is a page's own way of being asked for and is
+  // added below. One list, so the page `pu --help` prints and the page each command prints
+  // cannot come to hold different flags.
+  std::vector<std::string> shared_names;
+  for (const OptionSpec& option : global_options) {
+    const std::string name = long_name_of(option.name);
+    if (name != "command" && name != "help") shared_names.push_back(name);
+  }
 
   // One page per name the table declares, so a command added to the table cannot be left
   // without one: a page that is missing does not fail, it falls back to `all`, and a reader
   // asking `pu <cmd> --help` would be shown every flag the line has.
+  //
+  // Built in place with its caption rather than default-constructed and filled: the caption is
+  // a const member, so a page made the other way prints the bibliographic default and says
+  // "Options" where the top-level page says "Global options".
   for (const auto& [command, options] : option_table) {
-    line.per_command.emplace(command, page(options));
+    std::vector<std::string> names = shared_names;
+    for (const OptionSpec& option : options) names.push_back(long_name_of(option.name));
+    auto [it, inserted] =
+        line.per_command.try_emplace(command, boost::program_options::options_description{
+                                                  "Global options"});
+    (void)inserted;
+    fill_page(it->second, std::move(names));
   }
+
+  // The page `pu --help` prints: the same shared names, and no others. Everything else in
+  // `all` belongs to one command, and a reader arriving with no command is not choosing
+  // between `--bind` and `--verify`.
+  fill_page(line.global, std::move(shared_names));
 
   boost::program_options::positional_options_description positional;
   positional.add("command", 1);
@@ -320,6 +284,11 @@ std::string CommandLine::HintFor(const std::string& command) const {
   return "";
 }
 
+namespace {
+
+// The listing on its own, without the flags under it. File-local: the only page a caller
+// outside this file sees is `TopLevelPage`, so there is no second caller left to disagree
+// about the shape of the list.
 std::string CommandList(const CommandLine& line) {
   std::ostringstream printed;
   printed << "commands:\n";
@@ -333,151 +302,12 @@ std::string CommandList(const CommandLine& line) {
   return printed.str();
 }
 
-int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
-           bool show_usage) {
-  // The prompt is the whole of what this turn knows. `chat` and `serve` remember, and are
-  // where a conversation that continues belongs; an answer asked for once should not move the
-  // conversation the next `pu ask` inherits.
-  return WithInitializedRuntime(
-      agent, runtime,
-      [&] {
-        bool is_command = false;
-        ExecutionResult result =
-            runtime.ProcessInput(prompt, is_command, platform::ShutdownToken(), nullptr, {},
-                                 nullptr, platform::ShutdownToken());
-        PrintFailure(result);
-        if (!result.has_error) {
-          if (result.was_streamed) {
-            std::cout << "\n";
-          } else if (!result.content.empty()) {
-            std::cout << result.content << "\n";
-          } else if (!is_command) {
-            std::cout << "\n";
-          }
-        }
-        PrintNotice(result);
-        if (show_usage) PrintUsage(result);
-        return ExitCodeForAsk(result, is_command);
-      },
-      /*ephemeral=*/true);
-}
+}  // namespace
 
-int RunChat(const std::string& agent, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::AgentEntry& active = runtime.ActiveAgent();
-    std::string agent_info = "Connected to agent: " + active.name;
-    if (!active.description.empty()) agent_info += " (" + active.description + ")";
-    spdlog::info("{}", agent_info);
-    spdlog::info("Type /help for available commands.");
-
-    std::string input;
-    while (std::cout << "> " << std::flush, std::getline(std::cin, input)) {
-      if (input.empty()) continue;
-
-      if (input == "/exit" || input == "/quit") break;
-
-      try {
-        bool is_command = false;
-        ExecutionResult result =
-            runtime.ProcessInput(input, is_command, platform::ShutdownToken(), nullptr, {},
-                                 nullptr, platform::ShutdownToken());
-        if (result.has_error) {
-          if (is_command && result.error_message.empty()) {
-            std::cout << "Unknown command. ";
-            PrintChatHelp(runtime);
-          } else {
-            PrintFailure(result);
-          }
-        } else if (!result.was_streamed) {
-          if (!result.content.empty()) {
-            std::cout << result.content << "\n";
-          } else if (!is_command) {
-            std::cout << "\n";
-          }
-        }
-
-        PrintNotice(result);
-      } catch (const std::exception& e) {
-        std::cerr << e.what() << "\n";
-      }
-    }
-    std::cout << "\nGoodbye!\n";
-    return kOk;
-  });
-}
-
-// One probe run: a single-token prompt to the agent's backend, the raw stream kept,
-// and the field names the gateway actually sent read back out of it. A ResponseShape
-// for a new gateway is written from this capture rather than from a specification.
-int RunProbe(const std::string& agent, const std::string& gateway, const std::string& model,
-             const std::string& prompt, const std::string& out_dir, bool save, bool listing,
-             Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    tools_cli::ProbeOptions options;
-    options.gateway = gateway;
-    options.model = model;
-    options.prompt = prompt;
-    options.out_dir = out_dir;
-    options.save = save;
-    options.listing = listing;
-    // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
-    // the agent's keys; the standalone tool builds the same table from its own config read.
-    return tools_cli::RunProbe(options, BackendFor(gateway, model, runtime), runtime.Http());
-  });
-}
-
-int RunModels(const std::string& agent, const std::string& gateway, const std::string& model,
-              ModelShape shape, const std::string& entry_id, bool verify, Runtime& runtime) {
-  return WithInitializedRuntime(agent, runtime, [&] {
-    const config::Backend backend = BackendFor(gateway, model, runtime);
-    const std::vector<llm::ModelEntry> models = config::ListModels(backend, runtime.Http());
-
-    // The listing is read once for every shape. Two of them ask nothing else of the network,
-    // and the third only adds a token request per model.
-    if (shape == ModelShape::kEntry) {
-      // A model outside the listing is exactly the one being written for, so a missing id is
-      // an empty entry rather than an error.
-      llm::ModelEntry wanted{entry_id, {}};
-      for (const llm::ModelEntry& listed : models) {
-        if (listed.id == entry_id) {
-          wanted = listed;
-          break;
-        }
-      }
-      const std::optional<boost::json::value> source =
-          config::FindRawAgentEntry(runtime.ConfigPath(), runtime.ActiveAgent().name);
-      if (!source) throw GenericError("Cannot read the entry to copy from " + runtime.ConfigPath());
-      std::cout << config::FormatAgentEntry(wanted, *source) << "\n";
-      return kOk;
-    }
-
-    if (!verify) {
-      std::cout << llm::FormatModelList(
-                       models, config::GatewayName(backend.gateway), backend.host, backend.model,
-                       shape == ModelShape::kCaps ? llm::ListingDetail::kCaps
-                                                  : llm::ListingDetail::kIds)
-                << "\n";
-      return kOk;
-    }
-
-    const std::vector<llm::ModelCheck> checks =
-        llm::VerifyModels(backend, models, runtime.SharedHttp());
-    int answered = 0;
-    for (const llm::ModelCheck& check : checks) {
-      std::cout << check.model << "  ";
-      if (check.answered) {
-        std::cout << "ok";
-        ++answered;
-      } else {
-        std::cout << "unavailable: " << check.detail;
-      }
-      std::cout << "\n";
-    }
-    std::cout << answered << " of " << checks.size() << " model(s) answered\n";
-    // A verification that found a model down is the answer the caller asked for, and a
-    // script needs to read it without parsing the text.
-    return answered == static_cast<int>(checks.size()) ? kOk : kProvider;
-  });
+std::string TopLevelPage(const CommandLine& line) {
+  std::ostringstream printed;
+  printed << CommandList(line) << "\n\n" << line.global;
+  return printed.str();
 }
 
 }  // namespace pu::cli

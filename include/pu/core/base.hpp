@@ -31,9 +31,31 @@ class GenericError : public RuntimeError {
   using RuntimeError::RuntimeError;
 };
 
+// A request the transport carried and a gateway refused, or one that never completed. The
+// status is kept because a caller's next move depends on it: 429 and 5xx are worth asking
+// again, 4xx is not, and the message alone cannot tell them apart without parsing prose.
 class HttpError : public GenericError {
  public:
-  explicit HttpError(const std::string& msg) : GenericError(msg) {}
+  explicit HttpError(const std::string& msg, unsigned status = 0)
+      : GenericError(msg), status_(status) {}
+
+  unsigned status() const { return status_; }
+
+  // Whether asking again could plausibly answer differently. A rate limit, an overloaded
+  // gateway and a server fault are all transient; a malformed request is not, and repeating
+  // it only spends the same time twice.
+  bool IsTransient() const {
+    if (transient_) return true;
+    return status_ == 429 || status_ == 408 || status_ >= 500;
+  }
+
+  // A request that never reached a status at all — a refused connection, a reset socket — is
+  // transient when the client says so, since no status exists to classify it by.
+  void MarkTransient() { transient_ = true; }
+
+ private:
+  unsigned status_ = 0;
+  bool transient_ = false;
 };
 
 namespace uuid {

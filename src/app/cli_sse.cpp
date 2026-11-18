@@ -19,7 +19,7 @@ std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& option
 }
 
 int RunSse(const SseOptions& options, http::HttpClient& http) {
-  return tools_cli::RunSse(options, http);
+  return static_cast<int>(tools_cli::RunSse(options, http));
 }
 
 }  // namespace pu::cli

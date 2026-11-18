@@ -575,3 +575,30 @@ TEST_CASE("A refusal says which kind it is", "[tools][refusal]") {
               R"({"success":false,"blocked":false,"output":"","error":"exit 1","exit_code":1})")
               .refusal == pu::tools::Refusal::kNone);
 }
+
+TEST_CASE("A page keeps its envelope through parsing", "[tools][paging]") {
+  // What a paged result looks like: the text, then the three scopes the envelope adds beside
+  // it. The envelope is what lets a reader draw a page as a page rather than as a whole answer
+  // -- the text alone cannot say which it is.
+  const pu::tools::ToolResult paged = pu::tools::ParseToolResult(
+      R"({"success":true,"blocked":false,"output":"one\ntwo","error":"","exit_code":0,)"
+      R"("lines":{"first":1,"last":2,"of":3500},)"
+      R"("stored":{"printed":3500,"kept":80,"dropped":3420,"printed_bytes":200000,)"
+      R"("kept_bytes":5000,"kept_from":"the end"},)"
+      R"("buffer":{"id":"b1","source":"ls","rank":0}})");
+
+  REQUIRE(paged.valid);
+  REQUIRE(paged.output == "one\ntwo");
+  REQUIRE_FALSE(paged.page.is_null());
+  const auto& page = paged.page.as_object();
+  REQUIRE(page.at("lines").at("of").as_int64() == 3500);
+  REQUIRE(page.at("stored").at("dropped").as_int64() == 3420);
+  REQUIRE(page.at("buffer").at("source").as_string() == "ls");
+
+  // A result with no envelope leaves the field null rather than empty: an empty object would
+  // read as a page showing nothing, which is a different claim from "this was not a page".
+  const pu::tools::ToolResult whole = pu::tools::ParseToolResult(
+      R"({"success":true,"blocked":false,"output":"a.txt","error":"","exit_code":0})");
+  REQUIRE(whole.valid);
+  REQUIRE(whole.page.is_null());
+}

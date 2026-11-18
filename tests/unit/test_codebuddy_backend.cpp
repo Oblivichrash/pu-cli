@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "pu/llm/projection.hpp"
+#include "pu/llm/llm_provider.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -36,14 +38,14 @@ std::string HeaderValue(const std::vector<std::string>& headers, const std::stri
 }  // namespace
 
 TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
+  cfg.host = model::DefaultHostFor(model::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
   auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  auto provider = config::CreateBackend(cfg, std::move(mock_http));
+  auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
@@ -72,21 +74,21 @@ TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[code
 }
 
 TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
+  cfg.host = model::DefaultHostFor(model::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
   auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  auto provider = config::CreateBackend(cfg, std::move(mock_http));
+  auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
   provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url ==
-          config::DefaultHostFor(config::GatewayId::kCodeBuddy) + "/chat/completions");
+          model::DefaultHostFor(model::GatewayId::kCodeBuddy) + "/chat/completions");
   REQUIRE(mock_ptr->last_body.find("\"stream\":true") != std::string::npos);
   REQUIRE(HeaderValue(mock_ptr->last_headers, "Authorization") == "Bearer key");
   REQUIRE(HasHeader(mock_ptr->last_headers, "X-Agent-Intent"));
@@ -94,14 +96,14 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
 }
 
 TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
+  cfg.host = model::DefaultHostFor(model::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
   auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  auto provider = config::CreateBackend(cfg, std::move(mock_http));
+  auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
@@ -119,16 +121,16 @@ TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[code
 }
 
 TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
-  cfg.host = config::DefaultHostFor(config::GatewayId::kCodeBuddy);
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
+  cfg.host = model::DefaultHostFor(model::GatewayId::kCodeBuddy);
   cfg.model = "deepseek-v4-flash";
   cfg.api_key = "key";
 
   auto [first_http, first_ptr] = MakeMockHttpClient();
-  auto first = config::CreateBackend(cfg, std::move(first_http));
+  auto first = llm::CreateBackend(cfg, std::move(first_http));
   auto [second_http, second_ptr] = MakeMockHttpClient();
-  auto second = config::CreateBackend(cfg, std::move(second_http));
+  auto second = llm::CreateBackend(cfg, std::move(second_http));
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
   first->Chat(ChatRequest(history, {}));
@@ -141,17 +143,17 @@ TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
 TEST_CASE("Every backend type carries a thinking level", "[codebuddy][openai][ollama]") {
   // Ollama takes one as a top-level `think`, the OpenAI-compatible types as
   // `reasoning_effort` / `extra_body`; the level is no longer a per-type carve-out.
-  REQUIRE(config::DefaultHostFor(config::GatewayId::kOllama) == "http://localhost:11434");
+  REQUIRE(model::DefaultHostFor(model::GatewayId::kOllama) == "http://localhost:11434");
 }
 
 TEST_CASE("A configured host is not overridden", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
   cfg.host = "http://127.0.0.1:9999/v1";
   cfg.model = "deepseek-v4-flash";
 
   auto [mock_http, mock_ptr] = MakeMockHttpClient();
-  auto provider = config::CreateBackend(cfg, std::move(mock_http));
+  auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
   std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
@@ -162,10 +164,10 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
 }
 
 TEST_CASE("CreateBackend refuses a backend that names no host", "[codebuddy]") {
-  config::Backend cfg;
-  cfg.gateway = config::GatewayId::kCodeBuddy;
+  model::Backend cfg;
+  cfg.gateway = model::GatewayId::kCodeBuddy;
   cfg.model = "deepseek-v4-flash";
 
   auto mock_http = std::make_shared<MockHttpClient>();
-  REQUIRE_THROWS_AS(config::CreateBackend(cfg, std::move(mock_http)), pu::GenericError);
+  REQUIRE_THROWS_AS(llm::CreateBackend(cfg, std::move(mock_http)), pu::GenericError);
 }

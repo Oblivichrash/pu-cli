@@ -87,7 +87,9 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   std::string msg = executor.BuildStaticSystemContext();
 
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
-  REQUIRE(msg.find("step-by-step plan") != std::string::npos);
+  // The plan is asked for in reasoning rather than in the reply: stating it in the reply
+  // competes with the parallel-call guideline below, and costs a round the user did not ask for.
+  REQUIRE(msg.find("Plan before you act, in your reasoning") != std::string::npos);
   // Which end a read starts at is the model's call, so the prompt names both ends — and
   // names them the way the tool's schema does, since a name the schema does not carry
   // comes back as a refusal.
@@ -103,6 +105,41 @@ TEST_CASE("What the environment probe found reaches the request", "[executor]") 
   REQUIRE(context.find("=== Environment ===") != std::string::npos);
   REQUIRE(context.find("OS: \n") == std::string::npos);
   REQUIRE(context.find("Kernel: \n") == std::string::npos);
+}
+
+TEST_CASE("The tool-call budget is stated before the first call", "[executor]") {
+  Executor executor;
+  REQUIRE(executor.BuildStaticSystemContext().find(
+              "Tool-call budget for this turn: 100 calls") != std::string::npos);
+
+  executor.SetToolCallBudget(7);
+  REQUIRE(executor.BuildStaticSystemContext().find(
+              "Tool-call budget for this turn: 7 calls") != std::string::npos);
+}
+
+TEST_CASE("The exit code table reaches the model", "[executor]") {
+  Executor executor;
+  const std::string context = executor.BuildStaticSystemContext();
+
+  REQUIRE(context.find("=== Exit Codes ===") != std::string::npos);
+  // Every code is named, because a model that knows only the ones it has met infers the rest.
+  for (const char* code : {"0 ok", "1 the invocation", "2 a provider refused", "3 the sandbox",
+                           "4 a person stopped it"}) {
+    INFO(code);
+    REQUIRE(context.find(code) != std::string::npos);
+  }
+}
+
+TEST_CASE("An agent's identity reaches the model", "[executor]") {
+  Executor executor;
+  // Absent when the entry named nothing: a heading with no name under it is not a fact.
+  REQUIRE(executor.BuildStaticSystemContext().find("=== Identity ===") == std::string::npos);
+
+  executor.SetAgentIdentity("review", "Reviews a diff and reports what is wrong with it");
+  const std::string context = executor.BuildStaticSystemContext();
+  REQUIRE(context.find("=== Identity ===") != std::string::npos);
+  REQUIRE(context.find("Agent: review") != std::string::npos);
+  REQUIRE(context.find("Role: Reviews a diff") != std::string::npos);
 }
 
 namespace {
@@ -346,6 +383,7 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   std::vector<boost::json::value> ended_args;
   std::vector<std::string> ended_outputs;
   std::vector<std::string> ended_errors;
+  std::vector<boost::json::value> ended_pages;
 
   ToolCallbacks cb;
   cb.on_start = [&](const std::string& id, const std::string& name,
@@ -356,16 +394,21 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
   };
   cb.on_end = [&](const std::string& id, const std::string& name,
                   const boost::json::value& args, const std::string& output,
-                  const std::string& error) {
+                  const std::string& error, const boost::json::value& page) {
     ended_ids.push_back(id);
     ended_names.push_back(name);
     ended_args.push_back(args);
     ended_outputs.push_back(output);
     ended_errors.push_back(error);
+    ended_pages.push_back(page);
   };
 
   Conversation ws;
-  ExecutionResult result = executor.Execute("run it", ws, &mock, toolbox, nullptr, nullptr, cb);
+  ExecutionResult result = executor.Execute("run it", ws,
+                                            {.provider = &mock,
+                                             .toolbox = &toolbox,
+                                             .content_callback = nullptr,
+                                             .tool_callbacks = cb});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -389,6 +432,9 @@ TEST_CASE("Executor fires tool_start/tool_end callbacks around tool execution",
 
   REQUIRE(ended_outputs[0] == "ran");
   REQUIRE(ended_errors[0].empty());
+  // A result that is not a page hands on no envelope: absent is what says "this is the whole
+  // output", and an empty object here would draw an extent of zero lines.
+  REQUIRE(ended_pages[0].is_null());
 
   bool found_paired_tool_msg = false;
   for (const auto& msg : ws.History()) {
@@ -419,7 +465,7 @@ TEST_CASE("A turn's usage sums what every round of the tool loop reported", "[ex
   mock.ReportUsagePerRound(/*prompt_tokens=*/100, /*credit=*/0.05);
 
   Conversation ws;
-  ExecutionResult result = executor.Execute("run it", ws, &mock, toolbox);
+  ExecutionResult result = executor.Execute("run it", ws, {.provider = &mock, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -491,7 +537,7 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[ex
   Conversation ws;
 
   CapturingLLM provider;
-  ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
+  ExecutionResult result = executor.Execute("hello", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
 
@@ -516,7 +562,7 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
   Conversation ws;
 
   CapturingLLM provider;
-  executor.Execute("hello", ws, &provider, toolbox);
+  executor.Execute("hello", ws, {.provider = &provider, .toolbox = &toolbox});
 
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
@@ -537,7 +583,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
 
   Conversation ws;
   FailingLLM provider;
-  const ExecutionResult result = executor.Execute("hello", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("hello", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error);
   REQUIRE(result.error_message.find("maximum context length") != std::string::npos);
@@ -563,7 +609,8 @@ TEST_CASE("A stop the caller asked for is not reported as a failure", "[executor
   const CancelToken withdrawn = std::make_shared<std::atomic<bool>>(true);
 
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox, withdrawn);
+  const ExecutionResult result = executor.Execute(
+      "ask", ws, {.provider = &provider, .toolbox = &toolbox, .cancel_token = withdrawn});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content.empty());
@@ -592,7 +639,7 @@ TEST_CASE("A shutdown abandons the turn without calling it a cancel", "[executor
   } reset;
   (void)reset;
 
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("ask", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.outcome == TurnOutcome::kCompleted);
@@ -609,7 +656,7 @@ TEST_CASE("A reply stopped at the token limit is reported as incomplete", "[exec
 
   StoppingLLM provider("half a sentence", "length");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("write a lot", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("write a lot", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "half a sentence");
@@ -626,7 +673,7 @@ TEST_CASE("A reply the model ended itself carries no remark", "[executor][tool_l
 
   StoppingLLM provider("a whole answer", "stop");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("ask", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "a whole answer");
@@ -648,7 +695,7 @@ TEST_CASE("A tool call without a name still gets an answer in the store", "[exec
   MockLLM provider(std::vector<ToolCall>{call}, "done", /*fire_calls_once=*/true);
 
   Conversation ws;
-  const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("go", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.has_error == false);
 
@@ -675,7 +722,7 @@ TEST_CASE("The model that answered is carried out of the turn", "[executor][tool
 
   StoppingLLM provider("hi", "stop", "gpt-4o-mini-2024-07-18");
   Conversation ws;
-  const ExecutionResult result = executor.Execute("ask", ws, &provider, toolbox);
+  const ExecutionResult result = executor.Execute("ask", ws, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
 }
@@ -690,9 +737,13 @@ TEST_CASE("Reasoning reaches the caller as it is produced", "[executor][tool_loo
   StoppingLLM provider("answer", "stop", "", "weighing the options");
   std::string streamed;
   Conversation ws;
-  const ExecutionResult result =
-      executor.Execute("think", ws, &provider, toolbox, nullptr, nullptr, {},
-                       [&](std::string_view token) { streamed += token; });
+  const ExecutionResult result = executor.Execute(
+      "think", ws,
+      {.provider = &provider,
+       .toolbox = &toolbox,
+       .content_callback = nullptr,
+       .tool_callbacks = {},
+       .reasoning_callback = [&](std::string_view token) { streamed += token; }});
 
   REQUIRE(streamed == "weighing the options");
   REQUIRE(result.content == "answer");
@@ -714,7 +765,8 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
   // The note rides into the store only when the turn is cancellable, which the served turn
   // always is; the CLI passes one too.
   const CancelToken live = std::make_shared<std::atomic<bool>>(false);
-  const ExecutionResult result = executor.Execute("go", ws, &provider, toolbox, live);
+  const ExecutionResult result =
+      executor.Execute("go", ws, {.provider = &provider, .toolbox = &toolbox, .cancel_token = live});
 
   REQUIRE(result.has_error == false);
   REQUIRE(result.content == "done");
@@ -792,7 +844,7 @@ TEST_CASE("A turn every one of whose calls the sandbox refused says so", "[execu
   toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
 
   const ExecutionResult result =
-      executor.Execute("try it", conversation, &provider, toolbox);
+      executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});
 
   REQUIRE(result.blocked_tool_calls == 1);
   REQUIRE(result.unaskable_tool_calls == 0);
@@ -810,7 +862,7 @@ TEST_CASE("A turn refused only for want of an approval channel is a different an
   toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kNobodyToAsk));
 
   const ExecutionResult result =
-      executor.Execute("try it", conversation, &provider, toolbox);
+      executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});
 
   // Both kinds are refusals, and both stop the turn: what differs is whose problem it is.
   REQUIRE(result.blocked_tool_calls == 1);
@@ -829,7 +881,7 @@ TEST_CASE("A refusal the turn recovered from is not the turn's outcome",
   toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
 
   const ExecutionResult result =
-      executor.Execute("try it", conversation, &provider, toolbox);
+      executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});
 
   // The refusal is counted, because it happened, and it is not the outcome: the model read
   // it and still produced an answer.

@@ -2,7 +2,7 @@
 #include "pu/tools/bash.hpp"
 
 #include "pu/core/json.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/tools/policy.hpp"
 
 #include <algorithm>
@@ -91,7 +91,7 @@ std::string BashTool::SourceKey(const std::string& command) const {
 std::string BashTool::PageResult(const paging::Buffer& buffer, const paging::Anchor& anchor,
                                  std::size_t lines) const {
   const paging::Page page = paging::Read(buffer, anchor, lines, pager_.budget().page_bytes);
-  const exec::Verdict& verdict = buffer.verdict();
+  const core::Verdict& verdict = buffer.verdict();
   boost::json::object extra = paging::Envelope(buffer, page);
   return MakeToolResultJson(verdict.ok, page.text, verdict.error, verdict.exit_code, false,
                             Refusal::kNone, &extra);
@@ -117,8 +117,8 @@ std::string BashTool::RunAndPage(const std::string& command, const paging::Ancho
   const pu::CancelToken stop = ctx.control != nullptr ? ctx.control->stop_token : pu::CancelToken{};
   const paging::Budget budget = pager_.budget();
 
-  auto ran = exec::Run(command, stop, sandbox_root_, budget.capture_bytes,
-                       anchor.from_end() ? exec::Keep::kEnd : exec::Keep::kHead);
+  auto ran = core::Run(command, stop, sandbox_root_, budget.capture_bytes,
+                       anchor.from_end() ? core::Keep::kEnd : core::Keep::kHead);
 
   // The user's own words beside a stopped command reach the model beside its result.
   if (ran.verdict.stopped && ctx.control != nullptr && !ctx.control->note.empty()) {
@@ -138,7 +138,7 @@ std::string BashTool::SearchStoredRun(std::string_view needle, std::size_t conte
   }
 
   const paging::Matches matches = paging::Search(*buffer, needle, context, max_lines);
-  const exec::Verdict& verdict = buffer->verdict();
+  const core::Verdict& verdict = buffer->verdict();
 
   boost::json::object extra = paging::Envelope(*buffer, paging::Page{});
   // The page bounds a text read; a search has no page, so it reports its own counts and

@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/backend.hpp"
-#include "pu/llm/probe.hpp"
+#include "pu/model/backend.hpp"
+#include "pu/llm/field_capture.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -44,8 +44,8 @@ TEST_CASE("[probe] an openai stream names its fields at each level", "[probe]") 
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "https://x.example/v1/chat/completions");
@@ -57,44 +57,6 @@ TEST_CASE("[probe] an openai stream names its fields at each level", "[probe]") 
   REQUIRE(report.keys.at("usage.prompt_tokens_details").count("cached_tokens") == 1);
 }
 
-TEST_CASE("[probe] the shape diff names only what the stream never sent", "[probe]") {
-  auto [http, mock] = MakeMockHttpClient();
-  mock->simulate_response = [](const std::string&, const std::string&,
-                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    const std::string raw = kOpenAIStream;
-    std::string copy = raw; cb(copy.data(), copy.size());
-  };
-
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
-                       "Say the single word: pong", std::nullopt);
-
-  // content, reasoning, the cached count (nested), total and credit were all named;
-  // refusal and the completion count (which the split fragment's tail carried) were not.
-  REQUIRE(report.shape_fields_absent ==
-          std::vector<std::string>{"refusal", "completion_tokens"});
-}
-
-TEST_CASE("[probe] a top-level cached count satisfies the nested field", "[probe]") {
-  auto [http, mock] = MakeMockHttpClient();
-  mock->simulate_response = [](const std::string&, const std::string&,
-                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
-    const std::string raw =
-        "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}],"
-        "\"usage\":{\"prompt_tokens\":3,\"prompt_cache_hit_tokens\":2,"
-        "\"completion_tokens\":1,\"total_tokens\":4}}\n"
-        "\n";
-    std::string copy = raw; cb(copy.data(), copy.size());
-  };
-
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
-                       "Say the single word: pong", std::nullopt);
-  REQUIRE(report.stream_parsed);
-  REQUIRE(std::find(report.shape_fields_absent.begin(), report.shape_fields_absent.end(),
-                    std::string{"cached_tokens"}) == report.shape_fields_absent.end());
-}
-
 TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
   auto [http, mock] = MakeMockHttpClient();
   mock->simulate_response = [](const std::string&, const std::string&,
@@ -103,15 +65,13 @@ TEST_CASE("[probe] an ollama stream reads its own shape", "[probe]") {
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOllama, "http://localhost:11434"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOllama, "http://localhost:11434"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE(mock->last_url == "http://localhost:11434/api/chat");
   REQUIRE(report.frames == 1);
   REQUIRE(report.keys.at("message").count("content") == 1);
-  // No ResponseShape to diff against a wire format that is not OpenAI's.
-  REQUIRE(report.shape_fields_absent.empty());
 }
 
 TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
@@ -122,13 +82,36 @@ TEST_CASE("[probe] a stream no frame of which parses says so", "[probe]") {
     std::string copy = raw; cb(copy.data(), copy.size());
   };
 
-  const llm::ProbeReport report =
-      llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                        "Say the single word: pong", std::nullopt);
 
   REQUIRE_FALSE(report.stream_parsed);
   REQUIRE(report.frames == 0);
-  REQUIRE(report.shape_fields_absent.empty());
+  // The code and the byte count are what tell "the gateway answered a page" apart from
+  // "the gateway answered a stream whose shape changed", which is the whole point of a
+  // capture run.
+  REQUIRE(report.http_status == 200);
+  REQUIRE(report.bytes == std::string("<html>gateway error</html>\n").size());
+  REQUIRE(report.error == "no frame of " + std::to_string(report.bytes) + " bytes parsed");
+
+  const std::string text = llm::FormatFieldCapture(report);
+  REQUIRE(text.find("http 200") != std::string::npos);
+  REQUIRE(text.find("bytes parsed") != std::string::npos);
+}
+
+TEST_CASE("[probe] an empty answer says the gateway sent nothing", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback) {};
+
+  const llm::FieldCapture report =
+      llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+                       "Say the single word: pong", std::nullopt);
+
+  REQUIRE(report.http_status == 200);
+  REQUIRE(report.bytes == 0);
+  REQUIRE(report.error == "the gateway answered no bytes");
 }
 
 TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {
@@ -142,7 +125,7 @@ TEST_CASE("[probe] the raw stream lands where --out names", "[probe]") {
   const auto path = std::filesystem::temp_directory_path() / "pu_probe_test.raw";
   std::filesystem::remove(path);
 
-  llm::ProbeStream(BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
+  llm::CaptureFields(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock,
                    "Say the single word: pong", path.string());
 
   REQUIRE(std::filesystem::file_size(path) == std::string(kOpenAIStream).size());
@@ -160,7 +143,7 @@ TEST_CASE("[probe] a listing is walked the way its shape reads it", "[probe]") {
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE(report.parsed);
   REQUIRE(report.http_status == 200);
@@ -179,7 +162,7 @@ TEST_CASE("[probe] a listing is asked for the names its shape reads", "[probe]")
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   // The OpenAI shape names no capability field, so nothing is reported absent: a shape that
   // does not ask is not a gateway that dropped anything.
@@ -194,9 +177,58 @@ TEST_CASE("[probe] a listing that is not JSON says so rather than reporting an e
   };
 
   const llm::ListingReport report = llm::ProbeListing(
-      BackendOfType(config::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
 
   REQUIRE_FALSE(report.parsed);
   REQUIRE(report.error.find("does not parse as JSON") != std::string::npos);
   REQUIRE(report.shape_fields_absent.empty());
+}
+
+TEST_CASE("[probe] both report types answer success by whether the answer parsed", "[probe]") {
+  // The two shapes differ — one describes a stream, the other an object — but the question a
+  // probe's exit code asks is the same, so it is asked of the report rather than spelled out
+  // at each call site where the two could drift apart.
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string frame =
+        "data: {\"choices\":[{\"delta\":{\"text\":\"hi\"},\"stop_reason\":\"stop\"}]}\n\n"
+        "data: [DONE]\n\n";
+    cb(const_cast<char*>(frame.data()), frame.size());
+  };
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, R"({"data":[{"id":"m"}]})"};
+  };
+
+  const llm::FieldCapture capture = llm::CaptureFields(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      std::nullopt);
+  const llm::ListingReport listing =
+      llm::ProbeListing(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE(capture.stream_parsed);
+  REQUIRE(capture.Succeeded());
+  REQUIRE(listing.parsed);
+  REQUIRE(listing.Succeeded());
+}
+
+TEST_CASE("[probe] a report of nothing that parsed is a failure on both paths", "[probe]") {
+  auto [http, mock] = MakeMockHttpClient();
+  mock->simulate_response = [](const std::string&, const std::string&,
+                               const std::vector<std::string>&, pu::http::WriteCallback cb) {
+    const std::string raw = "<html>gateway error</html>\n";
+    std::string copy = raw; cb(copy.data(), copy.size());
+  };
+  mock->simulate_get = [](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, "not json either"};
+  };
+
+  const llm::FieldCapture capture = llm::CaptureFields(
+      BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock, "hi",
+      std::nullopt);
+  const llm::ListingReport listing =
+      llm::ProbeListing(BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *mock);
+
+  REQUIRE_FALSE(capture.Succeeded());
+  REQUIRE_FALSE(listing.Succeeded());
 }

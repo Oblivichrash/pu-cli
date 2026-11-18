@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include "pu/config/backend.hpp"
+#include "pu/model/backend.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -152,9 +152,9 @@ class ScopedTempDir {
 namespace pu::tests {
 
 // A backend pointed at whatever host a test names, with a model that says it was set.
-inline config::Backend BackendOfType(config::GatewayId type, const std::string& host,
+inline model::Backend BackendOfType(model::GatewayId type, const std::string& host,
                                      const std::string& key = "") {
-  config::Backend cfg;
+  model::Backend cfg;
   cfg.gateway = type;
   cfg.host = host;
   cfg.model = "the-active-model";

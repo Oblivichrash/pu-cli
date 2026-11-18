@@ -11,7 +11,7 @@
 
 #include <boost/json.hpp>
 
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/paging/origin.hpp"
 
 namespace pu::paging {
@@ -73,13 +73,13 @@ class Anchor {
 // One command's output: kept whole, indexed by line, immutable once stored.
 class Buffer {
  public:
-  Buffer(std::string id, std::string source, exec::Verdict verdict, std::string text,
-         exec::Extent extent, std::size_t rank = 0);
+  Buffer(std::string id, std::string source, core::Verdict verdict, std::string text,
+         core::Extent extent, std::size_t rank = 0);
 
   const std::string& id() const { return id_; }
   const std::string& source() const { return source_; }
-  const exec::Verdict& verdict() const { return verdict_; }
-  const exec::Extent& extent() const { return extent_; }
+  const core::Verdict& verdict() const { return verdict_; }
+  const core::Extent& extent() const { return extent_; }
   // The run's place in the order runs were started. Only ranks from one chain of runs compare,
   // which is why a pager opening a transcript continues its numbering instead of restarting;
   // 0 means the run names no order, and then no page supersedes any.
@@ -92,9 +92,9 @@ class Buffer {
  private:
   std::string id_;
   std::string source_;
-  exec::Verdict verdict_;
+  core::Verdict verdict_;
   std::string text_;
-  exec::Extent extent_;
+  core::Extent extent_;
   std::size_t rank_ = 0;
   std::vector<std::size_t> line_starts_;
 };
@@ -191,7 +191,7 @@ class Pager {
   // the key rather than counted, so a resumed transcript still reads a question as itself.
   // The buffer id names the run *and this pager*, so a cursor written elsewhere — by an
   // earlier process — finds nothing instead of finding a namesake.
-  std::shared_ptr<const Buffer> Store(exec::Captured captured, exec::Verdict verdict,
+  std::shared_ptr<const Buffer> Store(core::Captured captured, core::Verdict verdict,
                                       std::string source_key = {});
   std::shared_ptr<const Buffer> Find(std::string_view id) const;
 
@@ -206,7 +206,7 @@ class Pager {
   // the source its key derives, which is what makes two answers to one question two runs of one
   // source. It cannot be found by a cursor, because no cursor names it; what it buys is the
   // rank, and the rank is what elides the older answer. `source_key` must not be empty.
-  std::shared_ptr<const Buffer> Record(std::string text, exec::Verdict verdict,
+  std::shared_ptr<const Buffer> Record(std::string text, core::Verdict verdict,
                                        std::string source_key);
 
  private:

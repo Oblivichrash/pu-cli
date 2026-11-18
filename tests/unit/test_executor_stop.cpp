@@ -86,7 +86,7 @@ TEST_CASE("A stop read between rounds ends the turn before the next reply", "[ex
   executor.SetStopCheck(StopsAfter(2, &asked));
 
   Conversation ws;
-  const ExecutionResult result = executor.Execute("go", ws, &model, toolbox);
+  const ExecutionResult result = executor.Execute("go", ws, {.provider = &model, .toolbox = &toolbox});
 
   REQUIRE(counted->executions == 1);
   // A stopped turn is not a failed one: nothing has_error here, and the content is empty
@@ -131,7 +131,7 @@ TEST_CASE("A stop read before a tool call keeps the rest of that round's calls f
 
   ThreeCallLLM model;
   Conversation ws;
-  const ExecutionResult result = executor.Execute("go", ws, &model, toolbox);
+  const ExecutionResult result = executor.Execute("go", ws, {.provider = &model, .toolbox = &toolbox});
 
   // The first call ran; the second was refused the moment the check answered.
   REQUIRE(counted->executions == 1);
@@ -174,7 +174,7 @@ TEST_CASE("A turn with no stop check runs to its own end", "[executor][stop]") {
 
   OneCallLLM model;
   Conversation ws;
-  const ExecutionResult result = executor.Execute("go", ws, &model, toolbox);
+  const ExecutionResult result = executor.Execute("go", ws, {.provider = &model, .toolbox = &toolbox});
 
   REQUIRE(counted->executions == 1);
   REQUIRE(result.content == "done");

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -27,9 +28,14 @@ struct ToolCallbacks {
   // The name and arguments ride with the result as well as with the call: a page that
   // reconnected mid-command receives the end without the start, and what it draws has to
   // come from the end itself.
+  //
+  // `page` is the paging envelope the result carried, or null for a result that was not a
+  // page. It is here rather than folded into `output` because the two answer different
+  // questions: `output` is what the command printed, `page` is how much of that survived and
+  // where the rest is. Without it a page of a 3500-line log draws exactly like a whole reply.
   std::function<void(const std::string& id, const std::string& name,
                      const boost::json::value& args, const std::string& output,
-                     const std::string& error)>
+                     const std::string& error, const boost::json::value& page)>
       on_end;
 };
 
@@ -42,6 +48,20 @@ enum class TurnOutcome {
   kToolBudgetReached,
 };
 
+// What one provider call did. The four states are exclusive, which is why they are one value
+// rather than three flags a caller would have to keep mutually exclusive by hand.
+enum class ProviderOutcome {
+  kReplied,
+  kFailed,
+  kStopped,
+  kAbandoned,
+};
+
+struct ProviderCall {
+  ChatResult reply;
+  ProviderOutcome outcome = ProviderOutcome::kReplied;
+};
+
 struct ExecutionResult {
   std::string content;
   bool was_streamed = false;
@@ -51,8 +71,6 @@ struct ExecutionResult {
   // and the token counts are both their sum; without this the sum has no explanation.
   int rounds = 0;
   std::string notice;
-  // A shape change worth telling the user about, attached to `notice` rather than logged.
-  std::vector<std::string> shape_notes;
   std::string model;
   TurnOutcome outcome = TurnOutcome::kCompleted;
   bool has_error = false;
@@ -71,6 +89,11 @@ struct ExecutionResult {
   bool only_blocked_calls = false;
   // Those refusals were all of the unaskable kind: nothing is wrong with the command.
   bool only_unaskable_calls = false;
+  // The line was a command the router answered, so no provider was called and `content` is the
+  // command's own output. A fact about this turn like `has_error` is, and carried here for the
+  // same reason: the caller that prints the answer and the caller that picks an exit status
+  // both need it, and neither should have to be handed a second out-parameter to get it.
+  bool was_command = false;
 };
 
 class Executor {
@@ -89,6 +112,23 @@ class Executor {
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
   void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
+
+  // Who is answering this turn, in the runtime's own words. Carried into the static context
+  // because a prompt a person wrote says what an agent is for, and an agent that has been
+  // switched to mid-session otherwise answers as whichever agent the model last heard about.
+  // Set beside the system prompt, which is the same part of the same entry.
+  void SetAgentIdentity(std::string name, std::string description) {
+    agent_name_ = std::move(name);
+    agent_description_ = std::move(description);
+  }
+
+  // The workspaces the question this turn is answering has already been asked in. Empty for an
+  // ordinary turn; set by the runtime on a delegated one, which is how a tool that asks another
+  // workspace learns where the question came from. Refreshed on every toolbox rebuild, so a turn
+  // started after the runtime's chain grows sees the new one.
+  void SetDelegatedChain(std::vector<std::filesystem::path> chain) {
+    delegated_visited_ = std::move(chain);
+  }
 
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
@@ -113,19 +153,10 @@ class Executor {
     approval_cv_.notify_all();
   }
 
-  ExecutionResult Execute(const std::string& input, Conversation& conversation,
-                          LLMProvider* provider, Toolbox& toolbox,
-                          CancelToken cancel_token = nullptr,
-                          TokenCallback content_callback = nullptr,
-                          ToolCallbacks tool_callbacks = {},
-                          TokenCallback reasoning_callback = nullptr,
-                          CancelToken command_stop_token = nullptr);
-
-  std::string BuildStaticSystemContext() const;
-  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
-  void AddToolSpending(ExecutionResult& result) const;
-
- private:
+  // Everything one turn needs beyond its input and the conversation it writes to. Named
+  // fields because half of these are callbacks and two of them share a type: a positional
+  // call site could not tell the two `TokenCallback`s apart. No default member initializers,
+  // so that a call site can name only the fields it sets.
   struct Turn {
     LLMProvider* provider;
     Toolbox* toolbox;
@@ -133,13 +164,21 @@ class Executor {
     ToolCallbacks tool_callbacks;
     TokenCallback reasoning_callback;
     CancelToken cancel_token;
+    // A second token, because a command kills its own turn without cancelling the turn that
+    // asked for it: `ask_dir` passes the asking turn's token here so a stop reaches the child.
     CancelToken command_stop_token;
   };
 
+  ExecutionResult Execute(const std::string& input, Conversation& conversation, Turn turn);
+
+  std::string BuildStaticSystemContext() const;
+  // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.
+  void AddToolSpending(ExecutionResult& result) const;
+
+ private:
   ExecutionResult RunToolLoop(Conversation& conversation, const Turn& turn);
 
-  ChatResult CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result,
-                          bool& failed, bool& stopped, bool& abandoned);
+  ProviderCall CallProvider(Conversation& conversation, const Turn& turn, ExecutionResult& result);
 
   void RunToolCalls(Conversation& conversation, const Turn& turn,
                     const std::vector<ToolCall>& calls, ExecutionResult& result);
@@ -164,12 +203,18 @@ class Executor {
 
   std::optional<config::SecurityPolicy> security_policy_;
   std::string system_prompt_;
+  std::string agent_name_;
+  std::string agent_description_;
   // What tools spent on the turn's behalf. Cleared at the start of a turn, and added to the
   // provider's own count before the result is returned.
   ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
 
   int tool_call_budget_ = kDefaultToolCallBudget;
+
+  // Where this turn's question has already been asked. Copied into every ToolContext the turn
+  // builds, so a tool that delegates carries it onward without the executor knowing why.
+  std::vector<std::filesystem::path> delegated_visited_;
 
   std::function<bool()> stop_check_;
 

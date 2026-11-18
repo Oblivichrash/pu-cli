@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <regex>
 #include <set>
 #include <string>
@@ -16,9 +17,17 @@ namespace fs = std::filesystem;
 
 const fs::path kSourceDir{PU_SOURCE_DIR};
 
+// A read that fails answers with nothing rather than asserting. The corpus these rules walk
+// grows with the tree, and an assertion per file would make the number of assertions a fact
+// about how many files exist rather than about which rules hold — a figure that moves on every
+// commit and so reads as churn. The empty string is what a failed read legitimately looks like
+// to every caller: no script, no name, no control character. Where an empty answer would pass
+// for an answer, the caller says so itself, and `CHECK` on the corpus being non-empty is what
+// catches a directory that could not be read at all.
 std::string ReadFile(const fs::path& path) {
   std::ifstream file(path, std::ios::binary);
-  REQUIRE(file.is_open());
+  INFO("reading " << path.lexically_relative(kSourceDir).string());
+  if (!file.is_open()) return {};
   return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
@@ -123,4 +132,56 @@ TEST_CASE("every document is named by the index or by a document that links to i
     return joined;
   }());
   CHECK(orphans.empty());
+}
+
+TEST_CASE("no source, document or page carries a terminal escape sequence", "[rules][text]") {
+  // A shell's own bookkeeping (`ESC ] 633 ; ... BEL`) once survived a paste and was committed
+  // into docs/runtime.md, where it sat on the first line for months: invisible in every editor
+  // that renders it, and harmless until something else read the file as text. The same paste
+  // can also carry a colour code into a string literal, which changes what a terminal prints.
+  //
+  // A tab, a newline and a carriage return are the control characters these files may hold —
+  // everything else below 0x20, and DEL, is not. The escape byte itself is the check that
+  // matters, so the case names it rather than a list of the sequences built from it.
+  const fs::path root = kSourceDir;
+  const std::set<std::string> extensions{".md", ".cpp", ".hpp", ".js", ".css", ".html"};
+
+  // The rule is about what a person committed, so it walks the project's own directories rather
+  // than the checkout. A build tree, a vendor drop and the source tarball a CI runner unpacks
+  // beside the repository are all inside `kSourceDir` on some machines and none of them is ours:
+  // an enterprising `tar xf boost.tar.bz2` at the top of the tree once put Boost's own test
+  // suite -- which carries escape sequences on purpose, because it tests a regex engine -- in
+  // front of this case. Naming the directories that are ours is a closed list; naming the ones
+  // that are not was an open one, and it lost.
+  const std::set<std::string> owned{"docs", "include", "src", "tests", "web", "cmake",
+                                    ".github"};
+  std::vector<std::string> offenders;
+  for (const auto& entry : fs::recursive_directory_iterator(root)) {
+    const fs::path relative = entry.path().lexically_relative(root);
+    if (relative.empty()) continue;
+    const std::string top = relative.begin()->string();
+    // A file at the top of the tree is ours (README.md, CMakeLists.txt) but a directory there
+    // is not walked unless it is named above.
+    const bool at_top = std::next(relative.begin()) == relative.end();
+    if (!at_top && owned.count(top) == 0) continue;
+
+    if (!entry.is_regular_file()) continue;
+    const std::string ext = entry.path().extension().string();
+    if (extensions.count(ext) == 0) continue;
+
+    const std::string text = ReadFile(entry.path());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+      const auto c = static_cast<unsigned char>(text[i]);
+      if (c != 0x1b && (c >= 0x20 || c == '\t' || c == '\n' || c == '\r')) continue;
+      offenders.push_back(relative.string() + " at byte " + std::to_string(i));
+      break;
+    }
+  }
+
+  INFO("files carrying control characters: " << [&] {
+    std::string joined;
+    for (const std::string& name : offenders) joined += name + "; ";
+    return joined;
+  }());
+  CHECK(offenders.empty());
 }

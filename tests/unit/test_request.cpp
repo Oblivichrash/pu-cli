@@ -2,7 +2,7 @@
 #include "pu/llm/projection.hpp"
 #include <catch2/catch_test_macros.hpp>
 
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/session/request.hpp"
 
@@ -25,6 +25,38 @@ session::MessagePayload Assistant(const std::string& text) {
   session::AssistantPayload assistant;
   assistant.content = text;
   return assistant;
+}
+
+// The smallest unit the projection may handle is a pair: the call and the receipt that answers
+// it. A `tool` message whose `tool_call_id` names no call is rejected by every provider, and a
+// call with no receipt leaves the model waiting for a result that never arrives. Every tier is
+// free to compress or remove whole pairs, so this invariant is checked from both directions
+// wherever a tier that removes something is exercised.
+void AssertPairsIntact(const std::vector<ChatMessage>& messages) {
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    bool answered = false;
+    for (const ChatMessage& call : messages) {
+      if (!call.HasToolCalls()) continue;
+      for (const auto& tc : call.tool_calls.as_array()) {
+        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
+      }
+    }
+    INFO("orphaned receipt: " << msg.tool_call_id);
+    REQUIRE(answered);
+  }
+  for (const ChatMessage& call : messages) {
+    if (!call.HasToolCalls()) continue;
+    for (const auto& tc : call.tool_calls.as_array()) {
+      const std::string id = boost::json::value_to<std::string>(tc.at("id"));
+      bool answered = false;
+      for (const ChatMessage& msg : messages) {
+        if (msg.role == "tool" && msg.tool_call_id == id) answered = true;
+      }
+      INFO("orphaned call: " << id);
+      REQUIRE(answered);
+    }
+  }
 }
 
 }  // namespace
@@ -102,6 +134,117 @@ TEST_CASE("A stored system node is passed through", "[request]") {
   REQUIRE(messages[2].content == "a note from the caller");
 }
 
+TEST_CASE("A large argument body is elided and a small one is left alone", "[request]") {
+  // T4: the argument body is the last pool with no bound. T3 keeps the newest ten pairs, and
+  // every one of them re-sends its arguments on each turn -- so a `write_file` of a thousand
+  // lines costs its content in tokens forever, while the confirmation it came back with was
+  // already reduced to a verdict on the output side.
+  session::MessageGraph graph;
+
+  session::AssistantPayload assistant;
+  assistant.content = "writing";
+  // Two calls in one message: a big `write_file` and a small `bash`. Only the first may change,
+  // because eliding a call the model could have re-sent costs a round to recover from.
+  const std::string big_content(20000, 'x');
+  assistant.tool_calls.push_back(session::ToolCallRecord{
+      "call_big", "write_file",
+      boost::json::parse(R"({"path":".pu/agents.json","content":""})")});
+  assistant.tool_calls[0].arguments.as_object()["content"] = big_content;
+  assistant.tool_calls.push_back(
+      session::ToolCallRecord{"call_small", "bash", boost::json::parse(R"({"command":"ls"})")});
+  graph.AppendAfterLeaf(std::move(assistant));
+
+  for (const char* id : {"call_big", "call_small"}) {
+    session::ToolPayload receipt;
+    receipt.tool_call_id = id;
+    receipt.tool_name = std::string(id) == "call_big" ? "write_file" : "bash";
+    receipt.content = "ok";
+    graph.AppendAfterLeaf(std::move(receipt));
+  }
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+
+  // Ten kilobytes of content becomes a line that says what it was, how much went, and which
+  // argument carried it -- while `path` survives, so the model still knows which file it wrote.
+  const std::string rendered = boost::json::serialize(messages.front().tool_calls);
+  REQUIRE(rendered.find("elided") != std::string::npos);
+  REQUIRE(rendered.find(big_content) == std::string::npos);
+  REQUIRE(rendered.find(".pu/agents.json") != std::string::npos);
+  REQUIRE(rendered.find("\"omitted\":\"content\"") != std::string::npos);
+
+  const boost::json::object& big = messages.front().tool_calls.as_array()[0].as_object();
+  const boost::json::object& body = big.at("function").as_object().at("arguments").as_object();
+  // One line of content is still one line, whatever its length: the count is what a reader
+  // uses to judge whether the body was large, and a byte figure alone would not say that.
+  REQUIRE(body.at("lines").as_uint64() == 1);
+
+  // The small call is untouched: it is under the threshold, so nothing about it changes.
+  const auto& small = messages.front().tool_calls.as_array()[1].as_object();
+  REQUIRE_FALSE(small.at("function").as_object().at("arguments").as_object().contains("elided"));
+  REQUIRE(small.at("function").as_object().at("arguments").as_object().at("command") == "ls");
+
+  // Both receipts are still there and both ids still resolve, so the tool messages remain valid.
+  AssertPairsIntact(messages);
+}
+
+TEST_CASE("An elided argument still says how much of it went", "[request]") {
+  session::MessageGraph graph;
+  session::AssistantPayload assistant;
+  assistant.content = "writing";
+  // Comfortably past `kMaxArgumentBytes`, so the tier actually fires: 500 lines of ordinary
+  // text would not reach it, which is the point of a threshold measured in bytes.
+  std::string body;
+  for (int i = 1; i <= 500; ++i) body += "line " + std::to_string(i) + std::string(60, '.') + "\n";
+  assistant.tool_calls.push_back(session::ToolCallRecord{
+      "call_1", "write_file", boost::json::parse(R"({"path":"a.txt","content":""})")});
+  assistant.tool_calls[0].arguments.as_object()["content"] = body;
+  graph.AppendAfterLeaf(std::move(assistant));
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  const auto& args = messages.front()
+                         .tool_calls.as_array()[0]
+                         .as_object()
+                         .at("function")
+                         .as_object()
+                         .at("arguments")
+                         .as_object();
+
+  REQUIRE(args.at("elided") == "arguments");
+  // 500 newlines mean 501 lines: the trailing newline opens a line the text never fills, and
+  // the count is what the model reads, so it must be the count a text editor would show.
+  REQUIRE(args.at("lines").as_uint64() == 501);
+  REQUIRE(args.at("bytes").as_uint64() > 16384);
+  REQUIRE(args.at("path") == "a.txt");
+}
+
+TEST_CASE("A call whose arguments are already a stand-in is not elided twice", "[request]") {
+  // The counters a reader needs are the ones from the first elision. Re-measuring a stand-in
+  // would report the size of the stand-in and shrink it a second time, which loses the only
+  // account of how much the call really carried.
+  session::MessageGraph graph;
+  session::AssistantPayload assistant;
+  assistant.content = "writing";
+  assistant.tool_calls.push_back(session::ToolCallRecord{
+      "call_1", "write_file",
+      boost::json::parse(
+          R"({"elided":"arguments","bytes":40000,"lines":900,"omitted":"content"})")});
+  graph.AppendAfterLeaf(std::move(assistant));
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+  const auto& args = messages.front()
+                         .tool_calls.as_array()[0]
+                         .as_object()
+                         .at("function")
+                         .as_object()
+                         .at("arguments")
+                         .as_object();
+
+  // `as_int64` here rather than `as_uint64`: these numbers come from a parsed literal, which
+  // Boost stores as `int64_t`, whereas the counters the tier writes itself are `uint64_t`.
+  REQUIRE(args.at("bytes").as_int64() == 40000);
+  REQUIRE(args.at("lines").as_int64() == 900);
+}
+
 TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
   session::MessageGraph graph;
   session::AssistantPayload assistant;
@@ -177,11 +320,11 @@ namespace {
 // cannot drift from the writer the projection reads.
 std::string PageJson(const std::string& source, const std::string& buffer,
                      const std::string& text, std::size_t rank) {
-  exec::Verdict verdict;
+  core::Verdict verdict;
   verdict.command = "seq 1 3";
   verdict.ok = true;
 
-  exec::Extent extent;
+  core::Extent extent;
   extent.lines = 3;
   extent.bytes = text.size();
   extent.retained = 3;
@@ -387,12 +530,13 @@ std::vector<std::size_t> ToolPositions(const std::vector<ChatMessage>& messages)
 
 TEST_CASE("A request with no supersession is the transcript itself", "[request]") {
   session::MessageGraph graph;
-  for (int i = 1; i <= 10; ++i) AppendCallAndReceipt(graph, i, Wide(40));
+  // Six pairs is the point below which T3 does nothing, so what this case sees is the transcript
+  // whole: an exploration with no repeat is not a history that needs shrinking, and no amount of
+  // bulk inside one result makes the projection reach for a pair.
+  for (int i = 1; i <= 6; ++i) AppendCallAndReceipt(graph, i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   // Every node, and no system message because this call gave no prompt or environment.
-  // Nothing was superseded, so nothing was compressed: an exploration with no repeat is not a
-  // history that needs shrinking.
   REQUIRE(messages.size() == graph.Size());
   for (const ChatMessage& msg : messages) {
     REQUIRE(msg.content.find("tombstone") == std::string::npos);
@@ -400,17 +544,22 @@ TEST_CASE("A request with no supersession is the transcript itself", "[request]"
 }
 
 TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
-  // One command, run twelve times. Every run but the last is superseded, so eleven receipts
-  // enter T1; the five oldest of those fall to T2 because a cursor six results back is an
-  // invitation to spend a turn on history the conversation has moved past.
+  // One command, run twelve times, so eleven receipts of the twelve are superseded. Two tiers
+  // then act, in order. T3 retires whole call-and-receipt pairs, oldest first, and keeps ten of
+  // them -- four more than the cursor rule, so that T2 still has room to work. What is left is
+  // the newest nine runs: nine superseded receipts and the live one.
+  //
+  // T2 then keeps a cursor on the newest six of those nine, which leaves three older superseded
+  // receipts to tombstone. Both tiers remain visible, which is what the case is about: the
+  // newest run is whole, the newest six superseded receipts still page, and the oldest three
+  // carry a verdict with no way to ask for more.
   session::MessageGraph graph;
   for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
-  REQUIRE(messages.size() == graph.Size());
 
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
-  REQUIRE(tool_at.size() == 12);
+  REQUIRE(tool_at.size() == 10);
 
   int superseded = 0;
   int tombstones = 0;
@@ -423,9 +572,10 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
     // Never both: a receipt is in exactly one tier.
     REQUIRE_FALSE((tombstone && superseded_receipt));
   }
-  // Eleven superseded runs, of which six keep their cursor.
+  // Six superseded receipts keep a cursor, three fall to a tombstone, and the newest run is
+  // neither.
   REQUIRE(superseded == 6);
-  REQUIRE(tombstones == 5);
+  REQUIRE(tombstones == 3);
 
   // The newest run was never superseded and is still whole.
   REQUIRE(messages[tool_at.back()].content.find("line 40 of the output") != std::string::npos);
@@ -434,11 +584,15 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
 TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   // A superseded receipt still holds a `page`, which is a standing invitation to reread it. A
   // tombstone holds what happened and no way to ask for more.
+  //
+  // Twelve runs leave ten pairs after T3; T2 tombstones the three oldest of them and leaves the
+  // newest six superseded receipts paging.
   session::MessageGraph graph;
   for (int i = 1; i <= 12; ++i) AppendSupersedingRun(graph, "build", i, Wide(40));
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
+  REQUIRE(tool_at.size() == 10);
 
   const boost::json::object tombstone = boost::json::parse(messages[tool_at.front()].content).as_object();
   REQUIRE(tombstone.contains("elided"));
@@ -450,11 +604,11 @@ TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   REQUIRE(tombstone.contains("buffer"));
   REQUIRE(tombstone.at("buffer").as_object().contains("source"));
 
-  // A receipt six results in still has its cursor, because six is the newest.
-  const auto kept_index = tool_at.size() - 6;
-  const boost::json::object kept = boost::json::parse(messages[tool_at[kept_index]].content).as_object();
-  REQUIRE(kept.contains("superseded_by"));
-  REQUIRE_FALSE(kept.contains("elided"));
+  // The newest run is whole, so the body it holds is readable.
+  const boost::json::object newest = boost::json::parse(messages[tool_at.back()].content).as_object();
+  REQUIRE_FALSE(newest.contains("elided"));
+  REQUIRE(boost::json::value_to<std::string>(newest.at("output"))
+              .find("line 40 of the output") != std::string::npos);
 }
 
 TEST_CASE("A registry of six or fewer superseded results keeps every cursor", "[request]") {
@@ -564,19 +718,11 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
 
-  // Every call still has the receipt that answers it: the projection never removes a message.
-  REQUIRE(messages.size() == graph.Size());
-  for (const ChatMessage& msg : messages) {
-    if (msg.role != "tool") continue;
-    bool answered = false;
-    for (const ChatMessage& call : messages) {
-      if (!call.HasToolCalls()) continue;
-      for (const auto& tc : call.tool_calls.as_array()) {
-        if (boost::json::value_to<std::string>(tc.at("id")) == msg.tool_call_id) answered = true;
-      }
-    }
-    REQUIRE(answered);
-  }
+  // Every call still has the receipt that answers it, and every receipt still has its call. T3
+  // does remove pairs, so the transcript is shorter than the graph, but it never removes half of
+  // one.
+  REQUIRE(messages.size() < graph.Size());
+  AssertPairsIntact(messages);
 
   int tombstones = 0;
   for (const ChatMessage& msg : messages) {
@@ -588,5 +734,32 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
       REQUIRE(msg.content.find("tombstone") == std::string::npos);
     }
   }
+  // The pages that fell past the cursor floor are tombstoned; the answer is never one of them.
   REQUIRE(tombstones > 0);
+}
+
+TEST_CASE("The oldest tool-call pairs are retired and no pair is ever split", "[request]") {
+  // T3 is the only tier that takes messages out of the transcript, and the smallest thing it may
+  // take is a pair: the assistant's `tool_calls` and the receipts that answer them. A `tool`
+  // message whose `tool_call_id` names no call is rejected by every provider, and a call with no
+  // receipt leaves the model waiting for a result that will never arrive. So this case checks
+  // both directions, and it checks that the bound is a count rather than a size.
+  session::MessageGraph graph;
+  for (int i = 1; i <= 20; ++i) AppendSupersedingRun(graph, "build", i, Wide(4));
+
+  const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
+
+  // The graph holds twenty pairs; the projection keeps ten of them, so two hundred and twenty
+  // lines of re-sent output become a hundred and ten.
+  REQUIRE(graph.Size() == 40);
+  REQUIRE(messages.size() == 20);
+
+  AssertPairsIntact(messages);
+
+  // It is the *oldest* that went: the newest run is still there, and the first run is not.
+  REQUIRE(messages.back().content.find("line 4 of the output") != std::string::npos);
+  for (const ChatMessage& msg : messages) {
+    if (msg.role != "tool") continue;
+    REQUIRE_FALSE(msg.tool_call_id == "call_build_1");
+  }
 }

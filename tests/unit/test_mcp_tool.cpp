@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/mcp_tool.hpp"
+#include "pu/runtime/mcp_tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <boost/json.hpp>
@@ -7,6 +7,7 @@
 #include <string>
 
 using namespace pu;
+using namespace pu::runtime;
 using namespace pu::tools;
 
 namespace {

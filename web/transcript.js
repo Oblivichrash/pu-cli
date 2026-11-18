@@ -148,6 +148,7 @@ function handleToolEnd(payload) {
       args: payload.args ?? null,
       output: payload.output || "",
       error: payload.error || "",
+      page: payload.page ?? null,
       status: "done",
       collapsed: true,
     });
@@ -155,6 +156,7 @@ function handleToolEnd(payload) {
   }
   block.output = payload.output || "";
   block.error = payload.error || "";
+  block.page = payload.page ?? null;
   block.status = "done";
   updateCurrentAssistantBlocks();
 }

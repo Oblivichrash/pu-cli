@@ -2,7 +2,7 @@
 #pragma once
 
 #include "pu/core/http_client.hpp"
-#include "pu/config/gateway.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/llm/streaming_provider.hpp"
 
 #include <functional>
@@ -28,7 +28,7 @@ struct ResponseShape {
   std::string_view completion_tokens_field = "completion_tokens";
   std::string_view total_tokens_field = "total_tokens";
   // What a call cost is a product fact, not a protocol one: two products share this shape and
-  // only one of them reports a price. `config::Gateway::billing` says which, and where.
+  // only one of them reports a price. `model::Gateway::billing` says which, and where.
 
   // One gateway nests the cached prompt, another puts it at the top level; both carry the
   // same count. The nested name is tried first.
@@ -38,13 +38,6 @@ struct ResponseShape {
 
   std::string_view finish_reason_field = "finish_reason";
 };
-
-// The shape's field names a reply never carried. `required_only` is what the runtime can act
-// on, since `content` and `reasoning_content` are legitimately absent from a tool-call reply
-// and from a model that does not reason; a capture asks about those too.
-std::vector<std::string> AbsentShapeFields(
-    const ResponseShape& shape, const std::function<bool(std::string_view)>& seen,
-    bool required_only);
 
 }  // namespace pu::llm
 
@@ -63,12 +56,20 @@ class OpenAIProtocol : public StreamingProvider {
     float temperature = 0.7f;
     std::string api_key;
     std::optional<int> max_tokens;
+    // Sent only when set: an absent value leaves the product's own default in place.
+    std::optional<float> top_p;
+    std::optional<int> seed;
+    // The sequences that end a reply early, sent as `stop`. Empty sends none.
+    std::vector<std::string> stop;
+    // A schema the reply must satisfy, sent as `response_format`. Absent leaves the reply
+    // prose, which is what a turn with no schema asked for.
+    std::optional<boost::json::value> response_schema;
     ThinkingLevel thinking = ThinkingLevel::kServerDefault;
     std::function<std::vector<std::string>()> extra_headers;
     llm::ResponseShape shape;
     // How the product that built this provider prices a call. Default `kNone`: a provider
     // built without a gateway behind it — a test, a probe — must not invent a price.
-    config::Billing billing;
+    model::Billing billing;
   };
 
  protected:
@@ -79,8 +80,9 @@ class OpenAIProtocol : public StreamingProvider {
 
   std::string BuildRequest(std::span<const ChatMessage> history,
                            std::span<const ToolDefinition> tools) const override;
-  void ParseData(std::string_view data, const ChatRequest& request) override;
-  void ResetAccumulators() override;
+  void ParseData(std::string_view event, std::string_view data,
+                 const ChatRequest& request) override;
+  void ResetTurnState() override;
   void FinishStream(const ChatRequest& request) override;
 
  private:
@@ -103,7 +105,7 @@ class OpenAIProtocol : public StreamingProvider {
   int reply_choice_index_ = -1;
   bool reported_extra_choice_ = false;
 
-  // The gateway's refusal text, kept apart from `content_` until the stream ends: a
+  // The gateway's refusal text, kept apart from the reply until the stream ends: a
   // reply can arrive with both, and folding one into the other mid-stream would make
   // the two indistinguishable.
   std::string refusal_;

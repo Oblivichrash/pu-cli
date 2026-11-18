@@ -4,7 +4,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/logging.hpp"
-#include "pu/exec/run.hpp"
+#include "pu/core/process.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
 #include "pu/tools/toolbox.hpp"
@@ -26,15 +26,6 @@
 namespace pu {
 
 namespace {
-
-std::string JoinQuoted(const std::vector<std::string>& names) {
-  std::string joined;
-  for (const std::string& name : names) {
-    if (!joined.empty()) joined += ", ";
-    joined += "\"" + name + "\"";
-  }
-  return joined;
-}
 
 std::string StopNotice(const std::string& finish_reason) {
   if (finish_reason.empty()) return "";
@@ -69,7 +60,7 @@ std::string WindowsKernelVersion() {
 
 #ifndef _WIN32
 std::string RunShellCapture(const std::string& cmd) {
-  std::string output = pu::exec::Run(cmd, pu::CancelToken{}, "", 0).captured.text;
+  std::string output = pu::core::Run(cmd, pu::CancelToken{}, "", 0).captured.text;
   while (!output.empty() && (output.back() == '\n' || output.back() == '\r' ||
                              output.back() == ' ' || output.back() == '\t')) {
     output.pop_back();
@@ -110,9 +101,22 @@ void Executor::ProbeStaticEnvironment() {
 std::string Executor::BuildStaticSystemContext() const {
   std::ostringstream oss;
 
+  // First, because every section below is read as this agent's view of the machine. Left out
+  // when the entry named nothing: a heading with no name under it is a line the model spends
+  // reasoning about rather than a fact.
+  if (!agent_name_.empty() || !agent_description_.empty()) {
+    oss << "=== Identity ===\n";
+    if (!agent_name_.empty()) oss << "Agent: " << agent_name_ << "\n";
+    if (!agent_description_.empty()) oss << "Role: " << agent_description_ << "\n";
+  }
+
   oss << "=== Environment ===\n";
   oss << "OS: " << static_env_info_.os_name << "\n";
   oss << "Kernel: " << static_env_info_.kernel_version << "\n";
+  // Stated up front rather than only when it runs out. A budget the model learns about at the
+  // last call is a budget it cannot plan against: the exhaustion notice already arrives after
+  // there is nothing left to spend it on.
+  oss << "Tool-call budget for this turn: " << tool_call_budget_ << " calls\n";
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -138,9 +142,17 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << ".\n";
   }
 
+  oss << "=== Exit Codes ===\n";
+  oss << "0 ok, 1 the invocation or its configuration was wrong, 2 a provider refused or was "
+         "unreachable, 3 the sandbox refused every call the turn tried, 4 a person stopped it. "
+         "A `bash` result carries the command's own exit code, which is whatever the command "
+         "meant by it; these four are what this program exits with.\n";
+
   oss << "=== Tool Use Guidelines ===\n";
-  oss << "1. Before calling any tool, output a concise step-by-step plan. Only execute tools after "
-         "stating the plan.\n";
+  // Not "state the plan before every call": that competes with the parallel-call guideline
+  // below, and a round spent on a plan the user did not ask for is a round not spent working.
+  oss << "1. Plan before you act, in your reasoning. Write a plan into your reply only when its "
+         "steps tell the user something they could not read off the work itself.\n";
   oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
          "read from its head (the default), and a log, a build's output, or a failure is read "
          "from its tail with at='tail'.\n";
@@ -187,24 +199,15 @@ bool Executor::AskApproval(const std::string& command, std::string& note) {
 }
 
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
-                                  LLMProvider* provider, Toolbox& toolbox,
-                                  CancelToken cancel_token,
-                                  TokenCallback content_callback,
-                                  ToolCallbacks tool_callbacks,
-                                  TokenCallback reasoning_callback,
-                                  CancelToken command_stop_token) {
+                                  Turn turn) {
   ChatMessage user_turn;
-  user_turn.role = session::kUserRole;
+  user_turn.role = kUserRole;
   user_turn.content = input;
   conversation.Append(user_turn);
 
   // A turn's tally starts at nothing. What a tool spends on its behalf is added here, so a
   // receipt can say what the call cost rather than only what the model that asked cost.
   spent_by_tools_ = ToolContext::Spending{};
-
-  const Turn turn{provider,          &toolbox,          std::move(content_callback),
-                  std::move(tool_callbacks), std::move(reasoning_callback), cancel_token,
-                  command_stop_token};
 
   ExecutionResult result = RunToolLoop(conversation, turn);
   AddToolSpending(result);
@@ -251,6 +254,7 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
 
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
+  tool_ctx.delegated_visited = delegated_visited_;
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
   // The tally belongs to the turn: a tool adds to it, and the turn reports it beside what its
   // own model cost.
@@ -267,16 +271,15 @@ void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult&
   }
 
   ChatMessage assistant_msg;
-  assistant_msg.role = session::kAssistantRole;
+  assistant_msg.role = kAssistantRole;
   assistant_msg.content = chat_result.content;
   assistant_msg.reasoning = chat_result.reasoning;
   assistant_msg.tool_calls = std::move(calls);
   conversation.Append(assistant_msg);
 }
 
-ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
-                                  ExecutionResult& result, bool& failed, bool& stopped,
-                                  bool& abandoned) {
+ProviderCall Executor::CallProvider(Conversation& conversation, const Turn& turn,
+                                    ExecutionResult& result) {
   session::RequestInputs inputs;
   inputs.system_prompt = system_prompt_;
   inputs.environment = BuildStaticSystemContext();
@@ -346,32 +349,21 @@ ChatResult Executor::CallProvider(Conversation& conversation, const Turn& turn,
                    boost::json::serialize(boost::json::array(chat_result.unread_fields.begin(),
                                                              chat_result.unread_fields.end())));
     }
-    if (!chat_result.missing_fields.empty()) {
-      spdlog::warn("fields this build reads that the reply never sent: {}",
-                   boost::json::serialize(boost::json::array(chat_result.missing_fields.begin(),
-                                                             chat_result.missing_fields.end())));
-      result.shape_notes.emplace_back("the reply never carried " +
-                               JoinQuoted(chat_result.missing_fields) +
-                               "; this build reads a name the gateway no longer sends");
-    }
-    return chat_result;
+    return {.reply = std::move(chat_result), .outcome = ProviderOutcome::kReplied};
   } catch (const std::exception& e) {
     const bool cancelled =
         turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire);
     if (cancelled) {
       spdlog::debug("Request stopped by the caller: {}", e.what());
-      stopped = true;
-      return {};
+      return {.reply = {}, .outcome = ProviderOutcome::kStopped};
     }
     if (platform::ShutdownRequested()) {
       spdlog::debug("Request abandoned as the process shut down: {}", e.what());
-      abandoned = true;
-      return {};
+      return {.reply = {}, .outcome = ProviderOutcome::kAbandoned};
     }
-    failed = true;
     result.has_error = true;
     result.error_message = "Request failed: " + text::ReadableError(e.what());
-    return {};
+    return {.reply = {}, .outcome = ProviderOutcome::kFailed};
   }
 }
 
@@ -422,10 +414,16 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     }
 
     if (turn.tool_callbacks.on_end) {
+      // The envelope travels beside the text rather than inside it: `output` is what the
+      // command printed and `page` is how much of it this result is showing, so a reader that
+      // only wants the text is not made to unwrap a shape it does not read.
+      const boost::json::value page = parsed.valid ? parsed.page : boost::json::value{};
       if (parsed.valid) {
-        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error);
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, parsed.output, parsed.error,
+                                   page);
       } else {
-        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, tool_result, "");
+        turn.tool_callbacks.on_end(call.id, call.name, call.arguments, tool_result, "",
+                                   boost::json::value{});
       }
     }
 
@@ -455,9 +453,8 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
   ExecutionResult result;
-  bool budget_reached = false;
-  bool wrap_up_asked = false;
-  bool abandoned = false;
+    bool budget_reached = false;
+    bool wrap_up_asked = false;
 
   // The tool-call budget is what this loop counts, and the two stop checks inside it are what
   // end it early; neither is a property of this loop, so both are read rather than held here.
@@ -499,7 +496,7 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
         return result;
       }
       ChatMessage wrap_up;
-      wrap_up.role = session::kUserRole;
+      wrap_up.role = kUserRole;
       wrap_up.content =
           "[system] The tool-call budget for this turn is exhausted. Do not call any "
           "more tools; answer now from what you have gathered so far.";
@@ -510,15 +507,16 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       break;
     }
 
-    bool failed = false;
-    bool stopped = false;
-    ChatResult chat_result = CallProvider(conversation, turn, result, failed, stopped, abandoned);
-    if (failed) break;
-    if (stopped) {
+    ProviderCall call = CallProvider(conversation, turn, result);
+    if (call.outcome == ProviderOutcome::kFailed) break;
+    if (call.outcome == ProviderOutcome::kStopped) {
       conversation.SealInterruptedToolCalls();
       return result;
     }
-    if (abandoned) return result;
+    if (call.outcome == ProviderOutcome::kAbandoned) {
+      return result;
+    }
+    ChatResult& chat_result = call.reply;
 
     if (chat_result.tool_calls.empty()) {
       std::string response = chat_result.content;
@@ -585,11 +583,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
   if (result.content.empty() && result.tool_call_count > 0) {
     spdlog::info("Tool execution completed without a final text response - considered successful.");
-  }
-
-  for (const std::string& note : result.shape_notes) {
-    if (!result.notice.empty()) result.notice += "\n";
-    result.notice += note;
   }
 
   return result;

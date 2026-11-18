@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/serve_internal.hpp"
+#include "serve/serve_internal.hpp"
 #include "pu/app/cli.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/core/platform.hpp"
@@ -209,6 +209,48 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   REQUIRE(j.as_array().size() == 3);
   REQUIRE(j.as_array()[2].at("output") == "plain text from a tool");
   REQUIRE(j.as_array()[2].at("error") == "");
+  // Not a page, so no envelope: absent is what every result said before the field existed.
+  REQUIRE_FALSE(j.as_array()[2].as_object().contains("page"));
+}
+
+TEST_CASE("serve API /api/history replays a page as a page", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  auto session = harness.RuntimeRef().DefaultSession();
+  REQUIRE(session != nullptr);
+  pu::Conversation& conversation = session->Messages();
+  conversation.Append("user", "show the log");
+
+  pu::ChatMessage assistant;
+  assistant.role = "assistant";
+  assistant.tool_calls = boost::json::array{boost::json::object{
+      {"id", "call_1"},
+      {"type", "function"},
+      {"function", boost::json::object{{"name", "execute_bash"},
+                                       {"arguments", boost::json::object{{"command", "cat log"}}}}}}};
+  conversation.Append(assistant);
+
+  // The shape `execute_bash` writes for a run it had to page: the text, then the envelope
+  // beside it. A reloaded turn has to draw this as a page rather than as a whole answer.
+  pu::ChatMessage receipt;
+  receipt.role = "tool";
+  receipt.tool_call_id = "call_1";
+  receipt.tool_name = "execute_bash";
+  receipt.content =
+      R"({"success":true,"blocked":false,"output":"one\ntwo","error":"","exit_code":0,)"
+      R"("lines":{"first":1,"last":2,"of":3500},)"
+      R"("stored":{"printed":3500,"kept":80,"dropped":3420,"printed_bytes":200000,)"
+      R"("kept_bytes":5000,"kept_from":"the end"},)"
+      R"("buffer":{"id":"b1","source":"cat log","rank":0}})";
+  conversation.Append(receipt);
+
+  auto j = HistoryOf(client);
+  const auto& turn = j.as_array()[2].as_object();
+  REQUIRE(turn.at("output") == "one\ntwo");
+  REQUIRE(turn.contains("page"));
+  REQUIRE(turn.at("page").at("lines").at("of").as_int64() == 3500);
+  REQUIRE(turn.at("page").at("stored").at("dropped").as_int64() == 3420);
 }
 
 TEST_CASE("serve API /api/agents", "[serve][api]") {
@@ -474,7 +516,7 @@ TEST_CASE("serve API /api/rewind refuses while a tool call is pending", "[serve]
 // in a document nobody re-reads.
 TEST_CASE("every route states the audience it answers, and none of them silently widened",
           "[serve][api][rules]") {
-  const auto routes = pu::cli::detail::HttpRoutes();
+  const auto routes = pu::serve::detail::HttpRoutes();
   REQUIRE_FALSE(routes.empty());
 
   // The one route whose answer is a fact about this machine rather than about the session: the
@@ -483,21 +525,21 @@ TEST_CASE("every route states the audience it answers, and none of them silently
   // there, not a route.
   const std::set<std::string> kLoopbackOnly{"/api/servers"};
 
-  for (const pu::cli::detail::Route& route : routes) {
+  for (const pu::serve::detail::Route& route : routes) {
     const std::string target{route.target};
     INFO(target);
     if (kLoopbackOnly.count(target) > 0) {
-      CHECK(route.audience == pu::cli::detail::Audience::kLoopback);
+      CHECK(route.audience == pu::serve::detail::Audience::kLoopback);
       continue;
     }
-    CHECK(route.audience == pu::cli::detail::Audience::kAnyone);
+    CHECK(route.audience == pu::serve::detail::Audience::kAnyone);
   }
 }
 
 TEST_CASE("an audience admits a caller by the two questions it can fail", "[serve][api][rules]") {
-  using pu::cli::detail::Admission;
-  using pu::cli::detail::Admit;
-  using pu::cli::detail::Audience;
+  using pu::serve::detail::Admission;
+  using pu::serve::detail::Admit;
+  using pu::serve::detail::Audience;
 
   // Anyone: the address is irrelevant.
   CHECK(Admit(Audience::kAnyone, "192.168.1.10") == Admission::kAllowed);
@@ -586,7 +628,7 @@ TEST_CASE("serve page files are mounted and served from the web directory", "[se
 // the shipped binary actually uses. That lookup derives a path from the module handle, and a wrong
 // answer there is silent: the assets simply 404 and the page comes up blank.
 TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
-  const fs::path exe_dir = pu::cli::detail::ExecutableDir();
+  const fs::path exe_dir = pu::serve::detail::ExecutableDir();
   REQUIRE_FALSE(exe_dir.empty());
   REQUIRE(fs::is_directory(exe_dir));
 

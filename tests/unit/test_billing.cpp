@@ -16,14 +16,14 @@
 #include <string>
 #include <vector>
 
-#include "pu/config/gateway.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/llm/openai_provider.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 
 namespace {
 
 // One SSE answer whose usage object is `usage`, so a case can vary only the price field.
-pu::OpenAIProvider::Config ConfigWithUsage(const std::string& usage, pu::config::Billing billing) {
+pu::OpenAIProvider::Config ConfigWithUsage(const std::string& usage, pu::model::Billing billing) {
   pu::OpenAIProvider::Config config;
   config.model = "test-model";
   config.billing = billing;
@@ -48,7 +48,7 @@ TEST_CASE("A price is read only from the field the product names", "[openai][usa
 
   // The product reports a price: read it, and keep the unit the product named.
   pu::OpenAIProvider reporting(ConfigWithUsage(
-                               "{}", {pu::config::BillingKind::kReported, "credit", "credits"}),
+                               "{}", {pu::model::BillingKind::kReported, "credit", "credits"}),
                            std::move(mock_http));
   auto priced = reporting.Chat(pu::ChatRequest(OneQuestion(), {}));
   REQUIRE(priced.usage.has_value());
@@ -96,7 +96,7 @@ TEST_CASE("A price that is not a number is not read as one", "[openai][usage][bi
   };
 
   pu::OpenAIProvider reporting(ConfigWithUsage(
-                               "{}", {pu::config::BillingKind::kReported, "credit", "credits"}),
+                               "{}", {pu::model::BillingKind::kReported, "credit", "credits"}),
                            std::move(mock_http));
   auto result = reporting.Chat(pu::ChatRequest(OneQuestion(), {}));
 
