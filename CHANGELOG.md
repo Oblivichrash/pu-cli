@@ -8,6 +8,44 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Added
 
+- **Anthropic is a gateway of its own, not an OpenAI row with a different host.**
+  `anthropic` speaks the Messages wire format, which differs from the OpenAI one in
+  four ways that are not renamings: content is a list of blocks rather than a string
+  beside a `tool_calls` array, the reply is dispatched on the SSE `event:` name that
+  OpenAI never sets, the system prompt is a top-level field rather than a message,
+  and `max_tokens` is required rather than optional. `AnthropicProvider` builds the
+  block list from the message the session stores and folds the block events back
+  into the string and call list it stores, which makes it the one file where the two
+  representations meet. Key in `ANTHROPIC_API_KEY`, read from `x-api-key` rather
+  than a bearer, with `anthropic-version: 2023-06-01` on every route. A `tool`
+  message becomes a `tool_result` block on a user turn because this API has no role
+  for one; a text block is refused beside thinking, so `temperature` is dropped when
+  a level is set. The catalogue answers the OpenAI `{"data":[{"id":...}]}` shape, so
+  the same reader lists it.
+
+- **A transient failure is retried, and a permanent one is not.** `core::WithRetry`
+  and `RetryPolicy` now sit between `StreamingProvider::Chat` and one attempt, so
+  every gateway gets the same behaviour from one place. A 408, 429 or 5xx doubles
+  from 500 ms to an 8 s ceiling; a `Retry-After` header outranks that guess up to
+  30 s, and a value that is not a whole number of seconds is ignored rather than
+  guessed at. `HttpError` carries the status it was refused with and says whether
+  it is transient, so the decision is made from the failure rather than from a
+  string. **Known defect:** a retry after output has started replays that output
+  into a caller whose `on_content` already fired; only a failure before the first
+  byte is safe to repeat, and this build does not yet distinguish the two.
+
+- **Sampling knobs and structured output reach the wire.** `top_p`, `seed` and
+  `stop` are backend fields that are sent only when set, so an absent one leaves
+  the provider's own default in place rather than substituting this build's.
+  `response_schema` is sent as OpenAI's `response_format` with `strict: true`;
+  Ollama has no such field and drops it. Each product spells them its own way —
+  `stop` for OpenAI, `stop_sequences` for Anthropic, `options.stop` for Ollama.
+
+- **Whether a gateway prefixes its catalogue ids with its own name is a row in the
+  table, not a string comparison.** `Gateway::prefixes_agent_name` replaces the
+  `gateway == "codebuddy"` test in `AgentNameFor`, so the next product whose ids are
+  unique only inside its own catalogue declares it where it declares its host.
+
 - **The oldest tool-call pairs are retired from the transcript.** Scaffolding was the one pool
   still unbounded: every `execute_bash` the conversation had ever made was re-sent on every
   turn, `tool_calls[].arguments` included, long after the result had been replaced and the

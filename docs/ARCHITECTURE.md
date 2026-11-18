@@ -645,11 +645,28 @@ resolves the name.
 A protocol stays what it was — the implementation of how a gateway talks. `openai` is split into
 `llm/openai_protocol.{hpp,cpp}` (the wire format) and `OpenAIProvider` (that protocol at one
 host with one set of headers), because a change to the SSE parse and a change to a gateway's
-headers are different changes; `ollama` keeps protocol and provider in one class. The gateway
+headers are different changes; `ollama` keeps protocol and provider in one class. `anthropic`
+is a third protocol rather than a variant of `openai`: the text arrives as a list of content
+blocks rather than one string, the frame type is named by the SSE `event:` field rather than a
+field inside the JSON, the system prompt is a request field rather than a message, and the key
+travels in `x-api-key` rather than a bearer. `AnthropicProvider` is therefore the one place in
+the layer where two representations of a message meet, and it is the file to read first when
+that translation goes wrong. The gateway
 abstraction stops short of one thing the design chose not to build yet: a gateway offering more
 than one protocol, which would need an `entry` between the gateway and the protocol. Every gateway
 measured so far speaks exactly one, so that layer is deferred rather than carried as unused
 state.
+
+### Retries
+
+A transient provider failure is retried below the turn, not above it. `core/retry.hpp` holds
+`RetryPolicy` and `WithRetry`; `StreamingProvider::Chat` wraps the single attempt in it, so a
+caller reading a reply never sees a `429` or a `503` that would have succeeded on a second
+try. The classification lives with the error: `HttpError` carries the status and marks itself
+transient at the one place that knows — a `408`, `429` or `5xx` is, a refusal is not — rather
+than a list of codes in the retry loop. A mid-stream failure is the known exception: content
+has already been handed to `on_content`, so a retry there would repeat it, and the guard for
+that is still to be written. [providers.md](providers.md) gives the statuses and the delays.
 
 ### Dependency direction
 

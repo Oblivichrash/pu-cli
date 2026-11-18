@@ -35,30 +35,38 @@ subclass overrides it.
 base URL plus a header set. Its gateway behavior is recorded in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md).
 
+`anthropic` **is** a third protocol. Its content is a list of blocks rather than a string, its
+reply is dispatched on the SSE `event:` name that OpenAI never sets, and its system prompt is
+a top-level field rather than a message. Sharing the OpenAI parser with a name table would
+have been a diff of every branch, so `AnthropicProvider` is a subclass of its own and the one
+place in this tree where the block representation and the string representation meet. The
+session still stores a message as a string plus a `tool_calls` array; this provider builds the
+block list on the way out and folds the block events back in on the way home.
+
 ## Field by field
 
-| Dimension | Ollama | OpenAI compatible |
-|-----------|--------|-------------------|
-| Endpoint | `{host}/api/chat` | `{host}/chat/completions` |
-| Auth | `Authorization: Bearer` only when a key is set | same |
-| Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` |
-| Model / temperature | `model`, `options.temperature` | `model`, `temperature` |
-| Token cap | not sent; Ollama's own default stands, and `max_tokens` has no effect here | `max_tokens` when set |
-| Extra options | `keep_alive` is a fixed `30m` (not configurable) | nothing beyond the level below |
-| Thinking level | top-level `think`: `false` for `none`, the level name for `low`/`medium`/`high`, not sent for `default` | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default`. A gateway that does not reason by default has nothing for the first field to suppress, so it is inert there — [codebuddy's gateway](design/codebuddy-cloud-api.md) is one |
-| Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim |
-| Assistant with tool calls | `content` sent as-is | `content` forced to `null` |
-| Reasoning on request | sent on assistant messages as `thinking` when non-empty | sent on assistant messages as `reasoning_content` when non-empty |
-| Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` |
-| `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised |
-| Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` |
-| Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated |
-| Reasoning on the wire | one string under `thinking` | one string under `reasoning_content` |
-| Reasoning with signatures | n/a | a provider that signs its blocks gets `[{text, signature?}]` instead of one string, replayed verbatim when a block carries the provider's own JSON |
-| End of reply | `done_reason` on the final object | `finish_reason` on each choice |
-| Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure |
-| Error outside the stream | a non-200 body is summarized into the failure detail | same; a gateway that sends `displayMsg` has it shown in place of the log line, and its `msg`, `code` and `requestId` are logged at warning |
-| Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for |
+| Dimension | Ollama | OpenAI compatible | Anthropic |
+|-----------|--------|-------------------|-----------|
+| Endpoint | `{host}/api/chat` | `{host}/chat/completions` | `{host}/messages` |
+| Auth | `Authorization: Bearer` only when a key is set | same | `x-api-key`, plus `anthropic-version: 2023-06-01` on every route; a bearer is not sent |
+| Streaming | NDJSON, one object per line, ends at `{"done":true}` | SSE, `data: ` lines, ends at `data: [DONE]` | SSE with an `event:` name on every frame, ends at `message_stop` |
+| Model / temperature | `model`, `options.temperature` | `model`, `temperature` | `model`, `temperature` — erased when thinking is on, which the API refuses beside it |
+| Token cap | not sent; Ollama's own default stands, and `max_tokens` has no effect here | `max_tokens` when set | `max_tokens` always, because the API requires one |
+| Extra options | `keep_alive` is a fixed `30m` (not configurable) | nothing beyond the level below | nothing beyond the level below |
+| Thinking level | top-level `think`: `false` for `none`, the level name for `low`/`medium`/`high`, not sent for `default` | `extra_body.thinking.type = "disabled"` for `none`, `reasoning_effort` for `low`/`medium`/`high`, nothing for `default`. A gateway that does not reason by default has nothing for the first field to suppress, so it is inert there — [codebuddy's gateway](design/codebuddy-cloud-api.md) is one | `thinking: {type:"enabled", budget_tokens}` for `low`/`medium`/`high` (1024 / 4096 / half the cap), absent for `default` and `none`, which this API has no way to express |
+| Role mapping | `user`/`assistant`/`system`/`tool`; anything else falls back to `user` | `tool_result` rewritten to `tool`; others verbatim | `tool` becomes a `user` turn holding a `tool_result` block; `system` messages are dropped because the prompt is a field |
+| Assistant with tool calls | `content` sent as-is | `content` forced to `null` | `[{type:"text"}]` plus one `{type:"tool_use"}` block per call |
+| Reasoning on request | sent on assistant messages as `thinking` when non-empty | sent on assistant messages as `reasoning_content` when non-empty | sent as a `thinking` block carrying the signature it came with |
+| Tool result fields | `role`, `tool_name`, `tool_call_id` | `role`, `tool_call_id` | `tool_use_id` inside a `tool_result` block |
+| `tool_calls.arguments` | JSON object; a string is parsed, non-JSON passed through | JSON string; an object or array is re-serialised | JSON object under `input`; a string is parsed, non-JSON passed through |
+| Call assembly | one complete call per line | `index`-keyed deltas, flushed when the stream ends, sentinel or not; a call with no `index` is a call of its own when it carries an `id` | `content_block_delta` fragments of `input_json_delta.partial_json`, accumulated until `content_block_stop` |
+| Reasoning on response | `message.thinking` accumulated | `delta.reasoning_content` accumulated | `thinking_delta` accumulated, with `signature_delta` kept beside it |
+| Reasoning on the wire | one string under `thinking` | one string under `reasoning_content` | one block, its `signature` filling this tree's `ReasoningBlock::signature` |
+| Reasoning with signatures | n/a | a provider that signs its blocks gets `[{text, signature?}]` instead of one string, replayed verbatim when a block carries the provider's own JSON | always, since every thinking block here is signed |
+| End of reply | `done_reason` on the final object | `finish_reason` on each choice | `stop_reason` on `message_delta` |
+| Error inside the stream | `{"error":"..."}` raised as the request's failure | `{"error":{...}}` raised as the request's failure | an `event: error` frame raised as the request's failure |
+| Error outside the stream | a non-200 body is summarized into the failure detail | same; a gateway that sends `displayMsg` has it shown in place of the log line, and its `msg`, `code` and `requestId` are logged at warning | same as the OpenAI column |
+| Usage | `prompt_eval_count` / `eval_count` on the final object | `usage`, which the request has to ask for | `input_tokens` on `message_start`, `output_tokens` on `message_delta`; this API states no total, so none is derived |
 
 The level names are newer than the setting they name: until `low`/`medium`/`high`
 existed it was a boolean, and `default` is what that switch's on-state meant while
@@ -157,6 +165,33 @@ The request asks for one completion, so the reply is read from the first choice 
 the stream names. A gateway that sends a second index has it reported at `debug` rather
 than folded into the reply.
 
+## Retries
+
+A failure that a second try could answer differently is repeated; one that would get the same
+answer is not. `src/core/retry.cpp` holds the decision and `StreamingProvider::Chat` is the
+only caller, so every gateway gets it from one place rather than each provider deciding for
+itself.
+
+| Status | Repeated | Why |
+| --- | --- | --- |
+| 408, 429, 500, 502, 503, 504 | yes | The request was refused for a reason that expires: load, a rate limit, a gateway restarting |
+| Any other 4xx | no | The same request would be answered the same way |
+| No status at all | only when the transport marks it | A deadline or a dropped connection says nothing about whether the request was valid, which is the transport's judgement to make and not this table's |
+
+The wait before each repeat doubles from 500 ms up to an 8 s ceiling. A `Retry-After` header
+outranks that guess and is honoured up to 30 s, because a server that names a time knows better
+than a client's backoff does — and one that names an hour does not get to hold this build for an
+hour. A value that is not a whole number of seconds is ignored rather than guessed at; the
+header's date form would need the server's clock and ours to agree.
+
+**A retry is not safe mid-stream.** The callbacks a caller registered with
+`ChatRequest::on_content` and `on_reasoning` have already fired for whatever arrived before the
+failure, so repeating a request that had already produced output replays it into a reader that
+has seen it once. The current implementation rebuilds the accumulators but does not distinguish
+"no byte arrived" from "the reply was half-delivered"; only the first is a failure a caller
+would want repeated. Treat a mid-stream retry as a defect still to be closed rather than as
+behaviour to rely on.
+
 ## Deadlines
 
 Every request is bounded, and the bound is why a gateway that hangs is a failure rather than a
@@ -178,9 +213,10 @@ at all, which used to hold `pu models --verify` and `pu ask` for as long as the 
 
 ## Limits
 
-Neither backend implements a capability the table above does not name. Both
-stream content and accept parallel tool calls; neither keeps a full provider
-response, carries a reasoning signature, or accepts multimodal input or output.
+No backend implements a capability the table above does not name. All of them
+stream content and accept parallel tool calls; a provider that has a reasoning
+signature sends it, and Anthropic does so on every thinking block. None accepts
+multimodal input or output.
 
 Reasoning is stored as an ordered list of blocks, not one string, so a turn that
 thinks, calls a tool, then thinks again keeps that order. A block carries the
