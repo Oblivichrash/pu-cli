@@ -6,6 +6,8 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+## 0.7.2
+
 ### Added
 
 - **Anthropic is a gateway of its own, not an OpenAI row with a different host.**

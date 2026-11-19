@@ -23,9 +23,15 @@ PU.composer.inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !PU.composer.composing && !PU.isStreaming) {
     e.preventDefault();
     sendMessage();
+  } else if (e.key === "Escape" && PU.editing) {
+    // Escape is the way out of an edit. It is bound here rather than on a Cancel button because
+    // the button is gone: an edit is cancelled by leaving it, and the field is where the reader
+    // already is.
+    e.preventDefault();
+    cancelEdit(true);
   }
 });
-PU.composer.inputEl.addEventListener("input", () => { PU.composer.inputEl.style.height = "auto"; });
+PU.composer.inputEl.addEventListener("input", resizeComposerInput);
 
 // The transcript has one loader: the socket's first open runs `resyncAfterReconnect()`,
 // which reads the store once the session is attached. Reading it here as well made the two

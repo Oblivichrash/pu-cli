@@ -10,7 +10,8 @@
 function renderSendButton() {
   const { sendBtn } = PU.composer;
   if (!PU.isStreaming) {
-    sendBtn.textContent = "Send";
+    // The button says what the next press ends: a sentence to send, or a message to replace.
+    sendBtn.textContent = PU.editing ? "Save" : "Send";
     sendBtn.disabled = false;
     return;
   }
@@ -18,6 +19,15 @@ function renderSendButton() {
   // that is still on its way looks like one that did nothing.
   sendBtn.textContent = PU.stopRequested ? "Stopping…" : "Stop";
   sendBtn.disabled = PU.stopRequested;
+}
+
+// The field grows to its own text and no further. Both the typed message and the edited one land
+// in the same box, so the box's height is one fact and one function settles it.
+function resizeComposerInput() {
+  const input = PU.composer.inputEl;
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = input.scrollHeight + "px";
 }
 
 function setSendButtonState(streaming) {
@@ -49,7 +59,12 @@ function stopReply() {
 // `existing` is the bubble a re-sent turn is already drawn in. An edited message keeps its place
 // in the transcript, so a second copy of it would be a duplicate of the same sentence; the caller
 // passes the bubble it is using and nothing is created.
-function sendText(text, existing) {
+//
+// `forcedTurn` is the number the caller already knows the turn has. An edit that stepped the store
+// back needs the bubble it draws to carry the number the store gave it, and that number is not
+// `chainLength + 1` until `refreshChainLength` has come back -- reading it here would race the
+// refresh and number the replacement turn wrongly.
+function sendText(text, existing, forcedTurn) {
   if (!text) return false;
   if (!PU.ws || PU.ws.readyState !== WebSocket.OPEN) {
     createSystemMessage("Not connected to the server.");
@@ -59,8 +74,8 @@ function sendText(text, existing) {
   // The turn is the stored message count plus one, which is what /api/rewind takes. A message
   // being re-sent after a rewind keeps the turn it already carries, because the rewind left it
   // the last thing in the chain and the browser now agrees with the store.
-  const turn = existing ? Number(existing.dataset.turn) || PU.chainLength + 1
-                        : PU.chainLength + 1;
+  const turn = forcedTurn || (existing ? Number(existing.dataset.turn) || PU.chainLength + 1
+                                        : PU.chainLength + 1);
   const el = existing ||
       createMessage("user", [{ type: BLOCK_TYPES.TEXT, content: text }], turn, text);
   el.dataset.turn = String(turn);
@@ -74,6 +89,12 @@ function sendText(text, existing) {
 function sendMessage() {
   if (PU.isStreaming) {
     stopReply();
+    return;
+  }
+  // An open edit is what this button ends. It is checked before the field is read, because the
+  // field holds the sentence being edited rather than the one being typed.
+  if (PU.editing) {
+    sendEdit();
     return;
   }
 

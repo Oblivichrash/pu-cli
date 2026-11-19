@@ -68,6 +68,10 @@ const PU = {
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,
+  // The message being edited, as `{el, turn, original}`, or null when none is. The words live in
+  // the composer rather than in the bubble: an edit is a sentence about to be said again, and the
+  // page asks for a turn in one place.
+  editing: null,
   currentAssistantBlocks: [],
   currentAssistantEl: null,
   // name -> description, so the closed control can carry the chosen agent's tooltip.
@@ -87,6 +91,9 @@ const PU = {
 
   composer: {
     composing: false,
+    // "new" while the field is a message being typed, "edit" while it holds one being replaced.
+    // The button reads this, so the two jobs can share a field without sharing a label.
+    mode: "new",
     inputEl: null,
     sendBtn: null,
     messagesEl: null,
