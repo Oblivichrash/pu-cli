@@ -480,9 +480,45 @@ AgentsConfig LoadSingleAgentConfig(const json::value& j, const std::string& conf
   return result;
 }
 
+// The steps an entry takes once it has been parsed, whichever form introduced it: the name has to
+// be one a session can record, it has to be unique, its persona is a file named relative to the
+// table that named it, and the MCP commands it lists are relative to that table too. An inline
+// entry arrived with its name and a directory entry has just been given its directory's name, so
+// both reach this point carrying one and neither repeats a check the other needs.
+//
+// The host and the model are not checked here: `ParseAgentEntry` has already answered both for
+// every entry, because it is the only place a backend is read.
+void FinishAgentEntry(AgentEntry& entry, const json::value& raw,
+                      const std::filesystem::path& table_dir,
+                      const std::vector<AgentEntry>& known) {
+  if (entry.name.empty()) throw pu::GenericError("Missing agent name");
+  const auto clash = std::find_if(
+      known.begin(), known.end(),
+      [&](const AgentEntry& other) { return other.name == entry.name; });
+  if (clash != known.end()) {
+    throw pu::GenericError("two agents are named '" + entry.name + "': a name names one agent");
+  }
+  entry.source_dir = table_dir;
+  ApplyPersona(entry, raw, table_dir);
+  for (config::McpServerConfig& server : entry.mcp_servers) {
+    server.command = ResolveAgainst(table_dir, server.command);
+    for (std::string& arg : server.args) arg = ResolveAgainst(table_dir, arg);
+  }
+}
+
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   const json::value j = ReadJsonFile(config_path);
+
+  // A backend at the top of a file that also has an `agents` array is neither form: the array
+  // makes it a table, and the table's backends live inside its entries. Reading it as a table
+  // would drop that backend without a word, so the file is refused and asked to pick one shape.
+  if (json::HasKey(j, "backend") && json::HasKey(j, "agents") && j.at("agents").is_array()) {
+    throw pu::GenericError(
+        config_path +
+        " has both a top-level backend and an agents array: a table's agents each have their "
+        "own backend, so drop the top-level one (or drop the array to describe a single agent)");
+  }
 
   if (IsSingleAgentFile(j)) return LoadSingleAgentConfig(j, config_path);
 
@@ -494,7 +530,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
     throw pu::GenericError("Missing agents array");
   for (const auto& item : j.at("agents").as_array()) {
     AgentEntry entry = ParseAgentEntry(item);
-    if (entry.name.empty()) throw pu::GenericError("Missing agent name");
+    FinishAgentEntry(entry, item, std::filesystem::path(config_path).parent_path(), result.agents);
     result.agents.push_back(std::move(entry));
   }
 
@@ -521,20 +557,7 @@ AgentsConfig LoadAgentsConfig(const std::string& config_path) {
                                entry.name + "'; a directory is named after its agent");
       }
       entry.name = from_dir;
-      const auto clash = std::find_if(result.agents.begin(), result.agents.end(),
-                                      [&](const AgentEntry& known) { return known.name == entry.name; });
-      if (clash != result.agents.end()) {
-        throw pu::GenericError("two agents are named '" + entry.name + "': one inline in " +
-                               config_path + ", one in " + table.string());
-      }
-      entry.source_dir = table.parent_path();
-      ApplyPersona(entry, dir_json, table.parent_path());
-      for (config::McpServerConfig& server : entry.mcp_servers) {
-        server.command = ResolveAgainst(table.parent_path(), server.command);
-        for (std::string& arg : server.args) arg = ResolveAgainst(table.parent_path(), arg);
-      }
-      if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
-      if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
+      FinishAgentEntry(entry, dir_json, table.parent_path(), result.agents);
       result.agents.push_back(std::move(entry));
     }
   }
