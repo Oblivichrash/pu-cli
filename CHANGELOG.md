@@ -9,9 +9,10 @@ the commit that made it, and its current behaviour is in the relevant document
 ### Added
 
 - **A workspace with no `agents.json` is configured by being asked.** `pu setup`
-  asks for the gateway (a number, with a local product marked as needing no key),
-  then the URL — blank meaning the gateway's own — then the key, asked only when
-  that gateway reads one, and then fetches the catalogue and prints it with
+  asks for the gateway, offering them as a numbered list with the first one
+  already filled in, then the URL — blank meaning the gateway's own — then the
+  key, asked only when that gateway reads one, and then fetches the catalogue
+  and prints it with
   numbers so the model is a keystroke rather than a spelling. It writes
   `./.pu/agents.json` and refuses to replace a file that is already there. A
   listing that fails is not fatal: the model can be typed, which is what a
@@ -23,6 +24,12 @@ the commit that made it, and its current behaviour is in the relevant document
   is not there.
 
 ### Changed
+
+- **Two gateways are named after their vendors.** `nim` is now `nvidia` and
+  `codebuddy` is now `tencent`, and their keys are read from `NVIDIA_API_KEY`
+  and `TENCENT_API_KEY`. The new names are what the gateway table, the setup
+  wizard and a `backend:` line read; the old spellings are not kept as aliases,
+  so an `agents.json` naming one has to be updated by hand.
 
 - **One agent can be the whole file.** An `agents.json` with `name` and
   `backend` at the top and no `agents` array and no `default_agent` is read as

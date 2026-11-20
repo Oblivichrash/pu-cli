@@ -261,8 +261,8 @@ Which gateway?
   6) tencent
   7) anthropic
 
-Gateway: 1
-URL: http://localhost:11434
+Gateway [ollama]: 
+URL [http://localhost:11434]: 
 What this gateway offers:
   1) qwen2.5:0.5b          tools max-in=32768
   2) llama3.1:8b           tools max-in=131072
@@ -277,19 +277,15 @@ The menu is the gateway table itself, in the order it is written, so a gateway a
 nothing else: which variable holds a gateway's key is a question the next prompt answers, and
 printing it twice made the menu a paragraph where a list was wanted.
 
-The gateway prompt holds `1`, so `<enter>` is the first entry and choosing the fourth is typing
-one character over it. A name is still accepted where a reader prefers to spell one out.
+The gateway prompt shows the first entry as its default, so `<enter>` takes it and a name or
+number typed instead replaces it.
 
-The answer the reader types starts out holding the default: the URL question opens with the
-chosen gateway's own address already on the line and the cursor at its end, so changing
-`api.openai.com` to a proxy is editing that text rather than retyping it. `<enter>` takes it
-whole, backspace removes it character by character, `^U` clears the line, and an arrow key is
-ignored rather than inserted as bytes. `^C` or `^D` on a blank line abandons the wizard — it
-writes nothing — and puts the terminal back the way it was.
-
-Off a terminal there is nothing to edit, so the default is printed beside the prompt the way
-it always was — `URL [http://localhost:11434]:` — and a blank line takes it. A script's answers
-arrive as they did before this was editable.
+Every question follows the same shape, and it is the shape a shell prompt has: the default is
+shown in brackets after the question, a blank line takes it, and anything typed is the answer.
+`URL [http://localhost:11434]:` is also what a script sees, so the answers a script gives are
+the answers a reader gives. The terminal is never put in a mode of its own — no raw mode, no
+line editing here — so the reader's own keymap, history and screen reader all work as they do
+everywhere else on the machine. `^C` or `^D` abandons the wizard, which writes nothing.
 
 It asks in the order a reader can answer: the gateway first, because it decides both the
 default address and whether a key is needed at all; then the URL, where blank means the

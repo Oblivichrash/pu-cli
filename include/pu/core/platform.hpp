@@ -34,15 +34,16 @@ bool ProcessRunning(int pid);
 // that has none, it waits for a keyboard that is not there.
 bool StdinIsTerminal();
 
-// One line from a reader, arriving at `prompt` (printed to stderr) with `initial` already on
-// it and the cursor at its end. Backspace and arrow keys edit that line, so a default longer
-// than the reader wants to retype is a place to start from rather than a value to fight.
+// One line from a reader, asked at `prompt` (printed to stderr) with `initial` shown beside it
+// in brackets. A blank line takes the default and any other line is the answer, which is the
+// shape every shell prompt has: the reader types the whole value or none of it, and nothing
+// here edits the line on their behalf.
 //
-// On a terminal stdin is put in raw mode for the line's length and the line is echoed here;
-// off one, `initial` is printed beside the prompt and a whole line is read from the stream, so
-// a script feeding answers sees what a reader would have. Returns `initial` at end of input --
-// the answer a blank line gives -- and false when there was no input at all, which is the one
-// case a caller cannot tell from an accepted default.
+// The terminal is left as it was found -- no mode is set, so the reader's own line editing,
+// keymap and history all work as they do everywhere else on the machine.
+//
+// Returns `initial` at end of input -- the answer a blank line gives -- and false when there
+// was no input at all, which is the one case a caller cannot tell from an accepted default.
 std::pair<bool, std::string> ReadLineWithDefault(const std::string& prompt,
                                                  const std::string& initial);
 

@@ -221,10 +221,11 @@ TEST_CASE("A transport error is read back as its reason", "[text][errors]") {
           "HTTP error 401: bad key [oops");
 }
 
-TEST_CASE("A prompted default is taken by a blank line off a terminal", "[platform][prompt]") {
-  // The test's own stdin is not a terminal, which is the path a script takes: the default
-  // goes out beside the prompt and a whole line is read. A blank line is the default because
-  // that is what the prompt says it is, and a line with anything on it is that instead.
+TEST_CASE("A prompted default is taken by a blank line", "[platform][prompt]") {
+  // The default goes out beside the prompt and a whole line is read. A blank line is the
+  // default because that is what the prompt says it is, and a line with anything on it is
+  // that instead. The same path serves a terminal and a script, so the answers a script
+  // gives are the answers a reader gives.
   if (pu::platform::StdinIsTerminal()) return;
 
   std::istringstream blank("\n");

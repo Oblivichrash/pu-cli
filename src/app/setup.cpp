@@ -44,13 +44,10 @@ std::string Trimmed(const std::string& text) {
 // to stderr: an answer is the command's output, and a prompt on stdout would be read as part
 // of it by a caller that captured the result.
 //
-// The default is put on the line rather than beside it, so a reader who wants
-// `https://api.deepseek.com/v1` can change one character of it instead of typing all of it
-// again. On a terminal that means the line is edited here; off one, it is printed as text
-// and a whole line is read, which is what a script's answer has always been.
-//
-// No value is the reader leaving: nothing was typed, or the keyboard said stop. A wizard
-// that took the default there would write a file they had just asked it not to write.
+// The default is shown in brackets after the question and the answer is read as a plain line:
+// <enter> takes it, anything typed replaces it. No value is the reader leaving: nothing was
+// typed, or the keyboard said stop. A wizard that took the default there would write a file
+// they had just asked it not to write.
 std::optional<std::string> Ask(const std::string& question, const std::string& fallback) {
   const auto [got_answer, answer] = platform::ReadLineWithDefault(question, fallback);
   if (!got_answer) return std::nullopt;
@@ -115,11 +112,12 @@ std::optional<config::SetupChoice> RunSetupWizard(const std::filesystem::path& w
   }
   std::cerr << "\n";
 
-  // The default is the first number rather than the first name: a reader who wants the first
-  // entry presses <enter>, and one who wants another types one character over it. The name
-  // was the default before this, which made `<enter>` mean "the first one" in a line that
-  // read as if it meant "the one spelled here".
-  const std::optional<std::string> gateway_answer = Ask("Gateway", "1");
+  // Either a number or a name is accepted, and the default is the first gateway's name: it
+  // says which one <enter> takes, where a `1` would have described the list by a position
+  // the reader then has to look up two lines above. The list is numbered so a number is
+  // still one keystroke away.
+  const std::optional<std::string> gateway_answer =
+      Ask("Gateway", model::GatewayName(offered.front()));
   if (!gateway_answer) return std::nullopt;
   const std::optional<model::GatewayId> gateway = ParseGatewayAnswer(*gateway_answer, offered);
   if (!gateway) {
