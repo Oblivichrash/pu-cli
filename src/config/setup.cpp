@@ -53,9 +53,8 @@ void ValidateSetupChoice(const SetupChoice& choice) {
 }
 
 std::string RenderSetupConfig(const SetupChoice& choice) {
-  // The single-agent form: no `agents` array and no `default_agent`, because a file that
-  // describes one agent has nothing to choose between and nothing to default to. The name is
-  // written because a session records it and there is no directory to supply it.
+  // The name is written because a session records it and there is no directory to supply it;
+  // a file that describes one agent has nothing to choose between and nothing to default to.
   json::object backend;
   backend["gateway"] = std::string(model::GatewayName(choice.gateway));
   if (!Trimmed(choice.host).empty()) backend["host"] = Trimmed(choice.host);

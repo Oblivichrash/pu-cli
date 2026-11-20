@@ -12,6 +12,7 @@
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
+#include "pu/core/workspace_path.hpp"
 
 #include "pu/config/agents.hpp"
 #include "pu/tools/ask_dir_tool.hpp"
@@ -27,13 +28,6 @@
 
 namespace pu {
 namespace {
-
-std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
-                                           const std::string& configured_path) {
-  const auto path =
-      configured_path.empty() ? std::filesystem::path(".") : std::filesystem::path(configured_path);
-  return path.is_absolute() ? path : root / path;
-}
 
 // A session this build cannot read is moved aside rather than left to be overwritten by
 // the first save of the fresh conversation that replaces it. The backup is one file, so a
@@ -141,25 +135,18 @@ void Runtime::Initialize(const std::string& config_path) {
 
   config_path_ = cfg_path;
 
-  auto agents_cfg = config::LoadAgentsConfig(cfg_path);
+  auto agents_cfg = config::LoadAgentConfig(cfg_path);
 
   const std::string active_agent =
-      default_agent_override_.empty() ? agents_cfg.default_agent : default_agent_override_;
-  const auto default_entry = std::ranges::find_if(
-      agents_cfg.agents,
-      [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
-  if (default_entry == agents_cfg.agents.end()) {
-    const std::string known = text::Join(
-        std::views::transform(agents_cfg.agents,
-                              [](const config::AgentEntry& entry) { return entry.name; }),
-        " ");
+      default_agent_override_.empty() ? agents_cfg.name : default_agent_override_;
+  if (active_agent != agents_cfg.name) {
     throw GenericError("Requested agent is not configured: " + active_agent +
-                       (known.empty() ? " (no agents are configured)" : "; configured: " + known));
+                       "; configured: " + agents_cfg.name);
   }
 
   agent_manager_ = std::make_unique<AgentManager>();
   agent_manager_->SetActiveAgent(active_agent);
-  agent_manager_->LoadAgentConfigs(agents_cfg.agents);
+  agent_manager_->LoadAgentConfigs({agents_cfg});
 
   command_router_ = std::make_unique<CommandRouter>(*this);
 
@@ -171,7 +158,7 @@ void Runtime::Initialize(const std::string& config_path) {
   executor_->SetStopCheck([this] { return StopRequested(); });
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
-  RebuildToolbox(*default_entry);
+  RebuildToolbox(agents_cfg);
 
   // An ephemeral runtime wakes up with no past: a stored conversation belongs to the world
   // that asked for it, and this one was asked to answer a question, not to continue one.
@@ -442,9 +429,8 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     result.error =
         "'" + target.string() +
         "' configures no agent: it has no .pu/agents.json. Write one with write_file, in the "
-        "shape of this workspace's own .pu/agents.json ({\"default_agent\": \"<name>\", "
-        "\"agents\": [{\"name\": \"<name>\", \"backend\": {\"gateway\": ..., \"model\": ...}}]}), "
-        "then ask again.";
+        "shape of this workspace's own .pu/agents.json ({\"name\": \"<name>\", "
+        "\"backend\": {\"gateway\": ..., \"model\": ...}}), then ask again.";
     return result;
   }
 

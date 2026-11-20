@@ -52,22 +52,12 @@ struct RouterFixture {
  private:
   void WriteAgentsFile() const {
     boost::json::value cfg = {
-        {"default_agent", "chat"},
-        {"agents",
-         boost::json::array{
-             boost::json::value{{"name", "chat"},
-                                {"description", "Default agent"},
-                                {"backend",
-                                 {{"gateway", "ollama"},
-                                  {"host", "http://127.0.0.1:11434"},
-                                  {"model", "chat-model"}}}},
-             boost::json::value{{"name", "coder"},
-                                {"description", "Coding agent"},
-                                {"backend",
-                                 {{"gateway", "ollama"},
-                                  {"host", "http://127.0.0.1:11434"},
-                                  {"model", "coder-model"}}}},
-         }},
+        {"name", "chat"},
+        {"description", "Default agent"},
+        {"backend",
+         {{"gateway", "ollama"},
+          {"host", "http://127.0.0.1:11434"},
+          {"model", "chat-model"}}},
     };
     std::ofstream out(root.Path() / ".pu" / "agents.json", std::ios::trunc);
     out << boost::json::serialize(cfg);
@@ -97,7 +87,6 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find("chat") != std::string::npos);
-  REQUIRE(output.find("coder") != std::string::npos);
 }
 
 TEST_CASE("CommandRouter routes through the instance that was built last", "[router]") {
@@ -237,17 +226,6 @@ TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find("tencent") != std::string::npos);
-
-  reply = f.Route("/backend coder");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched to agent: coder") != std::string::npos);
-
-  reply = f.Route("/agents");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("coder (active)") != std::string::npos);
-  REQUIRE(output.find("chat (active)") == std::string::npos);
 }
 
 TEST_CASE("CommandRouter names an adopted agent after switching to it", "[router]") {

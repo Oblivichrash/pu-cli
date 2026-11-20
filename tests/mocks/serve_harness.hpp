@@ -322,6 +322,9 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   backend["model"] = JsonStr("test-model");
 
   boost::json::object security;
+  // Nothing at all, which is the root under the workspace: the same place `"."` resolves to,
+  // written the way a file that names no root writes it. A case that needs a narrower or a
+  // wider root sets it, and the report says where the tool will be allowed to write.
   security["sandbox_root"] = JsonStr(".");
   security["forbidden_patterns"] = boost::json::array{};
   // A command matching this needs approval. Empty means the policy names none, which is
@@ -352,11 +355,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
     agent["mcp_servers"] = boost::json::array{std::move(server)};
   }
 
-  boost::json::object root;
-  root["default_agent"] = JsonStr("chat");
-  root["agents"] = boost::json::array{std::move(agent)};
-
-  const std::string text = boost::json::serialize(root);
+  const std::string text = boost::json::serialize(agent);
   {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     REQUIRE(file.is_open());
@@ -555,7 +554,7 @@ class ServeHarness {
                              std::istreambuf_iterator<char>());
       CAPTURE(text);
       const boost::json::value parsed = boost::json::parse(text);
-      const boost::json::value& first = parsed.at("agents").at(0).at("name");
+      const boost::json::value& first = parsed.at("name");
       REQUIRE(first.is_string());
       REQUIRE(boost::json::value_to<std::string>(first) == "chat");
     }

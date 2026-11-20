@@ -13,33 +13,26 @@ namespace pu::config {
 
 namespace {
 
-// The agent entry the table names, with the message a caller needs: which names it could have
-// used, because a typo is the only reason this branch runs in practice.
-const AgentEntry& FindAgent(const AgentsConfig& agents, const std::string& wanted) {
-  const auto entry = std::find_if(
-      agents.agents.begin(), agents.agents.end(),
-      [&](const AgentEntry& candidate) { return candidate.name == wanted; });
-  if (entry == agents.agents.end()) {
-    std::string known;
-    for (const AgentEntry& candidate : agents.agents) known += " " + candidate.name;
-    throw std::runtime_error(
-        "agent is not configured: " + wanted +
-        (known.empty() ? " (no agents are configured)" : "; configured:" + known));
+// The entry a file names, with the message a caller needs: the name it does have, because a
+// typo or a stale `--agent` is the only reason this branch runs in practice.
+const AgentEntry& FindAgent(const AgentEntry& agents, const std::string& wanted) {
+  if (agents.name != wanted) {
+    throw std::runtime_error("agent is not configured: " + wanted + "; configured: " + agents.name);
   }
-  return *entry;
+  return agents;
 }
 
 }  // namespace
 
 model::Backend BackendFromTable(const std::string& gateway, const std::string& model,
-                                const std::string& agent, const AgentsConfig& agents) {
+                                const std::string& agent, const AgentEntry& agents) {
   if (!gateway.empty()) {
     model::Backend backend = model::BackendForGateway(gateway);
     if (!model.empty()) backend.model = model;
     return backend;
   }
 
-  const std::string wanted = agent.empty() ? agents.default_agent : agent;
+  const std::string wanted = agent.empty() ? agents.name : agent;
   // The entry's backend already carries the agent's model, so only an explicit `model`
   // overrides it, the way it does for a named gateway.
   model::Backend backend = FindAgent(agents, wanted).backend;
@@ -49,7 +42,7 @@ model::Backend BackendFromTable(const std::string& gateway, const std::string& m
 
 model::Backend BackendFromTable(const std::string& gateway, const std::string& model,
                                 const std::string& agent, const std::string& config_path) {
-  return BackendFromTable(gateway, model, agent, LoadAgentsConfig(config_path));
+  return BackendFromTable(gateway, model, agent, LoadAgentConfig(config_path));
 }
 
 }  // namespace pu::config

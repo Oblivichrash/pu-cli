@@ -48,30 +48,14 @@ class BackendSourceFixture {
 
   void Write(float temperature) {
     boost::json::value cfg = {
-        {"default_agent", "chat"},
-        {"agents",
-         boost::json::array{
-             boost::json::value{
-                 {"name", "chat"},
-                 {"backend",
-                  {
-                      {"gateway", "openai"},
-                      {"host", "http://127.0.0.1:1"},
-                      {"model", "test-model"},
-                      {"temperature", temperature},
-                      {"thinking", "none"},
-                  }},
-             },
-             boost::json::value{
-                 {"name", "coder"},
-                 {"backend",
-                  {
-                      {"gateway", "openai"},
-                      {"host", "http://127.0.0.1:1"},
-                      {"model", "coder-model"},
-                      {"temperature", 0.4},
-                  }},
-             },
+        {"name", "chat"},
+        {"backend",
+         {
+             {"gateway", "openai"},
+             {"host", "http://127.0.0.1:1"},
+             {"model", "test-model"},
+             {"temperature", temperature},
+             {"thinking", "none"},
          }},
     };
     std::ofstream out(root_ / ".pu" / "agents.json", std::ios::trunc);
@@ -203,76 +187,6 @@ TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backe
   const auto names_after = runtime.Agents().AgentNames();
   REQUIRE(names_after.size() == names_before.size() + 1);
   REQUIRE(runtime.Agents().AgentConfig("openai") != nullptr);
-}
-
-TEST_CASE("An agent named on the command line outranks the one a session remembers",
-          "[backend]") {
-  BackendSourceFixture fixture;
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    const auto* coder = runtime.Agents().AgentConfig("coder");
-    REQUIRE(coder != nullptr);
-    runtime.SwitchAgent(*coder);
-    runtime.Shutdown();
-  }
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.SetDefaultAgent("chat");
-    runtime.Initialize();
-
-    REQUIRE(runtime.ActiveAgent().name == "chat");
-    REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
-    REQUIRE(runtime.CurrentBackend().model == "test-model");
-  }
-}
-
-TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {
-  BackendSourceFixture fixture;
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    REQUIRE(runtime.DefaultSession() != nullptr);
-    const auto* coder = runtime.Agents().AgentConfig("coder");
-    REQUIRE(coder != nullptr);
-    runtime.SwitchAgent(*coder);
-    runtime.Shutdown();
-  }
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
-    REQUIRE(runtime.CurrentBackend().model == "coder-model");
-  }
-}
-
-TEST_CASE("A turn after an agent switch reaches an initialized registry", "[backend]") {
-  BackendSourceFixture fixture;
-
-  ScopedWorkingDir in_workspace(fixture.root());
-  Runtime runtime;
-  runtime.Initialize();
-  REQUIRE(runtime.DefaultSession() != nullptr);
-
-  const auto* coder = runtime.Agents().AgentConfig("coder");
-  REQUIRE(coder != nullptr);
-  runtime.SwitchAgent(*coder);
-  REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
-
-  const ExecutionResult result = runtime.ProcessInput("hello");
-
-  REQUIRE(result.was_command == false);
-  REQUIRE(result.has_error);
-
-  runtime.Shutdown();
 }
 
 TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend]") {

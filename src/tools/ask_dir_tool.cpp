@@ -84,10 +84,10 @@ std::string AskDirTool::Description() const {
          "agent this table configures, or a directory whose own agent answers there. You get "
          "the conclusion and not the reading.\n"
          "A directory must already carry its own configuration before you ask it: write "
-         "'<dir>/.pu/agents.json' with write_file first, holding {\"default_agent\": \"name\", "
-         "\"agents\": [{\"name\": \"name\", \"backend\": {\"gateway\", \"model\"\")]} "
-         "(the same shape as this workspace's own .pu/agents.json). It is not created for "
-         "you, and a directory without one is refused rather than answered.";
+         "'<dir>/.pu/agents.json' with write_file first, holding {\"name\": \"name\", "
+         "\"backend\": {\"gateway\": ..., \"model\": ...}} (the same shape as this workspace's "
+         "own .pu/agents.json). It is not created for you, and a directory without one is "
+         "refused rather than answered.";
 }
 
 boost::json::value AskDirTool::ParametersSchema() const {

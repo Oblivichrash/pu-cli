@@ -50,7 +50,7 @@ wizard are the same shape.
 | `mcp_servers` | Optional; see below |
 | `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
 | `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
-| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. A name nothing configures, this agent's own name, and a circle are all refused by `pu check` |
+| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. `pu check` refuses this agent's own name, since the turn that reached it would recurse until a budget stopped it. A name nothing configures is found when `ask_dir` is called, not here: the agent that would answer may be a directory this workspace does not hold, so a file is in no position to say it does not exist. A circle is refused when it closes, by the child that would be asked to answer a question already being worked on further up the chain |
 | `persona` | Optional, in an agent's own directory only; a path to a file whose text becomes `backend.system_prompt`. Naming this and `backend.system_prompt` both is refused |
 
 **Backend fields**

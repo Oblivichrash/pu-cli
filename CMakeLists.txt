@@ -42,6 +42,7 @@ add_library(pu_core_util STATIC
     src/core/process.cpp
     src/core/retry.cpp
     src/core/sse.cpp
+    src/core/workspace_path.cpp
     src/tools_cli/sse.cpp
 )
 target_link_libraries(pu_core_util PUBLIC

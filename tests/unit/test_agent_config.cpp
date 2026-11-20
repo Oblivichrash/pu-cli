@@ -35,60 +35,52 @@ struct TempConfigFile {
 
 namespace {
 
-void WriteAgentsConfigForTest(const std::string& config_path, const config::AgentsConfig& cfg) {
-  json::value j = {{"default_agent", cfg.default_agent}};
+void WriteAgentsConfigForTest(const std::string& config_path, const config::AgentEntry& entry) {
+  json::value j = {
+      {"name", entry.name},
+      {"description", entry.description},
+  };
+  json::value security = {
+      {"sandbox_root", entry.security.sandbox_root},
+      {"max_command_length", entry.security.max_command_length},
+  };
+  security.as_object()["forbidden_patterns"] =
+      boost::json::value_from(entry.security.forbidden_patterns);
+  j.as_object()["security"] = security;
 
-  json::array agents_array;
-  for (const auto& entry : cfg.agents) {
-    json::value item = {
-        {"name", entry.name},
-        {"description", entry.description},
-    };
-    json::value security = {
-        {"sandbox_root", entry.security.sandbox_root},
-        {"max_command_length", entry.security.max_command_length},
-    };
-    security.as_object()["forbidden_patterns"] =
-        boost::json::value_from(entry.security.forbidden_patterns);
-    item.as_object()["security"] = security;
-
-    json::value backend = {
-        {"gateway", (entry.backend.gateway == model::GatewayId::kOpenAI) ? "openai" : "ollama"},
-        {"host", entry.backend.host},
-        {"model", entry.backend.model},
-        {"temperature", entry.backend.temperature},
-        {"thinking", ThinkingLevelName(entry.backend.thinking)},
-    };
-    if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
-    if (entry.backend.context_window) {
-      backend.as_object()["context_window"] = *entry.backend.context_window;
-    }
-    if (entry.backend.system_prompt)
-      backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
-    item.as_object()["backend"] = backend;
-
-    if (!entry.mcp_servers.empty()) {
-      json::array mcp_array;
-      for (const auto& srv : entry.mcp_servers) {
-        json::value srv_json = {
-            {"name", srv.name},
-            {"command", srv.command},
-        };
-        srv_json.as_object()["args"] = boost::json::value_from(srv.args);
-        if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
-        if (!srv.headers.empty()) {
-          json::value headers = json::object{};
-          for (const auto& [k, v] : srv.headers) headers.as_object()[k] = v;
-          srv_json.as_object()["headers"] = headers;
-        }
-        mcp_array.push_back(srv_json);
-      }
-      item.as_object()["mcp_servers"] = mcp_array;
-    }
-
-    agents_array.push_back(item);
+  json::value backend = {
+      {"gateway", (entry.backend.gateway == model::GatewayId::kOpenAI) ? "openai" : "ollama"},
+      {"host", entry.backend.host},
+      {"model", entry.backend.model},
+      {"temperature", entry.backend.temperature},
+      {"thinking", ThinkingLevelName(entry.backend.thinking)},
+  };
+  if (entry.backend.api_key) backend.as_object()["api_key"] = *entry.backend.api_key;
+  if (entry.backend.context_window) {
+    backend.as_object()["context_window"] = *entry.backend.context_window;
   }
-  j.as_object()["agents"] = agents_array;
+  if (entry.backend.system_prompt)
+    backend.as_object()["system_prompt"] = *entry.backend.system_prompt;
+  j.as_object()["backend"] = backend;
+
+  if (!entry.mcp_servers.empty()) {
+    json::array mcp_array;
+    for (const auto& srv : entry.mcp_servers) {
+      json::value srv_json = {
+          {"name", srv.name},
+          {"command", srv.command},
+      };
+      srv_json.as_object()["args"] = boost::json::value_from(srv.args);
+      if (!srv.url.empty()) srv_json.as_object()["url"] = srv.url;
+      if (!srv.headers.empty()) {
+        json::value headers = json::object{};
+        for (const auto& [k, v] : srv.headers) headers.as_object()[k] = v;
+        srv_json.as_object()["headers"] = headers;
+      }
+      mcp_array.push_back(srv_json);
+    }
+    j.as_object()["mcp_servers"] = mcp_array;
+  }
 
   std::ofstream file(config_path);
   if (!file.is_open()) throw pu::GenericError("Failed to open config file for writing: " + config_path);
@@ -219,9 +211,9 @@ TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_co
   fs::remove_all(home, ec);
 }
 
-// A file that describes one agent has nothing to choose between and nothing to default to,
-// so it says neither: the name is at the top and the backend beneath it, which is the whole
-// of what a workspace with one agent has to record.
+// A file that describes one agent has nothing to choose between and nothing to default to:
+// the name is at the top and the backend beneath it, which is the whole of what a workspace
+// with one agent has to record.
 TEST_CASE("A file describing one agent needs no default_agent and no agents array",
           "[agent_config][single]") {
   TempConfigFile tmp;
@@ -230,15 +222,13 @@ TEST_CASE("A file describing one agent needs no default_agent and no agents arra
     "backend": { "gateway": "ollama", "model": "qwen2.5:0.5b" }
   })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.default_agent == "solo");
-  REQUIRE(cfg.agents.size() == 1);
-  REQUIRE(cfg.agents[0].name == "solo");
-  REQUIRE(cfg.agents[0].backend.gateway == model::GatewayId::kOllama);
-  REQUIRE(cfg.agents[0].backend.model == "qwen2.5:0.5b");
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.name == "solo");
+  REQUIRE(cfg.backend.gateway == model::GatewayId::kOllama);
+  REQUIRE(cfg.backend.model == "qwen2.5:0.5b");
   // The host was left out, so it is the gateway's own rather than empty: a backend with no
   // address named the one the gateway always has.
-  REQUIRE(cfg.agents[0].backend.host == model::DefaultHostFor(model::GatewayId::kOllama));
+  REQUIRE(cfg.backend.host == model::DefaultHostFor(model::GatewayId::kOllama));
 }
 
 TEST_CASE("A single-agent file that does not name itself is refused", "[agent_config][single]") {
@@ -247,19 +237,8 @@ TEST_CASE("A single-agent file that does not name itself is refused", "[agent_co
 
   // There is no directory and no table to supply the name, and a name is what a session
   // records, so nobody but the file's author can answer it.
-  REQUIRE_THROWS_WITH(config::LoadAgentsConfig(tmp.path.string()),
+  REQUIRE_THROWS_WITH(config::LoadAgentConfig(tmp.path.string()),
                       Catch::Matchers::ContainsSubstring("must name itself"));
-}
-
-TEST_CASE("A file with neither an agents array nor a backend is a table missing its array",
-          "[agent_config][single]") {
-  TempConfigFile tmp;
-  tmp.write(R"({ "default_agent": "chat" })");
-
-  // The table form's own error rather than this one's: a file that omits both keys is far
-  // more likely a table that lost its array than a single agent that lost its backend.
-  REQUIRE_THROWS_WITH(config::LoadAgentsConfig(tmp.path.string()),
-                      Catch::Matchers::ContainsSubstring("Missing agents array"));
 }
 
 TEST_CASE("A backend that names no key takes the gateway's own variable", "[agent_config][single]") {
@@ -274,17 +253,17 @@ TEST_CASE("A backend that names no key takes the gateway's own variable", "[agen
 
   SECTION("set") {
     ScopedEnvVar env("TENCENT_API_KEY", "sk-from-the-environment");
-    const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-    REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
-    REQUIRE(*cfg.agents.at(0).backend.api_key == "sk-from-the-environment");
+    const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+    REQUIRE(cfg.backend.api_key.has_value());
+    REQUIRE(*cfg.backend.api_key == "sk-from-the-environment");
   }
 
   SECTION("unset") {
     // Nothing to take, so nothing is invented: the backend has no key and the first turn
     // says so, rather than carrying an empty one that reads as a key which is wrong.
     ScopedEnvVar env("TENCENT_API_KEY", "");
-    const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-    REQUIRE(!cfg.agents.at(0).backend.api_key.has_value());
+    const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+    REQUIRE(!cfg.backend.api_key.has_value());
   }
 }
 
@@ -300,9 +279,9 @@ TEST_CASE("A key the file names is not replaced by the environment", "[agent_con
 
   // The file's own answer, even though the gateway has one: a written key is the author's
   // choice, and falling back past it would silently use an account they did not name.
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
-  REQUIRE(*cfg.agents.at(0).backend.api_key == "from-the-file");
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.backend.api_key.has_value());
+  REQUIRE(*cfg.backend.api_key == "from-the-file");
 }
 
 TEST_CASE("An explicit empty key stays empty rather than falling back", "[agent_config][single]") {
@@ -316,12 +295,12 @@ TEST_CASE("An explicit empty key stays empty rather than falling back", "[agent_
   })");
 
   ScopedEnvVar gateway("TENCENT_API_KEY", "from-the-gateway");
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
   // A key that expanded to nothing keeps the empty answer the author wrote rather than the
   // gateway's variable: the variable they named is the one they meant, and taking another one
   // would hide the typo. `pu check` reports this as "(empty)" with a warning.
-  REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
-  REQUIRE(cfg.agents.at(0).backend.api_key->empty());
+  REQUIRE(cfg.backend.api_key.has_value());
+  REQUIRE(cfg.backend.api_key->empty());
 }
 
 TEST_CASE("A blank key is accepted when its variable holds one", "[setup]") {
@@ -426,9 +405,9 @@ TEST_CASE("WriteSetupConfig refuses to overwrite a file that is already there", 
   REQUIRE_THROWS_WITH(config::WriteSetupConfig(choice, workspace.string()),
                       Catch::Matchers::ContainsSubstring("already there"));
   // The file that was there is the one still there.
-  const config::AgentsConfig kept =
-      config::LoadAgentsConfig((workspace / ".pu" / "agents.json").string());
-  REQUIRE(kept.agents.at(0).backend.model == "m");
+  const config::AgentEntry kept =
+      config::LoadAgentConfig((workspace / ".pu" / "agents.json").string());
+  REQUIRE(kept.backend.model == "m");
 
   fs::remove_all(workspace, ec);
 }
@@ -436,360 +415,93 @@ TEST_CASE("WriteSetupConfig refuses to overwrite a file that is already there", 
 TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
-        "type": "llm",
         "description": "Local Chat",
         "backend": {
           "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "qwen3.5:4b",
           "temperature": 0.7
-        }
-      },
-      {
-        "name": "bash",
-        "type": "llm",
-        "description": "Command Runner",
-        "backend": {
-          "gateway": "openai",
-          "host": "https://api.openai.com/v1",
-          "api_key": "${OPENAI_KEY}",
-          "model": "gpt-4o-mini"
         },
         "security": {
           "sandbox_root": "/tmp"
         }
-      }
-    ]
-  })";
+      })";
   tmp.write(json);
 
   {
-    ScopedEnvVar env("OPENAI_KEY", "test-key-123");
-    config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+    config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
 
-    REQUIRE(cfg.default_agent == "chat");
-    REQUIRE(cfg.agents.size() == 2);
-    REQUIRE(cfg.agents[0].name == "chat");
-    REQUIRE(cfg.agents[0].backend.gateway == model::GatewayId::kOllama);
-    REQUIRE(cfg.agents[1].name == "bash");
-    REQUIRE(cfg.agents[1].backend.gateway == model::GatewayId::kOpenAI);
-    REQUIRE(cfg.agents[1].backend.api_key == "test-key-123");
-    REQUIRE(cfg.agents[1].security.sandbox_root == "/tmp");
+    REQUIRE(cfg.name == "chat");
+    REQUIRE(cfg.backend.gateway == model::GatewayId::kOllama);
+    REQUIRE(cfg.backend.model == "qwen3.5:4b");
+    REQUIRE(cfg.security.sandbox_root == "/tmp");
   }
 }
 
 
-namespace {
-
-// A workspace of the shape this build reads: a top-level table, and one directory per agent
-// beside it. Built and removed per case so two cases cannot see each other's files.
-struct TempAgentWorkspace {
-  fs::path root;
-  TempAgentWorkspace() {
-    root = UniqueTempPath("pu_agents_dir");
-    fs::create_directories(root / ".pu");
-  }
-  ~TempAgentWorkspace() {
-    std::error_code ec;
-    fs::remove_all(root, ec);
-  }
-  fs::path Table() const { return root / ".pu" / "agents.json"; }
-  fs::path AgentDir(const std::string& name) const { return root / ".pu" / "agents" / name; }
-  void WriteTable(const std::string& content) const {
-    std::ofstream file(Table(), std::ios::trunc);
-    file << content;
-  }
-  void WriteAgent(const std::string& name, const std::string& content) const {
-    fs::create_directories(AgentDir(name));
-    std::ofstream file(AgentDir(name) / "agents.json", std::ios::trunc);
-    file << content;
-  }
-  void WritePersona(const std::string& name, const std::string& text) const {
-    fs::create_directories(AgentDir(name));
-    std::ofstream file(AgentDir(name) / "persona.md", std::ios::trunc);
-    file << text;
-  }
-};
-
-const char* kInlineOnly = R"({
-  "default_agent": "chat",
-  "agents": [
-    { "name": "chat", "backend": { "gateway": "ollama", "host": "http://x:1", "model": "m" } }
-  ]
-})";
-
-const char* kOneAgentDir = R"({
-  "description": "reads and reports",
-  "delegates": ["reviewer"],
-  "tools": ["bash"],
-  "backend": { "gateway": "ollama", "model": "m" }
-})";
-
-}  // namespace
-
-TEST_CASE("An agent filed under .pu/agents/ is read by the name of its directory",
-          "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reader", kOneAgentDir);
-
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
-
-  REQUIRE(cfg.agents.size() == 2);
-  const auto& reader = cfg.agents[1];
-  CHECK(reader.name == "reader");
-  CHECK(reader.description == "reads and reports");
-  CHECK(reader.delegates == std::vector<std::string>{"reviewer"});
-  CHECK(reader.tools == std::vector<std::string>{"bash"});
-  // A gateway with a default host supplies it, exactly as it does for an inline entry.
-  CHECK_FALSE(reader.backend.host.empty());
-  CHECK(reader.source_dir == ws.AgentDir("reader"));
-}
-
-TEST_CASE("A persona file becomes the agent's system prompt", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reviewer", R"({
-    "persona": "persona.md",
-    "backend": { "gateway": "ollama", "model": "m" }
-  })");
-  // Trailing blank lines are the file's shape, not part of what the model is told.
-  ws.WritePersona("reviewer", "You review code and never write it.\n\n");
-
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
-  const auto& reviewer = cfg.agents.at(1);
-
-  CHECK(reviewer.backend.system_prompt.has_value());
-  CHECK(*reviewer.backend.system_prompt == "You review code and never write it.");
-}
-
-TEST_CASE("A table naming both persona and system_prompt is refused", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reader", R"({
-    "persona": "persona.md",
-    "backend": { "gateway": "ollama", "model": "m", "system_prompt": "be brief" }
-  })");
-  ws.WritePersona("reader", "You read.\n");
-
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("both persona and backend.system_prompt"));
-}
-
-TEST_CASE("A persona that is not there is refused by name", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reader", R"({
-    "persona": "missing.md",
-    "backend": { "gateway": "ollama", "model": "m" }
-  })");
-
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("persona file not found for reader"));
-}
-
-TEST_CASE("A directory whose table names another agent is refused", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reader", R"({
-    "name": "writer",
-    "backend": { "gateway": "ollama", "model": "m" }
-  })");
-
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("a directory is named after its agent"));
-}
-
-TEST_CASE("Two agents with one name are refused rather than merged", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(R"({
-    "default_agent": "chat",
-    "agents": [
-      { "name": "chat", "backend": { "gateway": "ollama", "host": "http://x:1", "model": "m" } }
-    ]
-  })");
-  ws.WriteAgent("chat", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
-
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("two agents are named 'chat'"));
-}
-
-TEST_CASE("A directory without a table is not an agent", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  fs::create_directories(ws.AgentDir("notes"));
-
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
-
-  CHECK(cfg.agents.size() == 1);
-}
-
-TEST_CASE("A tools list naming something this build does not register is refused",
-          "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("reader", R"({
-    "tools": ["bash", "telepathy"],
-    "backend": { "gateway": "ollama", "model": "m" }
-  })");
-
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("not a builtin tool"));
-}
 
 
-TEST_CASE("An MCP path in an agent's own table names something beside that table",
-          "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("runner", R"({
-    "backend": { "gateway": "ollama", "model": "m" },
-    "mcp_servers": [
-      { "name": "local", "command": "./serve.sh", "args": ["./serve.sh", "--verbose"] },
-      { "name": "elsewhere", "command": "/usr/bin/other" }
-    ]
-  })");
-  {
-    std::ofstream script(ws.AgentDir("runner") / "serve.sh", std::ios::trunc);
-    script << "#!/bin/sh\n";
-  }
-
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
-  const auto& servers = cfg.agents.at(1).mcp_servers;
-  REQUIRE(servers.size() == 2);
-
-  // Named and present beside the table: rewritten so it runs from wherever the process is.
-  CHECK(servers[0].command == (ws.AgentDir("runner") / "serve.sh").lexically_normal().string());
-  // A flag is not a path, and must be handed to the server as written.
-  CHECK(servers[0].args.at(1) == "--verbose");
-  // An absolute command is already unambiguous, and is left alone.
-  CHECK(servers[1].command == "/usr/bin/other");
-}
 
 
-TEST_CASE("An agent that delegates without ask_dir is a warning, not a refusal",
-          "[agent_config][delegates]") {
-  // The table is legal: `delegates` names who it may ask, `tools` names what it has, and the
-  // pair is what a reader has to hold together to see that the delegation is unreachable.
-  // `pu check` says so; loading does not refuse it, because a table that names a relation it
-  // has no tool for is a mistake to point out rather than one to stop for.
-  TempAgentWorkspace ws;
-  ws.WriteTable(kInlineOnly);
-  ws.WriteAgent("orchestrator", R"({
-    "delegates": ["reader"],
-    "tools": ["bash"],
-    "backend": { "gateway": "ollama", "model": "m" }
-  })");
-  ws.WriteAgent("reader", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
-  const auto orchestrator = std::find_if(cfg.agents.begin(), cfg.agents.end(),
-                                         [](const config::AgentEntry& entry) {
-                                           return entry.name == "orchestrator";
-                                         });
-  REQUIRE(orchestrator != cfg.agents.end());
-  CHECK(orchestrator->delegates == std::vector<std::string>{"reader"});
-  CHECK(orchestrator->tools == std::vector<std::string>{"bash"});
-}
 
-TEST_CASE("default_agent may name an agent that lives in its own directory",
-          "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(R"({ "default_agent": "reviewer", "agents": [] })");
-  ws.WriteAgent("reviewer", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(ws.Table().string());
 
-  REQUIRE(cfg.agents.size() == 1);
-  CHECK(cfg.agents[0].name == "reviewer");
-}
 
-TEST_CASE("A default_agent nothing configures lists what is configured", "[agent_config][delegates]") {
-  TempAgentWorkspace ws;
-  ws.WriteTable(R"({ "default_agent": "nobody", "agents": [] })");
-  ws.WriteAgent("reviewer", R"({ "backend": { "gateway": "ollama", "model": "m" } })");
 
-  CHECK_THROWS_WITH(config::LoadAgentsConfig(ws.Table().string()),
-                    Catch::Matchers::ContainsSubstring("have: reviewer"));
-}
+
+
+
+
 
 TEST_CASE("LoadAgentsConfig throws on missing file", "[agent_config]") {
-  REQUIRE_THROWS_AS(config::LoadAgentsConfig("/nonexistent/path/agents.json"), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentConfig("/nonexistent/path/agents.json"), std::runtime_error);
 }
 
 TEST_CASE("LoadAgentsConfig throws on invalid JSON", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write("not valid json");
-  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentConfig(tmp.path.string()), std::runtime_error);
 }
 
-TEST_CASE("LoadAgentsConfig works with explicit default_agent", "[agent_config]") {
+TEST_CASE("LoadAgentConfig reads a one-agent file", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_agent": "only",
-    "agents": [
-      {
         "name": "only",
-        "type": "llm",
         "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
-      }
-    ]
-  })";
+      })";
   tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.default_agent == "only");
+  config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.name == "only");
 }
 
 TEST_CASE("A backend may leave out the host its gateway supplies", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
         "backend": { "gateway": "ollama", "model": "qwen" }
-      },
-      {
-        "name": "cloud",
-        "backend": { "gateway": "tencent", "model": "glm-5.3" }
-      }
-    ]
-  })");
+      })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
 
-  REQUIRE(cfg.agents[0].backend.host == "http://localhost:11434");
-  REQUIRE(cfg.agents[1].backend.host == "https://copilot.tencent.com/v2");
+  REQUIRE(cfg.backend.host == "http://localhost:11434");
 }
 
 TEST_CASE("A backend without a model is still refused", "[agent_config]") {
   TempConfigFile tmp;
-  tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      { "name": "chat", "backend": { "gateway": "ollama" } }
-    ]
-  })");
+  tmp.write(R"({ "name": "chat", "backend": { "gateway": "ollama" } })");
 
-  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentConfig(tmp.path.string()), std::runtime_error);
 }
 
 TEST_CASE("A backend naming no gateway is refused, and says which field is missing",
           "[agent_config]") {
   TempConfigFile tmp;
-  tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      { "name": "chat", "backend": { "host": "http://localhost", "model": "x" } }
-    ]
-  })");
+  tmp.write(R"({ "name": "chat", "backend": { "host": "http://localhost", "model": "x" } })");
 
   try {
-    (void)config::LoadAgentsConfig(tmp.path.string());
+    (void)config::LoadAgentConfig(tmp.path.string());
     FAIL("a backend with no gateway was accepted");
   } catch (const std::exception& e) {
     REQUIRE(std::string(e.what()).find("Missing gateway") != std::string::npos);
@@ -797,25 +509,17 @@ TEST_CASE("A backend naming no gateway is refused, and says which field is missi
   }
 }
 
-TEST_CASE("LoadAgentsConfig rejects an unknown default_agent", "[agent_config]") {
+TEST_CASE("A file without a name is refused", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "missing",
-    "agents": [
-      {
-        "name": "chat",
         "backend": { "gateway": "ollama", "host": "http://localhost", "model": "x" }
-      }
-    ]
-  })");
+      })");
 
-  REQUIRE_THROWS_AS(config::LoadAgentsConfig(tmp.path.string()), std::runtime_error);
+  REQUIRE_THROWS_AS(config::LoadAgentConfig(tmp.path.string()), std::runtime_error);
 }
 
 TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   TempConfigFile tmp;
-  config::AgentsConfig original;
-  original.default_agent = "test";
   config::AgentEntry entry;
   entry.name = "test";
   entry.description = "desc";
@@ -823,17 +527,14 @@ TEST_CASE("Agents config writer produces valid JSON", "[agent_config]") {
   entry.backend.host = "https://api.test.com";
   entry.backend.model = "test-model";
   entry.backend.api_key = "secret";
-  original.agents.push_back(entry);
 
-  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
+  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), entry));
 
-  config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(loaded.default_agent == "test");
-  REQUIRE(loaded.agents.size() == 1);
-  REQUIRE(loaded.agents[0].name == "test");
-  REQUIRE(loaded.agents[0].backend.gateway == model::GatewayId::kOpenAI);
-  REQUIRE(loaded.agents[0].backend.host == "https://api.test.com");
-  REQUIRE(loaded.agents[0].backend.api_key == "secret");
+  config::AgentEntry loaded = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(loaded.name == "test");
+  REQUIRE(loaded.backend.gateway == model::GatewayId::kOpenAI);
+  REQUIRE(loaded.backend.host == "https://api.test.com");
+  REQUIRE(loaded.backend.api_key == "secret");
 }
 
 TEST_CASE("CreateBackend creates OllamaBackend", "[agent_config]") {
@@ -864,32 +565,23 @@ TEST_CASE("CreateBackend creates OpenAIBackend", "[agent_config]") {
 TEST_CASE("ExpandEnvVars warns on undefined variable", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_agent": "x",
-    "agents": [
-      {
         "name": "x",
-        "type": "llm",
         "backend": {
           "gateway": "ollama",
           "host": "http://localhost:11434",
           "model": "llama3.2",
           "system_prompt": "${UNDEFINED_VAR_FOR_TEST}"
         }
-      }
-    ]
-  })";
+      })";
   tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents[0].backend.system_prompt.has_value());
-  REQUIRE(cfg.agents[0].backend.system_prompt->empty());
+  config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.backend.system_prompt.has_value());
+  REQUIRE(cfg.backend.system_prompt->empty());
 }
 
 TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_agent": "deepseek",
-    "agents": [
-      {
         "name": "deepseek",
         "backend": {
           "gateway": "openai",
@@ -897,81 +589,62 @@ TEST_CASE("LoadAgentsConfig reads a thinking level", "[agent_config]") {
           "model": "deepseek-reasoner",
           "thinking": "high"
         }
-      }
-    ]
-  })";
+      })";
   tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kHigh);
+  config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.backend.thinking == ThinkingLevel::kHigh);
 }
 
 TEST_CASE("LoadAgentsConfig reads the context window a file names", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "cb",
-    "agents": [
-      {
         "name": "cb",
         "backend": {
           "gateway": "tencent",
           "model": "deepseek-v4.1-flash",
           "context_window": 250000
         }
-      }
-    ]
-  })");
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+      })");
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
   // A nominal figure a product does not enforce is corrected here, so the file outranks the
   // catalogue: the number is kept as written rather than checked against anything.
-  REQUIRE(cfg.agents[0].backend.context_window.has_value());
-  REQUIRE(*cfg.agents[0].backend.context_window == 250000);
+  REQUIRE(cfg.backend.context_window.has_value());
+  REQUIRE(*cfg.backend.context_window == 250000);
 }
 
 TEST_CASE("An absent context window stays absent", "[agent_config]") {
   TempConfigFile tmp;
-  tmp.write(R"({
-    "default_agent": "a",
-    "agents": [{"name": "a", "backend": {"gateway": "ollama", "model": "m"}}]
-  })");
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  tmp.write(R"({"name": "a", "backend": {"gateway": "ollama", "model": "m"} })");
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
   // Absent is not zero: absent is what sends the resolver to the gateway's own catalogue, and a
   // zero here would read as "this model holds nothing".
-  REQUIRE_FALSE(cfg.agents[0].backend.context_window.has_value());
+  REQUIRE_FALSE(cfg.backend.context_window.has_value());
 }
 
 TEST_CASE("LoadAgentsConfig uses defaults for an absent backend option", "[agent_config]") {
   TempConfigFile tmp;
   std::string json = R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
         "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen" }
-      }
-    ]
-  })";
+      })";
   tmp.write(json);
-  config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(cfg.agents[0].backend.thinking == ThinkingLevel::kServerDefault);
+  config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(cfg.backend.thinking == ThinkingLevel::kServerDefault);
 }
 
 TEST_CASE("Agents config writer round-trips a thinking level", "[agent_config]") {
   TempConfigFile tmp;
-  config::AgentsConfig original;
-  original.default_agent = "deepseek";
   config::AgentEntry entry;
   entry.name = "deepseek";
   entry.backend.gateway = model::GatewayId::kOpenAI;
   entry.backend.host = "https://api.deepseek.com/v1";
   entry.backend.model = "deepseek-reasoner";
   entry.backend.thinking = ThinkingLevel::kMedium;
-  original.agents.push_back(entry);
 
-  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), original));
+  REQUIRE_NOTHROW(WriteAgentsConfigForTest(tmp.path.string(), entry));
 
-  config::AgentsConfig loaded = config::LoadAgentsConfig(tmp.path.string());
-  REQUIRE(loaded.agents.size() == 1);
-  REQUIRE(loaded.agents[0].backend.thinking == ThinkingLevel::kMedium);
+  config::AgentEntry loaded = config::LoadAgentConfig(tmp.path.string());
+  REQUIRE(loaded.backend.thinking == ThinkingLevel::kMedium);
 }
 
 TEST_CASE("A rendered entry copies the file's own surroundings and expands nothing",
@@ -1039,13 +712,7 @@ TEST_CASE("A rendered entry leaves a model that does not require a level alone",
 
 TEST_CASE("FindRawAgentEntry reads the file as written, not as resolved", "[agent_config]") {
   TempConfigFile tmp;
-  tmp.write(R"({
-    "default_agent": "a",
-    "agents": [
-      {"name": "a", "backend": {"gateway": "tencent", "model": "m1", "api_key": "${KEY_A}"}},
-      {"name": "b", "backend": {"gateway": "openai", "model": "m2"}}
-    ]
-  })");
+  tmp.write(R"({"name": "a", "backend": {"gateway": "tencent", "model": "m1", "api_key": "${KEY_A}"} })");
 
   const std::optional<boost::json::value> found =
       config::FindRawAgentEntry(tmp.path.string(), "a");
@@ -1060,19 +727,14 @@ TEST_CASE("FindRawAgentEntry reads the file as written, not as resolved", "[agen
 TEST_CASE("A paging block sets the budget a session runs with", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
         "backend": { "gateway": "ollama", "model": "qwen" },
         "paging": { "page_lines": 40, "max_lines": 90, "capture_bytes": 4096,
                     "retain_bytes": 8192, "retain_buffers": 3 }
-      }
-    ]
-  })");
+      })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  const paging::Budget& budget = cfg.agents[0].paging;
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  const paging::Budget& budget = cfg.paging;
 
   REQUIRE(budget.page_lines == 40);
   REQUIRE(budget.max_lines == 90);
@@ -1087,19 +749,14 @@ TEST_CASE("A paging block sets the budget a session runs with", "[agent_config]"
 TEST_CASE("A paging block that cannot be obeyed is raised to one that can", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
         "backend": { "gateway": "ollama", "model": "qwen" },
         "paging": { "page_lines": 0, "max_lines": 0, "capture_bytes": 1,
                     "retain_bytes": 1, "retain_buffers": 0 }
-      }
-    ]
-  })");
+      })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
-  const paging::Budget& budget = cfg.agents[0].paging;
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  const paging::Budget& budget = cfg.paging;
 
   REQUIRE(budget.page_lines == 1);
   REQUIRE(budget.max_lines == 1);  // raised to page_lines, which was itself raised to 1
@@ -1110,21 +767,16 @@ TEST_CASE("A paging block that cannot be obeyed is raised to one that can", "[ag
 
 TEST_CASE("An agent with no paging block keeps the default budget", "[agent_config]") {
   TempConfigFile tmp;
-  tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      { "name": "chat", "backend": { "gateway": "ollama", "model": "qwen" } }
-    ]
-  })");
+  tmp.write(R"({ "name": "chat", "backend": { "gateway": "ollama", "model": "qwen" } })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
   const paging::Budget defaults;
 
-  REQUIRE(cfg.agents[0].paging.page_lines == defaults.page_lines);
-  REQUIRE(cfg.agents[0].paging.max_lines == defaults.max_lines);
-  REQUIRE(cfg.agents[0].paging.capture_bytes == defaults.capture_bytes);
-  REQUIRE(cfg.agents[0].paging.retain_bytes == defaults.retain_bytes);
-  REQUIRE(cfg.agents[0].paging.retain_buffers == defaults.retain_buffers);
+  REQUIRE(cfg.paging.page_lines == defaults.page_lines);
+  REQUIRE(cfg.paging.max_lines == defaults.max_lines);
+  REQUIRE(cfg.paging.capture_bytes == defaults.capture_bytes);
+  REQUIRE(cfg.paging.retain_bytes == defaults.retain_bytes);
+  REQUIRE(cfg.paging.retain_buffers == defaults.retain_buffers);
 }
 
 // `output` was the block's name before it grew retention as well as page size. A config
@@ -1132,17 +784,12 @@ TEST_CASE("An agent with no paging block keeps the default budget", "[agent_conf
 TEST_CASE("An output block from an older config is ignored, not fatal", "[agent_config]") {
   TempConfigFile tmp;
   tmp.write(R"({
-    "default_agent": "chat",
-    "agents": [
-      {
         "name": "chat",
         "backend": { "gateway": "ollama", "model": "qwen" },
         "output": { "page_lines": 40 }
-      }
-    ]
-  })");
+      })");
 
-  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
 
-  REQUIRE(cfg.agents[0].paging.page_lines == paging::Budget{}.page_lines);
+  REQUIRE(cfg.paging.page_lines == paging::Budget{}.page_lines);
 }

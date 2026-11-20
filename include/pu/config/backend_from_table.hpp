@@ -12,11 +12,11 @@
 
 namespace pu::config {
 
-// A named gateway is built from the table and never adopted. An unnamed one is the agent the
-// table names, or its `default_agent` when none was named. `model` overrides the agent's own,
-// which is the one thing a caller gets to say about a table it did not write.
+// A named gateway is built from the table and never adopted. An unnamed one is the agent's
+// own. `model` overrides that, which is the one thing a caller gets to say about a file it did
+// not write.
 model::Backend BackendFromTable(const std::string& gateway, const std::string& model,
-                                const std::string& agent, const config::AgentsConfig& agents);
+                                const std::string& agent, const config::AgentEntry& agents);
 
 // The same, reading the table itself. Throws when the table names no such agent, since the
 // caller asked for one by name and a silently different gateway would be the wrong answer to

@@ -89,9 +89,9 @@ int main(int argc, char** argv) {
         const std::string config_path = vm.count("config") > 0 ? vm["config"].as<std::string>()
                                                                : pu::config::FindConfigPath();
         // Which agent the entry is copied from: a named one, or the table's own default.
-        const pu::config::AgentsConfig table = pu::config::LoadAgentsConfig(config_path);
+        const pu::config::AgentEntry table = pu::config::LoadAgentConfig(config_path);
         const std::string agent_name =
-            vm.count("agent") > 0 ? vm["agent"].as<std::string>() : table.default_agent;
+            vm.count("agent") > 0 ? vm["agent"].as<std::string>() : table.name;
 
         const pu::model::Backend backend = BackendFor(models, config_path, agent_name);
         auto http = std::make_shared<pu::http::BeastHttpClient>();

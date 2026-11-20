@@ -30,6 +30,7 @@
 #include "pu/model/gateway.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
+#include "pu/core/workspace_path.hpp"
 
 namespace pu::cli {
 
@@ -63,24 +64,21 @@ std::string ApiKeyState(const model::Backend& backend, const boost::json::value&
     // What an unset ${VAR} expands to: an empty key, which a provider answers with a 401
     // rather than with "that variable is not set".
     const std::string declared = json::ValueOrDefault<std::string>(raw_backend, "api_key", "");
-    warnings.push_back("api_key in " + std::string("this backend") + " resolves to empty" +
-                       (declared.empty() ? std::string()
-                                         : " (declared as " + declared +
-                                               "; is the variable set?)"));
+    const std::string detail =
+        declared.empty() ? std::string() : " (declared as " + declared + "; is the variable set?)";
+    warnings.push_back("api_key in this backend resolves to empty" + detail);
     return "(empty)";
   }
   return "(set, " + std::to_string(backend.api_key->size()) + " characters)";
 }
 
+// Where the toolbox will actually be allowed to write, resolved by the same rule the runtime
+// applies when it hands the policy to a tool -- not by a second copy of it. `weakly_canonical`
+// is over the resolved path rather than the written one, so a `..` that climbs out of the
+// workspace shows as the place it lands.
 std::string SandboxState(const config::SecurityPolicy& policy, const fs::path& workspace,
                          std::vector<std::string>& warnings) {
-  if (policy.sandbox_root.empty()) {
-    warnings.push_back("no sandbox_root names, so the workspace is the sandbox");
-    return workspace.string();
-  }
-  const fs::path resolved = fs::path(policy.sandbox_root).is_absolute()
-                                ? fs::path(policy.sandbox_root)
-                                : workspace / policy.sandbox_root;
+  const fs::path resolved = ResolveWorkspacePath(workspace, policy.sandbox_root);
   std::error_code ec;
   const fs::path canonical = fs::weakly_canonical(resolved, ec);
   if (ec) {
@@ -91,14 +89,12 @@ std::string SandboxState(const config::SecurityPolicy& policy, const fs::path& w
   return canonical.string();
 }
 
-std::string FormatAgent(const config::AgentEntry& entry, const boost::json::value& raw,
-                        const fs::path& workspace, const std::string& default_agent,
-                        std::vector<std::string>& warnings) {
-  const boost::json::object* raw_agent = raw.if_object();
+// The header carries the agent's name and nothing else.
+std::string FormatAgent(const config::AgentEntry& entry, const boost::json::value* raw,
+                        const fs::path& workspace, std::vector<std::string>& warnings) {
+  const boost::json::object* raw_agent = raw == nullptr ? nullptr : raw->if_object();
   std::ostringstream out;
-  out << entry.name;
-  if (entry.name == default_agent) out << "   (default_agent)";
-  out << "\n";
+  out << entry.name << "\n";
 
   if (!entry.description.empty()) out << "  description  " << entry.description << "\n";
   out << "  gateway      " << model::GatewayName(entry.backend.gateway) << "\n";
@@ -115,6 +111,14 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   out << "  model        " << entry.backend.model << "\n";
   if (raw_agent != nullptr && raw_agent->contains("backend")) {
     out << "  api_key      " << ApiKeyState(entry.backend, raw_agent->at("backend"), warnings)
+        << "\n";
+  } else {
+    // The resolved key is known from the environment whether or not the file could be read,
+    // and a key that expanded to nothing is the failure this report exists to catch.
+    out << "  api_key      "
+        << (entry.backend.api_key ? "(set, " + std::to_string(entry.backend.api_key->size()) +
+                                        " characters)"
+                                  : "(none)")
         << "\n";
   }
   out << "  thinking     " << ThinkingLevelName(entry.backend.thinking) << "\n";
@@ -152,9 +156,8 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
   }
   if (!entry.delegates.empty()) {
     out << "  delegates to " << text::Join(entry.delegates) << "\n";
-    // A delegation is reached through `ask_dir`, and one whose `tools` list leaves that out
-    // names a relationship nothing can use. Not an error — the table is legal — but the one
-    // thing a reader would not see from either field alone.
+    // A delegation is reached through `ask_dir`. `tools` leaving that out names a relationship
+    // nothing can use; the file is still legal, so it is said and not refused.
     const bool has_ask_dir =
         entry.tools.empty() ||
         std::find(entry.tools.begin(), entry.tools.end(), "ask_dir") != entry.tools.end();
@@ -206,7 +209,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   std::string path = config_path;
   if (path.empty()) {
     // The same order `Initialize` reads a run by, resolved against this directory rather than
-    // the process's: a table beside the directory `-C` named is the one the run would load.
+    // the process's: the file beside the directory `-C` named is the one the run would load.
     const fs::path local = workspace / ".pu" / "agents.json";
     std::error_code ec;
     if (fs::exists(local, ec)) {
@@ -224,9 +227,9 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
 
   std::cout << "config  " << path << "\n\n";
 
-  config::AgentsConfig cfg;
+  config::AgentEntry cfg;
   try {
-    cfg = config::LoadAgentsConfig(path);
+    cfg = config::LoadAgentConfig(path);
   } catch (const std::exception& e) {
     // A file this build cannot read is the invocation being wrong: fixing it is the remedy.
     std::cerr << "cannot load " << path << ": " << e.what() << "\n";
@@ -234,7 +237,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   }
 
   std::cout << "workspace  " << workspace.string() << "\n";
-  std::cout << "default    " << cfg.default_agent << "\n\n";
+  std::cout << "agent      " << cfg.name << "\n\n";
 
   const boost::json::value root = [&] {
     std::ifstream file(path);
@@ -246,33 +249,16 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
       return boost::json::value(boost::json::object{});
     }
   }();
-  const boost::json::array* raw_agents = nullptr;
-  if (root.is_object() && root.as_object().contains("agents") &&
-      root.at("agents").is_array()) {
-    raw_agents = &root.at("agents").as_array();
-  }
-
   std::vector<std::string> warnings;
-  for (std::size_t i = 0; i < cfg.agents.size(); ++i) {
-    // A file describing one agent is its own raw entry: there is no array to index, and the
-    // object the report asks about fields of is the whole file. Reporting an empty one there
-    // would say nothing was declared, and the api_key line — the one this report exists to
-    // show resolved — would be left out entirely.
-    const boost::json::value raw =
-        (raw_agents != nullptr && i < raw_agents->size())
-            ? (*raw_agents)[i]
-            : (cfg.agents.size() == 1 && root.is_object() ? root
-                                                          : boost::json::value(boost::json::object{}));
-    std::cout << FormatAgent(cfg.agents[i], raw, workspace, cfg.default_agent, warnings) << "\n";
-  }
+  // The file is its own raw entry: the object the report asks about fields of is the whole
+  // file. A file that did not parse passes null rather than an empty object, so a line saying
+  // nothing was declared is not printed as though it were a declaration.
+  std::cout << FormatAgent(cfg, root.is_object() ? &root : nullptr, workspace, warnings) << "\n";
 
-  // The session outranks default_agent by design, so a session naming an agent this file no
-  // longer has is a fact to report rather than a file to fix: the names that do exist are
-  // printed beside it.
-  // Beside the config that was read, which is where the runtime looks: a session and the
-  // file that configures it are two halves of one workspace, and `--config` names one of
-  // them only for the reader's convenience.
-  const fs::path session_path = fs::path(path).parent_path() / "session.json";
+  // The session lives in the workspace under `.pu`, where the runtime reads it from, so
+  // `--config` naming a file elsewhere does not move it. It outranks the file, so a name the
+  // file does not configure is a fact to print rather than a file to refuse.
+  const fs::path session_path = workspace / ".pu" / "session.json";
   if (fs::exists(session_path)) {
     std::ifstream file(session_path);
     std::ostringstream text;
@@ -289,67 +275,23 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
             ? json::ValueOrDefault<std::string>(saved.at("session_spec"), "agent_name", "")
             : std::string();
     if (!named.empty()) {
-      const bool known = std::any_of(cfg.agents.begin(), cfg.agents.end(),
-                                     [&](const config::AgentEntry& entry) {
-                                       return entry.name == named;
-                                     });
+      const bool known = named == cfg.name;
       std::cout << "session  " << session_path.string() << "\n";
       if (known) {
         std::cout << "  names  " << named << "\n\n";
       } else {
         std::cout << "  names  " << named << ", which this file does not configure\n";
-        std::cout << "  configured: ";
-        for (std::size_t i = 0; i < cfg.agents.size(); ++i) {
-          if (i > 0) std::cout << ", ";
-          std::cout << cfg.agents[i].name;
-        }
-        std::cout << "\n\n";
+        std::cout << "  configured: " << cfg.name << "\n\n";
       }
     }
   }
 
-  // Delegation is a relation between entries, so it is checked once against all of them: a
-  // name nothing configures, an agent told it may ask itself, and a cycle are all facts the
-  // single entry cannot show. Each is an error rather than a warning, because a table that
-  // says it cannot be used is one a turn will fail on later with less to go on.
-  std::set<std::string> configured;
-  for (const config::AgentEntry& entry : cfg.agents) configured.insert(entry.name);
-
+  // Each target configures itself elsewhere, so the one delegation mistake a file can make is
+  // asking itself: the turn that reaches it recurses until a budget stops it.
   std::vector<std::string> errors;
-  for (const config::AgentEntry& entry : cfg.agents) {
-    for (const std::string& target : entry.delegates) {
-      if (configured.count(target) == 0) {
-        errors.push_back(entry.name + " delegates to '" + target +
-                         "', which nothing configures");
-      } else if (target == entry.name) {
-        errors.push_back(entry.name + " delegates to itself");
-      }
-    }
+  for (const std::string& target : cfg.delegates) {
+    if (target == cfg.name) errors.push_back(cfg.name + " delegates to itself");
   }
-  // A cycle would run out of depth rather than run forever, but it is still a table nobody
-  // meant to write, and the chain is what makes it obvious.
-  for (const config::AgentEntry& entry : cfg.agents) {
-    std::vector<std::string> chain{entry.name};
-    std::string here = entry.name;
-    for (std::size_t step = 0; step < cfg.agents.size(); ++step) {
-      const auto it = std::find_if(cfg.agents.begin(), cfg.agents.end(),
-                                   [&](const config::AgentEntry& known) { return known.name == here; });
-      if (it == cfg.agents.end() || it->delegates.empty()) break;
-      here = it->delegates.front();
-      if (here == entry.name) {
-        std::string drawn;
-        for (const std::string& name : chain) drawn += name + " -> ";
-        errors.push_back("delegation goes round in a circle: " + drawn + entry.name);
-        break;
-      }
-      if (std::find(chain.begin(), chain.end(), here) != chain.end()) break;
-      chain.push_back(here);
-    }
-  }
-  // One report per cycle, not one per member of it.
-  std::sort(errors.begin(), errors.end());
-  errors.erase(std::unique(errors.begin(), errors.end()), errors.end());
-
   if (!errors.empty()) {
     std::cout << "delegation\n";
     for (const std::string& error : errors) std::cout << "  " << error << "\n";
@@ -361,9 +303,8 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
     for (const std::string& warning : warnings) std::cout << "  " << warning << "\n";
   }
 
-  // A warning is not a failure: a file this build reads and an entry it can run is a pass,
-  // and what it noticed is for a person to weigh. A delegation that names nothing runnable is
-  // a failure, because the turn that reaches it fails with less to go on than this does.
+  // A warning is not a failure: a file this build reads and an agent it can run is a pass, and
+  // what it noticed is for a person to weigh.
   if (!errors.empty()) return static_cast<int>(ExitCode::kUsage);
   return static_cast<int>(ExitCode::kOk);
 }
