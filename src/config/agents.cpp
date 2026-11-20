@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/text.hpp"
+#include "pu/model/gateway.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -83,7 +84,24 @@ model::Backend ParseBackend(const json::value& j) {
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
   cfg.model = ExpandEnvVars(cfg.model);
-  if (cfg.api_key) cfg.api_key = ExpandEnvVars(*cfg.api_key);
+  if (cfg.api_key) {
+    cfg.api_key = ExpandEnvVars(*cfg.api_key);
+  } else {
+    // The gateway's own variable, when the file names no key at all. A backend that says
+    // which product it talks to and not which key it uses is the ordinary case: the key is a
+    // secret in the environment, and writing the variable's name in every entry is asking the
+    // file to restate what the gateway already knows. Only an absent `api_key` reaches here —
+    // an explicit one, even one that expanded to empty, is the author's answer and is left as
+    // they wrote it, so a typo in a variable name stays visible instead of being papered over
+    // by a second lookup.
+    const std::string_view env = model::ApiKeyEnvFor(cfg.gateway);
+    if (!env.empty()) {
+      const std::string name(env);
+      if (const char* value = std::getenv(name.c_str()); value != nullptr && *value != '\0') {
+        cfg.api_key = std::string(value);
+      }
+    }
+  }
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
   return cfg;
@@ -426,9 +444,42 @@ const std::vector<std::string>& BuiltinToolNames() {
   return names;
 }
 
+// The one agent a file describes when it describes itself rather than a table of agents: no
+// `agents` array, no `default_agent`, and the backend written at the top. A file that names a
+// single agent with nothing to choose between has no list to write and no default to pick, and the
+// two keys that exist to answer those questions are the two a reader of such a file has to skip
+// past.
+//
+// It is told apart from the table form by the key that only one of them has: an `agents` array is
+// a table whatever else it says, and a top-level `backend` with no array is one agent. A file with
+// neither is the table form's own error, because a file that omits both is more likely to be a
+// table missing its array than a single agent missing its backend.
+//
+// The name is required here. In the table form it can be left out and a directory supplies it,
+// but there is no directory for an inline entry and a name is what a session records, so the
+// writer of this file is the only one who can supply it.
+bool IsSingleAgentFile(const json::value& j) {
+  const bool has_table = json::HasKey(j, "agents") && j.at("agents").is_array();
+  return !has_table && json::HasKey(j, "backend");
+}
+
+AgentsConfig LoadSingleAgentConfig(const json::value& j, const std::string& config_path) {
+  AgentsConfig result;
+  AgentEntry entry = ParseAgentEntry(j);
+  if (entry.name.empty()) {
+    throw pu::GenericError(config_path +
+                           " describes one agent, so it must name itself: add a \"name\" field");
+  }
+  result.default_agent = entry.name;
+  result.agents.push_back(std::move(entry));
+  return result;
+}
+
 AgentsConfig LoadAgentsConfig(const std::string& config_path) {
   AgentsConfig result;
   const json::value j = ReadJsonFile(config_path);
+
+  if (IsSingleAgentFile(j)) return LoadSingleAgentConfig(j, config_path);
 
   if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
     throw pu::GenericError("Missing default_agent field");

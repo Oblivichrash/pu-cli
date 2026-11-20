@@ -140,6 +140,21 @@ bool ProcessRunning(int pid) {
 #endif
 }
 
+bool StdinIsTerminal() {
+#ifdef _WIN32
+  // A console is a character device this process has one of; a pipe or a redirected file is
+  // a handle that reports a type rather than a terminal.
+  HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+  if (input == nullptr || input == INVALID_HANDLE_VALUE) return false;
+  DWORD mode = 0;
+  return GetConsoleMode(input, &mode) != 0;
+#else
+  // `isatty` is asked of the descriptor rather than the stream: a reader answering a prompt
+  // has one on stdin, and a redirected one has a file.
+  return ::isatty(STDIN_FILENO) != 0;
+#endif
+}
+
 std::string FromConsoleOutput(std::string_view text) {
 #ifdef _WIN32
   UINT code_page = GetConsoleOutputCP();

@@ -6,6 +6,32 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Added
+
+- **A workspace with no `agents.json` is configured by being asked.** `pu setup`
+  asks for the gateway (a number, with a local product marked as needing no key),
+  then the URL — blank meaning the gateway's own — then the key, asked only when
+  that gateway reads one, and then fetches the catalogue and prints it with
+  numbers so the model is a keystroke rather than a spelling. It writes
+  `./.pu/agents.json` and refuses to replace a file that is already there. A
+  listing that fails is not fatal: the model can be typed, which is what a
+  machine with no route to the gateway needs. `pu ask`, `pu chat` and `pu serve`
+  run the same wizard themselves when they find no configuration and have a
+  terminal attached, so the command that needed a file runs against the file
+  just written. A run with no terminal is asked nothing and keeps the familiar
+  "Configuration file not found", because a wizard cannot read a keyboard that
+  is not there.
+
+### Changed
+
+- **One agent can be the whole file.** An `agents.json` with `name` and
+  `backend` at the top and no `agents` array and no `default_agent` is read as
+  a one-entry table whose default is that name. A file that describes one agent
+  has nothing to choose between and nothing to default to, and the two keys that
+  exist to answer those questions are the two its reader has to skip past. The
+  table form is unchanged; a file with neither an `agents` array nor a
+  `backend` is still a table missing its array.
+
 ## 0.7.2
 
 ### Added

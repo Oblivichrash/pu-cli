@@ -254,9 +254,15 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
 
   std::vector<std::string> warnings;
   for (std::size_t i = 0; i < cfg.agents.size(); ++i) {
+    // A file describing one agent is its own raw entry: there is no array to index, and the
+    // object the report asks about fields of is the whole file. Reporting an empty one there
+    // would say nothing was declared, and the api_key line — the one this report exists to
+    // show resolved — would be left out entirely.
     const boost::json::value raw =
-        (raw_agents != nullptr && i < raw_agents->size()) ? (*raw_agents)[i]
-                                                         : boost::json::value(boost::json::object{});
+        (raw_agents != nullptr && i < raw_agents->size())
+            ? (*raw_agents)[i]
+            : (cfg.agents.size() == 1 && root.is_object() ? root
+                                                          : boost::json::value(boost::json::object{}));
     std::cout << FormatAgent(cfg.agents[i], raw, workspace, cfg.default_agent, warnings) << "\n";
   }
 

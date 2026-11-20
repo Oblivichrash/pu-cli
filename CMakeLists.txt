@@ -86,6 +86,7 @@ add_library(pu_config STATIC
     src/config/agents.cpp
     src/config/backend_from_table.cpp
     src/config/serve_registry.cpp
+    src/config/setup.cpp
 )
 target_link_libraries(pu_config PUBLIC pu_model)
 pu_configure_target(pu_config)
@@ -175,6 +176,7 @@ add_library(pu_core STATIC
     src/app/cli_sse.cpp
     src/app/models.cpp
     src/app/probe.cpp
+    src/app/setup.cpp
 )
 target_link_libraries(pu_core PUBLIC
     pu_serve

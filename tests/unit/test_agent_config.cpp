@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "pu/config/agents.hpp"
+#include "pu/config/setup.hpp"
 #include "pu/model/backend.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -218,6 +219,220 @@ TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_co
   fs::current_path(old);
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
+}
+
+// A file that describes one agent has nothing to choose between and nothing to default to,
+// so it says neither: the name is at the top and the backend beneath it, which is the whole
+// of what a workspace with one agent has to record.
+TEST_CASE("A file describing one agent needs no default_agent and no agents array",
+          "[agent_config][single]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "name": "solo",
+    "backend": { "gateway": "ollama", "model": "qwen2.5:0.5b" }
+  })");
+
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.default_agent == "solo");
+  REQUIRE(cfg.agents.size() == 1);
+  REQUIRE(cfg.agents[0].name == "solo");
+  REQUIRE(cfg.agents[0].backend.gateway == model::GatewayId::kOllama);
+  REQUIRE(cfg.agents[0].backend.model == "qwen2.5:0.5b");
+  // The host was left out, so it is the gateway's own rather than empty: a backend with no
+  // address named the one the gateway always has.
+  REQUIRE(cfg.agents[0].backend.host == model::DefaultHostFor(model::GatewayId::kOllama));
+}
+
+TEST_CASE("A single-agent file that does not name itself is refused", "[agent_config][single]") {
+  TempConfigFile tmp;
+  tmp.write(R"({ "backend": { "gateway": "ollama", "model": "m" } })");
+
+  // There is no directory and no table to supply the name, and a name is what a session
+  // records, so nobody but the file's author can answer it.
+  REQUIRE_THROWS_WITH(config::LoadAgentsConfig(tmp.path.string()),
+                      Catch::Matchers::ContainsSubstring("must name itself"));
+}
+
+TEST_CASE("A file with neither an agents array nor a backend is a table missing its array",
+          "[agent_config][single]") {
+  TempConfigFile tmp;
+  tmp.write(R"({ "default_agent": "chat" })");
+
+  // The table form's own error rather than this one's: a file that omits both keys is far
+  // more likely a table that lost its array than a single agent that lost its backend.
+  REQUIRE_THROWS_WITH(config::LoadAgentsConfig(tmp.path.string()),
+                      Catch::Matchers::ContainsSubstring("Missing agents array"));
+}
+
+TEST_CASE("A backend that names no key takes the gateway's own variable", "[agent_config][single]") {
+  TempConfigFile tmp;
+  // No `api_key` at all, which is the ordinary case: the key is a secret in the environment
+  // and writing the variable's name in every entry asks the file to restate what the gateway
+  // already knows.
+  tmp.write(R"({
+    "name": "solo",
+    "backend": { "gateway": "codebuddy", "model": "deepseek-v4.1-flash" }
+  })");
+
+  SECTION("set") {
+    ScopedEnvVar env("CODEBUDDY_API_KEY", "sk-from-the-environment");
+    const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+    REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
+    REQUIRE(*cfg.agents.at(0).backend.api_key == "sk-from-the-environment");
+  }
+
+  SECTION("unset") {
+    // Nothing to take, so nothing is invented: the backend has no key and the first turn
+    // says so, rather than carrying an empty one that reads as a key which is wrong.
+    ScopedEnvVar env("CODEBUDDY_API_KEY", "");
+    const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+    REQUIRE(!cfg.agents.at(0).backend.api_key.has_value());
+  }
+}
+
+TEST_CASE("A key the file names is not replaced by the environment", "[agent_config][single]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "name": "solo",
+    "backend": { "gateway": "codebuddy", "model": "m", "api_key": "${MY_OWN_KEY}" }
+  })");
+
+  ScopedEnvVar own("MY_OWN_KEY", "from-the-file");
+  ScopedEnvVar gateway("CODEBUDDY_API_KEY", "from-the-gateway");
+
+  // The file's own answer, even though the gateway has one: a written key is the author's
+  // choice, and falling back past it would silently use an account they did not name.
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
+  REQUIRE(*cfg.agents.at(0).backend.api_key == "from-the-file");
+}
+
+TEST_CASE("An explicit empty key stays empty rather than falling back", "[agent_config][single]") {
+  TempConfigFile tmp;
+  // A variable that is not set: the expansion is empty, and that empty key is the author's
+  // answer. Taking the gateway's variable instead would paper over a typo in the name they
+  // wrote, which is the mistake this leaves visible.
+  tmp.write(R"({
+    "name": "solo",
+    "backend": { "gateway": "codebuddy", "model": "m", "api_key": "${NOT_SET_ANYWHERE}" }
+  })");
+
+  ScopedEnvVar gateway("CODEBUDDY_API_KEY", "from-the-gateway");
+  const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
+  // A key that expanded to nothing keeps the empty answer the author wrote rather than the
+  // gateway's variable: the variable they named is the one they meant, and taking another one
+  // would hide the typo. `pu check` reports this as "(empty)" with a warning.
+  REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
+  REQUIRE(cfg.agents.at(0).backend.api_key->empty());
+}
+
+TEST_CASE("A blank key is accepted when its variable holds one", "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kCodeBuddy;
+  choice.model = "m";
+  // The question offered this variable as the default, so a blank answer is the intended one;
+  // refusing it would make the prompt's own instruction unusable.
+  ScopedEnvVar env("CODEBUDDY_API_KEY", "sk-from-the-environment");
+  REQUIRE_NOTHROW(config::ValidateSetupChoice(choice));
+  // And the file names no key, leaving the run to read the variable -- writing it would copy a
+  // secret into the workspace for no reason.
+  const std::string rendered = config::RenderSetupConfig(choice);
+  const boost::json::value parsed = boost::json::parse(rendered);
+  REQUIRE(!parsed.at("backend").as_object().contains("api_key"));
+}
+
+TEST_CASE("A blank key is refused when its variable is unset", "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kCodeBuddy;
+  choice.model = "m";
+  // Nothing would answer the question, so the turn would fail on its first request somewhere
+  // far from this prompt.
+  ScopedEnvVar env("CODEBUDDY_API_KEY", "");
+  REQUIRE_THROWS_AS(config::ValidateSetupChoice(choice), GenericError);
+}
+
+TEST_CASE("RenderSetupConfig writes the single-agent form with no key when there is none",
+          "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kOllama;
+  choice.host = "http://localhost:9999";
+  choice.model = "qwen2.5:0.5b";
+  choice.agent_name = "default";
+
+  const std::string text = config::RenderSetupConfig(choice);
+  const json::value parsed = json::parse(text);
+
+  REQUIRE(text.back() == '\n');
+  REQUIRE(!json::HasKey(parsed, "default_agent"));
+  REQUIRE(!json::HasKey(parsed, "agents"));
+  REQUIRE(boost::json::value_to<std::string>(parsed.at("name")) == "default");
+  const auto& backend = parsed.at("backend").as_object();
+  REQUIRE(boost::json::value_to<std::string>(backend.at("gateway")) == "ollama");
+  REQUIRE(boost::json::value_to<std::string>(backend.at("host")) == "http://localhost:9999");
+  REQUIRE(boost::json::value_to<std::string>(backend.at("model")) == "qwen2.5:0.5b");
+  // Absent rather than empty: a file that said `api_key: ""` would read as a key that is
+  // wrong, where saying nothing reads as a product that never asked for one.
+  REQUIRE(backend.find("api_key") == backend.end());
+}
+
+TEST_CASE("A gateway that reads a key is refused when the choice has none", "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kOpenAI;
+  choice.model = "gpt-4o-mini";
+
+  // A file written without it would fail on the first turn with a message about a header,
+  // far from the question that was left blank.
+  REQUIRE_THROWS_WITH(config::ValidateSetupChoice(choice),
+                      Catch::Matchers::ContainsSubstring("enter one here"));
+
+  // With a key it passes, which is the same check saying yes rather than a second test.
+  choice.api_key = "sk-test";
+  REQUIRE_NOTHROW(config::ValidateSetupChoice(choice));
+}
+
+TEST_CASE("A choice with no model is refused", "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kOllama;
+  choice.model = "   ";
+
+  REQUIRE_THROWS_WITH(config::ValidateSetupChoice(choice),
+                      Catch::Matchers::ContainsSubstring("needs a model"));
+}
+
+TEST_CASE("A choice with no agent name is refused", "[setup]") {
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kOllama;
+  choice.model = "m";
+  choice.agent_name = " ";
+
+  REQUIRE_THROWS_WITH(config::ValidateSetupChoice(choice),
+                      Catch::Matchers::ContainsSubstring("needs a name"));
+}
+
+TEST_CASE("WriteSetupConfig refuses to overwrite a file that is already there", "[setup]") {
+  // `<workspace>/.pu/agents.json` is where the writer looks, so the workspace is built first
+  // and the file placed where it would have gone. A run reaching this point found no file,
+  // so one being there means something else wrote it and it is not this writer's to replace.
+  const fs::path workspace = UniqueTempPath("pu_setup_ws");
+  std::error_code ec;
+  fs::create_directories(workspace / ".pu");
+  {
+    std::ofstream file(workspace / ".pu" / "agents.json", std::ios::trunc);
+    file << R"({ "name": "kept", "backend": { "gateway": "ollama", "model": "m" } })";
+  }
+
+  config::SetupChoice choice;
+  choice.gateway = model::GatewayId::kOllama;
+  choice.model = "other";
+
+  REQUIRE_THROWS_WITH(config::WriteSetupConfig(choice, workspace.string()),
+                      Catch::Matchers::ContainsSubstring("already there"));
+  // The file that was there is the one still there.
+  const config::AgentsConfig kept =
+      config::LoadAgentsConfig((workspace / ".pu" / "agents.json").string());
+  REQUIRE(kept.agents.at(0).backend.model == "m");
+
+  fs::remove_all(workspace, ec);
 }
 
 TEST_CASE("LoadAgentsConfig parses valid JSON", "[agent_config]") {

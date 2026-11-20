@@ -28,6 +28,11 @@ CancelToken& ShutdownToken();
 int CurrentProcessId();
 bool ProcessRunning(int pid);
 
+// Whether standard input is a terminal a reader can answer on, as opposed to a pipe, a file
+// or /dev/null. A prompt is only worth printing where the answer can arrive: asked of a pipe
+// that has none, it waits for a keyboard that is not there.
+bool StdinIsTerminal();
+
 // A stamp that names this particular holder of `pid`, not merely the number. A pid is reused once
 // its owner exits, so a record that stores one and asks later whether "the process" is alive gets
 // a true answer about a different program. The stamp is the process's start time, and it is

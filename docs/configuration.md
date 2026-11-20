@@ -14,9 +14,30 @@ default). See [Configure](../README.md#configuration) for a full example.
 
 | Field | Description |
 |-------|-------------|
-| `default_agent` | Required; must name one of the entries in `agents` |
-| `agents` | Required; the entries below |
+| `default_agent` | Required in the table form; must name one of the entries in `agents` |
+| `agents` | Required in the table form; the entries below |
 | `serve` | Optional; `{"bind": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names. `bind` is the interface the listener sits on, not an address to dial |
+
+**One agent, no table**
+
+A workspace with one agent has nothing to choose between and nothing to default to, so it can
+say so: put `name` and `backend` at the top and write no `agents` array and no `default_agent`.
+
+```json
+{
+  "name": "default",
+  "backend": { "gateway": "ollama", "model": "qwen2.5:0.5b" }
+}
+```
+
+The file is read as a one-entry table whose `default_agent` is that name. `name` is required
+here — the table form lets a directory under `.pu/agents/` supply one, and there is no
+directory for an entry written inline. A file with an `agents` array is the table form whatever
+else it says; a file with neither an array nor a `backend` is a table missing its array, and
+that is the error it gets.
+
+`pu setup` writes this form, so a workspace configured by hand and one configured by the
+wizard are the same shape.
 
 **Agent fields**
 
@@ -221,6 +242,55 @@ to fix.
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
 table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+
+### Writing it the first time: `pu setup`
+
+A workspace with no `agents.json` has nothing a turn can be sent with, and three of the facts
+the file holds — gateway, address, model — are the reader's own account rather than anything
+this build can guess. `pu setup` asks for them and writes the file:
+
+```
+No agents.json here yet. Three questions and this workspace is ready.
+
+Which gateway?
+  1) ollama  (no key needed)
+  2) openai
+  3) anthropic
+  4) codebuddy
+
+Gateway [ollama]: URL (blank for the gateway's own):
+What this gateway offers:
+  1) qwen2.5:0.5b
+  2) llama3.1:8b
+
+Model (number or id): 1
+Wrote .pu/agents.json
+```
+
+It asks in the order a reader can answer: the gateway first, because it decides both the
+default address and whether a key is needed at all; then the URL, where blank means the
+gateway's own; then the key, asked only when the gateway has one to ask for. The catalogue is
+then fetched with the answers so far and printed with numbers, so the model is a keystroke
+rather than a spelling.
+
+The key question names the variable the gateway reads, and blank there means that variable:
+the catalogue is listed with it, and the written file names no key at all, so the secret stays
+in the environment where it already was. Only a variable that is unset is refused — nothing
+would answer the question then, and the turn would fail on its first request somewhere far
+from this prompt. A key typed in is written to the file.
+
+A listing that fails is not the end of the run: the model can be typed, which is what a
+machine with no route to the gateway needs. A blank model is refused, because there is nothing
+to write. Prompts go to stderr and the file is written to `./.pu/agents.json` — the same
+single-agent form shown above — and an existing file is never replaced.
+
+**The first run asks these questions itself.** `pu ask`, `pu chat` or `pu serve` with no
+configuration and a terminal attached runs the same wizard before the command, so the command
+that needed a file runs against the one just written, once, with no second invocation. A run
+with no terminal — a script, a pipe, CI — is asked nothing and gets the usual "Configuration
+file not found"; a wizard cannot read a keyboard that is not there. `pu setup` is the explicit
+way to ask for the questions when a file already exists or when the answer must be written by
+hand.
 
 ## Environment Variables
 
