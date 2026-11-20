@@ -475,10 +475,11 @@ lists tools.
 
 ```
 <workspace>/.pu/session.json   # Single session state
-./.pu/logs/                    # Log output, moved by PU_HOME
+<workspace>/.pu/logs/          # Log output, moved by PU_HOME
 ```
 
-`<workspace>` is the directory `pu` was started in. Logs are the only thing
+`<workspace>` is the directory the run is about: the one `-C` names, and the
+directory `pu` was started in when it names none. Logs are the only thing
 `PU_HOME` moves, and their directory is per process so two processes in one
 workspace never rotate the same file; the environment table in
 [configuration.md](configuration.md#environment-variables) owns both paths.

@@ -36,6 +36,15 @@ struct RouterFixture {
     router = std::make_unique<CommandRouter>(runtime);
   }
 
+  // Initializing the runtime also starts the log file inside this fixture's directory, and the
+  // async writer keeps its own schedule. `ScopedTempDir` removes the directory on the way out;
+  // a writer that flushed afterwards would put `.pu/logs/pu.log` back into it, leaving one
+  // directory behind per run. Stopping the runtime first closes the file.
+  ~RouterFixture() {
+    if (router) router.reset();
+    runtime.Shutdown();
+  }
+
   CommandReply Route(const std::string& input) {
     return router->Route(input, *runtime.DefaultSession());
   }

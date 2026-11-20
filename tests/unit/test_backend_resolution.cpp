@@ -11,6 +11,7 @@
 
 #include "pu/app/cli.hpp"
 #include "pu/config/agents.hpp"
+#include "pu/core/logging.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -32,6 +33,13 @@ class BackendSourceFixture {
   }
 
   ~BackendSourceFixture() {
+    // A `Runtime` built against this directory starts its log file inside it, and the async
+    // writer is not bound to the runtime's lifetime: the workspace root is process-wide, so it
+    // keeps naming this directory after every runtime here is gone. Removing the directory while
+    // the writer still points at it leaves the next flush to recreate `.pu/logs` in a path meant
+    // to be empty, which is one stranded directory per run. Clearing the root first puts the
+    // writer back on the process's own directory.
+    pu::SetWorkspaceRoot({});
     std::error_code ec;
     fs::remove_all(root_, ec);
   }

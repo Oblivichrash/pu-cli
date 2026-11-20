@@ -16,6 +16,15 @@ namespace pu {
 // agent state stay under the workspace's own .pu/.
 std::filesystem::path LogDir();
 
+// Where the current run happens, which is what a relative path in `LogDir` and
+// `FindConfigPath` is read against. A run with `-C` is about that directory, so its logs and
+// its agents.json have to be found there and not where the binary happened to be started --
+// otherwise the same command run from two shells writes to two different places. Set once,
+// as early as the workspace root is known; a run that never sets it keeps the process's
+// working directory, which is what a tool invoked from inside a workspace has always meant.
+void SetWorkspaceRoot(const std::filesystem::path& root);
+std::filesystem::path WorkspaceRoot();
+
 void InitLogging(const std::string& log_level = "");
 // True once any Runtime in this process has installed a logger. A nested Runtime built for
 // a delegated turn asks this before calling InitLogging: the process has one log destination

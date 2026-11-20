@@ -3,6 +3,7 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/logging.hpp"
 #include "pu/core/text.hpp"
 #include "pu/model/gateway.hpp"
 
@@ -276,7 +277,11 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
 }
 
 std::string FindConfigPath() {
-  const std::filesystem::path project = "./.pu/agents.json";
+  // Read against the run's own root, not the shell's: `pu -C ..` asks about the directory it
+  // named, and a file sitting there is the one it means. Falling back to the working
+  // directory would find nothing in that case and report a configured workspace as a first
+  // run, which is what sends `-C` into the setup wizard.
+  const std::filesystem::path project = pu::WorkspaceRoot() / ".pu" / "agents.json";
   if (std::filesystem::exists(project)) return project.string();
 
   const char* home = std::getenv("HOME");

@@ -7,6 +7,7 @@
 #include "tests/mocks/test_helpers.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/logging.hpp"
 #include "pu/llm/llm_provider.hpp"
 #include "pu/llm/model_factory.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -96,7 +97,7 @@ void WriteAgentsConfigForTest(const std::string& config_path, const config::Agen
 
 }  // namespace
 
-TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
+TEST_CASE("FindConfigPath prefers the workspace's .pu/agents.json", "[agent_config]") {
   auto dir = UniqueTempPath("pu_findconfig_project");
   auto home = UniqueTempPath("pu_findconfig_home");
   std::error_code ec;
@@ -105,18 +106,19 @@ TEST_CASE("FindConfigPath prefers ./.pu/agents.json", "[agent_config]") {
   fs::create_directories(dir / ".pu");
   fs::create_directories(home);
 
-  auto old = fs::current_path();
-  fs::current_path(dir);
+  ScopedWorkspaceRoot root(dir);
 
   {
     ScopedEnvVar env("HOME", home.string());
     std::ofstream f(dir / ".pu" / "agents.json");
     f << "{}";
 
-    REQUIRE(config::FindConfigPath() == "./.pu/agents.json");
+    // The answer is the file this run is about, given as a path that can be opened from
+    // anywhere: a relative "./.pu/agents.json" would mean a different file to a caller that
+    // had since changed directory.
+    REQUIRE(config::FindConfigPath() == (dir / ".pu" / "agents.json").string());
   }
 
-  fs::current_path(old);
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
 }
@@ -130,8 +132,7 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
   fs::create_directories(dir);
   fs::create_directories(home / ".pu");
 
-  auto old = fs::current_path();
-  fs::current_path(dir);
+  ScopedWorkspaceRoot root(dir);
 
   {
     ScopedEnvVar env("HOME", home.string());
@@ -141,7 +142,6 @@ TEST_CASE("FindConfigPath falls back to ~/.pu/agents.json", "[agent_config]") {
     REQUIRE(config::FindConfigPath() == (home / ".pu" / "agents.json").string());
   }
 
-  fs::current_path(old);
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
 }
@@ -155,15 +155,13 @@ TEST_CASE("FindConfigPath reports no configuration when neither location exists"
   fs::create_directories(dir);
   fs::create_directories(home);
 
-  auto old = fs::current_path();
-  fs::current_path(dir);
+  ScopedWorkspaceRoot root(dir);
 
   {
     ScopedEnvVar env("HOME", home.string());
     REQUIRE(config::FindConfigPath().empty());
   }
 
-  fs::current_path(old);
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
 }
@@ -177,8 +175,9 @@ TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_co
   fs::create_directories(dir / ".pu");
   fs::create_directories(home);
 
-  auto old = fs::current_path();
-  fs::current_path(dir);
+  // The options are read from the run's own table, which is the directory named here and not
+  // whichever one this process was started in.
+  ScopedWorkspaceRoot root(dir);
 
   {
     ScopedEnvVar env("HOME", home.string());
@@ -216,7 +215,6 @@ TEST_CASE("FindServeOptions reads the workspace's own bind and port", "[agent_co
     }
   }
 
-  fs::current_path(old);
   fs::remove_all(dir, ec);
   fs::remove_all(home, ec);
 }

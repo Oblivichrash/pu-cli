@@ -109,6 +109,12 @@ void Runtime::Initialize(const std::string& config_path) {
 
   if (workspace_root_.empty()) workspace_root_ = std::filesystem::current_path();
 
+  // Before the logger is built: `LogDir` and `FindConfigPath` read their relative paths
+  // against this, and a run started with `-C` has to write its log and find its table under
+  // the directory it named. Setting it after `InitLogging` would put this run's log in
+  // whichever directory the shell was in.
+  pu::SetWorkspaceRoot(workspace_root_);
+
   // A Runtime is constructed in place for a delegated turn, so this runs more than once per
   // process. The first caller sets the destination and the level; a child cannot lower the
   // parent's verbosity or reopen the log file under it.
@@ -204,6 +210,10 @@ void Runtime::Shutdown() {
   // Async logging only writes on its own schedule, so a process that ends abruptly would leave
   // the last lines, which are the ones that explain the ending, unwritten.
   FlushLogging();
+  // The root was this run's, and the run is over: a second Runtime in the same process gets to
+  // say where its own is. Leaving it set pointed every later reader of `LogDir` and
+  // `FindConfigPath` at this run's directory, which by then may not exist.
+  pu::SetWorkspaceRoot({});
 }
 
 void Runtime::SaveCurrentSession() {
