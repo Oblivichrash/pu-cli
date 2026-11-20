@@ -506,12 +506,12 @@ the next save.
 `session_spec` names the agent and carries the session's own thinking level when
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
 editing the configuration takes effect without touching the session.
-`/backend <type> <model>` adopts an agent named after the type, so the backend a
+`/backend <type> <model>` adopts the model named by the file, so the backend a
 session reports and the agent it names are always the same answer. It takes no key:
 a key typed at the prompt is written into the scrollback, so an endpoint that needs
-one is named in `agents.json`, where it can come from the environment. The session
-also decides which agent a restart resumes: the named agent wins over
-`default_agent`.
+one is named in `agents.json`, where it can come from the environment. A restart
+resumes the agent the session names; a name the file no longer carries is reported
+and the file's own agent is used, since a file describes exactly one.
 
 The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
 timestamp, its parent and one role payload, plus the `leaf` that marks the current

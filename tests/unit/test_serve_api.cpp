@@ -37,6 +37,29 @@ boost::json::value HistoryOf(TestHttpClient& client) {
   return ParseJson(client.Get("/api/history")).at("messages");
 }
 
+// A directory this case creates beside the executable and removes on the way out, including when
+// an assertion fails first. Without the destructor a failing run leaves `web/` behind and the
+// next run fails for a reason that belongs to this one.
+class BesideTheExecutable {
+ public:
+  explicit BesideTheExecutable(const fs::path& dir) : dir_(dir) {
+    std::error_code ec;
+    fs::create_directories(dir_, ec);
+    failed_ = static_cast<bool>(ec);
+  }
+  ~BesideTheExecutable() {
+    std::error_code ec;
+    fs::remove_all(dir_, ec);
+  }
+  BesideTheExecutable(const BesideTheExecutable&) = delete;
+  BesideTheExecutable& operator=(const BesideTheExecutable&) = delete;
+  bool failed() const { return failed_; }
+
+ private:
+  fs::path dir_;
+  bool failed_ = false;
+};
+
 }  // namespace
 
 TEST_CASE("serve API /api/session", "[serve][api]") {
@@ -634,10 +657,13 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
 
   const fs::path web = exe_dir / "web";
   std::error_code ec;
-  const bool preexisting = fs::exists(web, ec);
-  REQUIRE_FALSE(preexisting);
-  fs::create_directories(web, ec);
-  REQUIRE_FALSE(ec);
+  // The directory is the fixture: whatever an interrupted earlier run left here is removed
+  // first, so this case cannot fail for a reason that belongs to a previous one. `web` is
+  // beside the executable rather than in the build tree, so a failure needs no cleanup of its
+  // own to leave the checkout as it found it.
+  fs::remove_all(web, ec);
+  BesideTheExecutable beside(web);
+  REQUIRE_FALSE(beside.failed());
 
   {
     std::ofstream file(web / "index.html", std::ios::binary | std::ios::trunc);
@@ -654,6 +680,4 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
   const HttpResponse root = client.GetRaw("/");
   CHECK(root.status == 200);
   CHECK(root.body == "<!doctype html>beside the executable");
-
-  fs::remove_all(web, ec);
 }

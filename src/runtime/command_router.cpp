@@ -16,8 +16,8 @@ namespace pu {
 namespace {
 
 constexpr const char* kBackendHelp =
-    "  /backend <agent_name>  Switch to a predefined agent\n"
-    "  /backend <type> <model> [host]  Adopt a backend as an agent of its type\n";
+    "  /backend              Report the current agent's backend\n"
+    "  /backend <type> <model> [host]  Rebuild this agent's backend\n";
 
 // What a failed command says in the transcript. Written once so the prefix is one fact: a
 // prefix that changed in three of four places would read as two different failures.

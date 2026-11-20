@@ -71,13 +71,8 @@ made to fail at all — so it comes before the one that costs money.
 mkdir -p .pu
 cat > .pu/agents.json <<'JSON'
 {
-  "default_agent": "local-assistant",
-  "agents": [
-    {
-      "name": "local-assistant",
-      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
-    }
-  ]
+  "name": "local-assistant",
+  "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
 }
 JSON
 ```
@@ -216,26 +211,18 @@ fails on an orphan, so a new file is registered rather than left to be found.
 
 ```json
 {
-  "default_agent": "local-assistant",
-  "agents": [
-    {
-      "name": "local-assistant",
-      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" },
-      "security": { "sandbox_root": ".", "forbidden_patterns": ["cd", "rm -rf", "sudo"] }
-    }
-  ]
+  "name": "local-assistant",
+  "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" },
+  "security": { "sandbox_root": ".", "forbidden_patterns": ["cd", "rm -rf", "X"] }
 }
 ```
 
 `gateway` is required and must name a product the build carries. A config that
 names a protocol instead is refused at load rather than guessed at.
 
-An agent can also live in its own directory — `.pu/agents/<name>/agents.json`, with a
-`persona.md` beside it that becomes its system prompt — and one agent can hand a turn to
-another with `delegates`. That is how several models share one conversation without sharing
-one context: the turn runs where the work is and comes back as an answer. The two forms, and
-what a persona is not for, are in
-[docs/configuration.md](docs/configuration.md#one-directory-per-agent).
+The turn can reach a directory that is not this workspace's own with `ask_dir`, and
+`delegates` names who may be asked by name. Both are in
+[docs/configuration.md](docs/configuration.md).
 
 **Upgrading** — the keys that changed, and what a session saved by an older
 version does:

@@ -167,26 +167,25 @@ TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {
   }
 }
 
-TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backend]") {
+TEST_CASE("Switching the backend keeps the agent and the tooling", "[backend]") {
   BackendSourceFixture fixture;
   ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
   runtime.Initialize();
 
-  REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
+  REQUIRE(runtime.CurrentBackend().model == "test-model");
   const auto names_before = runtime.Agents().AgentNames();
 
   model::Backend replacement = runtime.CurrentBackend();
-  replacement.temperature = 1.5f;
+  replacement.model = "other-model";
   runtime.SwitchBackend(replacement);
 
-  REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
+  REQUIRE(runtime.CurrentBackend().model == "other-model");
   REQUIRE(runtime.DefaultSession() != nullptr);
-  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "openai");
-
-  const auto names_after = runtime.Agents().AgentNames();
-  REQUIRE(names_after.size() == names_before.size() + 1);
-  REQUIRE(runtime.Agents().AgentConfig("openai") != nullptr);
+  // One agent has one backend: the switch replaces the backend and nothing else, so the agent
+  // keeps its name and no second agent is added to the list.
+  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
+  REQUIRE(runtime.Agents().AgentNames() == names_before);
 }
 
 TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend]") {

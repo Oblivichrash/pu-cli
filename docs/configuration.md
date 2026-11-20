@@ -14,14 +14,13 @@ default). See [Configure](../README.md#configuration) for a full example.
 
 | Field | Description |
 |-------|-------------|
-| `default_agent` | Required in the table form; must name one of the entries in `agents` |
-| `agents` | Required in the table form; the entries below |
+| `name` | Required; what identifies this agent in `pu check`, `/backend` and the session |
 | `serve` | Optional; `{"bind": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names. `bind` is the interface the listener sits on, not an address to dial |
 
-**One agent, no table**
+The file describes one agent. The fields below are that agent's, at the top level of the file;
+`backend` is the one that must be there.
 
-A workspace with one agent has nothing to choose between and nothing to default to, so it can
-say so: put `name` and `backend` at the top and write no `agents` array and no `default_agent`.
+**One agent, no table**
 
 ```json
 {
@@ -30,11 +29,10 @@ say so: put `name` and `backend` at the top and write no `agents` array and no `
 }
 ```
 
-The file is read as a one-entry table whose `default_agent` is that name. `name` is required
-here — the table form lets a directory under `.pu/agents/` supply one, and there is no
-directory for an entry written inline. A file with an `agents` array is the table form whatever
-else it says; a file with neither an array nor a `backend` is a table missing its array, and
-that is the error it gets.
+`name` is required: a turn, a session and a `/backend` all name the agent they mean, and a file
+that does not name itself leaves nothing to name. A file with no `backend` is refused with
+`Missing backend`: it describes an agent, and the backend is the part a turn cannot be sent
+without.
 
 `pu setup` writes this form, so a workspace configured by hand and one configured by the
 wizard are the same shape.
@@ -43,7 +41,7 @@ wizard are the same shape.
 
 | Field | Description |
 |-------|-------------|
-| `name` | Identifier used by `default_agent`, `/backend <agent>`, and `--agent` |
+| `name` | Identifier used by `/backend <agent>`, `--agent`, and the session |
 | `description` | Optional text shown when the agent connects |
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
@@ -51,7 +49,7 @@ wizard are the same shape.
 | `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
 | `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
 | `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. `pu check` refuses this agent's own name, since the turn that reached it would recurse until a budget stopped it. A name nothing configures is found when `ask_dir` is called, not here: the agent that would answer may be a directory this workspace does not hold, so a file is in no position to say it does not exist. A circle is refused when it closes, by the child that would be asked to answer a question already being worked on further up the chain |
-| `persona` | Optional, in an agent's own directory only; a path to a file whose text becomes `backend.system_prompt`. Naming this and `backend.system_prompt` both is refused |
+| `system_prompt` | Optional; this agent's system prompt, merged with the injected context |
 
 **Backend fields**
 
@@ -66,37 +64,6 @@ wizard are the same shape.
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
 | `context_window` | unset | How much context the model holds, in tokens. Advisory: nothing trims a prompt against it and no turn is refused for outgrowing it. It is the only figure the Web page's context bar measures the last reply against, so a model without it draws no fill and shows the count alone. `pu models --detail caps` prints what the gateway's own catalogue says, which is where a number to write here comes from |
 | `system_prompt` | unset | Merged with the injected context |
-
-### One directory per agent
-
-An agent can also be a directory of its own, beside the table that names it. The directory is
-named after the agent, so `ls .pu/agents/` is the list, and a table inside it that names itself
-something else is refused rather than renamed:
-
-```
-.pu/
-  agents.json              the default_agent, and any agent written inline
-  agents/
-    reviewer/
-      agents.json          this agent's backend, security, tools and delegates
-      persona.md           what it is, read into backend.system_prompt
-```
-
-The table inside a directory takes every agent field above except `name`, which the directory
-supplies. Paths in it — `persona`, and an `mcp_servers` command or url — resolve against that
-directory, not the workspace. Both forms may be used at once; two agents with one name are
-refused rather than merged.
-
-A persona is a document rather than a string because a character worth describing takes more
-than a line, and Markdown is what an editor can hold. Three things it is not:
-
-- **Not a place for environment.** The sandbox root, the forbidden commands and how the tools
-  are to be used are injected every turn from the configuration, and a persona that restates
-  them will eventually contradict them.
-- **Not trimmed.** Nothing measures it against `context_window`; a persona long enough to crowd
-  out the conversation will, and the conversation loses.
-- **Not the agent's only voice.** It is the `system` message's first half, beside the injected
-  environment — what it says is who the agent is, not where it is.
 
 ### Asking a directory that is not an agent of yours
 
@@ -214,9 +181,11 @@ pu check --config /tmp/other.json
 config  /home/me/.pu/agents.json
 
 workspace  /home/me/work
-default    fast
+agent      fast
+session  /home/me/work/.pu/session.json
+  names  fast
 
-fast   (default_agent)
+fast
   gateway      tencent
   host         https://copilot.tencent.com/v2   (default for this gateway)
   model        deepseek-v4.1-flash
@@ -224,7 +193,7 @@ fast   (default_agent)
   thinking     default
   context      250000
   sandbox      /home/me/work
-  forbids      'sudo', 'mkfs'
+  forbids      'X1', 'X2'
   tool budget  100
 ```
 
@@ -234,10 +203,9 @@ variable. A field this build never reads is listed under `warnings`, named with 
 sits at — the agent itself, `backend`, `security` or `paging` — because a build may be older
 than the file, and that is a warning and not a failure.
 
-A session naming an agent the file no longer has is reported with the names that do exist.
-The session outranks `default_agent` by design (see
-[ARCHITECTURE.md](ARCHITECTURE.md#persistence)), so this is a fact to read rather than a file
-to fix.
+A session naming an agent the file does not name is reported as a warning. The file has one
+agent, so the next turn uses that one and the session is corrected rather than the file (see
+[ARCHITECTURE.md](ARCHITECTURE.md#persistence)).
 
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status

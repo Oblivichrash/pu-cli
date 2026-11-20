@@ -17,7 +17,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend_from_table.hpp"
+#include "pu/config/backend_from_agent.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/model/backend.hpp"
 #include "pu/tools_cli/entry_point.hpp"
@@ -52,7 +52,7 @@ po::options_description Options() {
 // one: without a session there is nothing to adopt, so the table is the whole of the answer.
 pu::model::Backend BackendFor(const ModelsOptions& options, const std::string& config_path,
                               const std::string& agent_name) {
-  return pu::config::BackendFromTable(options.gateway, options.model, agent_name, config_path);
+  return pu::config::BackendFromAgent(options.gateway, options.model, agent_name, config_path);
 }
 
 }  // namespace

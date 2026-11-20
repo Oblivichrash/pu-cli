@@ -85,7 +85,7 @@ add_library(pu::model ALIAS pu_model)
 
 add_library(pu_config STATIC
     src/config/agents.cpp
-    src/config/backend_from_table.cpp
+    src/config/backend_from_agent.cpp
     src/config/serve_registry.cpp
     src/config/setup.cpp
 )

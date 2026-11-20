@@ -17,7 +17,7 @@
 #include <string>
 
 #include "pu/config/agents.hpp"
-#include "pu/config/backend_from_table.hpp"
+#include "pu/config/backend_from_agent.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/model/backend.hpp"
 #include "pu/tools_cli/entry_point.hpp"
@@ -48,9 +48,9 @@ po::options_description Options() {
 
 // The backend a standalone probe reads, from the table alone: there is no session to adopt, so
 // the agent the table names is the one `pu probe` would have called its current one. The rule
-// lives in `backend_from_table`, where `pu-models` reads it too.
+// lives in `backend_from_agent`, where `pu-models` reads it too.
 pu::model::Backend BackendFor(const ProbeOptions& options) {
-  return pu::config::BackendFromTable(options.gateway, options.model, options.agent,
+  return pu::config::BackendFromAgent(options.gateway, options.model, options.agent,
                                       pu::config::FindConfigPath());
 }
 

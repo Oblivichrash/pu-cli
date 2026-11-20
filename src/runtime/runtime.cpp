@@ -631,13 +631,19 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
 }
 
 void Runtime::SwitchBackend(const model::Backend& backend) {
-  config::AgentEntry transient = ActiveAgent();
-  transient.name = model::GatewayName(backend.gateway);
-  transient.backend = backend;
-  transient.description.clear();
-
-  agent_manager_->Adopt(transient);
-  Activate(transient);
+  // One agent has one backend: a switch replaces it in place, so the name and the tooling the
+  // agent was configured with stay as they are and no second agent appears. The entry is also
+  // written back into the index, because every read of the backend (CurrentBackend, the toolbox,
+  // a new session) goes through that index rather than through a copy held elsewhere.
+  config::AgentEntry switched = ActiveAgent();
+  switched.backend = backend;
+  std::vector<config::AgentEntry> entries;
+  for (const auto& name : agent_manager_->AgentNames()) {
+    const auto* entry = agent_manager_->AgentConfig(name);
+    entries.push_back(entry->name == switched.name ? switched : *entry);
+  }
+  agent_manager_->LoadAgentConfigs(entries);
+  Activate(switched);
 }
 
 }  // namespace pu

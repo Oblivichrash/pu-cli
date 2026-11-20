@@ -217,58 +217,43 @@ TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[
   output = reply.text;
   REQUIRE(output.find("tencent") != std::string::npos);
 
+  // One agent has one backend: a backend switch changes the gateway under the same agent, so
+  // the agent keeps its name and stays the active one.
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("tencent (active)") != std::string::npos);
+  REQUIRE(output.find("chat (active)") != std::string::npos);
+  REQUIRE(output.find("tencent") != std::string::npos);
+  REQUIRE(output.find("deepseek-v4-flash") != std::string::npos);
 
   reply = f.Route("/backend");
   REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("tencent") != std::string::npos);
+  const std::string current = reply.text;
+  REQUIRE(current.find("tencent") != std::string::npos);
+  REQUIRE(current.find("deepseek-v4-flash") != std::string::npos);
 }
 
-TEST_CASE("CommandRouter names an adopted agent after switching to it", "[router]") {
+TEST_CASE("A backend switch keeps the agent and its name", "[router]") {
   RouterFixture f;
   CommandReply reply;
   std::string output;
 
-  // Adopting a backend puts a transient entry in the manager; switching to that entry
-  // by name walks the same path a configured agent does.
+  // One agent has one backend, so switching the backend replaces it in place: no second agent
+  // appears under the backend's name, and the list of agents does not change.
   reply = f.Route("/backend ollama llama3");
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find("Switched backend to") != std::string::npos);
 
-  reply = f.Route("/backend ollama");
+  reply = f.Route("/backend");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("Switched to agent: ollama") != std::string::npos);
+  REQUIRE(output.find("ollama") != std::string::npos);
   REQUIRE(output.find("llama3") != std::string::npos);
 
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("ollama (active)") != std::string::npos);
-}
-
-TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "[router]") {
-  RouterFixture f;
-  CommandReply reply;
-  std::string output;
-
-  reply = f.Route("/backend ollama llama3");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched backend to") != std::string::npos);
-
-  const auto* chat = f.runtime.Agents().AgentConfig("chat");
-  REQUIRE(chat != nullptr);
-  REQUIRE(chat->backend.model == "chat-model");
-
-  reply = f.Route("/backend chat");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched to agent: chat") != std::string::npos);
-  REQUIRE(output.find("chat-model") != std::string::npos);
+  REQUIRE(output.find("chat (active)") != std::string::npos);
+  REQUIRE(output.find("ollama (active)") == std::string::npos);
 }
