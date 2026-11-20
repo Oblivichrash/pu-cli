@@ -36,7 +36,7 @@ pu::app::AgentSummary AgentOf(const std::string& name, const std::string& descri
 
 TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
   const std::vector<pu::app::AgentSummary> agents = {
-      AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
+      AgentOf("fast", "the cheap one", "tencent", "flash", true),
       AgentOf("strong", "", "openai", "pro", false),
   };
 
@@ -47,7 +47,7 @@ TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
   const boost::json::value& first = json.as_array().at(0);
   REQUIRE(pu::json::ValueOrDefault<std::string>(first, "name", "") == "fast");
   REQUIRE(pu::json::ValueOrDefault<std::string>(first, "description", "") == "the cheap one");
-  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "gateway", "") == "codebuddy");
+  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "gateway", "") == "tencent");
   REQUIRE(pu::json::ValueOrDefault<std::string>(first, "model", "") == "flash");
   REQUIRE(pu::json::ValueOrDefault<bool>(first, "active", false));
 
@@ -60,7 +60,7 @@ TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
 
 TEST_CASE("The table marks the active agent and says what each one is", "[agents]") {
   const std::vector<pu::app::AgentSummary> agents = {
-      AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
+      AgentOf("fast", "the cheap one", "tencent", "flash", true),
       AgentOf("strong-name", "", "openai", "pro", false),
   };
 
@@ -71,7 +71,7 @@ TEST_CASE("The table marks the active agent and says what each one is", "[agents
   REQUIRE(table.find("strong-name (active)") == std::string::npos);
   REQUIRE(table.find("the cheap one") != std::string::npos);
   // The gateway and the model, which is what tells two agents apart after the name.
-  REQUIRE(table.find("codebuddy / flash") != std::string::npos);
+  REQUIRE(table.find("tencent / flash") != std::string::npos);
   REQUIRE(table.find("openai / pro") != std::string::npos);
 }
 

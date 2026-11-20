@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "pu/core/base.hpp"
 
@@ -32,6 +33,18 @@ bool ProcessRunning(int pid);
 // or /dev/null. A prompt is only worth printing where the answer can arrive: asked of a pipe
 // that has none, it waits for a keyboard that is not there.
 bool StdinIsTerminal();
+
+// One line from a reader, arriving at `prompt` (printed to stderr) with `initial` already on
+// it and the cursor at its end. Backspace and arrow keys edit that line, so a default longer
+// than the reader wants to retype is a place to start from rather than a value to fight.
+//
+// On a terminal stdin is put in raw mode for the line's length and the line is echoed here;
+// off one, `initial` is printed beside the prompt and a whole line is read from the stream, so
+// a script feeding answers sees what a reader would have. Returns `initial` at end of input --
+// the answer a blank line gives -- and false when there was no input at all, which is the one
+// case a caller cannot tell from an accepted default.
+std::pair<bool, std::string> ReadLineWithDefault(const std::string& prompt,
+                                                 const std::string& initial);
 
 // A stamp that names this particular holder of `pid`, not merely the number. A pid is reused once
 // its owner exits, so a record that stores one and asks later whether "the process" is alive gets

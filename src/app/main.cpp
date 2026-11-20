@@ -190,14 +190,19 @@ int main(int argc, char* argv[]) {
       pu::config::FindConfigPath().empty()) {
     const std::optional<pu::config::SetupChoice> choice =
         pu::cli::RunSetupWizard(runtime.WorkspaceRoot());
-    if (choice) {
-      try {
-        const std::string written = pu::config::WriteSetupConfig(*choice, runtime.WorkspaceRoot().string());
-        std::cerr << "\nWrote " << written << "\n\n";
-      } catch (const std::exception& e) {
-        std::cerr << "Could not write the configuration: " << e.what() << "\n";
-        return 1;
-      }
+    // No answer means the reader left at one of the questions. Answering that with the
+    // loader's "Configuration file not found" would send them looking for the file the
+    // wizard had just offered to write, so the leaving is reported as itself and the
+    // command does not run. What is left is the wizard's own last line, which already said
+    // what was missing.
+    if (!choice) return static_cast<int>(pu::cli::ExitCode::kInterrupted);
+    try {
+      const std::string written =
+          pu::config::WriteSetupConfig(*choice, runtime.WorkspaceRoot().string());
+      std::cerr << "\nWrote " << written << "\n\n";
+    } catch (const std::exception& e) {
+      std::cerr << "Could not write the configuration: " << e.what() << "\n";
+      return 1;
     }
   }
 

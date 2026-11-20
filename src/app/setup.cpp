@@ -16,11 +16,16 @@
 #include "pu/config/setup.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/llm/model_factory.hpp"
+#include "pu/llm/model_listing.hpp"
 #include "pu/model/gateway.hpp"
 
+#include <algorithm>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,16 +43,19 @@ std::string Trimmed(const std::string& text) {
 // One line of the reader's answer, with the default applied when they give none. Prompts go
 // to stderr: an answer is the command's output, and a prompt on stdout would be read as part
 // of it by a caller that captured the result.
-std::string Ask(const std::string& question, const std::string& fallback) {
-  std::cerr << question;
-  if (!fallback.empty()) std::cerr << " [" << fallback << "]";
-  std::cerr << ": ";
-  std::cerr.flush();
-
-  std::string answer;
-  if (!std::getline(std::cin, answer)) return fallback;
-  answer = Trimmed(answer);
-  return answer.empty() ? fallback : answer;
+//
+// The default is put on the line rather than beside it, so a reader who wants
+// `https://api.deepseek.com/v1` can change one character of it instead of typing all of it
+// again. On a terminal that means the line is edited here; off one, it is printed as text
+// and a whole line is read, which is what a script's answer has always been.
+//
+// No value is the reader leaving: nothing was typed, or the keyboard said stop. A wizard
+// that took the default there would write a file they had just asked it not to write.
+std::optional<std::string> Ask(const std::string& question, const std::string& fallback) {
+  const auto [got_answer, answer] = platform::ReadLineWithDefault(question, fallback);
+  if (!got_answer) return std::nullopt;
+  const std::string trimmed = Trimmed(answer);
+  return trimmed.empty() ? fallback : trimmed;
 }
 
 // The gateway, chosen by number or by name. The list is printed with its numbers because a
@@ -87,38 +95,57 @@ std::optional<config::SetupChoice> RunSetupWizard(const std::filesystem::path& w
 
   std::cerr << "No agents.json here yet. Three questions and this workspace is ready.\n\n";
 
-  const std::vector<model::GatewayId> offered{
-      model::GatewayId::kOllama, model::GatewayId::kOpenAI, model::GatewayId::kAnthropic,
-      model::GatewayId::kCodeBuddy};
+  // The table is the list, in the order it is written: a gateway added to the table is one
+  // the first run offers, and one the wizard leaves out by being written somewhere else is
+  // one a reader has to know the name of before they can use it.
+  std::vector<model::GatewayId> offered;
+  {
+    const std::span<const model::Gateway> all = model::Gateways();
+    offered.reserve(all.size());
+    for (const model::Gateway& gateway : all) offered.push_back(gateway.id);
+  }
+  if (offered.empty()) {
+    std::cerr << "No gateways are built into this binary.\n";
+    return std::nullopt;
+  }
 
   std::cerr << "Which gateway?\n";
   for (std::size_t i = 0; i < offered.size(); ++i) {
-    std::cerr << "  " << (i + 1) << ") " << model::GatewayName(offered[i]);
-    // A local product needs no account, which is the fact that decides the choice for a
-    // first run on a machine with nothing configured yet.
-    if (model::ApiKeyEnvFor(offered[i]).empty()) std::cerr << "  (no key needed)";
-    std::cerr << "\n";
+    std::cerr << "  " << (i + 1) << ") " << model::GatewayName(offered[i]) << "\n";
   }
   std::cerr << "\n";
 
-  const std::string gateway_answer = Ask("Gateway", std::string(model::GatewayName(offered[0])));
-  const std::optional<model::GatewayId> gateway = ParseGatewayAnswer(gateway_answer, offered);
+  // The default is the first number rather than the first name: a reader who wants the first
+  // entry presses <enter>, and one who wants another types one character over it. The name
+  // was the default before this, which made `<enter>` mean "the first one" in a line that
+  // read as if it meant "the one spelled here".
+  const std::optional<std::string> gateway_answer = Ask("Gateway", "1");
+  if (!gateway_answer) return std::nullopt;
+  const std::optional<model::GatewayId> gateway = ParseGatewayAnswer(*gateway_answer, offered);
   if (!gateway) {
-    std::cerr << "Not a gateway: " << gateway_answer << ". One of: " << model::GatewayNames()
+    std::cerr << "Not a gateway: " << *gateway_answer << ". One of: " << model::GatewayNames()
               << "\n";
     return std::nullopt;
   }
 
   config::SetupChoice choice;
   choice.gateway = *gateway;
-  choice.host = Ask("URL (blank for the gateway's own)", std::string());
+  // Asked with the address the gateway itself would use as its default, so `<enter>` is an
+  // answer the reader can see the result of: "blank for the gateway's own" names a value they
+  // would have to remember from two questions ago, and a default that has to be remembered is
+  // one that gets typed wrong.
+  const std::optional<std::string> host = Ask("URL", model::DefaultHostFor(choice.gateway));
+  if (!host) return std::nullopt;
+  choice.host = *host;
   // Only asked where it is used. A product with no key has no reason to be shown a question
   // it must leave blank, and a blank answer there would look like a mistake rather than the
   // correct one.
   const std::string_view env_name = model::ApiKeyEnvFor(choice.gateway);
   if (!env_name.empty()) {
-    choice.api_key = Ask("API key (or leave blank to read " + std::string(env_name) + ")",
-                         std::string());
+    const std::optional<std::string> key =
+        Ask("API key (or leave blank to read " + std::string(env_name) + ")", std::string());
+    if (!key) return std::nullopt;
+    choice.api_key = *key;
   }
 
   // The catalogue, read with what has been answered so far. A listing that fails is not fatal:
@@ -150,34 +177,73 @@ std::optional<config::SetupChoice> RunSetupWizard(const std::filesystem::path& w
 
   if (!listed.empty()) {
     std::cerr << "\nWhat this gateway offers:\n";
+    // The number is what the answer is typed as, so the columns beside it have to clear it.
+    // Measured against the last index rather than assumed: a catalogue of a hundred and six
+    // entries is one more digit than one of ninety-nine.
+    const std::size_t number_width = std::to_string(listed.size()).size();
+    std::size_t id_width = 0;
+    for (const model::ModelEntry& entry : listed) id_width = std::max(id_width, entry.id.size());
+
     for (std::size_t i = 0; i < listed.size(); ++i) {
-      std::cerr << "  " << (i + 1) << ") " << listed[i].id << "\n";
+      std::cerr << "  " << std::setw(static_cast<int>(number_width)) << (i + 1) << ") "
+                << std::left << std::setw(static_cast<int>(id_width)) << listed[i].id
+                << std::right << "  ";
+      // What the catalogue says about the model, on the same line so a reader comparing two of
+      // them does not have to hold one in their head. A model nothing is known about says so,
+      // because a blank cell reads as a column that failed to print.
+      const std::string caps = llm::CapabilityLine(listed[i].caps);
+      std::cerr << (caps.empty() ? std::string("(nothing stated)") : caps) << "\n";
     }
     std::cerr << "\n";
   }
 
-  const std::string model_answer = Ask("Model (number or id)", std::string());
-  bool digits = !model_answer.empty();
-  for (const char c : model_answer) {
-    if (c < '0' || c > '9') {
-      digits = false;
-      break;
+  // The model, asked until there is one. Unlike the questions above, this one has no default
+  // to fall back on: a turn needs a model, and a guessed id would fail at the first request
+  // rather than here. A blank line is therefore not an answer, it is the question again --
+  // ending the wizard there would throw away the three answers already given, which is what
+  // a reader coming from a failed listing (the case where there is nothing to pick from)
+  // is most likely to do.
+  //
+  // Where the catalogue was listed, a number picks from it and a bare `<enter>` is still
+  // blank -- the numbers are on screen, and a default that silently picked the first of
+  // thirty models is a choice the reader did not make.
+  const std::string question =
+      listed.empty() ? std::string("Model id") : std::string("Model (number or id)");
+  for (;;) {
+    const std::optional<std::string> model_prompt = Ask(question, std::string());
+    if (!model_prompt) return std::nullopt;
+    const std::string& model_answer = *model_prompt;
+    if (Trimmed(model_answer).empty()) {
+      std::cerr << "A model is needed: "
+                << (listed.empty() ? "type the id your gateway knows it by.\n"
+                                   : "type its number, or its id.\n");
+      continue;
     }
-  }
-  if (!model_answer.empty() && digits && model_answer.size() <= 4) {
-    const int index = std::stoi(model_answer);
-    if (index >= 1 && static_cast<std::size_t>(index) <= listed.size()) {
-      choice.model = listed[static_cast<std::size_t>(index) - 1].id;
+    bool digits = true;
+    for (const char c : model_answer) {
+      if (c < '0' || c > '9') {
+        digits = false;
+        break;
+      }
     }
-  }
-  if (choice.model.empty()) {
-    // Not a number, or a number past the end of a list that failed to arrive: taken as an id,
-    // which is what the reader typed and what the file is going to say.
+    if (digits && model_answer.size() <= 4) {
+      const int index = std::stoi(model_answer);
+      if (index >= 1 && static_cast<std::size_t>(index) <= listed.size()) {
+        choice.model = listed[static_cast<std::size_t>(index) - 1].id;
+        break;
+      }
+      // A number that names nothing in a list is a slip, not a model id: a model whose id is
+      // all digits is not a thing any catalogue here lists, and accepting it would write a
+      // file whose first request fails.
+      if (!listed.empty()) {
+        std::cerr << "No model numbered " << index << "; pick one from the list.\n";
+        continue;
+      }
+    }
+    // Not a number, or a number with no list to index: taken as an id, which is what the
+    // reader typed and what the file is going to say.
     choice.model = model_answer;
-  }
-  if (Trimmed(choice.model).empty()) {
-    std::cerr << "No model, so there is nothing to write.\n";
-    return std::nullopt;
+    break;
   }
 
   try {

@@ -271,11 +271,11 @@ TEST_CASE("A backend that names no key takes the gateway's own variable", "[agen
   // already knows.
   tmp.write(R"({
     "name": "solo",
-    "backend": { "gateway": "codebuddy", "model": "deepseek-v4.1-flash" }
+    "backend": { "gateway": "tencent", "model": "deepseek-v4.1-flash" }
   })");
 
   SECTION("set") {
-    ScopedEnvVar env("CODEBUDDY_API_KEY", "sk-from-the-environment");
+    ScopedEnvVar env("TENCENT_API_KEY", "sk-from-the-environment");
     const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
     REQUIRE(cfg.agents.at(0).backend.api_key.has_value());
     REQUIRE(*cfg.agents.at(0).backend.api_key == "sk-from-the-environment");
@@ -284,7 +284,7 @@ TEST_CASE("A backend that names no key takes the gateway's own variable", "[agen
   SECTION("unset") {
     // Nothing to take, so nothing is invented: the backend has no key and the first turn
     // says so, rather than carrying an empty one that reads as a key which is wrong.
-    ScopedEnvVar env("CODEBUDDY_API_KEY", "");
+    ScopedEnvVar env("TENCENT_API_KEY", "");
     const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
     REQUIRE(!cfg.agents.at(0).backend.api_key.has_value());
   }
@@ -294,11 +294,11 @@ TEST_CASE("A key the file names is not replaced by the environment", "[agent_con
   TempConfigFile tmp;
   tmp.write(R"({
     "name": "solo",
-    "backend": { "gateway": "codebuddy", "model": "m", "api_key": "${MY_OWN_KEY}" }
+    "backend": { "gateway": "tencent", "model": "m", "api_key": "${MY_OWN_KEY}" }
   })");
 
   ScopedEnvVar own("MY_OWN_KEY", "from-the-file");
-  ScopedEnvVar gateway("CODEBUDDY_API_KEY", "from-the-gateway");
+  ScopedEnvVar gateway("TENCENT_API_KEY", "from-the-gateway");
 
   // The file's own answer, even though the gateway has one: a written key is the author's
   // choice, and falling back past it would silently use an account they did not name.
@@ -314,10 +314,10 @@ TEST_CASE("An explicit empty key stays empty rather than falling back", "[agent_
   // wrote, which is the mistake this leaves visible.
   tmp.write(R"({
     "name": "solo",
-    "backend": { "gateway": "codebuddy", "model": "m", "api_key": "${NOT_SET_ANYWHERE}" }
+    "backend": { "gateway": "tencent", "model": "m", "api_key": "${NOT_SET_ANYWHERE}" }
   })");
 
-  ScopedEnvVar gateway("CODEBUDDY_API_KEY", "from-the-gateway");
+  ScopedEnvVar gateway("TENCENT_API_KEY", "from-the-gateway");
   const config::AgentsConfig cfg = config::LoadAgentsConfig(tmp.path.string());
   // A key that expanded to nothing keeps the empty answer the author wrote rather than the
   // gateway's variable: the variable they named is the one they meant, and taking another one
@@ -332,7 +332,7 @@ TEST_CASE("A blank key is accepted when its variable holds one", "[setup]") {
   choice.model = "m";
   // The question offered this variable as the default, so a blank answer is the intended one;
   // refusing it would make the prompt's own instruction unusable.
-  ScopedEnvVar env("CODEBUDDY_API_KEY", "sk-from-the-environment");
+  ScopedEnvVar env("TENCENT_API_KEY", "sk-from-the-environment");
   REQUIRE_NOTHROW(config::ValidateSetupChoice(choice));
   // And the file names no key, leaving the run to read the variable -- writing it would copy a
   // secret into the workspace for no reason.
@@ -347,7 +347,7 @@ TEST_CASE("A blank key is refused when its variable is unset", "[setup]") {
   choice.model = "m";
   // Nothing would answer the question, so the turn would fail on its first request somewhere
   // far from this prompt.
-  ScopedEnvVar env("CODEBUDDY_API_KEY", "");
+  ScopedEnvVar env("TENCENT_API_KEY", "");
   REQUIRE_THROWS_AS(config::ValidateSetupChoice(choice), GenericError);
 }
 
@@ -757,7 +757,7 @@ TEST_CASE("A backend may leave out the host its gateway supplies", "[agent_confi
       },
       {
         "name": "cloud",
-        "backend": { "gateway": "codebuddy", "model": "glm-5.3" }
+        "backend": { "gateway": "tencent", "model": "glm-5.3" }
       }
     ]
   })");
@@ -915,7 +915,7 @@ TEST_CASE("LoadAgentsConfig reads the context window a file names", "[agent_conf
       {
         "name": "cb",
         "backend": {
-          "gateway": "codebuddy",
+          "gateway": "tencent",
           "model": "deepseek-v4.1-flash",
           "context_window": 250000
         }
@@ -983,7 +983,7 @@ TEST_CASE("A rendered entry copies the file's own surroundings and expands nothi
     "name": "source-agent",
     "description": "whatever it says",
     "backend": {
-      "gateway": "codebuddy",
+      "gateway": "tencent",
       "model": "some-model",
       "api_key": "${SOME_KEY}",
       "temperature": 0.3,
@@ -999,7 +999,7 @@ TEST_CASE("A rendered entry copies the file's own surroundings and expands nothi
 
   const std::string rendered = config::FormatAgentEntry(model, source);
 
-  REQUIRE(rendered.find("\"name\": \"codebuddy-glm-5.3-flash\"") != std::string::npos);
+  REQUIRE(rendered.find("\"name\": \"tencent-glm-5.3-flash\"") != std::string::npos);
   REQUIRE(rendered.find("\"model\": \"glm-5.3-flash\"") != std::string::npos);
   // Copied, not resolved: a snippet goes into a file that may be committed.
   REQUIRE(rendered.find("${SOME_KEY}") != std::string::npos);
@@ -1015,7 +1015,7 @@ TEST_CASE("A rendered entry names a level a reasoning-only model cannot run with
           "[agent_config]") {
   const boost::json::value source = json::parse(R"({
     "name": "source-agent",
-    "backend": {"gateway": "codebuddy", "model": "some-model", "api_key": "${K}"}
+    "backend": {"gateway": "tencent", "model": "some-model", "api_key": "${K}"}
   })");
 
   model::ModelEntry model{"glm-5.1", {}};
@@ -1044,7 +1044,7 @@ TEST_CASE("FindRawAgentEntry reads the file as written, not as resolved", "[agen
   tmp.write(R"({
     "default_agent": "a",
     "agents": [
-      {"name": "a", "backend": {"gateway": "codebuddy", "model": "m1", "api_key": "${KEY_A}"}},
+      {"name": "a", "backend": {"gateway": "tencent", "model": "m1", "api_key": "${KEY_A}"}},
       {"name": "b", "backend": {"gateway": "openai", "model": "m2"}}
     ]
   })");

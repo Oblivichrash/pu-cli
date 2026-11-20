@@ -79,6 +79,12 @@ std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view active_model,
                             ListingDetail detail = ListingDetail::kIds);
 
+// What a catalogue says about one model, as a line: `tools images max-in=128000`. Empty when it
+// said nothing. Exported because the setup wizard asks the same question of the same catalogue
+// and a reader deciding between two models should get the same words wherever they are asked
+// -- a second rendering would be a second vocabulary.
+std::string CapabilityLine(const model::Capabilities& caps);
+
 class OllamaModelLister final : public pu::ModelLister {
  public:
   std::vector<model::ModelEntry> ListModels(const std::string& host, const std::string& api_key,

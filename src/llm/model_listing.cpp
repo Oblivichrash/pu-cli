@@ -293,12 +293,10 @@ std::vector<model::ModelEntry> CodeBuddyModelLister::ListModels(const std::strin
   return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), CodeBuddyShape(), url);
 }
 
-namespace {
-
-// The columns that decide between two models a reader has already narrowed to. Each says what
-// it knows and nothing where it was told nothing: a blank column is "this gateway did not say"
-// rather than "no".
 std::string CapabilityLine(const model::Capabilities& caps) {
+  // The columns that decide between two models a reader has already narrowed to. Each says what
+  // it knows and nothing where it was told nothing: a blank column is "this gateway did not
+  // say" rather than "no".
   std::ostringstream line;
   auto flag = [&](bool set, const char* name) {
     if (!set) return;
@@ -321,8 +319,6 @@ std::string CapabilityLine(const model::Capabilities& caps) {
   }
   return line.str();
 }
-
-}  // namespace
 
 std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view gateway,

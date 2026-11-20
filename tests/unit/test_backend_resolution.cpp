@@ -125,13 +125,13 @@ TEST_CASE("A stored backend naming no gateway is refused rather than defaulted",
 }
 
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
-  REQUIRE(model::ParseGatewayId("codebuddy") == model::GatewayId::kCodeBuddy);
+  REQUIRE(model::ParseGatewayId("tencent") == model::GatewayId::kCodeBuddy);
   REQUIRE(model::ParseGatewayId("openai") == model::GatewayId::kOpenAI);
   REQUIRE(model::ParseGatewayId("ollama") == model::GatewayId::kOllama);
   REQUIRE(model::ParseGatewayId("anthropic") == model::GatewayId::kAnthropic);
   REQUIRE_FALSE(model::ParseGatewayId("gpt").has_value());
 
-  REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "tencent");
   REQUIRE(std::string(model::GatewayName(model::GatewayId::kAnthropic)) == "anthropic");
 }
 
@@ -304,7 +304,7 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
 }
 
 TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
-  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nim", "codebuddy"}) {
+  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent"}) {
     const std::optional<model::GatewayId> id = model::ParseGatewayId(name);
     REQUIRE(id.has_value());
     REQUIRE(std::string(model::GatewayName(*id)) == name);
@@ -313,7 +313,7 @@ TEST_CASE("A gateway name is one product, and the table answers for all of them"
 }
 
 TEST_CASE("Naming a gateway reaches it without an agents.json entry", "[backend]") {
-  const model::Backend nim = model::BackendForGateway("nim");
+  const model::Backend nim = model::BackendForGateway("nvidia");
   REQUIRE(nim.gateway == model::GatewayId::kNim);
   REQUIRE(nim.host == "https://integrate.api.nvidia.com/v1");
 
@@ -331,8 +331,8 @@ TEST_CASE("Naming a gateway this build has not got says which it has", "[backend
     const std::string message = e.what();
     REQUIRE(message.find("Unknown gateway") != std::string::npos);
     // The candidates, since a name typed from memory is the case this guards.
-    REQUIRE(message.find("nim") != std::string::npos);
-    REQUIRE(message.find("codebuddy") != std::string::npos);
+    REQUIRE(message.find("nvidia") != std::string::npos);
+    REQUIRE(message.find("tencent") != std::string::npos);
   }
 }
 
@@ -350,7 +350,7 @@ TEST_CASE("A read-only command reads the session's backend until a gateway is na
 
   // A named gateway is built from the table and never adopted.
   const model::Backend before = runtime.CurrentBackend();
-  const model::Backend named = cli::ReadOnlyBackend("nim", "", runtime);
+  const model::Backend named = cli::ReadOnlyBackend("nvidia", "", runtime);
   REQUIRE(named.gateway == model::GatewayId::kNim);
   REQUIRE(runtime.CurrentBackend().gateway == before.gateway);
   REQUIRE(runtime.CurrentBackend().model == before.model);
@@ -358,5 +358,5 @@ TEST_CASE("A read-only command reads the session's backend until a gateway is na
   // `--model` is honoured in both branches. It used to be read only when a gateway
   // was named, so `pu probe --model X` silently kept the agent's model.
   REQUIRE(cli::ReadOnlyBackend("", "chosen", runtime).model == "chosen");
-  REQUIRE(cli::ReadOnlyBackend("nim", "chosen", runtime).model == "chosen");
+  REQUIRE(cli::ReadOnlyBackend("nvidia", "chosen", runtime).model == "chosen");
 }

@@ -155,7 +155,7 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
   CommandReply reply;
   std::string output;
 
-  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  reply = f.Route("/backend tencent deepseek-v4-flash");
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find(model::DefaultHostFor(model::GatewayId::kCodeBuddy)) != std::string::npos);
@@ -214,20 +214,20 @@ TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[
   output = reply.text;
   REQUIRE(output.find("chat (active)") != std::string::npos);
 
-  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  reply = f.Route("/backend tencent deepseek-v4-flash");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy") != std::string::npos);
+  REQUIRE(output.find("tencent") != std::string::npos);
 
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy (active)") != std::string::npos);
+  REQUIRE(output.find("tencent (active)") != std::string::npos);
 
   reply = f.Route("/backend");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy") != std::string::npos);
+  REQUIRE(output.find("tencent") != std::string::npos);
 
   reply = f.Route("/backend coder");
   REQUIRE(reply.ok);

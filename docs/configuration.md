@@ -133,7 +133,7 @@ do not treat a child's file as evidence that a repository agreed to anything. It
 by the built-in `agents.json` checks that `pu` runs against the workspace's own table, so a
 malformed child file fails at the refusal, not at load.
 
-`codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
+`tencent` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md). Its
 supported models are the account's, so a request naming one the account may not
@@ -141,10 +141,10 @@ use is answered by the gateway itself.
 
 ```json
 "backend": {
-  "gateway": "codebuddy",
+  "gateway": "tencent",
   "host": "https://copilot.tencent.com/v2",
   "model": "deepseek-v4-flash",
-  "api_key": "${CODEBUDDY_API_KEY}"
+  "api_key": "${TENCENT_API_KEY}"
 }
 ```
 
@@ -217,7 +217,7 @@ workspace  /home/me/work
 default    fast
 
 fast   (default_agent)
-  gateway      codebuddy
+  gateway      tencent
   host         https://copilot.tencent.com/v2   (default for this gateway)
   model        deepseek-v4.1-flash
   api_key      (set, 59 characters)
@@ -253,25 +253,52 @@ this build can guess. `pu setup` asks for them and writes the file:
 No agents.json here yet. Three questions and this workspace is ready.
 
 Which gateway?
-  1) ollama  (no key needed)
-  2) openai
-  3) anthropic
-  4) codebuddy
+  1) ollama
+  2) ollama-cloud
+  3) openai
+  4) deepseek
+  5) nvidia
+  6) tencent
+  7) anthropic
 
-Gateway [ollama]: URL (blank for the gateway's own):
+Gateway: 1
+URL: http://localhost:11434
 What this gateway offers:
-  1) qwen2.5:0.5b
-  2) llama3.1:8b
+  1) qwen2.5:0.5b          tools max-in=32768
+  2) llama3.1:8b           tools max-in=131072
 
 Model (number or id): 1
 Wrote .pu/agents.json
 ```
 
+The menu is the gateway table itself, in the order it is written, so a gateway added to
+`src/llm/gateway_table.cpp` is one the first run offers — `ollama-cloud`, `deepseek` and
+`nvidia` were missing from a hand-maintained list of four. The list names the products and
+nothing else: which variable holds a gateway's key is a question the next prompt answers, and
+printing it twice made the menu a paragraph where a list was wanted.
+
+The gateway prompt holds `1`, so `<enter>` is the first entry and choosing the fourth is typing
+one character over it. A name is still accepted where a reader prefers to spell one out.
+
+The answer the reader types starts out holding the default: the URL question opens with the
+chosen gateway's own address already on the line and the cursor at its end, so changing
+`api.openai.com` to a proxy is editing that text rather than retyping it. `<enter>` takes it
+whole, backspace removes it character by character, `^U` clears the line, and an arrow key is
+ignored rather than inserted as bytes. `^C` or `^D` on a blank line abandons the wizard — it
+writes nothing — and puts the terminal back the way it was.
+
+Off a terminal there is nothing to edit, so the default is printed beside the prompt the way
+it always was — `URL [http://localhost:11434]:` — and a blank line takes it. A script's answers
+arrive as they did before this was editable.
+
 It asks in the order a reader can answer: the gateway first, because it decides both the
 default address and whether a key is needed at all; then the URL, where blank means the
 gateway's own; then the key, asked only when the gateway has one to ask for. The catalogue is
-then fetched with the answers so far and printed with numbers, so the model is a keystroke
-rather than a spelling.
+then fetched with the answers so far and printed with numbers beside what the catalogue says
+about each model — the same capability line `pu models --caps` prints, including `tools`,
+`images`, `reasoning`, a forced `effort`, and the input window. A model the catalogue says
+nothing about is marked `(nothing stated)` rather than left blank, because a blank column reads
+as one that failed to print. The number is a keystroke where the id would be a spelling.
 
 The key question names the variable the gateway reads, and blank there means that variable:
 the catalogue is listed with it, and the written file names no key at all, so the secret stays

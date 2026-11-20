@@ -67,13 +67,13 @@ TEST_CASE("serve API /api/session says how much context the model holds", "[serv
 }
 
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
-  ServeHarness harness("codebuddy");
+  ServeHarness harness("tencent");
   auto client = harness.Client();
 
   auto j = ParseJson(client.Get("/api/session"));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("gateway") == "codebuddy");
+  REQUIRE(j.at("gateway") == "tencent");
   REQUIRE(j.at("backend_model") == "test-model");
 }
 

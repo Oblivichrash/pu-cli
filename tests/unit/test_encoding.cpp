@@ -15,6 +15,8 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <iostream>
+#include <sstream>
 #include <string>
 
 #ifdef _WIN32
@@ -217,4 +219,38 @@ TEST_CASE("A transport error is read back as its reason", "[text][errors]") {
   REQUIRE(pu::text::ReadableError("Request cancelled") == "Request cancelled");
   REQUIRE(pu::text::ReadableError("HTTP error 401: bad key [oops") ==
           "HTTP error 401: bad key [oops");
+}
+
+TEST_CASE("A prompted default is taken by a blank line off a terminal", "[platform][prompt]") {
+  // The test's own stdin is not a terminal, which is the path a script takes: the default
+  // goes out beside the prompt and a whole line is read. A blank line is the default because
+  // that is what the prompt says it is, and a line with anything on it is that instead.
+  if (pu::platform::StdinIsTerminal()) return;
+
+  std::istringstream blank("\n");
+  std::istringstream typed("https://example.test/v1\n");
+  std::istringstream nothing("");
+  std::streambuf* saved = std::cin.rdbuf();
+
+  std::cin.rdbuf(blank.rdbuf());
+  const auto [got_default, default_answer] =
+      pu::platform::ReadLineWithDefault("URL", "http://localhost:11434");
+  REQUIRE(got_default);
+  REQUIRE(default_answer == "http://localhost:11434");
+
+  std::cin.rdbuf(typed.rdbuf());
+  const auto [got_typed, typed_answer] =
+      pu::platform::ReadLineWithDefault("URL", "http://localhost:11434");
+  REQUIRE(got_typed);
+  REQUIRE(typed_answer == "https://example.test/v1");
+
+  // No line at all is not an answer: a wizard that took the default there would write a file
+  // the reader had just left.
+  std::cin.rdbuf(nothing.rdbuf());
+  const auto [got_eof, eof_answer] =
+      pu::platform::ReadLineWithDefault("URL", "http://localhost:11434");
+  REQUIRE_FALSE(got_eof);
+  REQUIRE(eof_answer == "http://localhost:11434");
+
+  std::cin.rdbuf(saved);
 }
