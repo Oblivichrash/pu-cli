@@ -59,9 +59,10 @@ function messageText(blocks) {
 }
 
 // Copy is a reading action, and the right button is where a reader already reaches for it. The
-// old control turned into the word "Copied" in place; the menu has no room for that, so the
-// confirmation is a line of system text the page already knows how to draw, and the menu closes
-// on the press as it does for any other row.
+// old control turned into the word "Copied" in place; the menu closes on the press as it does for
+// any other row, and a copy that worked needs no line of its own -- the words are on the clipboard,
+// which is the whole of what was asked for. Only a refusal is drawn, because it is the one outcome
+// the reader has to do something about.
 function copyMessage(text) {
   if (!text) return true;
   // A page served over plain http has no clipboard API, so the older command is the fallback

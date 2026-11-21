@@ -92,7 +92,10 @@ function menuItems(el) {
         createSystemMessage("There is no text in this message to copy.");
         return;
       }
-      if (copyMessage(text)) createSystemMessage("Copied to the clipboard.");
+      // A copy that worked says nothing: the reader asked for the words and the words are now
+      // on the clipboard, which is the answer. Only the failure is worth a line, because it is
+      // the one outcome the reader has to act on.
+      copyMessage(text);
     },
   });
 

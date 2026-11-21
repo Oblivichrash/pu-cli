@@ -58,10 +58,6 @@
     <aside id="sidebar">
       <div class="panel">
         <div class="panel-title">Session</div>
-        <label class="field">
-          <span>Agent</span>
-          <select id="agent-select"></select>
-        </label>
         <!-- One row per setting the server offers, drawn from /api/settings: a setting added
              there appears here without this file changing. How much reasoning to ask for is a
              row like any other now. -->
@@ -81,11 +77,21 @@
 
       <div class="panel">
         <div class="panel-title">Backend</div>
-        <dl id="panel-backend" class="kv">
-          <dt>Type</dt><dd id="kb-type">—</dd>
-          <dt>Model</dt><dd id="kb-model">—</dd>
-          <dt>Host</dt><dd id="kb-host">—</dd>
-        </dl>
+        <!-- The backend is the one thing on this page the operator still chooses: the agent is
+             fixed by its file, but which gateway and model answer is a runtime decision that is
+             written back to that file. The model list is asked of the gateway, so a gateway that
+             cannot be asked leaves a text field here instead of a stale menu. -->
+        <label class="field">
+          <span>Gateway</span>
+          <select id="kb-type"></select>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="kb-model"></select>
+          <input id="kb-model-text" type="text" hidden>
+        </label>
+        <dl class="kv"><dt>Host</dt><dd id="kb-host">—</dd></dl>
+        <div id="kb-error" class="backend-error" hidden></div>
       </div>
 
       <div class="panel">
