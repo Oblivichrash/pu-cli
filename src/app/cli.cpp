@@ -89,6 +89,8 @@ CommandLine BuildCommandLine() {
        "that is already configured. `pu sse` takes a URL and headers instead, for a feed that "
        "is not a chat turn."},
       {"serve", "host the page and the API that a browser talks to"},
+      {"setup",
+       "ask the questions agents.json answers -- gateway, URL, key, model -- and write it"},
       {"sse",
        "read a server-sent-event stream and print each event", false,
        "A plain client: the URL, the method and the headers are yours, and no agents.json is "
@@ -162,6 +164,9 @@ CommandLine BuildCommandLine() {
       {"serve",
        {{"bind", "interface to listen on (default 127.0.0.1)", true},
         {"port", "port to listen on (default 8080)", true}}},
+      // No options: the questions are the interface, and a flag that answered one of them
+      // would be a second way to say the same thing that the wizard could not keep in step.
+      {"setup", {}},
   };
 
   CommandLine line;

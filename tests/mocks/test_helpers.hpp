@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "pu/core/logging.hpp"
 #include "pu/model/backend.hpp"
 
 #include <atomic>
@@ -109,6 +110,24 @@ class ScopedWorkingDir {
 
   ScopedWorkingDir(const ScopedWorkingDir&) = delete;
   ScopedWorkingDir& operator=(const ScopedWorkingDir&) = delete;
+
+ private:
+  std::filesystem::path original_;
+};
+
+// The run's root is process-wide, so a case that sets it has to put back what it found. Without
+// this, catch_discover_tests running cases in parallel sees one case's temporary directory leak
+// into another's `LogDir`.
+class ScopedWorkspaceRoot {
+ public:
+  explicit ScopedWorkspaceRoot(const std::filesystem::path& root) : original_(pu::WorkspaceRoot()) {
+    pu::SetWorkspaceRoot(root);
+  }
+
+  ~ScopedWorkspaceRoot() { pu::SetWorkspaceRoot(original_); }
+
+  ScopedWorkspaceRoot(const ScopedWorkspaceRoot&) = delete;
+  ScopedWorkspaceRoot& operator=(const ScopedWorkspaceRoot&) = delete;
 
  private:
   std::filesystem::path original_;
