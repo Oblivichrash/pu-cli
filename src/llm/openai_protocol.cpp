@@ -96,9 +96,13 @@ std::string OpenAIProtocol::BuildRequest(std::span<const ChatMessage> history,
 
 void OpenAIProtocol::HandleJsonToken(const boost::json::value& j, const ChatRequest& request) {
   // The top-level names this reads, kept beside the reads themselves so a name added to
-  // the wire has to pass them to go unnoticed. `done` is this protocol's own sentinel.
+  // the wire has to pass them to go unnoticed. `done` is this protocol's own sentinel, and the
+  // three names after it are the chunk's identity -- present on every frame of every
+  // OpenAI-compatible stream, saying which completion and which kind of object this is. They
+  // are listed because they arrive always, and a warning that fires on every turn is a warning
+  // nobody reads; a field that only some gateways send still has no entry here.
   static constexpr std::string_view kReadKeys[] = {
-      "error", "choices", "usage", "model", "done",
+      "error", "choices", "usage", "model", "done", "id", "object", "created",
   };
   NoteUnreadFields(j, kReadKeys);
 
