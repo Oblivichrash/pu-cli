@@ -86,7 +86,8 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   };
 
   std::string accumulated;
-  const std::vector<ChatMessage> history = {ChatMessage{1, "now", "user", "Hi"}};
+  const std::vector<ChatMessage> history = {
+      ChatMessage{.id = 1, .timestamp = "now", .role = "user", .content = "Hi"}};
   auto result = harness->Chat(ChatRequest(history, {}, [&](std::string_view token) {
     accumulated += token;
   }));

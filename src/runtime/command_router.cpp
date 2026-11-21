@@ -196,7 +196,7 @@ CommandReply CommandRouter::ReportModels(const model::Backend& cfg) {
   }
 }
 
-CommandReply CommandRouter::HandleAgents(Args, Session& session) {
+CommandReply CommandRouter::HandleAgents(Args, Session&) {
   // The same answer `pu agents` prints: the chat is not a second place to learn who is
   // configured, and two renderings of one fact drift.
   return Replied(app::FormatAgent(app::SummarizeAgent(runtime_.Agents())));

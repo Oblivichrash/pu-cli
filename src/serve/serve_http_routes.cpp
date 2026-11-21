@@ -336,13 +336,6 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
   return turns;
 }
 
-boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
-  // The same summary `pu agents` prints, so the page and the CLI cannot disagree about what
-  // is configured. One agent file, so the answer is one object rather than a list of one.
-  Runtime& runtime = call.runtime;
-  return app::AgentAsJson(app::SummarizeAgent(runtime.Agents()));
-}
-
 // The backend the agent speaks through now. What else it could speak through is not here: the
 // gateways are this build's own table and the models belong to one gateway, so each is asked at
 // its own address -- `/api/gateways`, `/api/models` -- by the menu that needs it, rather than

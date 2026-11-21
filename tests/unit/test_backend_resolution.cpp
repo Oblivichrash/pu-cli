@@ -107,7 +107,7 @@ TEST_CASE("A stored backend naming a gateway this build has not got is refused",
 TEST_CASE("A stored backend naming no gateway is refused rather than defaulted", "[backend]") {
   // The field was named `type` before the gateway table; a file still carrying it names no
   // gateway, and reading it as ollama would send its turns to a host nobody chose.
-  for (const boost::json::value stored :
+  for (const boost::json::value& stored :
        {boost::json::value{{"host", "https://example.invalid/v1"}, {"model", "test-model"}},
         boost::json::value{{"type", "openai"}, {"host", "https://example.invalid/v1"},
                            {"model", "test-model"}},

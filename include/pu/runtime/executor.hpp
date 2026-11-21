@@ -155,18 +155,18 @@ class Executor {
 
   // Everything one turn needs beyond its input and the conversation it writes to. Named
   // fields because half of these are callbacks and two of them share a type: a positional
-  // call site could not tell the two `TokenCallback`s apart. No default member initializers,
-  // so that a call site can name only the fields it sets.
+  // call site could not tell the two `TokenCallback`s apart. Every field starts empty, so a
+  // call site names only what it carries.
   struct Turn {
-    LLMProvider* provider;
-    Toolbox* toolbox;
-    TokenCallback content_callback;
-    ToolCallbacks tool_callbacks;
-    TokenCallback reasoning_callback;
-    CancelToken cancel_token;
+    LLMProvider* provider = nullptr;
+    Toolbox* toolbox = nullptr;
+    TokenCallback content_callback = nullptr;
+    ToolCallbacks tool_callbacks = {};
+    TokenCallback reasoning_callback = nullptr;
+    CancelToken cancel_token = nullptr;
     // A second token, because a command kills its own turn without cancelling the turn that
     // asked for it: `ask_dir` passes the asking turn's token here so a stop reaches the child.
-    CancelToken command_stop_token;
+    CancelToken command_stop_token = nullptr;
   };
 
   ExecutionResult Execute(const std::string& input, Conversation& conversation, Turn turn);

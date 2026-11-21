@@ -88,13 +88,13 @@ struct ReasoningBlock {
 
 struct ChatMessage {
   int id = 0;
-  std::string timestamp;
+  std::string timestamp = "";
   std::string role;
-  std::string content;
-  std::string tool_name;
-  boost::json::value tool_calls;
-  std::vector<ReasoningBlock> reasoning;
-  std::string tool_call_id;
+  std::string content = "";
+  std::string tool_name = "";
+  boost::json::value tool_calls = nullptr;
+  std::vector<ReasoningBlock> reasoning = {};
+  std::string tool_call_id = "";
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();
