@@ -106,7 +106,7 @@ async function adoptServer(server) {
   renderServers();
   // The session answers with the name and port the page is now attached to, so a switch ends by
   // correcting the label from the server it arrived at rather than trusting the entry it used.
-  await loadAgents();
+  await loadBackends();
   await loadSession();
   await loadHistory();
   scrollToBottom();

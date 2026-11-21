@@ -29,6 +29,7 @@
 #include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -36,6 +37,24 @@
 
 namespace pu::serve::detail {
 namespace {
+
+// One value out of a query string, read without decoding: a gateway name is a plain word, and
+// the only parameter these handlers ask for is one. Absent or empty answers empty.
+std::string QueryValue(const std::string& query, std::string_view name) {
+  std::size_t at = 0;
+  while (at < query.size()) {
+    const std::size_t end = query.find('&', at);
+    const std::string_view pair(query.data() + at,
+                               (end == std::string::npos ? query.size() : end) - at);
+    const std::size_t eq = pair.find('=');
+    if (eq != std::string_view::npos && pair.substr(0, eq) == name) {
+      return std::string(pair.substr(eq + 1));
+    }
+    if (end == std::string::npos) break;
+    at = end + 1;
+  }
+  return {};
+}
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -319,21 +338,88 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
 
 boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
   // The same summary `pu agents` prints, so the page and the CLI cannot disagree about what
-  // is configured. The active agent is the session's, which is what the selector shows.
+  // is configured. One agent file, so the answer is one object rather than a list of one.
   Runtime& runtime = call.runtime;
-  const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
-                                                      : std::string();
-  return app::AgentsAsJson(app::SummarizeAgents(runtime.Agents(), active));
+  return app::AgentAsJson(app::SummarizeAgent(runtime.Agents()));
 }
 
-boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& body) {
-  Runtime& runtime = call.runtime;
-  RequireString(body, "agent_name");
-  const std::string agent_name = boost::json::value_to<std::string>(body.at("agent_name"));
-  const auto* cfg = runtime.Agents().AgentConfig(agent_name);
-  if (!cfg) throw NotFound("Agent not found: " + agent_name);
-  runtime.SwitchAgent(*cfg);
-  return boost::json::object{{"agent", agent_name}};
+// The backend the agent speaks through now. What else it could speak through is not here: the
+// gateways are this build's own table and the models belong to one gateway, so each is asked at
+// its own address -- `/api/gateways`, `/api/models` -- by the menu that needs it, rather than
+// carried along on every read of the backend in force.
+boost::json::value BackendAsJson(Call& call) {
+  const model::Backend current = call.runtime.CurrentBackend();
+  return boost::json::object{
+      {"gateway", model::GatewayName(current.gateway)},
+      {"model", current.model},
+      {"host", current.host},
+  };
+}
+
+boost::json::value HandleApiBackend(Call& call, const boost::json::value&) {
+  return BackendAsJson(call);
+}
+
+// Every gateway this build can speak through, in table order. The list is the code's own, so
+// this asks a provider nothing.
+boost::json::value HandleApiGateways(Call&, const boost::json::value&) {
+  boost::json::array gateways;
+  for (const model::Gateway& gateway : model::Gateways()) {
+    gateways.emplace_back(std::string(gateway.name));
+  }
+  return boost::json::object{{"gateways", std::move(gateways)}};
+}
+
+// What one gateway serves, asked when the page opens the model list rather than once at load.
+// The gateway is named by the request, so the answer is that gateway's catalogue and not the
+// current backend's; the key is the one a turn would read from the environment, which keeps a
+// key out of the page. A gateway that cannot be asked answers with no models and the reason,
+// and the page falls back to typing a model name.
+boost::json::value HandleApiModels(Call& call, const boost::json::value&) {
+  const std::string gateway_name = QueryValue(call.query, "gateway");
+  boost::json::array models;
+  std::string error;
+  const model::Gateway* gateway = model::FindGateway(gateway_name);
+  if (gateway == nullptr) {
+    error = "No gateway is named '" + gateway_name + "'.";
+  } else {
+    model::Backend backend;
+    backend.gateway = gateway->id;
+    backend.host = std::string(gateway->default_host);
+    const std::string key_env(gateway->api_key_env);
+    if (!key_env.empty()) {
+      if (const char* key = std::getenv(key_env.c_str()); key != nullptr && *key != '\0') {
+        backend.api_key = std::string(key);
+      }
+    }
+    try {
+      for (const model::ModelEntry& entry : llm::ListModels(backend, call.runtime.Http())) {
+        models.emplace_back(entry.id);
+      }
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+  }
+  return boost::json::object{
+      {"gateway", gateway_name},
+      {"models", std::move(models)},
+      {"error", error},
+  };
+}
+
+boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& body) {
+  const std::string gateway = json::ValueOrDefault<std::string>(body, "gateway", "");
+  const std::string model = json::ValueOrDefault<std::string>(body, "model", "");
+  if (gateway.empty()) throw RequestRefused("Missing 'gateway'");
+  if (model.empty()) throw RequestRefused("Missing 'model'");
+  const std::optional<model::GatewayId> id = model::ParseGatewayId(gateway);
+  if (!id) throw RequestRefused("Unknown gateway: " + gateway);
+  model::Backend next = call.runtime.CurrentBackend();
+  if (next.gateway != *id) next.host = model::DefaultHostFor(*id);
+  next.gateway = *id;
+  next.model = model;
+  call.runtime.SwitchBackend(next);
+  return BackendAsJson(call);
 }
 
 // The other servers on this machine, so the page can name a workspace instead of a port. The one
@@ -397,14 +483,20 @@ boost::json::value HandleApiResetSettings(Call& call, const boost::json::value&)
 
 // Every route this server answers, with the two things a row cannot leave implicit: who may read
 // it, and the shape of what it returns. `key` names the member a listing is filed under, so
-// `/api/history` answers `{"messages": [...]}` the way `/api/agents` answers `{"agents": [...]}`:
+// `/api/history` answers `{"messages": [...]}` the way `/api/backend` answers `{"backend": {...}}`:
 // one envelope, read from this table, instead of a rule each handler restates.
 constexpr Route kRoutes[] = {
     //   target,              method,          handler,              key,          audience,                 status, body
     {"/api/session", http::verb::get, &HandleApiSession, "", Audience::kAnyone, 200, false},
     {"/api/history", http::verb::get, &HandleApiHistory, "messages", Audience::kAnyone, 200, false},
-    {"/api/agents", http::verb::get, &HandleApiAgents, "agents", Audience::kAnyone, 200, false},
-    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, "", Audience::kAnyone, 200, true},
+    // The page reads one agent's backend, and writes it back when a choice is made there. Both
+    // go through /api/backend: nothing on the page enumerates agents, because there is one.
+    {"/api/backend", http::verb::get, &HandleApiBackend, "backend", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::post, &HandleApiSetBackend, "backend", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::get, &HandleApiBackend, "", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::post, &HandleApiSetBackend, "", Audience::kAnyone, 200, true},
+    {"/api/gateways", http::verb::get, &HandleApiGateways, "", Audience::kAnyone, 200, false},
+    {"/api/models", http::verb::get, &HandleApiModels, "", Audience::kAnyone, 200, false},
     {"/api/rewind", http::verb::post, &HandleApiRewind, "", Audience::kAnyone, 200, true},
     {"/api/settings", http::verb::get, &HandleApiSettings, "", Audience::kAnyone, 200, false},
     {"/api/settings", http::verb::post, &HandleApiSetSetting, "", Audience::kAnyone, 200, true},
@@ -453,7 +545,11 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res, const std::string& peer,
                          std::uint16_t port) {
-  const std::string_view target = req.target();
+  const std::string_view request_target = req.target();
+  const std::size_t question = request_target.find('?');
+  const std::string_view target = request_target.substr(0, question);
+  const std::string_view query =
+      question == std::string_view::npos ? std::string_view{} : request_target.substr(question + 1);
 
   if (IsPageFile(target)) {
     ServeFile(std::string(target), res);
@@ -469,7 +565,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
       return;
     }
 
-    Call call{runtime, peer, IsLoopback(peer), port};
+    Call call{.query = std::string(query), .runtime = runtime, .address = peer, .loopback = IsLoopback(peer), .port = port};
 
     try {
       const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};

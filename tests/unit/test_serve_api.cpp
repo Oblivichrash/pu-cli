@@ -37,6 +37,29 @@ boost::json::value HistoryOf(TestHttpClient& client) {
   return ParseJson(client.Get("/api/history")).at("messages");
 }
 
+// A directory this case creates beside the executable and removes on the way out, including when
+// an assertion fails first. Without the destructor a failing run leaves `web/` behind and the
+// next run fails for a reason that belongs to this one.
+class BesideTheExecutable {
+ public:
+  explicit BesideTheExecutable(const fs::path& dir) : dir_(dir) {
+    std::error_code ec;
+    fs::create_directories(dir_, ec);
+    failed_ = static_cast<bool>(ec);
+  }
+  ~BesideTheExecutable() {
+    std::error_code ec;
+    fs::remove_all(dir_, ec);
+  }
+  BesideTheExecutable(const BesideTheExecutable&) = delete;
+  BesideTheExecutable& operator=(const BesideTheExecutable&) = delete;
+  bool failed() const { return failed_; }
+
+ private:
+  fs::path dir_;
+  bool failed_ = false;
+};
+
 }  // namespace
 
 TEST_CASE("serve API /api/session", "[serve][api]") {
@@ -67,13 +90,13 @@ TEST_CASE("serve API /api/session says how much context the model holds", "[serv
 }
 
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
-  ServeHarness harness("codebuddy");
+  ServeHarness harness("tencent");
   auto client = harness.Client();
 
   auto j = ParseJson(client.Get("/api/session"));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("gateway") == "codebuddy");
+  REQUIRE(j.at("gateway") == "tencent");
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
@@ -253,17 +276,41 @@ TEST_CASE("serve API /api/history replays a page as a page", "[serve][api]") {
   REQUIRE(turn.at("page").at("stored").at("dropped").as_int64() == 3420);
 }
 
-TEST_CASE("serve API /api/agents", "[serve][api]") {
+TEST_CASE("serve API /api/backend says what is in force", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  std::string body = client.Get("/api/agents");
-  auto j = ParseJson(body);
+  const auto j = ParseJson(client.Get("/api/backend")).at("backend");
 
-  REQUIRE(j.at("agents").is_array());
-  auto& agents = j.at("agents").as_array();
-  REQUIRE(agents.size() == 1);
-  REQUIRE(agents[0].at("name") == "chat");
+  // The backend in force, from the agent file. The harness writes an ollama gateway by default;
+  // the model is the one it wrote.
+  REQUIRE(j.at("gateway") == "ollama");
+  REQUIRE(j.at("model") == "test-model");
+  // What it could be instead is not carried here: the gateways are the build's own table and the
+  // models belong to one gateway, each asked at its own address.
+  const auto& obj = j.as_object();
+  REQUIRE(!obj.contains("gateways"));
+  REQUIRE(!obj.contains("models"));
+  REQUIRE(!obj.contains("model_error"));
+}
+
+TEST_CASE("serve API /api/gateways lists every gateway this build carries", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/gateways"));
+  const auto& gateways = j.at("gateways").as_array();
+  // The table itself, in its order: a build that lost one of these could not be told to use it.
+  REQUIRE(gateways.size() >= 7);
+  const std::vector<std::string> wanted = {"ollama", "ollama-cloud", "openai", "deepseek",
+                                           "nvidia", "tencent", "anthropic"};
+  for (const std::string& name : wanted) {
+    bool saw = false;
+    for (const auto& gateway : gateways) {
+      if (gateway.as_string() == name) saw = true;
+    }
+    REQUIRE(saw);
+  }
 }
 
 TEST_CASE("serve API /api/settings names every setting and where it came from",
@@ -425,24 +472,12 @@ TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto res = client.PostRaw("/api/agent/switch", "not json");
+  auto res = client.PostRaw("/api/settings", "not json");
 
   REQUIRE(res.status == 400);
   auto j = ParseJson(res.body);
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("error") == "Invalid JSON");
-}
-
-TEST_CASE("serve API switching to an agent that does not exist returns 404", "[serve][api]") {
-  ServeHarness harness;
-  auto client = harness.Client();
-
-  auto res = client.PostFull("/api/agent/switch", boost::json::object{{"agent_name", "ghost"}});
-
-  REQUIRE(res.status == 404);
-  auto j = ParseJson(res.body);
-  REQUIRE(j.at("success") == false);
-  REQUIRE(j.at("error") == "Agent not found: ghost");
 }
 
 TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
@@ -634,10 +669,13 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
 
   const fs::path web = exe_dir / "web";
   std::error_code ec;
-  const bool preexisting = fs::exists(web, ec);
-  REQUIRE_FALSE(preexisting);
-  fs::create_directories(web, ec);
-  REQUIRE_FALSE(ec);
+  // The directory is the fixture: whatever an interrupted earlier run left here is removed
+  // first, so this case cannot fail for a reason that belongs to a previous one. `web` is
+  // beside the executable rather than in the build tree, so a failure needs no cleanup of its
+  // own to leave the checkout as it found it.
+  fs::remove_all(web, ec);
+  BesideTheExecutable beside(web);
+  REQUIRE_FALSE(beside.failed());
 
   {
     std::ofstream file(web / "index.html", std::ios::binary | std::ios::trunc);
@@ -654,6 +692,4 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
   const HttpResponse root = client.GetRaw("/");
   CHECK(root.status == 200);
   CHECK(root.body == "<!doctype html>beside the executable");
-
-  fs::remove_all(web, ec);
 }

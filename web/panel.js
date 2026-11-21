@@ -12,10 +12,20 @@ function setText(id, text) {
   if (el) el.textContent = text || "—";
 }
 
+// The gateway and the model sit in selects, so the label is written into the control's value:
+// textContent on a select would read as its options rather than as the one chosen.
+function setSelectValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value || "";
+  return el;
+}
+
+// The menus hold what the build carries and what the gateway serves; a label says which one is in
+// force and never grows the list.
 function setBackendLabel(gateway, model, host) {
   if (gateway) PU.gatewayShown = gateway;
-  setText(BACKEND_FIELDS.type, PU.gatewayShown);
-  if (model) setText(BACKEND_FIELDS.model, model);
+  const typeSelect = setSelectValue(BACKEND_FIELDS.type, PU.gatewayShown);
+  if (model) setSelectValue(BACKEND_FIELDS.model, model);
   if (host) setText(BACKEND_FIELDS.host, host);
   if (model) PU.backendModelShown = model;
   if (host) PU.backendHostShown = host;
@@ -28,14 +38,11 @@ function setBackendLabel(gateway, model, host) {
 // The bar repeats what the panel holds, in one line, because the panel folds and the
 // session's own facts do not change when it does.
 function renderStatusBar() {
-  const agent = PU.composer.agentSelect ? PU.composer.agentSelect.value : "";
-  setText("status-agent", agent);
-  // The bar's copy is cut at 220px, so it carries the same tooltip the panel's control does.
-  const agentEl = document.getElementById("status-agent");
-  if (agentEl) {
-    const description = (PU.agentDescriptions || {})[agent];
-    agentEl.title = description || "The agent that answers";
-  }
+  // The agent is fixed by its file, so the bar names the backend that answers instead: which
+  // gateway and model reply is the only part of this a reader can still change.
+  const gateway = PU.gatewayShown || "";
+  const model = PU.backendModelShown || "";
+  setText("status-agent", gateway && model ? gateway + " / " + model : (gateway || model));
 
   // What the server last said about thinking, rather than what a control holds: a setting an
   // older page does not draw is still a fact about the session.
