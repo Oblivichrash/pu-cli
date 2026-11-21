@@ -188,9 +188,11 @@ TEST_CASE("OpenAIProvider names the fields on a captured frame that nothing read
 
   // The set is asserted whole rather than one name at a time: a gateway that adds a field
   // to what this capture holds fails here, which is the signal that a name the backend
-  // should have read may have arrived and been missed by every read above.
-  REQUIRE(result.unread_fields ==
-          std::vector<std::string>{"id", "object", "created", "system_fingerprint"});
+  // should have read may have arrived and been missed by every read above. `id`, `object` and
+  // `created` are the chunk's identity, on every frame of every OpenAI-compatible stream, so
+  // they are read past at the protocol; `system_fingerprint` is sent by some gateways only,
+  // and its presence here is the reminder that it is not read.
+  REQUIRE(result.unread_fields == std::vector<std::string>{"system_fingerprint"});
 }
 
 TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {

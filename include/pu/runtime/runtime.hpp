@@ -192,7 +192,7 @@ class Runtime {
   // them on another.
   mutable std::mutex overrides_mutex_;
 
-
+  // The agent a `--agent` named, when one did. Empty: the file's own.
   std::string default_agent_override_;
   std::string config_path_;
 

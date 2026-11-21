@@ -172,10 +172,10 @@ TEST_CASE("[model_check] a model outside the listing is still named as the activ
   // CodeBuddy answers with the subset its agent may run, and a backend may name a model
   // outside it. Dropping the marker would leave the running model as the one row missing.
   const std::string rendered =
-      llm::FormatModelList(EntriesOf({"alpha", "beta"}), "codebuddy", "https://x.invalid/v2",
+      llm::FormatModelList(EntriesOf({"alpha", "beta"}), "tencent", "https://x.invalid/v2",
                            "not-listed");
 
-  REQUIRE(rendered.find("2 model(s) reported by codebuddy") != std::string::npos);
+  REQUIRE(rendered.find("2 model(s) reported by tencent") != std::string::npos);
   REQUIRE(rendered.find("not-listed (active, not listed by this gateway)") != std::string::npos);
   REQUIRE(rendered.find("alpha (active)") == std::string::npos);
 }
@@ -185,7 +185,7 @@ TEST_CASE("[model_check] a listing carrying a price says so beside the model", "
   models[0].caps.credits = "x0.06 credits";
 
   const std::string rendered =
-      llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "cheap");
+      llm::FormatModelList(models, "tencent", "https://x.invalid/v2", "cheap");
 
   REQUIRE(rendered.find("cheap (active)  x0.06 credits") != std::string::npos);
 }

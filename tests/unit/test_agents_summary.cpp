@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //
-// The one list of configured agents, and the four surfaces that print it.
+// The one agent, and the surfaces that print it.
 //
-// `pu agents`, the chat's `/agents`, `GET /api/agents` and the Web selector answer the same
-// question. They differ in how they draw the answer; these cases hold the answer still, so a
-// change to one surface's wording cannot quietly change what the others say.
+// `pu agents`, the chat's `/agents` and `GET /api/agents` answer the same question. They
+// differ in how they draw the answer; these cases hold the answer still, so a change to one
+// surface's wording cannot quietly change what the others say.
 //
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,7 +13,6 @@
 #include <boost/json.hpp>
 
 #include <string>
-#include <vector>
 
 #include "pu/app/agent_summary.hpp"
 #include "pu/core/json.hpp"
@@ -21,62 +20,43 @@
 namespace {
 
 pu::app::AgentSummary AgentOf(const std::string& name, const std::string& description,
-                                 const std::string& gateway, const std::string& model,
-                                 bool active) {
+                              const std::string& gateway, const std::string& model) {
   pu::app::AgentSummary agent;
   agent.name = name;
   agent.description = description;
   agent.gateway = gateway;
   agent.model = model;
-  agent.active = active;
   return agent;
 }
 
 }  // namespace
 
 TEST_CASE("The JSON shape is the one the API answers with", "[agents]") {
-  const std::vector<pu::app::AgentSummary> agents = {
-      AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
-      AgentOf("strong", "", "openai", "pro", false),
-  };
+  const boost::json::value json =
+      pu::app::AgentAsJson(AgentOf("fast", "the cheap one", "tencent", "flash"));
+  REQUIRE(json.is_object());
 
-  const boost::json::value json = pu::app::AgentsAsJson(agents);
-  REQUIRE(json.is_array());
-  REQUIRE(json.as_array().size() == 2);
-
-  const boost::json::value& first = json.as_array().at(0);
-  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "name", "") == "fast");
-  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "description", "") == "the cheap one");
-  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "gateway", "") == "codebuddy");
-  REQUIRE(pu::json::ValueOrDefault<std::string>(first, "model", "") == "flash");
-  REQUIRE(pu::json::ValueOrDefault<bool>(first, "active", false));
+  REQUIRE(pu::json::ValueOrDefault<std::string>(json, "name", "") == "fast");
+  REQUIRE(pu::json::ValueOrDefault<std::string>(json, "description", "") == "the cheap one");
+  REQUIRE(pu::json::ValueOrDefault<std::string>(json, "gateway", "") == "tencent");
+  REQUIRE(pu::json::ValueOrDefault<std::string>(json, "model", "") == "flash");
 
   // An agent with no description still carries the field: a reader of the shape should not
   // have to tell "absent" from "empty".
-  const boost::json::value& second = json.as_array().at(1);
-  REQUIRE(second.as_object().contains("description"));
-  REQUIRE_FALSE(pu::json::ValueOrDefault<bool>(second, "active", true));
+  const boost::json::value bare = pu::app::AgentAsJson(AgentOf("fast", "", "tencent", "flash"));
+  REQUIRE(bare.as_object().contains("description"));
 }
 
-TEST_CASE("The table marks the active agent and says what each one is", "[agents]") {
-  const std::vector<pu::app::AgentSummary> agents = {
-      AgentOf("fast", "the cheap one", "codebuddy", "flash", true),
-      AgentOf("strong-name", "", "openai", "pro", false),
-  };
-
-  const std::string table = pu::app::FormatAgentTable(agents);
-  REQUIRE(table.find("2 agent(s) configured") != std::string::npos);
-  REQUIRE(table.find("fast (active)") != std::string::npos);
-  // Only the active one is marked, or the marker says nothing.
-  REQUIRE(table.find("strong-name (active)") == std::string::npos);
-  REQUIRE(table.find("the cheap one") != std::string::npos);
-  // The gateway and the model, which is what tells two agents apart after the name.
-  REQUIRE(table.find("codebuddy / flash") != std::string::npos);
-  REQUIRE(table.find("openai / pro") != std::string::npos);
+TEST_CASE("The lines say what the agent is and which product answers it", "[agents]") {
+  const std::string lines =
+      pu::app::FormatAgent(AgentOf("fast", "the cheap one", "tencent", "flash"));
+  REQUIRE(lines.rfind("fast\n", 0) == 0);
+  REQUIRE(lines.find("the cheap one") != std::string::npos);
+  REQUIRE(lines.find("tencent / flash") != std::string::npos);
 }
 
 TEST_CASE("An empty configuration says so instead of printing nothing", "[agents]") {
   // A blank answer reads as a broken command; the words say what is missing.
-  REQUIRE(pu::app::FormatAgentTable({}) == "No agents are configured.\n");
-  REQUIRE(pu::app::AgentsAsJson({}).as_array().empty());
+  REQUIRE(pu::app::FormatAgent({}) == "No agent is configured.\n");
+  REQUIRE(pu::app::AgentAsJson({}).is_null());
 }

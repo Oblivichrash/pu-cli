@@ -14,23 +14,42 @@ default). See [Configure](../README.md#configuration) for a full example.
 
 | Field | Description |
 |-------|-------------|
-| `default_agent` | Required; must name one of the entries in `agents` |
-| `agents` | Required; the entries below |
+| `name` | Required; what identifies this agent in `pu check`, `/backend` and the session |
 | `serve` | Optional; `{"bind": ..., "port": ...}` for `pu serve`, used for whichever of the two neither the command line nor the environment names. `bind` is the interface the listener sits on, not an address to dial |
+
+The file describes one agent. The fields below are that agent's, at the top level of the file;
+`backend` is the one that must be there.
+
+**One agent, no table**
+
+```json
+{
+  "name": "default",
+  "backend": { "gateway": "ollama", "model": "qwen2.5:0.5b" }
+}
+```
+
+`name` is required: a turn, a session and a `/backend` all name the agent they mean, and a file
+that does not name itself leaves nothing to name. A file with no `backend` is refused with
+`Missing backend`: it describes an agent, and the backend is the part a turn cannot be sent
+without.
+
+`pu setup` writes this form, so a workspace configured by hand and one configured by the
+wizard are the same shape.
 
 **Agent fields**
 
 | Field | Description |
 |-------|-------------|
-| `name` | Identifier used by `default_agent`, `/backend <agent>`, and `--agent` |
+| `name` | Identifier used by `/backend <agent>`, `--agent`, and the session |
 | `description` | Optional text shown when the agent connects |
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
 | `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
 | `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
-| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. A name nothing configures, this agent's own name, and a circle are all refused by `pu check` |
-| `persona` | Optional, in an agent's own directory only; a path to a file whose text becomes `backend.system_prompt`. Naming this and `backend.system_prompt` both is refused |
+| `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. `pu check` refuses this agent's own name, since the turn that reached it would recurse until a budget stopped it. A name nothing configures is found when `ask_dir` is called, not here: the agent that would answer may be a directory this workspace does not hold, so a file is in no position to say it does not exist. A circle is refused when it closes, by the child that would be asked to answer a question already being worked on further up the chain |
+| `system_prompt` | Optional; this agent's system prompt, merged with the injected context |
 
 **Backend fields**
 
@@ -45,37 +64,6 @@ default). See [Configure](../README.md#configuration) for a full example.
 | `thinking` | `default` | `none`, `low`, `medium`, `high`, or `default`. Set it per session with `/thinking`, the Web header, or `POST /api/settings` with `{"name":"thinking","value":"low"}`. What each level puts on the wire is in [providers.md](providers.md) |
 | `context_window` | unset | How much context the model holds, in tokens. Advisory: nothing trims a prompt against it and no turn is refused for outgrowing it. It is the only figure the Web page's context bar measures the last reply against, so a model without it draws no fill and shows the count alone. `pu models --detail caps` prints what the gateway's own catalogue says, which is where a number to write here comes from |
 | `system_prompt` | unset | Merged with the injected context |
-
-### One directory per agent
-
-An agent can also be a directory of its own, beside the table that names it. The directory is
-named after the agent, so `ls .pu/agents/` is the list, and a table inside it that names itself
-something else is refused rather than renamed:
-
-```
-.pu/
-  agents.json              the default_agent, and any agent written inline
-  agents/
-    reviewer/
-      agents.json          this agent's backend, security, tools and delegates
-      persona.md           what it is, read into backend.system_prompt
-```
-
-The table inside a directory takes every agent field above except `name`, which the directory
-supplies. Paths in it — `persona`, and an `mcp_servers` command or url — resolve against that
-directory, not the workspace. Both forms may be used at once; two agents with one name are
-refused rather than merged.
-
-A persona is a document rather than a string because a character worth describing takes more
-than a line, and Markdown is what an editor can hold. Three things it is not:
-
-- **Not a place for environment.** The sandbox root, the forbidden commands and how the tools
-  are to be used are injected every turn from the configuration, and a persona that restates
-  them will eventually contradict them.
-- **Not trimmed.** Nothing measures it against `context_window`; a persona long enough to crowd
-  out the conversation will, and the conversation loses.
-- **Not the agent's only voice.** It is the `system` message's first half, beside the injected
-  environment — what it says is who the agent is, not where it is.
 
 ### Asking a directory that is not an agent of yours
 
@@ -112,7 +100,7 @@ do not treat a child's file as evidence that a repository agreed to anything. It
 by the built-in `agents.json` checks that `pu` runs against the workspace's own table, so a
 malformed child file fails at the refusal, not at load.
 
-`codebuddy` is the `openai` protocol against the CodeBuddy cloud gateway; the
+`tencent` is the `openai` protocol against the CodeBuddy cloud gateway; the
 gateway's contract is in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md). Its
 supported models are the account's, so a request naming one the account may not
@@ -120,10 +108,10 @@ use is answered by the gateway itself.
 
 ```json
 "backend": {
-  "gateway": "codebuddy",
+  "gateway": "tencent",
   "host": "https://copilot.tencent.com/v2",
   "model": "deepseek-v4-flash",
-  "api_key": "${CODEBUDDY_API_KEY}"
+  "api_key": "${TENCENT_API_KEY}"
 }
 ```
 
@@ -193,17 +181,19 @@ pu check --config /tmp/other.json
 config  /home/me/.pu/agents.json
 
 workspace  /home/me/work
-default    fast
+agent      fast
+session  /home/me/work/.pu/session.json
+  names  fast
 
-fast   (default_agent)
-  gateway      codebuddy
+fast
+  gateway      tencent
   host         https://copilot.tencent.com/v2   (default for this gateway)
   model        deepseek-v4.1-flash
   api_key      (set, 59 characters)
   thinking     default
   context      250000
   sandbox      /home/me/work
-  forbids      'sudo', 'mkfs'
+  forbids      'X1', 'X2'
   tool budget  100
 ```
 
@@ -213,21 +203,92 @@ variable. A field this build never reads is listed under `warnings`, named with 
 sits at — the agent itself, `backend`, `security` or `paging` — because a build may be older
 than the file, and that is a warning and not a failure.
 
-A session naming an agent the file no longer has is reported with the names that do exist.
-The session outranks `default_agent` by design (see
-[ARCHITECTURE.md](ARCHITECTURE.md#persistence)), so this is a fact to read rather than a file
-to fix.
+A session naming an agent the file does not name is reported as a warning. The file has one
+agent, so the next turn uses that one and the session is corrected rather than the file (see
+[ARCHITECTURE.md](ARCHITECTURE.md#persistence)).
 
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
 table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+
+### Writing it the first time: `pu setup`
+
+A workspace with no `agents.json` has nothing a turn can be sent with, and three of the facts
+the file holds — gateway, address, model — are the reader's own account rather than anything
+this build can guess. `pu setup` asks for them and writes the file:
+
+```
+No agents.json here yet. Three questions and this workspace is ready.
+
+Which gateway?
+  1) ollama
+  2) ollama-cloud
+  3) openai
+  4) deepseek
+  5) nvidia
+  6) tencent
+  7) anthropic
+
+Gateway [ollama]: 
+URL [http://localhost:11434]: 
+What this gateway offers:
+  1) qwen2.5:0.5b          tools max-in=32768
+  2) llama3.1:8b           tools max-in=131072
+
+Model (number or id): 1
+Wrote .pu/agents.json
+```
+
+The menu is the gateway table itself, in the order it is written, so a gateway added to
+`src/llm/gateway_table.cpp` is one the first run offers — `ollama-cloud`, `deepseek` and
+`nvidia` were missing from a hand-maintained list of four. The list names the products and
+nothing else: which variable holds a gateway's key is a question the next prompt answers, and
+printing it twice made the menu a paragraph where a list was wanted.
+
+The gateway prompt shows the first entry as its default, so `<enter>` takes it and a name or
+number typed instead replaces it.
+
+Every question follows the same shape, and it is the shape a shell prompt has: the default is
+shown in brackets after the question, a blank line takes it, and anything typed is the answer.
+`URL [http://localhost:11434]:` is also what a script sees, so the answers a script gives are
+the answers a reader gives. The terminal is never put in a mode of its own — no raw mode, no
+line editing here — so the reader's own keymap, history and screen reader all work as they do
+everywhere else on the machine. `^C` or `^D` abandons the wizard, which writes nothing.
+
+It asks in the order a reader can answer: the gateway first, because it decides both the
+default address and whether a key is needed at all; then the URL, where blank means the
+gateway's own; then the key, asked only when the gateway has one to ask for. The catalogue is
+then fetched with the answers so far and printed with numbers beside what the catalogue says
+about each model — the same capability line `pu models --caps` prints, including `tools`,
+`images`, `reasoning`, a forced `effort`, and the input window. A model the catalogue says
+nothing about is marked `(nothing stated)` rather than left blank, because a blank column reads
+as one that failed to print. The number is a keystroke where the id would be a spelling.
+
+The key question names the variable the gateway reads, and blank there means that variable:
+the catalogue is listed with it, and the written file names no key at all, so the secret stays
+in the environment where it already was. Only a variable that is unset is refused — nothing
+would answer the question then, and the turn would fail on its first request somewhere far
+from this prompt. A key typed in is written to the file.
+
+A listing that fails is not the end of the run: the model can be typed, which is what a
+machine with no route to the gateway needs. A blank model is refused, because there is nothing
+to write. Prompts go to stderr and the file is written to `./.pu/agents.json` — the same
+single-agent form shown above — and an existing file is never replaced.
+
+**The first run asks these questions itself.** `pu ask`, `pu chat` or `pu serve` with no
+configuration and a terminal attached runs the same wizard before the command, so the command
+that needed a file runs against the one just written, once, with no second invocation. A run
+with no terminal — a script, a pipe, CI — is asked nothing and gets the usual "Configuration
+file not found"; a wizard cannot read a keyboard that is not there. `pu setup` is the explicit
+way to ask for the questions when a file already exists or when the answer must be written by
+hand.
 
 ## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
 | `PU_AGENTS_CONFIG` | Names the `agents.json` to load, ahead of `./.pu/agents.json` and `~/.pu/agents.json`. A path that does not exist is an error rather than a fallback |
-| `PU_HOME` | Moves the log directory (default `./.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
+| `PU_HOME` | Moves the log directory (default `<workspace>/.pu/logs/`). Only logs follow it: `session.json` lives in the workspace's `.pu/`, and `agents.json` in that workspace's `.pu/` or `~/.pu/` |
 | `PU_LOG_LEVEL` | File log level: `trace`, `debug`, `info`, `warn`, `error`, `critical` |
 | `PU_LOG_JSON=1` | Enable structured JSON logging |
 | `PU_WEB_DIR` | Directory served as the Web UI for `pu serve`. Ahead of the page directory that ships with the binary, which is found under the executable's own prefix, then `./web` and the system install locations |
@@ -238,6 +299,11 @@ table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what
 
 The console shows only `error` and `critical`; the file gets `PU_LOG_LEVEL` (default
 `info`) and goes to `<data-dir>/logs/pu.log`, rotating at 5MB and keeping 3 files.
+
+The data directory is `$PU_HOME` when it is set, and otherwise the workspace's `.pu/`. It
+is the workspace this run is about, not the directory the shell happened to be in: `pu -C
+/tmp/proj` writes `/tmp/proj/.pu/logs/pu.log`. `pu setup` logs too, since the one thing
+worth reading afterwards is why a file was refused or where it was written.
 
 The writer behind the file is an async logger on a single thread pool. That pool is
 created once per process and never replaced, so a second `Runtime` — a retried server, a

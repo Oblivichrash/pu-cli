@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(pu-cli VERSION 0.7.1 LANGUAGES CXX)
+project(pu-cli VERSION 0.7.2 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -42,6 +42,7 @@ add_library(pu_core_util STATIC
     src/core/process.cpp
     src/core/retry.cpp
     src/core/sse.cpp
+    src/core/workspace_path.cpp
     src/tools_cli/sse.cpp
 )
 target_link_libraries(pu_core_util PUBLIC
@@ -84,8 +85,9 @@ add_library(pu::model ALIAS pu_model)
 
 add_library(pu_config STATIC
     src/config/agents.cpp
-    src/config/backend_from_table.cpp
+    src/config/backend_from_agent.cpp
     src/config/serve_registry.cpp
+    src/config/setup.cpp
 )
 target_link_libraries(pu_config PUBLIC pu_model)
 pu_configure_target(pu_config)
@@ -175,6 +177,7 @@ add_library(pu_core STATIC
     src/app/cli_sse.cpp
     src/app/models.cpp
     src/app/probe.cpp
+    src/app/setup.cpp
 )
 target_link_libraries(pu_core PUBLIC
     pu_serve

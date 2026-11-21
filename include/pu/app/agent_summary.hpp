@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //
-// The agents a workspace offers, in one place.
+// The agent a workspace configures, as a reader needs it.
 //
-// Four surfaces ask this question: `pu agents`, the chat's `/agents`, `GET /api/agents`, and
-// the tooltip the Web panel shows on the selector. They differ in how they draw the answer,
-// never in what it is, so the answer is built here once and each surface only formats it.
+// Three surfaces ask this question: `pu agents`, the chat's `/agents`, and `GET /api/agents`.
+// A workspace holds one agent file, so there is one answer; the surfaces differ in how they
+// draw it, never in what it is, so it is built here once and each surface only formats it.
 //
 
 #pragma once
@@ -13,41 +13,37 @@
 #include <boost/json.hpp>
 
 #include <string>
-#include <vector>
 
 namespace pu {
 
 class AgentManager;
+struct AgentEntry;
 
 namespace app {
 
-// One agent as a reader needs it: what to type, what it is for, which product answers it, and
-// which model. A surface that wants less leaves fields out of what it prints; none of them
-// has to work them out again.
+// One agent as a reader needs it: what to type, what it is for, and which product and model
+// answer it.
 struct AgentSummary {
   std::string name;
   std::string description;
   std::string gateway;
   std::string model;
-  // What this one may hand a turn to. The list is the whole of what it may reach, so a reader
-  // looking at who can call whom reads it here rather than in each table.
-  std::vector<std::string> delegates;
-  bool active = false;
 };
 
-// Every configured agent, in configuration order, with `active` set on the one the session
-// names. The agent index is passed rather than a `Runtime`: this reads the configuration and
-// nothing else, and asking for the whole runtime to reach two of its lookups would make the
-// formatting layer depend on the layer that runs turns.
-std::vector<AgentSummary> SummarizeAgents(const AgentManager& agents, const std::string& active);
+// The configured agent. A workspace with no agent file yields the empty summary, whose name
+// is empty -- `pu agents` reports that in words and the API answers with a null object.
+// The agent index is passed rather than a `Runtime`: this reads the configuration and nothing
+// else, and asking for the whole runtime to reach its lookup would make the formatting layer
+// depend on the layer that runs turns.
+AgentSummary SummarizeAgent(const AgentManager& agents);
 
-// The shape `GET /api/agents` answers with, and the one `pu agents --json` prints: a JSON
-// array of `{name, description, gateway, model, active}`. One function so the two cannot
-// drift into two shapes for one fact.
-boost::json::value AgentsAsJson(const std::vector<AgentSummary>& agents);
+// The shape `GET /api/agents` answers with, and the one `pu agents --json` prints:
+// `{name, description, gateway, model}`, or `null` when no agent is configured. One function
+// so the two cannot drift into two shapes for one fact.
+boost::json::value AgentAsJson(const AgentSummary& agent);
 
-// The table a reader sees: the name, a marker on the active one, and its description.
-std::string FormatAgentTable(const std::vector<AgentSummary>& agents);
+// What a reader sees: the name, its description and the product answering it.
+std::string FormatAgent(const AgentSummary& agent);
 
 }  // namespace app
 }  // namespace pu

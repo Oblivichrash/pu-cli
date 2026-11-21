@@ -475,10 +475,11 @@ lists tools.
 
 ```
 <workspace>/.pu/session.json   # Single session state
-./.pu/logs/                    # Log output, moved by PU_HOME
+<workspace>/.pu/logs/          # Log output, moved by PU_HOME
 ```
 
-`<workspace>` is the directory `pu` was started in. Logs are the only thing
+`<workspace>` is the directory the run is about: the one `-C` names, and the
+directory `pu` was started in when it names none. Logs are the only thing
 `PU_HOME` moves, and their directory is per process so two processes in one
 workspace never rotate the same file; the environment table in
 [configuration.md](configuration.md#environment-variables) owns both paths.
@@ -505,12 +506,12 @@ the next save.
 `session_spec` names the agent and carries the session's own thinking level when
 `/thinking` set one. Backend fields are read from `agents.json` on each start, so
 editing the configuration takes effect without touching the session.
-`/backend <type> <model>` adopts an agent named after the type, so the backend a
+`/backend <type> <model>` adopts the model named by the file, so the backend a
 session reports and the agent it names are always the same answer. It takes no key:
 a key typed at the prompt is written into the scrollback, so an endpoint that needs
-one is named in `agents.json`, where it can come from the environment. The session
-also decides which agent a restart resumes: the named agent wins over
-`default_agent`.
+one is named in `agents.json`, where it can come from the environment. A restart
+resumes the agent the session names; a name the file no longer carries is reported
+and the file's own agent is used, since a file describes exactly one.
 
 The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
 timestamp, its parent and one role payload, plus the `leaf` that marks the current

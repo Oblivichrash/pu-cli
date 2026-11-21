@@ -34,11 +34,11 @@ namespace pu {
 // A delegated turn gets no `ask_dir` of its own, so a chain of them stops at one hop, and what
 // it cost comes back, so the turn that asked can account for what it spent. The one hop is a
 // property of the tool box a child is built with, not a depth counter, so it is not by itself a
-// guard against a cycle: a table that names B, and B's directory naming the workspace that
+// guard against a cycle: a file that names B, and B's directory naming the workspace that
 // asked, would keep handing the same question round and only the ten-minute ceiling would end
 // it. `visited` below is what closes that, carried down rather than inferred.
 struct Delegation {
-  std::string agent;            // empty: the table's own default_agent
+  std::string agent;            // empty: the asking agent itself
   std::filesystem::path dir;    // empty: the asking runtime's workspace
   std::string prompt;
 

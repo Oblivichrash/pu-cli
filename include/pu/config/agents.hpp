@@ -25,20 +25,15 @@ struct AgentEntry {
   // The tool-call budget for one turn. Absent: the executor's default applies.
   std::optional<int> tool_call_budget;
   // Which agents this one may hand a turn to, by name. Empty means it may hand a turn to
-  // nobody, which is the answer a file that says nothing should get: a table that does not
+  // nobody, which is the answer a file that says nothing should get: a file that does not
   // mention delegation cannot be used to reach an agent it does not mention.
   std::vector<std::string> delegates;
-  // The builtin tools this one has, by name. Empty means every builtin, which is what a table
-  // written before this field existed meant and what it must keep meaning.
+  // The builtin tools this one has, by name. Empty means every builtin, which is what the
+  // field's absence has always meant and must keep meaning.
   std::vector<std::string> tools;
   // Where this entry was read from: the file's directory, which is what a `persona` and an
-  // `mcp_servers` path are relative to. Empty for an inline entry in the top-level table.
+  // `mcp_servers` path are relative to. Empty for an entry written inline in the file itself.
   std::filesystem::path source_dir;
-};
-
-struct AgentsConfig {
-  std::string default_agent;
-  std::vector<AgentEntry> agents;
 };
 
 // Where the page and the API listen. `bind` is the interface the listener sits on, not an address
@@ -74,10 +69,18 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
 
 std::string FindConfigPath();
 
-// The directory an agent's own table lives in, beside the top-level `agents.json`: one
-// directory per agent, named after it, holding that agent's table and whatever its table
-// points at. An empty path when this build looks nowhere else, which it does not.
-std::filesystem::path AgentTableDir(const std::filesystem::path& config_path);
+// Points the one agent this file describes at another gateway and model, in place, and leaves
+// every other key byte-for-byte as written. It edits the file's own text rather than re-rendering
+// a parsed entry: a parsed backend holds the expanded `api_key`, so writing that back would move
+// a secret out of the environment and into the file, and an unset optional field would be
+// written back as its default. Only `gateway` and `model` change; `host` follows the gateway's
+// default only when the file named none, so a host typed by hand survives a model change.
+//
+// The write is atomic: the new text goes to a sibling temporary file, is parsed back to prove it
+// is still one agent file, and only then replaces the original. A failure leaves the file as it
+// was and throws.
+void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
+                        const std::string& model_name);
 
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.
@@ -99,6 +102,7 @@ const std::set<std::string>& ReadMcpServerKeys();
 
 std::optional<ServeOptions> FindServeOptions();
 
-AgentsConfig LoadAgentsConfig(const std::string& config_path);
+// A config file describes exactly one agent, and this is it. One file, one agent.
+AgentEntry LoadAgentConfig(const std::string& config_path);
 
 }  // namespace pu::config

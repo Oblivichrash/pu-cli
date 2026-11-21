@@ -11,6 +11,7 @@
 
 #include "pu/app/cli.hpp"
 #include "pu/config/agents.hpp"
+#include "pu/core/logging.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
 #include "tests/mocks/test_helpers.hpp"
@@ -32,6 +33,13 @@ class BackendSourceFixture {
   }
 
   ~BackendSourceFixture() {
+    // A `Runtime` built against this directory starts its log file inside it, and the async
+    // writer is not bound to the runtime's lifetime: the workspace root is process-wide, so it
+    // keeps naming this directory after every runtime here is gone. Removing the directory while
+    // the writer still points at it leaves the next flush to recreate `.pu/logs` in a path meant
+    // to be empty, which is one stranded directory per run. Clearing the root first puts the
+    // writer back on the process's own directory.
+    pu::SetWorkspaceRoot({});
     std::error_code ec;
     fs::remove_all(root_, ec);
   }
@@ -40,30 +48,14 @@ class BackendSourceFixture {
 
   void Write(float temperature) {
     boost::json::value cfg = {
-        {"default_agent", "chat"},
-        {"agents",
-         boost::json::array{
-             boost::json::value{
-                 {"name", "chat"},
-                 {"backend",
-                  {
-                      {"gateway", "openai"},
-                      {"host", "http://127.0.0.1:1"},
-                      {"model", "test-model"},
-                      {"temperature", temperature},
-                      {"thinking", "none"},
-                  }},
-             },
-             boost::json::value{
-                 {"name", "coder"},
-                 {"backend",
-                  {
-                      {"gateway", "openai"},
-                      {"host", "http://127.0.0.1:1"},
-                      {"model", "coder-model"},
-                      {"temperature", 0.4},
-                  }},
-             },
+        {"name", "chat"},
+        {"backend",
+         {
+             {"gateway", "openai"},
+             {"host", "http://127.0.0.1:1"},
+             {"model", "test-model"},
+             {"temperature", temperature},
+             {"thinking", "none"},
          }},
     };
     std::ofstream out(root_ / ".pu" / "agents.json", std::ios::trunc);
@@ -125,13 +117,13 @@ TEST_CASE("A stored backend naming no gateway is refused rather than defaulted",
 }
 
 TEST_CASE("A type is named the same way in configuration and in an answer", "[backend]") {
-  REQUIRE(model::ParseGatewayId("codebuddy") == model::GatewayId::kCodeBuddy);
+  REQUIRE(model::ParseGatewayId("tencent") == model::GatewayId::kCodeBuddy);
   REQUIRE(model::ParseGatewayId("openai") == model::GatewayId::kOpenAI);
   REQUIRE(model::ParseGatewayId("ollama") == model::GatewayId::kOllama);
   REQUIRE(model::ParseGatewayId("anthropic") == model::GatewayId::kAnthropic);
   REQUIRE_FALSE(model::ParseGatewayId("gpt").has_value());
 
-  REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "codebuddy");
+  REQUIRE(std::string(model::GatewayName(model::GatewayId::kCodeBuddy)) == "tencent");
   REQUIRE(std::string(model::GatewayName(model::GatewayId::kAnthropic)) == "anthropic");
 }
 
@@ -175,96 +167,25 @@ TEST_CASE("Editing agents.json is enough to change the backend", "[backend]") {
   }
 }
 
-TEST_CASE("Switching the backend adopts an agent and keeps the tooling", "[backend]") {
+TEST_CASE("Switching the backend keeps the agent and the tooling", "[backend]") {
   BackendSourceFixture fixture;
   ScopedWorkingDir in_workspace(fixture.root());
   Runtime runtime;
   runtime.Initialize();
 
-  REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(0.3f));
+  REQUIRE(runtime.CurrentBackend().model == "test-model");
   const auto names_before = runtime.Agents().AgentNames();
 
   model::Backend replacement = runtime.CurrentBackend();
-  replacement.temperature = 1.5f;
+  replacement.model = "other-model";
   runtime.SwitchBackend(replacement);
 
-  REQUIRE(runtime.CurrentBackend().temperature == Catch::Approx(1.5f));
+  REQUIRE(runtime.CurrentBackend().model == "other-model");
   REQUIRE(runtime.DefaultSession() != nullptr);
-  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "openai");
-
-  const auto names_after = runtime.Agents().AgentNames();
-  REQUIRE(names_after.size() == names_before.size() + 1);
-  REQUIRE(runtime.Agents().AgentConfig("openai") != nullptr);
-}
-
-TEST_CASE("An agent named on the command line outranks the one a session remembers",
-          "[backend]") {
-  BackendSourceFixture fixture;
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    const auto* coder = runtime.Agents().AgentConfig("coder");
-    REQUIRE(coder != nullptr);
-    runtime.SwitchAgent(*coder);
-    runtime.Shutdown();
-  }
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.SetDefaultAgent("chat");
-    runtime.Initialize();
-
-    REQUIRE(runtime.ActiveAgent().name == "chat");
-    REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
-    REQUIRE(runtime.CurrentBackend().model == "test-model");
-  }
-}
-
-TEST_CASE("A restart keeps talking to the agent the session names", "[backend]") {
-  BackendSourceFixture fixture;
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    REQUIRE(runtime.DefaultSession() != nullptr);
-    const auto* coder = runtime.Agents().AgentConfig("coder");
-    REQUIRE(coder != nullptr);
-    runtime.SwitchAgent(*coder);
-    runtime.Shutdown();
-  }
-
-  {
-    ScopedWorkingDir in_workspace(fixture.root());
-    Runtime runtime;
-    runtime.Initialize();
-    REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
-    REQUIRE(runtime.CurrentBackend().model == "coder-model");
-  }
-}
-
-TEST_CASE("A turn after an agent switch reaches an initialized registry", "[backend]") {
-  BackendSourceFixture fixture;
-
-  ScopedWorkingDir in_workspace(fixture.root());
-  Runtime runtime;
-  runtime.Initialize();
-  REQUIRE(runtime.DefaultSession() != nullptr);
-
-  const auto* coder = runtime.Agents().AgentConfig("coder");
-  REQUIRE(coder != nullptr);
-  runtime.SwitchAgent(*coder);
-  REQUIRE(runtime.Agents().ActiveAgentName() == "coder");
-
-  const ExecutionResult result = runtime.ProcessInput("hello");
-
-  REQUIRE(result.was_command == false);
-  REQUIRE(result.has_error);
-
-  runtime.Shutdown();
+  // One agent has one backend: the switch replaces the backend and nothing else, so the agent
+  // keeps its name and no second agent is added to the list.
+  REQUIRE(runtime.DefaultSession()->Spec().agent_name == "chat");
+  REQUIRE(runtime.Agents().AgentNames() == names_before);
 }
 
 TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend]") {
@@ -304,7 +225,7 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
 }
 
 TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
-  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nim", "codebuddy"}) {
+  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent"}) {
     const std::optional<model::GatewayId> id = model::ParseGatewayId(name);
     REQUIRE(id.has_value());
     REQUIRE(std::string(model::GatewayName(*id)) == name);
@@ -313,7 +234,7 @@ TEST_CASE("A gateway name is one product, and the table answers for all of them"
 }
 
 TEST_CASE("Naming a gateway reaches it without an agents.json entry", "[backend]") {
-  const model::Backend nim = model::BackendForGateway("nim");
+  const model::Backend nim = model::BackendForGateway("nvidia");
   REQUIRE(nim.gateway == model::GatewayId::kNim);
   REQUIRE(nim.host == "https://integrate.api.nvidia.com/v1");
 
@@ -331,8 +252,8 @@ TEST_CASE("Naming a gateway this build has not got says which it has", "[backend
     const std::string message = e.what();
     REQUIRE(message.find("Unknown gateway") != std::string::npos);
     // The candidates, since a name typed from memory is the case this guards.
-    REQUIRE(message.find("nim") != std::string::npos);
-    REQUIRE(message.find("codebuddy") != std::string::npos);
+    REQUIRE(message.find("nvidia") != std::string::npos);
+    REQUIRE(message.find("tencent") != std::string::npos);
   }
 }
 
@@ -350,7 +271,7 @@ TEST_CASE("A read-only command reads the session's backend until a gateway is na
 
   // A named gateway is built from the table and never adopted.
   const model::Backend before = runtime.CurrentBackend();
-  const model::Backend named = cli::ReadOnlyBackend("nim", "", runtime);
+  const model::Backend named = cli::ReadOnlyBackend("nvidia", "", runtime);
   REQUIRE(named.gateway == model::GatewayId::kNim);
   REQUIRE(runtime.CurrentBackend().gateway == before.gateway);
   REQUIRE(runtime.CurrentBackend().model == before.model);
@@ -358,5 +279,5 @@ TEST_CASE("A read-only command reads the session's backend until a gateway is na
   // `--model` is honoured in both branches. It used to be read only when a gateway
   // was named, so `pu probe --model X` silently kept the agent's model.
   REQUIRE(cli::ReadOnlyBackend("", "chosen", runtime).model == "chosen");
-  REQUIRE(cli::ReadOnlyBackend("nim", "chosen", runtime).model == "chosen");
+  REQUIRE(cli::ReadOnlyBackend("nvidia", "chosen", runtime).model == "chosen");
 }

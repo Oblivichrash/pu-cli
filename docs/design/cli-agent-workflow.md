@@ -20,7 +20,7 @@ notes and in the code excerpts describe 0.5.1; what runs now is in
 | §2.5 read-only commands touch the workspace | **not done** | `Shutdown()` still saves unconditionally |
 | §2.6 a leading `/` cannot be sent | **not done** | |
 | §2.7 no stdin prompt | **not done** | |
-| §2.8 no agent list outside the chat | **done** | `pu agents [--json]`, sharing its list with `/agents` and `GET /api/agents` |
+| §2.8 no agent list outside the chat | **done** | `pu agents [--json]`, sharing its answer with `/agents` and `GET /api/agents` |
 | §2.9 no config validation | **done** | `pu check`, which resolves `${ENV}`, the gateway's host and the sandbox |
 | §2.10 irrelevant flags pass silently | **done** | flags are held against the command's own page |
 | §2.11 one `--help` for every command | **done** | `pu <cmd> --help` prints that command's page |
@@ -50,17 +50,17 @@ The CLI has one field answering two different questions:
 ```
 
 Both are `Runtime::default_agent_override_`. It is set by `--agent`
-(`cli.cpp:37`, through `WithInitializedRuntime`), read at `runtime.cpp:113` to pick the
-active agent, and then **written into the session** at `runtime.cpp:147-149`:
+(`cli.cpp:37`, through `WithInitializedRuntime`), read at `runtime.cpp:141` to pick the
+active agent, and then **written into the session** at `runtime.cpp:176-179`:
 
 ```cpp
+const bool agent_chosen_here = !default_agent_override_.empty();
 const std::string remembered = agent_chosen_here ? active_agent : spec.agent_name;
-const auto* stored = agent_manager_->AgentConfig(remembered);
 ...
 spec.agent_name = stored->name;      // ← the per-run flag becomes persistent state
 ```
 
-`Shutdown()` then saves that (`runtime.cpp:160-162`). So `--agent` is documented as
+`Shutdown()` then saves that (`runtime.cpp:191-192`). So `--agent` is documented as
 "agent to use" and behaves as "agent to use from now on".
 
 ### What that produces
@@ -78,22 +78,6 @@ session file is the only place it shows up.
 The first and third rows no longer apply to `ask`, which since 0.6.1 writes no session at
 all: it reads a stored conversation neither before nor after the turn. `models` is unchanged,
 so the second row — a read-only query re-pointing what the next turn runs on — still stands.
-
-### The mirror-image problem
-
-Because the session wins over configuration (`runtime.cpp:143`), editing
-`default_agent` in `agents.json` has no effect once a session file exists:
-
-```
-session agent = codebuddy-glm-5.3-flash, config default_agent = codebuddy-deepseek-v4-flash
-$ pu ask "/backend"
-Current backend: codebuddy (model: glm-5.3-flash, ...)      ← config ignored
-```
-
-This is documented as intentional (`ARCHITECTURE.md`: "the named agent wins over
-`default_agent`"), and it is defensible. But it means renaming an agent — which is what
-we just did — requires hand-editing `.pu/session.json`, or accepting one warning line and
-a silent fallback. Neither is a workflow.
 
 ---
 
@@ -195,7 +179,7 @@ route, and it breaks on argv length and on content with quotes.
 
 **Fixed.** `pu agents`, whose list the chat and the API now share.
 
-`/agents` exists in chat (`command_router.cpp:198`) and `GET /api/agents` in serve, but
+`/agents` exists in chat (`command_router.cpp`) and `GET /api/agents` in serve, but
 the CLI has no equivalent. The only non-interactive way to learn the configured names is
 to fail on purpose:
 
@@ -413,10 +397,10 @@ come later if someone wants a genuinely different name.
 
 ## 4. What not to change
 
-- **The session outranking `default_agent`** is correct. A user who typed
+- **The session outranking the file's agent name** is correct. A user who typed
   `/backend deepseek-v4-pro` yesterday expects that today. The fix for "renaming an agent
-  is painful" is `pu check` telling you the session names an unknown agent and offering
-  the names that exist — not reversing the precedence.
+  is painful" is the warning the runtime already prints when the session names an agent the
+  file does not — not reversing the precedence.
 - **`ask` continuing the conversation by default.** It matches `chat` and it is what makes
   `pu ask` useful for follow-ups. `--fresh` covers the other case.
 - **Options in one place.** `BuildCommandLine` keeping every name in one function is what
