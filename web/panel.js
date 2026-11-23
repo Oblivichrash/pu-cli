@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// What is read rather than chosen: where the last reply ran, how much context it ran
-// against, which tools the agent can reach, and the status bar that repeats the session's
-// own facts so a folded panel costs no state.
+// What is read rather than chosen: where the last reply ran, how much context it ran against,
+// which tools the agent can reach, and the status bar that repeats the session's own facts.
 
 "use strict";
 
@@ -20,10 +19,9 @@ function setSelectValue(id, value) {
   return el;
 }
 
-// The address is a field the reader types in, so drawing it is not the same act as drawing a
-// menu: a value arriving while the reader has the field in hand must not overwrite what they are
-// typing. Only an unfocused field takes the drawn value, which is the case on every load and on
-// every answer that came back from a press that started here.
+// The address is a field the reader types in, so drawing it is not the same act as drawing a menu:
+// a value arriving while the reader has the field in hand must not overwrite what they are typing.
+// Only an unfocused field takes the drawn value.
 function setHostValue(host) {
   const el = document.getElementById(BACKEND_FIELDS.host);
   if (!el) return;
@@ -50,16 +48,15 @@ function setBackendLabel(gateway, model, host) {
   renderContextBar();
 }
 
-// "gateway / model", the two facts a reader checks between turns. It is drawn in two places --
-// the bar and the column -- and they must not disagree, so they are one string.
+// "gateway / model", the two facts a reader checks between turns. The bar and the dialog both draw
+// it, so it is one string rather than two that could disagree.
 function backendSummary() {
   const gateway = PU.gatewayShown || "";
   const model = PU.backendModelShown || "";
   return gateway && model ? gateway + " / " + model : (gateway || model);
 }
 
-// The bar repeats what the panel holds, in one line, because the panel folds and the
-// session's own facts do not change when it does.
+// The bar repeats what the dialog holds, in one line.
 function renderStatusBar() {
   // The agent is fixed by its file, so the bar names the backend that answers instead: which
   // gateway and model reply is the only part of this a reader can still change.
@@ -88,21 +85,20 @@ function tokenLine(prompt, cached) {
   return line;
 }
 
-// Puts the turn's cost beside the reply it paid for. A reload draws this line from the stored
-// turn through `createMessage`; a live turn never went through that path, so the same node is
-// added here, built by the same function, and the two cannot say different things.
+// Puts the turn's cost beside the reply it paid for. A reload draws this line from the stored turn
+// through `createMessage`; a live turn never went through that path, so the same node is added here
+// by the same function and the two cannot say different things.
 //
-// The bubble takes it only once: `usage` is sent once per turn, but a resync can replay it after
-// a reconnect has already redrawn the turn from the store.
+// The bubble takes it only once: `usage` is sent once per turn, but a resync can replay it after a
+// reconnect has already redrawn the turn from the store.
 function attachUsageToOpenReply(payload) {
   if (!Number.isFinite(Number(payload.prompt_tokens))) return;
   const el = PU.currentAssistantEl;
   if (!el) return;
   el.querySelectorAll(".msg-usage").forEach((old) => old.remove());
   // The cost is the last line inside the bubble, and a live turn has none until this frame makes
-  // one: the two paths -- a turn drawn from the store and a turn still streaming -- agree because
-  // there is only one place for it to go. A bubble that already has the line from the store keeps
-  // it where it is rather than growing a second one.
+  // one. A bubble that already has the line from the store keeps it where it is rather than growing
+  // a second one.
   const foot = el.querySelector(".msg-bubble > .msg-foot");
   if (foot) foot.appendChild(usageLineNode(payload));
   else {
@@ -113,15 +109,15 @@ function attachUsageToOpenReply(payload) {
   }
 }
 
-// Draws one turn's usage on the status bar, and the conversation's total into the same tooltip.
-// The socket sends both together because the turn that just ended is part of the total, so a
-// figure drawn without its total would answer a question the reader has already asked.
+// Draws one turn's usage on the status bar, and the conversation's total into the same tooltip. The
+// socket sends both together because the turn that just ended is part of the total, so a figure
+// drawn without its total would answer a question the reader has already asked.
 function showUsage(payload) {
   if (!payload) return;
   if (payload.total) renderUsageTotal(payload.total);
-  // The frame arrives before the `done` that closes the bubble, so the reply on screen is still
-  // the live one. Without this the figure only appeared on reload, where the stored turn carries
-  // it into the replayed message -- a live turn read as if it had cost nothing.
+  // The frame arrives before the `done` that closes the bubble, so the reply on screen is still the
+  // live one; without this the figure only appeared on reload, where the stored turn carries it
+  // into the replayed message, and a live turn read as if it had cost nothing.
   attachUsageToOpenReply(payload);
   const prompt = Number(payload.prompt_tokens);
   const completion = Number(payload.completion_tokens);
@@ -133,8 +129,8 @@ function showUsage(payload) {
     renderContextBar();
     return;
   }
-  // The console used to read this line: "12,345 tokens  ·  40% cached  ·  +312". It is kept
-  // rather than spelled out again in the tooltip, so the two cannot disagree.
+  // "12,345 tokens  ·  40% cached  ·  +312", kept so the tooltip repeats it rather than spelling it
+  // out again and risking a different answer.
   PU.lastTurnLine =
       tokenLine(prompt, cached) +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
@@ -144,12 +140,9 @@ function showUsage(payload) {
   renderContextBar();
 }
 
-// The fill, drawn from the two facts it needs rather than from whichever payload landed last:
-// the counts arrive with a turn and the window arrives with the session, and a reload can
-// deliver them in either order. Both are on `PU`, so either arrival can redraw.
-//
-// This is the whole of the reading now: the bar prints the count, the hairline under it says how
-// full that count is, and the colour is the only warning a reader gets without hovering.
+// The fill is drawn from the two facts it needs rather than from whichever payload landed last: the
+// counts arrive with a turn and the window arrives with the session, and a reload can deliver them
+// in either order. Both are on `PU`, so either arrival can redraw.
 function renderContextBar() {
   const fill = document.getElementById("usage-fill");
   const barEl = document.getElementById("status-usage");
@@ -191,9 +184,9 @@ function renderContextBar() {
   renderUsageTitle();
 }
 
-// The tooltip is the one place every figure about the turn lives now that the column is gone:
-// what this turn cost, how much of the window it filled, what the conversation has spent. It is
-// rebuilt whenever a figure arrives, since either arrival can be the last.
+// The tooltip is where every figure about the turn lives: what this turn cost, how much of the
+// window it filled, what the conversation has spent. It is rebuilt whenever a figure arrives, since
+// either arrival can be the last.
 function renderUsageTitle() {
   const barEl = document.getElementById("status-usage");
   if (!barEl) return;
@@ -229,8 +222,7 @@ function renderUsageTitle() {
   barEl.title = lines.join("\n");
 }
 
-// What the conversation has spent. It is no longer drawn as its own block: the figures go into
-// the usage tooltip, and `PU.usageTotal` is what the next rebuild reads.
+// The figures go into the usage tooltip; `PU.usageTotal` is what the next rebuild reads.
 function renderUsageTotal(total) {
   PU.usageTotal = total && Number.isFinite(Number(total.turns)) ? total : null;
   renderUsageTitle();
@@ -241,7 +233,7 @@ function renderToolList(tools) {
   if (!list) return;
   list.replaceChildren();
 
-  // The count is what the bar can hold; the names are what the panel is for.
+  // The count is what the bar can hold; the names are what the dialog is for.
   const count = Array.isArray(tools) ? tools.length : 0;
   setText("status-tools", count === 0 ? "no tools" : `${count} tool${count === 1 ? "" : "s"}`);
   const toolsEl = document.getElementById("status-tools");

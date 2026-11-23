@@ -6,18 +6,16 @@
 
 const MAX_BUSY_RETRIES = 2;
 
-// How much context each `gateway · model` holds, as the server last reported it. A window is a
-// fact about a model rather than about a gateway — two gateways serve the same id at different
-// sizes — so the key carries both. Empty means nobody stated one, and a blank bar is the honest
-// answer there: NIM reports no window at all, and a nominal figure a product does not enforce
-// would draw a fill that lies.
+// How much context each `gateway · model` holds, as the server last reported it. The key carries
+// both because a window is a fact about a model, and two gateways serve the same id at different
+// sizes. Empty means nobody stated one, and a blank bar is the honest answer: NIM reports no
+// window at all, and a nominal figure a product does not enforce would draw a fill that lies.
 const CONTEXT_WINDOWS = {};
 
-// The server this page is attached to. There is always exactly one, because a page was served by
-// one: `origin` is the address that answered, `name` is the label it gave itself, and `port` is
-// the one it answered on. None of the three is derived from the server list, which describes the
-// others — a page that learned its own identity from a list would be blank whenever the list is
-// unavailable, and the list is unavailable on every remote page by design.
+// The server this page is attached to: `origin` answered, `name` is the label it gave itself,
+// `port` is where it answered. None of the three is derived from the server list, which describes
+// the others — a page that learned its own identity from a list would be blank on every remote
+// page, where that list is unavailable by design.
 const SELF = {
   origin: window.location.origin,
   name: "",
@@ -27,15 +25,11 @@ const SELF = {
 const PU = {
   ws: null,
   self: SELF,
-  // The other servers on this machine, as `GET /api/servers` reports them: `{name, port}`. Empty is
-  // an ordinary state, so the header draws the page's own name and offers no switch. Use
-  // `setOthers`; a module that assigns the array directly leaves the header describing a list it
-  // no longer has.
+  // The other servers on this machine, as `GET /api/servers` reports them: `{name, port}`. Use
+  // `setOthers`: assigning the array directly leaves the header describing a list it no longer has.
   others: [],
   // Why `others` is empty, when it is: `null` for "there are none", `"loopback"` for "this route is
-  // answered on the machine the server runs on", and `"unreachable"` for a network failure. The
-  // header says which, because a reader on another machine deserves to know the switcher is not
-  // hidden by a bug.
+  // answered on the machine the server runs on", and `"unreachable"` for a network failure.
   othersRestricted: null,
   // A module loaded before notice.js cannot name showNotice. app.js points this at it
   // once every module is in; a remark that arrives before then is dropped.
@@ -55,7 +49,7 @@ const PU = {
   supersededSocket: null,
   // True from a socket's open until the transcript it bought is rebuilt. Frames arriving
   // meanwhile wait in loadingFrames instead of being drawn into boxes about to be replaced.
-  // Exactly one function raises it and two lower it: the rebuild's own end, and this timer.
+  // Lowered by two things: the rebuild's own end, and this timer.
   loading: false,
   loadingTimer: null,
   loadingFrames: [],
@@ -68,9 +62,8 @@ const PU = {
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,
-  // The message being edited, as `{el, turn, original}`, or null when none is. The words live in
-  // the composer rather than in the bubble: an edit is a sentence about to be said again, and the
-  // page asks for a turn in one place.
+  // The message being edited, as `{el, turn, original}`, or null. The words live in the composer,
+  // not the bubble: an edit is a sentence about to be said again.
   editing: null,
   currentAssistantBlocks: [],
   currentAssistantEl: null,
@@ -82,15 +75,13 @@ const PU = {
   agentShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
   contextShown: "",
-  // The prompt of the last turn, kept so the bar can be redrawn when the window arrives late:
-  // the counts come with a turn and the window comes with the session, so the two are drawn
-  // from state rather than from whichever payload happened to land last.
+  // Kept so the bar can be redrawn when the window arrives late: the counts come with a turn and
+  // the window comes with the session, so both are drawn from state rather than from whichever
+  // payload landed last.
   lastTurnPrompt: null,
-  // That same turn stated as the reader used to see it in the console -- the count, the cached
-  // share, the completion -- so the tooltip can repeat it without recomputing it.
+  // That same turn as the console stated it -- count, cached share, completion -- so the tooltip
+  // repeats it rather than recomputing it.
   lastTurnLine: "",
-  // The last total the server reported for this conversation, kept so the tooltip can be rebuilt
-  // from the newest of the two facts rather than from whichever arrived last.
   usageTotal: null,
 
   composer: {
@@ -112,10 +103,8 @@ const PU = {
   },
 };
 
-// The origin of another server on this machine. It is not built from that server's bind address:
-// `0.0.0.0` is a legal place to listen and never an address to dial, and a server behind a proxy
-// or another interface would give one this page cannot reach. A sibling is the port on the same
-// host this page already reached, which is the one fact the two are guaranteed to share.
+// Not built from the sibling's bind address: `0.0.0.0` is a legal place to listen and never an
+// address to dial, and a server behind a proxy would give one this page cannot reach.
 function siblingOrigin(port) {
   const scheme = window.location.protocol === "https:" ? "https" : "http";
   return `${scheme}://${window.location.hostname}:${port}`;

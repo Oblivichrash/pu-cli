@@ -39,9 +39,9 @@ own name.
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
-| `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
+| `web/session.js` | The REST calls: session, history, thinking, agents, backend choice, rewind |
 | `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It is a `<dialog>`, so the focus trap and Escape come from the browser; the one thing it adds is that opening it asks the gateway for its model list, since the menu is drawn from whatever that gateway serves |
-| `web/composer.js` | Turning a press into a mark: an arrow while a turn is the thing the press would start, a square while one is running and the press would end it |
+| `web/composer.js` | The composer and everything it starts: the press's mark (an arrow while a turn is the thing the press would start, a square while one is running and the press would end it), the field growing to its own text, the one place a turn is sent from, and the edit flow — `beginEdit`, `cancelEdit`, `setComposerMode`, `sendEdit` — since an edit is a send whose text is a step back |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
 A transcript block and its element are separate things: the block is plain data (`type`,

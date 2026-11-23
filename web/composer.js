@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The composer's two jobs: turning what is typed into a run, and turning a second press
-// while one is in flight into a stop.
+// The composer's jobs: turning what is typed into a run, turning a second press while one is in
+// flight into a stop, and turning a message being replaced into a step back and a new send.
 
 "use strict";
 
@@ -119,4 +119,116 @@ function sendMessage() {
     input.style.height = "auto";
   }
   sendText(text);
+}
+
+// --- Editing -----------------------------------------------------------------------------
+//
+// An edit puts a message's words in the composer and leaves the bubble alone. `PU.editing` holds
+// the bubble, its turn, and the text the field was filled with; a send that changes that text
+// steps the store back to just before the turn and replaces it.
+
+// `fromButton` is set by the context menu: the guards below exist to keep a drag that left a
+// selection, or a press that landed on a link or a fold, from opening the composer. The menu has
+// already made those decisions, so its word is taken rather than re-litigated.
+function beginEdit(el, event, fromButton) {
+  if (!fromButton && event &&
+      event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking")) {
+    return;
+  }
+  const selection = window.getSelection();
+  if (selection && selection.toString().trim()) return;
+  if (PU.isStreaming) {
+    createSystemMessage("Cannot edit while a reply is streaming.");
+    return;
+  }
+  const turn = turnOf(el);
+  if (!turn) {
+    createSystemMessage("This message has no turn to edit.");
+    return;
+  }
+  if (PU.editing && PU.editing.el === el) {
+    PU.composer.inputEl.focus();
+    return;
+  }
+  if (PU.editing) cancelEdit(false);
+  PU.editing = { el, turn, original: el.dataset.text || "" };
+  el.classList.add("editing");
+  PU.composer.inputEl.value = PU.editing.original;
+  resizeComposerInput();
+  setComposerMode("edit");
+  PU.composer.inputEl.focus();
+  // The caret goes to the end: an edit usually appends or trims, and a caret at zero makes the
+  // reader press End before changing the half of the sentence they meant.
+  const end = PU.composer.inputEl.value.length;
+  PU.composer.inputEl.setSelectionRange(end, end);
+}
+
+// `restore` clears the field, which only a cancel that is not about to overwrite it wants:
+// leaving a cancelled sentence in the box would invite a send that says it as a new turn.
+function cancelEdit(restore) {
+  const editing = PU.editing;
+  PU.editing = null;
+  if (editing) editing.el.classList.remove("editing");
+  setComposerMode("new");
+  if (restore && !PU.isStreaming) {
+    PU.composer.inputEl.value = "";
+    resizeComposerInput();
+  }
+}
+
+function setComposerMode(mode) {
+  PU.composer.mode = mode;
+  const input = PU.composer.inputEl;
+  if (mode === "edit") {
+    input.placeholder =
+        "Editing this message… (Enter to replace it, Shift+Enter for a newline, Escape to cancel)";
+    input.dataset.editing = "1";
+  } else {
+    delete input.dataset.editing;
+    input.placeholder = "Type a message… (Enter to send, Shift+Enter for a newline)";
+  }
+  renderSendButton();
+}
+
+// A refused step back leaves the conversation as it was and the words in the field, because the
+// alternative is a message removed from the page and still held by the store.
+async function sendEdit() {
+  const editing = PU.editing;
+  if (!editing) return false;
+  const text = PU.composer.inputEl.value.trim();
+  if (!text) return false;
+  // The same words are not an edit, and asking the server to step back for a message it would
+  // then be told to say again is a round trip that changes nothing.
+  if (text === editing.original) {
+    cancelEdit(true);
+    return false;
+  }
+  // Everything from the edited turn on is what the store is about to lose: the old words and
+  // every reply that answered them.
+  const dropped = [];
+  for (let node = editing.el; node; node = node.nextElementSibling) {
+    dropped.push(node);
+  }
+  try {
+    await postJson("/api/rewind", { turn: editing.turn });
+  } catch (e) {
+    createSystemMessage("Could not step back: " + e.message);
+    return false;
+  }
+  for (const node of dropped) node.remove();
+  // A reply still being written belonged to a turn just dropped, so it must not keep drawing
+  // into a conversation that has been stepped back under it.
+  if (PU.currentAssistantEl && !PU.composer.messagesEl.contains(PU.currentAssistantEl)) {
+    PU.currentAssistantEl = null;
+    PU.currentAssistantBlocks = [];
+  }
+  PU.editing = null;
+  editing.el.classList.remove("editing");
+  setComposerMode("new");
+  PU.composer.inputEl.value = "";
+  resizeComposerInput();
+  await refreshChainLength();
+  // `existing` is left out so the send creates the bubble: the edited one is no longer the
+  // message the store holds.
+  return sendText(text, null, editing.turn);
 }
