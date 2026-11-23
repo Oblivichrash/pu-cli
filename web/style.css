@@ -307,9 +307,17 @@ main {
   background: var(--user-bg);
   border-color: #d0c4b0;
 }
+/* A reply is not a message from someone: it is what the page holds, and the page is already
+   paper. Drawing a white card behind the answer and a frame around the card makes it a second
+   surface laid on the first, so every turn reads as a note stuck to the page rather than as
+   the page's own text. The tint and the frame stay on the question, which is the one thing
+   that did come from outside, and the reply is set straight onto the background.
+   The padding is kept even though nothing is drawn: it is what puts the first letter of a
+   reply on the same line as the first letter inside the user's bubble, so the two sides of a
+   turn share one left margin and the transcript reads as a column rather than two. */
 .msg.assistant .msg-bubble {
-  background: var(--assistant-bg);
-  border-color: var(--border);
+  background: transparent;
+  border-color: transparent;
 }
 .msg.error {
   align-self: flex-start;
