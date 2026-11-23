@@ -250,7 +250,7 @@ main {
    There is no menu and there is no note: a press is the whole vocabulary, so the only thing
    that has to be true is that the words stay legible while the pointer is over them. */
 .msg.user.editing .msg-bubble { cursor: text; }
-/* A message takes the width of what it says, not the width of the column. A turn that fills the
+/* A question takes the width of what it says, not the width of the column. A turn that fills the
    column draws a tinted band 900px wide behind two words, and the empty right of it is not
    space the reader can use -- it is the tint telling them the message is longer than it is.
    Hugging the text makes the shape of the turn say how much was said.
@@ -259,7 +259,13 @@ main {
    The two sides are told apart by where they sit as well as by tint: the user's turn goes to
    the right edge, because it is the one asking, and the reply stays at the left margin it was
    read from. With a bubble that hugs its text the two colours alone are too close to carry it
-   -- a two-word question and a two-word answer are both small pale rectangles. */
+   -- a two-word question and a two-word answer are both small pale rectangles.
+
+   Only the question hugs. A reply stretches, because a reply is the page's own text rather
+   than a note from outside, and because what it holds is not always a paragraph: a tool call
+   is a line of a log, and a log line that stops a third of the way across the column reads as
+   a short entry rather than as a step. The step has to reach the right edge to be seen as
+   taking its row, so the row it sits in does too. */
 .msg.user {
   align-self: flex-end;
   max-width: 100%;
@@ -267,7 +273,7 @@ main {
   text-align: left;
 }
 .msg.assistant {
-  align-self: flex-start;
+  align-self: stretch;
   max-width: 100%;
   min-width: 0;
 }
@@ -280,10 +286,15 @@ main {
    surface laid on the first, so every turn reads as a note stuck to the page rather than as
    the page's own text. The tint and the frame stay on the question, which is the one thing
    that did come from outside, and the reply is set straight onto the background.
-   The padding is kept even though nothing is drawn: it is what puts the first letter of a
-   reply on the same line as the first letter inside the user's bubble, so the two sides of a
-   turn share one left margin and the transcript reads as a column rather than two. */
+   The padding is 8px top and bottom and nothing at the sides. The vertical room is what puts
+   a reply's first line on the same rhythm as the question above it, and it is the same 8px the
+   question uses. The sides are zero because this row already spans the column: the question is
+   inset by its own padding inside a box that hugs it, while the reply has no box to be inset
+   within, and 14px of side padding here would hold the first letter of every reply off the
+   left margin the question was read at, and pull a tool call's rule in from the edge it is
+   meant to run to. */
 .msg.assistant .msg-bubble {
+  padding: 8px 0;
   background: transparent;
   border-color: transparent;
 }
@@ -559,7 +570,7 @@ main {
   color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 2px;
-  padding: 10px 52px 10px 14px;
+  padding: 10px 44px 10px 14px;
   font-size: 15px;
   font-family: inherit;
   outline: none;
@@ -576,18 +587,25 @@ main {
    the path. */
 #send {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  /* 8px rather than 6 now the ring is 28: the field's minimum is 44px, so 8 above and 8 below
+     leaves the disc centred on one line, and 8 from the right keeps the same 6px of light
+     between the ring and the frame. */
+  right: 8px;
+  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
   /* The press is a circle: an arrow is a direction rather than a block of text, and a ring
      around it is the shape every send control takes. The ring is drawn in the accent because it
      is the one filled mark on a page of paper and hairline, and it is what turns a glyph in a
-     corner into something that reads as pressable. */
+     corner into something that reads as pressable.
+     28px, not 32: a filled disc carries more weight than an open glyph of the same size, and at
+     32 it sat heavier than the 15px text it shares the field with. The ring only needs to be
+     big enough to read as round and to be hit without care -- a mouse needs about 24px, and 28
+     keeps a margin over that and a full 6px of light around it inside the field's 10px pad. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
   background: var(--accent);
   border: none;
   border-radius: 50%;
@@ -616,13 +634,16 @@ main {
 /* A press that is still on its way says so by not answering: the mark stays, the hand does not
    change, and the press is refused rather than repeated. */
 #send:disabled { cursor: not-allowed; opacity: 0.5; }
-/* The mark is drawn at Lucide's own weight but a step down in size, because it now sits inside
-   a 32px ring rather than alone in a 36px corner: at 24px the arrow pressed against the ring
-   with no light around it, which made the circle look like a sticker rather than a button. */
+/* The mark is drawn a step down in size, because it now sits inside a 28px ring rather than
+   alone in a 36px corner: an arrow spends its height on a shaft and a head rather than filling
+   its box the way a letter does, so it needs a larger share of the ring than a letter would to
+   read at the same weight -- but not so much that it presses against the ring. At 16px the
+   arrow takes 57% of the disc, which is the proportion Material and Apple use for a glyph in
+   an icon button. */
 #send .icon {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
