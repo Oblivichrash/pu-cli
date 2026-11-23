@@ -68,17 +68,35 @@ header {
 .conn-dot.online { background: var(--ok); }
 .conn-dot.offline { background: var(--accent); }
 .conn-dot.connecting { background: var(--warn); }
+/* The one drawn mark in the header. Its box is the button's, so the glyph is set to the size of
+   the label it replaced and the padding is chosen to leave a square: 18 + 3 + 3 = 24, which is
+   where the height of the neighbouring caret button already sat. `line-height: 0` is what makes
+   the inline SVG sit on the padding rather than on a text baseline, and the stroke is `currentColor`
+   so the hover rule below reaches the path without naming it. */
 #config-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 2px;
   color: var(--ink-light);
-  font-size: 14px;
-  padding: 4px 8px;
+  padding: 2px;
   cursor: pointer;
   font-family: inherit;
+  line-height: 0;
 }
 #config-open:hover { color: var(--accent); }
+#config-open .icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* The server strip: the name of the workspace on the left, the others behind a caret. It sits
    in the header rather than the panel because which workspace this is belongs beside the
