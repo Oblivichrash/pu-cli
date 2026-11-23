@@ -1,6 +1,5 @@
 :root {
   --column: 900px;
-  --sidebar: 280px;
   --paper: #fdfbf7;
   --ink: #2c2c2c;
   --ink-light: #6b5f55;
@@ -69,7 +68,7 @@ header {
 .conn-dot.online { background: var(--ok); }
 .conn-dot.offline { background: var(--accent); }
 .conn-dot.connecting { background: var(--warn); }
-#sidebar-toggle {
+#config-open {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -79,7 +78,7 @@ header {
   cursor: pointer;
   font-family: inherit;
 }
-#sidebar-toggle:hover { color: var(--accent); }
+#config-open:hover { color: var(--accent); }
 
 /* The server strip: the name of the workspace on the left, the others behind a caret. It sits
    in the header rather than the panel because which workspace this is belongs beside the
@@ -157,7 +156,7 @@ header {
 }
 .server-row.current .server-name:hover { background: transparent; }
 
-/* ---------- stage: conversation + sidebar ---------- */
+/* ---------- stage: conversation ---------- */
 #stage {
   flex: 1;
   display: flex;
@@ -351,15 +350,6 @@ main {
 .msg.user.editing .msg-bubble { border-color: var(--accent); }
 
 .blocks-container { width: 100%; }
-
-/* The session's running total, under the context bar: facts, not a control. */
-.usage-total {
-  margin-top: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--ink-light);
-  font-variant-numeric: tabular-nums;
-}
 
 /* The cost of a reply: a remark at the end of the message, not part of the answer. */
 .msg-usage {
@@ -740,12 +730,33 @@ main {
    content and pushes its neighbours out of the bar instead. */
 #status-agent { max-width: 220px; }
 #status-tools { max-width: 120px; }
-/* The panel has a bar for this; the status bar has room for the number and its colour. */
-#status-context.warn { color: var(--warn); }
-#status-context.high { color: var(--accent); }
+/* The usage reading: the count, then a hairline saying how full the window is. The number is
+   what a reader glances at; the rule is the only part that can be read without reading, so it
+   carries the warning colour and the tooltip carries everything else. */
+#status-usage { max-width: 220px; color: var(--ink-light); }
+#status-usage.warn { color: var(--warn); }
+#status-usage.high { color: var(--accent); }
+.usage-bar {
+  display: inline-block;
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+#usage-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ink-light);
+  transition: width 0.3s, background 0.3s;
+}
+#status-usage.warn #usage-fill { background: var(--warn); }
+#status-usage.high #usage-fill { background: var(--accent); }
 /* The right-hand group is the count and the tool tally: what moves, kept at the far edge where
    a status bar's readings sit. The gateway and its model lived here too and were removed, because
-   they name a configuration rather than a state, and the Backend panel already holds them. */
+   they name a configuration rather than a state, and the configuration dialog already holds them. */
 .status-right {
   margin-left: auto;
   display: flex;
@@ -754,21 +765,8 @@ main {
   overflow: hidden;
 }
 
-/* ---------- sidebar ---------- */
-#sidebar {
-  width: var(--sidebar);
-  flex: 0 0 var(--sidebar);
-  border-left: 1px solid var(--border);
-  padding: 18px 16px;
-  overflow-y: auto;
-  background: rgba(255, 252, 245, 0.4);
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-#shell.sidebar-hidden #sidebar { display: none; }
-/* A choice in the panel has room, so it keeps the control's own shape: the label above,
-   the select filling the column. */
+/* ---------- configuration dialog: a choice in the panel has room, so it keeps the control's
+   own shape: the label above, the select filling the column. ---------- */
 .field {
   display: flex;
   flex-direction: column;
@@ -873,27 +871,6 @@ main {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   word-break: break-all;
 }
-#context-usage {
-  font-size: 13px;
-  color: var(--ink);
-  min-height: 1.2em;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-}
-.context-bar {
-  margin-top: 6px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-#context-fill {
-  height: 100%;
-  width: 0;
-  background: var(--ink-light);
-  transition: width 0.3s, background 0.3s;
-}
-#context-fill.warn { background: var(--warn); }
-#context-fill.high { background: var(--accent); }
 .tool-list {
   list-style: none;
   margin: 0;
@@ -915,14 +892,10 @@ main {
 }
 
 /* ---------- scrollbar ---------- */
-#messages::-webkit-scrollbar,
-#sidebar::-webkit-scrollbar { width: 6px; }
-#messages::-webkit-scrollbar-track,
-#sidebar::-webkit-scrollbar-track { background: var(--paper); }
-#messages::-webkit-scrollbar-thumb,
-#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-#messages::-webkit-scrollbar-thumb:hover,
-#sidebar::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
+#messages::-webkit-scrollbar { width: 6px; }
+#messages::-webkit-scrollbar-track { background: var(--paper); }
+#messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#messages::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 
 .hljs {
   background: #f0ebe0;
@@ -966,16 +939,8 @@ main {
   50% { opacity: 0; }
 }
 
-#scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 15;
-}
-#scrim[hidden] { display: none; }
-
 /* ---------- configuration dialog ---------- */
-/* The panel the column used to hold, opened rather than pinned. It is sized by what is in it and
+/* The sheet the configuration lives on, opened rather than pinned. It is sized by what is in it and
    capped to the viewport, so a short agent does not leave a mostly-empty sheet and a long one
    scrolls its body instead of the page behind it. */
 #config-dialog {
@@ -1000,8 +965,8 @@ main {
   margin: 0;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
-  /* The same tint as the header and the column, taken from the paper rather than written out in
-     white: a light overlay on a dark sheet would draw a bright band across the top of it. */
+  /* The same tint as the header, taken from the paper rather than written out in white: a light
+     overlay on a dark sheet would draw a bright band across the top of it. */
   background: color-mix(in srgb, var(--paper) 60%, transparent);
 }
 #config-title {
@@ -1033,36 +998,13 @@ main {
   flex-direction: column;
   gap: 18px;
 }
-/* The sheet's own scrollbar, drawn like the column's rather than in the platform's grey: the two
-   are read one after the other and a different scrollbar would read as a different window. */
+/* The sheet's own scrollbar, drawn like the conversation's rather than in the platform's grey: the
+   two are read one after the other and a different scrollbar would read as a different window. */
 .config-body::-webkit-scrollbar { width: 6px; }
 .config-body::-webkit-scrollbar-track { background: transparent; }
 .config-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .config-body::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 .config-section { display: flex; flex-direction: column; gap: 8px; }
-/* The backend in the column is read as one line, and it is the line a reader checks between
-   turns: opening a dialog to recall which model is answering would be the cost of a control
-   nobody is using at that moment. */
-.summary-line {
-  font-size: 13px;
-  color: var(--ink);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  word-break: break-word;
-}
-#config-open {
-  width: 100%;
-  margin-top: 8px;
-  background: transparent;
-  color: var(--ink-light);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 5px 8px;
-  font-size: 11px;
-  font-family: inherit;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-}
-#config-open:hover { color: var(--ink); }
 #config-dialog .tool-list li { font-size: 12px; }
 #config-dialog .config-section .kv { font-size: 12px; }
 /* A gateway that cannot be asked is a fact about the menu above it, not a page-level failure, so
@@ -1073,29 +1015,7 @@ main {
   line-height: 1.4;
 }
 
-/* The toggle is a column control, not a drawer handle: under the drawer breakpoint the
-   panel is opened and closed by its own rules, so the button would only confuse. */
-@media (max-width: 1024px) {
-  #sidebar-toggle { display: none; }
-}
-
-/* ---------- narrow screens: sidebar becomes a drawer ---------- */
-@media (max-width: 1024px) {
-  #sidebar {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 20;
-    background: var(--paper);
-    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
-    transform: translateX(100%);
-    transition: transform 0.2s;
-  }
-  #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
-  #shell.sidebar-hidden #sidebar { display: flex; }
-  /* The drawer reaches the bottom, covering the bar: what it shows is what the bar says. */
-}
+/* ---------- narrow screens ---------- */
 @media (max-width: 640px) {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
@@ -1106,7 +1026,7 @@ main {
   #send { flex: 1; height: 40px; min-width: 0; }
   /* Nothing is dropped from the bar. The two readings that used to be hidden here were the
      gateway and the model, and they are gone from the bar entirely -- what is left on the right
-     is the tool count and the context count, which are now the whole of that half. Dropping
+     is the tool count and the usage reading, which are now the whole of that half. Dropping
      them leaves it empty. The bar clips instead, and each item carries its own width bound. */
 }
 
@@ -1124,7 +1044,7 @@ main {
     --ok: #6fa07d;
     --warn: #c9a24a;
   }
-  header, #composer, #sidebar, #status-bar { background: rgba(28, 26, 23, 0.7); }
+  header, #composer, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }

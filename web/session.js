@@ -44,8 +44,8 @@ async function loadHistory() {
       }
     }
     PU.chainLength = history.length;
-    // The bar and the panel describe the last reply, and a reload has no stream to learn it
-    // from: the stored turn carries the same figure the socket would have sent.
+    // The bar describes the last reply, and a reload has no stream to learn it from: the stored
+    // turn carries the same figure the socket would have sent.
     const replies = groupHistory(history).filter((turn) => turn.role === "assistant" && turn.usage);
     if (replies.length > 0) showUsage(replies[replies.length - 1].usage);
   } catch (_) {
@@ -284,7 +284,7 @@ function renderModels(models, current, error) {
 }
 
 // The gateway menu and the model menu are drawn from one answer: what this build carries, and the
-// backend in force. The model is written here and not again by the label, so the panel holds one
+// backend in force. The model is written here and not again by the label, so the dialog holds one
 // story about which model runs.
 function renderBackendChoices(gateway, gateways, model, models, modelError, host) {
   renderGateways(gateways, gateway);

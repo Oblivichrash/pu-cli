@@ -33,15 +33,14 @@ own name.
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
 | `web/message.js` | The frame around a message: role label, container, edit affordance |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
-| `web/layout.js` | Which way the panel opens, and remembering that choice across the column and drawer layouts |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
-| `web/panel.js` | What the page reads rather than chooses: the backend label shared by the status bar and the column, the context bar, the tool list, and the spend total a finished turn brings with it |
+| `web/panel.js` | What the page reads rather than chooses: the backend label, the tool list, and the usage reading — the count and its hairline in the status bar, with this turn's figures and the conversation's total in that item's tooltip |
 | `web/servers.js` | The header's server strip: the workspace this page is attached to, the other servers over `/api/servers`, and the switch to one of them. The name comes from `/api/session`, never from the list, so a refused list leaves the name intact and the caret explains why it cannot be used |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, rewind |
-| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the column. It is a `<dialog>`, so the focus trap and Escape come from the browser; the one thing it adds is that opening it asks the gateway for its model list, since the menu is drawn from whatever that gateway serves |
+| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It is a `<dialog>`, so the focus trap and Escape come from the browser; the one thing it adds is that opening it asks the gateway for its model list, since the menu is drawn from whatever that gateway serves |
 | `web/composer.js` | Turning a press into a run, and a second press into a stop |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 

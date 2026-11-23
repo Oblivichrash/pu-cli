@@ -48,11 +48,7 @@ function backendSummary() {
 function renderStatusBar() {
   // The agent is fixed by its file, so the bar names the backend that answers instead: which
   // gateway and model reply is the only part of this a reader can still change.
-  const summary = backendSummary();
-  setText("status-agent", summary);
-  // The column carries the same line beside the button that opens the dialog, so the reader can
-  // see what is configured without opening it.
-  setText("summary-backend", summary);
+  setText("status-agent", backendSummary());
   // The agent's own name is stated in the dialog rather than chosen, so it is read once per
   // render from what the session reported.
   setText("config-agent-name", PU.agentShown || "");
@@ -62,7 +58,9 @@ function renderStatusBar() {
   const thinking = settingValue("thinking");
   setText("status-thinking", thinking === null ? "—" : String(thinking));
 
-  setText("status-context", PU.contextShown || "—");
+  // The usage item states its own figures -- the count and the hairline -- so the bar only has
+  // to keep them in step with whatever landed last.
+  renderContextBar();
 }
 
 // "1,234 tok · 40% cached", or the count alone where the gateway said nothing about a cache.
@@ -100,13 +98,11 @@ function attachUsageToOpenReply(payload) {
   }
 }
 
-// Draws one turn's usage in the panel and the bar, and the conversation's total under it. The
-// socket sends both together because the turn that just ended is part of the total, so a frame
-// drawn without its total would answer a question the reader has already asked.
+// Draws one turn's usage on the status bar, and the conversation's total into the same tooltip.
+// The socket sends both together because the turn that just ended is part of the total, so a
+// figure drawn without its total would answer a question the reader has already asked.
 function showUsage(payload) {
-  const el = document.getElementById("context-usage");
-  const fill = document.getElementById("context-fill");
-  if (!el || !payload) return;
+  if (!payload) return;
   if (payload.total) renderUsageTotal(payload.total);
   // The frame arrives before the `done` that closes the bubble, so the reply on screen is still
   // the live one. Without this the figure only appeared on reload, where the stored turn carries
@@ -116,12 +112,15 @@ function showUsage(payload) {
   const completion = Number(payload.completion_tokens);
   const cached = Number(payload.cached_tokens);
   if (!Number.isFinite(prompt)) {
-    el.textContent = "";
     PU.lastTurnPrompt = null;
+    PU.lastTurnLine = "";
+    renderStatusBar();
     renderContextBar();
     return;
   }
-  el.textContent =
+  // The console used to read this line: "12,345 tokens  ·  40% cached  ·  +312". It is kept
+  // rather than spelled out again in the tooltip, so the two cannot disagree.
+  PU.lastTurnLine =
       tokenLine(prompt, cached) +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
   PU.contextShown = prompt.toLocaleString() + " tok";
@@ -133,71 +132,93 @@ function showUsage(payload) {
 // The fill, drawn from the two facts it needs rather than from whichever payload landed last:
 // the counts arrive with a turn and the window arrives with the session, and a reload can
 // deliver them in either order. Both are on `PU`, so either arrival can redraw.
+//
+// This is the whole of the reading now: the bar prints the count, the hairline under it says how
+// full that count is, and the colour is the only warning a reader gets without hovering.
 function renderContextBar() {
-  const fill = document.getElementById("context-fill");
+  const fill = document.getElementById("usage-fill");
+  const barEl = document.getElementById("status-usage");
+  if (!fill || !barEl) return;
   const prompt = PU.lastTurnPrompt;
   const window = contextWindowFor(PU.gatewayShown, PU.backendModelShown);
 
-  // The bar has no room for a progress bar, so the status line carries the same warning.
-  const barEl = document.getElementById("status-context");
-  if (!fill) return;
-
-  if (!Number.isFinite(prompt) || !window) {
-    // No window: the count stands alone, which is what every gateway but the ones that state
-    // a size leaves it. Said in the tooltip rather than left as a bare dash.
+  if (!Number.isFinite(prompt)) {
+    // Nothing has been spent yet, so there is no ratio to draw and no colour to give it.
+    setText("usage-text", "—");
     fill.style.width = "0";
     fill.className = "";
-    if (barEl) {
-      barEl.className = "status-item";
-      barEl.title = window
-        ? "Context the last reply ran against"
-        : "Context the last reply ran against; this model reports no window to measure it against";
-    }
+    barEl.className = "status-item usage";
+    barEl.title = "How much context the last reply ran against";
+    return;
+  }
+
+  // The count is always printed, since it is the honest half; the window is only shown when the
+  // model states one, which is what turns the figure into a proportion.
+  setText("usage-text", window
+      ? `${prompt.toLocaleString()} / ${window.toLocaleString()}`
+      : `${prompt.toLocaleString()} tok`);
+
+  if (!window) {
+    // No window: the count stands alone, which is what every gateway but the ones that state a
+    // size leaves it. The hairline stays empty, since there is nothing to be a fraction of.
+    fill.style.width = "0";
+    fill.className = "";
+    barEl.className = "status-item usage";
+    renderUsageTitle();
     return;
   }
 
   const ratio = Math.min(prompt / window, 1);
   fill.style.width = (ratio * 100).toFixed(1) + "%";
-  fill.className = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
-  if (barEl) {
-    barEl.className = "status-item" + (ratio > 0.85 ? " high" : (ratio > 0.6 ? " warn" : ""));
-    barEl.title = `Context the last reply ran against: ${Math.round(ratio * 100)}% of ${window.toLocaleString()}`;
-  }
+  const level = ratio > 0.85 ? "high" : (ratio > 0.6 ? "warn" : "");
+  fill.className = level;
+  barEl.className = "status-item usage" + (level ? " " + level : "");
+  renderUsageTitle();
 }
 
-// What the conversation has spent. The counts are sums; a price is drawn only when every turn
-  // that reported one agreed on the unit, which is what the server already decided.
-function renderUsageTotal(total) {
-  const host = document.getElementById("usage-total");
-  if (!host) return;
-  PU.usageTotal = total || null;
-  if (!total || !Number.isFinite(Number(total.turns))) {
-    host.textContent = "";
-    return;
-  }
-  const sum = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
-  const lines = [
-    `${sum(total.turns)} turn${sum(total.turns) === 1 ? "" : "s"}  ·  ` +
-        `${sum(total.prompt_tokens).toLocaleString()} prompt  ·  ` +
-        `${sum(total.completion_tokens).toLocaleString()} completion`,
-  ];
-  if (sum(total.cached_tokens) > 0) {
-    lines.push(`${sum(total.cached_tokens).toLocaleString()} tokens came from the cache`);
-  }
-  if (total.cost && Number.isFinite(Number(total.cost.amount))) {
-    lines.push(`${Number(total.cost.amount)} ${total.cost.unit || ""}`.trim());
-  } else if (sum(total.priced_turns) > 0) {
-    // Some turns were priced and some were not, or two units were mixed: a total would lie.
-    lines.push(`price not summed (${sum(total.priced_turns)} of ${sum(total.turns)} turns priced)`);
+// The tooltip is the one place every figure about the turn lives now that the column is gone:
+// what this turn cost, how much of the window it filled, what the conversation has spent. It is
+// rebuilt whenever a figure arrives, since either arrival can be the last.
+function renderUsageTitle() {
+  const barEl = document.getElementById("status-usage");
+  if (!barEl) return;
+  const prompt = PU.lastTurnPrompt;
+  if (!Number.isFinite(prompt)) return;
+  const window = contextWindowFor(PU.gatewayShown, PU.backendModelShown);
+  const lines = [PU.lastTurnLine || `${prompt.toLocaleString()} tokens`];
+  if (window) {
+    lines.push(`${Math.round(Math.min(prompt / window, 1) * 100)}% of ${window.toLocaleString()} tokens`);
   } else {
-    lines.push("no gateway here reported a price");
+    lines.push("this model reports no window to measure it against");
   }
-  host.replaceChildren();
-  for (const line of lines) {
-    const row = document.createElement("div");
-    row.textContent = line;
-    host.appendChild(row);
+  const total = PU.usageTotal;
+  if (total) {
+    const sum = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+    lines.push("");
+    lines.push(
+        `${sum(total.turns)} turn${sum(total.turns) === 1 ? "" : "s"}  ·  ` +
+        `${sum(total.prompt_tokens).toLocaleString()} prompt  ·  ` +
+        `${sum(total.completion_tokens).toLocaleString()} completion`);
+    if (sum(total.cached_tokens) > 0) {
+      lines.push(`${sum(total.cached_tokens).toLocaleString()} tokens came from the cache`);
+    }
+    if (total.cost && Number.isFinite(Number(total.cost.amount))) {
+      lines.push(`${Number(total.cost.amount)} ${total.cost.unit || ""}`.trim());
+    } else if (sum(total.priced_turns) > 0) {
+      // Some turns were priced and some were not, or two units were mixed: a total would lie.
+      lines.push(`price not summed (${sum(total.priced_turns)} of ${sum(total.turns)} turns priced)`);
+    } else {
+      lines.push("no gateway here reported a price");
+    }
   }
+  barEl.title = lines.join("\n");
+}
+
+// What the conversation has spent. It is no longer drawn as its own block: the figures go into
+// the usage tooltip, and `PU.usageTotal` is what the next rebuild reads.
+function renderUsageTotal(total) {
+  PU.usageTotal = total && Number.isFinite(Number(total.turns)) ? total : null;
+  renderUsageTitle();
 }
 
 function renderToolList(tools) {

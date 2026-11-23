@@ -86,8 +86,11 @@ const PU = {
   // the counts come with a turn and the window comes with the session, so the two are drawn
   // from state rather than from whichever payload happened to land last.
   lastTurnPrompt: null,
-  // The last total the server reported for this conversation, kept so a failed read leaves
-  // the panel as it was rather than blanking a figure that is still true.
+  // That same turn stated as the reader used to see it in the console -- the count, the cached
+  // share, the completion -- so the tooltip can repeat it without recomputing it.
+  lastTurnLine: "",
+  // The last total the server reported for this conversation, kept so the tooltip can be rebuilt
+  // from the newest of the two facts rather than from whichever arrived last.
   usageTotal: null,
 
   composer: {

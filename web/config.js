@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The configuration dialog: everything the reader writes rather than reads, in one place. The
-// column beside the conversation keeps the usage figures, which are the opposite kind of thing
-// and were what the old panels were separated by.
+// The configuration dialog: everything the reader writes rather than reads, in one place. What
+// the conversation has spent is the opposite kind of thing and lives in the status bar, where a
+// figure at rest belongs.
 
 "use strict";
 

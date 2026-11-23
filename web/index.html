@@ -22,7 +22,10 @@
       <ul id="server-list" class="server-list" hidden></ul>
     </div>
     <div class="header-right">
-      <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
+      <!-- The one thing on this page a reader chooses, beside the one thing a reader opens. It
+           used to sit in a column of its own, behind a button that folded that column; with the
+           column gone the chooser is where the column's toggler was. -->
+      <button id="config-open" title="Choose the backend and this session's settings" aria-label="Configure agent">⚙</button>
     </div>
   </header>
 
@@ -46,8 +49,8 @@
       </div>
 
       <div id="composer">
-        <!-- The field and the button, nothing else: what is chosen between messages lives in
-             the panel, and what is merely read lives on the status bar below. -->
+        <!-- The field and the button, nothing else: what is chosen between messages lives behind
+             the gear in the header, and what is merely read lives on the status bar below. -->
         <div id="composer-row">
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
           <button id="send">Send</button>
@@ -55,33 +58,11 @@
       </div>
     </main>
 
-    <aside id="sidebar">
-      <div class="panel">
-        <div class="panel-title">Usage</div>
-        <div id="context-usage" title="How much context the last reply ran against"></div>
-        <div class="context-bar"><div id="context-fill"></div></div>
-        <!-- What the whole conversation has spent, summed by the server. -->
-        <div id="usage-total" class="usage-total" title="What this conversation has spent so far"></div>
-      </div>
-
-      <div class="panel">
-        <!-- The column is for what the reader watches; everything that is chosen lives in the
-             dialog behind this button. The gateway and the model are repeated here as text
-             because they are the two facts a reader checks between turns, and opening a dialog
-             to read them would be the cost of a control nobody is using. -->
-        <div class="panel-title">Configuration</div>
-        <div id="summary-backend" class="summary-line" title="The gateway and model that answer">—</div>
-        <button id="config-open" type="button" title="Choose the backend and this session's settings">
-          Configure agent…
-        </button>
-      </div>
-    </aside>
-
   </div>
 
-  <!-- A read-out, not a control: what the session is, so a folded panel costs no state.
-       It spans the shell rather than sitting in the column, so the panel opening and
-       closing does not move it. -->
+  <!-- A read-out, not a control: what the session is. It is the only place these facts live now
+       -- the column that held the usage figures is gone -- so the bar carries them at the shell's
+       own width, where nothing can move them. -->
   <div id="status-bar">
     <span class="status-item">
       <span id="conn-dot" class="conn-dot" title="Connection"></span>
@@ -89,13 +70,17 @@
     </span>
     <span class="status-item" id="status-agent" title="The agent that answers">—</span>
     <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
-    <!-- The gateway and the model are not here. They are a fact about the configuration, and
-         they do not change from one turn to the next, so the bar spent a third of its width
-         repeating what the Backend panel already holds. What is left is what moves: the tools
-         the agent can reach and the context the last reply ran against. -->
     <span class="status-right">
       <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
-      <span class="status-item" id="status-context" title="Context the last reply ran against">—</span>
+      <!-- The window the last reply filled. The fill is a hairline under the figure rather than a
+           bar of its own: it is one number, and a bar wide enough to read as a bar would take the
+           room the agent's name is using. The whole record -- both counts, the window, the cached
+           share and the conversation's sum -- is in the tooltip, which is where a reader who wants
+           the number rather than the glance goes. -->
+      <span class="status-item usage" id="status-usage" title="How much context the last reply ran against">
+        <span id="usage-text">—</span>
+        <span class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></span>
+      </span>
     </span>
   </div>
 
@@ -157,11 +142,8 @@
       </section>
     </div>
   </dialog>
-
-  <div id="scrim" hidden></div>
 </div>
 
-<script src="layout.js"></script>
 <script src="approval.js"></script>
 <script src="blocks.js"></script>
 <script src="state.js"></script>
