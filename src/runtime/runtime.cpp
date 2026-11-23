@@ -659,7 +659,8 @@ void Runtime::SwitchBackend(const model::Backend& backend) {
   // own default rather than pinning an address that resolves to nothing.
   try {
     config::UpdateAgentBackend(config_path_, model::GatewayName(backend.gateway), backend.model,
-                               backend.host);
+                               backend.host, backend.temperature, backend.max_tokens,
+                               backend.top_p, backend.seed, backend.context_window);
   } catch (const std::exception& e) {
     spdlog::error("Backend switched for this run only: {}", e.what());
   }

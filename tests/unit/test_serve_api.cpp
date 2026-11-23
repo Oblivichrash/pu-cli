@@ -295,11 +295,29 @@ TEST_CASE("serve API /api/backend says what is in force", "[serve][api]") {
   REQUIRE(!obj.contains("model_error"));
 }
 
+// `/api/models` asks the gateway the request names, and it must ask it at the address the agent
+// file gives rather than at the one the build's gateway row names: a reader who pointed their
+// gateway somewhere else would otherwise get an empty list after a connect timeout, for a
+// gateway that answers perfectly well.
+TEST_CASE("serve API /api/models asks the configured address, not the gateway default", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/models?gateway=ollama"));
+
+  // The harness wrote `ollama` with the fake backend's port as its address, while the gateway's
+  // own row names 11434, where nothing is listening here.
+  REQUIRE(j.at("error") == "");
+  const auto& models = j.at("models");
+  REQUIRE(models.as_array().size() == 2);
+  REQUIRE(models.as_array()[0] == "test-model");
+  REQUIRE(models.as_array()[1] == "second-model");
+}
+
 // The backend is written back to the agent file, and the address goes with the gateway and the
 // model: a reader pointing a local gateway at a port the table has never heard of has to be able
 // to put that address somewhere that survives the process.
 namespace {
-
 // What the agent file says about its backend, read from disk rather than from a reply: the
 // question is whether the write landed, and the server's own answer cannot settle that.
 boost::json::value BackendInFile(const fs::path& home) {

@@ -287,7 +287,10 @@ std::string FindConfigPath() {
 }
 
 void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
-                        const std::string& model_name, const std::string& host) {
+                        const std::string& model_name, const std::string& host,
+                        float temperature, const std::optional<int>& max_tokens,
+                        const std::optional<float>& top_p, const std::optional<int>& seed,
+                        const std::optional<int>& context_window) {
   std::ifstream file(config_path);
   if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
   const std::string original{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -308,6 +311,31 @@ void UpdateAgentBackend(const std::string& config_path, const std::string& gatew
     backend.erase("host");
   } else {
     backend["host"] = host;
+  }
+  // The sampling settings follow the address' rule: stated, they are written; not stated, the key
+  // is gone. A key holding a number nobody chose is worse than no key, because the file then
+  // claims a pin the reader never asked for. `temperature` is the exception: it is not optional
+  // in the type, so a backend always answers at some value and the file always says which.
+  backend["temperature"] = temperature;
+  if (max_tokens) {
+    backend["max_tokens"] = *max_tokens;
+  } else {
+    backend.erase("max_tokens");
+  }
+  if (top_p) {
+    backend["top_p"] = *top_p;
+  } else {
+    backend.erase("top_p");
+  }
+  if (seed) {
+    backend["seed"] = *seed;
+  } else {
+    backend.erase("seed");
+  }
+  if (context_window) {
+    backend["context_window"] = *context_window;
+  } else {
+    backend.erase("context_window");
   }
 
   const std::string text = boost::json::serialize(root);

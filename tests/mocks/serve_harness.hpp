@@ -285,6 +285,13 @@ class FakeBackend : public FakeHttpServer {
 {"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_.load(std::memory_order_relaxed)) +
                    R"(,"eval_count":)" + std::to_string(completion_tokens_.load(std::memory_order_relaxed)) + R"(}
 )";
+    } else if (req.target() == "/api/tags" && req.method() == http::verb::get) {
+      // The catalogue a gateway is asked for by name. Served here so a case can tell whether the
+      // page's model list was asked at the address this backend owns rather than at the one the
+      // gateway's row names.
+      res.result(http::status::ok);
+      res.set(http::field::content_type, "application/json");
+      res.body() = R"({"models":[{"name":"test-model"},{"name":"second-model"}]})";
     } else {
       res.result(http::status::not_found);
     }

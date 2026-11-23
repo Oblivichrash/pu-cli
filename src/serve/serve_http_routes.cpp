@@ -342,11 +342,22 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
 // carried along on every read of the backend in force.
 boost::json::value BackendAsJson(Call& call) {
   const model::Backend current = call.runtime.CurrentBackend();
-  return boost::json::object{
+  boost::json::object body{
       {"gateway", model::GatewayName(current.gateway)},
       {"model", current.model},
       {"host", current.host},
   };
+  // The sampling settings travel with the backend because they are properties of it: a model
+  // answers at a temperature, holds a context window. `null` is a setting nobody stated, which
+  // is not the same as a zero and not the same as the provider's default either -- the form
+  // shows the difference by leaving the box empty rather than at some number.
+  body["temperature"] = current.temperature;
+  body["max_tokens"] = current.max_tokens ? boost::json::value(*current.max_tokens) : boost::json::value();
+  body["top_p"] = current.top_p ? boost::json::value(*current.top_p) : boost::json::value();
+  body["seed"] = current.seed ? boost::json::value(*current.seed) : boost::json::value();
+  body["context_window"] =
+      current.context_window ? boost::json::value(*current.context_window) : boost::json::value();
+  return body;
 }
 
 boost::json::value HandleApiBackend(Call& call, const boost::json::value&) {
@@ -378,7 +389,17 @@ boost::json::value HandleApiModels(Call& call, const boost::json::value&) {
   } else {
     model::Backend backend;
     backend.gateway = gateway->id;
-    backend.host = std::string(gateway->default_host);
+    // The address this gateway is actually reached at, which is the configured one when it is
+    // already in force and the catalogue's default otherwise. Asking the default while the agent
+    // file names another address would list nothing for a gateway that answers perfectly well,
+    // and would spend the connect timeout learning it.
+    const model::Backend current = call.runtime.CurrentBackend();
+    backend.host = current.gateway == gateway->id && !current.host.empty()
+                       ? current.host
+                       : std::string(gateway->default_host);
+    // A configured address may still be a `${VAR}` placeholder; the file is where one is expanded,
+    // and a placeholder is not an address to dial.
+    if (backend.host.find("${") != std::string::npos) backend.host = std::string(gateway->default_host);
     const std::string key_env(gateway->api_key_env);
     if (!key_env.empty()) {
       if (const char* key = std::getenv(key_env.c_str()); key != nullptr && *key != '\0') {
@@ -448,6 +469,64 @@ boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& bod
   }
   next.gateway = *id;
   next.model = model;
+  // The sampling settings, each one optional in the request for the same reason it is optional
+  // in the file: absent leaves what is in force, an explicit null clears it back to the
+  // provider's own default. They are read here rather than passed whole so a page cannot write
+  // a field this endpoint does not own -- `api_key` and `response_schema` are not a form's to
+  // set.
+  if (json::HasKey(body, "temperature")) {
+    const boost::json::value& raw = body.at("temperature");
+    if (raw.is_null()) {
+      next.temperature = 0.7f;
+    } else if (const std::optional<double> want = json::OptionalOrDefault<double>(body, "temperature")) {
+      if (*want < 0.0 || *want > 2.0) throw RequestRefused("'temperature' must be between 0 and 2");
+      next.temperature = static_cast<float>(*want);
+    } else {
+      throw RequestRefused("'temperature' must be a number");
+    }
+  }
+  if (json::HasKey(body, "max_tokens")) {
+    if (body.at("max_tokens").is_null()) {
+      next.max_tokens.reset();
+    } else if (const std::optional<std::int64_t> want =
+                   json::OptionalOrDefault<std::int64_t>(body, "max_tokens")) {
+      if (*want <= 0) throw RequestRefused("'max_tokens' must be positive");
+      next.max_tokens = static_cast<int>(*want);
+    } else {
+      throw RequestRefused("'max_tokens' must be a number");
+    }
+  }
+  if (json::HasKey(body, "top_p")) {
+    if (body.at("top_p").is_null()) {
+      next.top_p.reset();
+    } else if (const std::optional<double> want = json::OptionalOrDefault<double>(body, "top_p")) {
+      if (*want <= 0.0 || *want > 1.0) throw RequestRefused("'top_p' must be above 0 and at most 1");
+      next.top_p = static_cast<float>(*want);
+    } else {
+      throw RequestRefused("'top_p' must be a number");
+    }
+  }
+  if (json::HasKey(body, "seed")) {
+    if (body.at("seed").is_null()) {
+      next.seed.reset();
+    } else if (const std::optional<std::int64_t> want =
+                   json::OptionalOrDefault<std::int64_t>(body, "seed")) {
+      next.seed = static_cast<int>(*want);
+    } else {
+      throw RequestRefused("'seed' must be a number");
+    }
+  }
+  if (json::HasKey(body, "context_window")) {
+    if (body.at("context_window").is_null()) {
+      next.context_window.reset();
+    } else if (const std::optional<std::int64_t> want =
+                   json::OptionalOrDefault<std::int64_t>(body, "context_window")) {
+      if (*want <= 0) throw RequestRefused("'context_window' must be positive");
+      next.context_window = static_cast<int>(*want);
+    } else {
+      throw RequestRefused("'context_window' must be a number");
+    }
+  }
   call.runtime.SwitchBackend(next);
   return BackendAsJson(call);
 }

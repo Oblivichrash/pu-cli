@@ -73,18 +73,28 @@ std::string FindConfigPath();
 // leaves every other key byte-for-byte as written. It edits the file's own text rather than
 // re-rendering a parsed entry: a parsed backend holds the expanded `api_key`, so writing that
 // back would move a secret out of the environment and into the file, and an unset optional field
-// would be written back as its default. Only `gateway`, `model` and `host` change.
+// would be written back as its default. Only `gateway`, `model`, `host` and the sampling
+// settings below change.
 //
 // `host` is written as given and is never expanded, so a value spelled `${VAR}` stays four
 // characters and a variable sign rather than becoming this run's address; the next load is where
 // it is read. An empty `host` removes the key, which is what makes the gateway's own default
 // apply again -- writing "" would pin an address that resolves to nothing.
 //
+// The sampling settings are written as given and removed when absent: a cleared `max_tokens` is
+// the key gone, which is what "send no cap" looks like in the file, rather than a key holding a
+// number nobody chose. `temperature` is always written, because it is not optional: a backend
+// that never stated one still answers at some temperature, and the file is where that value is
+// kept.
+//
 // The write is atomic: the new text goes to a sibling temporary file, is parsed back to prove it
 // is still one agent file, and only then replaces the original. A failure leaves the file as it
 // was and throws.
 void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
-                        const std::string& model_name, const std::string& host);
+                        const std::string& model_name, const std::string& host,
+                        float temperature, const std::optional<int>& max_tokens,
+                        const std::optional<float>& top_p, const std::optional<int>& seed,
+                        const std::optional<int>& context_window);
 
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.
