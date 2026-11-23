@@ -226,14 +226,17 @@ main {
    takes, deliberately: a larger radius at this width pulls the corners away from the first and
    last word of a short line, and this page's messages are short and set in one column.
 
-   The room is 10px top and bottom against 24.75px of line height. A line box carries its own
+   The room is 8px top and bottom against 24.75px of line height. A line box carries its own
    leading, so the padding is not what the eye reads as the gap -- half the leading above the
-   cap height is, which is about 5px here, so the gap the eye sees is 15px. The sides are 14px
-   because with the bubble hugging its text rather than filling the column, the side padding is
-   the whole of the space between the first letter and the frame; at 18px a one-word turn
-   floated in a wide tint with nothing to say why. */
+   cap height is, which is about 5px here, so the gap the eye sees is 13px. That is the same
+   gap the words have from each other, which is what makes a short turn read as set rather than
+   as floating: at 10px the eye sees 15px, and a single line of 15px type in a box with 15px
+   above and below it has more air than it has words. The sides are 14px because with the
+   bubble hugging its text rather than filling the column, the side padding is the whole of the
+   space between the first letter and the frame; at 18px a one-word turn floated in a wide tint
+   with nothing to say why. */
 .msg-bubble {
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-radius: 6px;
   border: 1px solid transparent;
 }
@@ -313,7 +316,7 @@ main {
   max-width: 100%;
 }
 .msg.error .msg-bubble {
-  padding: 10px 14px;
+  padding: 8px 14px;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
