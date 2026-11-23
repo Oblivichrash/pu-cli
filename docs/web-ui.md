@@ -34,13 +34,14 @@ own name.
 | `web/message.js` | The frame around a message: role label, container, the press a reader makes on one — a user turn goes back into the composer to be edited, an assistant turn goes to the clipboard — and the guards that keep that press from firing on a link, a tool card, or a passage the reader has selected. A press that acted silently would look like nothing happened, so a copy with no text to copy says so in a system message |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
-| `web/panel.js` | What the page reads rather than chooses: the backend label, the host field (drawn from the server's answer, and left alone while it has focus so a typing reader is not overwritten), the tool list, and the usage reading — the count and its hairline in the status bar, with this turn's figures and the conversation's total in that item's tooltip |
+| `web/panel.js` | What the page draws from the server's answer: the gateway and the model as two separate readings in the status bar (two, because they are two choices side by side, and a press on one must not be read as a press on the other), the tool list, and the usage reading — the count and its hairline, with this turn's figures and the conversation's total in that item's tooltip |
 | `web/servers.js` | The header's server strip: the workspace this page is attached to, the other servers over `/api/servers`, and the switch to one of them. The name comes from `/api/session`, never from the list, so a refused list leaves the name intact and the caret explains why it cannot be used |
 | `web/notice.js` | The strip above the composer |
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
-| `web/session.js` | The REST calls: session, history, thinking, agents, backend choice, rewind |
-| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It is a `<dialog>`, so the focus trap and Escape come from the browser; the one thing it adds is that opening it asks the gateway for its model list, since the menu is drawn from whatever that gateway serves |
+| `web/session.js` | The REST calls: session, history, thinking, agents, the gateway and model writes (`saveGateway`, `saveModel`), rewind |
+| `web/gateway.js` | The two forms the status bar opens: the **gateway form** at `#gateway-dialog` (which gateway, and the address it is reached at) and the **model form** at `#model-dialog` (which model that gateway answers with, and how — temperature, max tokens, top P, seed, context window). Both are `<dialog>`s, so the focus trap and Escape come from the browser, and both close only when the server took the answers: a refusal is the form's to show, and a form that closed on one would leave the reader believing a change that was never made |
+| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It holds the agent's name, the session settings that are not a model's (thinking, the tool budget), and the tool list — the gateway, the address and the sampling settings belong to `gateway.js`'s two forms. It is a `<dialog>`, so the focus trap and Escape come from the browser |
 | `web/composer.js` | The composer and everything it starts: the press's mark (an arrow while a turn is the thing the press would start, a square while one is running and the press would end it), the field growing to its own text, the one place a turn is sent from, and the edit flow — `beginEdit`, `cancelEdit`, `setComposerMode`, `sendEdit` — since an edit is a send whose text is a step back |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
@@ -58,9 +59,11 @@ press rather than something to look at — an arrow is a direction, not a block 
 around it is the form every send control takes. The mark itself is Lucide's `arrow-up` on the
 library's own 24-unit grid, the same grid the gear in the header is drawn on, so the two controls
 read as one hand. The grid and the hand are shared but not the scale: the gear is set to the 14-15px
-of the text beside it, while this mark is cut at 18px — smaller than the 24px it was when it stood
-alone, because inside a 32px ring a 24px arrow pressed against the edge and made the circle look
-like a sticker; at 18px it keeps a ring's worth of light around it. The gear, by the same reading,
+of the text beside it, while this mark is cut at 16px — smaller than the 24px it was when it stood
+alone, because inside a 28px ring a 24px arrow pressed against the edge and made the circle look
+like a sticker; at 16px it keeps a ring's worth of light around it. The ratio of mark to ring is
+what is held constant, not either figure alone: a filled disc reads heavier than an open glyph, so
+the ring came down with the arrow rather than staying at the size a glyph would have needed. The gear, by the same reading,
 is not boxed — nothing else in the header is, and a frame around the one control drew a border
 round a single word. While a turn is in flight the arrow gives way to a solid square — the
 press that ends a turn is the same press, so the mark says what the *next* press does rather than
@@ -110,6 +113,21 @@ the reply stops following for the rest of the turn. `isAtBottom()` therefore mea
 element each time it is asked, and a writer reads it *before* it appends, because the
 append is the very thing that moves the content being measured. A reader who scrolls up
 is left where they are; returning to the bottom resumes following with no other gesture.
+
+**A model is a form, not a menu.** The gateway answers the question *where the turn is sent*; the
+model answers *how it is answered*, and the second is more than a name — the same gateway will
+answer at any temperature, under any cap, against any window. The status bar therefore opens two
+dialogs: the gateway form holds the gateway and its address, the model form holds the name and the
+sampling settings. The name is both a `<select>` filled from `/api/models` and a text field, so a
+model the gateway does not list can still be named. A setting left empty means the gateway's own
+default and is written as `null`; clearing `temperature` restores the default rather than removing
+the key, because the backend always answers at some temperature. A refusal — `'top_p' must be above
+0 and at most 1` — keeps the form open with the reason in `#md-error`.
+
+The sampling settings are also session overrides, and an override outranks the agent file. A save
+therefore writes the file *and* clears the `temperature` and `max_tokens` overrides, so the number
+just saved is the number in force; without that second step the form would report success while the
+reader went on seeing the override's value.
 
 ## How the page is served
 

@@ -109,7 +109,14 @@ function renderSettings(settings) {
   const host = PU.composer.settingsRows;
   if (!host) return;
   host.replaceChildren();
+  // The settings a model form owns are not drawn here. `temperature` and `max_tokens` are
+  // properties of the model -- the same numbers the model's own form writes -- so a second editable
+  // copy in this sheet would be two boxes for one value, and a reader who changed one would find
+  // the other disagreeing. They stay in the list so the model form can read the value in force;
+  // only the row is withheld.
+  const modelOwned = new Set(["temperature", "max_tokens"]);
   for (const entry of PU.composer.settings) {
+    if (modelOwned.has(entry.name)) continue;
     const row = document.createElement("label");
     row.className = "field";
     const label = document.createElement("span");
@@ -220,6 +227,16 @@ async function loadBackends() {
     const backend = answer.backend || {};
     const gateways = catalogue.success ? catalogue.gateways || [] : [];
     if (!catalogue.success) setBackendError(catalogue.error || "The gateway list could not be read.");
+    // The settings that belong to the model are kept where its form reads them. They travel with
+    // the backend because that is what they are properties of, and a `null` here is a setting
+    // nobody stated rather than a zero.
+    PU.backendParamsShown = {
+      temperature: backend.temperature === undefined ? null : backend.temperature,
+      max_tokens: backend.max_tokens === undefined ? null : backend.max_tokens,
+      top_p: backend.top_p === undefined ? null : backend.top_p,
+      seed: backend.seed === undefined ? null : backend.seed,
+      context_window: backend.context_window === undefined ? null : backend.context_window,
+    };
     // No catalogue is asked for here: the model in force is drawn as the one option, and the
     // gateway's own list arrives when the menu is opened.
     renderBackendChoices(backend.gateway, gateways, backend.model, null, "", backend.host);
@@ -249,37 +266,14 @@ function renderGateways(gateways, gateway) {
   if (PU.gatewayShown) gatewaySelect.value = PU.gatewayShown;
 }
 
-// The model menu holds what the gateway serves, asked when the menu is opened rather than once
-// at start: a catalogue belongs to the gateway, and the one being looked at is the only one worth
-// a request. A gateway that lists nothing -- no key, host down -- leaves the name as typed text,
-// so a model in force is never lost to a list that could not be fetched.
+// What the gateway serves, kept where the menu in the bar can read it. There is no control in this
+// file to fill any more: the model is chosen from the bar, so a catalogue arriving here is a fact
+// about the gateway rather than something to write into a form. The one thing that does belong
+// here is the refusal -- a gateway that cannot say what it serves is a reason the reader should
+// see, and it is reported where the gateway form reports its own.
 function renderModels(models, current, error) {
-  const { modelSelect, modelText } = PU.composer;
-  if (!modelSelect || !modelText) return;
-  const asked = Array.isArray(models);
-  const list = asked ? models : [];
-  const want = current || PU.backendModelShown || "";
-  // The name in force is an option before it is a value: a select assigned a value it has no
-  // option for shows nothing, and a menu missing the running model would read as one not in use.
-  // The menu is emptied only when a full list arrives to refill it. A list fetched and empty is
-  // not a list of nothing to choose from -- the gateway could not say what it serves -- so the
-  // name becomes text the reader can type.
-  const typed = asked && list.length === 0;
-  modelSelect.hidden = typed;
-  modelText.hidden = !typed;
-  if (typed) {
-    modelText.value = want;
-  } else {
-    if (list.length > 0) {
-      modelSelect.textContent = "";
-      if (want && !list.includes(want)) modelSelect.append(new Option(want, want));
-      for (const name of list) modelSelect.append(new Option(name, name));
-    } else if (want && !Array.from(modelSelect.options, (o) => o.value).includes(want)) {
-      modelSelect.append(new Option(want, want));
-    }
-    modelSelect.value = want || (list[0] || "");
-  }
   if (current) PU.backendModelShown = current;
+  if (Array.isArray(models)) PU.modelsShown = models.slice();
   setBackendError(error || "");
 }
 
@@ -296,7 +290,7 @@ function renderBackendChoices(gateway, gateways, model, models, modelError, host
 }
 
 function setBackendError(message) {
-  const el = document.getElementById("kb-error");
+  const el = document.getElementById("gw-error");
   if (!el) return;
   el.textContent = message || "";
   el.hidden = !message;
@@ -343,29 +337,97 @@ async function chooseBackend(gateway, model, host) {
   }
   // Redrawn first and reported second: the redraw is what puts the fields back in agreement with
   // the server, and a message written before it would be a message the redraw then erased. On
-  // success the fields are the server's answer, so nothing is left to say.
-  await loadBackends();
-  setBackendError(failure);
-  if (!failure) {
-    // The field the reader is still in shows what was accepted rather than what was typed: an
-    // emptied field is a request for the default, and leaving the box blank would leave the
-    // reader without the address that is now in force.
-    const { hostInput } = PU.composer;
-    if (hostInput && document.activeElement === hostInput) hostInput.value = PU.backendHostShown || "";
+  // success the fields are the server's answer, so nothing is left to say. A refusal skips the
+  // redraw -- nothing changed -- so its message is written at once rather than after a round trip
+  // that has nothing to report.
+  if (failure) {
+    setBackendError(failure);
+    return false;
   }
+  await loadBackends();
+  setBackendError("");
+  return true;
 }
 
-// The address alone, on the model already in force. It is a backend write like any other, so it
-// goes through the same route and is redrawn from the reply: a host the server refuses comes back
-// with a reason, and one it accepts comes back in the shape the next read will answer with.
-function commitHost() {
+// The gateway and its address, on Save. The model is not part of this form: it is chosen from the
+// bar, where it is already written, and a form that also asked for it would be asking the same
+// question twice. What is sent is the model in force, which `chooseBackend` keeps unless the
+// gateway it belongs to has been left -- switching gateway rightly replaces a name the new one does
+// not serve. `host` goes as typed, including empty: an emptied field is the reader asking for the
+// gateway's own address back, a request that only means something when it is said out loud.
+async function saveGateway() {
   const { gatewaySelect, hostInput } = PU.composer;
-  if (!gatewaySelect || !hostInput) return;
+  if (!gatewaySelect) return false;
   const gateway = gatewaySelect.value;
-  const host = hostInput.value.trim();
-  const model = PU.backendModelShown || "";
-  if (!gateway || !model) return;
-  chooseBackend(gateway, model, host);
+  const host = hostInput ? hostInput.value.trim() : "";
+  if (!gateway) {
+    setBackendError("Pick a gateway.");
+    return false;
+  }
+  return chooseBackend(gateway, PU.backendModelShown || "", host);
+}
+
+// The model's own form, on Save: the name and the settings that belong to it. The gateway is not
+// asked for here -- it is the one in force, since a model is a choice inside a gateway and this
+// form was opened from that gateway's name -- and the address is left out entirely, so posting
+// does not reach for the gateway's default back.
+//
+// A number box that was emptied is a setting the reader cleared, sent as null: the file then
+// holds no key for it rather than a number nobody chose. A box that cannot be read as a number is
+// a typo and is refused here, before a request that would only carry the same problem.
+async function saveModel(model, raw) {
+  const payload = { gateway: PU.gatewayShown || "", model };
+  const numeric = {
+    temperature: raw.temperature,
+    max_tokens: raw.max_tokens,
+    top_p: raw.top_p,
+    seed: raw.seed,
+    context_window: raw.context_window,
+  };
+  for (const [key, text] of Object.entries(numeric)) {
+    if (text === "") {
+      // A cleared box is a setting the reader removed. For `temperature` that is not "no value":
+      // the backend always answers at some temperature, so clearing it restores the default
+      // rather than sending a null the type cannot hold.
+      payload[key] = key === "temperature" ? 0.7 : null;
+      continue;
+    }
+    const value = Number(text);
+    if (!Number.isFinite(value)) {
+      modelError(`"${key.replace(/_/g, " ")}" must be a number.`);
+      return false;
+    }
+    payload[key] = value;
+  }
+  let failure = "";
+  try {
+    const data = await postJson("/api/backend", payload);
+    if (!data.success) failure = data.error || "The model could not be changed";
+  } catch (e) {
+    failure = (e && e.body && e.body.error) || `The model could not be changed: ${e.message}`;
+  }
+  // The two settings this form writes are also session overrides, and an override outranks the
+  // file: writing the file while a stale override stands would leave the reader looking at the
+  // number the override still holds, not the one they just saved. Clearing those overrides is what
+  // makes the file's value the value in force, which is what "this is the model's temperature"
+  // means. Only on success, and only the two this form owns -- `temperature` is not in the model
+  // file's absence and `max_tokens` is a cap this form sets, not a session knob.
+  if (!failure) {
+    for (const name of ["temperature", "max_tokens"]) {
+      try {
+        const cleared = await postJson("/api/settings", { name, value: null });
+        if (cleared.success) renderSettings(cleared.settings);
+      } catch (_) {
+        // A setting that could not be cleared leaves its override in force; the file is still
+        // written, and the next read of `/api/backend` shows which number won.
+      }
+    }
+  }
+  // The refusal is shown before the state is read back: a refused save changed nothing, and the
+  // reader should not wait on a round trip to learn why the form is still open.
+  modelError(failure);
+  if (!failure) await loadBackends();
+  return !failure;
 }
 
 

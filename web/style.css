@@ -787,9 +787,52 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A bound is what makes the ellipsis above mean anything: without one the item grows to its
-   content and pushes its neighbours out of the bar instead. */
-#status-agent { max-width: 220px; }
+/* The three items the reader can press. Each one is its own target, so each gets its own
+   hover: a press target that does not answer the pointer with anything but a cursor makes a
+   reader guess where one item ends and the next begins, and the gateway and the model are
+   close enough that the guess would often be wrong.
+
+   The hover cannot be a background on the item itself: `.status-item` clips its own overflow so
+   a long model name can end in an ellipsis, and a background drawn inside a clipped box stops at
+   the text rather than at the item. The tint is therefore drawn by a box-shadow, which is not
+   clipped, and the padding gives that shadow something to sit around. The negative margin takes
+   back the width the padding added, so the bar's spacing between items does not change and the
+   items do not close up around the new padding.
+
+   The colour is the accent, at the same weight as `:hover` elsewhere on the page: this is one
+   vocabulary for "pressable", not a second one invented for the bar. */
+.status-press {
+  padding: 2px 5px;
+  margin: 0 -5px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, box-shadow 0.15s;
+}
+.status-press:hover {
+  color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+/* A press reaches the bar from the keyboard too, since it is focusable: the ring is the same
+   accent so the two ways in do not look like two different things. It is drawn as an outline
+   rather than the shadow above because an outline is what the rest of the page's fields use for
+   focus, and a reader tabbing through should meet one mark for focus everywhere. */
+.status-press:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--accent);
+}
+/* The slash between the gateway and the model belongs to neither: it is a joiner, so it takes no
+   press, no hover, and the plain reading colour. Without a weight of its own it would sit in the
+   gap as if it were part of the gateway's press target. */
+.status-sep {
+  color: var(--border);
+  margin: 0 -8px;
+  user-select: none;
+}
+   a local checkpoint's path), so the model gets the larger bound and the pair still fits where
+   the old single item did. */
+#status-gateway { max-width: 140px; }
+#status-model { max-width: 180px; }
 #status-tools { max-width: 120px; }
 /* The usage reading: the count, then a hairline saying how full the window is. The number is
    what a reader glances at; the rule is the only part that can be read without reading, so it
@@ -853,6 +896,18 @@ main {
 }
 .field select:disabled { opacity: 0.55; cursor: not-allowed; }
 .field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A press in the status bar opens the sheet onto the field it named, and this is what says which
+   field that was. It is a ring rather than a colour change so the field's own text and border
+   stay as they are -- the reader is being pointed at a field, not told that it has changed. It
+   fades on its own and takes no room: a shadow is drawn outside the box, so a row that flashes
+   does not move the rows under it while the reader is about to press one. */
+.field-flash {
+  animation: field-flash 1.2s ease-out;
+}
+@keyframes field-flash {
+  0%, 40% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
 /* The agent is stated rather than chosen, so it is read as a value and not as a box. */
 .field .agent-name {
   padding: 4px 0;
@@ -896,6 +951,39 @@ main {
 }
 #settings-reset:hover { color: var(--ink); }
 #settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
+/* The way out of the gateway form, offered as the pair a form ends with: the quiet one first, the
+   one that writes second. Save is the accent's only filled shape here, so the button that changes
+   the backend is the one the eye lands on -- Cancel is the same shape unfilled, which is what makes
+   the pair read as one choice rather than two controls that happen to sit together. */
+.gateway-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gateway-button {
+  background: transparent;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.gateway-button:hover { color: var(--ink); border-color: var(--ink-light); }
+.gateway-button-primary {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+.gateway-button-primary:hover {
+  background: color-mix(in srgb, var(--accent) 82%, #000);
+  border-color: color-mix(in srgb, var(--accent) 82%, #000);
+  color: var(--paper);
+}
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;

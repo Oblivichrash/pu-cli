@@ -82,16 +82,29 @@
 
   </div>
 
-  <!-- A read-out, not a control: what the session is. It is the only place these facts live now
-       -- the column that held the usage figures is gone -- so the bar carries them at the shell's
-       own width, where nothing can move them. -->
+  <!-- A read-out that the reader can also reach into: what the session is, and the three facts in
+       it that are still theirs to change. It is the only place these facts live now -- the column
+       that held the usage figures is gone -- so the bar carries them at the shell's own width,
+       where nothing can move them.
+
+       Only the three that change are controls, and each is a control of its own: the gateway and
+       the model sit in one line but are two presses, because they are two choices, and a reader
+       who wants the other model should not have to open a sheet that also asks them about the
+       address and the temperature. A shared press target would also have to guess which half of
+       "openai / stub-model" the pointer meant. What stays read-only is what the reader never
+       chose: the connection, the tool list, and the window the last reply filled. -->
   <div id="status-bar">
     <span class="status-item">
       <span id="conn-dot" class="conn-dot" title="Connection"></span>
       <span id="conn-text">connecting</span>
     </span>
-    <span class="status-item" id="status-agent" title="The agent that answers">—</span>
-    <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
+    <span class="status-item status-press" id="status-gateway" role="button" tabindex="0"
+          title="The gateway that answers — click to change">—</span>
+    <span class="status-sep" aria-hidden="true">/</span>
+    <span class="status-item status-press" id="status-model" role="button" tabindex="0"
+          title="The model that answers — click to change">—</span>
+    <span class="status-item status-press" id="status-thinking" role="button" tabindex="0"
+          title="How much reasoning is asked for — click to change">—</span>
     <span class="status-right">
       <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
       <!-- The window the last reply filled. The fill is a hairline under the figure rather than a
@@ -106,6 +119,72 @@
     </span>
   </div>
 
+  <!-- The model, chosen where it is written. The bar already names the model in force, so pressing
+       it opens a form about that question and no other: which model answers, and how it answers --
+       a model carries settings of its own (temperature, cap, window) that the gateway's name has
+       nothing to do with, and a reader who wants to loosen the temperature is not asking to change
+       where the turn is sent. The model itself is a list when the gateway lists its catalogue and a
+       typed name when it will not, so the same field takes both: a gateway that cannot be asked
+       still lets the reader name a model, because a list that could not be read is not a list of
+       one. Like the gateway's own form, nothing here is written until Save. -->
+  <dialog id="model-dialog" aria-labelledby="model-title">
+    <form id="model-form" class="config-head">
+      <div id="model-title">Which model answers, and how</div>
+      <button type="button" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </form>
+
+    <div class="config-body">
+      <section class="config-section">
+        <div class="panel-title">Model</div>
+        <label class="field">
+          <span>Name</span>
+          <select id="md-name"></select>
+        </label>
+        <label class="field">
+          <span>Or type one</span>
+          <input id="md-name-text" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="a model this gateway serves">
+        </label>
+      </section>
+
+      <section class="config-section">
+        <div class="panel-title">How it answers</div>
+        <!-- Every box here starts from what is in force, and an empty box is a setting nobody
+             stated: a cap the file does not name is not a cap of zero, and the placeholder says
+             what the absence means rather than leaving the reader to guess. -->
+        <label class="field">
+          <span>Temperature</span>
+          <input id="md-temperature" type="number" min="0" max="2" step="0.1"
+                 placeholder="0.7">
+        </label>
+        <label class="field">
+          <span>Max tokens</span>
+          <input id="md-max-tokens" type="number" min="1" step="1" placeholder="no cap">
+        </label>
+        <label class="field">
+          <span>Top P</span>
+          <input id="md-top-p" type="number" min="0.01" max="1" step="0.01"
+                 placeholder="the gateway's own">
+        </label>
+        <label class="field">
+          <span>Seed</span>
+          <input id="md-seed" type="number" step="1" placeholder="not pinned">
+        </label>
+        <label class="field">
+          <span>Context window</span>
+          <input id="md-context-window" type="number" min="1" step="1"
+                 placeholder="whatever the model holds">
+        </label>
+        <div id="md-error" class="backend-error" hidden></div>
+      </section>
+
+      <div class="gateway-actions">
+        <button id="md-cancel" type="button" class="gateway-button">Cancel</button>
+        <button id="md-save" type="button" class="gateway-button gateway-button-primary">Save</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Everything the reader writes rather than reads, in one place. It is a dialog rather than
        three panels in the column because these are one act -- pick what answers, then adjust
        how it answers -- and the column had them separated by the usage figures, which are the
@@ -118,39 +197,16 @@
     </form>
 
     <div class="config-body">
-      <!-- The agent itself, stated rather than chosen: it is fixed by its file, and a page that
-           offered to change it would be offering something no route accepts. -->
+      <!-- The agent is stated rather than chosen: it is fixed by its file, and a page that
+           offered to change it would be offering something no route accepts. Where the backend
+           answers is not here: the gateway, the address and the model are one decision made in
+           one place, and that place is the bar, where the answer is already written. -->
       <section class="config-section">
         <div class="panel-title">Agent</div>
         <label class="field">
           <span>Name</span>
           <span id="config-agent-name" class="agent-name">—</span>
         </label>
-      </section>
-
-      <!-- The backend is the one thing here the operator still chooses: which gateway, model and
-           address answer is a runtime decision written back to the agent's file. The model list is
-           asked of the gateway, so a gateway that cannot be asked leaves a text field instead of a
-           stale menu. The address is typed rather than picked because only the gateway's table
-           knows its default, and a reader pointing at a local port names something that table has
-           never heard of. -->
-      <section class="config-section">
-        <div class="panel-title">Backend</div>
-        <label class="field">
-          <span>Gateway</span>
-          <select id="kb-type"></select>
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <select id="kb-model"></select>
-          <input id="kb-model-text" type="text" hidden>
-        </label>
-        <label class="field">
-          <span>Host</span>
-          <input id="kb-host" type="text" spellcheck="false" autocomplete="off"
-                 placeholder="the gateway's own address">
-        </label>
-        <div id="kb-error" class="backend-error" hidden></div>
       </section>
 
       <section class="config-section">
@@ -168,6 +224,41 @@
         <div class="panel-title">Tools</div>
         <ul id="panel-tools" class="tool-list"></ul>
       </section>
+    </div>
+  </dialog>
+
+  <!-- Where the conversation is sent, on its own rather than inside the settings sheet: a reader
+       presses the gateway in the bar to change where the turn goes, and that is one act with three
+       parts -- which gateway, what address, which model -- that the sheet would have buried under
+       the temperature and the tool list. A form also lets the one thing the old inline control
+       could not do: hold a half-typed address without posting it, and take it back if the reader
+       changes their mind. Nothing is written until Save. -->
+  <dialog id="gateway-dialog" aria-labelledby="gateway-title">
+    <form id="gateway-form" class="config-head">
+      <div id="gateway-title">Where the conversation goes</div>
+      <button type="button" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </form>
+
+    <div class="config-body">
+      <section class="config-section">
+        <div class="panel-title">Backend</div>
+        <!-- The gateway first, because the other two belong to it: the model list is the
+             gateway's, and an address typed here is read by the gateway it names. -->
+        <label class="field">
+          <span>Gateway</span>
+          <select id="gw-type"></select>
+        </label>
+        <label class="field">
+          <span>Address</span>
+          <input id="gw-host" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="leave blank to use the gateway's own">
+        </label>
+        <div id="gw-error" class="backend-error" hidden></div>
+      </section>
+      <div class="gateway-actions">
+        <button id="gw-cancel" type="button" class="gateway-button">Cancel</button>
+        <button id="gw-save" type="button" class="gateway-button gateway-button-primary">Save</button>
+      </div>
     </div>
   </dialog>
 </div>
@@ -190,6 +281,7 @@
 <script src="session.js"></script>
 <script src="composer.js"></script>
 <script src="config.js"></script>
+<script src="gateway.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

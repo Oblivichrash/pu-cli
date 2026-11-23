@@ -4,7 +4,7 @@
 
 "use strict";
 
-const BACKEND_FIELDS = { type: "kb-type", model: "kb-model", host: "kb-host" };
+const BACKEND_FIELDS = { type: "gw-type", host: "gw-host" };
 
 function setText(id, text) {
   const el = document.getElementById(id);
@@ -28,12 +28,12 @@ function setHostValue(host) {
   if (document.activeElement !== el) el.value = host || "";
 }
 
-// The menus hold what the build carries and what the gateway serves; a label says which one is in
-// force and never grows the list.
+// The form holds what the build carries; a label says which one is in force and never grows the
+// list. The model is no longer drawn into a control here -- it is chosen from the bar -- so this
+// only has to keep the reading of it in step with the server's answer.
 function setBackendLabel(gateway, model, host) {
   if (gateway) PU.gatewayShown = gateway;
-  const typeSelect = setSelectValue(BACKEND_FIELDS.type, PU.gatewayShown);
-  if (model) setSelectValue(BACKEND_FIELDS.model, model);
+  setSelectValue(BACKEND_FIELDS.type, PU.gatewayShown);
   // An absent host is a drawn fact, not a skipped one: the field shows the gateway's default when
   // the server answers with no address, so the reader can see what would be written if they typed
   // over it. `undefined` is a caller with nothing to say; `""` is the server saying so.
@@ -48,8 +48,9 @@ function setBackendLabel(gateway, model, host) {
   renderContextBar();
 }
 
-// "gateway / model", the two facts a reader checks between turns. The bar and the dialog both draw
-// it, so it is one string rather than two that could disagree.
+// "gateway / model", the two facts a reader checks between turns. Kept as one string for the
+// places that want them together -- a system message, a tooltip -- but the bar draws the two
+// halves into their own elements so each can be pressed on its own.
 function backendSummary() {
   const gateway = PU.gatewayShown || "";
   const model = PU.backendModelShown || "";
@@ -58,9 +59,13 @@ function backendSummary() {
 
 // The bar repeats what the dialog holds, in one line.
 function renderStatusBar() {
-  // The agent is fixed by its file, so the bar names the backend that answers instead: which
-  // gateway and model reply is the only part of this a reader can still change.
-  setText("status-agent", backendSummary());
+  // The gateway and the model are drawn apart because they are two choices, not one: a reader
+  // who wants the other model has no reason to be shown the address and the temperature, and a
+  // shared target would have to guess which half of "openai / stub-model" was pressed. Each takes
+  // a dash rather than being emptied when there is nothing to say, so the bar keeps its shape
+  // through the first render.
+  setText("status-gateway", PU.gatewayShown || "");
+  setText("status-model", PU.backendModelShown || "");
   // The agent's own name is stated in the dialog rather than chosen, so it is read once per
   // render from what the session reported.
   setText("config-agent-name", PU.agentShown || "");

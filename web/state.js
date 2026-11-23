@@ -70,6 +70,16 @@ const PU = {
   gatewayShown: "",
   backendModelShown: "",
   backendHostShown: "",
+  // The sampling settings in force, as `/api/backend` states them. A `null` member is a setting
+  // nobody named, which is not zero: the model form draws it as an empty box, and clearing a box
+  // sends the null back rather than a number invented here.
+  backendParamsShown: {
+    temperature: null,
+    max_tokens: null,
+    top_p: null,
+    seed: null,
+    context_window: null,
+  },
   // The agent that answers, as `/api/session` names it. It is stated in the configuration dialog
   // rather than chosen, so it is kept here only so the dialog can print it.
   agentShown: "",
@@ -93,8 +103,6 @@ const PU = {
     sendBtn: null,
     messagesEl: null,
     gatewaySelect: null,
-    modelSelect: null,
-    modelText: null,
     // The settings the server offered, as it last reported them: the rows are drawn from this
     // and the status bar reads it, so a setting added on the server needs no change here.
     settings: [],

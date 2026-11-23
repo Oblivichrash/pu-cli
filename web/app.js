@@ -9,47 +9,19 @@ PU.announce = showNotice;
 PU.composer.messagesEl = document.getElementById("messages");
 PU.composer.inputEl = document.getElementById("input");
 PU.composer.sendBtn = document.getElementById("send");
-PU.composer.gatewaySelect = document.getElementById("kb-type");
-PU.composer.modelSelect = document.getElementById("kb-model");
-PU.composer.modelText = document.getElementById("kb-model-text");
-PU.composer.hostInput = document.getElementById("kb-host");
+PU.composer.gatewaySelect = document.getElementById("gw-type");
+PU.composer.hostInput = document.getElementById("gw-host");
 PU.composer.settingsRows = document.getElementById("settings-rows");
 PU.composer.settingsReset = document.getElementById("settings-reset");
 
 PU.composer.settingsReset.addEventListener("click", resetSettings);
-// Opening the menu asks what the gateway serves, rather than having been told once at start:
-// the catalogue belongs to the gateway, and only the one being looked at is worth a request.
-// The dialog asks as well when it opens, since a reader who changes the gateway there must find
-// the new one's models already listed in the menu beside it.
-PU.composer.modelSelect.addEventListener("pointerdown", () => loadModelsFor(PU.composer.gatewaySelect.value));
+// Nothing in this form writes until Save. The controls hold an intention, not a change: a reader
+// who tries three gateways looking for the one they meant should not have switched the backend
+// three times, and an address half typed is not an address to send. A gateway switch is therefore
+// only drawn here; the model, which is the other half of the same decision, is chosen from the bar
+// once the gateway is in force.
 PU.composer.gatewaySelect.addEventListener("change", () => {
-  // The model menu belongs to the gateway: switching empties it and asks the new one, so the
-  // names offered are the ones that gateway serves.
-  const gateway = PU.composer.gatewaySelect.value;
-  loadModelsFor(gateway);
-  chooseBackend(gateway, null);
-});
-PU.composer.modelSelect.addEventListener("change", () => chooseBackend(PU.composer.gatewaySelect.value, PU.composer.modelSelect.value));
-// A gateway that lists no models -- a key that is not set, a host that is down -- leaves the
-// model as typed text. The text is committed on Enter, not on every key, so a half-typed name
-// is never sent.
-PU.composer.modelText.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter") return;
-  e.preventDefault();
-  chooseBackend(PU.composer.gatewaySelect.value, PU.composer.modelText.value.trim());
-});
-// The address is committed the same way and for the same reason: a host typed one character at a
-// time would reload the backend on every keystroke, and the first characters of an address are
-// never an address. Enter, or leaving the field with a value that differs from the one in force,
-// asks once. Emptying it is a real request too -- it means the gateway's own default -- so the
-// comparison is against what was last drawn rather than against non-empty.
-PU.composer.hostInput.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter") return;
-  e.preventDefault();
-  commitHost();
-});
-PU.composer.hostInput.addEventListener("blur", () => {
-  if (PU.composer.hostInput.value.trim() !== (PU.backendHostShown || "")) commitHost();
+  loadModelsFor(PU.composer.gatewaySelect.value);
 });
 PU.composer.sendBtn.addEventListener("click", sendMessage);
 
