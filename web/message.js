@@ -145,20 +145,34 @@ function createMessage(role, blocks, turn, text, usage) {
     el.dataset.text = text || "";
   }
 
-  // A menu behind the right button is a thing nobody is told about, and the only way to find one
-  // is to try. This is the telling. It goes on the bubble's top edge rather than on a line of its
-  // own, because a line would make every turn taller to carry a reminder: the note is positioned
-  // over the paper, so nothing moves when it appears and nothing moved to make room.
-  // It is text rather than a mark because the sentence is the point: a glyph would have to be
-  // learned, which is the problem it is meant to solve.
-  // Only messages the menu will open for get one. A system remark and an error have nothing to
-  // offer, and a hint of options that never arrive would be worse than no hint at all.
+  // A press on a message is the whole vocabulary now: your own turn opens for editing, and a
+  // reply is copied as it stands. There is no menu and no note saying one exists -- an
+  // affordance a reader has to be told about is a second gesture they have to learn, and a
+  // pointer already knows what pressing a thing does.
+  // A press that lands on a link, a control, or a tool card is that thing's press, not the
+  // message's: the block types listed here hold their own buttons and their own selectable
+  // output, and taking their clicks would make them unopenable. A press that ends a text
+  // selection is likewise the reader's, not the message's.
   if (role === "user" || role === "assistant") {
-    const hint = document.createElement("span");
-    hint.className = "msg-hint";
-    hint.textContent = "right-click for options";
-    hint.setAttribute("aria-hidden", "true");
-    bubble.appendChild(hint);
+    bubble.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking")) return;
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim()) return;
+      if (role === "user") {
+        beginEdit(el, event);
+        return;
+      }
+      const text = messageText(blocksOf(el));
+      if (!text) {
+        createSystemMessage("There is no text in this message to copy.");
+        return;
+      }
+      copyMessage(text);
+    });
+    // A message that acts on a press says so to a pointer, and to a screen reader that cannot
+    // make one it says what the press is for.
+    bubble.style.cursor = "pointer";
+    bubble.setAttribute("title", role === "user" ? "Click to edit" : "Click to copy");
   }
 
   // Read the position before the append, because the append itself moves the content
