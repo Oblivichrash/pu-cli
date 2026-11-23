@@ -210,16 +210,32 @@ main {
    under it, which is the cost and the controls. The message itself draws neither, so the two
    are free to be shaped differently -- which is the point of putting the line outside. */
 .msg {
-  border-radius: 2px;
   line-height: 1.65;
   font-size: 15px;
   word-break: break-word;
 }
 /* The paper: the tint, the frame and the room around the words. This is the only part of a
-   message that looks like something was said. */
+   message that looks like something was said.
+
+   The corner is 6px, not the 2px the rest of the page uses. Every other 2px corner here is on
+   a control or a rule -- a field, a menu row, a scrollbar thumb -- where the radius exists to
+   take the burr off a hard corner and nothing more. A bubble is a surface with a tint and a
+   frame, and at 2px the tint's corners read as square: the frame is what carries the eye round
+   the shape, so a radius under about half the padding looks like a rounded border on a
+   rectangle rather than a rounded rectangle. 6px is under the 8-10px a chat surface usually
+   takes, deliberately: a larger radius at this width pulls the corners away from the first and
+   last word of a short line, and this page's messages are short and set in one column.
+
+   The room is 14px top and bottom against 24.75px of line height. A line box carries its own
+   leading, so the padding is not what the eye reads as the gap -- half the leading above the
+   cap height is, which is about 5px here. 12px + 5px read as tight for a tinted surface, where
+   the tint is the gap; 14px + 5px is the even inset that a tinted box needs, and it is what a
+   filled surface takes rather than what a hairline one takes. The sides stay at 18px: a line of
+   text needs more room from its sides than from its top, because the corner curve eats into
+   them and because a ragged right edge runs furthest from the frame. */
 .msg-bubble {
-  padding: 12px 18px;
-  border-radius: 2px;
+  padding: 14px 18px;
+  border-radius: 6px;
   border: 1px solid transparent;
 }
 /* A message says what may be done with it only when a reader is on it: a menu behind the right
@@ -282,7 +298,7 @@ main {
   align-self: stretch;
 }
 .msg.error .msg-bubble {
-  padding: 12px 18px;
+  padding: 14px 18px;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
