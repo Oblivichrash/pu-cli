@@ -226,15 +226,14 @@ main {
    takes, deliberately: a larger radius at this width pulls the corners away from the first and
    last word of a short line, and this page's messages are short and set in one column.
 
-   The room is 14px top and bottom against 24.75px of line height. A line box carries its own
+   The room is 10px top and bottom against 24.75px of line height. A line box carries its own
    leading, so the padding is not what the eye reads as the gap -- half the leading above the
-   cap height is, which is about 5px here. 12px + 5px read as tight for a tinted surface, where
-   the tint is the gap; 14px + 5px is the even inset that a tinted box needs, and it is what a
-   filled surface takes rather than what a hairline one takes. The sides stay at 18px: a line of
-   text needs more room from its sides than from its top, because the corner curve eats into
-   them and because a ragged right edge runs furthest from the frame. */
+   cap height is, which is about 5px here, so the gap the eye sees is 15px. The sides are 14px
+   because with the bubble hugging its text rather than filling the column, the side padding is
+   the whole of the space between the first letter and the frame; at 18px a one-word turn
+   floated in a wide tint with nothing to say why. */
 .msg-bubble {
-  padding: 14px 18px;
+  padding: 10px 14px;
   border-radius: 6px;
   border: 1px solid transparent;
 }
@@ -280,11 +279,26 @@ main {
     display: none;
   }
 }
+/* A message takes the width of what it says, not the width of the column. A turn that fills the
+   column draws a tinted band 900px wide behind two words, and the empty right of it is not
+   space the reader can use -- it is the tint telling them the message is longer than it is.
+   Hugging the text makes the shape of the turn say how much was said.
+   The cap is the column, so a long reply wraps where it always did rather than running past the
+   edge; `min-width: 0` is what lets the flex item shrink below its text instead of overflowing.
+   The two sides are told apart by where they sit as well as by tint: the user's turn goes to
+   the right edge, because it is the one asking, and the reply stays at the left margin it was
+   read from. With a bubble that hugs its text the two colours alone are too close to carry it
+   -- a two-word question and a two-word answer are both small pale rectangles. */
 .msg.user {
-  align-self: stretch;
+  align-self: flex-end;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
 }
 .msg.assistant {
-  align-self: stretch;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
 }
 .msg.user .msg-bubble {
   background: var(--user-bg);
@@ -295,10 +309,11 @@ main {
   border-color: var(--border);
 }
 .msg.error {
-  align-self: stretch;
+  align-self: flex-start;
+  max-width: 100%;
 }
 .msg.error .msg-bubble {
-  padding: 14px 18px;
+  padding: 10px 14px;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
