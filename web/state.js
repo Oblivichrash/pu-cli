@@ -77,6 +77,9 @@ const PU = {
   gatewayShown: "",
   backendModelShown: "",
   backendHostShown: "",
+  // The agent that answers, as `/api/session` names it. It is stated in the configuration dialog
+  // rather than chosen, so it is kept here only so the dialog can print it.
+  agentShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
   contextShown: "",
   // The prompt of the last turn, kept so the bar can be redrawn when the window arrives late:

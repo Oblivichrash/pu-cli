@@ -57,17 +57,6 @@
 
     <aside id="sidebar">
       <div class="panel">
-        <div class="panel-title">Session</div>
-        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
-             there appears here without this file changing. How much reasoning to ask for is a
-             row like any other now. -->
-        <div id="settings-rows"></div>
-        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
-          Reset to the agent's configuration
-        </button>
-      </div>
-
-      <div class="panel">
         <div class="panel-title">Usage</div>
         <div id="context-usage" title="How much context the last reply ran against"></div>
         <div class="context-bar"><div id="context-fill"></div></div>
@@ -76,29 +65,16 @@
       </div>
 
       <div class="panel">
-        <div class="panel-title">Backend</div>
-        <!-- The backend is the one thing on this page the operator still chooses: the agent is
-             fixed by its file, but which gateway and model answer is a runtime decision that is
-             written back to that file. The model list is asked of the gateway, so a gateway that
-             cannot be asked leaves a text field here instead of a stale menu. -->
-        <label class="field">
-          <span>Gateway</span>
-          <select id="kb-type"></select>
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <select id="kb-model"></select>
-          <input id="kb-model-text" type="text" hidden>
-        </label>
-        <dl class="kv"><dt>Host</dt><dd id="kb-host">—</dd></dl>
-        <div id="kb-error" class="backend-error" hidden></div>
+        <!-- The column is for what the reader watches; everything that is chosen lives in the
+             dialog behind this button. The gateway and the model are repeated here as text
+             because they are the two facts a reader checks between turns, and opening a dialog
+             to read them would be the cost of a control nobody is using. -->
+        <div class="panel-title">Configuration</div>
+        <div id="summary-backend" class="summary-line" title="The gateway and model that answer">—</div>
+        <button id="config-open" type="button" title="Choose the backend and this session's settings">
+          Configure agent…
+        </button>
       </div>
-
-      <div class="panel">
-        <div class="panel-title">Tools</div>
-        <ul id="panel-tools" class="tool-list"></ul>
-      </div>
-
     </aside>
 
   </div>
@@ -123,6 +99,65 @@
     </span>
   </div>
 
+  <!-- Everything the reader writes rather than reads, in one place. It is a dialog rather than
+       three panels in the column because these are one act -- pick what answers, then adjust
+       how it answers -- and the column had them separated by the usage figures, which are the
+       opposite kind of thing. A native dialog also brings the focus trap and the Escape key,
+       which a hand-rolled overlay gets wrong in a page that already binds Escape elsewhere. -->
+  <dialog id="config-dialog" aria-labelledby="config-title">
+    <form method="dialog" class="config-head">
+      <div id="config-title">Agent configuration</div>
+      <button type="submit" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </form>
+
+    <div class="config-body">
+      <!-- The agent itself, stated rather than chosen: it is fixed by its file, and a page that
+           offered to change it would be offering something no route accepts. -->
+      <section class="config-section">
+        <div class="panel-title">Agent</div>
+        <label class="field">
+          <span>Name</span>
+          <span id="config-agent-name" class="agent-name">—</span>
+        </label>
+      </section>
+
+      <!-- The backend is the one thing here the operator still chooses: which gateway and model
+           answer is a runtime decision written back to the agent's file. The model list is asked
+           of the gateway, so a gateway that cannot be asked leaves a text field instead of a
+           stale menu. -->
+      <section class="config-section">
+        <div class="panel-title">Backend</div>
+        <label class="field">
+          <span>Gateway</span>
+          <select id="kb-type"></select>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="kb-model"></select>
+          <input id="kb-model-text" type="text" hidden>
+        </label>
+        <dl class="kv"><dt>Host</dt><dd id="kb-host">—</dd></dl>
+        <div id="kb-error" class="backend-error" hidden></div>
+      </section>
+
+      <section class="config-section">
+        <div class="panel-title">Session settings</div>
+        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
+             there appears here without this file changing. How much reasoning to ask for is a
+             row like any other. -->
+        <div id="settings-rows"></div>
+        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
+          Reset to the agent's configuration
+        </button>
+      </section>
+
+      <section class="config-section">
+        <div class="panel-title">Tools</div>
+        <ul id="panel-tools" class="tool-list"></ul>
+      </section>
+    </div>
+  </dialog>
+
   <div id="scrim" hidden></div>
 </div>
 
@@ -145,6 +180,7 @@
 <script src="ws.js"></script>
 <script src="session.js"></script>
 <script src="composer.js"></script>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

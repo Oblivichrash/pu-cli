@@ -35,14 +35,27 @@ function setBackendLabel(gateway, model, host) {
   renderContextBar();
 }
 
+// "gateway / model", the two facts a reader checks between turns. It is drawn in two places --
+// the bar and the column -- and they must not disagree, so they are one string.
+function backendSummary() {
+  const gateway = PU.gatewayShown || "";
+  const model = PU.backendModelShown || "";
+  return gateway && model ? gateway + " / " + model : (gateway || model);
+}
+
 // The bar repeats what the panel holds, in one line, because the panel folds and the
 // session's own facts do not change when it does.
 function renderStatusBar() {
   // The agent is fixed by its file, so the bar names the backend that answers instead: which
   // gateway and model reply is the only part of this a reader can still change.
-  const gateway = PU.gatewayShown || "";
-  const model = PU.backendModelShown || "";
-  setText("status-agent", gateway && model ? gateway + " / " + model : (gateway || model));
+  const summary = backendSummary();
+  setText("status-agent", summary);
+  // The column carries the same line beside the button that opens the dialog, so the reader can
+  // see what is configured without opening it.
+  setText("summary-backend", summary);
+  // The agent's own name is stated in the dialog rather than chosen, so it is read once per
+  // render from what the session reported.
+  setText("config-agent-name", PU.agentShown || "");
 
   // What the server last said about thinking, rather than what a control holds: a setting an
   // older page does not draw is still a fact about the session.

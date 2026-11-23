@@ -16,8 +16,10 @@ PU.composer.settingsRows = document.getElementById("settings-rows");
 PU.composer.settingsReset = document.getElementById("settings-reset");
 
 PU.composer.settingsReset.addEventListener("click", resetSettings);
-// Opening a menu asks what the gateway serves, rather than having been told once at start:
+// Opening the menu asks what the gateway serves, rather than having been told once at start:
 // the catalogue belongs to the gateway, and only the one being looked at is worth a request.
+// The dialog asks as well when it opens, since a reader who changes the gateway there must find
+// the new one's models already listed in the menu beside it.
 PU.composer.modelSelect.addEventListener("pointerdown", () => loadModelsFor(PU.composer.gatewaySelect.value));
 PU.composer.gatewaySelect.addEventListener("change", () => {
   // The model menu belongs to the gateway: switching empties it and asks the new one, so the
