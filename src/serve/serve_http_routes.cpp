@@ -400,6 +400,30 @@ boost::json::value HandleApiModels(Call& call, const boost::json::value&) {
   };
 }
 
+// A host is a destination, so it has to name a scheme and a host and nothing else. `${VAR}` is
+// allowed as it stands -- the file is where a variable is expanded, and a page that resolved it
+// here would write this run's key into the agent file -- but the rest is checked now rather than
+// at the first turn, because an address that cannot work is a mistake to answer at the press
+// that made it.
+std::string HostFromBody(const boost::json::value& body) {
+  if (!json::HasKey(body, "host")) return {};
+  const boost::json::value& raw = body.at("host");
+  if (raw.is_null()) return {};
+  if (!raw.is_string()) throw RequestRefused("'host' must be a string");
+  const std::string host = boost::json::value_to<std::string>(raw);
+  if (host.empty()) return {};
+  // A placeholder is left whole: it is not an address yet, and parsing it as one would refuse the
+  // only spelling that lets a file name an environment rather than a literal.
+  if (host.find("${") != std::string::npos) return host;
+  if (host.find_first_of(" \t\r\n") != std::string::npos) {
+    throw RequestRefused("'host' must not contain spaces");
+  }
+  if (host.rfind("http://", 0) != 0 && host.rfind("https://", 0) != 0) {
+    throw RequestRefused("'host' must start with http:// or https://");
+  }
+  return host;
+}
+
 boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& body) {
   const std::string gateway = json::ValueOrDefault<std::string>(body, "gateway", "");
   const std::string model = json::ValueOrDefault<std::string>(body, "model", "");
@@ -407,8 +431,21 @@ boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& bod
   if (model.empty()) throw RequestRefused("Missing 'model'");
   const std::optional<model::GatewayId> id = model::ParseGatewayId(gateway);
   if (!id) throw RequestRefused("Unknown gateway: " + gateway);
+  // Absent and empty both mean "no address of its own", which is how the page asks for the
+  // gateway's default back.
+  const std::string host = HostFromBody(body);
   model::Backend next = call.runtime.CurrentBackend();
-  if (next.gateway != *id) next.host = model::DefaultHostFor(*id);
+  if (next.gateway != *id) {
+    // The old gateway's address means nothing to a new one: a menu that swapped the scheme and
+    // kept the address would point the new gateway at the old one's port.
+    next.host = host.empty() ? model::DefaultHostFor(*id) : host;
+  } else if (!host.empty()) {
+    next.host = host;
+  } else if (json::HasKey(body, "host")) {
+    // An explicit empty host on the gateway already in force is the reader asking for the default
+    // back, not a request that forgot the field.
+    next.host = model::DefaultHostFor(*id);
+  }
   next.gateway = *id;
   next.model = model;
   call.runtime.SwitchBackend(next);
@@ -484,8 +521,13 @@ constexpr Route kRoutes[] = {
     {"/api/history", http::verb::get, &HandleApiHistory, "messages", Audience::kAnyone, 200, false},
     // The page reads one agent's backend, and writes it back when a choice is made there. Both
     // go through /api/backend: nothing on the page enumerates agents, because there is one.
+    //
+    // A write has to read its body on both of its rows. The two rows differ only in the envelope
+    // -- the first answers under `backend`, the second as a bare object -- but the dispatcher
+    // takes the first match, so a first row that did not read the body would hand the handler an
+    // empty one and answer "Missing 'gateway'" to every write.
     {"/api/backend", http::verb::get, &HandleApiBackend, "backend", Audience::kAnyone, 200, false},
-    {"/api/backend", http::verb::post, &HandleApiSetBackend, "backend", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::post, &HandleApiSetBackend, "backend", Audience::kAnyone, 200, true},
     {"/api/backend", http::verb::get, &HandleApiBackend, "", Audience::kAnyone, 200, false},
     {"/api/backend", http::verb::post, &HandleApiSetBackend, "", Audience::kAnyone, 200, true},
     {"/api/gateways", http::verb::get, &HandleApiGateways, "", Audience::kAnyone, 200, false},

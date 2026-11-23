@@ -12,6 +12,7 @@ PU.composer.sendBtn = document.getElementById("send");
 PU.composer.gatewaySelect = document.getElementById("kb-type");
 PU.composer.modelSelect = document.getElementById("kb-model");
 PU.composer.modelText = document.getElementById("kb-model-text");
+PU.composer.hostInput = document.getElementById("kb-host");
 PU.composer.settingsRows = document.getElementById("settings-rows");
 PU.composer.settingsReset = document.getElementById("settings-reset");
 
@@ -36,6 +37,19 @@ PU.composer.modelText.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   chooseBackend(PU.composer.gatewaySelect.value, PU.composer.modelText.value.trim());
+});
+// The address is committed the same way and for the same reason: a host typed one character at a
+// time would reload the backend on every keystroke, and the first characters of an address are
+// never an address. Enter, or leaving the field with a value that differs from the one in force,
+// asks once. Emptying it is a real request too -- it means the gateway's own default -- so the
+// comparison is against what was last drawn rather than against non-empty.
+PU.composer.hostInput.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  commitHost();
+});
+PU.composer.hostInput.addEventListener("blur", () => {
+  if (PU.composer.hostInput.value.trim() !== (PU.backendHostShown || "")) commitHost();
 });
 PU.composer.sendBtn.addEventListener("click", sendMessage);
 

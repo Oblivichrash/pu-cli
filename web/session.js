@@ -290,7 +290,9 @@ function renderBackendChoices(gateway, gateways, model, models, modelError, host
   renderGateways(gateways, gateway);
   if (model) PU.backendModelShown = model;
   renderModels(models, model, modelError);
-  setBackendLabel(gateway, null, host);
+  // `host` is forwarded even when the answer carried none: an empty address is the server saying
+  // the gateway's default applies, which is a value the field has to show rather than keep.
+  setBackendLabel(gateway, null, host === undefined ? "" : host);
 }
 
 function setBackendError(message) {
@@ -308,7 +310,11 @@ function setBackendError(message) {
 // serves, so a name carried over from the old gateway is replaced by one the new gateway lists.
 // A gateway that lists nothing -- no key, host down -- keeps the typed name, because a list that
 // could not be fetched is not a list of one.
-async function chooseBackend(gateway, model) {
+//
+// `host` is only sent when the caller names one. An address belongs to the gateway it was typed
+// for, so a switch to a different gateway posts none and takes whatever that gateway's table
+// says; the address on screen is the old gateway's and means nothing to the new one.
+async function chooseBackend(gateway, model, host) {
   if (!gateway) return;
   const sent = gateway;
   const served = await loadModelsFor(sent);
@@ -322,23 +328,44 @@ async function chooseBackend(gateway, model) {
     setBackendError("Pick a model for this gateway.");
     return;
   }
+  const payload = { gateway: sent, model: chosen };
+  // Present and empty is the reader asking for the gateway's default back, which is not the same
+  // request as not mentioning the address at all.
+  if (host !== undefined) payload.host = host;
+  let failure = "";
   try {
-    const data = await fetchJson("/api/backend", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gateway: sent, model: chosen }),
-    });
-    if (!data.success) {
-      setBackendError(data.error || "The backend could not be changed");
-      await loadBackends();
-      return;
-    }
-    setBackendError("");
-    await loadBackends();
+    const data = await postJson("/api/backend", payload);
+    if (!data.success) failure = data.error || "The backend could not be changed";
   } catch (e) {
-    setBackendError(`The backend could not be changed: ${e.message}`);
-    await loadBackends();
+    // A refusal is the server's answer, and the message is the whole of what the reader needs:
+    // the status and the body carry no more than the error string already says.
+    failure = (e && e.body && e.body.error) || `The backend could not be changed: ${e.message}`;
   }
+  // Redrawn first and reported second: the redraw is what puts the fields back in agreement with
+  // the server, and a message written before it would be a message the redraw then erased. On
+  // success the fields are the server's answer, so nothing is left to say.
+  await loadBackends();
+  setBackendError(failure);
+  if (!failure) {
+    // The field the reader is still in shows what was accepted rather than what was typed: an
+    // emptied field is a request for the default, and leaving the box blank would leave the
+    // reader without the address that is now in force.
+    const { hostInput } = PU.composer;
+    if (hostInput && document.activeElement === hostInput) hostInput.value = PU.backendHostShown || "";
+  }
+}
+
+// The address alone, on the model already in force. It is a backend write like any other, so it
+// goes through the same route and is redrawn from the reply: a host the server refuses comes back
+// with a reason, and one it accepts comes back in the shape the next read will answer with.
+function commitHost() {
+  const { gatewaySelect, hostInput } = PU.composer;
+  if (!gatewaySelect || !hostInput) return;
+  const gateway = gatewaySelect.value;
+  const host = hostInput.value.trim();
+  const model = PU.backendModelShown || "";
+  if (!gateway || !model) return;
+  chooseBackend(gateway, model, host);
 }
 
 // Editing a turn of yours puts its words in the composer and leaves the bubble alone.

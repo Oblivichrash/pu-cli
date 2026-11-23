@@ -643,13 +643,23 @@ void Runtime::SwitchBackend(const model::Backend& backend) {
     entries.push_back(entry->name == switched.name ? switched : *entry);
   }
   agent_manager_->LoadAgentConfigs(entries);
-  Activate(switched);
+
+  // The index is what `ConfiguredBackend` reads through `spec.agent_name`, so the new entry is
+  // already reachable and no re-activation is needed to make it so. Calling `Activate` here would
+  // rebuild the toolbox on every address edit -- reconnecting every MCP server and re-registering
+  // every builtin -- for a change that touches one string, and it would do it before a session
+  // exists, where the toolbox has nothing to rebuild from.
 
   // The file follows, so the choice outlives the process: a session remembers which agent is
   // speaking, and the file remembers what it speaks through. A file that cannot be written
   // leaves the switch in memory only for this run, and says so rather than pretending.
+  //
+  // The host goes with them. A value spelled `${VAR}` is written back as spelled, and `""` is
+  // written as the absence of the key, so emptying the field in the page restores the gateway's
+  // own default rather than pinning an address that resolves to nothing.
   try {
-    config::UpdateAgentBackend(config_path_, model::GatewayName(backend.gateway), backend.model);
+    config::UpdateAgentBackend(config_path_, model::GatewayName(backend.gateway), backend.model,
+                               backend.host);
   } catch (const std::exception& e) {
     spdlog::error("Backend switched for this run only: {}", e.what());
   }

@@ -113,10 +113,12 @@
         </label>
       </section>
 
-      <!-- The backend is the one thing here the operator still chooses: which gateway and model
-           answer is a runtime decision written back to the agent's file. The model list is asked
-           of the gateway, so a gateway that cannot be asked leaves a text field instead of a
-           stale menu. -->
+      <!-- The backend is the one thing here the operator still chooses: which gateway, model and
+           address answer is a runtime decision written back to the agent's file. The model list is
+           asked of the gateway, so a gateway that cannot be asked leaves a text field instead of a
+           stale menu. The address is typed rather than picked because only the gateway's table
+           knows its default, and a reader pointing at a local port names something that table has
+           never heard of. -->
       <section class="config-section">
         <div class="panel-title">Backend</div>
         <label class="field">
@@ -128,7 +130,11 @@
           <select id="kb-model"></select>
           <input id="kb-model-text" type="text" hidden>
         </label>
-        <dl class="kv"><dt>Host</dt><dd id="kb-host">—</dd></dl>
+        <label class="field">
+          <span>Host</span>
+          <input id="kb-host" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="the gateway's own address">
+        </label>
         <div id="kb-error" class="backend-error" hidden></div>
       </section>
 

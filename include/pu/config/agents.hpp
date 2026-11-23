@@ -69,18 +69,22 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
 
 std::string FindConfigPath();
 
-// Points the one agent this file describes at another gateway and model, in place, and leaves
-// every other key byte-for-byte as written. It edits the file's own text rather than re-rendering
-// a parsed entry: a parsed backend holds the expanded `api_key`, so writing that back would move
-// a secret out of the environment and into the file, and an unset optional field would be
-// written back as its default. Only `gateway` and `model` change; `host` follows the gateway's
-// default only when the file named none, so a host typed by hand survives a model change.
+// Points the one agent this file describes at another gateway, model and host, in place, and
+// leaves every other key byte-for-byte as written. It edits the file's own text rather than
+// re-rendering a parsed entry: a parsed backend holds the expanded `api_key`, so writing that
+// back would move a secret out of the environment and into the file, and an unset optional field
+// would be written back as its default. Only `gateway`, `model` and `host` change.
+//
+// `host` is written as given and is never expanded, so a value spelled `${VAR}` stays four
+// characters and a variable sign rather than becoming this run's address; the next load is where
+// it is read. An empty `host` removes the key, which is what makes the gateway's own default
+// apply again -- writing "" would pin an address that resolves to nothing.
 //
 // The write is atomic: the new text goes to a sibling temporary file, is parsed back to prove it
 // is still one agent file, and only then replaces the original. A failure leaves the file as it
 // was and throws.
 void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
-                        const std::string& model_name);
+                        const std::string& model_name, const std::string& host);
 
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.

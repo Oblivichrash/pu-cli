@@ -56,7 +56,7 @@ wizard are the same shape.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `gateway` | — | Required. One of the rows in [providers.md](providers.md#which-provider-a-request-reaches); a missing or unknown name is refused rather than defaulted, so a backend never reaches a host its author did not choose |
-| `host` | per gateway | Base URL; omitted, it falls back to the gateway's own `default_host`, which the load error and [providers.md](providers.md) both answer |
+| `host` | per gateway | Base URL; omitted, it falls back to the gateway's own `default_host`, which the load error and [providers.md](providers.md) both answer. Editable from the Web page's configure dialog, which writes this key back as typed: `${VAR}` is kept as spelled rather than expanded, and an empty field restores the default rather than pinning an empty address |
 | `model` | — | Required |
 | `api_key` | unset | Sent as `Authorization: Bearer` when set |
 | `temperature` | `0.7` | |

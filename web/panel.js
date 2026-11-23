@@ -20,15 +20,30 @@ function setSelectValue(id, value) {
   return el;
 }
 
+// The address is a field the reader types in, so drawing it is not the same act as drawing a
+// menu: a value arriving while the reader has the field in hand must not overwrite what they are
+// typing. Only an unfocused field takes the drawn value, which is the case on every load and on
+// every answer that came back from a press that started here.
+function setHostValue(host) {
+  const el = document.getElementById(BACKEND_FIELDS.host);
+  if (!el) return;
+  if (document.activeElement !== el) el.value = host || "";
+}
+
 // The menus hold what the build carries and what the gateway serves; a label says which one is in
 // force and never grows the list.
 function setBackendLabel(gateway, model, host) {
   if (gateway) PU.gatewayShown = gateway;
   const typeSelect = setSelectValue(BACKEND_FIELDS.type, PU.gatewayShown);
   if (model) setSelectValue(BACKEND_FIELDS.model, model);
-  if (host) setText(BACKEND_FIELDS.host, host);
+  // An absent host is a drawn fact, not a skipped one: the field shows the gateway's default when
+  // the server answers with no address, so the reader can see what would be written if they typed
+  // over it. `undefined` is a caller with nothing to say; `""` is the server saying so.
+  if (host !== undefined) {
+    setHostValue(host);
+    PU.backendHostShown = host || "";
+  }
   if (model) PU.backendModelShown = model;
-  if (host) PU.backendHostShown = host;
   renderStatusBar();
   // The window is filed under the model, so a label naming a different one changes which window
   // applies. A gateway that picked the model (`done` names it) has to redraw the bar here.
