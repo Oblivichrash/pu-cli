@@ -31,7 +31,7 @@ own name.
 | `web/block-thinking.js`, `web/block-tool.js`, `web/block-subtask.js` | The block custom elements and their own drawing |
 | `web/blocks.js` | The block kinds, and which kind a tool call is drawn as |
 | `web/block-node.js` | Picking the element a block type becomes, and the folding a block shares |
-| `web/message.js` | The frame around a message: role label, container, edit affordance |
+| `web/message.js` | The frame around a message: role label, container, the press a reader makes on one — a user turn goes back into the composer to be edited, an assistant turn goes to the clipboard — and the guards that keep that press from firing on a link, a tool card, or a passage the reader has selected. A press that acted silently would look like nothing happened, so a copy with no text to copy says so in a system message |
 | `web/transcript.js` | The assistant message in flight, block patching, the chunk handlers |
 | `web/approval.js` | The card parked above the composer while a tool call waits for an answer |
 | `web/panel.js` | What the page reads rather than chooses: the backend label, the host field (drawn from the server's answer, and left alone while it has focus so a typing reader is not overwritten), the tool list, and the usage reading — the count and its hairline in the status bar, with this turn's figures and the conversation's total in that item's tooltip |
@@ -50,16 +50,19 @@ on connect. `sync(block)` is the only way in, so a patch and a first paint take 
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
 
-**One button, one mark.** The send control is an SVG mark drawn in the field's lower right
-corner, not a filled block beside it: a block of text was the loudest thing on a page whose messages
-are paper and hairline, and it took a width the field could have used. The mark is Lucide's
-`arrow-up` on the library's own 24-unit grid, the same grid the gear in the header is drawn on, so
-the two controls read as one hand. The grid and the hand are shared but not the scale: the gear is
-set to the 14-15px of the text beside it, while this mark is cut at 24px and at the library's 2.0
-stroke, because an arrow spends its height on a shaft and a head rather than filling its box the way
-a letter does, and at 18px the arrow read as a speck beside 15px body text. The gear, by the same
-reading, is not boxed — nothing else in the header is, and a frame around the one control drew a
-border round a single word. While a turn is in flight the arrow gives way to a solid square — the
+**One button, one mark.** The send control is an SVG mark inside a filled accent circle in the
+field's lower right corner, not a word beside it: a block of text was the loudest thing on a page
+whose messages are paper and hairline, and it took a width the field could have used. The circle is
+the one filled shape on the page, which is what makes a glyph in a corner read as something to
+press rather than something to look at — an arrow is a direction, not a block of text, and a ring
+around it is the form every send control takes. The mark itself is Lucide's `arrow-up` on the
+library's own 24-unit grid, the same grid the gear in the header is drawn on, so the two controls
+read as one hand. The grid and the hand are shared but not the scale: the gear is set to the 14-15px
+of the text beside it, while this mark is cut at 18px — smaller than the 24px it was when it stood
+alone, because inside a 32px ring a 24px arrow pressed against the edge and made the circle look
+like a sticker; at 18px it keeps a ring's worth of light around it. The gear, by the same reading,
+is not boxed — nothing else in the header is, and a frame around the one control drew a border
+round a single word. While a turn is in flight the arrow gives way to a solid square — the
 press that ends a turn is the same press, so the mark says what the *next* press does rather than
 adding a second control. The square is filled and not
 outlined for the same reason it is not a circle: at this size an outline a stroke wide reads as an

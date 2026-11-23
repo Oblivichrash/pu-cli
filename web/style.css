@@ -240,48 +240,16 @@ main {
   border-radius: 6px;
   border: 1px solid transparent;
 }
-/* A message says what may be done with it only when a reader is on it: a menu behind the right
-   button is a thing nobody is told about, so this is the telling, and it costs no layout: the
-   note is placed over the paper rather than laid out into it, so a turn is the same height with
-   it and without it.
-   It sits on the bubble's top edge, outside the frame. Inside is where the words are -- a
-   one-line turn puts its first line exactly where a corner label would go, and a long one runs
-   under it -- but above the edge there is never anything, so the note reads as a remark about
-   the paper rather than as the beginning of the sentence.
-   It is text rather than a mark because the sentence is the point: a glyph would have to be
-   learned, which is the problem it is meant to solve. It is kept out of the accessibility tree
-   for the converse reason: a screen reader is told about the message by the message, and
-   "right-click" names a gesture it cannot make.
-   Faded in rather than shown, so that moving the pointer down a column of turns does not make
-   twelve of these blink on and off on the way past. */
+/* The bubble is the press target, so it is the element that positions what it holds and the one
+   that takes the pointer: a message that acts on a press says so with a cursor and a title,
+   both set where the message is built. */
 .msg-bubble {
   position: relative;
 }
-.msg-hint {
-  position: absolute;
-  bottom: calc(100% + 3px);
-  right: 2px;
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  color: var(--ink-light);
-  opacity: 0;
-  transition: opacity 120ms ease;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
-}
-.msg:hover > .msg-bubble > .msg-hint,
-.msg:focus-within > .msg-bubble > .msg-hint {
-  opacity: 0.55;
-}
-/* A touch screen has no right button, so the note would name a gesture that cannot be made. The
-   menu is not reachable there either, which is a gap this rule does not pretend to fill. */
-@media (hover: none) {
-  .msg-hint {
-    display: none;
-  }
-}
+/* A hint was drawn over the bubble's top edge to tell a reader the right button opened a menu.
+   There is no menu and there is no note: a press is the whole vocabulary, so the only thing
+   that has to be true is that the words stay legible while the pointer is over them. */
+.msg.user.editing .msg-bubble { cursor: text; }
 /* A message takes the width of what it says, not the width of the column. A turn that fills the
    column draws a tinted band 900px wide behind two words, and the empty right of it is not
    space the reader can use -- it is the tint telling them the message is longer than it is.
@@ -369,46 +337,6 @@ main {
   margin-top: 0;
 }
 
-/* The menu the right button opens. It floats over the message it names rather than pushing one
-   into the transcript: a reader opening it is looking at a message they have already found, and
-   the menu must not move it out from under the pointer that is about to press it. */
-.context-menu {
-  position: fixed;
-  z-index: 60;
-  min-width: 160px;
-  padding: 4px;
-  background: var(--paper, #fff);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
-}
-.context-menu[hidden] { display: none; }
-
-/* One row per action, each a whole sentence about what it does. A menu is read once by a reader
-   already looking for one line in it, so an icon with a tooltip would be a thing to point at
-   before it could be understood. */
-.context-item {
-  display: block;
-  width: 100%;
-  padding: 5px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 2px;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.context-item:hover,
-.context-item:focus-visible {
-  /* Tinted rather than filled. A block of accent under the pointer is the loudest thing on a
-     page whose messages are paper and hairline: the menu is a list of sentences, and the row
-     under the pointer is where the reader is, not a button asking to be pressed. */
-  background: var(--accent-soft);
-  color: var(--accent);
-  outline: none;
-}
 .msg.user.editing { cursor: default; }
 
 /* The bubble an edit is pointed at says so, because the words are now in the composer and the
@@ -648,22 +576,26 @@ main {
    the path. */
 #send {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
+  right: 6px;
+  bottom: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  background: transparent;
+  /* The press is a circle: an arrow is a direction rather than a block of text, and a ring
+     around it is the shape every send control takes. The ring is drawn in the accent because it
+     is the one filled mark on a page of paper and hairline, and it is what turns a glyph in a
+     corner into something that reads as pressable. */
+  background: var(--accent);
   border: none;
-  border-radius: 2px;
-  color: var(--ink-light);
+  border-radius: 50%;
+  color: #fff;
   cursor: pointer;
   font-family: inherit;
   line-height: 0;
-  transition: color 0.2s, background 0.2s;
+  transition: background 0.2s, opacity 0.2s;
 }
 /* `hidden` on an SVG path is not the sure thing it is on a div: the attribute only works through
    the UA sheet's `[hidden] { display: none }`, which SVG elements are not reliably subject to, and
@@ -676,18 +608,21 @@ main {
    and a closed arrow is a triangle. */
 #send .icon-send { fill: none; }
 #send .icon-stop { fill: currentColor; stroke: none; }
-#send:hover { color: var(--accent); background: var(--accent-soft); }
+/* The ring is already the accent, so hover cannot deepen the colour the way a text control
+   does. It steps down instead: the circle darkens and keeps white ink, which is the only move
+   left once the mark is filled. The step is mixed from the variable rather than written as a
+   hex, because the accent lightens in the dark theme and a fixed dark red would swallow it. */
+#send:hover { background: color-mix(in srgb, var(--accent) 82%, #000); }
 /* A press that is still on its way says so by not answering: the mark stays, the hand does not
    change, and the press is refused rather than repeated. */
 #send:disabled { cursor: not-allowed; opacity: 0.5; }
-/* The mark is drawn at Lucide's own size and weight for the arrow: 24 units on a 24 grid at a
-   2.0 stroke, which is what the header's gear would be if it were scaled up to match. At 20px the
-   arrow read as a speck beside 15px body text, since an arrow spends its height on a shaft and a
-   head rather than filling its box the way a block of text does. */
+/* The mark is drawn at Lucide's own weight but a step down in size, because it now sits inside
+   a 32px ring rather than alone in a 36px corner: at 24px the arrow pressed against the ring
+   with no light around it, which made the circle look like a sticker rather than a button. */
 #send .icon {
   display: block;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
