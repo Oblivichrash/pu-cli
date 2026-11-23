@@ -62,13 +62,15 @@
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
           <!-- The press is a mark in the corner of the field rather than a block beside it. A
                filled block of text is the loudest thing on a page whose messages are paper and
-               hairline, and it took a width the field could have used; the mark is the same
-               stroke path the header's gear is, so the two controls read as one hand. The
-               button keeps its label for a screen reader and its meaning for a pointer: the
-               title and aria-label say which press this is, and the path changes with it. -->
+               hairline, and it took a width the field could have used. The two paths are Lucide's
+               `arrow-up` and a solid square, on the library's own 24-unit grid: the same grid the
+               gear in the header is drawn on, so the controls read as one hand. The button keeps
+               its label for a screen reader and its meaning for a pointer: the title and
+               aria-label say which press this is, and the path changes with it. -->
           <button id="send" aria-label="Send" title="Send (Enter)">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path class="icon-send" d="M12 20V4M5 11l7-7 7 7"/>
+              <path class="icon-send" d="m5 12 7-7 7 7"/>
+              <path class="icon-send" d="M12 19V5"/>
               <path class="icon-stop" d="M7 7h10v10H7z" hidden/>
             </svg>
           </button>

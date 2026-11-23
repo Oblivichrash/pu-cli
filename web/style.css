@@ -583,7 +583,7 @@ main {
   color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 2px;
-  padding: 10px 44px 10px 14px;
+  padding: 10px 52px 10px 14px;
   font-size: 15px;
   font-family: inherit;
   outline: none;
@@ -593,20 +593,20 @@ main {
   transition: border-color 0.2s;
 }
 #input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-/* The mark in the field's lower right, on the same 24-unit grid and at the same stroke weight as
-   the gear in the header. It is a stroke path rather than a typed arrow for the reason the gear
-   is: a character at this size is a glyph the serif bolds into a smudge, while a path keeps the
-   weight the rest of the page uses. Colour is `currentColor`, so the hover and the stop states
-   are rules on the button and not on the path. */
+/* The mark in the field's lower right, on the same 24-unit grid as the gear in the header. It is a
+   stroke path rather than a typed arrow for the reason the gear is: a character at this size is a
+   glyph the serif bolds into a smudge, while a path keeps the weight the rest of the page uses.
+   Colour is `currentColor`, so the hover and the stop states are rules on the button and not on
+   the path. */
 #send {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  right: 4px;
+  bottom: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   background: transparent;
   border: none;
@@ -617,6 +617,11 @@ main {
   line-height: 0;
   transition: color 0.2s, background 0.2s;
 }
+/* `hidden` on an SVG path is not the sure thing it is on a div: the attribute only works through
+   the UA sheet's `[hidden] { display: none }`, which SVG elements are not reliably subject to, and
+   both paths stayed laid out here. The rule is written out so the second state cannot leak through
+   the first. */
+#send .icon path[hidden] { display: none; }
 /* The square is drawn solid rather than as an outline: at this size a hollow square a stroke wide
    reads as an empty checkbox, while a filled one is the mark every player uses for the same
    press. The arrow gets its fill back because an open path is closed implicitly when it is filled,
@@ -627,16 +632,17 @@ main {
 /* A press that is still on its way says so by not answering: the mark stays, the hand does not
    change, and the press is refused rather than repeated. */
 #send:disabled { cursor: not-allowed; opacity: 0.5; }
-/* The mark is drawn a little larger than the gear: the gear sits alone in the header and has the
-   air around it to read at 18px, while this one sits inside a field whose border is a hairline, and
-   a stroke that thin loses its corners against the line it is near. */
+/* The mark is drawn at Lucide's own size and weight for the arrow: 24 units on a 24 grid at a
+   2.0 stroke, which is what the header's gear would be if it were scaled up to match. At 20px the
+   arrow read as a speck beside 15px body text, since an arrow spends its height on a shaft and a
+   head rather than filling its box the way a block of text does. */
 #send .icon {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }

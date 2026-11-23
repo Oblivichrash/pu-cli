@@ -50,20 +50,26 @@ on connect. `sync(block)` is the only way in, so a patch and a first paint take 
 path, and the coalesced re-render in `transcript.js` only has to decide *which* blocks
 bear re-reading rather than how to draw them.
 
-**One button, one mark.** The send control is an SVG stroke path drawn in the field's lower
-right corner, not a filled block beside it: a block of text was the loudest thing on a page whose
-messages are paper and hairline, and it took a width the field could have used. The path is on the
-same 24-unit grid and at the same stroke weight as the gear in the header, so the two controls read
-as one hand. While a turn is in flight the arrow gives way to a solid square — the press that ends a
-turn is the same press, so the mark says what the *next* press does rather than adding a second
-control. The words are not gone, only moved: the button keeps its `aria-label` (`Send`, `Stop`,
-`Stopping`) and its `title`, so a screen reader and a hovering pointer still hear which press this
-is. From the press until the server's `done` the square dims and the button is `disabled` — a press
-still on its way is refused rather than repeated. The frame it sends is `cancel`, which ends the
-turn and whatever command it is running; a reader who presses it means both, so splitting the mark
-would offer a choice the protocol does not make. `renderSendButton` is the one place those states
-are written, so a path that ends a turn cannot leave the mark saying something the page is not
-doing.
+**One button, one mark.** The send control is an SVG mark drawn in the field's lower right
+corner, not a filled block beside it: a block of text was the loudest thing on a page whose messages
+are paper and hairline, and it took a width the field could have used. The mark is Lucide's
+`arrow-up` on the library's own 24-unit grid, the same grid the gear in the header is drawn on, so
+the two controls read as one hand — it is cut larger than the gear and at the library's 2.0 stroke,
+because an arrow spends its height on a shaft and a head rather than filling its box the way a
+letter does, and at 18px it read as a speck beside 15px body text. While a turn is in flight the
+arrow gives way to a solid square — the press that ends a turn is the same press, so the mark says
+what the *next* press does rather than adding a second control. The square is filled and not
+outlined for the same reason it is not a circle: at this size an outline a stroke wide reads as an
+empty checkbox, and `circle-stop`'s inner square collapses into a blob. The words are not gone, only
+moved: the button keeps its `aria-label` (`Send`, `Stop`, `Stopping`) and its `title`, so a screen
+reader and a hovering pointer still hear which press this is. From the press until the server's
+`done` the square dims and the button is `disabled` — a press still on its way is refused rather
+than repeated. The frame it sends is `cancel`, which ends the turn and whatever command it is
+running; a reader who presses it means both, so splitting the mark would offer a choice the
+protocol does not make. `renderSendButton` is the one place those states are written, so a path
+that ends a turn cannot leave the mark saying something the page is not doing. It toggles the
+`hidden` *attribute* rather than the property, because on an SVG element `hidden` is only an
+attribute the UA sheet happens to style and assigning `false` to it leaves the mark on screen.
 
 That re-render is deferred to the next animation frame, so a fast stream costs one paint
 rather than one per chunk — which makes the frame a thing that can be *owed*. Two rules

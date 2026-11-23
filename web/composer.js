@@ -14,14 +14,19 @@
 // is small and a word in it would take the room the sentence needs.
 function renderSendButton() {
   const { sendBtn } = PU.composer;
-  const sendPath = sendBtn.querySelector(".icon-send");
+  // The arrow is two paths -- a head and a shaft -- because that is how the icon set draws it, so
+  // both are toggled rather than the first one found.
+  const sendPaths = sendBtn.querySelectorAll(".icon-send");
   const stopPath = sendBtn.querySelector(".icon-stop");
   // A field being edited is still a field to fill, so the edit keeps the arrow too: what the press
   // does is replace a message, which is a send like any other from where the reader is standing.
   const stopping = PU.stopRequested;
   const streaming = PU.isStreaming;
-  sendPath.hidden = streaming;
-  stopPath.hidden = !streaming;
+  // `hidden` is a reflected boolean property on HTML elements, but on an SVG element it is only an
+  // attribute the UA sheet happens to style -- assigning `false` leaves it in the DOM. The attribute
+  // is toggled here instead, which is the form that works in both directions.
+  for (const path of sendPaths) path.toggleAttribute("hidden", streaming);
+  stopPath.toggleAttribute("hidden", !streaming);
   // "Stopping…" is the window between asking and the server's `done`: without it a press that is
   // still on its way looks like one that did nothing, so the square dims and the press is refused.
   sendBtn.disabled = stopping;
