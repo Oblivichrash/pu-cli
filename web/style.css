@@ -68,25 +68,31 @@ header {
 .conn-dot.online { background: var(--ok); }
 .conn-dot.offline { background: var(--accent); }
 .conn-dot.connecting { background: var(--warn); }
-/* The one drawn mark in the header. Its box is the button's, so the glyph is set to the size of
-   the label it replaced and the padding is chosen to leave a square: 18 + 3 + 3 = 24, which is
-   where the height of the neighbouring caret button already sat. `line-height: 0` is what makes
-   the inline SVG sit on the padding rather than on a text baseline, and the stroke is `currentColor`
-   so the hover rule below reaches the path without naming it. */
+/* The one drawn mark in the header. Nothing else in the bar is boxed -- the brand, the workspace
+   name and the caret are all marks on the paper -- so a frame around this one drew a border round
+   a single word, and the mark read as a button among labels rather than as the one control of the
+   same weight. The border is gone and the padding is what is left: 18 + 4 + 4 = 26, a hit area
+   wide enough for a pointer without a visible edge, centred on the same line as the name beside
+   it. `line-height: 0` is what makes the inline SVG sit on the padding rather than on a text
+   baseline, and the stroke is `currentColor` so the hover rule below reaches the path. */
 #config-open {
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 2px;
   color: var(--ink-light);
-  padding: 2px;
+  padding: 4px;
   cursor: pointer;
   font-family: inherit;
   line-height: 0;
 }
 #config-open:hover { color: var(--accent); }
+/* Drawn at the size of the text around it. The gear is the only glyph in the bar that is a drawing
+   rather than a character, so it is matched to the 14-15px the name and the caret sit at rather
+   than to the 24px mark inside the composer: what is shared with that mark is the grid and the
+   hand, not the scale, since the two are read at different distances. */
 #config-open .icon {
   display: block;
   width: 18px;

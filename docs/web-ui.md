@@ -54,11 +54,14 @@ bear re-reading rather than how to draw them.
 corner, not a filled block beside it: a block of text was the loudest thing on a page whose messages
 are paper and hairline, and it took a width the field could have used. The mark is Lucide's
 `arrow-up` on the library's own 24-unit grid, the same grid the gear in the header is drawn on, so
-the two controls read as one hand — it is cut larger than the gear and at the library's 2.0 stroke,
-because an arrow spends its height on a shaft and a head rather than filling its box the way a
-letter does, and at 18px it read as a speck beside 15px body text. While a turn is in flight the
-arrow gives way to a solid square — the press that ends a turn is the same press, so the mark says
-what the *next* press does rather than adding a second control. The square is filled and not
+the two controls read as one hand. The grid and the hand are shared but not the scale: the gear is
+set to the 14-15px of the text beside it, while this mark is cut at 24px and at the library's 2.0
+stroke, because an arrow spends its height on a shaft and a head rather than filling its box the way
+a letter does, and at 18px the arrow read as a speck beside 15px body text. The gear, by the same
+reading, is not boxed — nothing else in the header is, and a frame around the one control drew a
+border round a single word. While a turn is in flight the arrow gives way to a solid square — the
+press that ends a turn is the same press, so the mark says what the *next* press does rather than
+adding a second control. The square is filled and not
 outlined for the same reason it is not a circle: at this size an outline a stroke wide reads as an
 empty checkbox, and `circle-stop`'s inner square collapses into a blob. The words are not gone, only
 moved: the button keeps its `aria-label` (`Send`, `Stop`, `Stopping`) and its `title`, so a screen
