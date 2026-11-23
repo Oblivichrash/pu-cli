@@ -4,21 +4,29 @@
 
 "use strict";
 
-// One button, one word. What the frame ends is a turn and whatever it has running, and a
-// reader who presses it means both: splitting the label would offer a choice the protocol
-// does not make.
+// One button, one mark. What the frame ends is a turn and whatever it has running, and a
+// reader who presses it means both: splitting the mark would offer a choice the protocol does
+// not make.
+//
+// The mark says what the next press does rather than what is happening: an arrow while a turn is
+// the thing that press would start, a square while one is running and that press would end it.
+// The words are in the title and the label, where a reader who needs them finds them -- the field
+// is small and a word in it would take the room the sentence needs.
 function renderSendButton() {
   const { sendBtn } = PU.composer;
-  if (!PU.isStreaming) {
-    // The button says what the next press ends: a sentence to send, or a message to replace.
-    sendBtn.textContent = PU.editing ? "Save" : "Send";
-    sendBtn.disabled = false;
-    return;
-  }
-  // "Stopping…" is the window between asking and the server's `done`: without it a press
-  // that is still on its way looks like one that did nothing.
-  sendBtn.textContent = PU.stopRequested ? "Stopping…" : "Stop";
-  sendBtn.disabled = PU.stopRequested;
+  const sendPath = sendBtn.querySelector(".icon-send");
+  const stopPath = sendBtn.querySelector(".icon-stop");
+  // A field being edited is still a field to fill, so the edit keeps the arrow too: what the press
+  // does is replace a message, which is a send like any other from where the reader is standing.
+  const stopping = PU.stopRequested;
+  const streaming = PU.isStreaming;
+  sendPath.hidden = streaming;
+  stopPath.hidden = !streaming;
+  // "Stopping…" is the window between asking and the server's `done`: without it a press that is
+  // still on its way looks like one that did nothing, so the square dims and the press is refused.
+  sendBtn.disabled = stopping;
+  sendBtn.setAttribute("aria-label", streaming ? (stopping ? "Stopping" : "Stop") : "Send");
+  sendBtn.title = streaming ? (stopping ? "Stopping…" : "Stop the reply") : "Send (Enter)";
 }
 
 // The field grows to its own text and no further. Both the typed message and the edited one land

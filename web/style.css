@@ -572,6 +572,9 @@ main {
 #composer-row {
   display: flex;
   gap: 12px;
+  /* The press is drawn inside the field, so the row is what the corner is measured from and the
+     field is given the room it needs on the right for the mark to sit in without covering text. */
+  position: relative;
 }
 #input {
   flex: 1;
@@ -580,7 +583,7 @@ main {
   color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 2px;
-  padding: 10px 14px;
+  padding: 10px 44px 10px 14px;
   font-size: 15px;
   font-family: inherit;
   outline: none;
@@ -590,23 +593,53 @@ main {
   transition: border-color 0.2s;
 }
 #input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* The mark in the field's lower right, on the same 24-unit grid and at the same stroke weight as
+   the gear in the header. It is a stroke path rather than a typed arrow for the reason the gear
+   is: a character at this size is a glyph the serif bolds into a smudge, while a path keeps the
+   weight the rest of the page uses. Colour is `currentColor`, so the hover and the stop states
+   are rules on the button and not on the path. */
 #send {
-  background: var(--ink);
-  color: var(--paper);
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
   border: none;
   border-radius: 2px;
-  font-size: 14px;
+  color: var(--ink-light);
   cursor: pointer;
   font-family: inherit;
-  font-weight: 400;
-  letter-spacing: 1px;
-  transition: background 0.2s;
-  /* One width for both labels, so "Cancel reply" does not shrink the field mid-run. */
-  min-width: 128px;
-  padding: 0 16px;
+  line-height: 0;
+  transition: color 0.2s, background 0.2s;
 }
-#send:hover { background: var(--accent); }
-#send:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The square is drawn solid rather than as an outline: at this size a hollow square a stroke wide
+   reads as an empty checkbox, while a filled one is the mark every player uses for the same
+   press. The arrow gets its fill back because an open path is closed implicitly when it is filled,
+   and a closed arrow is a triangle. */
+#send .icon-send { fill: none; }
+#send .icon-stop { fill: currentColor; stroke: none; }
+#send:hover { color: var(--accent); background: var(--accent-soft); }
+/* A press that is still on its way says so by not answering: the mark stays, the hand does not
+   change, and the press is refused rather than repeated. */
+#send:disabled { cursor: not-allowed; opacity: 0.5; }
+/* The mark is drawn a little larger than the gear: the gear sits alone in the header and has the
+   air around it to read at 18px, while this one sits inside a field whose border is a hairline, and
+   a stroke that thin loses its corners against the line it is near. */
+#send .icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 /* The approval gate is parked above the composer, not floating over the page: a
    decision waited on is the one thing that must not be scrolled past or missed. */
 #approval-bar {
@@ -1038,10 +1071,10 @@ main {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
   .msg { font-size: 14px; }
-  /* The field takes the row, and the choices share the line under it. */
-  #composer-row { flex-wrap: wrap; }
+  /* The field takes the row, and the mark stays in its corner: the button is inside the field
+     now, so there is no second row for it to share and nothing to wrap. */
+  #composer-row { flex-wrap: nowrap; }
   #input { flex-basis: 100%; }
-  #send { flex: 1; height: 40px; min-width: 0; }
   /* Nothing is dropped from the bar. The two readings that used to be hidden here were the
      gateway and the model, and they are gone from the bar entirely -- what is left on the right
      is the tool count and the usage reading, which are now the whole of that half. Dropping
@@ -1064,7 +1097,6 @@ main {
   }
   header, #composer, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
-  #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
