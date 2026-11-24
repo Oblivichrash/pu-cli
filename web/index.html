@@ -138,9 +138,13 @@
        catalogue is the list of names the gateway answers to, not advice about them. Like the
        gateway's own form, nothing here is written until Save. -->
   <dialog id="model-dialog" aria-labelledby="model-title">
+    <!-- No ✕ here. The sheet ends on Cancel and Save, and a second way out in the corner is the
+         same way out twice: on a form this short both are on screen at once, so the reader is
+         left asking what separates them. Escape, a backdrop click and Cancel all still work; the
+         configuration sheet keeps its ✕ because it has no buttons and that corner is its only
+         way out. -->
     <form id="model-form" class="config-head">
-      <div id="model-title">Which model answers, and how</div>
-      <button type="button" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+      <div id="model-title" class="config-title">Which model answers, and how</div>
     </form>
 
     <div class="config-body">
@@ -233,7 +237,7 @@
        which a hand-rolled overlay gets wrong in a page that already binds Escape elsewhere. -->
   <dialog id="config-dialog" aria-labelledby="config-title">
     <form method="dialog" class="config-head">
-      <div id="config-title">Agent configuration</div>
+      <div id="config-title" class="config-title">Agent configuration</div>
       <button type="submit" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
     </form>
 
@@ -275,9 +279,10 @@
        could not do: hold a half-typed address without posting it, and take it back if the reader
        changes their mind. Nothing is written until Save. -->
   <dialog id="gateway-dialog" aria-labelledby="gateway-title">
+    <!-- The same reading as the model sheet's head: the pair at the foot is the way out, so there
+         is no second one in the corner. -->
     <form id="gateway-form" class="config-head">
-      <div id="gateway-title">Where the conversation goes</div>
-      <button type="button" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+      <div id="gateway-title" class="config-title">Where the conversation goes</div>
     </form>
 
     <div class="config-body">

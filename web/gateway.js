@@ -79,8 +79,10 @@ function wireGatewayDialog() {
   if (save) save.addEventListener("click", gatewaySave);
   const cancel = document.getElementById("gw-cancel");
   if (cancel) cancel.addEventListener("click", gatewayClose);
-  const close = dialog.querySelector(".config-close");
-  if (close) close.addEventListener("click", gatewayClose);
+  // Cancel is the only button that closes this sheet: the head has no ✕, since a corner one would
+  // be the same exit as the pair at the foot, both on screen at once. The rest of the ways out --
+  // Escape and a backdrop click, wired below -- are gestures rather than controls and so do not
+  // read as a second button.
   // The buttons are type=button, so every way out goes through gatewayClose: Enter in the address
   // field must not submit the head's form and close the sheet before the server has answered.
   const form = document.getElementById("gateway-form");
@@ -304,8 +306,9 @@ function wireModelDialog() {
   if (save) save.addEventListener("click", modelSave);
   const cancel = modelField("md-cancel");
   if (cancel) cancel.addEventListener("click", modelClose);
-  const close = dialog.querySelector(".config-close");
-  if (close) close.addEventListener("click", modelClose);
+  // Same as the gateway sheet's head: Cancel is the one control that leaves, because the ✕ that
+  // used to sit in the corner said what Cancel already says. Escape and a backdrop click remain,
+  // and neither is drawn as a button.
   // The buttons are type=button, so every way out goes through modelClose: Enter in a number box
   // must not submit the head's form and close the sheet before the server has answered.
   const form = modelField("model-form");

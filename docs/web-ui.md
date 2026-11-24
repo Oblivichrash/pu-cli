@@ -184,6 +184,20 @@ change to it, so writing it as a field would promise an edit that cannot be made
 `#gw-agent-name` and `#md-agent-name`, kept in step by the same `renderStatusBar` that fills the
 configuration sheet's name — one renderer for the one fact, drawn in three places.
 
+**A form has one way out.** The gateway and model sheets end on `Cancel` and `Save`, and the `✕`
+that used to sit in their corner is gone. On a configuration sheet with a scroll box and no buttons
+that corner is the only way out and it stays. On these two the corner and the foot were both on
+screen at once, doing the same thing, so the reader was left working out what separated them —
+and a control whose meaning has to be worked out is a control that should not be there. `Cancel`
+is the one visible exit; Escape and a backdrop click remain, and neither is drawn as a button.
+
+Two consequences worth knowing. The heads of the two backend forms are now a title on its own row,
+so the title style moved from `#config-title` to a `.config-title` class on all three — the same
+lesson as the `dialog` rule above, in a smaller place: an id selector written for one sheet does
+not reach the others. And an Escape pressed while a `<select>` has focus is still the browser's,
+closing the open menu rather than the sheet, so the first Escape after opening a form may only
+shut a dropdown; that is deliberate and was true before this change too.
+
 ## How the page is served
 
 The UI travels with the binary, not with the workspace the session is pointed at, so
