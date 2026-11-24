@@ -787,10 +787,14 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The three items the reader can press. Each one is its own target, so each gets its own
-   hover: a press target that does not answer the pointer with anything but a cursor makes a
-   reader guess where one item ends and the next begins, and the gateway and the model are
-   close enough that the guess would often be wrong.
+/* The two items the reader can press. Each one is its own target, so each gets its own hover: a
+   press target that does not answer the pointer with anything but a cursor makes a reader guess
+   where one item ends and the next begins, and the gateway and the model are close enough that
+   the guess would often be wrong.
+
+   They are `<button>`s, so the keyboard, the focus ring and `:active` are the browser's. A button
+   also arrives with a border, a background and a font of its own, which are what these first
+   lines take away: the bar's font is the bar's, and the shape of the press is the hover's.
 
    The hover cannot be a background on the item itself: `.status-item` clips its own overflow so
    a long model name can end in an ellipsis, and a background drawn inside a clipped box stops at
@@ -802,6 +806,10 @@ main {
    The colour is the accent, at the same weight as `:hover` elsewhere on the page: this is one
    vocabulary for "pressable", not a second one invented for the bar. */
 .status-press {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
   padding: 2px 5px;
   margin: 0 -5px;
   border-radius: 3px;
