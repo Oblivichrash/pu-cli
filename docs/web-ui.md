@@ -119,18 +119,43 @@ model answers *how it is answered*, and the second is more than a name — the s
 answer at any temperature, at any reasoning level, under any cap, against any window. The status
 bar therefore opens two dialogs: the gateway form holds the gateway and its address, the model form
 holds the name and everything the model answers with — the sampling settings and the thinking
-level. The name is both a `<select>` filled from `/api/models` and a text field, so a model the
-gateway does not list can still be named. A setting left empty means the gateway's own default and
-is written as `null`; clearing `temperature` restores the default rather than removing the key,
-because the backend always answers at some temperature. The level is a menu rather than a box and
-has no empty state: `auto` is the reader's word for "no level of our own" and travels as itself,
-and the file spells it `default`. A refusal — `'top_p' must be above 0 and at most 1` — keeps the
-form open with the reason in `#md-error`.
+level. Both names are menus, and for the same reason. Which gateways exist is the build's fact,
+and which models a gateway serves is the catalogue's: in each case the rows are the answer, and a
+name outside them is a typo the field would have to be corrected out of. A `<datalist>` was tried
+for both and is not the same control — Chromium stops offering a list once the box holds a value
+the list already matches, which is exactly the state a form opens in, so the reader meets a field
+that looks closed. The model menu always lists the name in force, drawn first when the catalogue
+does not carry it: a gateway answers names it does not advertise, and a catalogue that could not
+be read must leave the field holding what runs rather than empty. Two controls for one answer
+would be the fault; one control with the right shape is not. What *is* free here is the address:
+the menu's answer only fills it with that gateway's default, and the reader may then edit it — a
+proxy, a local mirror, a gateway on another port. A setting left empty means the gateway's own
+default and is written as `null`; clearing `temperature` restores the default rather than removing
+the key, because the backend always answers at some temperature. The level is a menu rather than a
+box and has no empty state: `auto` is the reader's word for "no level of our own" and travels as
+itself, and the file spells it `default`. A refusal — `'top_p' must be above 0 and at most 1` —
+keeps the form open with the reason in `#md-error`.
 
 The sampling settings and the level are also session overrides, and an override outranks the agent
 file. A save therefore writes the file *and* clears the `temperature`, `max_tokens` and `thinking`
 overrides, so the value just saved is the value in force; without that second step the form would
 report success while the reader went on seeing the override's value.
+
+**The address follows the gateway.** An address is a fact about the gateway it was typed for, not
+about the form, so the box is rewritten the moment the gateway menu changes: `/api/gateways` carries
+each gateway's default address, and the new one replaces whatever the box held. Filling it once, from
+the gateway in force, was wrong in exactly the case the form exists for — switching away from that
+gateway — and it was wrong quietly. The box went on showing `http://localhost:11434` while the menu
+said `deepseek`, and the save posted that address to a vendor that does not answer there: the model
+was fine, the route was not, and nothing on screen said so. The box is still the reader's, so a value
+they typed is theirs to keep — it is replaced only by the gateway change itself.
+
+**A save says it is working.** Choosing a backend asks the new gateway what it serves before it
+posts, and a gateway that cannot be reached takes the whole connect timeout to say so — ten seconds
+during which a button that looked untouched would be read as one that does not work. Both save
+buttons therefore take `Saving…`, `disabled` and `aria-busy="true"` for the duration and give the
+label back afterwards, whether the save succeeded, was refused, or timed out. The button is also
+guarded on `aria-busy`, so a second press while the first is still in flight does nothing.
 
 ## How the page is served
 

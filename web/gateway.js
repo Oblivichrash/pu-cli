@@ -184,14 +184,21 @@ function modelError(message) {
   el.hidden = !message;
 }
 
-// Opening asks the gateway in force what it serves, so the name field is a list when the catalogue
-// is readable and a typed box when it is not. The fill happens first and the list arrives under it:
-// the form is usable the moment it opens, and a gateway that never answers costs no wait.
+// Opening asks the gateway in force what it serves, so the name box has suggestions when the
+// catalogue is readable and is typed into when it is not. The fill happens first and the list
+// arrives under it: the form is usable the moment it opens, and a gateway that never answers costs
+// no wait.
 //
-// The arriving list only fills in the name choices. It must not re-fill the whole form: the reader
+// The arriving list only changes the suggestions. It must not re-fill the whole form: the reader
 // may already have typed a temperature by the time the catalogue lands, and a re-fill would quietly
 // undo it -- the same defect a Save-then-redraw had, where a late fill put the old numbers back
-// under a reader who had just changed them.
+// under a reader who had just changed them. It must not touch the name box either: a name typed
+// while the catalogue was in flight is the reader's answer and not a value to be corrected.
+// The arriving catalogue only changes the menu's entries. It must not re-fill the whole form: the
+// reader may already have typed a temperature by the time the list lands, and a re-fill would
+// quietly undo it -- the same defect a Save-then-redraw had, where a late fill put the old numbers
+// back under a reader who had just changed them. It must not move the choice either: a name picked
+// while the catalogue was in flight is the reader's answer and not a value to be corrected.
 function modelOpen() {
   const dialog = modelDialog();
   if (!dialog || dialog.open) return;
@@ -202,17 +209,12 @@ function modelOpen() {
   modelFill();
   dialog.showModal();
   const gateway = PU.gatewayShown || "";
-  loadModelsFor(gateway).then((models) => {
+  const picked = modelField("md-name") ? modelField("md-name").value : "";
+  loadModelsFor(gateway).then((entry) => {
     if (!dialog.open) return;
-    const nameSelect = modelField("md-name");
-    if (!nameSelect) return;
-    const current = nameSelect.value || PU.backendModelShown || "";
-    const known = (Array.isArray(models) ? models : []).slice();
-    if (current && !known.includes(current)) known.unshift(current);
-    nameSelect.textContent = "";
-    for (const name of known) nameSelect.append(new Option(name, name));
-    if (known.includes(current)) nameSelect.value = current;
-    if (known.length > 0) modelError("");
+    // The choice in flight is what stays selected, and the name in force is still one entry.
+    fillModelChoices((entry && entry.models) || [], picked || PU.backendModelShown || "");
+    if (entry && !entry.error) modelError("");
   });
 }
 
@@ -225,13 +227,12 @@ function modelClose() {
 // is the form's to show, and a form that closed on one would leave the reader believing a change
 // that was never made.
 async function modelSave() {
-  const nameSelect = modelField("md-name");
-  const nameText = modelField("md-name-text");
-  const typed = nameText ? nameText.value.trim() : "";
-  const listed = nameSelect ? nameSelect.value : "";
-  const model = typed || listed;
+  const menu = modelField("md-name");
+  // A menu always holds a value when it has any entry at all, so there is one name to send and
+  // nothing to reconcile: the picked entry and the value in force arrive by the same route.
+  const model = menu ? menu.value.trim() : "";
   if (!model) {
-    modelError("Name a model, or pick one from the list.");
+    modelError("Pick a model: the gateway has not been asked what it serves yet.");
     return;
   }
   const raw = {
@@ -245,7 +246,9 @@ async function modelSave() {
     // reader's word for "no level of our own" and travels as itself.
     thinking: modelField("md-thinking") ? modelField("md-thinking").value : "auto",
   };
-  const ok = await saveModel(model, raw);
+  // The same wait as the gateway form's, for the same reason, though this form's request does not
+  // go through a connect timeout of its own: it is the same server writing the same file.
+  const ok = await withBusy(modelField("md-save"), () => saveModel(model, raw));
   if (ok) modelClose();
 }
 
@@ -253,24 +256,9 @@ function wireModelDialog() {
   const dialog = modelDialog();
   if (!dialog) return;
   const open = document.getElementById("status-model");
-  if (open) {
-    open.addEventListener("click", modelOpen);
-    // These are spans given a role, so the browser does not press them for the reader.
-    open.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
-      e.preventDefault();
-      modelOpen();
-    });
-  }
-  // A name picked from the list fills the typed box too, so one field holds the answer whichever
-  // way it arrived. Typing over it is how a model the gateway did not list is named.
-  const nameSelect = modelField("md-name");
-  const nameText = modelField("md-name-text");
-  if (nameSelect && nameText) {
-    nameSelect.addEventListener("change", () => {
-      if (nameSelect.value) nameText.value = nameSelect.value;
-    });
-  }
+  if (open) open.addEventListener("click", modelOpen);
+  // The name box is the answer, so there is no second control to keep in step with it: the
+  // suggestions are what the browser draws from the datalist and nothing here mirrors them back.
   const save = modelField("md-save");
   if (save) save.addEventListener("click", modelSave);
   const cancel = modelField("md-cancel");
@@ -282,6 +270,9 @@ function wireModelDialog() {
   const form = modelField("model-form");
   if (form) form.addEventListener("submit", (e) => e.preventDefault());
   dialog.addEventListener("keydown", (e) => {
+    // A menu open on Escape is the browser's to close and the form's to survive: the level's list
+    // is the sheet's last native menu, and closing the whole form instead would throw away every
+    // answer given so far for the sake of dismissing one of them.
     if (e.key === "Escape" && e.target.tagName !== "SELECT") {
       e.preventDefault();
       modelClose();

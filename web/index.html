@@ -134,10 +134,9 @@
        it opens a form about that question and no other: which model answers, and how it answers --
        a model carries settings of its own (temperature, cap, window) that the gateway's name has
        nothing to do with, and a reader who wants to loosen the temperature is not asking to change
-       where the turn is sent. The model itself is a list when the gateway lists its catalogue and a
-       typed name when it will not, so the same field takes both: a gateway that cannot be asked
-       still lets the reader name a model, because a list that could not be read is not a list of
-       one. Like the gateway's own form, nothing here is written until Save. -->
+       where the turn is sent. The name is a menu, for the same reason the gateway's is: the
+       catalogue is the list of names the gateway answers to, not advice about them. Like the
+       gateway's own form, nothing here is written until Save. -->
   <dialog id="model-dialog" aria-labelledby="model-title">
     <form id="model-form" class="config-head">
       <div id="model-title">Which model answers, and how</div>
@@ -150,11 +149,13 @@
         <label class="field">
           <span>Name</span>
           <select id="md-name"></select>
-        </label>
-        <label class="field">
-          <span>Or type one</span>
-          <input id="md-name-text" type="text" spellcheck="false" autocomplete="off"
-                 placeholder="a model this gateway serves">
+          <!-- Filled from /api/models, and a menu rather than a box: the gateway's catalogue is the
+               list of names it answers to, so the entries are the answer and not advice. The name in
+               force is always one of them -- drawn first when the catalogue does not list it -- so a
+               catalogue that could not be read leaves the field holding what runs rather than empty.
+               A box with a datalist behind it was tried and is not the same control: Chromium shows
+               no picker at all once the box holds a name the list matches, which is every time the
+               form opens, so the reader meets a field that looks closed and cannot be opened. -->
         </label>
       </section>
 
