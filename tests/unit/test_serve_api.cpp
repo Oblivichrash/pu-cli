@@ -532,6 +532,55 @@ TEST_CASE("serve API /api/gateways lists every gateway this build carries", "[se
   }
 }
 
+TEST_CASE("serve API /api/gateways says what each gateway's address is",
+          "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/gateways"));
+  REQUIRE(j.at("success") == true);
+  const auto& gateways = j.at("gateways").as_array();
+  const auto& hosts = j.at("hosts").as_object();
+  // Every name in the list answers with an address, and it is the one the table would dial if the
+  // file named none. The page puts this in the address box when the reader switches gateway, so a
+  // missing or empty entry is a box left holding the address of the gateway they just left -- an
+  // address for another vendor's endpoint, which the next Save would post to.
+  CHECK(hosts.size() == gateways.size());
+  for (const auto& gateway : gateways) {
+    const std::string name = boost::json::value_to<std::string>(gateway);
+    REQUIRE(hosts.contains(name));
+    const std::string host = boost::json::value_to<std::string>(hosts.at(name));
+    CHECK(!host.empty());
+  }
+  // One known answer, so the map is the table's and not a set of identical strings: `openai` is
+  // the gateway the harness starts on, and its default is the one the routing layer would use.
+  CHECK(boost::json::value_to<std::string>(hosts.at("openai")) ==
+        pu::model::DefaultHostFor(pu::model::GatewayId::kOpenAI));
+}
+
+TEST_CASE("serve API /api/backend names the gateways when it refuses a name that is none",
+          "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  const std::string written =
+      boost::json::value_to<std::string>(BackendInFile(harness.Home()).as_object().at("host"));
+
+  // The page lets a gateway be typed rather than picked, so the refusal is the only place a reader
+  // is told what the list held. A bare "Unknown gateway: gpt" would leave them guessing at the
+  // spelling of a name the menu cannot offer while they are typing in a box.
+  const auto res = client.PostFull(
+      "/api/backend", boost::json::object{{"gateway", "gpt"}, {"model", "test-model"}});
+  REQUIRE(res.status == 400);
+  const std::string error = boost::json::value_to<std::string>(ParseJson(res.body).at("error"));
+  CHECK(error.find("Unknown gateway: gpt") != std::string::npos);
+  for (const std::string& name : {"ollama", "openai", "deepseek", "anthropic"}) {
+    CHECK(error.find(name) != std::string::npos);
+  }
+  // A refusal wrote nothing: the file still holds what the harness gave it.
+  CHECK(boost::json::value_to<std::string>(
+            BackendInFile(harness.Home()).as_object().at("host")) == written);
+}
+
 TEST_CASE("serve API /api/settings names every setting and where it came from",
           "[serve][api]") {
   ServeHarness harness("openai");

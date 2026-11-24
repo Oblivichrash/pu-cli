@@ -11,8 +11,8 @@ function setText(id, text) {
   if (el) el.textContent = text || "—";
 }
 
-// The gateway and the model sit in selects, so the label is written into the control's value:
-// textContent on a select would read as its options rather than as the one chosen.
+// The gateway sits in a select, so the label is written into the control's value: textContent on a
+// select would read as its options rather than as the one chosen.
 function setSelectValue(id, value) {
   const el = document.getElementById(id);
   if (el) el.value = value || "";

@@ -68,6 +68,9 @@ const PU = {
   currentAssistantBlocks: [],
   currentAssistantEl: null,
   gatewayShown: "",
+  // Each gateway's default address, from /api/gateways. Read when the menu changes, so the
+  // address box follows the gateway rather than keeping the one just left behind.
+  gatewayHosts: {},
   backendModelShown: "",
   backendHostShown: "",
   // The sampling settings in force, as `/api/backend` states them. A `null` member is a setting

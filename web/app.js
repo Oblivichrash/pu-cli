@@ -20,9 +20,21 @@ PU.composer.settingsReset.addEventListener("click", resetSettings);
 // three times, and an address half typed is not an address to send. A gateway switch is therefore
 // only drawn here; the model, which is the other half of the same decision, is chosen from the bar
 // once the gateway is in force.
-PU.composer.gatewaySelect.addEventListener("change", () => {
-  loadModelsFor(PU.composer.gatewaySelect.value);
-});
+//
+// The address is drawn along with it, because it is a fact about the gateway and not about the
+// form: leaving the previous gateway's host in the box would show an address for another vendor's
+// endpoint, and saving would post this gateway's name to it. The box takes the new gateway's own
+// default, which is the address the server would dial if the file named none, and the reader may
+// then edit it -- a proxy, a local mirror, a gateway served on another port. Without this the box
+// would be filled once at open and go on showing the address of a gateway they had left.
+const followGateway = () => {
+  const gateway = PU.composer.gatewaySelect ? PU.composer.gatewaySelect.value : "";
+  const hosts = PU.gatewayHosts || {};
+  if (!gateway) return;
+  if (PU.composer.hostInput) PU.composer.hostInput.value = hosts[gateway] || "";
+  loadModelsFor(gateway);
+};
+PU.composer.gatewaySelect.addEventListener("change", followGateway);
 PU.composer.sendBtn.addEventListener("click", sendMessage);
 
 PU.composer.inputEl.addEventListener("compositionstart", () => { PU.composer.composing = true; });

@@ -190,16 +190,21 @@ async function loadSession() {
 // by its file, but the gateway and the model under it are a choice. What one gateway serves is
 // asked when its menu is opened, because the catalogue belongs to the gateway; one that cannot
 // be asked answers with nothing and a reason, and the model in force is left as typed text.
+//
+// The answer is the whole entry rather than the list, because the two ways of having no list are
+// not the same fact: a gateway that says it has no models is answering, and a gateway that could
+// not be reached is not. A caller choosing a model has to tell them apart -- one means there is
+// nothing to pick, the other means nobody knows what there is -- and a bare `[]` would say both.
 async function loadModelsFor(gateway) {
-  if (!gateway) return;
+  if (!gateway) return null;
   const sent = gateway;
-  if (PU.modelCache && PU.modelCache.get(sent)) return PU.modelCache.get(sent).models;
+  if (PU.modelCache && PU.modelCache.get(sent)) return PU.modelCache.get(sent);
   let reply;
   try {
     reply = await fetchJson("/api/models?gateway=" + encodeURIComponent(sent));
   } catch (e) {
     console.error("loadModels error:", e);
-    return null;
+    return { models: [], error: String(e && e.message ? e.message : e) };
   }
   const entry = { models: reply.models || [], error: reply.error || "" };
   if (!PU.modelCache) PU.modelCache = new Map();
@@ -207,7 +212,7 @@ async function loadModelsFor(gateway) {
   if (PU.composer.gatewaySelect && sent === PU.composer.gatewaySelect.value) {
     renderModels(entry.models, PU.backendModelShown, entry.error);
   }
-  return entry.models;
+  return entry;
 }
 
 // What the agent speaks through now, and -- from its own address -- every gateway this build
@@ -227,6 +232,9 @@ async function loadBackends() {
     const backend = answer.backend || {};
     const gateways = catalogue.success ? catalogue.gateways || [] : [];
     if (!catalogue.success) setBackendError(catalogue.error || "The gateway list could not be read.");
+    // Each gateway's own address, kept where the menu can read it. An address belongs to the
+    // gateway it was typed for, so the box cannot be left holding the one just left behind.
+    if (catalogue.success && catalogue.hosts) PU.gatewayHosts = catalogue.hosts;
     // The settings that belong to the model are kept where its form reads them. They travel with
     // the backend because that is what they are properties of, and a `null` here is a setting
     // nobody stated rather than a zero.
@@ -314,10 +322,16 @@ function setBackendError(message) {
 async function chooseBackend(gateway, model, host) {
   if (!gateway) return;
   const sent = gateway;
-  const served = await loadModelsFor(sent);
+  const entry = await loadModelsFor(sent);
+  // Three cases, not two. A catalogue that arrived is something to choose from, even when it is
+  // empty; a catalogue that could not be read says nothing about what the gateway serves, so the
+  // name already in force stands. Flattening the last into the first would hand the new gateway a
+  // model it has never heard of, which is what a timed-out catalogue used to do.
   let chosen = (model || "").trim();
-  if (served && served.length > 0) {
-    if (!served.includes(chosen)) chosen = served[0];
+  if (entry && entry.error) {
+    chosen = chosen || PU.backendModelShown || "";
+  } else if (entry && entry.models.length > 0) {
+    if (!entry.models.includes(chosen)) chosen = entry.models[0];
   } else {
     chosen = chosen || PU.backendModelShown || "";
   }

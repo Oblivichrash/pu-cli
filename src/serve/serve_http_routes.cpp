@@ -371,12 +371,25 @@ boost::json::value HandleApiBackend(Call& call, const boost::json::value&) {
 
 // Every gateway this build can speak through, in table order. The list is the code's own, so
 // this asks a provider nothing.
+//
+// Each name arrives with the address that gateway is reached at by default. A reader switching
+// from one gateway to another is switching products, and the address they were shown belonged to
+// the gateway they just left: it is an address for a different vendor's endpoint, so keeping it in
+// the box would post the new gateway's name to the old gateway's host. The default is what the
+// box should hold until the reader says otherwise -- the same address the server would dial for
+// that gateway if the file named none.
 boost::json::value HandleApiGateways(Call&, const boost::json::value&) {
   boost::json::array gateways;
+  boost::json::object hosts;
   for (const model::Gateway& gateway : model::Gateways()) {
-    gateways.emplace_back(std::string(gateway.name));
+    const std::string name(gateway.name);
+    gateways.emplace_back(name);
+    // A `${VAR}` placeholder is a valid thing for the file to hold and is not an address to dial,
+    // but it is still what the gateway's own table says, and the page shows what the table says
+    // rather than guessing an expansion it cannot perform.
+    hosts[name] = std::string(gateway.default_host);
   }
-  return boost::json::object{{"gateways", std::move(gateways)}};
+  return boost::json::object{{"gateways", std::move(gateways)}, {"hosts", std::move(hosts)}};
 }
 
 // What one gateway serves, asked when the page opens the model list rather than once at load.
@@ -456,7 +469,12 @@ boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& bod
   if (gateway.empty()) throw RequestRefused("Missing 'gateway'");
   if (model.empty()) throw RequestRefused("Missing 'model'");
   const std::optional<model::GatewayId> id = model::ParseGatewayId(gateway);
-  if (!id) throw RequestRefused("Unknown gateway: " + gateway);
+  // The names, not only the fact that this one is wrong: the page lets a gateway be typed rather
+  // than picked, and a box that was typed in is the one place a reader has to be told what the
+  // list said -- the menu beside it is a suggestion, not a guard.
+  if (!id) {
+    throw RequestRefused("Unknown gateway: " + gateway + "; name one of " + model::GatewayNames());
+  }
   // Absent and empty both mean "no address of its own", which is how the page asks for the
   // gateway's default back.
   const std::string host = HostFromBody(body);
