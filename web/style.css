@@ -963,6 +963,25 @@ main {
 }
 #settings-reset:hover { color: var(--ink); }
 #settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
+/* The line a backend form ends on, above its buttons: which agent the sheet belongs to. It is
+   read as context and not as a field -- no border and no box -- because there is nothing here to
+   answer. The dotted rule above it separates it from the settings the reader does change, so the
+   eye reads it as the footnote to the form rather than as its last setting. */
+.dialog-context {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--border);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+.dialog-context span {
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  font-size: 12px;
+}
 /* The way out of the gateway form, offered as the pair a form ends with: the quiet one first, the
    one that writes second. Save is the accent's only filled shape here, so the button that changes
    the backend is the one the eye lands on -- Cancel is the same shape unfilled, which is what makes
@@ -1103,8 +1122,15 @@ main {
 /* ---------- configuration dialog ---------- */
 /* The sheet the configuration lives on, opened rather than pinned. It is sized by what is in it and
    capped to the viewport, so a short agent does not leave a mostly-empty sheet and a long one
-   scrolls its body instead of the page behind it. */
-#config-dialog {
+   scrolls its body instead of the page behind it.
+
+   The three sheets are one shape, so the shape is written once. A `<dialog>` arrives from the
+   browser with a 3px solid black border, a rounded-zero white box and its own padding -- close to
+   what this page wants and not the same thing: black is not ink here, white is not paper, and a
+   sheet that is drawn differently from the one beside it reads as a different kind of thing. The
+   selector is by element rather than by id because the fault was a missing id: the model and
+   gateway forms were written after this rule and inherited the browser's box instead. */
+dialog {
   width: min(460px, calc(100vw - 32px));
   max-height: min(82vh, 720px);
   padding: 0;
@@ -1118,7 +1144,16 @@ main {
 /* The page behind a modal is dimmed by the browser's own backdrop; this only decides how much,
    so the conversation stays legible as the thing the choices are about. */
 #config-dialog::backdrop { background: rgba(0, 0, 0, 0.32); }
-#config-dialog:not([open]) { display: none; }
+/* A closed dialog is not drawn. The browser's own rule is `display: none` on the element, but
+   `dialog` is laid out by the page as soon as it is set to anything, so the state is stated
+   here rather than relied on. */
+dialog:not([open]) { display: none; }
+/* The two forms the status bar opens ask one question each, so they stop at the width of that
+   question rather than opening at the configuration sheet's. */
+#gateway-dialog,
+#model-dialog {
+  width: min(400px, calc(100vw - 32px));
+}
 .config-head {
   display: flex;
   align-items: center;

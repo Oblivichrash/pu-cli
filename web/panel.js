@@ -67,8 +67,11 @@ function renderStatusBar() {
   setText("status-gateway", PU.gatewayShown || "");
   setText("status-model", PU.backendModelShown || "");
   // The agent's own name is stated in the dialog rather than chosen, so it is read once per
-  // render from what the session reported.
+  // render from what the session reported. The two backend forms state it too, in one line
+  // above their buttons: each of them changes one agent's backend, and the name says whose.
   setText("config-agent-name", PU.agentShown || "");
+  setText("gw-agent-name", PU.agentShown || "—");
+  setText("md-agent-name", PU.agentShown || "—");
 
   // What the server last said about thinking, rather than what a control holds: a setting an
   // older page does not draw is still a fact about the session.

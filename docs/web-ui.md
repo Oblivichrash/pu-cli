@@ -169,6 +169,21 @@ buttons therefore take `Saving…`, `disabled` and `aria-busy="true"` for the du
 label back afterwards, whether the save succeeded, was refused, or timed out. The button is also
 guarded on `aria-busy`, so a second press while the first is still in flight does nothing.
 
+**The three sheets are one shape.** A `<dialog>` arrives from the browser with a 3px solid black
+border, a square white box and 16px of its own padding. That is close to what this page wants and
+not the same thing: black is not ink here and white is not paper, so a sheet drawn that way reads
+as a different kind of object from every other surface on the page. The configuration sheet was
+written out by hand and the two backend forms were not, so they inherited the browser's box and sat
+beside it in a visibly different style. The shape is therefore written once, on `dialog` by element
+rather than by id, so a fourth sheet added later cannot miss it the way the second and third did.
+
+**A backend form names its agent.** Both forms change one agent's backend and nothing on screen
+otherwise says which agent that is, so each ends with a line reading `Agent default` above its
+buttons. It is read, not offered: the name is fixed by the agent's file and no route accepts a
+change to it, so writing it as a field would promise an edit that cannot be made. The line is
+`#gw-agent-name` and `#md-agent-name`, kept in step by the same `renderStatusBar` that fills the
+configuration sheet's name — one renderer for the one fact, drawn in three places.
+
 ## How the page is served
 
 The UI travels with the binary, not with the workspace the session is pointed at, so

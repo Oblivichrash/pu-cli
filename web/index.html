@@ -215,6 +215,10 @@
         <div id="md-error" class="backend-error" hidden></div>
       </section>
 
+      <!-- The same line the gateway form ends on, for the same reason: this sheet changes the
+           backend of one agent, and the name says which. A model is a setting of an agent's, so a
+           sheet that showed the model without the agent would be answering half the question. -->
+      <div class="dialog-context">Agent <span id="md-agent-name">—</span></div>
       <div class="gateway-actions">
         <button id="md-cancel" type="button" class="gateway-button">Cancel</button>
         <button id="md-save" type="button" class="gateway-button gateway-button-primary">Save</button>
@@ -301,6 +305,11 @@
         </label>
         <div id="gw-error" class="backend-error" hidden></div>
       </section>
+      <!-- Which agent is being configured, stated and not offered. The name is fixed by the
+           agent's file and no route accepts a change to it, so it is written here for the reader
+           who has two agents open and needs to know which one this sheet belongs to -- the
+           backend it changes is that agent's, and the sheet is otherwise all about the backend. -->
+      <div class="dialog-context">Agent <span id="gw-agent-name">—</span></div>
       <div class="gateway-actions">
         <button id="gw-cancel" type="button" class="gateway-button">Cancel</button>
         <button id="gw-save" type="button" class="gateway-button gateway-button-primary">Save</button>
