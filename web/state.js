@@ -87,9 +87,6 @@ const PU = {
     seed: null,
     context_window: null,
   },
-  // The agent that answers, as `/api/session` names it. It is stated in the configuration dialog
-  // rather than chosen, so it is kept here only so the dialog can print it.
-  agentShown: "",
   // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
   contextShown: "",
   // Kept so the bar can be redrawn when the window arrives late: the counts come with a turn and

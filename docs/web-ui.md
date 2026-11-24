@@ -41,7 +41,7 @@ own name.
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, the gateway and model writes (`saveGateway`, `saveModel`), rewind |
 | `web/gateway.js` | The two forms the status bar opens: the **gateway form** at `#gateway-dialog` (which gateway, and the address it is reached at) and the **model form** at `#model-dialog` (which model that gateway answers with, and how — temperature, thinking, max tokens, top P, seed, context window). Both are `<dialog>`s, so the focus trap and Escape come from the browser, and both close only when the server took the answers: a refusal is the form's to show, and a form that closed on one would leave the reader believing a change that was never made |
-| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It holds the agent's name, the session settings that are not a model's (the tool budget), and the tool list — the gateway, the address, the model and everything a model answers with belong to `gateway.js`'s two forms. It is a `<dialog>`, so the focus trap and Escape come from the browser |
+| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It holds the session settings that are not a model's (the tool budget) and the tool list — the gateway, the address, the model and everything a model answers with belong to `gateway.js`'s two forms. It is a `<dialog>`, so the focus trap and Escape come from the browser |
 | `web/composer.js` | The composer and everything it starts: the press's mark (an arrow while a turn is the thing the press would start, a square while one is running and the press would end it), the field growing to its own text, the one place a turn is sent from, and the edit flow — `beginEdit`, `cancelEdit`, `setComposerMode`, `sendEdit` — since an edit is a send whose text is a step back |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
@@ -202,10 +202,20 @@ shut a dropdown; that is deliberate and was true before this change too.
 than it used to be: `Backend` is gone, and the two fields now sit directly under the head. A
 section heading earns its line by saying what the rows beneath it are a group of, and it is only
 worth reading when there is more than one group to tell apart. The model sheet has eight fields
-in two kinds and so keeps `Model` and `How it answers`; the configuration sheet keeps `Agent`,
-`Session settings` and `Tools` for the same reason. The gateway sheet has two fields of one kind,
-under a head that already reads *Where the conversation goes* — a word for that repeated one line
-lower organises nothing, and it was the only reason the form was taller than its contents.
+in two kinds and so keeps `Model` and `How it answers`; the configuration sheet keeps `Session
+settings` and `Tools` for the same reason. The gateway sheet has two fields of one kind, under a
+head that already reads *Where the conversation goes* — a word for that repeated one line lower
+organises nothing, and it was the only reason the form was taller than its contents.
+
+**The configuration sheet names no agent.** It used to open on an `Agent` group whose single row
+read the name the process was started with, and that group is gone. The reason is the one that
+took `Agent default` off the two backend forms: a process serves one agent, so the row could not
+vary, and a line that cannot vary is not something the reader can act on — it was a restatement
+of the identity they started the program with, in the one sheet they opened to change something.
+What is left is exactly what can be changed. The name is still on the wire — `/api/session`
+reports `agent_name`, and a page that wants it for a tab title or a log has it — it simply has no
+row in this dialog. The `Agent` heading went with it, since a heading over nothing is worse than
+the orphan row it would have introduced.
 
 ## How the page is served
 

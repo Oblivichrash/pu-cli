@@ -238,18 +238,12 @@
     </form>
 
     <div class="config-body">
-      <!-- The agent is stated rather than chosen: it is fixed by its file, and a page that
-           offered to change it would be offering something no route accepts. Where the backend
-           answers is not here: the gateway, the address and the model are one decision made in
-           one place, and that place is the bar, where the answer is already written. -->
-      <section class="config-section">
-        <div class="panel-title">Agent</div>
-        <label class="field">
-          <span>Name</span>
-          <span id="config-agent-name" class="agent-name">—</span>
-        </label>
-      </section>
-
+      <!-- No agent section. The name this sheet used to state in its first group is the one the
+           process was started with, and a process serves one agent: the line could not vary, so
+           it told the reader nothing they did not already have. It failed the same way the
+           `Agent default` line failed on the two backend forms, and is gone for the same reason.
+           What is left is what the reader can act on -- the settings, and the tools those
+           settings bound. -->
       <section class="config-section">
         <div class="panel-title">Session settings</div>
         <!-- One row per setting the server offers, drawn from /api/settings: a setting added

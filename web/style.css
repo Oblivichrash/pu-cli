@@ -920,18 +920,6 @@ main {
   0%, 40% { box-shadow: 0 0 0 3px var(--accent-soft); }
   100% { box-shadow: 0 0 0 3px transparent; }
 }
-/* The agent is stated rather than chosen, so it is read as a value and not as a box. */
-.field .agent-name {
-  padding: 4px 0;
-  color: var(--ink);
-  font-size: 13px;
-  letter-spacing: normal;
-  text-transform: none;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.field .agent-name.missing { color: var(--ink-light); font-style: italic; }
 /* A number setting is an input rather than a list, and reads as the same box. */
 .field input {
   width: 100%;

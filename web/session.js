@@ -170,9 +170,6 @@ async function loadSession() {
     // actually reached rather than from the entry it asked for.
     if (data.server) setSelf({ name: data.server.name, port: data.server.port });
     renderServers();
-    // The agent is fixed by its file and cannot be changed from this page, so its name is only
-    // carried and printed: the dialog states it beside the things that can be changed.
-    if (typeof data.agent_name === "string") PU.agentShown = data.agent_name;
     setBackendLabel(data.gateway, data.backend_model, data.backend_host);
     // The window belongs to the model rather than to the gateway, so it is filed under both and
     // drawn here: a trial of a turn may already have been drawn against no window, and a switch
