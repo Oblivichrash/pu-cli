@@ -228,6 +228,8 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
 
 // --- Session and conversation --------------------------------------------------------------
 
+boost::json::array SettingsArray(Runtime& runtime);
+
 boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   Runtime& runtime = call.runtime;
   auto session = runtime.DefaultSession();
@@ -259,17 +261,7 @@ boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   };
   // Every setting this build knows, with the value in force and where it came from; the two
   // fields above are the same answer in the shape older pages read.
-  boost::json::array settings;
-  for (const session::SettingView& view : runtime.Settings()) {
-    settings.push_back(boost::json::object{
-        {"name", view.name},
-        {"type", view.type},
-        {"value", view.value},
-        {"source", view.source},
-        {"agent_value", view.agent_value},
-    });
-  }
-  body["settings"] = std::move(settings);
+  body["settings"] = SettingsArray(runtime);
 
   // What this conversation has spent so far. The counts are sums; a price is a sum only while
   // every turn that reported one reported it in the same unit, which is why `cost` can be
@@ -497,59 +489,61 @@ boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& bod
   // provider's own default. They are read here rather than passed whole so a page cannot write
   // a field this endpoint does not own -- `api_key` and `response_schema` are not a form's to
   // set.
-  if (json::HasKey(body, "temperature")) {
-    const boost::json::value& raw = body.at("temperature");
-    if (raw.is_null()) {
-      next.temperature = 0.7f;
-    } else if (const std::optional<double> want = json::OptionalOrDefault<double>(body, "temperature")) {
-      if (*want < 0.0 || *want > 2.0) throw RequestRefused("'temperature' must be between 0 and 2");
-      next.temperature = static_cast<float>(*want);
-    } else {
-      throw RequestRefused("'temperature' must be a number");
+  //
+  // One number is read by one shape of code below rather than five: the rule really is the same
+  // rule each time, and it is the provider that differs. `clear` is what an explicit null means
+  // for that field, and `acceptable` is the field's own range -- a field with no range passes a
+  // checker that answers true, which is how `seed` stays unconstrained.
+  const auto read_number = [&body](std::string_view key, auto clear, std::string_view message,
+                                   auto acceptable, auto set) {
+    const std::string name(key);
+    if (!json::HasKey(body, name)) return;
+    if (body.at(name).is_null()) {
+      clear();
+      return;
     }
-  }
-  if (json::HasKey(body, "max_tokens")) {
-    if (body.at("max_tokens").is_null()) {
-      next.max_tokens.reset();
-    } else if (const std::optional<std::int64_t> want =
-                   json::OptionalOrDefault<std::int64_t>(body, "max_tokens")) {
-      if (*want <= 0) throw RequestRefused("'max_tokens' must be positive");
-      next.max_tokens = static_cast<int>(*want);
-    } else {
-      throw RequestRefused("'max_tokens' must be a number");
+    if (const std::optional<std::int64_t> want = json::OptionalOrDefault<std::int64_t>(body, name)) {
+      if (!acceptable(*want)) throw RequestRefused((std::string("'") + name + "' ") + std::string(message));
+      set(static_cast<int>(*want));
+      return;
     }
-  }
-  if (json::HasKey(body, "top_p")) {
-    if (body.at("top_p").is_null()) {
-      next.top_p.reset();
-    } else if (const std::optional<double> want = json::OptionalOrDefault<double>(body, "top_p")) {
-      if (*want <= 0.0 || *want > 1.0) throw RequestRefused("'top_p' must be above 0 and at most 1");
-      next.top_p = static_cast<float>(*want);
-    } else {
-      throw RequestRefused("'top_p' must be a number");
+    throw RequestRefused((std::string("'") + name + "' must be a number"));
+  };
+  const auto read_float = [&body](std::string_view key, std::string_view message,
+                                  auto acceptable, auto set) {
+    const std::string name(key);
+    if (!json::HasKey(body, name)) return;
+    if (body.at(name).is_null()) {
+      set(0.7f);
+      return;
     }
-  }
-  if (json::HasKey(body, "seed")) {
-    if (body.at("seed").is_null()) {
-      next.seed.reset();
-    } else if (const std::optional<std::int64_t> want =
-                   json::OptionalOrDefault<std::int64_t>(body, "seed")) {
-      next.seed = static_cast<int>(*want);
-    } else {
-      throw RequestRefused("'seed' must be a number");
+    if (const std::optional<double> want = json::OptionalOrDefault<double>(body, name)) {
+      if (!acceptable(*want)) throw RequestRefused((std::string("'") + name + "' ") + std::string(message));
+      set(static_cast<float>(*want));
+      return;
     }
-  }
-  if (json::HasKey(body, "context_window")) {
-    if (body.at("context_window").is_null()) {
-      next.context_window.reset();
-    } else if (const std::optional<std::int64_t> want =
-                   json::OptionalOrDefault<std::int64_t>(body, "context_window")) {
-      if (*want <= 0) throw RequestRefused("'context_window' must be positive");
-      next.context_window = static_cast<int>(*want);
-    } else {
-      throw RequestRefused("'context_window' must be a number");
-    }
-  }
+    throw RequestRefused((std::string("'") + name + "' must be a number"));
+  };
+  read_float(
+      "temperature", "must be between 0 and 2",
+      [](double v) { return v >= 0.0 && v <= 2.0; },
+      [&next](float v) { next.temperature = v; });
+  read_number(
+      "max_tokens", [&next] { next.max_tokens.reset(); }, "must be positive",
+      [](std::int64_t v) { return v > 0; },
+      [&next](int v) { next.max_tokens = v; });
+  read_float(
+      "top_p", "must be above 0 and at most 1",
+      [](double v) { return v > 0.0 && v <= 1.0; },
+      [&next](float v) { next.top_p = v; });
+  read_number(
+      "seed", [&next] { next.seed.reset(); }, "",
+      [](std::int64_t) { return true; },
+      [&next](int v) { next.seed = v; });
+  read_number(
+      "context_window", [&next] { next.context_window.reset(); }, "must be positive",
+      [](std::int64_t v) { return v > 0; },
+      [&next](int v) { next.context_window = v; });
   // The level is a property of the model the way the cap is: which gateway answers decides what
   // "high" puts on the wire, so it belongs to the choice of model rather than to a session knob.
   // `auto` and an explicit null both mean "no level of our own", which is the state the file
@@ -605,7 +599,7 @@ boost::json::value HandleApiRewind(Call& call, const boost::json::value& body) {
 
 // The settings this build knows, with the value in force and where it came from. One shape for
 // the whole table, so a page draws a new setting without a new endpoint.
-boost::json::value SettingsBody(Runtime& runtime) {
+boost::json::array SettingsArray(Runtime& runtime) {
   boost::json::array settings;
   for (const session::SettingView& view : runtime.Settings()) {
     settings.push_back(boost::json::object{
@@ -616,7 +610,11 @@ boost::json::value SettingsBody(Runtime& runtime) {
         {"agent_value", view.agent_value},
     });
   }
-  return boost::json::object{{"settings", std::move(settings)}};
+  return settings;
+}
+
+boost::json::value SettingsBody(Runtime& runtime) {
+  return boost::json::object{{"settings", SettingsArray(runtime)}};
 }
 
 boost::json::value HandleApiSettings(Call& call, const boost::json::value&) {
