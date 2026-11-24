@@ -14,6 +14,12 @@
   --error-text: #8a2a1a;
   --ok: #4a7c59;
   --warn: #b5892a;
+  /* The room between a full-width row and the column it holds: 20px on a narrow window, and
+     centred once the window is wider than the column. */
+  --gutter: max(20px, calc(50% - var(--column) / 2));
+  /* The one monospace stack: a block's command and its product are the only places the page
+     is not set in a serif. */
+  --mono: "JetBrains Mono", "Cascadia Code", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -68,13 +74,10 @@ header {
 .conn-dot.online { background: var(--ok); }
 .conn-dot.offline { background: var(--accent); }
 .conn-dot.connecting { background: var(--warn); }
-/* The one drawn mark in the header. Nothing else in the bar is boxed -- the brand, the workspace
-   name and the caret are all marks on the paper -- so a frame around this one drew a border round
-   a single word, and the mark read as a button among labels rather than as the one control of the
-   same weight. The border is gone and the padding is what is left: 18 + 4 + 4 = 26, a hit area
-   wide enough for a pointer without a visible edge, centred on the same line as the name beside
-   it. `line-height: 0` is what makes the inline SVG sit on the padding rather than on a text
-   baseline, and the stroke is `currentColor` so the hover rule below reaches the path. */
+/* The one drawn mark in the header. The border is gone and the padding is what is left, because
+   a frame around one word among labels read as a button. `line-height: 0` keeps the inline SVG
+   on the padding rather than on a text baseline; the stroke is `currentColor` so the hover
+   reaches the path. */
 #config-open {
   display: flex;
   align-items: center;
@@ -89,10 +92,8 @@ header {
   line-height: 0;
 }
 #config-open:hover { color: var(--accent); }
-/* Drawn at the size of the text around it. The gear is the only glyph in the bar that is a drawing
-   rather than a character, so it is matched to the 14-15px the name and the caret sit at rather
-   than to the 24px mark inside the composer: what is shared with that mark is the grid and the
-   hand, not the scale, since the two are read at different distances. */
+/* Drawn at the size of the text around it, not the 24px mark inside the composer: the two are
+   read at different distances. */
 #config-open .icon {
   display: block;
   width: 18px;
@@ -191,19 +192,14 @@ main {
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 24px max(20px, calc(50% - var(--column) / 2));
+  padding: 24px var(--gutter);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-/* A message is a column of blocks, not preformatted text: markdown decides where the
-   lines break, so the container does not preserve whitespace of its own -- doing both
-   rendered markdown's own newlines between blocks as well, which read as blank lines.
-   The blocks that are set as raw text keep their own white-space. */
 /* A message is two surfaces: the bubble, which is the text and nothing else, and the footing
-   under it, which is the cost and the controls. The message itself draws neither, so the two
-   are free to be shaped differently -- which is the point of putting the line outside. */
+   under it, which is the cost and the controls. */
 .msg {
   line-height: 1.65;
   font-size: 15px;
@@ -212,24 +208,9 @@ main {
 /* The paper: the tint, the frame and the room around the words. This is the only part of a
    message that looks like something was said.
 
-   The corner is 6px, not the 2px the rest of the page uses. Every other 2px corner here is on
-   a control or a rule -- a field, a menu row, a scrollbar thumb -- where the radius exists to
-   take the burr off a hard corner and nothing more. A bubble is a surface with a tint and a
-   frame, and at 2px the tint's corners read as square: the frame is what carries the eye round
-   the shape, so a radius under about half the padding looks like a rounded border on a
-   rectangle rather than a rounded rectangle. 6px is under the 8-10px a chat surface usually
-   takes, deliberately: a larger radius at this width pulls the corners away from the first and
-   last word of a short line, and this page's messages are short and set in one column.
-
-   The room is 8px top and bottom against 24.75px of line height. A line box carries its own
-   leading, so the padding is not what the eye reads as the gap -- half the leading above the
-   cap height is, which is about 5px here, so the gap the eye sees is 13px. That is the same
-   gap the words have from each other, which is what makes a short turn read as set rather than
-   as floating: at 10px the eye sees 15px, and a single line of 15px type in a box with 15px
-   above and below it has more air than it has words. The sides are 14px because with the
-   bubble hugging its text rather than filling the column, the side padding is the whole of the
-   space between the first letter and the frame; at 18px a one-word turn floated in a wide tint
-   with nothing to say why. */
+   The corner is 6px where the rest of the page uses 2px. Every other 2px corner here is on a
+   control or a rule, where the radius only takes the burr off a hard corner; a bubble is a
+   surface with a tint and a frame, and at 2px the tint's corners read as square. */
 .msg-bubble {
   padding: 8px 14px;
   border-radius: 6px;
@@ -245,22 +226,14 @@ main {
    There is no menu and there is no note: a press is the whole vocabulary, so the only thing
    that has to be true is that the words stay legible while the pointer is over them. */
 .msg.user.editing .msg-bubble { cursor: text; }
-/* A question takes the width of what it says, not the width of the column. A turn that fills the
-   column draws a tinted band 900px wide behind two words, and the empty right of it is not
-   space the reader can use -- it is the tint telling them the message is longer than it is.
-   Hugging the text makes the shape of the turn say how much was said.
-   The cap is the column, so a long reply wraps where it always did rather than running past the
-   edge; `min-width: 0` is what lets the flex item shrink below its text instead of overflowing.
-   The two sides are told apart by where they sit as well as by tint: the user's turn goes to
-   the right edge, because it is the one asking, and the reply stays at the left margin it was
-   read from. With a bubble that hugs its text the two colours alone are too close to carry it
-   -- a two-word question and a two-word answer are both small pale rectangles.
+/* A question takes the width of what it says, not the width of the column: a tinted 900px band
+   behind two words reads as a message longer than it is. Only the question hugs. A reply
+   stretches, because what it holds is not always a paragraph -- a tool call is a line of a log,
+   and a log line stopping a third of the way across reads as a short entry rather than a step.
 
-   Only the question hugs. A reply stretches, because a reply is the page's own text rather
-   than a note from outside, and because what it holds is not always a paragraph: a tool call
-   is a line of a log, and a log line that stops a third of the way across the column reads as
-   a short entry rather than as a step. The step has to reach the right edge to be seen as
-   taking its row, so the row it sits in does too. */
+The two sides are told apart by where they sit as well as by tint: the user's turn goes to the
+right edge and the reply stays at the left margin it was read from. With a bubble that hugs its
+text the two colours alone are too close to carry that. */
 .msg.user {
   align-self: flex-end;
   max-width: 100%;
@@ -277,17 +250,8 @@ main {
   border-color: #d0c4b0;
 }
 /* A reply is not a message from someone: it is what the page holds, and the page is already
-   paper. Drawing a white card behind the answer and a frame around the card makes it a second
-   surface laid on the first, so every turn reads as a note stuck to the page rather than as
-   the page's own text. The tint and the frame stay on the question, which is the one thing
-   that did come from outside, and the reply is set straight onto the background.
-   The padding is 8px top and bottom and nothing at the sides. The vertical room is what puts
-   a reply's first line on the same rhythm as the question above it, and it is the same 8px the
-   question uses. The sides are zero because this row already spans the column: the question is
-   inset by its own padding inside a box that hugs it, while the reply has no box to be inset
-   within, and 14px of side padding here would hold the first letter of every reply off the
-   left margin the question was read at, and pull a tool call's rule in from the edge it is
-   meant to run to. */
+   paper. The sides are zero because this row spans the column -- 14px here would hold the first
+   letter of every reply off the left margin the question was read at. */
 .msg.assistant .msg-bubble {
   padding: 8px 0;
   background: transparent;
@@ -302,7 +266,7 @@ main {
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   font-size: 13px;
   white-space: pre-wrap;
 }
@@ -319,16 +283,9 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-/* The cost of the turn is the last line of the bubble: it sits inside the paper, at the same
-   left inset as the words, so it closes the message rather than trailing after it. On the page
-   it read as a footnote to the frame above it -- a note in a second surface about a first one --
-   and a reply is one turn, not an answer with an annotation.
-   The gap is 4px rather than the 8px it started at: the line is 11px type in an 18px box, so
-   half of what the eye reads as gap is the leading inside the line box, not the margin. Eight
-   plus that leading put the note far enough down to look detached from the text it belongs to.
-   It centres rather than sits on baselines. Baseline alignment is right for two runs of type and
-   wrong for a type run beside an icon; the line has no icons left, and centring keeps whatever
-   is added beside it later level without re-deciding the alignment. */
+/* The cost of the turn is the last line of the bubble: at the same left inset as the words, it
+   closes the message rather than trailing after it. It centres rather than sitting on baselines,
+   which is right for a type run beside an icon and wrong for two runs of type. */
 .msg-foot {
   display: flex;
   align-items: center;
@@ -404,7 +361,7 @@ main {
 }
 .block-tool .block-header,
 .block-subtask .block-header {
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
 }
 .block-tool .tool-name {
   color: var(--ink);
@@ -485,34 +442,17 @@ main {
 }
 .tool-page:empty { display: none; }
 
+/* A call and a subtask both show their arguments as text, and the subtask's rows repeat what
+   its header says in one line each rather than truncating. The two are drawn alike, so they
+   are set alike. */
 .tool-args,
-.tool-result { margin: 4px 0; }
-.tool-args pre,
-.tool-result pre {
-  margin: 4px 0 0 0;
-  padding: 6px 10px;
-  background: var(--paper);
-  border-radius: 2px;
-  font-size: 13px;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 40vh;
-  overflow: auto;
-}
-.tool-error {
-  color: var(--error-text);
-  border-left: 3px solid var(--error-border);
-  padding-left: 10px;
-}
-
-/* The subtask body names the two things the call was made of, then the answer. The
-   header says where and what was asked in one line each, so these repeat them in full
-   rather than truncating. */
+.tool-result,
 .subtask-agent-row,
 .subtask-dir-row,
 .subtask-prompt-row,
 .subtask-answer { margin: 4px 0; }
+.tool-args pre,
+.tool-result pre,
 .subtask-agent-row pre,
 .subtask-dir-row pre,
 .subtask-prompt-row pre,
@@ -522,12 +462,13 @@ main {
   background: var(--paper);
   border-radius: 2px;
   font-size: 13px;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 40vh;
   overflow: auto;
 }
+.tool-error,
 .subtask-error {
   color: var(--error-text);
   border-left: 3px solid var(--error-border);
@@ -539,7 +480,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px max(20px, calc(50% - var(--column) / 2)) 12px;
+  padding: 10px var(--gutter) 12px;
   border-top: 1px solid var(--border);
   background: rgba(255, 252, 245, 0.7);
   flex: 0 0 auto;
@@ -570,28 +511,19 @@ main {
 }
 #input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 /* The mark in the field's lower right, on the same 24-unit grid as the gear in the header. It is a
-   stroke path rather than a typed arrow for the reason the gear is: a character at this size is a
-   glyph the serif bolds into a smudge, while a path keeps the weight the rest of the page uses.
-   Colour is `currentColor`, so the hover and the stop states are rules on the button and not on
-   the path. */
+   stroke path rather than a typed arrow because a character at this size is a glyph the serif
+   bolds into a smudge. Colour is `currentColor`, so the hover and stop states are rules on the
+   button and not on the path. */
 #send {
   position: absolute;
-  /* 8px rather than 6 now the ring is 28: the field's minimum is 44px, so 8 above and 8 below
-     leaves the disc centred on one line, and 8 from the right keeps the same 6px of light
-     between the ring and the frame. */
   right: 8px;
   bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The press is a circle: an arrow is a direction rather than a block of text, and a ring
-     around it is the shape every send control takes. The ring is drawn in the accent because it
-     is the one filled mark on a page of paper and hairline, and it is what turns a glyph in a
-     corner into something that reads as pressable.
-     28px, not 32: a filled disc carries more weight than an open glyph of the same size, and at
-     32 it sat heavier than the 15px text it shares the field with. The ring only needs to be
-     big enough to read as round and to be hit without care -- a mouse needs about 24px, and 28
-     keeps a margin over that and a full 6px of light around it inside the field's 10px pad. */
+  /* The press is a circle, drawn in the accent because it is the one filled mark on a page of
+     paper and hairline. 28px, not 32: a filled disc carries more weight than an open glyph of the
+     same size and at 32 sat heavier than the 15px text it shares the field with. */
   width: 28px;
   height: 28px;
   padding: 0;
@@ -605,30 +537,24 @@ main {
   transition: background 0.2s, opacity 0.2s;
 }
 /* `hidden` on an SVG path is not the sure thing it is on a div: the attribute only works through
-   the UA sheet's `[hidden] { display: none }`, which SVG elements are not reliably subject to, and
-   both paths stayed laid out here. The rule is written out so the second state cannot leak through
-   the first. */
+   the UA sheet's `[hidden] { display: none }`, which SVG elements are not reliably subject to,
+   and both paths stayed laid out here. The rule is written out so the second state cannot leak
+   through the first. */
 #send .icon path[hidden] { display: none; }
-/* The square is drawn solid rather than as an outline: at this size a hollow square a stroke wide
-   reads as an empty checkbox, while a filled one is the mark every player uses for the same
-   press. The arrow gets its fill back because an open path is closed implicitly when it is filled,
-   and a closed arrow is a triangle. */
+/* The square is drawn solid: at this size a hollow square a stroke wide reads as an empty
+   checkbox. The arrow gets its fill back because an open path is closed implicitly when filled. */
 #send .icon-send { fill: none; }
 #send .icon-stop { fill: currentColor; stroke: none; }
 /* The ring is already the accent, so hover cannot deepen the colour the way a text control
-   does. It steps down instead: the circle darkens and keeps white ink, which is the only move
-   left once the mark is filled. The step is mixed from the variable rather than written as a
-   hex, because the accent lightens in the dark theme and a fixed dark red would swallow it. */
+   does. It steps down instead, mixed from the variable rather than written as a hex: the accent
+   lightens in the dark theme and a fixed dark red would swallow it. */
 #send:hover { background: color-mix(in srgb, var(--accent) 82%, #000); }
 /* A press that is still on its way says so by not answering: the mark stays, the hand does not
    change, and the press is refused rather than repeated. */
 #send:disabled { cursor: not-allowed; opacity: 0.5; }
-/* The mark is drawn a step down in size, because it now sits inside a 28px ring rather than
-   alone in a 36px corner: an arrow spends its height on a shaft and a head rather than filling
-   its box the way a letter does, so it needs a larger share of the ring than a letter would to
-   read at the same weight -- but not so much that it presses against the ring. At 16px the
-   arrow takes 57% of the disc, which is the proportion Material and Apple use for a glyph in
-   an icon button. */
+/* The mark is drawn a step down in size because it now sits inside a 28px ring rather than alone
+   in a 36px corner: an arrow spends its height on a shaft and a head rather than filling its box
+   the way a letter does, so it needs a larger share of the ring to read at the same weight. */
 #send .icon {
   display: block;
   width: 16px;
@@ -642,7 +568,7 @@ main {
 /* The approval gate is parked above the composer, not floating over the page: a
    decision waited on is the one thing that must not be scrolled past or missed. */
 #approval-bar {
-  margin: 0 max(20px, calc(50% - var(--column) / 2));
+  margin: 0 var(--gutter);
   padding: 12px 14px;
   border: 1px solid var(--accent);
   border-radius: 2px;
@@ -664,7 +590,7 @@ main {
   flex-shrink: 0;
 }
 .approval-command {
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   font-size: 13px;
   color: var(--error-text);
   background: transparent;
@@ -732,7 +658,7 @@ main {
 /* A notice (disconnect, token limit) is a dismissible strip above the composer, kept
    out of the transcript. */
 #notice-bar {
-  margin: 0 max(20px, calc(50% - var(--column) / 2)) 8px;
+  margin: 0 var(--gutter) 8px;
   padding: 8px 12px;
   border-left: 3px solid var(--warn);
   background: rgba(181, 137, 42, 0.08);
@@ -776,24 +702,12 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The two items the reader can press. Each one is its own target, so each gets its own hover: a
-   press target that does not answer the pointer with anything but a cursor makes a reader guess
-   where one item ends and the next begins, and the gateway and the model are close enough that
-   the guess would often be wrong.
-
-   They are `<button>`s, so the keyboard, the focus ring and `:active` are the browser's. A button
-   also arrives with a border, a background and a font of its own, which are what these first
-   lines take away: the bar's font is the bar's, and the shape of the press is the hover's.
-
-   The hover cannot be a background on the item itself: `.status-item` clips its own overflow so
-   a long model name can end in an ellipsis, and a background drawn inside a clipped box stops at
-   the text rather than at the item. The tint is therefore drawn by a box-shadow, which is not
-   clipped, and the padding gives that shadow something to sit around. The negative margin takes
-   back the width the padding added, so the bar's spacing between items does not change and the
-   items do not close up around the new padding.
-
-   The colour is the accent, at the same weight as `:hover` elsewhere on the page: this is one
-   vocabulary for "pressable", not a second one invented for the bar. */
+/* The two items the reader can press. The hover cannot be a background on the item itself:
+   `.status-item` clips its own overflow so a long model name can end in an ellipsis, and a
+   background drawn inside a clipped box stops at the text rather than at the item. The tint is
+   therefore a box-shadow, which is not clipped, and the padding gives that shadow something to
+   sit around; the negative margin takes back the width the padding added, so the bar's spacing
+   does not change. */
 .status-press {
   font: inherit;
   color: inherit;
@@ -994,7 +908,7 @@ main {
 .tool-list li {
   font-size: 13px;
   color: var(--ink);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   padding: 2px 0;
 }
 .tool-list li .tool-src {
@@ -1004,10 +918,16 @@ main {
 }
 
 /* ---------- scrollbar ---------- */
-#messages::-webkit-scrollbar { width: 6px; }
+/* The conversation and the sheet are read one after the other, so their scrollbars are drawn
+   alike rather than in the platform's grey. */
+#messages::-webkit-scrollbar,
+.config-body::-webkit-scrollbar { width: 6px; }
 #messages::-webkit-scrollbar-track { background: var(--paper); }
-#messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-#messages::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
+.config-body::-webkit-scrollbar-track { background: transparent; }
+#messages::-webkit-scrollbar-thumb,
+.config-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#messages::-webkit-scrollbar-thumb:hover,
+.config-body::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 
 /* One rhythm inside a reply: what markdown emits carries no margins of its own, and
    consecutive blocks are separated by a single step, so a paragraph, a list and a code
@@ -1046,16 +966,13 @@ main {
 }
 
 /* ---------- configuration dialog ---------- */
-/* The sheet the configuration lives on, opened rather than pinned. It is sized by what is in it and
-   capped to the viewport, so a short agent does not leave a mostly-empty sheet and a long one
-   scrolls its body instead of the page behind it.
+/* The sheet the configuration lives on, sized by its content and capped to the viewport: a short
+   agent does not leave a mostly-empty sheet and a long one scrolls its body instead of the page
+   behind it.
 
-   The three sheets are one shape, so the shape is written once. A `<dialog>` arrives from the
-   browser with a 3px solid black border, a rounded-zero white box and its own padding -- close to
-   what this page wants and not the same thing: black is not ink here, white is not paper, and a
-   sheet that is drawn differently from the one beside it reads as a different kind of thing. The
-   selector is by element rather than by id because the fault was a missing id: the model and
-   gateway forms were written after this rule and inherited the browser's box instead. */
+   A `<dialog>` arrives from the browser with a 3px black border, a square white box and its own
+   padding. The selector is by element rather than by id because the fault was a missing id: the
+   model and gateway forms were written after this rule and inherited the browser's box instead. */
 dialog {
   width: min(460px, calc(100vw - 32px));
   max-height: min(82vh, 720px);
@@ -1091,11 +1008,9 @@ dialog:not([open]) { display: none; }
      overlay on a dark sheet would draw a bright band across the top of it. */
   background: color-mix(in srgb, var(--paper) 60%, transparent);
 }
-/* The three heads are one shape, so the shape is written once and by class: this rule was on
-   #config-title alone, and the two backend forms' titles were never given it -- they carried the
-   browser's default size until the corner ✕ beside them was removed and there was nothing left on
-   the row to hide it. A selector by class cannot miss the next head, which is the same reason the
-   dialog's own shape is written on `dialog`. */
+/* The three heads are one shape, written once and by class: this rule was on #config-title alone
+   and the two backend forms' titles carried the browser's default size until the ✕ beside them
+   was removed and there was nothing left on the row to hide it. */
 .config-title {
   flex: 1;
   font-size: 12px;
@@ -1115,7 +1030,7 @@ dialog:not([open]) { display: none; }
   cursor: pointer;
 }
 .config-close:hover { color: var(--accent); }
-/* The body is the scroll box, and the thing a backdrop click misses: it fills the dialog, so a
+/* The body is the scroll box and the thing a backdrop click misses: it fills the dialog, so a
    click on the page-filling element itself is a click outside the sheet. */
 .config-body {
   padding: 14px 14px 14px 16px;
@@ -1125,12 +1040,6 @@ dialog:not([open]) { display: none; }
   flex-direction: column;
   gap: 18px;
 }
-/* The sheet's own scrollbar, drawn like the conversation's rather than in the platform's grey: the
-   two are read one after the other and a different scrollbar would read as a different window. */
-.config-body::-webkit-scrollbar { width: 6px; }
-.config-body::-webkit-scrollbar-track { background: transparent; }
-.config-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.config-body::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 .config-section { display: flex; flex-direction: column; gap: 8px; }
 #config-dialog .tool-list li { font-size: 12px; }
 /* A gateway that cannot be asked is a fact about the menu above it, not a page-level failure, so
@@ -1150,10 +1059,9 @@ dialog:not([open]) { display: none; }
      now, so there is no second row for it to share and nothing to wrap. */
   #composer-row { flex-wrap: nowrap; }
   #input { flex-basis: 100%; }
-  /* Nothing is dropped from the bar. The two readings that used to be hidden here were the
-     gateway and the model, and they are gone from the bar entirely -- what is left on the right
-     is the tool count and the usage reading, which are now the whole of that half. Dropping
-     them leaves it empty. The bar clips instead, and each item carries its own width bound. */
+  /* Nothing is dropped from the bar: what is left on the right is the tool count and the usage
+     reading, which are now the whole of that half, so hiding them would leave it empty. The bar
+     clips instead, and each item carries its own width bound. */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1173,7 +1081,9 @@ dialog:not([open]) { display: none; }
   header, #composer, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .tool-args pre, .tool-result pre { background: #262320; }
-  .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
+  .tool-args pre, .tool-result pre,
+  .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre {
+    background: #262320;
+  }
   .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }
