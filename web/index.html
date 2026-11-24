@@ -98,17 +98,22 @@
        who wants the other model should not have to open a sheet that also asks them about the
        address and the temperature. A shared press target would also have to guess which half of
        "openai / stub-model" the pointer meant. What stays read-only is what the reader never
-       chose: the connection, the tool list, and the window the last reply filled. -->
+       chose: the connection, the tool list, and the window the last reply filled.
+
+       The two presses are `<button>`s rather than spans given a role. A span with a role is a
+       promise the page has to keep by hand -- Enter and Space, the focus ring, the pressed state --
+       and the browser keeps all three for the element that was made for this, so the handler is
+       one `click` and the keyboard comes free. -->
   <div id="status-bar">
     <span class="status-item">
       <span id="conn-dot" class="conn-dot" title="Connection"></span>
       <span id="conn-text">connecting</span>
     </span>
-    <span class="status-item status-press" id="status-gateway" role="button" tabindex="0"
-          title="The gateway that answers — click to change">—</span>
+    <button type="button" class="status-item status-press" id="status-gateway"
+            title="The gateway that answers — click to change">—</button>
     <span class="status-sep" aria-hidden="true">/</span>
-    <span class="status-item status-press" id="status-model" role="button" tabindex="0"
-          title="The model that answers — click to change">—</span>
+    <button type="button" class="status-item status-press" id="status-model"
+            title="The model that answers — click to change">—</button>
     <span class="status-item" id="status-thinking"
           title="How much reasoning the model is asked for">—</span>
     <span class="status-right">
@@ -264,7 +269,16 @@
       <section class="config-section">
         <div class="panel-title">Backend</div>
         <!-- The gateway first, because the other two belong to it: the model list is the
-             gateway's, and an address typed here is read by the gateway it names. -->
+             gateway's, and an address typed here is read by the gateway it names.
+
+             A menu, not a box. Which gateways exist is the build's fact and not the reader's, so
+             there is nothing for a free name to mean here: the seven rows are the whole answer,
+             and a name outside them is a typo the field would have to be corrected out of. The
+             model's name is a box because a catalogue is advice -- a gateway answers names it does
+             not list -- but this one is a lookup, and a lookup is a list.
+
+             The address below is the one place a reader writes a destination, and it stays a box:
+             the menu's answer only supplies its default. -->
         <label class="field">
           <span>Gateway</span>
           <select id="gw-type"></select>

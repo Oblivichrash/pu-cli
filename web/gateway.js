@@ -42,24 +42,39 @@ function gatewayClose() {
 // Save is the one path that writes. It closes only when the server took the answers: a refusal is
 // the form's to show, and a form that closed on a refusal would leave the reader believing the
 // change was made.
+//
+// The button is held while the request runs, because the request can take as long as a connect
+// timeout -- a gateway whose host does not answer is asked what it serves before the backend is
+// written -- and a button that looked untouched through those seconds reads as one that did not
+// take the press. `aria-busy` says the same thing to a reader who is not watching the label.
+async function withBusy(button, work) {
+  if (!button) return work();
+  if (button.getAttribute("aria-busy") === "true") return undefined;
+  const label = button.textContent;
+  button.setAttribute("aria-busy", "true");
+  button.disabled = true;
+  button.textContent = "Saving…";
+  try {
+    return await work();
+  } finally {
+    button.removeAttribute("aria-busy");
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
 async function gatewaySave() {
-  const ok = await saveGateway();
+  const ok = await withBusy(document.getElementById("gw-save"), saveGateway);
   if (ok) gatewayClose();
 }
 
 function wireGatewayDialog() {
   const dialog = gatewayDialog();
   if (!dialog) return;
+  // A button presses itself: Enter and Space arrive as a `click`, so there is no key handler to
+  // write here and no way for the two targets to drift apart in how they answer the keyboard.
   const open = document.getElementById("status-gateway");
-  if (open) {
-    open.addEventListener("click", gatewayOpen);
-    // These are spans given a role, so the browser does not press them for the reader.
-    open.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
-      e.preventDefault();
-      gatewayOpen();
-    });
-  }
+  if (open) open.addEventListener("click", gatewayOpen);
   const save = document.getElementById("gw-save");
   if (save) save.addEventListener("click", gatewaySave);
   const cancel = document.getElementById("gw-cancel");
@@ -111,22 +126,33 @@ function showNumber(value) {
   return String(Math.round(n * 1e6) / 1e6);
 }
 
+// The catalogue is the menu's option list, rebuilt in place. The name in force is always one of the
+// entries: a catalogue is what a gateway says it serves, which is not always everything it answers,
+// and a name that is running must be selectable back out of the menu it sits in. It goes first when
+// the catalogue does not list it, so the menu opens on the name in force either way -- and a
+// catalogue that could not be read leaves a menu of one, which is the honest drawing of a gateway
+// that could not be asked rather than an empty field the reader has to guess into.
+function fillModelChoices(names, current) {
+  const menu = modelField("md-name");
+  if (!menu) return;
+  const known = (names || []).slice();
+  const shown = current === undefined ? PU.backendModelShown || "" : current;
+  if (shown && !known.includes(shown)) known.unshift(shown);
+  menu.textContent = "";
+  for (const name of known) menu.append(new Option(name, name));
+  // Assigned after the options exist: a value set before its option was drawn is dropped by the
+  // browser, and the menu would open on its first entry instead of on the name in force.
+  if (shown) menu.value = shown;
+}
+
 // The form opens on what is in force rather than on what was last typed, for the same reason the
 // gateway's form does: a draft abandoned last time must not return as if it had been saved. An
 // unstated setting -- no cap, no seed -- shows as an empty box rather than as a number, because a
 // cap nobody chose is not a cap.
 function modelFill() {
-  const nameSelect = modelField("md-name");
-  const nameText = modelField("md-name-text");
+  const menu = modelField("md-name");
   const current = PU.backendModelShown || "";
-  if (nameSelect) {
-    const known = (PU.modelsShown || []).slice();
-    if (current && !known.includes(current)) known.unshift(current);
-    nameSelect.textContent = "";
-    for (const name of known) nameSelect.append(new Option(name, name));
-    if (known.includes(current)) nameSelect.value = current;
-  }
-  if (nameText) nameText.value = current;
+  fillModelChoices(PU.modelsShown || [], current);
   const numbers = {
     "md-temperature": PU.backendParamsShown.temperature,
     "md-max-tokens": PU.backendParamsShown.max_tokens,
