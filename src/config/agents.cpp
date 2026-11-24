@@ -286,11 +286,7 @@ std::string FindConfigPath() {
   return {};
 }
 
-void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
-                        const std::string& model_name, const std::string& host,
-                        float temperature, const std::optional<int>& max_tokens,
-                        const std::optional<float>& top_p, const std::optional<int>& seed,
-                        const std::optional<int>& context_window) {
+void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& update) {
   std::ifstream file(config_path);
   if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
   const std::string original{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -301,39 +297,44 @@ void UpdateAgentBackend(const std::string& config_path, const std::string& gatew
   if (!json::HasKey(root, "backend") || !root.at("backend").is_object())
     throw pu::GenericError(config_path + " has no backend to change");
   boost::json::object& backend = root.at("backend").as_object();
-  backend["gateway"] = gateway_name;
-  backend["model"] = model_name;
+  backend["gateway"] = update.gateway;
+  backend["model"] = update.model;
   // The address is written as the reader spelled it. `${VAR}` is left standing so the file keeps
   // naming the environment rather than this run's expansion of it, and an empty value deletes the
   // key: a host key holding "" would pin the empty address, while no key at all is what lets the
   // gateway supply its own default on the next load.
-  if (host.empty()) {
+  if (update.host.empty()) {
     backend.erase("host");
   } else {
-    backend["host"] = host;
+    backend["host"] = update.host;
   }
   // The sampling settings follow the address' rule: stated, they are written; not stated, the key
   // is gone. A key holding a number nobody chose is worse than no key, because the file then
   // claims a pin the reader never asked for. `temperature` is the exception: it is not optional
   // in the type, so a backend always answers at some value and the file always says which.
-  backend["temperature"] = temperature;
-  if (max_tokens) {
-    backend["max_tokens"] = *max_tokens;
+  backend["temperature"] = update.temperature;
+  // `thinking` is the other exception, and for the same reason: `kServerDefault` is a level the
+  // file spells `default` rather than a missing key, so an absent level is written as the word
+  // the loader reads back as "no level". Writing holes here would make "the backend decides" and
+  // "nobody said" two different states the loader cannot tell apart.
+  backend["thinking"] = update.thinking;
+  if (update.max_tokens) {
+    backend["max_tokens"] = *update.max_tokens;
   } else {
     backend.erase("max_tokens");
   }
-  if (top_p) {
-    backend["top_p"] = *top_p;
+  if (update.top_p) {
+    backend["top_p"] = *update.top_p;
   } else {
     backend.erase("top_p");
   }
-  if (seed) {
-    backend["seed"] = *seed;
+  if (update.seed) {
+    backend["seed"] = *update.seed;
   } else {
     backend.erase("seed");
   }
-  if (context_window) {
-    backend["context_window"] = *context_window;
+  if (update.context_window) {
+    backend["context_window"] = *update.context_window;
   } else {
     backend.erase("context_window");
   }

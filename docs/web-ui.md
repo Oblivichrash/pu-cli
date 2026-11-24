@@ -40,8 +40,8 @@ own name.
 | `web/history.js` | Folding stored messages back into the bubbles a reader saw |
 | `web/ws.js` | The socket, built from `PU.self.origin`, its reconnect policy, the frame dispatch table |
 | `web/session.js` | The REST calls: session, history, thinking, agents, the gateway and model writes (`saveGateway`, `saveModel`), rewind |
-| `web/gateway.js` | The two forms the status bar opens: the **gateway form** at `#gateway-dialog` (which gateway, and the address it is reached at) and the **model form** at `#model-dialog` (which model that gateway answers with, and how — temperature, max tokens, top P, seed, context window). Both are `<dialog>`s, so the focus trap and Escape come from the browser, and both close only when the server took the answers: a refusal is the form's to show, and a form that closed on one would leave the reader believing a change that was never made |
-| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It holds the agent's name, the session settings that are not a model's (thinking, the tool budget), and the tool list — the gateway, the address and the sampling settings belong to `gateway.js`'s two forms. It is a `<dialog>`, so the focus trap and Escape come from the browser |
+| `web/gateway.js` | The two forms the status bar opens: the **gateway form** at `#gateway-dialog` (which gateway, and the address it is reached at) and the **model form** at `#model-dialog` (which model that gateway answers with, and how — temperature, thinking, max tokens, top P, seed, context window). Both are `<dialog>`s, so the focus trap and Escape come from the browser, and both close only when the server took the answers: a refusal is the form's to show, and a form that closed on one would leave the reader believing a change that was never made |
+| `web/config.js` | The configuration dialog: everything the reader writes rather than reads, opened from the gear in the header. It holds the agent's name, the session settings that are not a model's (the tool budget), and the tool list — the gateway, the address, the model and everything a model answers with belong to `gateway.js`'s two forms. It is a `<dialog>`, so the focus trap and Escape come from the browser |
 | `web/composer.js` | The composer and everything it starts: the press's mark (an arrow while a turn is the thing the press would start, a square while one is running and the press would end it), the field growing to its own text, the one place a turn is sent from, and the edit flow — `beginEdit`, `cancelEdit`, `setComposerMode`, `sendEdit` — since an edit is a send whose text is a step back |
 | `web/app.js` | The element lookups and the start-up order, and nothing else |
 
@@ -116,18 +116,21 @@ is left where they are; returning to the bottom resumes following with no other 
 
 **A model is a form, not a menu.** The gateway answers the question *where the turn is sent*; the
 model answers *how it is answered*, and the second is more than a name — the same gateway will
-answer at any temperature, under any cap, against any window. The status bar therefore opens two
-dialogs: the gateway form holds the gateway and its address, the model form holds the name and the
-sampling settings. The name is both a `<select>` filled from `/api/models` and a text field, so a
-model the gateway does not list can still be named. A setting left empty means the gateway's own
-default and is written as `null`; clearing `temperature` restores the default rather than removing
-the key, because the backend always answers at some temperature. A refusal — `'top_p' must be above
-0 and at most 1` — keeps the form open with the reason in `#md-error`.
+answer at any temperature, at any reasoning level, under any cap, against any window. The status
+bar therefore opens two dialogs: the gateway form holds the gateway and its address, the model form
+holds the name and everything the model answers with — the sampling settings and the thinking
+level. The name is both a `<select>` filled from `/api/models` and a text field, so a model the
+gateway does not list can still be named. A setting left empty means the gateway's own default and
+is written as `null`; clearing `temperature` restores the default rather than removing the key,
+because the backend always answers at some temperature. The level is a menu rather than a box and
+has no empty state: `auto` is the reader's word for "no level of our own" and travels as itself,
+and the file spells it `default`. A refusal — `'top_p' must be above 0 and at most 1` — keeps the
+form open with the reason in `#md-error`.
 
-The sampling settings are also session overrides, and an override outranks the agent file. A save
-therefore writes the file *and* clears the `temperature` and `max_tokens` overrides, so the number
-just saved is the number in force; without that second step the form would report success while the
-reader went on seeing the override's value.
+The sampling settings and the level are also session overrides, and an override outranks the agent
+file. A save therefore writes the file *and* clears the `temperature`, `max_tokens` and `thinking`
+overrides, so the value just saved is the value in force; without that second step the form would
+report success while the reader went on seeing the override's value.
 
 ## How the page is served
 

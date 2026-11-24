@@ -357,6 +357,11 @@ boost::json::value BackendAsJson(Call& call) {
   body["seed"] = current.seed ? boost::json::value(*current.seed) : boost::json::value();
   body["context_window"] =
       current.context_window ? boost::json::value(*current.context_window) : boost::json::value();
+  // The level the model answers at, named the way the page's menu names it: `auto` for "no level
+  // of our own", which is the word the setting has always used on the wire.
+  body["thinking"] = current.thinking == ThinkingLevel::kServerDefault
+                         ? std::string("auto")
+                         : std::string(ThinkingLevelName(current.thinking));
   return body;
 }
 
@@ -525,6 +530,32 @@ boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& bod
       next.context_window = static_cast<int>(*want);
     } else {
       throw RequestRefused("'context_window' must be a number");
+    }
+  }
+  // The level is a property of the model the way the cap is: which gateway answers decides what
+  // "high" puts on the wire, so it belongs to the choice of model rather than to a session knob.
+  // `auto` and an explicit null both mean "no level of our own", which is the state the file
+  // spells `default`; the file is where it is written, since the type cannot hold the absence.
+  if (json::HasKey(body, "thinking")) {
+    const boost::json::value& raw = body.at("thinking");
+    if (raw.is_null()) {
+      next.thinking = ThinkingLevel::kServerDefault;
+    } else if (raw.is_string()) {
+      const std::string name = boost::json::value_to<std::string>(raw);
+      if (name == "auto" || name == "default" || name.empty()) {
+        next.thinking = ThinkingLevel::kServerDefault;
+      } else {
+        const ThinkingLevel level = ParseThinkingLevel(name);
+        // The parser answers with `kServerDefault` for every word it does not know, so that one
+        // result stands for a typo as well as for the three spellings handled above: what is
+        // left here has to be one of the four real levels or a refusal.
+        if (level == ThinkingLevel::kServerDefault) {
+          throw RequestRefused("'thinking' must be one of: auto, none, low, medium, high");
+        }
+        next.thinking = level;
+      }
+    } else {
+      throw RequestRefused("'thinking' must be a string");
     }
   }
   call.runtime.SwitchBackend(next);

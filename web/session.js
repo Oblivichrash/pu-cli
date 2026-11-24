@@ -109,12 +109,12 @@ function renderSettings(settings) {
   const host = PU.composer.settingsRows;
   if (!host) return;
   host.replaceChildren();
-  // The settings a model form owns are not drawn here. `temperature` and `max_tokens` are
-  // properties of the model -- the same numbers the model's own form writes -- so a second editable
-  // copy in this sheet would be two boxes for one value, and a reader who changed one would find
-  // the other disagreeing. They stay in the list so the model form can read the value in force;
-  // only the row is withheld.
-  const modelOwned = new Set(["temperature", "max_tokens"]);
+  // The settings a model form owns are not drawn here. `temperature`, `max_tokens` and `thinking`
+  // are properties of the model -- the same values the model's own form writes -- so a second
+  // editable copy in this sheet would be two boxes for one value, and a reader who changed one
+  // would find the other disagreeing. They stay in the list so the model form can read the value
+  // in force; only the row is withheld.
+  const modelOwned = new Set(["temperature", "max_tokens", "thinking"]);
   for (const entry of PU.composer.settings) {
     if (modelOwned.has(entry.name)) continue;
     const row = document.createElement("label");
@@ -236,6 +236,9 @@ async function loadBackends() {
       top_p: backend.top_p === undefined ? null : backend.top_p,
       seed: backend.seed === undefined ? null : backend.seed,
       context_window: backend.context_window === undefined ? null : backend.context_window,
+      // A string rather than a number, but it travels with the backend for the same reason: the
+      // level is a property of the model, and its form is the only place that writes it.
+      thinking: backend.thinking === undefined ? "auto" : backend.thinking,
     };
     // No catalogue is asked for here: the model in force is drawn as the one option, and the
     // gateway's own list arrives when the menu is opened.
@@ -377,6 +380,10 @@ async function saveGateway() {
 // a typo and is refused here, before a request that would only carry the same problem.
 async function saveModel(model, raw) {
   const payload = { gateway: PU.gatewayShown || "", model };
+  // The level is a string rather than a number, so it is read out of its own menu instead of the
+  // numeric loop below. `auto` is sent as itself: the server reads it as "no level of our own",
+  // which is the state the file spells `default`.
+  if (raw.thinking !== undefined) payload.thinking = raw.thinking;
   const numeric = {
     temperature: raw.temperature,
     max_tokens: raw.max_tokens,
@@ -410,10 +417,11 @@ async function saveModel(model, raw) {
   // file: writing the file while a stale override stands would leave the reader looking at the
   // number the override still holds, not the one they just saved. Clearing those overrides is what
   // makes the file's value the value in force, which is what "this is the model's temperature"
-  // means. Only on success, and only the two this form owns -- `temperature` is not in the model
-  // file's absence and `max_tokens` is a cap this form sets, not a session knob.
+  // means. Only on success, and only the three this form owns -- `temperature` is not in the model
+  // file's absence and `max_tokens` is a cap this form sets, not a session knob, while `thinking`
+  // is a property of the model in exactly the way the level's other two neighbours are.
   if (!failure) {
-    for (const name of ["temperature", "max_tokens"]) {
+    for (const name of ["temperature", "max_tokens", "thinking"]) {
       try {
         const cleared = await postJson("/api/settings", { name, value: null });
         if (cleared.success) renderSettings(cleared.settings);

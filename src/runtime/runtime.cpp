@@ -658,9 +658,21 @@ void Runtime::SwitchBackend(const model::Backend& backend) {
   // written as the absence of the key, so emptying the field in the page restores the gateway's
   // own default rather than pinning an address that resolves to nothing.
   try {
-    config::UpdateAgentBackend(config_path_, model::GatewayName(backend.gateway), backend.model,
-                               backend.host, backend.temperature, backend.max_tokens,
-                               backend.top_p, backend.seed, backend.context_window);
+    config::BackendUpdate update;
+    update.gateway = model::GatewayName(backend.gateway);
+    update.model = backend.model;
+    update.host = backend.host;
+    update.temperature = backend.temperature;
+    update.max_tokens = backend.max_tokens;
+    update.top_p = backend.top_p;
+    update.seed = backend.seed;
+    update.context_window = backend.context_window;
+    // The level is spelled the way the file spells it: `default` is what the loader reads back as
+    // "no level", so writing the enum's own name here would leave a word the loader does not know.
+    update.thinking = backend.thinking == ThinkingLevel::kServerDefault
+                          ? std::string("default")
+                          : ThinkingLevelName(backend.thinking);
+    config::UpdateAgentBackend(config_path_, update);
   } catch (const std::exception& e) {
     spdlog::error("Backend switched for this run only: {}", e.what());
   }

@@ -293,11 +293,12 @@ TEST_CASE("serve API /api/backend says what is in force", "[serve][api]") {
   REQUIRE(!obj.contains("gateways"));
   REQUIRE(!obj.contains("models"));
   REQUIRE(!obj.contains("model_error"));
+  // The level travels with the backend the way the sampling settings do, named the way the page's
+  // menu names it: a model that stated no level answers `auto`, not `default`, because that is the
+  // word its form offers and the word a write accepts.
+  CHECK(obj.at("thinking") == "auto");
 }
 
-// `/api/models` asks the gateway the request names, and it must ask it at the address the agent
-// file gives rather than at the one the build's gateway row names: a reader who pointed their
-// gateway somewhere else would otherwise get an empty list after a connect timeout, for a
 // gateway that answers perfectly well.
 TEST_CASE("serve API /api/models asks the configured address, not the gateway default", "[serve][api]") {
   ServeHarness harness;
@@ -335,6 +336,80 @@ boost::json::value BackendInFile(const fs::path& home) {
 
 }  // namespace
 
+TEST_CASE("serve API /api/backend writes a thinking level into the agent file", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  for (const auto& [sent, expected] : std::vector<std::pair<std::string, std::string>>{
+           {"none", "none"}, {"low", "low"}, {"medium", "medium"}, {"high", "high"}}) {
+    const auto res = client.PostFull("/api/backend",
+                                     boost::json::object{{"gateway", "ollama"},
+                                                         {"model", "test-model"},
+                                                         {"thinking", sent}});
+    REQUIRE(res.status == 200);
+    // The file is what outlives the process, so it is what the level has to reach: the reply and
+    // the file agree, and a level this build does not know is refused rather than written.
+    const boost::json::value written = BackendInFile(harness.Home());
+    REQUIRE(written.is_object());
+    CHECK(boost::json::value_to<std::string>(written.at("thinking")) == expected);
+    // The reply is read through a named value too: `as_object()` on a returned temporary would
+    // leave the reference it hands back pointing at a document that dies at the end of the
+    // statement.
+    const boost::json::value echoed = ParseJson(res.body);
+    CHECK(boost::json::value_to<std::string>(echoed.at("backend").at("thinking")) == expected);
+  }
+}
+
+TEST_CASE("serve API /api/backend writes auto as the word the loader reads", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  REQUIRE(client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                             {"model", "test-model"},
+                                                             {"thinking", "high"}})
+              .status == 200);
+  // `auto` is the absence of a level, and the file spells that absence `default`: the type cannot
+  // hold a hole, so writing the word is what keeps "the gateway decides" a state the loader can
+  // read back rather than a key it silently ignores.
+  const auto res = client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                                       {"model", "test-model"},
+                                                                       {"thinking", "auto"}});
+  REQUIRE(res.status == 200);
+  const boost::json::value written = BackendInFile(harness.Home());
+  REQUIRE(written.is_object());
+  CHECK(boost::json::value_to<std::string>(written.at("thinking")) == "default");
+  CHECK(boost::json::value_to<std::string>(
+      ParseJson(res.body).at("backend").at("thinking")) == "auto");
+}
+
+TEST_CASE("serve API /api/backend refuses a thinking level it does not know", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  // The harness's own agent file need not name a level, so the "before" is read the way the
+  // loader reads it: an absent key is `default`, not an error.
+  const boost::json::value before_file = BackendInFile(harness.Home());
+  REQUIRE(before_file.is_object());
+  const std::string before =
+      before_file.as_object().contains("thinking")
+          ? boost::json::value_to<std::string>(before_file.at("thinking"))
+          : std::string("default");
+
+  const auto res = client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                                       {"model", "test-model"},
+                                                                       {"thinking", "loud"}});
+  CHECK(res.status != 200);
+  // A refused write changes nothing: the file still holds the level that was there.
+  const boost::json::value after = BackendInFile(harness.Home());
+  REQUIRE(after.is_object());
+  const std::string now = after.as_object().contains("thinking")
+                              ? boost::json::value_to<std::string>(after.at("thinking"))
+                              : std::string("default");
+  CHECK(now == before);
+}
+
+// `/api/models` asks the gateway the request names, and it must ask it at the address the agent
+// file gives rather than at the one the build's gateway row names: a reader who pointed their
+// gateway somewhere else would otherwise get an empty list after a connect timeout, for a
 TEST_CASE("serve API /api/backend writes a typed host into the agent file", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();

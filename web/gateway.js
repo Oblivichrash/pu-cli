@@ -138,6 +138,16 @@ function modelFill() {
     const input = modelField(id);
     if (input) input.value = showNumber(value);
   }
+  // The level is a menu rather than a box, so it is filled from the value in force and falls back
+  // to `auto` when nothing is stated: a level the menu does not offer would leave it silently on
+  // its first option, and falling back on purpose is not the same thing.
+  const thinking = modelField("md-thinking");
+  if (thinking) {
+    const level = PU.backendParamsShown.thinking;
+    const named = level === undefined || level === null || level === "" ? "auto" : String(level);
+    const known = Array.from(thinking.options, (option) => option.value);
+    thinking.value = known.includes(named) ? named : "auto";
+  }
   modelError("");
 }
 
@@ -205,6 +215,9 @@ async function modelSave() {
     seed: modelField("md-seed") ? modelField("md-seed").value.trim() : "",
     context_window: modelField("md-context-window")
         ? modelField("md-context-window").value.trim() : "",
+    // A menu always holds a value, so there is no empty case to send as null: `auto` is the
+    // reader's word for "no level of our own" and travels as itself.
+    thinking: modelField("md-thinking") ? modelField("md-thinking").value : "auto",
   };
   const ok = await saveModel(model, raw);
   if (ok) modelClose();

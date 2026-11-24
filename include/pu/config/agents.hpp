@@ -90,11 +90,27 @@ std::string FindConfigPath();
 // The write is atomic: the new text goes to a sibling temporary file, is parsed back to prove it
 // is still one agent file, and only then replaces the original. A failure leaves the file as it
 // was and throws.
-void UpdateAgentBackend(const std::string& config_path, const std::string& gateway_name,
-                        const std::string& model_name, const std::string& host,
-                        float temperature, const std::optional<int>& max_tokens,
-                        const std::optional<float>& top_p, const std::optional<int>& seed,
-                        const std::optional<int>& context_window);
+//
+// The fields are passed in a struct rather than as positional arguments. They are eight values of
+// four different types, several of them adjacent and two of them optional, so a call site that
+// transposed `temperature` and `top_p` would compile and quietly write the wrong number. A
+// designated initialiser names each field at the call, where the mistake is visible.
+struct BackendUpdate {
+  std::string gateway;
+  std::string model;
+  // An address spelled `${VAR}` is written back as spelled, and an empty one erases the key.
+  std::string host;
+  float temperature = 0.7f;
+  std::optional<int> max_tokens;
+  std::optional<float> top_p;
+  std::optional<int> seed;
+  std::optional<int> context_window;
+  // `auto` is the absence of a level, which the file spells `default`; it is written rather than
+  // erased because the type is not optional and the file always names the level it answers at.
+  std::string thinking = "default";
+};
+
+void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& update);
 
 // Every builtin tool a `tools` list may name. One list, so a name that `pu check` accepts is
 // one the runtime can register.

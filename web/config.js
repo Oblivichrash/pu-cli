@@ -56,30 +56,10 @@ function wireConfigDialog() {
   const opener = document.getElementById("config-open");
   if (opener) opener.addEventListener("click", () => configOpen());
   if (!dialog) return;
-  // The reasoning level is the one fact in the bar that still lives in this sheet -- the gateway,
-  // its address and the model moved to their own form, because they are where the conversation
-  // goes rather than how it answers. It is reached in two steps: the item in the bar presses the
-  // row, and the row's control takes focus.
-  //
-  // The row is named by a selector rather than an id because it is built from the server's own
-  // list of settings: it exists only if the server offers it, and it is the control inside the
-  // row -- not the row -- that takes focus.
-  const jumps = [
-    ["status-thinking", '#settings-rows [data-setting="thinking"]'],
-  ];
-  for (const [itemId, selector] of jumps) {
-    const item = document.getElementById(itemId);
-    if (!item) continue;
-    item.addEventListener("click", () => configOpen(selector));
-    // These are spans given a role, so the browser does not press them for the reader. Enter and
-    // Space are what a button answers to, and answering both is what keeps the bar's shortcut from
-    // being a mouse-only way in.
-    item.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
-      e.preventDefault();
-      configOpen(selector);
-    });
-  }
+  // The bar's reasoning level is a read-out now, not a way in: the level moved to the model's own
+  // form, where the other properties of the model are written, so there is no row in this sheet
+  // to jump to. The sheet is reached only by its own button, and the loop that once carried that
+  // one jump is gone with it rather than left holding an empty list.
   dialog.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.target.tagName === "SELECT") return;
   // A dropdown closes on Escape before the dialog hears it, so the key does not leak out of an open
