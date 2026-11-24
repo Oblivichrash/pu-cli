@@ -132,17 +132,55 @@ function showNumber(value) {
 // the catalogue does not list it, so the menu opens on the name in force either way -- and a
 // catalogue that could not be read leaves a menu of one, which is the honest drawing of a gateway
 // that could not be asked rather than an empty field the reader has to guess into.
-function fillModelChoices(names, current) {
+//
+// The one case a menu cannot answer is no entries at all, and that is a state a gateway really
+// states: tencent answers `"agents":null,"models":null` for an account with no models configured.
+// A menu of nothing is a dead end -- there is nothing to pick and no way to type out of it -- so
+// the box takes over in that case and the menu hides. They are never both shown, so the form still
+// holds one answer in one place.
+function fillModelChoices(names, current, error) {
   const menu = modelField("md-name");
+  const typed = modelField("md-typed");
+  const menuField = modelField("md-name-field");
+  const typedField = modelField("md-typed-field");
   if (!menu) return;
   const known = (names || []).slice();
   const shown = current === undefined ? PU.backendModelShown || "" : current;
+  // Whether the *gateway* offered anything, asked before the name in force is folded in: that
+  // name is added so it stays selectable, and counting it here would let a gateway that lists
+  // nothing look like a gateway with one entry -- the reason for the emptiness would be lost.
+  const empty = known.length === 0;
   if (shown && !known.includes(shown)) known.unshift(shown);
+
+  // Which control holds the answer, set here rather than re-derived at Save from what looks
+  // hidden: one place decides, so the two cannot disagree.
+  PU.modelTyped = empty;
   menu.textContent = "";
+  if (menuField) menuField.hidden = empty;
+  if (typedField) typedField.hidden = !empty;
+  // The name is not lost by switching control: whatever was the answer moves across, with the
+  // name in force as the fallback, so an empty catalogue does not also mean an empty box.
+  if (empty) {
+    if (typed) typed.value = shown;
+    // Two ways to arrive at an empty list, and they are not the same fact. A catalogue that could
+    // not be read says nothing about what the gateway serves, so the reader is told why and left
+    // to name what they know works. A catalogue that answered and listed nothing is the gateway
+    // saying its account has no models, which is worth saying in its own words rather than
+    // inviting a name that will be refused.
+    if (error) {
+      modelError("The catalogue could not be read (" + error + "). Name a model this gateway serves.");
+    } else if (shown) {
+      modelError("This account's catalogue is empty; the name in force is offered until you name another.");
+    }
+    return;
+  }
   for (const name of known) menu.append(new Option(name, name));
   // Assigned after the options exist: a value set before its option was drawn is dropped by the
   // browser, and the menu would open on its first entry instead of on the name in force.
   if (shown) menu.value = shown;
+  // A menu with entries has nothing to explain, and whatever the last fill said was about a
+  // catalogue that is no longer the one on screen.
+  modelError("");
 }
 
 // The form opens on what is in force rather than on what was last typed, for the same reason the
@@ -150,7 +188,6 @@ function fillModelChoices(names, current) {
 // unstated setting -- no cap, no seed -- shows as an empty box rather than as a number, because a
 // cap nobody chose is not a cap.
 function modelFill() {
-  const menu = modelField("md-name");
   const current = PU.backendModelShown || "";
   fillModelChoices(PU.modelsShown || [], current);
   const numbers = {
@@ -184,21 +221,16 @@ function modelError(message) {
   el.hidden = !message;
 }
 
-// Opening asks the gateway in force what it serves, so the name box has suggestions when the
-// catalogue is readable and is typed into when it is not. The fill happens first and the list
-// arrives under it: the form is usable the moment it opens, and a gateway that never answers costs
-// no wait.
+// Opening asks the gateway in force what it serves, so the name field has a menu when the
+// catalogue is readable and a box when it is not. The fill happens first and the list arrives
+// under it: the form is usable the moment it opens, and a gateway that never answers costs no wait.
 //
-// The arriving list only changes the suggestions. It must not re-fill the whole form: the reader
-// may already have typed a temperature by the time the catalogue lands, and a re-fill would quietly
-// undo it -- the same defect a Save-then-redraw had, where a late fill put the old numbers back
-// under a reader who had just changed them. It must not touch the name box either: a name typed
-// while the catalogue was in flight is the reader's answer and not a value to be corrected.
-// The arriving catalogue only changes the menu's entries. It must not re-fill the whole form: the
-// reader may already have typed a temperature by the time the list lands, and a re-fill would
-// quietly undo it -- the same defect a Save-then-redraw had, where a late fill put the old numbers
-// back under a reader who had just changed them. It must not move the choice either: a name picked
-// while the catalogue was in flight is the reader's answer and not a value to be corrected.
+// The arriving catalogue changes which control holds the name, and nothing else. It must not
+// re-fill the whole form: the reader may already have typed a temperature by the time the list
+// lands, and a re-fill would quietly undo it -- the same defect a Save-then-redraw had, where a
+// late fill put the old numbers back under a reader who had just changed them. It must not move
+// the choice either: a name picked or typed while the catalogue was in flight is the reader's
+// answer and not a value to be corrected.
 function modelOpen() {
   const dialog = modelDialog();
   if (!dialog || dialog.open) return;
@@ -209,12 +241,15 @@ function modelOpen() {
   modelFill();
   dialog.showModal();
   const gateway = PU.gatewayShown || "";
-  const picked = modelField("md-name") ? modelField("md-name").value : "";
+  const picked = PU.modelTyped
+    ? (modelField("md-typed") ? modelField("md-typed").value : "")
+    : (modelField("md-name") ? modelField("md-name").value : "");
   loadModelsFor(gateway).then((entry) => {
     if (!dialog.open) return;
-    // The choice in flight is what stays selected, and the name in force is still one entry.
-    fillModelChoices((entry && entry.models) || [], picked || PU.backendModelShown || "");
-    if (entry && !entry.error) modelError("");
+    // No `modelError("")` here: whether there is anything to say about an empty list is the
+    // fill's to decide, and clearing after it would wipe the reason it just wrote.
+    fillModelChoices((entry && entry.models) || [], picked || PU.backendModelShown || "",
+                     entry && entry.error);
   });
 }
 
@@ -228,11 +263,17 @@ function modelClose() {
 // that was never made.
 async function modelSave() {
   const menu = modelField("md-name");
-  // A menu always holds a value when it has any entry at all, so there is one name to send and
-  // nothing to reconcile: the picked entry and the value in force arrive by the same route.
-  const model = menu ? menu.value.trim() : "";
+  const typed = modelField("md-typed");
+  // One answer, read from whichever control is showing: the menu when the catalogue had entries,
+  // the box when it had none. `PU.modelTyped` is set by the same call that shows one and hides the
+  // other, so the read cannot disagree with what the reader is looking at.
+  const model = PU.modelTyped
+    ? (typed ? typed.value.trim() : "")
+    : (menu ? menu.value.trim() : "");
   if (!model) {
-    modelError("Pick a model: the gateway has not been asked what it serves yet.");
+    modelError(PU.modelTyped
+      ? "Name a model: this account's catalogue is empty, so nothing is listed to pick."
+      : "Pick a model from the list.");
     return;
   }
   const raw = {

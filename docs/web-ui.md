@@ -124,10 +124,22 @@ and which models a gateway serves is the catalogue's: in each case the rows are 
 name outside them is a typo the field would have to be corrected out of. A `<datalist>` was tried
 for both and is not the same control — Chromium stops offering a list once the box holds a value
 the list already matches, which is exactly the state a form opens in, so the reader meets a field
-that looks closed. The model menu always lists the name in force, drawn first when the catalogue
-does not carry it: a gateway answers names it does not advertise, and a catalogue that could not
-be read must leave the field holding what runs rather than empty. Two controls for one answer
-would be the fault; one control with the right shape is not. What *is* free here is the address:
+that looks closed. The model menu is built from the account's whole catalogue, with any name an
+agent lists but the catalogue omits appended: those are two different questions — what the account
+is offered, and what one agent may run — and the menu answers the reader's, which is the first.
+The model menu always lists the name in force, drawn first when the catalogue does not carry it: a
+gateway answers names it does not advertise, and a catalogue that could not be read must leave the
+field holding what runs rather than empty. Two controls for one answer would be the fault; one
+control with the right shape is not.
+
+A catalogue can also be empty, and that is a state the gateway states rather than a failure: one
+account answers `"agents":null,"models":null`, meaning it has no models configured. A menu of
+nothing is a dead end — nothing to pick and no way to type out of it — so in that case, and only
+that case, the menu gives way to a box the reader names a model in, prefilled with the name in
+force. `#md-error` says which of the two emptinesses it is: a catalogue that could not be read
+names the failure and invites a name; a catalogue that answered and listed nothing says the
+account is empty. The two controls are never both on screen, and which one holds the answer is
+decided once, when the fill happens. What *is* free here is the address:
 the menu's answer only fills it with that gateway's default, and the reader may then edit it — a
 proxy, a local mirror, a gateway on another port. A setting left empty means the gateway's own
 default and is written as `null`; clearing `temperature` restores the default rather than removing

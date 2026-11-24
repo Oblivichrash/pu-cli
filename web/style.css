@@ -888,6 +888,10 @@ main {
   text-transform: uppercase;
   color: var(--ink-light);
 }
+/* `display: flex` above outranks the UA sheet's `[hidden] { display: none }`, so a field marked
+   hidden would still be drawn. The model form shows one of its two name controls and hides the
+   other, and both being on screen would be two answers where there is one. */
+.field[hidden] { display: none; }
 .field select {
   width: 100%;
   background: transparent;

@@ -72,6 +72,10 @@ const PU = {
   // address box follows the gateway rather than keeping the one just left behind.
   gatewayHosts: {},
   backendModelShown: "",
+  // Which control in the model form holds the name: the menu when the catalogue had entries, a
+  // typed box when it had none. Set by the fill that shows one and hides the other, so Save reads
+  // the box the reader is actually looking at rather than re-deriving that from the DOM.
+  modelTyped: false,
   backendHostShown: "",
   // The sampling settings in force, as `/api/backend` states them. A `null` member is a setting
   // nobody named, which is not zero: the model form draws it as an empty box, and clearing a box

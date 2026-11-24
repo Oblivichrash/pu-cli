@@ -146,7 +146,7 @@
     <div class="config-body">
       <section class="config-section">
         <div class="panel-title">Model</div>
-        <label class="field">
+        <label class="field" id="md-name-field">
           <span>Name</span>
           <select id="md-name"></select>
           <!-- Filled from /api/models, and a menu rather than a box: the gateway's catalogue is the
@@ -156,6 +156,16 @@
                A box with a datalist behind it was tried and is not the same control: Chromium shows
                no picker at all once the box holds a name the list matches, which is every time the
                form opens, so the reader meets a field that looks closed and cannot be opened. -->
+        </label>
+        <!-- The one case the menu cannot answer: a gateway that says it has no models and nothing
+             in force to fall back on. An account whose catalogue is unconfigured is a real state --
+             tencent answers `"agents":null,"models":null` for one -- and a menu of no entries is a
+             dead end the reader cannot type their way out of. The box takes the name and the menu
+             goes away, so there is still one control holding the answer, not two disagreeing. -->
+        <label class="field" id="md-typed-field" hidden>
+          <span>Type a name</span>
+          <input id="md-typed" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="a model this gateway serves">
         </label>
       </section>
 
