@@ -198,6 +198,15 @@ not reach the others. And an Escape pressed while a `<select>` has focus is stil
 closing the open menu rather than the sheet, so the first Escape after opening a form may only
 shut a dropdown; that is deliberate and was true before this change too.
 
+**A one-question sheet carries no section heading.** The gateway sheet is one group title shorter
+than it used to be: `Backend` is gone, and the two fields now sit directly under the head. A
+section heading earns its line by saying what the rows beneath it are a group of, and it is only
+worth reading when there is more than one group to tell apart. The model sheet has eight fields
+in two kinds and so keeps `Model` and `How it answers`; the configuration sheet keeps `Agent`,
+`Session settings` and `Tools` for the same reason. The gateway sheet has two fields of one kind,
+under a head that already reads *Where the conversation goes* — a word for that repeated one line
+lower organises nothing, and it was the only reason the form was taller than its contents.
+
 ## How the page is served
 
 The UI travels with the binary, not with the workspace the session is pointed at, so
