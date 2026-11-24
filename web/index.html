@@ -73,7 +73,13 @@
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path class="icon-send" d="m5 12 7-7 7 7"/>
               <path class="icon-send" d="M12 19V5"/>
-              <path class="icon-stop" d="M7 7h10v10H7z" hidden/>
+              <!-- The square is 12 units wide on this 24-unit grid, not the 10 a stop mark usually
+                   starts as. Both marks share one 16px box, but the arrow's path spans 14 units
+                   while a 10-unit square paints only 6.7px of a 28px disc -- a quarter of it,
+                   against the arrow's well over half -- and read as a small dot rather than the
+                   mark. At 12 units it paints 8px, near the third of the disc a solid glyph
+                   wants, without touching the ring or the arrow, which were already right. -->
+              <path class="icon-stop" d="M6 6h12v12H6z" hidden/>
             </svg>
           </button>
         </div>
@@ -103,8 +109,8 @@
     <span class="status-sep" aria-hidden="true">/</span>
     <span class="status-item status-press" id="status-model" role="button" tabindex="0"
           title="The model that answers — click to change">—</span>
-    <span class="status-item status-press" id="status-thinking" role="button" tabindex="0"
-          title="How much reasoning is asked for — click to change">—</span>
+    <span class="status-item" id="status-thinking"
+          title="How much reasoning the model is asked for">—</span>
     <span class="status-right">
       <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
       <!-- The window the last reply filled. The fill is a hairline under the figure rather than a
@@ -156,6 +162,21 @@
           <span>Temperature</span>
           <input id="md-temperature" type="number" min="0" max="2" step="0.1"
                  placeholder="0.7">
+        </label>
+        <!-- The level sits with the model because that is whose property it is: which gateway
+             answers decides what "high" puts on the wire, so a level chosen without a model chosen
+             would be a setting with no subject. `auto` is the absence of a level, named rather
+             than left as an empty box: it is a choice the reader makes on purpose, and a blank
+             menu would read as a control that failed to load. -->
+        <label class="field">
+          <span>Thinking</span>
+          <select id="md-thinking">
+            <option value="auto">auto (the gateway decides)</option>
+            <option value="none">none</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
         </label>
         <label class="field">
           <span>Max tokens</span>
