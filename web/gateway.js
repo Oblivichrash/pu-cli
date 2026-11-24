@@ -116,6 +116,14 @@ function modelField(id) {
   return document.getElementById(id);
 }
 
+// A field a form may or may not be drawing: empty rather than a missing element, so a reader
+// writes one call where they would otherwise look the same id up twice to ask whether it is
+// there.
+function fieldValue(id) {
+  const el = modelField(id);
+  return el ? el.value : "";
+}
+
 // A float arriving over the wire is the nearest double to a float32, so 0.7 comes back as
 // 0.699999988079071: the server's number is right and its decimal is an artefact of the conversion,
 // and printing it would show the reader a precision nobody chose. Six places is more than any
@@ -244,8 +252,8 @@ function modelOpen() {
   dialog.showModal();
   const gateway = PU.gatewayShown || "";
   const picked = PU.modelTyped
-    ? (modelField("md-typed") ? modelField("md-typed").value : "")
-    : (modelField("md-name") ? modelField("md-name").value : "");
+    ? fieldValue("md-typed")
+    : fieldValue("md-name");
   loadModelsFor(gateway).then((entry) => {
     if (!dialog.open) return;
     // No `modelError("")` here: whether there is anything to say about an empty list is the
@@ -279,15 +287,14 @@ async function modelSave() {
     return;
   }
   const raw = {
-    temperature: modelField("md-temperature") ? modelField("md-temperature").value.trim() : "",
-    max_tokens: modelField("md-max-tokens") ? modelField("md-max-tokens").value.trim() : "",
-    top_p: modelField("md-top-p") ? modelField("md-top-p").value.trim() : "",
-    seed: modelField("md-seed") ? modelField("md-seed").value.trim() : "",
-    context_window: modelField("md-context-window")
-        ? modelField("md-context-window").value.trim() : "",
+    temperature: fieldValue("md-temperature").trim(),
+    max_tokens: fieldValue("md-max-tokens").trim(),
+    top_p: fieldValue("md-top-p").trim(),
+    seed: fieldValue("md-seed").trim(),
+    context_window: fieldValue("md-context-window").trim(),
     // A menu always holds a value, so there is no empty case to send as null: `auto` is the
     // reader's word for "no level of our own" and travels as itself.
-    thinking: modelField("md-thinking") ? modelField("md-thinking").value : "auto",
+    thinking: fieldValue("md-thinking") || "auto",
   };
   // The same wait as the gateway form's, for the same reason, though this form's request does not
   // go through a connect timeout of its own: it is the same server writing the same file.

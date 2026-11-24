@@ -64,12 +64,19 @@ function toolIsRunning() {
           block.status === "running");
 }
 
+// Drop the watchdog without reopening anything: the timer is not pending any more, and a command
+// that was given its longer wait starts over with the next turn.
+function clearWatchdog() {
+  clearTimeout(PU.watchdogTimer);
+  PU.watchdogTimer = null;
+  PU.watchdogToolGrace = false;
+}
+
 // A turn that stops speaking without a close is indistinguishable from a hung socket, so the socket
 // is reopened. The timer is re-armed on every progress frame.
 function armWatchdog() {
-  clearTimeout(PU.watchdogTimer);
   // Progress arrived, so a running command is no longer silent.
-  PU.watchdogToolGrace = false;
+  clearWatchdog();
   PU.watchdogTimer = setTimeout(onWatchdogElapsed, WATCHDOG_STREAM_MS);
 }
 
@@ -138,9 +145,7 @@ function handleDone(payload) {
       finishAssistantMessage();
     }
   }
-  clearTimeout(PU.watchdogTimer);
-  PU.watchdogTimer = null;
-  PU.watchdogToolGrace = false;
+  clearWatchdog();
   // The turn is over, so the socket it was handed over from has nothing left to deliver.
   releaseSupersededSocket();
   setSendButtonState(false);
@@ -198,9 +203,7 @@ function dispatchFrame(data) {
 // this socket was turned away rather than accepted and then lost, which is the one case where
 // retrying is bounded instead of open-ended.
 function handleSocketClose(refused) {
-  clearTimeout(PU.watchdogTimer);
-  PU.watchdogTimer = null;
-  PU.watchdogToolGrace = false;
+  clearWatchdog();
   releaseSupersededSocket();
   discardPendingApproval();
   if (PU.isStreaming) {
@@ -248,7 +251,6 @@ function endLoad(replay = true) {
   clearTimeout(PU.loadingTimer);
   PU.loadingTimer = null;
   PU.loading = false;
-  PU.resyncing = false;
   PU.loadGen += 1;
   const held = PU.loadingFrames;
   PU.loadingFrames = [];
@@ -272,7 +274,6 @@ function resyncAfterReconnect() {
     return;
   }
   beginLoad();
-  PU.resyncing = true;
   // This rebuild's number: `endLoad` bumps it, so a rebuild that a later one overtook can
   // tell that the frames in the hold are no longer its own to replay.
   const gen = PU.loadGen;

@@ -91,7 +91,7 @@ async function refreshServers() {
 // transcript and the session are read again from the one it moved to; nothing is
 // carried across, because nothing about a conversation in one workspace is true of another.
 async function adoptServer(server) {
-  setSelf({ origin: siblingOrigin(server.port), name: serverLabel(server), port: server.port });
+  setSelf({ origin: siblingOrigin(server.port), name: serverLabel(server) });
   if (PU.ws) {
     PU.ws.onmessage = null;
     PU.ws.onclose = null;

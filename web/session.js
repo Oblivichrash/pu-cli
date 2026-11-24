@@ -168,7 +168,7 @@ async function loadSession() {
     // The server that answered says what it is called and which port it answered on. That is the
     // page's own identity, so a switch ends here: the label is corrected from the server the page
     // actually reached rather than from the entry it asked for.
-    if (data.server) setSelf({ name: data.server.name, port: data.server.port });
+    if (data.server) setSelf({ name: data.server.name });
     renderServers();
     setBackendLabel(data.gateway, data.backend_model, data.backend_host);
     // The window belongs to the model rather than to the gateway, so it is filed under both and
@@ -304,6 +304,19 @@ function setBackendError(message) {
   el.hidden = !message;
 }
 
+// POST to `/api/backend` and answer with what went wrong, or `""` if nothing did. A refusal is
+// the server's answer, and the message is the whole of what the reader needs: the status and the
+// body carry no more than the error string already says. Both forms write this route, so the
+// reading of a failed write is written once.
+async function postBackend(payload, what) {
+  try {
+    const data = await postJson("/api/backend", payload);
+    return data.success ? "" : data.error || what;
+  } catch (e) {
+    return (e && e.body && e.body.error) || `${what}: ${e.message}`;
+  }
+}
+
 // A chosen backend is written back by the server, so the next start uses it too. The reply is
 // the same shape the GET answers in, and is drawn the same way rather than assuming the choice
 // took: a gateway may refuse a model, and the page should show what is now in force.
@@ -340,15 +353,7 @@ async function chooseBackend(gateway, model, host) {
   // Present and empty is the reader asking for the gateway's default back, which is not the same
   // request as not mentioning the address at all.
   if (host !== undefined) payload.host = host;
-  let failure = "";
-  try {
-    const data = await postJson("/api/backend", payload);
-    if (!data.success) failure = data.error || "The backend could not be changed";
-  } catch (e) {
-    // A refusal is the server's answer, and the message is the whole of what the reader needs:
-    // the status and the body carry no more than the error string already says.
-    failure = (e && e.body && e.body.error) || `The backend could not be changed: ${e.message}`;
-  }
+  let failure = await postBackend(payload, "The backend could not be changed");
   // Redrawn first and reported second: the redraw is what puts the fields back in agreement with
   // the server, and a message written before it would be a message the redraw then erased. On
   // success the fields are the server's answer, so nothing is left to say. A refusal skips the
@@ -417,13 +422,7 @@ async function saveModel(model, raw) {
     }
     payload[key] = value;
   }
-  let failure = "";
-  try {
-    const data = await postJson("/api/backend", payload);
-    if (!data.success) failure = data.error || "The model could not be changed";
-  } catch (e) {
-    failure = (e && e.body && e.body.error) || `The model could not be changed: ${e.message}`;
-  }
+  let failure = await postBackend(payload, "The model could not be changed");
   // The two settings this form writes are also session overrides, and an override outranks the
   // file: writing the file while a stale override stands would leave the reader looking at the
   // number the override still holds, not the one they just saved. Clearing those overrides is what

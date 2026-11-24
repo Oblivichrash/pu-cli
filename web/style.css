@@ -174,11 +174,6 @@ header {
   text-overflow: ellipsis;
 }
 .server-name:hover { background: rgba(0, 0, 0, 0.04); }
-.server-row.current .server-name {
-  color: var(--accent);
-  cursor: default;
-}
-.server-row.current .server-name:hover { background: transparent; }
 
 /* ---------- stage: conversation ---------- */
 #stage {
@@ -518,12 +513,6 @@ main {
 .subtask-dir-row,
 .subtask-prompt-row,
 .subtask-answer { margin: 4px 0; }
-.subtask-agent-row .subtask-key,
-.subtask-dir-row .subtask-key,
-.subtask-prompt-row .subtask-key {
-  font-size: 11px;
-  color: var(--ink-light);
-}
 .subtask-agent-row pre,
 .subtask-dir-row pre,
 .subtask-prompt-row pre,
@@ -837,8 +826,9 @@ main {
   margin: 0 -8px;
   user-select: none;
 }
-   a local checkpoint's path), so the model gets the larger bound and the pair still fits where
-   the old single item did. */
+/* The three press targets in the bar hold names of very different lengths, and the widest of them
+   would otherwise set the width of the row for every reader. Each is capped instead, and the
+   tooltip carries what is cut -- a name is a thing to press, not a paragraph to read. */
 #status-gateway { max-width: 140px; }
 #status-model { max-width: 180px; }
 #status-tools { max-width: 120px; }
@@ -993,33 +983,6 @@ main {
   padding-bottom: 4px;
   margin-bottom: 8px;
 }
-.panel-value {
-  font-size: 14px;
-  color: var(--ink);
-  word-break: break-word;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-}
-/* Read-only facts are named and valued, so a long host wraps under its own label instead
-   of running into the value above it. */
-.kv {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 10px;
-  font-size: 13px;
-}
-.kv dt {
-  color: var(--ink-light);
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  padding-top: 2px;
-}
-.kv dd {
-  margin: 0;
-  color: var(--ink);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  word-break: break-all;
-}
 .tool-list {
   list-style: none;
   margin: 0;
@@ -1045,12 +1008,6 @@ main {
 #messages::-webkit-scrollbar-track { background: var(--paper); }
 #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 #messages::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
-
-.hljs {
-  background: #f0ebe0;
-  border-radius: 2px;
-  padding: 8px 12px;
-}
 
 /* One rhythm inside a reply: what markdown emits carries no margins of its own, and
    consecutive blocks are separated by a single step, so a paragraph, a list and a code
@@ -1176,7 +1133,6 @@ dialog:not([open]) { display: none; }
 .config-body::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 .config-section { display: flex; flex-direction: column; gap: 8px; }
 #config-dialog .tool-list li { font-size: 12px; }
-#config-dialog .config-section .kv { font-size: 12px; }
 /* A gateway that cannot be asked is a fact about the menu above it, not a page-level failure, so
    it is stated at the size of the field it explains rather than in the browser's default. */
 .backend-error {
@@ -1217,7 +1173,6 @@ dialog:not([open]) { display: none; }
   header, #composer, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .hljs { background: #2a2620; }
   .tool-args pre, .tool-result pre { background: #262320; }
   .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
   .server-name:hover { background: rgba(255, 255, 255, 0.06); }

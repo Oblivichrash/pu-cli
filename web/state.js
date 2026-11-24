@@ -12,14 +12,13 @@ const MAX_BUSY_RETRIES = 2;
 // window at all, and a nominal figure a product does not enforce would draw a fill that lies.
 const CONTEXT_WINDOWS = {};
 
-// The server this page is attached to: `origin` answered, `name` is the label it gave itself,
-// `port` is where it answered. None of the three is derived from the server list, which describes
-// the others — a page that learned its own identity from a list would be blank on every remote
-// page, where that list is unavailable by design.
+// The server this page is attached to: `origin` answered, `name` is the label it gave itself.
+// Neither is derived from the server list, which describes the others — a page that learned its
+// own identity from a list would be blank on every remote page, where that list is unavailable
+// by design.
 const SELF = {
   origin: window.location.origin,
   name: "",
-  port: null,
 };
 
 const PU = {
@@ -55,8 +54,6 @@ const PU = {
   loadingFrames: [],
   // Bumped by each load, so a load that a later one overtook knows not to replay for it.
   loadGen: 0,
-  // True while resyncAfterReconnect is rebuilding, so loadHistory leaves the flag to it.
-  resyncing: false,
   // True while loadHistory is appending, so two runs cannot draw the chain twice.
   loadHistBusy: false,
 
@@ -87,8 +84,6 @@ const PU = {
     seed: null,
     context_window: null,
   },
-  // What the last reply ran against, as the bar prints it; empty until a turn reports usage.
-  contextShown: "",
   // Kept so the bar can be redrawn when the window arrives late: the counts come with a turn and
   // the window comes with the session, so both are drawn from state rather than from whichever
   // payload landed last.
@@ -100,9 +95,6 @@ const PU = {
 
   composer: {
     composing: false,
-    // "new" while the field is a message being typed, "edit" while it holds one being replaced.
-    // The button reads this, so the two jobs can share a field without sharing a label.
-    mode: "new",
     inputEl: null,
     sendBtn: null,
     messagesEl: null,
@@ -131,10 +123,9 @@ function setOthers({ servers, restricted }) {
 
 // The one place `PU.self` is written. Switching servers replaces all three fields together, so a
 // page cannot end up asking one server for a transcript it labels with another's name.
-function setSelf({ origin, name, port }) {
+function setSelf({ origin, name }) {
   if (origin !== undefined) PU.self.origin = origin || window.location.origin;
   if (name !== undefined) PU.self.name = name || "";
-  if (port !== undefined) PU.self.port = port === null ? null : Number(port);
 }
 
 function setConnectionState(state) {

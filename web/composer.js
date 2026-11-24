@@ -177,7 +177,6 @@ function cancelEdit(restore) {
 }
 
 function setComposerMode(mode) {
-  PU.composer.mode = mode;
   const input = PU.composer.inputEl;
   if (mode === "edit") {
     input.placeholder =

@@ -48,15 +48,6 @@ function setBackendLabel(gateway, model, host) {
   renderContextBar();
 }
 
-// "gateway / model", the two facts a reader checks between turns. Kept as one string for the
-// places that want them together -- a system message, a tooltip -- but the bar draws the two
-// halves into their own elements so each can be pressed on its own.
-function backendSummary() {
-  const gateway = PU.gatewayShown || "";
-  const model = PU.backendModelShown || "";
-  return gateway && model ? gateway + " / " + model : (gateway || model);
-}
-
 // The bar repeats what the dialog holds, in one line.
 function renderStatusBar() {
   // The gateway and the model are drawn apart because they are two choices, not one: a reader
@@ -136,7 +127,6 @@ function showUsage(payload) {
   PU.lastTurnLine =
       tokenLine(prompt, cached) +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
-  PU.contextShown = prompt.toLocaleString() + " tok";
   PU.lastTurnPrompt = prompt;
   renderStatusBar();
   renderContextBar();

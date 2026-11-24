@@ -9,8 +9,6 @@
 // nothing, and a tool nobody listed falls through to the first string it carries.
 const SUMMARY_FIELDS = ["command", "path", "query", "pattern", "url"];
 
-const SUMMARY_MAX = 60;
-
 // A one-line gist of the arguments, never the whole JSON: a long command is cut, and an
 // argument set with no readable value is counted rather than spelled out.
 function summarizeArgs(args) {
@@ -45,23 +43,6 @@ function pageSummary(page) {
   return `lines ${shown} of ${of}, ${where}${kept} kept`;
 }
 
-function oneLine(text) {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > SUMMARY_MAX ? flat.slice(0, SUMMARY_MAX) + "…" : flat;
-}
-
-function labelledPre(wrapperClass, label, text, preClass) {
-  const wrapper = document.createElement("div");
-  wrapper.className = wrapperClass;
-  const strong = document.createElement("strong");
-  strong.textContent = label;
-  const pre = document.createElement("pre");
-  if (preClass) pre.className = preClass;
-  pre.textContent = text;
-  wrapper.append(strong, pre);
-  return wrapper;
-}
-
 class ToolBlock extends HTMLElement {
   connectedCallback() {
     if (this.dataset.built) return;
@@ -91,7 +72,7 @@ class ToolBlock extends HTMLElement {
     this.nameEl.textContent = block.name || "unknown";
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
-    this.statusEl.textContent = this.#statusText(block);
+    this.statusEl.textContent = blockStatusText(block);
     const page = pageSummary(block.page);
     this.pageEl.textContent = page;
     this.pageEl.hidden = !page;
@@ -105,15 +86,6 @@ class ToolBlock extends HTMLElement {
 
   toggled() {
     return this._block.collapsed;
-  }
-
-  // A finished call that worked says so by being finished, so only the states a reader
-  // cannot infer are named: still running, not answered, and stopped before it ran.
-  #statusText(block) {
-    if (block.status === "running") return "running…";
-    if (block.status === "pending") return "no result";
-    if (block.status === "interrupted") return "interrupted";
-    return block.error ? "failed" : "";
   }
 
   #fillBody(block) {
