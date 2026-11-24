@@ -177,12 +177,12 @@ written out by hand and the two backend forms were not, so they inherited the br
 beside it in a visibly different style. The shape is therefore written once, on `dialog` by element
 rather than by id, so a fourth sheet added later cannot miss it the way the second and third did.
 
-**A backend form names its agent.** Both forms change one agent's backend and nothing on screen
-otherwise says which agent that is, so each ends with a line reading `Agent default` above its
-buttons. It is read, not offered: the name is fixed by the agent's file and no route accepts a
-change to it, so writing it as a field would promise an edit that cannot be made. The line is
-`#gw-agent-name` and `#md-agent-name`, kept in step by the same `renderStatusBar` that fills the
-configuration sheet's name — one renderer for the one fact, drawn in three places.
+**A backend form does not name its agent.** Both forms briefly ended with a line reading
+`Agent default`, on the reasoning that each changes one agent's backend and the reader might not
+know which. In practice the line could only ever say one thing: a served process has exactly one
+session and therefore one agent, so the name is a constant on a page whose subject is that agent,
+and a constant is not information. It is gone. The configuration sheet still states the name,
+because that sheet is about the agent itself.
 
 **A form has one way out.** The gateway and model sheets end on `Cancel` and `Save`, and the `✕`
 that used to sit in their corner is gone. On a configuration sheet with a scroll box and no buttons
