@@ -60,12 +60,8 @@ async function loadHistory() {
 // `source` says whether the value in force is this session's choice or the agent's own. One
 // renderer draws all of them, so a setting added on the server needs no change here.
 
-function settingEntry(name) {
-  return (PU.composer.settings || []).find((entry) => entry.name === name) || null;
-}
-
 function settingValue(name) {
-  const entry = settingEntry(name);
+  const entry = (PU.composer.settings || []).find((e) => e.name === name);
   return entry ? entry.value : null;
 }
 

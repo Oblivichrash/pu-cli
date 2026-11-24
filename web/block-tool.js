@@ -84,10 +84,6 @@ class ToolBlock extends HTMLElement {
     toggleSelf(this);
   }
 
-  toggled() {
-    return this._block.collapsed;
-  }
-
   #fillBody(block) {
     this.body.replaceChildren();
     // Tool output is a command's raw product, so it is set as text: its markup is data.

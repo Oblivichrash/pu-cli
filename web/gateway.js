@@ -112,15 +112,11 @@ function modelDialog() {
   return document.getElementById("model-dialog");
 }
 
-function modelField(id) {
-  return document.getElementById(id);
-}
-
 // A field a form may or may not be drawing: empty rather than a missing element, so a reader
 // writes one call where they would otherwise look the same id up twice to ask whether it is
 // there.
 function fieldValue(id) {
-  const el = modelField(id);
+  const el = document.getElementById(id);
   return el ? el.value : "";
 }
 
@@ -149,10 +145,10 @@ function showNumber(value) {
 // the box takes over in that case and the menu hides. They are never both shown, so the form still
 // holds one answer in one place.
 function fillModelChoices(names, current, error) {
-  const menu = modelField("md-name");
-  const typed = modelField("md-typed");
-  const menuField = modelField("md-name-field");
-  const typedField = modelField("md-typed-field");
+  const menu = document.getElementById("md-name");
+  const typed = document.getElementById("md-typed");
+  const menuField = document.getElementById("md-name-field");
+  const typedField = document.getElementById("md-typed-field");
   if (!menu) return;
   const known = (names || []).slice();
   const shown = current === undefined ? PU.backendModelShown || "" : current;
@@ -208,13 +204,13 @@ function modelFill() {
     "md-context-window": PU.backendParamsShown.context_window,
   };
   for (const [id, value] of Object.entries(numbers)) {
-    const input = modelField(id);
+    const input = document.getElementById(id);
     if (input) input.value = showNumber(value);
   }
   // The level is a menu rather than a box, so it is filled from the value in force and falls back
   // to `auto` when nothing is stated: a level the menu does not offer would leave it silently on
   // its first option, and falling back on purpose is not the same thing.
-  const thinking = modelField("md-thinking");
+  const thinking = document.getElementById("md-thinking");
   if (thinking) {
     const level = PU.backendParamsShown.thinking;
     const named = level === undefined || level === null || level === "" ? "auto" : String(level);
@@ -225,7 +221,7 @@ function modelFill() {
 }
 
 function modelError(message) {
-  const el = modelField("md-error");
+  const el = document.getElementById("md-error");
   if (!el) return;
   el.textContent = message || "";
   el.hidden = !message;
@@ -272,8 +268,8 @@ function modelClose() {
 // is the form's to show, and a form that closed on one would leave the reader believing a change
 // that was never made.
 async function modelSave() {
-  const menu = modelField("md-name");
-  const typed = modelField("md-typed");
+  const menu = document.getElementById("md-name");
+  const typed = document.getElementById("md-typed");
   // One answer, read from whichever control is showing: the menu when the catalogue had entries,
   // the box when it had none. `PU.modelTyped` is set by the same call that shows one and hides the
   // other, so the read cannot disagree with what the reader is looking at.
@@ -298,7 +294,7 @@ async function modelSave() {
   };
   // The same wait as the gateway form's, for the same reason, though this form's request does not
   // go through a connect timeout of its own: it is the same server writing the same file.
-  const ok = await withBusy(modelField("md-save"), () => saveModel(model, raw));
+  const ok = await withBusy(document.getElementById("md-save"), () => saveModel(model, raw));
   if (ok) modelClose();
 }
 
@@ -309,16 +305,16 @@ function wireModelDialog() {
   if (open) open.addEventListener("click", modelOpen);
   // The name box is the answer, so there is no second control to keep in step with it: the
   // suggestions are what the browser draws from the datalist and nothing here mirrors them back.
-  const save = modelField("md-save");
+  const save = document.getElementById("md-save");
   if (save) save.addEventListener("click", modelSave);
-  const cancel = modelField("md-cancel");
+  const cancel = document.getElementById("md-cancel");
   if (cancel) cancel.addEventListener("click", modelClose);
   // Same as the gateway sheet's head: Cancel is the one control that leaves, because the ✕ that
   // used to sit in the corner said what Cancel already says. Escape and a backdrop click remain,
   // and neither is drawn as a button.
   // The buttons are type=button, so every way out goes through modelClose: Enter in a number box
   // must not submit the head's form and close the sheet before the server has answered.
-  const form = modelField("model-form");
+  const form = document.getElementById("model-form");
   if (form) form.addEventListener("submit", (e) => e.preventDefault());
   dialog.addEventListener("keydown", (e) => {
     // A menu open on Escape is the browser's to close and the form's to survive: the level's list

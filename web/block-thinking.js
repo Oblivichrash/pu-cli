@@ -30,10 +30,6 @@ class ThinkingBlock extends HTMLElement {
   toggle() {
     toggleSelf(this);
   }
-
-  toggled() {
-    return this._block.collapsed;
-  }
 }
 
 class TextBlock extends HTMLElement {
