@@ -6,6 +6,8 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+## 0.7.2
+
 ### Added
 
 - **A workspace with no `agents.json` is configured by being asked.** `pu setup`
@@ -22,26 +24,6 @@ the commit that made it, and its current behaviour is in the relevant document
   just written. A run with no terminal is asked nothing and keeps the familiar
   "Configuration file not found", because a wizard cannot read a keyboard that
   is not there.
-
-### Changed
-
-- **Two gateways are named after their vendors.** `nim` is now `nvidia` and
-  `codebuddy` is now `tencent`, and their keys are read from `NVIDIA_API_KEY`
-  and `TENCENT_API_KEY`. The new names are what the gateway table, the setup
-  wizard and a `backend:` line read; the old spellings are not kept as aliases,
-  so an `agents.json` naming one has to be updated by hand.
-
-- **One agent can be the whole file.** An `agents.json` with `name` and
-  `backend` at the top and no `agents` array and no `default_agent` is read as
-  a one-entry table whose default is that name. A file that describes one agent
-  has nothing to choose between and nothing to default to, and the two keys that
-  exist to answer those questions are the two its reader has to skip past. The
-  table form is unchanged; a file with neither an `agents` array nor a
-  `backend` is still a table missing its array.
-
-## 0.7.2
-
-### Added
 
 - **Anthropic is a gateway of its own, not an OpenAI row with a different host.**
   `anthropic` speaks the Messages wire format, which differs from the OpenAI one in
@@ -124,6 +106,20 @@ The transcript is now bounded on four axes rather than three. All four are descr
 in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
 
 ### Changed
+
+- **Two gateways are named after their vendors.** `nim` is now `nvidia` and
+  `codebuddy` is now `tencent`, and their keys are read from `NVIDIA_API_KEY`
+  and `TENCENT_API_KEY`. The new names are what the gateway table, the setup
+  wizard and a `backend:` line read; the old spellings are not kept as aliases,
+  so an `agents.json` naming one has to be updated by hand.
+
+- **One agent can be the whole file.** An `agents.json` with `name` and
+  `backend` at the top and no `agents` array and no `default_agent` is read as
+  a one-entry table whose default is that name. A file that describes one agent
+  has nothing to choose between and nothing to default to, and the two keys that
+  exist to answer those questions are the two its reader has to skip past. The
+  table form is unchanged; a file with neither an `agents` array nor a
+  `backend` is still a table missing its array.
 
 - **Three names that described the wrong thing are gone.** None of them changes what the
   program does; each one named a file or a module after something it was not.
