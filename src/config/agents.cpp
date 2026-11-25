@@ -4,6 +4,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/logging.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 #include "pu/model/gateway.hpp"
 
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -18,6 +20,14 @@
 #include <regex>
 #include <set>
 #include <sstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
 
 namespace pu::config {
 
@@ -286,7 +296,103 @@ std::string FindConfigPath() {
   return {};
 }
 
+// The configuration is read and written by more than one process: `pu serve` holds it open for
+// the length of a run, and a second process -- the reader running `pu models --set`, a page save
+// against a serve that is already running -- writes the same file. The lock is taken on a
+// sibling `.lock` file rather than on the configuration itself, because the write replaces the
+// configuration by rename, and a lock follows the inode: the replacement would drop it and leave
+// the window it was meant to close.
+//
+// The lock is held only across the read-modify-write. A reader never takes it, since a rename is
+// atomic and a reader sees either the old file or the new one, never half of either.
+class ConfigLock {
+ public:
+  explicit ConfigLock(const std::string& path) {
+#ifdef _WIN32
+    const std::string lock_path = path + ".lock";
+    handle_ = CreateFileA(lock_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle_ != INVALID_HANDLE_VALUE) held_ = LockHeld(*this);
+#else
+    const std::string lock_path = path + ".lock";
+    fd_ = ::open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+    held_ = fd_ >= 0 && ::flock(fd_, LOCK_EX) == 0;
+#endif
+  }
+
+  ~ConfigLock() { Release(); }
+
+  ConfigLock(const ConfigLock&) = delete;
+  ConfigLock& operator=(const ConfigLock&) = delete;
+
+  void Release() {
+    if (!held_) return;
+    held_ = false;
+#ifdef _WIN32
+    if (handle_ != INVALID_HANDLE_VALUE) {
+      UnlockFileEx(handle_, 0, MAXDWORD, MAXDWORD, &overlapped_);
+      CloseHandle(handle_);
+      handle_ = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (fd_ >= 0) {
+      ::flock(fd_, LOCK_UN);
+      ::close(fd_);
+      fd_ = -1;
+    }
+#endif
+  }
+
+ private:
+#ifdef _WIN32
+  // `LockFileEx` waits, which is what a second writer wants: the two saves queue rather than one
+  // losing its change to the other's read-modify-write.
+  static bool LockHeld(ConfigLock& self) {
+    if (self.handle_ == INVALID_HANDLE_VALUE) return false;
+    std::memset(&self.overlapped_, 0, sizeof(self.overlapped_));
+    return ::LockFileEx(self.handle_, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD,
+                        &self.overlapped_) != 0;
+  }
+  HANDLE handle_ = INVALID_HANDLE_VALUE;
+  OVERLAPPED overlapped_{};
+#else
+  int fd_ = -1;
+#endif
+  bool held_ = false;
+};
+
+// Written beside the target and renamed over it: `rename` is atomic on POSIX, and on Windows
+// `std::filesystem::rename` refuses a target that already exists, which is the failure that made
+// the write look like it had happened when it had not. `MoveFileEx` with REPLACE_EXISTING is the
+// same operation there. The staged file is named for the process so two writers that did not wait
+// for the lock cannot publish one over the other's half-written text.
+void ReplaceFileText(const std::string& path, const std::string& text) {
+  const std::string staged = path + "." + std::to_string(platform::CurrentProcessId()) + ".tmp";
+  {
+    std::ofstream out(staged, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) throw pu::GenericError("cannot write " + staged);
+    out << text;
+    out.flush();
+    if (!out) throw pu::GenericError("cannot write " + staged);
+  }
+#ifdef _WIN32
+  if (!::MoveFileExA(staged.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    std::error_code ignored;
+    std::filesystem::remove(staged, ignored);
+    throw pu::GenericError("cannot replace " + path);
+  }
+#else
+  std::error_code ec;
+  std::filesystem::rename(staged, path, ec);
+  if (ec) {
+    std::filesystem::remove(staged, ec);
+    throw pu::GenericError("cannot replace " + path);
+  }
+#endif
+}
+
 void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& update) {
+  ConfigLock lock(config_path);
   std::ifstream file(config_path);
   if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
   const std::string original{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -346,20 +452,7 @@ void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& upd
   if (!written) throw pu::GenericError(config_path + " would not read back as JSON");
   ParseAgentEntry(*written);
 
-  const std::filesystem::path target(config_path);
-  const std::filesystem::path staged = target.string() + ".tmp";
-  {
-    std::ofstream out(staged, std::ios::trunc);
-    if (!out.is_open()) throw pu::GenericError("cannot write " + staged.string());
-    out << text;
-    if (!out) throw pu::GenericError("cannot write " + staged.string());
-  }
-  std::error_code ec;
-  std::filesystem::rename(staged, target, ec);
-  if (ec) {
-    std::filesystem::remove(staged, ec);
-    throw pu::GenericError("cannot replace " + config_path);
-  }
+  ReplaceFileText(config_path, text);
 }
 
 std::optional<ServeOptions> FindServeOptions() {

@@ -793,3 +793,52 @@ TEST_CASE("An output block from an older config is ignored, not fatal", "[agent_
 
   REQUIRE(cfg.paging.page_lines == paging::Budget{}.page_lines);
 }
+
+TEST_CASE("A backend write keeps the file's own spelling of every key it was not asked to change",
+          "[agent_config][write]") {
+  TempConfigFile tmp;
+  tmp.write(R"({
+    "name": "a",
+    "description": "kept",
+    "backend": {
+      "gateway": "tencent",
+      "model": "m",
+      "api_key": "$TENCENT_API_KEY",
+      "temperature": 0.3
+    },
+    "delegates": ["b"]
+  })");
+
+  config::BackendUpdate update;
+  update.gateway = "ollama";
+  update.model = "qwen";
+  config::UpdateAgentBackend(tmp.path.string(), update);
+
+  std::ifstream in(tmp.path);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(text.find("$TENCENT_API_KEY") != std::string::npos);
+  CHECK(text.find("\"description\"") != std::string::npos);
+  CHECK(text.find("\"delegates\"") != std::string::npos);
+
+  const config::AgentEntry cfg = config::LoadAgentConfig(tmp.path.string());
+  CHECK(cfg.backend.gateway == model::GatewayId::kOllama);
+  CHECK(cfg.backend.model == "qwen");
+  CHECK(cfg.backend.host == model::DefaultHostFor(model::GatewayId::kOllama));
+}
+
+TEST_CASE("A backend write leaves no staged file behind", "[agent_config][write]") {
+  TempConfigFile tmp;
+  tmp.write(R"({"name": "a", "backend": {"gateway": "ollama", "model": "m"}})");
+
+  config::BackendUpdate update;
+  update.gateway = "ollama";
+  update.model = "qwen";
+  config::UpdateAgentBackend(tmp.path.string(), update);
+
+  std::size_t leftovers = 0;
+  for (const auto& entry : fs::directory_iterator(fs::path(tmp.path).parent_path())) {
+    const std::string name = entry.path().filename().string();
+    if (name.starts_with(fs::path(tmp.path).filename().string()) && name.ends_with(".tmp")) ++leftovers;
+  }
+  CHECK(leftovers == 0);
+}
