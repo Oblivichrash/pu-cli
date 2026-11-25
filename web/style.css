@@ -972,13 +972,37 @@ text the two colours alone are too close to carry that. */
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.5;
-  overflow-x: auto;
+  /* A source file uses tabs, and eight columns of indent pushes every nest past the edge. Four
+     is what the languages that indent this way are read at. */
+  tab-size: 4;
+  /* A reply is read top to bottom, so one long file must not become the whole reply: past this
+     height the block scrolls on its own. The bound is generous enough that a snippet is never
+     cut, and short enough that a filled answer still ends within a screen or two. */
+  max-height: 60vh;
+  overflow: auto;
 }
 .msg .block-text pre code {
   padding: 0;
   background: none;
   border: 0;
+  /* `pre` carries the family and the size; a `code` nested in it must not reset either to the
+     browser's own monospace, which is a different width and would move the wrap. */
+  font-family: inherit;
   font-size: inherit;
+  tab-size: inherit;
+}
+/* The language a fence named, carried on the block as a mark rather than a heading: it is a
+   label for what is below it, so it sits in the corner of the tint without a line of its own. */
+.msg .block-text pre.has-lang { position: relative; padding-top: 22px; }
+.msg .block-text .code-lang {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--ink-light);
+  text-transform: lowercase;
+  user-select: none;
 }
 /* Inline code sits in a sentence, so it must break like the words around it or one long token
    drags the bubble wider than the column. */
