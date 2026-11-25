@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstddef>
 #include <exception>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -47,6 +48,18 @@ inline std::string ValueOrDefault(const value& j, boost::json::string_view key, 
 inline bool HasKey(const value& j, boost::json::string_view key) {
   const object* obj = j.if_object();
   return obj != nullptr && obj->contains(key);
+}
+
+// A new object holding only the members of `from` that `keys` names -- an allow-list, so that
+// a field the caller's own code does not know about is dropped rather than copied onward. A
+// member that is absent is simply not written: the caller asked for what was there.
+inline object Keep(const object& from, std::initializer_list<boost::json::string_view> keys) {
+  object kept;
+  for (const boost::json::string_view key : keys) {
+    const auto found = from.find(key);
+    if (found != from.end()) kept[key] = found->value();
+  }
+  return kept;
 }
 
 // `text` as a value, or nothing when it is not one. The failure is the return value rather

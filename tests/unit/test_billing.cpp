@@ -23,14 +23,16 @@
 namespace {
 
 // One SSE answer whose usage object is `usage`, so a case can vary only the price field.
-pu::OpenAIProvider::Config ConfigWithUsage(const std::string& usage, pu::model::Billing billing) {
+pu::OpenAIProvider::Config ConfigWithUsage(pu::model::Billing billing) {
   pu::OpenAIProvider::Config config;
   config.model = "test-model";
   config.billing = billing;
   return config;
 }
 
-std::vector<pu::ChatMessage> OneQuestion() { return {{1, "now", "user", "Hi"}}; }
+std::vector<pu::ChatMessage> OneQuestion() {
+  return {{.id = 1, .timestamp = "now", .role = "user", .content = "Hi"}};
+}
 
 }  // namespace
 
@@ -47,9 +49,8 @@ TEST_CASE("A price is read only from the field the product names", "[openai][usa
   };
 
   // The product reports a price: read it, and keep the unit the product named.
-  pu::OpenAIProvider reporting(ConfigWithUsage(
-                               "{}", {pu::model::BillingKind::kReported, "credit", "credits"}),
-                           std::move(mock_http));
+  pu::OpenAIProvider reporting(ConfigWithUsage({pu::model::BillingKind::kReported, "credit", "credits"}),
+                               std::move(mock_http));
   auto priced = reporting.Chat(pu::ChatRequest(OneQuestion(), {}));
   REQUIRE(priced.usage.has_value());
   REQUIRE(priced.usage->cost.has_value());
@@ -70,7 +71,7 @@ TEST_CASE("A product that reports no price leaves the cost absent", "[openai][us
     cb(buffer.data(), buffer.size());
   };
 
-  pu::OpenAIProvider silent(ConfigWithUsage("{}", {}), std::move(mock_http));
+  pu::OpenAIProvider silent(ConfigWithUsage({}), std::move(mock_http));
   auto result = silent.Chat(pu::ChatRequest(OneQuestion(), {}));
 
   REQUIRE(result.usage.has_value());
@@ -95,9 +96,8 @@ TEST_CASE("A price that is not a number is not read as one", "[openai][usage][bi
     cb(buffer.data(), buffer.size());
   };
 
-  pu::OpenAIProvider reporting(ConfigWithUsage(
-                               "{}", {pu::model::BillingKind::kReported, "credit", "credits"}),
-                           std::move(mock_http));
+  pu::OpenAIProvider reporting(ConfigWithUsage({pu::model::BillingKind::kReported, "credit", "credits"}),
+                               std::move(mock_http));
   auto result = reporting.Chat(pu::ChatRequest(OneQuestion(), {}));
 
   REQUIRE(result.usage.has_value());

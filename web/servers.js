@@ -91,7 +91,7 @@ async function refreshServers() {
 // transcript and the session are read again from the one it moved to; nothing is
 // carried across, because nothing about a conversation in one workspace is true of another.
 async function adoptServer(server) {
-  setSelf({ origin: siblingOrigin(server.port), name: serverLabel(server), port: server.port });
+  setSelf({ origin: siblingOrigin(server.port), name: serverLabel(server) });
   if (PU.ws) {
     PU.ws.onmessage = null;
     PU.ws.onclose = null;
@@ -106,7 +106,7 @@ async function adoptServer(server) {
   renderServers();
   // The session answers with the name and port the page is now attached to, so a switch ends by
   // correcting the label from the server it arrived at rather than trusting the entry it used.
-  await loadAgents();
+  await loadBackends();
   await loadSession();
   await loadHistory();
   scrollToBottom();

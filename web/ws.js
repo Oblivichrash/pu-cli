@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The page's single socket and the REST calls that go with it: one page owns a session, so
-// the page keeps exactly one socket and reports a refusal instead of taking the session
-// from the page that holds it.
+// The page's single socket and the REST calls that go with it: one page owns a session, so the
+// page keeps exactly one socket and reports a refusal instead of taking the session from the page
+// that holds it.
 //
-// A load is two things at once: the socket starts delivering the turn still being written,
-// and the transcript is rebuilt from the store. Frames that arrive while the rebuild is in
-// flight are held in `PU.loadingFrames` and dispatched into the fresh transcript once it is
-// there; drawn immediately, they would be appended to boxes that are about to be replaced,
-// and the turn would show twice.
+// A load is two things at once: the socket starts delivering the turn still being written, and the
+// transcript is rebuilt from the store. Frames arriving mid-rebuild wait in `PU.loadingFrames` and
+// are dispatched into the fresh transcript; drawn immediately, they would be appended to boxes
+// about to be replaced and the turn would show twice.
 
 "use strict";
 
@@ -16,8 +15,8 @@
 const WATCHDOG_STREAM_MS = 60000;
 const WATCHDOG_TOOL_MS = 300000;
 
-// The tab's name for itself. sessionStorage keeps it across a reload and gives every other
-// tab its own, so the server can tell this page's reconnects from a second page.
+// The tab's name for itself. sessionStorage keeps it across a reload and gives every other tab its
+// own, so the server can tell this page's reconnects from a second page.
 function pageClientId() {
   const key = "pu-client-id";
   let id = null;
@@ -58,28 +57,35 @@ function handleBusy(payload) {
 }
 
 function toolIsRunning() {
-  // A subtask is a tool that happens to run a conversation elsewhere: it holds the
-  // socket open for as long as a command would, so it earns the same longer wait.
+  // A subtask is a tool that runs a conversation elsewhere: it holds the socket open as long as a
+  // command would, so it earns the same longer wait.
   return PU.currentAssistantBlocks.some(
       (block) => (block.type === BLOCK_TYPES.TOOL_CALL || block.type === BLOCK_TYPES.SUBTASK) &&
           block.status === "running");
 }
 
-// A turn that stops speaking without a close is indistinguishable from a hung socket, so
-// the socket is reopened. The timer is re-armed on every progress frame.
-function armWatchdog() {
+// Drop the watchdog without reopening anything: the timer is not pending any more, and a command
+// that was given its longer wait starts over with the next turn.
+function clearWatchdog() {
   clearTimeout(PU.watchdogTimer);
-  // Progress arrived, so a running command is no longer silent.
+  PU.watchdogTimer = null;
   PU.watchdogToolGrace = false;
+}
+
+// A turn that stops speaking without a close is indistinguishable from a hung socket, so the socket
+// is reopened. The timer is re-armed on every progress frame.
+function armWatchdog() {
+  // Progress arrived, so a running command is no longer silent.
+  clearWatchdog();
   PU.watchdogTimer = setTimeout(onWatchdogElapsed, WATCHDOG_STREAM_MS);
 }
 
 function onWatchdogElapsed() {
   PU.watchdogTimer = null;
   if (!PU.isStreaming) return;
-  // A command that is still running says nothing until it ends, so the silence is not a
-  // hang. It is given the longer wait once rather than indefinitely: a tool that died
-  // without its `tool_end` must still lead to a reopened socket.
+  // A command that is still running says nothing until it ends, so the silence is not a hang. It is
+  // given the longer wait once rather than indefinitely: a tool that died without its `tool_end`
+  // must still lead to a reopened socket.
   if (toolIsRunning() && !PU.watchdogToolGrace) {
     PU.watchdogToolGrace = true;
     PU.watchdogTimer = setTimeout(onWatchdogElapsed, WATCHDOG_TOOL_MS);
@@ -88,17 +94,16 @@ function onWatchdogElapsed() {
   reopenSilentSocket();
 }
 
-// The socket being given up on is handed over, not closed. Its close would reach the server
-// as this page going away and cancel the turn still being written; instead the server closes
-// it once the replacement has taken the session. Until then its frames keep being drawn,
-// since they are this turn's, and its close is ignored: that close is the handover rather
-// than the page leaving.
+// The socket being given up on is handed over, not closed. Its close would reach the server as this
+// page going away and cancel the turn still being written; instead the server closes it once the
+// replacement has taken the session. Until then its frames keep being drawn, since they are this
+// turn's, and its close is ignored: that close is the handover rather than the page leaving.
 function reopenSilentSocket() {
   PU.watchdogTimer = null;
   PU.watchdogToolGrace = false;
   if (!PU.isStreaming) return;
-  // Only one socket can be waiting to be closed by the server: an older one has had its
-  // turn handed on already.
+  // Only one socket can be waiting to be closed by the server: an older one has had its turn
+  // handed on already.
   releaseSupersededSocket();
   const stale = PU.ws;
   PU.ws = null;
@@ -115,9 +120,9 @@ function reopenSilentSocket() {
   connectWebSocket();
 }
 
-// Let go of the handed-over socket once its turn is over. Closing it while the turn runs
-// would be read as the page leaving; closing it after `done` reaches a server with no turn
-// in flight, which is why the release waits for the end of the turn.
+// Let go of the handed-over socket once its turn is over. Closing it while the turn runs would be
+// read as the page leaving; after `done` there is no turn in flight, which is why the release waits
+// for the end of the turn.
 function releaseSupersededSocket() {
   const stale = PU.supersededSocket;
   PU.supersededSocket = null;
@@ -140,9 +145,7 @@ function handleDone(payload) {
       finishAssistantMessage();
     }
   }
-  clearTimeout(PU.watchdogTimer);
-  PU.watchdogTimer = null;
-  PU.watchdogToolGrace = false;
+  clearWatchdog();
   // The turn is over, so the socket it was handed over from has nothing left to deliver.
   releaseSupersededSocket();
   setSendButtonState(false);
@@ -196,13 +199,11 @@ function dispatchFrame(data) {
   if (handler) handler(data.payload);
 }
 
-// A dropped socket takes the reply with it: the turn is cancelled and keeps nothing.
-// `refused` says this socket was turned away rather than accepted and then lost, which is
-// the one case where retrying is bounded instead of open-ended.
+// A dropped socket takes the reply with it: the turn is cancelled and keeps nothing. `refused` says
+// this socket was turned away rather than accepted and then lost, which is the one case where
+// retrying is bounded instead of open-ended.
 function handleSocketClose(refused) {
-  clearTimeout(PU.watchdogTimer);
-  PU.watchdogTimer = null;
-  PU.watchdogToolGrace = false;
+  clearWatchdog();
   releaseSupersededSocket();
   discardPendingApproval();
   if (PU.isStreaming) {
@@ -212,12 +213,12 @@ function handleSocketClose(refused) {
   }
   refreshChainLength();
   if (refused) {
-    // A page that was never the session's client lost no reply, so the dot goes dark
-    // without the notice a lost reply would raise: the refusal on the bar is the story.
+    // A page that was never the session's client lost no reply, so the dot goes dark without the
+    // notice a lost reply would raise: the refusal on the bar is the story.
     PU.replyLostToDisconnect = false;
     setConnectionState("offline");
-    // The page holding the session may be reloading right now, so a refusal is retried a
-    // bounded number of times before the reader is told to reload.
+    // The page holding the session may be reloading, so a refusal is retried a bounded number of
+    // times before the reader is told to reload.
     if (PU.busyRefusals <= MAX_BUSY_RETRIES) scheduleReconnect();
     return;
   }
@@ -227,11 +228,11 @@ function handleSocketClose(refused) {
   scheduleReconnect();
 }
 
-// A transcript rebuild holds the socket's frames until it has the transcript it is drawing
-// into: a frame drawn first would be appended to boxes the rebuild is about to replace, and
-// the turn would show twice. The hold has exactly one owner, and it lets go on every path —
-// the rebuild's own end, a failure, and a timer — so no failure can leave it up. That
-// failure is what a page that stops mid-answer and needs a reload is made of.
+// A transcript rebuild holds the socket's frames until it has the transcript it is drawing into:
+// a frame drawn first would be appended to boxes the rebuild is about to replace, and the turn
+// would show twice. The hold has one owner and lets go on every path — the rebuild's own end, a
+// failure, and this timer — since a hold left up is a page that stops mid-answer and needs a
+// reload.
 const LOAD_HOLD_MS = 3000;
 
 function beginLoad() {
@@ -250,7 +251,6 @@ function endLoad(replay = true) {
   clearTimeout(PU.loadingTimer);
   PU.loadingTimer = null;
   PU.loading = false;
-  PU.resyncing = false;
   PU.loadGen += 1;
   const held = PU.loadingFrames;
   PU.loadingFrames = [];
@@ -258,25 +258,22 @@ function endLoad(replay = true) {
   for (const data of held) dispatchFrame(data);
 }
 
-// Re-draw what the server knows after a reconnect. The transcript is cleared and
-// replayed from the store, so a turn that completed while the socket was down appears
-// instead of a half-drawn reply.
+// Re-draw what the server knows after a reconnect: the transcript is cleared and replayed from the
+// store, so a turn that completed while the socket was down appears instead of a half-drawn reply.
 //
-// It returns at once and reads in the background: `onopen` must not await it. A socket's
-// event handlers run one at a time, each to completion, so a handler waiting on a fetch
-// holds the read call that would deliver the very frames it is waiting for. The page then
-// sits on a request of its own making until something else closes the socket.
+// It returns at once and reads in the background. `onopen` must not await it: a socket's handlers
+// run one at a time each to completion, so a handler waiting on a fetch holds the read call that
+// would deliver the frames it is waiting for, and the page sits on a request of its own making.
 function resyncAfterReconnect() {
-  // A turn still streaming keeps the bubble it is drawing: the store holds no reply for it
-  // yet, so replaying would delete the answer and leave the arriving frames drawing into a
-  // message that is no longer on the page.
+  // A streaming turn keeps the bubble it is drawing: the store holds no reply for it yet, so
+  // replaying would delete the answer and leave arriving frames drawing into a message no longer on
+  // the page.
   if (PU.isStreaming) {
     endLoad();
     refreshChainLength();
     return;
   }
   beginLoad();
-  PU.resyncing = true;
   // This rebuild's number: `endLoad` bumps it, so a rebuild that a later one overtook can
   // tell that the frames in the hold are no longer its own to replay.
   const gen = PU.loadGen;
@@ -320,16 +317,15 @@ function connectWebSocket() {
     if (ws !== PU.ws) return;
     PU.reconnectAttempts = 0;
     setConnectionState("online");
-    // A reconnect may have missed turns the server processed while the socket was
-    // down: the transcript and the chain length are re-read rather than trusted. The
-    // frames that arrive before that read finishes were produced by a turn that is
-    // still running, so they are held rather than drawn into boxes about to go.
+    // A reconnect may have missed turns processed while the socket was down, so the transcript and
+    // the chain length are re-read rather than trusted. Frames arriving before that read finishes
+    // belong to a turn still running and are held rather than drawn into boxes about to go.
     resyncAfterReconnect();
   };
 
   ws.onmessage = (event) => {
-    // A handed-over socket still delivers the turn it was reading until the server closes
-    // it, and those frames are not repeated on the replacement.
+    // A handed-over socket still delivers the turn it was reading until the server closes it, and
+    // those frames are not repeated on the replacement.
     if (ws !== PU.ws && ws !== PU.supersededSocket) return;
     let data;
     try {
@@ -343,9 +339,9 @@ function connectWebSocket() {
     } else {
       PU.busyRefusals = 0;
     }
-    // While the transcript is being rebuilt, the frames wait for it. One from a socket
-    // something else has replaced describes a turn the live socket now owns, so it is
-    // dropped instead of drawn into a transcript it does not belong to.
+    // While the transcript is being rebuilt, frames wait for it. One from a socket something else
+    // has replaced describes a turn the live socket now owns, so it is dropped instead of drawn
+    // into a transcript it does not belong to.
     if (PU.loading) {
       if (ws === PU.ws) PU.loadingFrames.push(data);
       return;

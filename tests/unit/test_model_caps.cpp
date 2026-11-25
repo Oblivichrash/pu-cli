@@ -43,7 +43,7 @@ TEST_CASE("A capabilities row says what the model accepts and where it must be t
 
   const std::vector<model::ModelEntry> models = {ModelWith("deepseek-v4-pro", caps)};
   const std::string rendered =
-      llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "deepseek-v4-pro",
+      llm::FormatModelList(models, "tencent", "https://x.invalid/v2", "deepseek-v4-pro",
                            llm::ListingDetail::kCaps);
 
   REQUIRE(rendered.find("tools") != std::string::npos);
@@ -75,8 +75,8 @@ TEST_CASE("The id list is unchanged by the capability renderer", "[caps]") {
   const std::vector<model::ModelEntry> models = {ModelWith("cheap", caps)};
 
   const std::string ids =
-      llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2", "cheap");
-  const std::string with_caps = llm::FormatModelList(models, "codebuddy", "https://x.invalid/v2",
+      llm::FormatModelList(models, "tencent", "https://x.invalid/v2", "cheap");
+  const std::string with_caps = llm::FormatModelList(models, "tencent", "https://x.invalid/v2",
                                                      "cheap", llm::ListingDetail::kCaps);
 
   // The default is still the id and the price, which is what `models` printed before.

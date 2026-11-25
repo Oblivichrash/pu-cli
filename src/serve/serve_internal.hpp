@@ -54,6 +54,9 @@ Admission Admit(Audience audience, const std::string& address);
 // What a handler computes against. Who called is a parameter like everything else, so a route
 // that only answers this machine cannot be written by forgetting to check.
 struct Call {
+  // Everything after the `?` in the target, so a handler can read a parameter without
+  // reaching for the request the dispatcher owns. Empty for a route asked without one.
+  std::string query;
   Runtime& runtime;
   // The address the request arrived from, empty when the socket could not name its peer.
   std::string address;

@@ -4,8 +4,27 @@
 
 "use strict";
 
+// The one way any block turns prose into DOM. `marked` marks a fenced block's language on the
+// code element rather than on the `pre`, and a reader who is about to copy a command wants that
+// name on the block itself: it says what the lines are before they are read. A fence with no
+// language gets no name, since inventing one would be a claim the source never made.
 function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text));
+  const html = marked.parse(text);
+  const holder = document.createElement("div");
+  holder.innerHTML = DOMPurify.sanitize(html);
+  for (const pre of holder.querySelectorAll("pre")) {
+    const code = pre.firstElementChild;
+    const language = code && code.className.startsWith("language-")
+      ? code.className.slice("language-".length)
+      : "";
+    if (!language) continue;
+    const name = document.createElement("span");
+    name.className = "code-lang";
+    name.textContent = language;
+    pre.classList.add("has-lang");
+    pre.prepend(name);
+  }
+  return holder.innerHTML;
 }
 
 class ThinkingBlock extends HTMLElement {
@@ -29,10 +48,6 @@ class ThinkingBlock extends HTMLElement {
 
   toggle() {
     toggleSelf(this);
-  }
-
-  toggled() {
-    return this._block.collapsed;
   }
 }
 

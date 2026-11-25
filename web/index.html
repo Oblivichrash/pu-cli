@@ -22,7 +22,19 @@
       <ul id="server-list" class="server-list" hidden></ul>
     </div>
     <div class="header-right">
-      <button id="sidebar-toggle" title="Hide or show the panel" aria-label="Toggle panel">▤</button>
+      <!-- The one thing on this page a reader chooses, beside the one thing a reader opens. It
+           used to sit in a column of its own, behind a button that folded that column; with the
+           column gone the chooser is where the column's toggler was. The marks are drawn rather
+           than typed: a gear character at 14px is a hairline glyph the font bolds into a smudge,
+           while a stroke path keeps the weight the rest of the page uses. It is not boxed, since
+           nothing else in this bar is: the frame made the one control in the row look like the only
+           thing that was not a label. -->
+      <button id="config-open" title="Choose the backend and this session's settings" aria-label="Configure agent">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -46,81 +58,261 @@
       </div>
 
       <div id="composer">
-        <!-- The field and the button, nothing else: what is chosen between messages lives in
-             the panel, and what is merely read lives on the status bar below. -->
+        <!-- The field and the button, nothing else: what is chosen between messages lives behind
+             the gear in the header, and what is merely read lives on the status bar below. -->
         <div id="composer-row">
           <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)" autofocus></textarea>
-          <button id="send">Send</button>
+          <!-- The press is a mark in the corner of the field rather than a block beside it. A
+               filled block of text is the loudest thing on a page whose messages are paper and
+               hairline, and it took a width the field could have used. The two paths are Lucide's
+               `arrow-up` and a solid square, on the library's own 24-unit grid: the same grid the
+               gear in the header is drawn on, so the controls read as one hand. The button keeps
+               its label for a screen reader and its meaning for a pointer: the title and
+               aria-label say which press this is, and the path changes with it. -->
+          <button id="send" aria-label="Send" title="Send (Enter)">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path class="icon-send" d="m5 12 7-7 7 7"/>
+              <path class="icon-send" d="M12 19V5"/>
+              <!-- The square is 12 units wide on this 24-unit grid, not the 10 a stop mark usually
+                   starts as. Both marks share one 16px box, but the arrow's path spans 14 units
+                   while a 10-unit square paints only 6.7px of a 28px disc -- a quarter of it,
+                   against the arrow's well over half -- and read as a small dot rather than the
+                   mark. At 12 units it paints 8px, near the third of the disc a solid glyph
+                   wants, without touching the ring or the arrow, which were already right. -->
+              <path class="icon-stop" d="M6 6h12v12H6z" hidden/>
+            </svg>
+          </button>
         </div>
       </div>
     </main>
 
-    <aside id="sidebar">
-      <div class="panel">
-        <div class="panel-title">Session</div>
-        <label class="field">
-          <span>Agent</span>
-          <select id="agent-select"></select>
-        </label>
-        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
-             there appears here without this file changing. How much reasoning to ask for is a
-             row like any other now. -->
-        <div id="settings-rows"></div>
-        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
-          Reset to the agent's configuration
-        </button>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Usage</div>
-        <div id="context-usage" title="How much context the last reply ran against"></div>
-        <div class="context-bar"><div id="context-fill"></div></div>
-        <!-- What the whole conversation has spent, summed by the server. -->
-        <div id="usage-total" class="usage-total" title="What this conversation has spent so far"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Backend</div>
-        <dl id="panel-backend" class="kv">
-          <dt>Type</dt><dd id="kb-type">—</dd>
-          <dt>Model</dt><dd id="kb-model">—</dd>
-          <dt>Host</dt><dd id="kb-host">—</dd>
-        </dl>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">Tools</div>
-        <ul id="panel-tools" class="tool-list"></ul>
-      </div>
-
-    </aside>
-
   </div>
 
-  <!-- A read-out, not a control: what the session is, so a folded panel costs no state.
-       It spans the shell rather than sitting in the column, so the panel opening and
-       closing does not move it. -->
+  <!-- A read-out that the reader can also reach into: what the session is, and the three facts in
+       it that are still theirs to change. It is the only place these facts live now -- the column
+       that held the usage figures is gone -- so the bar carries them at the shell's own width,
+       where nothing can move them.
+
+       Only the three that change are controls, and each is a control of its own: the gateway and
+       the model sit in one line but are two presses, because they are two choices, and a reader
+       who wants the other model should not have to open a sheet that also asks them about the
+       address and the temperature. A shared press target would also have to guess which half of
+       "openai / stub-model" the pointer meant. What stays read-only is what the reader never
+       chose: the connection, the tool list, and the window the last reply filled.
+
+       The two presses are `<button>`s rather than spans given a role. A span with a role is a
+       promise the page has to keep by hand -- Enter and Space, the focus ring, the pressed state --
+       and the browser keeps all three for the element that was made for this, so the handler is
+       one `click` and the keyboard comes free. -->
   <div id="status-bar">
     <span class="status-item">
       <span id="conn-dot" class="conn-dot" title="Connection"></span>
       <span id="conn-text">connecting</span>
     </span>
-    <span class="status-item" id="status-agent" title="The agent that answers">—</span>
-    <span class="status-item" id="status-thinking" title="How much reasoning is asked for">—</span>
-    <!-- The gateway and the model are not here. They are a fact about the configuration, and
-         they do not change from one turn to the next, so the bar spent a third of its width
-         repeating what the Backend panel already holds. What is left is what moves: the tools
-         the agent can reach and the context the last reply ran against. -->
+    <button type="button" class="status-item status-press" id="status-gateway"
+            title="The gateway that answers — click to change">—</button>
+    <span class="status-sep" aria-hidden="true">/</span>
+    <button type="button" class="status-item status-press" id="status-model"
+            title="The model that answers — click to change">—</button>
+    <span class="status-item" id="status-thinking"
+          title="How much reasoning the model is asked for">—</span>
     <span class="status-right">
       <span class="status-item" id="status-tools" title="Tools this agent can reach">—</span>
-      <span class="status-item" id="status-context" title="Context the last reply ran against">—</span>
+      <!-- The window the last reply filled. The fill is a hairline under the figure rather than a
+           bar of its own: it is one number, and a bar wide enough to read as a bar would take the
+           room the agent's name is using. The whole record -- both counts, the window, the cached
+           share and the conversation's sum -- is in the tooltip, which is where a reader who wants
+           the number rather than the glance goes. -->
+      <span class="status-item usage" id="status-usage" title="How much context the last reply ran against">
+        <span id="usage-text">—</span>
+        <span class="usage-bar" aria-hidden="true"><span id="usage-fill"></span></span>
+      </span>
     </span>
   </div>
 
-  <div id="scrim" hidden></div>
+  <!-- The model, chosen where it is written. The bar already names the model in force, so pressing
+       it opens a form about that question and no other: which model answers, and how it answers --
+       a model carries settings of its own (temperature, cap, window) that the gateway's name has
+       nothing to do with, and a reader who wants to loosen the temperature is not asking to change
+       where the turn is sent. The name is a menu, for the same reason the gateway's is: the
+       catalogue is the list of names the gateway answers to, not advice about them. Like the
+       gateway's own form, nothing here is written until Save. -->
+  <dialog id="model-dialog" aria-labelledby="model-title">
+    <!-- No ✕ here. The sheet ends on Cancel and Save, and a second way out in the corner is the
+         same way out twice: on a form this short both are on screen at once, so the reader is
+         left asking what separates them. Escape, a backdrop click and Cancel all still work; the
+         configuration sheet keeps its ✕ because it has no buttons and that corner is its only
+         way out. -->
+    <form id="model-form" class="config-head">
+      <div id="model-title" class="config-title">Which model answers, and how</div>
+    </form>
+
+    <div class="config-body">
+      <section class="config-section">
+        <div class="panel-title">Model</div>
+        <label class="field" id="md-name-field">
+          <span>Name</span>
+          <select id="md-name"></select>
+          <!-- Filled from /api/models, and a menu rather than a box: the gateway's catalogue is the
+               list of names it answers to, so the entries are the answer and not advice. The name in
+               force is always one of them -- drawn first when the catalogue does not list it -- so a
+               catalogue that could not be read leaves the field holding what runs rather than empty.
+               A box with a datalist behind it was tried and is not the same control: Chromium shows
+               no picker at all once the box holds a name the list matches, which is every time the
+               form opens, so the reader meets a field that looks closed and cannot be opened. -->
+        </label>
+        <!-- The one case the menu cannot answer: a gateway that says it has no models and nothing
+             in force to fall back on. An account whose catalogue is unconfigured is a real state --
+             tencent answers `"agents":null,"models":null` for one -- and a menu of no entries is a
+             dead end the reader cannot type their way out of. The box takes the name and the menu
+             goes away, so there is still one control holding the answer, not two disagreeing. -->
+        <label class="field" id="md-typed-field" hidden>
+          <span>Type a name</span>
+          <input id="md-typed" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="a model this gateway serves">
+        </label>
+      </section>
+
+      <section class="config-section">
+        <div class="panel-title">How it answers</div>
+        <!-- Every box here starts from what is in force, and an empty box is a setting nobody
+             stated: a cap the file does not name is not a cap of zero, and the placeholder says
+             what the absence means rather than leaving the reader to guess. -->
+        <label class="field">
+          <span>Temperature</span>
+          <input id="md-temperature" type="number" min="0" max="2" step="0.1"
+                 placeholder="0.7">
+        </label>
+        <!-- The level sits with the model because that is whose property it is: which gateway
+             answers decides what "high" puts on the wire, so a level chosen without a model chosen
+             would be a setting with no subject. `auto` is the absence of a level, named rather
+             than left as an empty box: it is a choice the reader makes on purpose, and a blank
+             menu would read as a control that failed to load. -->
+        <label class="field">
+          <span>Thinking</span>
+          <select id="md-thinking">
+            <option value="auto">auto (the gateway decides)</option>
+            <option value="none">none</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Max tokens</span>
+          <input id="md-max-tokens" type="number" min="1" step="1" placeholder="no cap">
+        </label>
+        <label class="field">
+          <span>Top P</span>
+          <input id="md-top-p" type="number" min="0.01" max="1" step="0.01"
+                 placeholder="the gateway's own">
+        </label>
+        <label class="field">
+          <span>Seed</span>
+          <input id="md-seed" type="number" step="1" placeholder="not pinned">
+        </label>
+        <label class="field">
+          <span>Context window</span>
+          <input id="md-context-window" type="number" min="1" step="1"
+                 placeholder="whatever the model holds">
+        </label>
+        <div id="md-error" class="backend-error" hidden></div>
+      </section>
+
+      <div class="gateway-actions">
+        <button id="md-cancel" type="button" class="gateway-button">Cancel</button>
+        <button id="md-save" type="button" class="gateway-button gateway-button-primary">Save</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Everything the reader writes rather than reads, in one place. It is a dialog rather than
+       three panels in the column because these are one act -- pick what answers, then adjust
+       how it answers -- and the column had them separated by the usage figures, which are the
+       opposite kind of thing. A native dialog also brings the focus trap and the Escape key,
+       which a hand-rolled overlay gets wrong in a page that already binds Escape elsewhere. -->
+  <dialog id="config-dialog" aria-labelledby="config-title">
+    <form method="dialog" class="config-head">
+      <div id="config-title" class="config-title">Agent configuration</div>
+      <button type="submit" class="config-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </form>
+
+    <div class="config-body">
+      <!-- No agent section. The name this sheet used to state in its first group is the one the
+           process was started with, and a process serves one agent: the line could not vary, so
+           it told the reader nothing they did not already have. It failed the same way the
+           `Agent default` line failed on the two backend forms, and is gone for the same reason.
+           What is left is what the reader can act on -- the settings, and the tools those
+           settings bound. -->
+      <section class="config-section">
+        <div class="panel-title">Session settings</div>
+        <!-- One row per setting the server offers, drawn from /api/settings: a setting added
+             there appears here without this file changing. How much reasoning to ask for is a
+             row like any other. -->
+        <div id="settings-rows"></div>
+        <button id="settings-reset" type="button" title="Drop this session's changes and go back to the agent's configuration">
+          Reset to the agent's configuration
+        </button>
+      </section>
+
+      <section class="config-section">
+        <div class="panel-title">Tools</div>
+        <ul id="panel-tools" class="tool-list"></ul>
+      </section>
+    </div>
+  </dialog>
+
+  <!-- Where the conversation is sent, on its own rather than inside the settings sheet: a reader
+       presses the gateway in the bar to change where the turn goes, and that is one act with three
+       parts -- which gateway, what address, which model -- that the sheet would have buried under
+       the temperature and the tool list. A form also lets the one thing the old inline control
+       could not do: hold a half-typed address without posting it, and take it back if the reader
+       changes their mind. Nothing is written until Save. -->
+  <dialog id="gateway-dialog" aria-labelledby="gateway-title">
+    <!-- The same reading as the model sheet's head: the pair at the foot is the way out, so there
+         is no second one in the corner. -->
+    <form id="gateway-form" class="config-head">
+      <div id="gateway-title" class="config-title">Where the conversation goes</div>
+    </form>
+
+    <div class="config-body">
+      <section class="config-section">
+        <!-- No group title. A section heading says what the fields under it are a group of, and
+             these two are the whole of the sheet: the title in the head already says where the
+             conversation goes, so a second word for the same thing only pushes the fields down.
+             The model sheet keeps its two headings because it has eight fields in two kinds;
+             this one has two fields in one kind and nothing to divide.
+
+             The gateway comes first, because the address belongs to it: an address typed here is
+             read by the gateway it names.
+
+             A menu, not a box. Which gateways exist is the build's fact and not the reader's, so
+             there is nothing for a free name to mean here: the seven rows are the whole answer,
+             and a name outside them is a typo the field would have to be corrected out of. The
+             model's name is a box because a catalogue is advice -- a gateway answers names it does
+             not list -- but this one is a lookup, and a lookup is a list.
+
+             The address below is the one place a reader writes a destination, and it stays a box:
+             the menu's answer only supplies its default. -->
+        <label class="field">
+          <span>Gateway</span>
+          <select id="gw-type"></select>
+        </label>
+        <label class="field">
+          <span>Address</span>
+          <input id="gw-host" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="leave blank to use the gateway's own">
+        </label>
+        <div id="gw-error" class="backend-error" hidden></div>
+      </section>
+      <div class="gateway-actions">
+        <button id="gw-cancel" type="button" class="gateway-button">Cancel</button>
+        <button id="gw-save" type="button" class="gateway-button gateway-button-primary">Save</button>
+      </div>
+    </div>
+  </dialog>
 </div>
 
-<script src="layout.js"></script>
 <script src="approval.js"></script>
 <script src="blocks.js"></script>
 <script src="state.js"></script>
@@ -130,7 +322,6 @@
 <script src="block-subtask.js"></script>
 <script src="block-node.js"></script>
 <script src="message.js"></script>
-<script src="contextmenu.js"></script>
 <script src="transcript.js"></script>
 <script src="panel.js"></script>
 <script src="servers.js"></script>
@@ -139,6 +330,8 @@
 <script src="ws.js"></script>
 <script src="session.js"></script>
 <script src="composer.js"></script>
+<script src="config.js"></script>
+<script src="gateway.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

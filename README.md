@@ -71,13 +71,8 @@ made to fail at all — so it comes before the one that costs money.
 mkdir -p .pu
 cat > .pu/agents.json <<'JSON'
 {
-  "default_agent": "local-assistant",
-  "agents": [
-    {
-      "name": "local-assistant",
-      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
-    }
-  ]
+  "name": "local-assistant",
+  "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" }
 }
 JSON
 ```
@@ -123,6 +118,7 @@ from a script joins the workspace's conversation rather than standing apart from
 | `pu models [--agent NAME] [--gateway GW] [--model M] [--detail ids\|caps] [--entry ID] [--verify]` | What the agent's gateway reports, and which model is active |
 | `pu probe` *(developer tool, not in `pu --help`)* | A gateway's raw stream, kept, and the field names it actually sent |
 | `pu check [--config PATH]` | What an `agents.json` resolves to, without contacting a provider |
+| `pu setup` | Ask for the gateway, URL, key and model, and write `./.pu/agents.json` |
 | `pu serve` | The Web UI and its WebSocket |
 | `pu sse URL [--format text\|json\|raw]` | Read a `text/event-stream` from any endpoint and print its events |
 
@@ -215,26 +211,18 @@ fails on an orphan, so a new file is registered rather than left to be found.
 
 ```json
 {
-  "default_agent": "local-assistant",
-  "agents": [
-    {
-      "name": "local-assistant",
-      "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" },
-      "security": { "sandbox_root": ".", "forbidden_patterns": ["cd", "rm -rf", "sudo"] }
-    }
-  ]
+  "name": "local-assistant",
+  "backend": { "gateway": "ollama", "host": "http://localhost:11434", "model": "qwen3.5:2b" },
+  "security": { "sandbox_root": ".", "forbidden_patterns": ["cd", "rm -rf", "X"] }
 }
 ```
 
 `gateway` is required and must name a product the build carries. A config that
 names a protocol instead is refused at load rather than guessed at.
 
-An agent can also live in its own directory — `.pu/agents/<name>/agents.json`, with a
-`persona.md` beside it that becomes its system prompt — and one agent can hand a turn to
-another with `delegates`. That is how several models share one conversation without sharing
-one context: the turn runs where the work is and comes back as an answer. The two forms, and
-what a persona is not for, are in
-[docs/configuration.md](docs/configuration.md#one-directory-per-agent).
+The turn can reach a directory that is not this workspace's own with `ask_dir`, and
+`delegates` names who may be asked by name. Both are in
+[docs/configuration.md](docs/configuration.md).
 
 **Upgrading** — the keys that changed, and what a session saved by an older
 version does:
@@ -246,6 +234,7 @@ version does:
 | 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
 | 0.6.1 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
 | 0.7.0 | `PU_ASK_DEPTH` no longer exists: a delegated turn gets no `ask_dir`, so it stops at one hop by construction. `ask_dir` takes one `ask` field naming who answers — an agent name from the table's `delegates`, or a directory relative to this one — rather than separate `agent` and `dir` fields; an agent that names no `delegates` may ask nobody. A table that relied on asking an agent by directory is unaffected; one that relied on a tool call spelling out `agent` and `dir` is not. Peer messaging and the task board are removed: `.pu/peers.json`, `PU_PEER_TOKEN`, `send_to_peer`, `/api/jobs`, `/api/peer/message` and `/api/board` no longer exist. Delete the file if a workspace has one; a tool that posted to a peer should use `ask_dir` or read the directory instead. `GET /api/history` no longer reports `from_peer`. |
+| 0.7.2 | `nim` is now `nvidia` and `codebuddy` is now `tencent`, and their keys are read from `NVIDIA_API_KEY` and `TENCENT_API_KEY`. The old spellings are not kept as aliases, so rename the gateway in any `agents.json` that names one and move the key to the new variable. |
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 

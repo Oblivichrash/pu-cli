@@ -22,7 +22,9 @@ struct ServeRecord {
   std::string bind;
   std::uint16_t port = 0;
   int pid = 0;
-  std::string started;
+  // Empty when the platform could not stamp the process, and when a case is about
+  // something else than when it started: a record is written with what it has.
+  std::string started = "";
 };
 
 // Whether the record still describes a running server: the pid is alive and it is the same

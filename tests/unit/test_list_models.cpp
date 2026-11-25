@@ -161,7 +161,7 @@ TEST_CASE("[list_models] a body that does not parse is an Error, not a crash",
                     pu::GenericError);
 }
 
-TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
+TEST_CASE("[list_models] codebuddy offers the account's catalogue, then what only an agent lists",
           "[list_models]") {
   auto [http, mock] = MakeMockHttpClient();
   const std::string body =
@@ -177,9 +177,54 @@ TEST_CASE("[list_models] codebuddy reads /v3/config and each agent's models",
       llm::ListModels(BackendOfType(model::GatewayId::kCodeBuddy, host), *mock);
 
   REQUIRE(mock->last_get_url == "https://copilot.tencent.com/v3/config");
-  REQUIRE(IdsOf(models) == std::vector<std::string>{"glm-5.2", "hy3"});
+  // `data.models` first, in its own order, then the names only the agent lists. A reader
+  // asking what they can pick was answered with the agent's subset alone, so a model the
+  // account offers that no agent happened to name never reached the page.
+  REQUIRE(IdsOf(models) ==
+          std::vector<std::string>{"glm-5.2", "hunyuan-image-alpha", "hy3"});
   REQUIRE(HasHeader(mock->last_headers, "User-Agent"));
   REQUIRE(HasHeader(mock->last_headers, "X-User-Id"));
+}
+
+TEST_CASE("[list_models] a model in both codebuddy lists keeps the wider entry's capabilities",
+          "[list_models]") {
+  // The account's catalogue says what a model is; an agent's list only names it. When the two
+  // name the same model the entry that knows something about itself has to win, or the picker
+  // loses the window and the price of every model the agent also lists.
+  auto [http, mock] = MakeMockHttpClient();
+  const std::string body =
+      "{\"data\":{"
+      "\"agents\":[{\"models\":[\"glm-5.2\"]}],"
+      "\"models\":[{\"id\":\"glm-5.2\",\"maxInputTokens\":128000,\"credits\":\"0.5\"}]}}";
+  mock->simulate_get = [body](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, body};
+  };
+
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kCodeBuddy, model::DefaultHostFor(model::GatewayId::kCodeBuddy)),
+      *mock);
+  REQUIRE(IdsOf(models) == std::vector<std::string>{"glm-5.2"});
+  REQUIRE(models.at(0).caps.max_input_tokens == 128000);
+  REQUIRE(models.at(0).caps.credits == "0.5");
+}
+
+TEST_CASE("[list_models] codebuddy with both lists null is an empty listing, not a refusal",
+          "[list_models]") {
+  // The shape a real account with no models configured answers: 200, `agents` and `models`
+  // both null. This is the gateway saying it has nothing to offer, which is an answer, and it
+  // must not print as a mismatch between this build and the product.
+  auto [http, mock] = MakeMockHttpClient();
+  const std::string body =
+      "{\"code\":0,\"msg\":\"OK\",\"data\":{\"agent\":{\"agents\":null},\"models\":null,"
+      "\"mcp\":{\"enableFilterCount\":0}}}";
+  mock->simulate_get = [body](const std::string&, const std::vector<std::string>&) {
+    return pu::http::Response{200, body};
+  };
+
+  const auto models = llm::ListModels(
+      BackendOfType(model::GatewayId::kCodeBuddy, model::DefaultHostFor(model::GatewayId::kCodeBuddy)),
+      *mock);
+  REQUIRE(models.empty());
 }
 
 TEST_CASE("[list_models] a codebuddy key rides the config read too", "[list_models]") {

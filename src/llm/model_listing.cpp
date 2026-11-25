@@ -146,34 +146,44 @@ std::vector<model::ModelEntry> ReadCodeBuddy(const boost::json::value& parsed, c
                        "keys were: " + TopLevelKeys(parsed));
   }
 
-  std::vector<std::string> ids;
+  // Two lists answer two different questions, and the page asks both. `data.models` is every
+  // model the account is offered, each with the capabilities and the window a reader weighs one
+  // by; `data.agents[].models` is the subset one agent may run, which is what a turn can name.
+  // Reading only the second answered "what can this agent start" to a reader who asked "what can
+  // I pick", and the menu came up short by every model the agent did not happen to list -- or
+  // empty, when the account's config states its agents as null.
+  std::vector<model::ModelEntry> models;
+  std::vector<std::string> listed;
+  if (const boost::json::array* catalogue = ArrayAt(*payload, shape.id_key);
+      catalogue != nullptr) {
+    for (const auto& item : *catalogue) {
+      if (!item.is_object()) continue;
+      const auto& fields = item.as_object();
+      const std::string id = StringField(fields, "id");
+      if (id.empty()) continue;
+      listed.push_back(id);
+      models.push_back(model::ModelEntry{id, ReadCapabilities(fields, shape)});
+    }
+  }
+
+  // The agent's names come second, and only where the wider catalogue did not already carry
+  // them: a name only an agent lists is still one a turn can name, but it answers with nothing
+  // about itself, so it arrives as an id with no capabilities rather than displacing the entry
+  // that does.
   if (const boost::json::array* agents = ArrayAt(*payload, shape.container); agents != nullptr) {
     for (const auto& agent : *agents) {
       if (!agent.is_object()) continue;
       if (const boost::json::value* list = Field(agent.as_object(), shape.nested);
           list != nullptr) {
-        const std::vector<std::string> named = ReadStrings(*list);
-        ids.insert(ids.end(), named.begin(), named.end());
-      }
-    }
-  }
-
-  std::vector<model::ModelEntry> models;
-  for (const std::string& id : ids) {
-    model::ModelEntry entry;
-    entry.id = id;
-    if (const boost::json::array* catalogue = ArrayAt(*payload, shape.id_key);
-        catalogue != nullptr) {
-      for (const auto& item : *catalogue) {
-        if (!item.is_object()) continue;
-        const auto& fields = item.as_object();
-        if (StringField(fields, "id") == id) {
-          entry.caps = ReadCapabilities(fields, shape);
-          break;
+        for (const std::string& id : ReadStrings(*list)) {
+          if (std::find(listed.begin(), listed.end(), id) != listed.end()) continue;
+          listed.push_back(id);
+          model::ModelEntry entry;
+          entry.id = id;
+          models.push_back(std::move(entry));
         }
       }
     }
-    models.push_back(std::move(entry));
   }
   return models;
 }
@@ -293,12 +303,10 @@ std::vector<model::ModelEntry> CodeBuddyModelLister::ListModels(const std::strin
   return ReadCodeBuddy(FetchListing(url, api_key, headers_, http), CodeBuddyShape(), url);
 }
 
-namespace {
-
-// The columns that decide between two models a reader has already narrowed to. Each says what
-// it knows and nothing where it was told nothing: a blank column is "this gateway did not say"
-// rather than "no".
 std::string CapabilityLine(const model::Capabilities& caps) {
+  // The columns that decide between two models a reader has already narrowed to. Each says what
+  // it knows and nothing where it was told nothing: a blank column is "this gateway did not
+  // say" rather than "no".
   std::ostringstream line;
   auto flag = [&](bool set, const char* name) {
     if (!set) return;
@@ -321,8 +329,6 @@ std::string CapabilityLine(const model::Capabilities& caps) {
   }
   return line.str();
 }
-
-}  // namespace
 
 std::string FormatModelList(const std::vector<model::ModelEntry>& models,
                             std::string_view gateway,

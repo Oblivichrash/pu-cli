@@ -29,6 +29,7 @@
 #include "pu/session/message.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/llm/model_factory.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
@@ -36,6 +37,24 @@
 
 namespace pu::serve::detail {
 namespace {
+
+// One value out of a query string, read without decoding: a gateway name is a plain word, and
+// the only parameter these handlers ask for is one. Absent or empty answers empty.
+std::string QueryValue(const std::string& query, std::string_view name) {
+  std::size_t at = 0;
+  while (at < query.size()) {
+    const std::size_t end = query.find('&', at);
+    const std::string_view pair(query.data() + at,
+                               (end == std::string::npos ? query.size() : end) - at);
+    const std::size_t eq = pair.find('=');
+    if (eq != std::string_view::npos && pair.substr(0, eq) == name) {
+      return std::string(pair.substr(eq + 1));
+    }
+    if (end == std::string::npos) break;
+    at = end + 1;
+  }
+  return {};
+}
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -209,6 +228,8 @@ void ServeFile(const std::string& target, http::response<http::string_body>& res
 
 // --- Session and conversation --------------------------------------------------------------
 
+boost::json::array SettingsArray(Runtime& runtime);
+
 boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   Runtime& runtime = call.runtime;
   auto session = runtime.DefaultSession();
@@ -240,17 +261,7 @@ boost::json::value HandleApiSession(Call& call, const boost::json::value&) {
   };
   // Every setting this build knows, with the value in force and where it came from; the two
   // fields above are the same answer in the shape older pages read.
-  boost::json::array settings;
-  for (const session::SettingView& view : runtime.Settings()) {
-    settings.push_back(boost::json::object{
-        {"name", view.name},
-        {"type", view.type},
-        {"value", view.value},
-        {"source", view.source},
-        {"agent_value", view.agent_value},
-    });
-  }
-  body["settings"] = std::move(settings);
+  body["settings"] = SettingsArray(runtime);
 
   // What this conversation has spent so far. The counts are sums; a price is a sum only while
   // every turn that reported one reported it in the same unit, which is why `cost` can be
@@ -317,23 +328,250 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
   return turns;
 }
 
-boost::json::value HandleApiAgents(Call& call, const boost::json::value&) {
-  // The same summary `pu agents` prints, so the page and the CLI cannot disagree about what
-  // is configured. The active agent is the session's, which is what the selector shows.
-  Runtime& runtime = call.runtime;
-  const std::string active = runtime.DefaultSession() ? runtime.DefaultSession()->Spec().agent_name
-                                                      : std::string();
-  return app::AgentsAsJson(app::SummarizeAgents(runtime.Agents(), active));
+// The backend the agent speaks through now. What else it could speak through is not here: the
+// gateways are this build's own table and the models belong to one gateway, so each is asked at
+// its own address -- `/api/gateways`, `/api/models` -- by the menu that needs it, rather than
+// carried along on every read of the backend in force.
+boost::json::value BackendAsJson(Call& call) {
+  const model::Backend current = call.runtime.CurrentBackend();
+  boost::json::object body{
+      {"gateway", model::GatewayName(current.gateway)},
+      {"model", current.model},
+      {"host", current.host},
+  };
+  // The sampling settings travel with the backend because they are properties of it: a model
+  // answers at a temperature, holds a context window. `null` is a setting nobody stated, which
+  // is not the same as a zero and not the same as the provider's default either -- the form
+  // shows the difference by leaving the box empty rather than at some number.
+  body["temperature"] = current.temperature;
+  body["max_tokens"] = current.max_tokens ? boost::json::value(*current.max_tokens) : boost::json::value();
+  body["top_p"] = current.top_p ? boost::json::value(*current.top_p) : boost::json::value();
+  body["seed"] = current.seed ? boost::json::value(*current.seed) : boost::json::value();
+  body["context_window"] =
+      current.context_window ? boost::json::value(*current.context_window) : boost::json::value();
+  // The level the model answers at, named the way the page's menu names it: `auto` for "no level
+  // of our own", which is the word the setting has always used on the wire.
+  body["thinking"] = current.thinking == ThinkingLevel::kServerDefault
+                         ? std::string("auto")
+                         : std::string(ThinkingLevelName(current.thinking));
+  return body;
 }
 
-boost::json::value HandleApiAgentSwitch(Call& call, const boost::json::value& body) {
-  Runtime& runtime = call.runtime;
-  RequireString(body, "agent_name");
-  const std::string agent_name = boost::json::value_to<std::string>(body.at("agent_name"));
-  const auto* cfg = runtime.Agents().AgentConfig(agent_name);
-  if (!cfg) throw NotFound("Agent not found: " + agent_name);
-  runtime.SwitchAgent(*cfg);
-  return boost::json::object{{"agent", agent_name}};
+boost::json::value HandleApiBackend(Call& call, const boost::json::value&) {
+  return BackendAsJson(call);
+}
+
+// Every gateway this build can speak through, in table order. The list is the code's own, so
+// this asks a provider nothing.
+//
+// Each name arrives with the address that gateway is reached at by default. A reader switching
+// from one gateway to another is switching products, and the address they were shown belonged to
+// the gateway they just left: it is an address for a different vendor's endpoint, so keeping it in
+// the box would post the new gateway's name to the old gateway's host. The default is what the
+// box should hold until the reader says otherwise -- the same address the server would dial for
+// that gateway if the file named none.
+boost::json::value HandleApiGateways(Call&, const boost::json::value&) {
+  boost::json::array gateways;
+  boost::json::object hosts;
+  for (const model::Gateway& gateway : model::Gateways()) {
+    const std::string name(gateway.name);
+    gateways.emplace_back(name);
+    // A `${VAR}` placeholder is a valid thing for the file to hold and is not an address to dial,
+    // but it is still what the gateway's own table says, and the page shows what the table says
+    // rather than guessing an expansion it cannot perform.
+    hosts[name] = std::string(gateway.default_host);
+  }
+  return boost::json::object{{"gateways", std::move(gateways)}, {"hosts", std::move(hosts)}};
+}
+
+// What one gateway serves, asked when the page opens the model list rather than once at load.
+// The gateway is named by the request, so the answer is that gateway's catalogue and not the
+// current backend's; the key is the one a turn would read from the environment, which keeps a
+// key out of the page. A gateway that cannot be asked answers with no models and the reason,
+// and the page falls back to typing a model name.
+boost::json::value HandleApiModels(Call& call, const boost::json::value&) {
+  const std::string gateway_name = QueryValue(call.query, "gateway");
+  boost::json::array models;
+  std::string error;
+  const model::Gateway* gateway = model::FindGateway(gateway_name);
+  if (gateway == nullptr) {
+    error = "No gateway is named '" + gateway_name + "'.";
+  } else {
+    model::Backend backend;
+    backend.gateway = gateway->id;
+    // The address this gateway is actually reached at, which is the configured one when it is
+    // already in force and the catalogue's default otherwise. Asking the default while the agent
+    // file names another address would list nothing for a gateway that answers perfectly well,
+    // and would spend the connect timeout learning it.
+    const model::Backend current = call.runtime.CurrentBackend();
+    backend.host = current.gateway == gateway->id && !current.host.empty()
+                       ? current.host
+                       : std::string(gateway->default_host);
+    // A configured address may still be a `${VAR}` placeholder; the file is where one is expanded,
+    // and a placeholder is not an address to dial.
+    if (backend.host.find("${") != std::string::npos) backend.host = std::string(gateway->default_host);
+    const std::string key_env(gateway->api_key_env);
+    if (!key_env.empty()) {
+      if (const char* key = std::getenv(key_env.c_str()); key != nullptr && *key != '\0') {
+        backend.api_key = std::string(key);
+      }
+    }
+    try {
+      for (const model::ModelEntry& entry : llm::ListModels(backend, call.runtime.Http())) {
+        models.emplace_back(entry.id);
+      }
+    } catch (const std::exception& e) {
+      error = e.what();
+    }
+  }
+  return boost::json::object{
+      {"gateway", gateway_name},
+      {"models", std::move(models)},
+      {"error", error},
+  };
+}
+
+// A host is a destination, so it has to name a scheme and a host and nothing else. `${VAR}` is
+// allowed as it stands -- the file is where a variable is expanded, and a page that resolved it
+// here would write this run's key into the agent file -- but the rest is checked now rather than
+// at the first turn, because an address that cannot work is a mistake to answer at the press
+// that made it.
+std::string HostFromBody(const boost::json::value& body) {
+  if (!json::HasKey(body, "host")) return {};
+  const boost::json::value& raw = body.at("host");
+  if (raw.is_null()) return {};
+  if (!raw.is_string()) throw RequestRefused("'host' must be a string");
+  const std::string host = boost::json::value_to<std::string>(raw);
+  if (host.empty()) return {};
+  // A placeholder is left whole: it is not an address yet, and parsing it as one would refuse the
+  // only spelling that lets a file name an environment rather than a literal.
+  if (host.find("${") != std::string::npos) return host;
+  if (host.find_first_of(" \t\r\n") != std::string::npos) {
+    throw RequestRefused("'host' must not contain spaces");
+  }
+  if (host.rfind("http://", 0) != 0 && host.rfind("https://", 0) != 0) {
+    throw RequestRefused("'host' must start with http:// or https://");
+  }
+  return host;
+}
+
+boost::json::value HandleApiSetBackend(Call& call, const boost::json::value& body) {
+  const std::string gateway = json::ValueOrDefault<std::string>(body, "gateway", "");
+  const std::string model = json::ValueOrDefault<std::string>(body, "model", "");
+  if (gateway.empty()) throw RequestRefused("Missing 'gateway'");
+  if (model.empty()) throw RequestRefused("Missing 'model'");
+  const std::optional<model::GatewayId> id = model::ParseGatewayId(gateway);
+  // The names, not only the fact that this one is wrong: the page lets a gateway be typed rather
+  // than picked, and a box that was typed in is the one place a reader has to be told what the
+  // list said -- the menu beside it is a suggestion, not a guard.
+  if (!id) {
+    throw RequestRefused("Unknown gateway: " + gateway + "; name one of " + model::GatewayNames());
+  }
+  // Absent and empty both mean "no address of its own", which is how the page asks for the
+  // gateway's default back.
+  const std::string host = HostFromBody(body);
+  model::Backend next = call.runtime.CurrentBackend();
+  if (next.gateway != *id) {
+    // The old gateway's address means nothing to a new one: a menu that swapped the scheme and
+    // kept the address would point the new gateway at the old one's port.
+    next.host = host.empty() ? model::DefaultHostFor(*id) : host;
+  } else if (!host.empty()) {
+    next.host = host;
+  } else if (json::HasKey(body, "host")) {
+    // An explicit empty host on the gateway already in force is the reader asking for the default
+    // back, not a request that forgot the field.
+    next.host = model::DefaultHostFor(*id);
+  }
+  next.gateway = *id;
+  next.model = model;
+  // The sampling settings, each one optional in the request for the same reason it is optional
+  // in the file: absent leaves what is in force, an explicit null clears it back to the
+  // provider's own default. They are read here rather than passed whole so a page cannot write
+  // a field this endpoint does not own -- `api_key` and `response_schema` are not a form's to
+  // set.
+  //
+  // One number is read by one shape of code below rather than five: the rule really is the same
+  // rule each time, and it is the provider that differs. `clear` is what an explicit null means
+  // for that field, and `acceptable` is the field's own range -- a field with no range passes a
+  // checker that answers true, which is how `seed` stays unconstrained.
+  const auto read_number = [&body](std::string_view key, auto clear, std::string_view message,
+                                   auto acceptable, auto set) {
+    const std::string name(key);
+    if (!json::HasKey(body, name)) return;
+    if (body.at(name).is_null()) {
+      clear();
+      return;
+    }
+    if (const std::optional<std::int64_t> want = json::OptionalOrDefault<std::int64_t>(body, name)) {
+      if (!acceptable(*want)) throw RequestRefused((std::string("'") + name + "' ") + std::string(message));
+      set(static_cast<int>(*want));
+      return;
+    }
+    throw RequestRefused((std::string("'") + name + "' must be a number"));
+  };
+  const auto read_float = [&body](std::string_view key, std::string_view message,
+                                  auto acceptable, auto set) {
+    const std::string name(key);
+    if (!json::HasKey(body, name)) return;
+    if (body.at(name).is_null()) {
+      set(0.7f);
+      return;
+    }
+    if (const std::optional<double> want = json::OptionalOrDefault<double>(body, name)) {
+      if (!acceptable(*want)) throw RequestRefused((std::string("'") + name + "' ") + std::string(message));
+      set(static_cast<float>(*want));
+      return;
+    }
+    throw RequestRefused((std::string("'") + name + "' must be a number"));
+  };
+  read_float(
+      "temperature", "must be between 0 and 2",
+      [](double v) { return v >= 0.0 && v <= 2.0; },
+      [&next](float v) { next.temperature = v; });
+  read_number(
+      "max_tokens", [&next] { next.max_tokens.reset(); }, "must be positive",
+      [](std::int64_t v) { return v > 0; },
+      [&next](int v) { next.max_tokens = v; });
+  read_float(
+      "top_p", "must be above 0 and at most 1",
+      [](double v) { return v > 0.0 && v <= 1.0; },
+      [&next](float v) { next.top_p = v; });
+  read_number(
+      "seed", [&next] { next.seed.reset(); }, "",
+      [](std::int64_t) { return true; },
+      [&next](int v) { next.seed = v; });
+  read_number(
+      "context_window", [&next] { next.context_window.reset(); }, "must be positive",
+      [](std::int64_t v) { return v > 0; },
+      [&next](int v) { next.context_window = v; });
+  // The level is a property of the model the way the cap is: which gateway answers decides what
+  // "high" puts on the wire, so it belongs to the choice of model rather than to a session knob.
+  // `auto` and an explicit null both mean "no level of our own", which is the state the file
+  // spells `default`; the file is where it is written, since the type cannot hold the absence.
+  if (json::HasKey(body, "thinking")) {
+    const boost::json::value& raw = body.at("thinking");
+    if (raw.is_null()) {
+      next.thinking = ThinkingLevel::kServerDefault;
+    } else if (raw.is_string()) {
+      const std::string name = boost::json::value_to<std::string>(raw);
+      if (name == "auto" || name == "default" || name.empty()) {
+        next.thinking = ThinkingLevel::kServerDefault;
+      } else {
+        const ThinkingLevel level = ParseThinkingLevel(name);
+        // The parser answers with `kServerDefault` for every word it does not know, so that one
+        // result stands for a typo as well as for the three spellings handled above: what is
+        // left here has to be one of the four real levels or a refusal.
+        if (level == ThinkingLevel::kServerDefault) {
+          throw RequestRefused("'thinking' must be one of: auto, none, low, medium, high");
+        }
+        next.thinking = level;
+      }
+    } else {
+      throw RequestRefused("'thinking' must be a string");
+    }
+  }
+  call.runtime.SwitchBackend(next);
+  return BackendAsJson(call);
 }
 
 // The other servers on this machine, so the page can name a workspace instead of a port. The one
@@ -361,7 +599,7 @@ boost::json::value HandleApiRewind(Call& call, const boost::json::value& body) {
 
 // The settings this build knows, with the value in force and where it came from. One shape for
 // the whole table, so a page draws a new setting without a new endpoint.
-boost::json::value SettingsBody(Runtime& runtime) {
+boost::json::array SettingsArray(Runtime& runtime) {
   boost::json::array settings;
   for (const session::SettingView& view : runtime.Settings()) {
     settings.push_back(boost::json::object{
@@ -372,7 +610,11 @@ boost::json::value SettingsBody(Runtime& runtime) {
         {"agent_value", view.agent_value},
     });
   }
-  return boost::json::object{{"settings", std::move(settings)}};
+  return settings;
+}
+
+boost::json::value SettingsBody(Runtime& runtime) {
+  return boost::json::object{{"settings", SettingsArray(runtime)}};
 }
 
 boost::json::value HandleApiSettings(Call& call, const boost::json::value&) {
@@ -397,14 +639,25 @@ boost::json::value HandleApiResetSettings(Call& call, const boost::json::value&)
 
 // Every route this server answers, with the two things a row cannot leave implicit: who may read
 // it, and the shape of what it returns. `key` names the member a listing is filed under, so
-// `/api/history` answers `{"messages": [...]}` the way `/api/agents` answers `{"agents": [...]}`:
+// `/api/history` answers `{"messages": [...]}` the way `/api/backend` answers `{"backend": {...}}`:
 // one envelope, read from this table, instead of a rule each handler restates.
 constexpr Route kRoutes[] = {
     //   target,              method,          handler,              key,          audience,                 status, body
     {"/api/session", http::verb::get, &HandleApiSession, "", Audience::kAnyone, 200, false},
     {"/api/history", http::verb::get, &HandleApiHistory, "messages", Audience::kAnyone, 200, false},
-    {"/api/agents", http::verb::get, &HandleApiAgents, "agents", Audience::kAnyone, 200, false},
-    {"/api/agent/switch", http::verb::post, &HandleApiAgentSwitch, "", Audience::kAnyone, 200, true},
+    // The page reads one agent's backend, and writes it back when a choice is made there. Both
+    // go through /api/backend: nothing on the page enumerates agents, because there is one.
+    //
+    // A write has to read its body on both of its rows. The two rows differ only in the envelope
+    // -- the first answers under `backend`, the second as a bare object -- but the dispatcher
+    // takes the first match, so a first row that did not read the body would hand the handler an
+    // empty one and answer "Missing 'gateway'" to every write.
+    {"/api/backend", http::verb::get, &HandleApiBackend, "backend", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::post, &HandleApiSetBackend, "backend", Audience::kAnyone, 200, true},
+    {"/api/backend", http::verb::get, &HandleApiBackend, "", Audience::kAnyone, 200, false},
+    {"/api/backend", http::verb::post, &HandleApiSetBackend, "", Audience::kAnyone, 200, true},
+    {"/api/gateways", http::verb::get, &HandleApiGateways, "", Audience::kAnyone, 200, false},
+    {"/api/models", http::verb::get, &HandleApiModels, "", Audience::kAnyone, 200, false},
     {"/api/rewind", http::verb::post, &HandleApiRewind, "", Audience::kAnyone, 200, true},
     {"/api/settings", http::verb::get, &HandleApiSettings, "", Audience::kAnyone, 200, false},
     {"/api/settings", http::verb::post, &HandleApiSetSetting, "", Audience::kAnyone, 200, true},
@@ -453,7 +706,11 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
                          http::request<http::string_body>&& req,
                          http::response<http::string_body>& res, const std::string& peer,
                          std::uint16_t port) {
-  const std::string_view target = req.target();
+  const std::string_view request_target = req.target();
+  const std::size_t question = request_target.find('?');
+  const std::string_view target = request_target.substr(0, question);
+  const std::string_view query =
+      question == std::string_view::npos ? std::string_view{} : request_target.substr(question + 1);
 
   if (IsPageFile(target)) {
     ServeFile(std::string(target), res);
@@ -469,7 +726,7 @@ void DispatchHttpRequest(Runtime& runtime, std::mutex& io_mutex,
       return;
     }
 
-    Call call{runtime, peer, IsLoopback(peer), port};
+    Call call{.query = std::string(query), .runtime = runtime, .address = peer, .loopback = IsLoopback(peer), .port = port};
 
     try {
       const boost::json::value body = route.has_body ? ParseBody(req) : boost::json::value{};

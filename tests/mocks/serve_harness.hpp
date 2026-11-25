@@ -285,6 +285,13 @@ class FakeBackend : public FakeHttpServer {
 {"done":true,"prompt_eval_count":)" + std::to_string(prompt_tokens_.load(std::memory_order_relaxed)) +
                    R"(,"eval_count":)" + std::to_string(completion_tokens_.load(std::memory_order_relaxed)) + R"(}
 )";
+    } else if (req.target() == "/api/tags" && req.method() == http::verb::get) {
+      // The catalogue a gateway is asked for by name. Served here so a case can tell whether the
+      // page's model list was asked at the address this backend owns rather than at the one the
+      // gateway's row names.
+      res.result(http::status::ok);
+      res.set(http::field::content_type, "application/json");
+      res.body() = R"({"models":[{"name":"test-model"},{"name":"second-model"}]})";
     } else {
       res.result(http::status::not_found);
     }
@@ -322,6 +329,9 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
   backend["model"] = JsonStr("test-model");
 
   boost::json::object security;
+  // Nothing at all, which is the root under the workspace: the same place `"."` resolves to,
+  // written the way a file that names no root writes it. A case that needs a narrower or a
+  // wider root sets it, and the report says where the tool will be allowed to write.
   security["sandbox_root"] = JsonStr(".");
   security["forbidden_patterns"] = boost::json::array{};
   // A command matching this needs approval. Empty means the policy names none, which is
@@ -352,11 +362,7 @@ inline std::string WriteAgentsFile(const fs::path& dir, int backend_port,
     agent["mcp_servers"] = boost::json::array{std::move(server)};
   }
 
-  boost::json::object root;
-  root["default_agent"] = JsonStr("chat");
-  root["agents"] = boost::json::array{std::move(agent)};
-
-  const std::string text = boost::json::serialize(root);
+  const std::string text = boost::json::serialize(agent);
   {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     REQUIRE(file.is_open());
@@ -555,7 +561,7 @@ class ServeHarness {
                              std::istreambuf_iterator<char>());
       CAPTURE(text);
       const boost::json::value parsed = boost::json::parse(text);
-      const boost::json::value& first = parsed.at("agents").at(0).at("name");
+      const boost::json::value& first = parsed.at("name");
       REQUIRE(first.is_string());
       REQUIRE(boost::json::value_to<std::string>(first) == "chat");
     }

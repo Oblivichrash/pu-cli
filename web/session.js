@@ -14,6 +14,15 @@ async function refreshChainLength() {
   } catch (_) {}
 }
 
+// The turn a bubble stands for. A user message carries its number on the element because the
+// menu and the edit both need it; a number the page cannot read is no turn, and a rewind needs a
+// real one. This is read from the element rather than from the view's position in the list: a
+// transcript that has been stepped back holds bubbles the store no longer counts.
+function turnOf(el) {
+  const turn = Number(el && el.dataset ? el.dataset.turn : NaN);
+  return Number.isFinite(turn) && turn > 0 ? turn : 0;
+}
+
 async function loadHistory() {
   // Appending a second copy of the chain into a list another run is filling is what drew
   // every turn twice, so one run at a time. The socket's hold on incoming frames is not
@@ -35,8 +44,8 @@ async function loadHistory() {
       }
     }
     PU.chainLength = history.length;
-    // The bar and the panel describe the last reply, and a reload has no stream to learn it
-    // from: the stored turn carries the same figure the socket would have sent.
+    // The bar describes the last reply, and a reload has no stream to learn it from: the stored
+    // turn carries the same figure the socket would have sent.
     const replies = groupHistory(history).filter((turn) => turn.role === "assistant" && turn.usage);
     if (replies.length > 0) showUsage(replies[replies.length - 1].usage);
   } catch (_) {
@@ -51,12 +60,8 @@ async function loadHistory() {
 // `source` says whether the value in force is this session's choice or the agent's own. One
 // renderer draws all of them, so a setting added on the server needs no change here.
 
-function settingEntry(name) {
-  return (PU.composer.settings || []).find((entry) => entry.name === name) || null;
-}
-
 function settingValue(name) {
-  const entry = settingEntry(name);
+  const entry = (PU.composer.settings || []).find((e) => e.name === name);
   return entry ? entry.value : null;
 }
 
@@ -100,7 +105,14 @@ function renderSettings(settings) {
   const host = PU.composer.settingsRows;
   if (!host) return;
   host.replaceChildren();
+  // The settings a model form owns are not drawn here. `temperature`, `max_tokens` and `thinking`
+  // are properties of the model -- the same values the model's own form writes -- so a second
+  // editable copy in this sheet would be two boxes for one value, and a reader who changed one
+  // would find the other disagreeing. They stay in the list so the model form can read the value
+  // in force; only the row is withheld.
+  const modelOwned = new Set(["temperature", "max_tokens", "thinking"]);
   for (const entry of PU.composer.settings) {
+    if (modelOwned.has(entry.name)) continue;
     const row = document.createElement("label");
     row.className = "field";
     const label = document.createElement("span");
@@ -152,7 +164,7 @@ async function loadSession() {
     // The server that answered says what it is called and which port it answered on. That is the
     // page's own identity, so a switch ends here: the label is corrected from the server the page
     // actually reached rather than from the entry it asked for.
-    if (data.server) setSelf({ name: data.server.name, port: data.server.port });
+    if (data.server) setSelf({ name: data.server.name });
     renderServers();
     setBackendLabel(data.gateway, data.backend_model, data.backend_host);
     // The window belongs to the model rather than to the gateway, so it is filed under both and
@@ -162,250 +174,274 @@ async function loadSession() {
     renderContextBar();
     renderSettings(data.settings);
     renderUsageTotal(data.usage_total);
-    if (data.agent_name) PU.composer.agentSelect.value = data.agent_name;
     renderToolList(data.tools);
-    // The tooltip follows the agent the server reports, not the one the list last drew.
-    showAgentDescription();
+    renderStatusBar();
   } catch (_) {}
 }
 
-// The option holds the name alone: a description beside it is longer than the column and
-// pushed the name itself out of view. The description is kept as a title, which the browser
-// shows on hover, and copied onto the closed control so it reads without opening the list.
-function renderAgentOptions(agents) {
-  const select = PU.composer.agentSelect;
-  select.replaceChildren();
-  PU.agentDescriptions = {};
-  if (agents && agents.length > 0) {
-    for (const agent of agents) {
-      const opt = document.createElement("option");
-      opt.value = agent.name;
-      opt.textContent = agent.name;
-      if (agent.description) {
-        opt.title = agent.description;
-        PU.agentDescriptions[agent.name] = agent.description;
-      }
-      select.appendChild(opt);
-    }
-    showAgentDescription();
-    return;
-  }
-  const opt = document.createElement("option");
-  opt.value = "";
-  opt.textContent = "No agents available";
-  select.appendChild(opt);
-  showAgentDescription();
-}
-
-// The closed control carries the chosen agent's description, since a tooltip on an option
-// is shown only while the list is open and not by every browser.
-function showAgentDescription() {
-  const select = PU.composer.agentSelect;
-  if (!select) return;
-  const description = (PU.agentDescriptions || {})[select.value];
-  select.title = description || select.value || "";
-  renderStatusBar();
-}
-
-async function switchAgent(name) {
+// Which backend answers is the part of this page a reader can still change: the agent is fixed
+// by its file, but the gateway and the model under it are a choice. What one gateway serves is
+// asked when its menu is opened, because the catalogue belongs to the gateway; one that cannot
+// be asked answers with nothing and a reason, and the model in force is left as typed text.
+//
+// The answer is the whole entry rather than the list, because the two ways of having no list are
+// not the same fact: a gateway that says it has no models is answering, and a gateway that could
+// not be reached is not. A caller choosing a model has to tell them apart -- one means there is
+// nothing to pick, the other means nobody knows what there is -- and a bare `[]` would say both.
+async function loadModelsFor(gateway) {
+  if (!gateway) return null;
+  const sent = gateway;
+  if (PU.modelCache && PU.modelCache.get(sent)) return PU.modelCache.get(sent);
+  let reply;
   try {
-    const data = await postJson("/api/agent/switch", { agent_name: name });
-    if (!data.success) {
-      createSystemMessage("Switch failed: " + (data.error || "unknown error"));
+    reply = await fetchJson("/api/models?gateway=" + encodeURIComponent(sent));
+  } catch (e) {
+    console.error("loadModels error:", e);
+    return { models: [], error: String(e && e.message ? e.message : e) };
+  }
+  const entry = { models: reply.models || [], error: reply.error || "" };
+  if (!PU.modelCache) PU.modelCache = new Map();
+  if (!entry.error) PU.modelCache.set(sent, entry);
+  if (PU.composer.gatewaySelect && sent === PU.composer.gatewaySelect.value) {
+    renderModels(entry.models, PU.backendModelShown, entry.error);
+  }
+  return entry;
+}
+
+// What the agent speaks through now, and -- from its own address -- every gateway this build
+// carries. The two are read together because the menu is drawn from both at once, and neither
+// answer depends on the other.
+async function loadBackends() {
+  try {
+    const [answer, catalogue] = await Promise.all([
+      fetchJson("/api/backend"),
+      fetchJson("/api/gateways"),
+    ]);
+    if (!answer.success) {
+      setBackendError(answer.error || "The backend in force could not be read.");
       return;
     }
-    PU.composer.messagesEl.replaceChildren();
-    await loadSession();
-    await loadHistory();
-    scrollToBottom();
-  } catch (e) {
-    createSystemMessage("Switch failed: " + e.message);
-  }
-}
-
-async function loadAgents() {
-  const select = PU.composer.agentSelect;
-  try {
-    const data = await fetchJson("/api/agents");
-    if (PU.composer.agentChangeHandler) {
-      select.removeEventListener("change", PU.composer.agentChangeHandler);
-    }
-    renderAgentOptions(data.agents);
-    PU.composer.agentChangeHandler = () => {
-      showAgentDescription();
-      if (select.value) switchAgent(select.value);
+    // The answer carries the backend under its own key, beside `success`.
+    const backend = answer.backend || {};
+    const gateways = catalogue.success ? catalogue.gateways || [] : [];
+    if (!catalogue.success) setBackendError(catalogue.error || "The gateway list could not be read.");
+    // Each gateway's own address, kept where the menu can read it. An address belongs to the
+    // gateway it was typed for, so the box cannot be left holding the one just left behind.
+    if (catalogue.success && catalogue.hosts) PU.gatewayHosts = catalogue.hosts;
+    // The settings that belong to the model are kept where its form reads them. They travel with
+    // the backend because that is what they are properties of, and a `null` here is a setting
+    // nobody stated rather than a zero.
+    PU.backendParamsShown = {
+      temperature: backend.temperature === undefined ? null : backend.temperature,
+      max_tokens: backend.max_tokens === undefined ? null : backend.max_tokens,
+      top_p: backend.top_p === undefined ? null : backend.top_p,
+      seed: backend.seed === undefined ? null : backend.seed,
+      context_window: backend.context_window === undefined ? null : backend.context_window,
+      // A string rather than a number, but it travels with the backend for the same reason: the
+      // level is a property of the model, and its form is the only place that writes it.
+      thinking: backend.thinking === undefined ? "auto" : backend.thinking,
     };
-    select.addEventListener("change", PU.composer.agentChangeHandler);
+    // No catalogue is asked for here: the model in force is drawn as the one option, and the
+    // gateway's own list arrives when the menu is opened.
+    renderBackendChoices(backend.gateway, gateways, backend.model, null, "", backend.host);
   } catch (e) {
-    createSystemMessage("Failed to load agents: " + e.message);
-    console.error("loadAgents error:", e);
+    console.error("loadBackends error:", e);
+    setBackendError(String(e && e.message ? e.message : e));
   }
 }
 
-// Editing a turn of your own happens in the bubble that holds it: the words become a field, the
-// transcript is not rebuilt and the view does not jump to the composer. What a save cannot do is
-// keep what came after -- every later turn was an answer to this text -- so the session is
-// stepped back to just before it, and the field stays open in place of a reply that is no longer
-// coming. Sending then replaces the turn.
+// Every gateway this build carries is on offer, not just the one in force: a menu holding the
+// current name alone could not be used to leave it. Redrawn only when the list differs, so a
+// reader choosing in an open dropdown keeps it.
+function renderGateways(gateways, gateway) {
+  const { gatewaySelect } = PU.composer;
+  if (!gatewaySelect) return;
+  const known = gateways || [];
+  // A page whose gateway list could not be read still names the one in force, rather than
+  // showing an empty menu that looks like a build with no gateways.
+  if (known.length === 0 && PU.gatewayShown && gatewaySelect.options.length <= 1) return;
+  const drawn = Array.from(gatewaySelect.options, (o) => o.value);
+  if (known.length > 0 && (drawn.length !== known.length ||
+      drawn.some((v, i) => v !== known[i]))) {
+    gatewaySelect.textContent = "";
+    for (const name of known) gatewaySelect.append(new Option(name, name));
+  }
+  if (gateway) PU.gatewayShown = gateway;
+  if (PU.gatewayShown) gatewaySelect.value = PU.gatewayShown;
+}
+
+// What the gateway serves, kept where the menu in the bar can read it. There is no control in this
+// file to fill any more: the model is chosen from the bar, so a catalogue arriving here is a fact
+// about the gateway rather than something to write into a form. The one thing that does belong
+// here is the refusal -- a gateway that cannot say what it serves is a reason the reader should
+// see, and it is reported where the gateway form reports its own.
+function renderModels(models, current, error) {
+  if (current) PU.backendModelShown = current;
+  if (Array.isArray(models)) PU.modelsShown = models.slice();
+  setBackendError(error || "");
+}
+
+// The gateway menu and the model menu are drawn from one answer: what this build carries, and the
+// backend in force. The model is written here and not again by the label, so the dialog holds one
+// story about which model runs.
+function renderBackendChoices(gateway, gateways, model, models, modelError, host) {
+  renderGateways(gateways, gateway);
+  if (model) PU.backendModelShown = model;
+  renderModels(models, model, modelError);
+  // `host` is forwarded even when the answer carried none: an empty address is the server saying
+  // the gateway's default applies, which is a value the field has to show rather than keep.
+  setBackendLabel(gateway, null, host === undefined ? "" : host);
+}
+
+function setBackendError(message) {
+  const el = document.getElementById("gw-error");
+  if (!el) return;
+  el.textContent = message || "";
+  el.hidden = !message;
+}
+
+// POST to `/api/backend` and answer with what went wrong, or `""` if nothing did. A refusal is
+// the server's answer, and the message is the whole of what the reader needs: the status and the
+// body carry no more than the error string already says. Both forms write this route, so the
+// reading of a failed write is written once.
+async function postBackend(payload, what) {
+  try {
+    const data = await postJson("/api/backend", payload);
+    return data.success ? "" : data.error || what;
+  } catch (e) {
+    return (e && e.body && e.body.error) || `${what}: ${e.message}`;
+  }
+}
+
+// A chosen backend is written back by the server, so the next start uses it too. The reply is
+// the same shape the GET answers in, and is drawn the same way rather than assuming the choice
+// took: a gateway may refuse a model, and the page should show what is now in force.
 //
-// Only the turn being edited is touched. A step back before turn N drops everything from N on,
-// and those bubbles are dropped here too, so the page and the store agree without a re-read.
+// The model is settled before the request: what one gateway serves is not what the next one
+// serves, so a name carried over from the old gateway is replaced by one the new gateway lists.
+// A gateway that lists nothing -- no key, host down -- keeps the typed name, because a list that
+// could not be fetched is not a list of one.
 //
-// `fromButton` is set by the menu item, which is not a click on the bubble: the guards below
-// exist to keep a drag that left a selection, or a press that landed on a link or a fold, from
-// opening the field. The menu has already made those decisions before it drew itself, so its
-// word is taken rather than re-litigated.
-function beginEdit(el, event, fromButton) {
-  // Selecting text to copy it also clicks. A drag that leaves a selection is not a request to
-  // edit, and neither is a click that landed on a fold or a link inside the bubble.
-  if (!fromButton && event &&
-      event.target.closest("a, button, .block-tool, .block-subtask, .block-thinking")) {
+// `host` is only sent when the caller names one. An address belongs to the gateway it was typed
+// for, so a switch to a different gateway posts none and takes whatever that gateway's table
+// says; the address on screen is the old gateway's and means nothing to the new one.
+async function chooseBackend(gateway, model, host) {
+  if (!gateway) return;
+  const sent = gateway;
+  const entry = await loadModelsFor(sent);
+  // Three cases, not two. A catalogue that arrived is something to choose from, even when it is
+  // empty; a catalogue that could not be read says nothing about what the gateway serves, so the
+  // name already in force stands. Flattening the last into the first would hand the new gateway a
+  // model it has never heard of, which is what a timed-out catalogue used to do.
+  let chosen = (model || "").trim();
+  if (entry && entry.error) {
+    chosen = chosen || PU.backendModelShown || "";
+  } else if (entry && entry.models.length > 0) {
+    if (!entry.models.includes(chosen)) chosen = entry.models[0];
+  } else {
+    chosen = chosen || PU.backendModelShown || "";
+  }
+  if (!chosen) {
+    setBackendError("Pick a model for this gateway.");
     return;
   }
-  const selection = window.getSelection();
-  if (selection && selection.toString().trim()) return;
-  if (el.dataset.editing === "1") return;
-  if (PU.isStreaming) {
-    createSystemMessage("Cannot edit while a reply is streaming.");
-    return;
+  const payload = { gateway: sent, model: chosen };
+  // Present and empty is the reader asking for the gateway's default back, which is not the same
+  // request as not mentioning the address at all.
+  if (host !== undefined) payload.host = host;
+  let failure = await postBackend(payload, "The backend could not be changed");
+  // Redrawn first and reported second: the redraw is what puts the fields back in agreement with
+  // the server, and a message written before it would be a message the redraw then erased. On
+  // success the fields are the server's answer, so nothing is left to say. A refusal skips the
+  // redraw -- nothing changed -- so its message is written at once rather than after a round trip
+  // that has nothing to report.
+  if (failure) {
+    setBackendError(failure);
+    return false;
   }
-  const original = el.dataset.text || "";
-  el.dataset.editing = "1";
-  el.classList.add("editing");
-  el.title = "";
-  const container = el.querySelector(".blocks-container");
-  const field = document.createElement("textarea");
-  field.className = "edit-field";
-  field.value = original;
-  container.replaceChildren(field);
-  // The bar under the field holds the two ways out of the edit and nothing else. Copy moved to
-  // the menu, where it copies the message as the store holds it: a copy taken from the field
-  // would take the half-changed sentence in it, which is not yet a message.
-  const actions = document.createElement("div");
-  actions.className = "edit-actions";
+  await loadBackends();
+  setBackendError("");
+  return true;
+}
 
-  const save = document.createElement("button");
-  save.type = "button";
-  save.className = "edit-save";
-  save.textContent = "Save";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.className = "edit-cancel";
-  cancel.textContent = "Cancel";
-  actions.append(save, cancel);
-  // Inside the bubble, with the field: these belong to the sentence being changed, not to the
-  // line under it that says what the turn cost.
-  (el.querySelector(".msg-bubble") || el).appendChild(actions);
+// The gateway and its address, on Save. The model is not part of this form: it is chosen from the
+// bar, where it is already written, and a form that also asked for it would be asking the same
+// question twice. What is sent is the model in force, which `chooseBackend` keeps unless the
+// gateway it belongs to has been left -- switching gateway rightly replaces a name the new one does
+// not serve. `host` goes as typed, including empty: an emptied field is the reader asking for the
+// gateway's own address back, a request that only means something when it is said out loud.
+async function saveGateway() {
+  const { gatewaySelect, hostInput } = PU.composer;
+  if (!gatewaySelect) return false;
+  const gateway = gatewaySelect.value;
+  const host = hostInput ? hostInput.value.trim() : "";
+  if (!gateway) {
+    setBackendError("Pick a gateway.");
+    return false;
+  }
+  return chooseBackend(gateway, PU.backendModelShown || "", host);
+}
 
-  // `value` is what the bubble says once the field is gone: `null` is a cancelled edit, which
-  // goes back to what it said before. Either way the sentence lands where the field was, so the
-  // reader is never left looking at a form for a message that is finished.
-  const close = (value) => {
-    delete el.dataset.editing;
-    el.classList.remove("editing");
-    actions.remove();
-    const text = value === null ? (el.dataset.text || "") : value;
-    // The bar offered a copy of the words as they were when it was built, and the field has
-    // since been edited past them: what the message carries now is what a copy should take.
-    el._puBlocks = [{ type: BLOCK_TYPES.TEXT, content: text }];
-    renderBlocks([{ type: BLOCK_TYPES.TEXT, content: text }], container);
+// The model's own form, on Save: the name and the settings that belong to it. The gateway is not
+// asked for here -- it is the one in force, since a model is a choice inside a gateway and this
+// form was opened from that gateway's name -- and the address is left out entirely, so posting
+// does not reach for the gateway's default back.
+//
+// A number box that was emptied is a setting the reader cleared, sent as null: the file then
+// holds no key for it rather than a number nobody chose. A box that cannot be read as a number is
+// a typo and is refused here, before a request that would only carry the same problem.
+async function saveModel(model, raw) {
+  const payload = { gateway: PU.gatewayShown || "", model };
+  // The level is a string rather than a number, so it is read out of its own menu instead of the
+  // numeric loop below. `auto` is sent as itself: the server reads it as "no level of our own",
+  // which is the state the file spells `default`.
+  if (raw.thinking !== undefined) payload.thinking = raw.thinking;
+  const numeric = {
+    temperature: raw.temperature,
+    max_tokens: raw.max_tokens,
+    top_p: raw.top_p,
+    seed: raw.seed,
+    context_window: raw.context_window,
   };
-
-  // The field is the only thing in the bubble, so it grows with what is in it.
-  const fit = () => {
-    field.style.height = "auto";
-    field.style.height = field.scrollHeight + "px";
-  };
-  field.addEventListener("input", fit);
-  requestAnimationFrame(() => {
-    fit();
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
-  });
-
-  // Escape leaves the text as it was; Enter with the modifier that means a newline is not a save.
-  field.addEventListener("keydown", (keyEvent) => {
-    if (keyEvent.key === "Escape") {
-      keyEvent.preventDefault();
-      close(null);
-    } else if (keyEvent.key === "Enter" && !keyEvent.shiftKey && !keyEvent.isComposing) {
-      keyEvent.preventDefault();
-      save.click();
+  for (const [key, text] of Object.entries(numeric)) {
+    if (text === "") {
+      // A cleared box is a setting the reader removed. For `temperature` that is not "no value":
+      // the backend always answers at some temperature, so clearing it restores the default
+      // rather than sending a null the type cannot hold.
+      payload[key] = key === "temperature" ? 0.7 : null;
+      continue;
     }
-  });
-  cancel.addEventListener("click", (clickEvent) => {
-    clickEvent.stopPropagation();
-    close(null);
-  });
-  save.addEventListener("click", async (clickEvent) => {
-    clickEvent.stopPropagation();
-    const text = field.value.trim();
-    if (!text) return;
-    if (text === original) {
-      close(null);
-      return;
+    const value = Number(text);
+    if (!Number.isFinite(value)) {
+      modelError(`"${key.replace(/_/g, " ")}" must be a number.`);
+      return false;
     }
-    // Everything after this bubble is the conversation the store is about to lose -- its own
-    // words if this turn is re-said, and the replies to turns that followed. The step back
-    // happens before the text is offered for sending, so the composer's turn number and the
-    // store's chain agree by the time a later send is made.
-    //
-    // The bubble being edited is the one that stays; it is this turn re-said rather than a new
-    // one, so the sweep starts after it and never takes it.
-    const dropped = [];
-    for (let node = el.nextElementSibling; node; node = node.nextElementSibling) {
-      dropped.push(node);
-    }
-    try {
-      const data = await postJson("/api/rewind", { turn });
-      if (!data.success) {
-        createSystemMessage("Could not step back: " + (data.error || "unknown error"));
-        return;
+    payload[key] = value;
+  }
+  let failure = await postBackend(payload, "The model could not be changed");
+  // The two settings this form writes are also session overrides, and an override outranks the
+  // file: writing the file while a stale override stands would leave the reader looking at the
+  // number the override still holds, not the one they just saved. Clearing those overrides is what
+  // makes the file's value the value in force, which is what "this is the model's temperature"
+  // means. Only on success, and only the three this form owns -- `temperature` is not in the model
+  // file's absence and `max_tokens` is a cap this form sets, not a session knob, while `thinking`
+  // is a property of the model in exactly the way the level's other two neighbours are.
+  if (!failure) {
+    for (const name of ["temperature", "max_tokens", "thinking"]) {
+      try {
+        const cleared = await postJson("/api/settings", { name, value: null });
+        if (cleared.success) renderSettings(cleared.settings);
+      } catch (_) {
+        // A setting that could not be cleared leaves its override in force; the file is still
+        // written, and the next read of `/api/backend` shows which number won.
       }
-    } catch (e) {
-      createSystemMessage("Could not step back: " + e.message);
-      return;
     }
-    for (const node of dropped) node.remove();
-    // A reply still being written belonged to a turn just dropped: it must not keep drawing
-    // into a conversation that has been stepped back under it.
-    if (PU.currentAssistantEl && !PU.composer.messagesEl.contains(PU.currentAssistantEl)) {
-      PU.currentAssistantEl = null;
-      PU.currentAssistantBlocks = [];
-    }
-    el.dataset.text = text;
-    close(text);
-    await refreshChainLength();
-    offerResend(el, text);
-  });
+  }
+  // The refusal is shown before the state is read back: a refused save changed nothing, and the
+  // reader should not wait on a round trip to learn why the form is still open.
+  modelError(failure);
+  if (!failure) await loadBackends();
+  return !failure;
 }
 
-// A saved edit is a turn of yours that has been said but not asked: the store was stepped back
-// to before it, so it is once again the newest thing you said. It keeps its place in the
-// transcript and grows one control, which is the only thing on the page that sends it.
-function offerResend(el, text) {
-  el.querySelectorAll(".edit-resend").forEach((old) => old.remove());
-  const bar = document.createElement("div");
-  bar.className = "edit-resend";
-  const note = document.createElement("span");
-  note.className = "edit-resend-note";
-  note.textContent = "Edited. The turns after this one were dropped.";
-  const send = document.createElement("button");
-  send.type = "button";
-  send.className = "edit-resend-btn";
-  send.textContent = "Send";
-  send.addEventListener("click", (event) => {
-    event.stopPropagation();
-    bar.remove();
-    if (!sendText(text, el)) {
-      // Nothing was sent, so the offer has to stay: losing it would leave a turn the store no
-      // longer holds and no way to ask it again except by retyping it.
-      offerResend(el, text);
-      return;
-    }
-  });
-  bar.append(note, send);
-  // The offer to re-send belongs to the turn that was just changed, so it stays inside the
-  // bubble rather than joining the footing, which describes a message that is settled.
-  (el.querySelector(".msg-bubble") || el).appendChild(bar);
-}
+

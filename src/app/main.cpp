@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/app/cli.hpp"
 
+#include "pu/app/setup.hpp"
 #include "pu/config/agents.hpp"
+#include "pu/config/setup.hpp"
+#include "pu/core/logging.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/build_config.hpp"
 #include "pu/model/gateway.hpp"
 #include "pu/runtime/runtime.hpp"
 
 #include <boost/program_options.hpp>
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -173,6 +177,43 @@ int main(int argc, char* argv[]) {
     runtime.SetWorkspaceRoot(std::filesystem::absolute(dir, ec));
   }
 
+  // As soon as there is a root, tell the two readers that resolve relative paths. The wizard
+  // below asks whether a configuration already exists, and it has to ask about the directory
+  // this run is about; a logger this run starts has to write there too.
+  pu::SetWorkspaceRoot(runtime.WorkspaceRoot());
+
+  // A workspace with no agents.json has nothing to answer a turn with, and the file it needs
+  // is the one thing `pu` cannot guess. The wizard runs before the command does, so the
+  // command that asked for it then runs exactly as it always did against the file that now
+  // exists -- one path, not a special case threaded through every command.
+  //
+  // Only where there is a reader to answer. A run with no terminal -- a script, a pipe, CI --
+  // cannot be asked anything, and blocking there would turn a clear "no configuration" error
+  // into a hang. `setup` itself is left alone: it is the explicit way to ask for these
+  // questions again, and it reports its own missing file. The question is asked about this
+  // run's root, because that is the directory the answer will be written into.
+  const auto asks_nothing_about_the_table = cmd == "check" || cmd == "setup" || cmd == "models" ||
+                                            cmd == "probe" || cmd == "sse";
+  if (!asks_nothing_about_the_table && pu::platform::StdinIsTerminal() &&
+      pu::config::FindConfigPath().empty()) {
+    const std::optional<pu::config::SetupChoice> choice =
+        pu::cli::RunSetupWizard(runtime.WorkspaceRoot());
+    // No answer means the reader left at one of the questions. Answering that with the
+    // loader's "Configuration file not found" would send them looking for the file the
+    // wizard had just offered to write, so the leaving is reported as itself and the
+    // command does not run. What is left is the wizard's own last line, which already said
+    // what was missing.
+    if (!choice) return static_cast<int>(pu::cli::ExitCode::kInterrupted);
+    try {
+      const std::string written =
+          pu::config::WriteSetupConfig(*choice, runtime.WorkspaceRoot().string());
+      std::cerr << "\nWrote " << written << "\n\n";
+    } catch (const std::exception& e) {
+      std::cerr << "Could not write the configuration: " << e.what() << "\n";
+      return 1;
+    }
+  }
+
   try {
     if (cmd == "ask") {
       // An empty prompt is a mistake in the invocation, not a turn to send: the store would
@@ -267,6 +308,34 @@ int main(int argc, char* argv[]) {
       // Only `check`'s own job is left here: read agents.json and say what it resolves to.
       // The two listing questions moved back to `models`, whose listing they read.
       return pu::cli::RunCheck(OptionOr(vm, "config", ""), runtime.WorkspaceRoot());
+    }
+
+    if (cmd == "setup") {
+      // The same questions a first run is asked, asked again on purpose. Nothing is opened
+      // and no turn is sent: the only thing this command produces is the file.
+      //
+      // The logger is started first even though no turn follows, because the one thing worth
+      // being able to read afterwards is why a file was refused or where it was written, and
+      // that is a log line rather than something a reader is expected to have copied off the
+      // screen. A setup that skipped logging was the only run that left nothing behind.
+      if (!pu::IsLoggingInitialized()) {
+        const char* level = std::getenv("PU_LOG_LEVEL");
+        pu::InitLogging(level ? level : "");
+      }
+      const std::optional<pu::config::SetupChoice> choice =
+          pu::cli::RunSetupWizard(runtime.WorkspaceRoot());
+      if (!choice) return 1;
+      try {
+        const std::string written =
+            pu::config::WriteSetupConfig(*choice, runtime.WorkspaceRoot().string());
+        spdlog::info("setup wrote {}", written);
+        std::cout << "Wrote " << written << "\n";
+      } catch (const std::exception& e) {
+        spdlog::error("setup could not write the configuration: {}", e.what());
+        std::cerr << e.what() << "\n";
+        return 1;
+      }
+      return static_cast<int>(pu::cli::ExitCode::kOk);
     }
 
     if (cmd == "probe") {

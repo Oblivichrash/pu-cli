@@ -20,12 +20,34 @@
 
 namespace pu {
 
+namespace {
+
+// The root every relative path is read against, once a run has one. Empty until then, which
+// is not the same as the current directory: an unset root means the process was never told
+// where the run is about, and each reader falls back to the working directory it started in.
+std::filesystem::path g_workspace_root;
+
+}  // namespace
+
+void SetWorkspaceRoot(const std::filesystem::path& root) {
+  // An empty root is a caller saying "nobody said", which is the state a run starts in. It is
+  // not ignored: a test, or a command that finds no directory to work in, has to be able to
+  // put this back the way it found it.
+  g_workspace_root = root;
+}
+
+std::filesystem::path WorkspaceRoot() {
+  return g_workspace_root.empty() ? std::filesystem::current_path() : g_workspace_root;
+}
+
 std::filesystem::path LogDir() {
+  // PU_HOME is a deliberate statement about where this machine keeps its state, so it wins
+  // over the workspace: a reader who set it asked for one directory for every run.
   if (const char* env = std::getenv("PU_HOME")) {
     return std::filesystem::path(env) / "logs";
   }
 
-  return std::filesystem::current_path() / ".pu" / "logs";
+  return WorkspaceRoot() / ".pu" / "logs";
 }
 
 namespace {
@@ -33,6 +55,10 @@ namespace {
 thread_local std::string g_request_id;
 thread_local std::string g_tool_name;
 thread_local int64_t g_duration_ms = -1;
+
+// Set by `InitLogging` and by nothing else. See `IsLoggingInitialized`: the presence of a
+// default logger says nothing, because spdlog puts one there before `main` runs.
+bool g_logging_initialized = false;
 
 std::string JsonEscape(const std::string& s) {
   std::string out;
@@ -192,9 +218,15 @@ void InitLogging(const std::string& log_level) {
   std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
   spdlog::set_default_logger(logger);
   if (previous != logger) KeepAlive(std::move(previous));
+
+  // The flag, not `default_logger_raw()`: spdlog installs a logger of its own before `main`
+  // runs, so asking whether one is there answers yes in a process that never called this.
+  // Trusting that question skipped this function entirely, which is why a run left no
+  // `pu.log` behind while every call appeared to be logging.
+  g_logging_initialized = true;
 }
 
-bool IsLoggingInitialized() { return spdlog::default_logger_raw() != nullptr; }
+bool IsLoggingInitialized() { return g_logging_initialized; }
 
 void FlushLogging() {
   if (auto logger = spdlog::default_logger()) logger->flush();

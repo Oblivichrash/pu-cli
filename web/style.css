@@ -1,6 +1,5 @@
 :root {
   --column: 900px;
-  --sidebar: 280px;
   --paper: #fdfbf7;
   --ink: #2c2c2c;
   --ink-light: #6b5f55;
@@ -11,10 +10,19 @@
   --accent-soft: rgba(181, 49, 42, 0.1);
   --user-bg: #f5efe8;
   --assistant-bg: #ffffff;
+  /* The tint behind a code block, an inline token and a table header: a shade off the paper,
+     quiet enough to sit under text that is read rather than looked at. */
+  --wash: rgba(0, 0, 0, 0.035);
   --error-border: #b5312a;
   --error-text: #8a2a1a;
   --ok: #4a7c59;
   --warn: #b5892a;
+  /* The room between a full-width row and the column it holds: 20px on a narrow window, and
+     centred once the window is wider than the column. */
+  --gutter: max(20px, calc(50% - var(--column) / 2));
+  /* The one monospace stack: a block's command and its product are the only places the page
+     is not set in a serif. */
+  --mono: "JetBrains Mono", "Cascadia Code", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -69,17 +77,36 @@ header {
 .conn-dot.online { background: var(--ok); }
 .conn-dot.offline { background: var(--accent); }
 .conn-dot.connecting { background: var(--warn); }
-#sidebar-toggle {
+/* The one drawn mark in the header. The border is gone and the padding is what is left, because
+   a frame around one word among labels read as a button. `line-height: 0` keeps the inline SVG
+   on the padding rather than on a text baseline; the stroke is `currentColor` so the hover
+   reaches the path. */
+#config-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 2px;
   color: var(--ink-light);
-  font-size: 14px;
-  padding: 4px 8px;
+  padding: 4px;
   cursor: pointer;
   font-family: inherit;
+  line-height: 0;
 }
-#sidebar-toggle:hover { color: var(--accent); }
+#config-open:hover { color: var(--accent); }
+/* Drawn at the size of the text around it, not the 24px mark inside the composer: the two are
+   read at different distances. */
+#config-open .icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* The server strip: the name of the workspace on the left, the others behind a caret. It sits
    in the header rather than the panel because which workspace this is belongs beside the
@@ -151,13 +178,8 @@ header {
   text-overflow: ellipsis;
 }
 .server-name:hover { background: rgba(0, 0, 0, 0.04); }
-.server-row.current .server-name {
-  color: var(--accent);
-  cursor: default;
-}
-.server-row.current .server-name:hover { background: transparent; }
 
-/* ---------- stage: conversation + sidebar ---------- */
+/* ---------- stage: conversation ---------- */
 #stage {
   flex: 1;
   display: flex;
@@ -173,97 +195,81 @@ main {
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 24px max(20px, calc(50% - var(--column) / 2));
+  padding: 24px var(--gutter);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-/* A message is a column of blocks, not preformatted text: markdown decides where the
-   lines break, so the container does not preserve whitespace of its own -- doing both
-   rendered markdown's own newlines between blocks as well, which read as blank lines.
-   The blocks that are set as raw text keep their own white-space. */
 /* A message is two surfaces: the bubble, which is the text and nothing else, and the footing
-   under it, which is the cost and the controls. The message itself draws neither, so the two
-   are free to be shaped differently -- which is the point of putting the line outside. */
+   under it, which is the cost and the controls. */
 .msg {
-  border-radius: 2px;
   line-height: 1.65;
   font-size: 15px;
   word-break: break-word;
 }
 /* The paper: the tint, the frame and the room around the words. This is the only part of a
-   message that looks like something was said. */
+   message that looks like something was said.
+
+   The corner is 6px where the rest of the page uses 2px. Every other 2px corner here is on a
+   control or a rule, where the radius only takes the burr off a hard corner; a bubble is a
+   surface with a tint and a frame, and at 2px the tint's corners read as square. */
 .msg-bubble {
-  padding: 12px 18px;
-  border-radius: 2px;
+  padding: 8px 14px;
+  border-radius: 6px;
   border: 1px solid transparent;
 }
-/* A message says what may be done with it only when a reader is on it: a menu behind the right
-   button is a thing nobody is told about, so this is the telling, and it costs no layout: the
-   note is placed over the paper rather than laid out into it, so a turn is the same height with
-   it and without it.
-   It sits on the bubble's top edge, outside the frame. Inside is where the words are -- a
-   one-line turn puts its first line exactly where a corner label would go, and a long one runs
-   under it -- but above the edge there is never anything, so the note reads as a remark about
-   the paper rather than as the beginning of the sentence.
-   It is text rather than a mark because the sentence is the point: a glyph would have to be
-   learned, which is the problem it is meant to solve. It is kept out of the accessibility tree
-   for the converse reason: a screen reader is told about the message by the message, and
-   "right-click" names a gesture it cannot make.
-   Faded in rather than shown, so that moving the pointer down a column of turns does not make
-   twelve of these blink on and off on the way past. */
+/* The bubble is the press target, so it is the element that positions what it holds and the one
+   that takes the pointer: a message that acts on a press says so with a cursor and a title,
+   both set where the message is built. */
 .msg-bubble {
   position: relative;
 }
-.msg-hint {
-  position: absolute;
-  bottom: calc(100% + 3px);
-  right: 2px;
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  color: var(--ink-light);
-  opacity: 0;
-  transition: opacity 120ms ease;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
-}
-.msg:hover > .msg-bubble > .msg-hint,
-.msg:focus-within > .msg-bubble > .msg-hint {
-  opacity: 0.55;
-}
-/* A touch screen has no right button, so the note would name a gesture that cannot be made. The
-   menu is not reachable there either, which is a gap this rule does not pretend to fill. */
-@media (hover: none) {
-  .msg-hint {
-    display: none;
-  }
-}
+/* A hint was drawn over the bubble's top edge to tell a reader the right button opened a menu.
+   There is no menu and there is no note: a press is the whole vocabulary, so the only thing
+   that has to be true is that the words stay legible while the pointer is over them. */
+.msg.user.editing .msg-bubble { cursor: text; }
+/* A question takes the width of what it says, not the width of the column: a tinted 900px band
+   behind two words reads as a message longer than it is. Only the question hugs. A reply
+   stretches, because what it holds is not always a paragraph -- a tool call is a line of a log,
+   and a log line stopping a third of the way across reads as a short entry rather than a step.
+
+The two sides are told apart by where they sit as well as by tint: the user's turn goes to the
+right edge and the reply stays at the left margin it was read from. With a bubble that hugs its
+text the two colours alone are too close to carry that. */
 .msg.user {
-  align-self: stretch;
+  align-self: flex-end;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
 }
 .msg.assistant {
   align-self: stretch;
+  max-width: 100%;
+  min-width: 0;
 }
 .msg.user .msg-bubble {
   background: var(--user-bg);
   border-color: #d0c4b0;
 }
+/* A reply is not a message from someone: it is what the page holds, and the page is already
+   paper. The sides are zero because this row spans the column -- 14px here would hold the first
+   letter of every reply off the left margin the question was read at. */
 .msg.assistant .msg-bubble {
-  background: var(--assistant-bg);
-  border-color: var(--border);
+  padding: 8px 0;
+  background: transparent;
+  border-color: transparent;
 }
 .msg.error {
-  align-self: stretch;
+  align-self: flex-start;
+  max-width: 100%;
 }
 .msg.error .msg-bubble {
-  padding: 12px 18px;
+  padding: 8px 14px;
   background: rgba(184, 58, 42, 0.06);
   border-color: var(--error-border);
   color: var(--error-text);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   font-size: 13px;
   white-space: pre-wrap;
 }
@@ -280,16 +286,9 @@ main {
   font-style: italic;
   white-space: pre-wrap;
 }
-/* The cost of the turn is the last line of the bubble: it sits inside the paper, at the same
-   left inset as the words, so it closes the message rather than trailing after it. On the page
-   it read as a footnote to the frame above it -- a note in a second surface about a first one --
-   and a reply is one turn, not an answer with an annotation.
-   The gap is 4px rather than the 8px it started at: the line is 11px type in an 18px box, so
-   half of what the eye reads as gap is the leading inside the line box, not the margin. Eight
-   plus that leading put the note far enough down to look detached from the text it belongs to.
-   It centres rather than sits on baselines. Baseline alignment is right for two runs of type and
-   wrong for a type run beside an icon; the line has no icons left, and centring keeps whatever
-   is added beside it later level without re-deciding the alignment. */
+/* The cost of the turn is the last line of the bubble: at the same left inset as the words, it
+   closes the message rather than trailing after it. It centres rather than sitting on baselines,
+   which is right for a type run beside an icon and wrong for two runs of type. */
 .msg-foot {
   display: flex;
   align-items: center;
@@ -304,114 +303,13 @@ main {
   margin-top: 0;
 }
 
-/* The menu the right button opens. It floats over the message it names rather than pushing one
-   into the transcript: a reader opening it is looking at a message they have already found, and
-   the menu must not move it out from under the pointer that is about to press it. */
-.context-menu {
-  position: fixed;
-  z-index: 60;
-  min-width: 160px;
-  padding: 4px;
-  background: var(--paper, #fff);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
-}
-.context-menu[hidden] { display: none; }
-
-/* One row per action, each a whole sentence about what it does. A menu is read once by a reader
-   already looking for one line in it, so an icon with a tooltip would be a thing to point at
-   before it could be understood. */
-.context-item {
-  display: block;
-  width: 100%;
-  padding: 5px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 2px;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.context-item:hover,
-.context-item:focus-visible {
-  /* Tinted rather than filled. A block of accent under the pointer is the loudest thing on a
-     page whose messages are paper and hairline: the menu is a list of sentences, and the row
-     under the pointer is where the reader is, not a button asking to be pressed. */
-  background: var(--accent-soft);
-  color: var(--accent);
-  outline: none;
-}
 .msg.user.editing { cursor: default; }
 
-/* The field is the bubble: it is sized to its own text and carries no frame of its own, so
-   editing reads as the sentence changing rather than a form opening. */
-.edit-field {
-  width: 100%;
-  min-height: 1.65em;
-  padding: 0;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.edit-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-/* The bar holds the two ways out of an edit. */
-.edit-actions button,
-.edit-resend-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 2px 10px;
-  color: var(--ink-light);
-  font-family: inherit;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-}
-.edit-actions button:hover,
-.edit-resend-btn:hover { color: var(--accent); border-color: var(--accent); }
-.edit-save { color: var(--ink); }
-
-/* A saved edit sits in the transcript until it is sent: the store no longer holds it, so the
-   one thing the page can offer is the one action that asks it again. */
-.edit-resend {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px dotted var(--border);
-  font-size: 11px;
-  color: var(--ink-light);
-}
-.edit-resend-note { flex: 1; font-style: italic; }
+/* The bubble an edit is pointed at says so, because the words are now in the composer and the
+   bubble has changed meaning: it is not a message at rest but the one about to be replaced. */
+.msg.user.editing .msg-bubble { border-color: var(--accent); }
 
 .blocks-container { width: 100%; }
-
-/* The session's running total, under the context bar: facts, not a control. */
-.usage-total {
-  margin-top: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--ink-light);
-  font-variant-numeric: tabular-nums;
-}
 
 /* The cost of a reply: a remark at the end of the message, not part of the answer. */
 .msg-usage {
@@ -466,7 +364,7 @@ main {
 }
 .block-tool .block-header,
 .block-subtask .block-header {
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
 }
 .block-tool .tool-name {
   color: var(--ink);
@@ -547,40 +445,17 @@ main {
 }
 .tool-page:empty { display: none; }
 
+/* A call and a subtask both show their arguments as text, and the subtask's rows repeat what
+   its header says in one line each rather than truncating. The two are drawn alike, so they
+   are set alike. */
 .tool-args,
-.tool-result { margin: 4px 0; }
-.tool-args pre,
-.tool-result pre {
-  margin: 4px 0 0 0;
-  padding: 6px 10px;
-  background: var(--paper);
-  border-radius: 2px;
-  font-size: 13px;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 40vh;
-  overflow: auto;
-}
-.tool-error {
-  color: var(--error-text);
-  border-left: 3px solid var(--error-border);
-  padding-left: 10px;
-}
-
-/* The subtask body names the two things the call was made of, then the answer. The
-   header says where and what was asked in one line each, so these repeat them in full
-   rather than truncating. */
+.tool-result,
 .subtask-agent-row,
 .subtask-dir-row,
 .subtask-prompt-row,
 .subtask-answer { margin: 4px 0; }
-.subtask-agent-row .subtask-key,
-.subtask-dir-row .subtask-key,
-.subtask-prompt-row .subtask-key {
-  font-size: 11px;
-  color: var(--ink-light);
-}
+.tool-args pre,
+.tool-result pre,
 .subtask-agent-row pre,
 .subtask-dir-row pre,
 .subtask-prompt-row pre,
@@ -590,12 +465,13 @@ main {
   background: var(--paper);
   border-radius: 2px;
   font-size: 13px;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 40vh;
   overflow: auto;
 }
+.tool-error,
 .subtask-error {
   color: var(--error-text);
   border-left: 3px solid var(--error-border);
@@ -607,7 +483,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px max(20px, calc(50% - var(--column) / 2)) 12px;
+  padding: 10px var(--gutter) 12px;
   border-top: 1px solid var(--border);
   background: rgba(255, 252, 245, 0.7);
   flex: 0 0 auto;
@@ -616,6 +492,9 @@ main {
 #composer-row {
   display: flex;
   gap: 12px;
+  /* The press is drawn inside the field, so the row is what the corner is measured from and the
+     field is given the room it needs on the right for the mark to sit in without covering text. */
+  position: relative;
 }
 #input {
   flex: 1;
@@ -624,7 +503,7 @@ main {
   color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 2px;
-  padding: 10px 14px;
+  padding: 10px 44px 10px 14px;
   font-size: 15px;
   font-family: inherit;
   outline: none;
@@ -634,27 +513,65 @@ main {
   transition: border-color 0.2s;
 }
 #input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* The mark in the field's lower right, on the same 24-unit grid as the gear in the header. It is a
+   stroke path rather than a typed arrow because a character at this size is a glyph the serif
+   bolds into a smudge. Colour is `currentColor`, so the hover and stop states are rules on the
+   button and not on the path. */
 #send {
-  background: var(--ink);
-  color: var(--paper);
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The press is a circle, drawn in the accent because it is the one filled mark on a page of
+     paper and hairline. 28px, not 32: a filled disc carries more weight than an open glyph of the
+     same size and at 32 sat heavier than the 15px text it shares the field with. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--accent);
   border: none;
-  border-radius: 2px;
-  font-size: 14px;
+  border-radius: 50%;
+  color: #fff;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 400;
-  letter-spacing: 1px;
-  transition: background 0.2s;
-  /* One width for both labels, so "Cancel reply" does not shrink the field mid-run. */
-  min-width: 128px;
-  padding: 0 16px;
+  line-height: 0;
+  transition: background 0.2s, opacity 0.2s;
 }
-#send:hover { background: var(--accent); }
-#send:disabled { opacity: 0.5; cursor: not-allowed; }
+/* `hidden` on an SVG path is not the sure thing it is on a div: the attribute only works through
+   the UA sheet's `[hidden] { display: none }`, which SVG elements are not reliably subject to,
+   and both paths stayed laid out here. The rule is written out so the second state cannot leak
+   through the first. */
+#send .icon path[hidden] { display: none; }
+/* The square is drawn solid: at this size a hollow square a stroke wide reads as an empty
+   checkbox. The arrow gets its fill back because an open path is closed implicitly when filled. */
+#send .icon-send { fill: none; }
+#send .icon-stop { fill: currentColor; stroke: none; }
+/* The ring is already the accent, so hover cannot deepen the colour the way a text control
+   does. It steps down instead, mixed from the variable rather than written as a hex: the accent
+   lightens in the dark theme and a fixed dark red would swallow it. */
+#send:hover { background: color-mix(in srgb, var(--accent) 82%, #000); }
+/* A press that is still on its way says so by not answering: the mark stays, the hand does not
+   change, and the press is refused rather than repeated. */
+#send:disabled { cursor: not-allowed; opacity: 0.5; }
+/* The mark is drawn a step down in size because it now sits inside a 28px ring rather than alone
+   in a 36px corner: an arrow spends its height on a shaft and a head rather than filling its box
+   the way a letter does, so it needs a larger share of the ring to read at the same weight. */
+#send .icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 /* The approval gate is parked above the composer, not floating over the page: a
    decision waited on is the one thing that must not be scrolled past or missed. */
 #approval-bar {
-  margin: 0 max(20px, calc(50% - var(--column) / 2));
+  margin: 0 var(--gutter);
   padding: 12px 14px;
   border: 1px solid var(--accent);
   border-radius: 2px;
@@ -676,7 +593,7 @@ main {
   flex-shrink: 0;
 }
 .approval-command {
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   font-size: 13px;
   color: var(--error-text);
   background: transparent;
@@ -744,7 +661,7 @@ main {
 /* A notice (disconnect, token limit) is a dismissible strip above the composer, kept
    out of the transcript. */
 #notice-bar {
-  margin: 0 max(20px, calc(50% - var(--column) / 2)) 8px;
+  margin: 0 var(--gutter) 8px;
   padding: 8px 12px;
   border-left: 3px solid var(--warn);
   background: rgba(181, 137, 42, 0.08);
@@ -788,16 +705,77 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A bound is what makes the ellipsis above mean anything: without one the item grows to its
-   content and pushes its neighbours out of the bar instead. */
-#status-agent { max-width: 220px; }
+/* The two items the reader can press. The hover cannot be a background on the item itself:
+   `.status-item` clips its own overflow so a long model name can end in an ellipsis, and a
+   background drawn inside a clipped box stops at the text rather than at the item. The tint is
+   therefore a box-shadow, which is not clipped, and the padding gives that shadow something to
+   sit around; the negative margin takes back the width the padding added, so the bar's spacing
+   does not change. */
+.status-press {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 5px;
+  margin: 0 -5px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, box-shadow 0.15s;
+}
+.status-press:hover {
+  color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+/* A press reaches the bar from the keyboard too, since it is focusable: the ring is the same
+   accent so the two ways in do not look like two different things. It is drawn as an outline
+   rather than the shadow above because an outline is what the rest of the page's fields use for
+   focus, and a reader tabbing through should meet one mark for focus everywhere. */
+.status-press:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--accent);
+}
+/* The slash between the gateway and the model belongs to neither: it is a joiner, so it takes no
+   press, no hover, and the plain reading colour. Without a weight of its own it would sit in the
+   gap as if it were part of the gateway's press target. */
+.status-sep {
+  color: var(--border);
+  margin: 0 -8px;
+  user-select: none;
+}
+/* The three press targets in the bar hold names of very different lengths, and the widest of them
+   would otherwise set the width of the row for every reader. Each is capped instead, and the
+   tooltip carries what is cut -- a name is a thing to press, not a paragraph to read. */
+#status-gateway { max-width: 140px; }
+#status-model { max-width: 180px; }
 #status-tools { max-width: 120px; }
-/* The panel has a bar for this; the status bar has room for the number and its colour. */
-#status-context.warn { color: var(--warn); }
-#status-context.high { color: var(--accent); }
+/* The usage reading: the count, then a hairline saying how full the window is. The number is
+   what a reader glances at; the rule is the only part that can be read without reading, so it
+   carries the warning colour and the tooltip carries everything else. */
+#status-usage { max-width: 220px; color: var(--ink-light); }
+#status-usage.warn { color: var(--warn); }
+#status-usage.high { color: var(--accent); }
+.usage-bar {
+  display: inline-block;
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+#usage-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ink-light);
+  transition: width 0.3s, background 0.3s;
+}
+#status-usage.warn #usage-fill { background: var(--warn); }
+#status-usage.high #usage-fill { background: var(--accent); }
 /* The right-hand group is the count and the tool tally: what moves, kept at the far edge where
    a status bar's readings sit. The gateway and its model lived here too and were removed, because
-   they name a configuration rather than a state, and the Backend panel already holds them. */
+   they name a configuration rather than a state, and the configuration dialog already holds them. */
 .status-right {
   margin-left: auto;
   display: flex;
@@ -806,21 +784,8 @@ main {
   overflow: hidden;
 }
 
-/* ---------- sidebar ---------- */
-#sidebar {
-  width: var(--sidebar);
-  flex: 0 0 var(--sidebar);
-  border-left: 1px solid var(--border);
-  padding: 18px 16px;
-  overflow-y: auto;
-  background: rgba(255, 252, 245, 0.4);
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-#shell.sidebar-hidden #sidebar { display: none; }
-/* A choice in the panel has room, so it keeps the control's own shape: the label above,
-   the select filling the column. */
+/* ---------- configuration dialog: a choice in the panel has room, so it keeps the control's
+   own shape: the label above, the select filling the column. ---------- */
 .field {
   display: flex;
   flex-direction: column;
@@ -830,6 +795,10 @@ main {
   text-transform: uppercase;
   color: var(--ink-light);
 }
+/* `display: flex` above outranks the UA sheet's `[hidden] { display: none }`, so a field marked
+   hidden would still be drawn. The model form shows one of its two name controls and hides the
+   other, and both being on screen would be two answers where there is one. */
+.field[hidden] { display: none; }
 .field select {
   width: 100%;
   background: transparent;
@@ -846,6 +815,18 @@ main {
 }
 .field select:disabled { opacity: 0.55; cursor: not-allowed; }
 .field select:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A press in the status bar opens the sheet onto the field it named, and this is what says which
+   field that was. It is a ring rather than a colour change so the field's own text and border
+   stay as they are -- the reader is being pointed at a field, not told that it has changed. It
+   fades on its own and takes no room: a shadow is drawn outside the box, so a row that flashes
+   does not move the rows under it while the reader is about to press one. */
+.field-flash {
+  animation: field-flash 1.2s ease-out;
+}
+@keyframes field-flash {
+  0%, 40% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
 /* A number setting is an input rather than a list, and reads as the same box. */
 .field input {
   width: 100%;
@@ -877,6 +858,39 @@ main {
 }
 #settings-reset:hover { color: var(--ink); }
 #settings-reset:disabled { opacity: 0.55; cursor: not-allowed; }
+/* The way out of the gateway form, offered as the pair a form ends with: the quiet one first, the
+   one that writes second. Save is the accent's only filled shape here, so the button that changes
+   the backend is the one the eye lands on -- Cancel is the same shape unfilled, which is what makes
+   the pair read as one choice rather than two controls that happen to sit together. */
+.gateway-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gateway-button {
+  background: transparent;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.gateway-button:hover { color: var(--ink); border-color: var(--ink-light); }
+.gateway-button-primary {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+.gateway-button-primary:hover {
+  background: color-mix(in srgb, var(--accent) 82%, #000);
+  border-color: color-mix(in srgb, var(--accent) 82%, #000);
+  color: var(--paper);
+}
 .panel-title {
   font-size: 11px;
   letter-spacing: 0.15em;
@@ -886,54 +900,6 @@ main {
   padding-bottom: 4px;
   margin-bottom: 8px;
 }
-.panel-value {
-  font-size: 14px;
-  color: var(--ink);
-  word-break: break-word;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-}
-/* Read-only facts are named and valued, so a long host wraps under its own label instead
-   of running into the value above it. */
-.kv {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 10px;
-  font-size: 13px;
-}
-.kv dt {
-  color: var(--ink-light);
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  padding-top: 2px;
-}
-.kv dd {
-  margin: 0;
-  color: var(--ink);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  word-break: break-all;
-}
-#context-usage {
-  font-size: 13px;
-  color: var(--ink);
-  min-height: 1.2em;
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
-}
-.context-bar {
-  margin-top: 6px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-#context-fill {
-  height: 100%;
-  width: 0;
-  background: var(--ink-light);
-  transition: width 0.3s, background 0.3s;
-}
-#context-fill.warn { background: var(--warn); }
-#context-fill.high { background: var(--accent); }
 .tool-list {
   list-style: none;
   margin: 0;
@@ -945,7 +911,7 @@ main {
 .tool-list li {
   font-size: 13px;
   color: var(--ink);
-  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-family: var(--mono);
   padding: 2px 0;
 }
 .tool-list li .tool-src {
@@ -955,20 +921,16 @@ main {
 }
 
 /* ---------- scrollbar ---------- */
+/* The conversation and the sheet are read one after the other, so their scrollbars are drawn
+   alike rather than in the platform's grey. */
 #messages::-webkit-scrollbar,
-#sidebar::-webkit-scrollbar { width: 6px; }
-#messages::-webkit-scrollbar-track,
-#sidebar::-webkit-scrollbar-track { background: var(--paper); }
+.config-body::-webkit-scrollbar { width: 6px; }
+#messages::-webkit-scrollbar-track { background: var(--paper); }
+.config-body::-webkit-scrollbar-track { background: transparent; }
 #messages::-webkit-scrollbar-thumb,
-#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.config-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 #messages::-webkit-scrollbar-thumb:hover,
-#sidebar::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
-
-.hljs {
-  background: #f0ebe0;
-  border-radius: 2px;
-  padding: 8px 12px;
-}
+.config-body::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
 
 /* One rhythm inside a reply: what markdown emits carries no margins of its own, and
    consecutive blocks are separated by a single step, so a paragraph, a list and a code
@@ -996,6 +958,87 @@ main {
 .msg .block-text pre { margin-top: 0.75em; }
 .msg .block-text pre + * { margin-top: 0.75em; }
 
+/* ---------- what markdown draws inside a reply ---------- */
+/* Everything below is a tag `marked` emits that the page had never drawn. Without it a reply
+   containing code pushed its own bubble off the window: `pre` carries `white-space: pre` from the
+   browser, so a long line cannot wrap and `word-break` on `.msg` never reaches inside it. The
+   width is contained here rather than by wrapping the code, because a wrapped line of source is
+   a line that can no longer be read as written -- the block scrolls instead. */
+.msg .block-text pre {
+  padding: 8px 10px;
+  background: var(--wash);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  /* A source file uses tabs, and eight columns of indent pushes every nest past the edge. Four
+     is what the languages that indent this way are read at. */
+  tab-size: 4;
+  /* A reply is read top to bottom, so one long file must not become the whole reply: past this
+     height the block scrolls on its own. The bound is generous enough that a snippet is never
+     cut, and short enough that a filled answer still ends within a screen or two. */
+  max-height: 60vh;
+  overflow: auto;
+}
+.msg .block-text pre code {
+  padding: 0;
+  background: none;
+  border: 0;
+  /* `pre` carries the family and the size; a `code` nested in it must not reset either to the
+     browser's own monospace, which is a different width and would move the wrap. */
+  font-family: inherit;
+  font-size: inherit;
+  tab-size: inherit;
+}
+/* The language a fence named, carried on the block as a mark rather than a heading: it is a
+   label for what is below it, so it sits in the corner of the tint without a line of its own. */
+.msg .block-text pre.has-lang { position: relative; padding-top: 22px; }
+.msg .block-text .code-lang {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--ink-light);
+  text-transform: lowercase;
+  user-select: none;
+}
+/* Inline code sits in a sentence, so it must break like the words around it or one long token
+   drags the bubble wider than the column. */
+.msg .block-text :not(pre) > code {
+  padding: 1px 4px;
+  background: var(--wash);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  word-break: break-word;
+}
+/* A table is the other thing that can outgrow the column: it is laid out to its content, so an
+   ordinary sentence in a cell is enough. It scrolls with the same intent as a code block. */
+.msg .block-text table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.msg .block-text th,
+.msg .block-text td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.msg .block-text th {
+  background: var(--wash);
+  font-weight: 600;
+}
+.msg .block-text blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  color: var(--ink-light);
+}
+
 .msg.assistant.typing .block-text:last-child::after {
   content: "▌";
   animation: blink 1s step-end infinite;
@@ -1006,49 +1049,103 @@ main {
   50% { opacity: 0; }
 }
 
-#scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 15;
-}
-#scrim[hidden] { display: none; }
+/* ---------- configuration dialog ---------- */
+/* The sheet the configuration lives on, sized by its content and capped to the viewport: a short
+   agent does not leave a mostly-empty sheet and a long one scrolls its body instead of the page
+   behind it.
 
-/* The toggle is a column control, not a drawer handle: under the drawer breakpoint the
-   panel is opened and closed by its own rules, so the button would only confuse. */
-@media (max-width: 1024px) {
-  #sidebar-toggle { display: none; }
+   A `<dialog>` arrives from the browser with a 3px black border, a square white box and its own
+   padding. The selector is by element rather than by id because the fault was a missing id: the
+   model and gateway forms were written after this rule and inherited the browser's box instead. */
+dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(82vh, 720px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+/* The page behind a modal is dimmed by the browser's own backdrop; this only decides how much,
+   so the conversation stays legible as the thing the choices are about. */
+dialog::backdrop { background: rgba(0, 0, 0, 0.32); }
+/* A closed dialog is not drawn. The browser's own rule is `display: none` on the element, but
+   `dialog` is laid out by the page as soon as it is set to anything, so the state is stated
+   here rather than relied on. */
+dialog:not([open]) { display: none; }
+/* The two forms the status bar opens ask one question each, so they stop at the width of that
+   question rather than opening at the configuration sheet's. */
+#gateway-dialog,
+#model-dialog {
+  width: min(400px, calc(100vw - 32px));
+}
+.config-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  /* The same tint as the header, taken from the paper rather than written out in white: a light
+     overlay on a dark sheet would draw a bright band across the top of it. */
+  background: color-mix(in srgb, var(--paper) 60%, transparent);
+}
+/* The three heads are one shape, written once and by class: this rule was on #config-title alone
+   and the two backend forms' titles carried the browser's default size until the ✕ beside them
+   was removed and there was nothing left on the row to hide it. */
+.config-title {
+  flex: 1;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+.config-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--ink-light);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.config-close:hover { color: var(--accent); }
+/* The body is the scroll box and the thing a backdrop click misses: it fills the dialog, so a
+   click on the page-filling element itself is a click outside the sheet. */
+.config-body {
+  padding: 14px 14px 14px 16px;
+  overflow-y: auto;
+  max-height: calc(min(82vh, 720px) - 49px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.config-section { display: flex; flex-direction: column; gap: 8px; }
+#config-dialog .tool-list li { font-size: 12px; }
+/* A gateway that cannot be asked is a fact about the menu above it, not a page-level failure, so
+   it is stated at the size of the field it explains rather than in the browser's default. */
+.backend-error {
+  font-size: 12px;
+  color: var(--warn);
+  line-height: 1.4;
 }
 
-/* ---------- narrow screens: sidebar becomes a drawer ---------- */
-@media (max-width: 1024px) {
-  #sidebar {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 20;
-    background: var(--paper);
-    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
-    transform: translateX(100%);
-    transition: transform 0.2s;
-  }
-  #shell:not(.sidebar-hidden) #sidebar { display: flex; transform: translateX(0); }
-  #shell.sidebar-hidden #sidebar { display: flex; }
-  /* The drawer reaches the bottom, covering the bar: what it shows is what the bar says. */
-}
+/* ---------- narrow screens ---------- */
 @media (max-width: 640px) {
   :root { --column: 100%; }
   header { padding: 10px 12px; gap: 8px; }
   .msg { font-size: 14px; }
-  /* The field takes the row, and the choices share the line under it. */
-  #composer-row { flex-wrap: wrap; }
+  /* The field takes the row, and the mark stays in its corner: the button is inside the field
+     now, so there is no second row for it to share and nothing to wrap. */
+  #composer-row { flex-wrap: nowrap; }
   #input { flex-basis: 100%; }
-  #send { flex: 1; height: 40px; min-width: 0; }
-  /* Nothing is dropped from the bar. The two readings that used to be hidden here were the
-     gateway and the model, and they are gone from the bar entirely -- what is left on the right
-     is the tool count and the context count, which are now the whole of that half. Dropping
-     them leaves it empty. The bar clips instead, and each item carries its own width bound. */
+  /* Nothing is dropped from the bar: what is left on the right is the tool count and the usage
+     reading, which are now the whole of that half, so hiding them would leave it empty. The bar
+     clips instead, and each item carries its own width bound. */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1060,17 +1157,18 @@ main {
     --accent: #d4645a;
     --user-bg: #262320;
     --assistant-bg: #201e1a;
+    --wash: rgba(255, 252, 245, 0.05);
     --error-border: #d4645a;
     --error-text: #e08b82;
     --ok: #6fa07d;
     --warn: #c9a24a;
   }
-  header, #composer, #sidebar, #status-bar { background: rgba(28, 26, 23, 0.7); }
+  header, #composer, #status-bar { background: rgba(28, 26, 23, 0.7); }
   #input:focus { box-shadow: 0 0 0 1px var(--accent); }
-  #send { background: var(--ink); color: var(--paper); }
   #approval-allow { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  .hljs { background: #2a2620; }
-  .tool-args pre, .tool-result pre { background: #262320; }
-  .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre { background: #262320; }
+  .tool-args pre, .tool-result pre,
+  .subtask-agent-row pre, .subtask-dir-row pre, .subtask-prompt-row pre, .subtask-answer pre {
+    background: #262320;
+  }
   .server-name:hover { background: rgba(255, 255, 255, 0.06); }
 }

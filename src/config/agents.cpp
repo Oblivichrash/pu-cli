@@ -3,12 +3,16 @@
 
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
+#include "pu/core/logging.hpp"
+#include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
+#include "pu/model/gateway.hpp"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -16,6 +20,14 @@
 #include <regex>
 #include <set>
 #include <sstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
 
 namespace pu::config {
 
@@ -83,7 +95,24 @@ model::Backend ParseBackend(const json::value& j) {
   // A stored backend keeps what the file resolved to, so it must not expand twice.
   cfg.host = ExpandEnvVars(cfg.host);
   cfg.model = ExpandEnvVars(cfg.model);
-  if (cfg.api_key) cfg.api_key = ExpandEnvVars(*cfg.api_key);
+  if (cfg.api_key) {
+    cfg.api_key = ExpandEnvVars(*cfg.api_key);
+  } else {
+    // The gateway's own variable, when the file names no key at all. A backend that says
+    // which product it talks to and not which key it uses is the ordinary case: the key is a
+    // secret in the environment, and writing the variable's name in every entry is asking the
+    // file to restate what the gateway already knows. Only an absent `api_key` reaches here —
+    // an explicit one, even one that expanded to empty, is the author's answer and is left as
+    // they wrote it, so a typo in a variable name stays visible instead of being papered over
+    // by a second lookup.
+    const std::string_view env = model::ApiKeyEnvFor(cfg.gateway);
+    if (!env.empty()) {
+      const std::string name(env);
+      if (const char* value = std::getenv(name.c_str()); value != nullptr && *value != '\0') {
+        cfg.api_key = std::string(value);
+      }
+    }
+  }
   if (json::HasKey(j, "system_prompt"))
     cfg.system_prompt = ExpandEnvVars(boost::json::value_to<std::string>(j.at("system_prompt")));
   return cfg;
@@ -129,7 +158,7 @@ AgentEntry ParseAgentEntry(const json::value& j) {
   entry.name = json::ValueOrDefault<std::string>(j, "name", "");
   entry.description = json::ValueOrDefault<std::string>(j, "description", "");
   if (!json::HasKey(j, "backend") || !j.at("backend").is_object())
-    throw pu::GenericError("Missing backend field");
+    throw pu::GenericError("Missing backend: an agent file describes one agent's backend");
   entry.backend = ParseBackend(j.at("backend"));
   if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
   if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend");
@@ -241,24 +270,21 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
     return std::nullopt;
   }
 
-  const boost::json::array* agents = nullptr;
-  if (const boost::json::object* top = parsed.if_object()) {
-    if (const auto it = top->find("agents"); it != top->end()) agents = it->value().if_array();
-  }
-  if (agents == nullptr) return std::nullopt;
-
-  for (const auto& entry : *agents) {
-    const boost::json::object* fields = entry.if_object();
-    if (fields == nullptr) continue;
-    const auto it = fields->find("name");
-    if (it == fields->end() || !it->value().is_string()) continue;
-    if (boost::json::value_to<std::string>(it->value()) == agent_name) return entry;
-  }
-  return std::nullopt;
+  const boost::json::object* fields = parsed.if_object();
+  if (fields == nullptr) return std::nullopt;
+  // One file describes one agent, so a name that does not match its own is not a miss to search
+  // past: it is the wrong file.
+  const std::string own = StringMember(*fields, "name");
+  if (own != agent_name) return std::nullopt;
+  return parsed;
 }
 
 std::string FindConfigPath() {
-  const std::filesystem::path project = "./.pu/agents.json";
+  // Read against the run's own root, not the shell's: `pu -C ..` asks about the directory it
+  // named, and a file sitting there is the one it means. Falling back to the working
+  // directory would find nothing in that case and report a configured workspace as a first
+  // run, which is what sends `-C` into the setup wizard.
+  const std::filesystem::path project = pu::WorkspaceRoot() / ".pu" / "agents.json";
   if (std::filesystem::exists(project)) return project.string();
 
   const char* home = std::getenv("HOME");
@@ -268,6 +294,178 @@ std::string FindConfigPath() {
   }
 
   return {};
+}
+
+// The configuration is read and written by more than one process: `pu serve` holds it open for
+// the length of a run, and a second process -- the reader running `pu models --set`, a page save
+// against a serve that is already running -- writes the same file. The lock is taken on a
+// sibling `.lock` file rather than on the configuration itself, because the write replaces the
+// configuration by rename, and a lock follows the inode: the replacement would drop it and leave
+// the window it was meant to close.
+//
+// The lock is held only across the read-modify-write. A reader never takes it, since a rename is
+// atomic and a reader sees either the old file or the new one, never half of either.
+class ConfigLock {
+ public:
+  explicit ConfigLock(const std::string& path) {
+#ifdef _WIN32
+    const std::string lock_path = path + ".lock";
+    handle_ = CreateFileA(lock_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle_ != INVALID_HANDLE_VALUE) held_ = LockHeld(*this);
+#else
+    const std::string lock_path = path + ".lock";
+    fd_ = ::open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+    held_ = fd_ >= 0 && ::flock(fd_, LOCK_EX) == 0;
+#endif
+  }
+
+  ~ConfigLock() { Release(); }
+
+  ConfigLock(const ConfigLock&) = delete;
+  ConfigLock& operator=(const ConfigLock&) = delete;
+
+  void Release() {
+    if (!held_) return;
+    held_ = false;
+#ifdef _WIN32
+    if (handle_ != INVALID_HANDLE_VALUE) {
+      UnlockFileEx(handle_, 0, MAXDWORD, MAXDWORD, &overlapped_);
+      CloseHandle(handle_);
+      handle_ = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (fd_ >= 0) {
+      ::flock(fd_, LOCK_UN);
+      ::close(fd_);
+      fd_ = -1;
+    }
+#endif
+  }
+
+ private:
+#ifdef _WIN32
+  // `LockFileEx` waits, which is what a second writer wants: the two saves queue rather than one
+  // losing its change to the other's read-modify-write.
+  static bool LockHeld(ConfigLock& self) {
+    if (self.handle_ == INVALID_HANDLE_VALUE) return false;
+    std::memset(&self.overlapped_, 0, sizeof(self.overlapped_));
+    return ::LockFileEx(self.handle_, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD,
+                        &self.overlapped_) != 0;
+  }
+  HANDLE handle_ = INVALID_HANDLE_VALUE;
+  OVERLAPPED overlapped_{};
+#else
+  int fd_ = -1;
+#endif
+  bool held_ = false;
+};
+
+// Written beside the target and renamed over it: `rename` is atomic on POSIX, and on Windows
+// `std::filesystem::rename` refuses a target that already exists, which is the failure that made
+// the write look like it had happened when it had not. `MoveFileEx` with REPLACE_EXISTING is the
+// same operation there. The staged file is named for the process so two writers that did not wait
+// for the lock cannot publish one over the other's half-written text.
+void ReplaceFileText(const std::string& path, const std::string& text) {
+  const std::string staged = path + "." + std::to_string(platform::CurrentProcessId()) + ".tmp";
+  {
+    std::ofstream out(staged, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) throw pu::GenericError("cannot write " + staged);
+    out << text;
+    out.flush();
+    if (!out) throw pu::GenericError("cannot write " + staged);
+  }
+#ifdef _WIN32
+  // The wide call, because the ANSI one reads the paths in the machine's code page and loses any
+  // character outside it -- a user name, a temporary directory that is not ASCII. Moving over an
+  // existing file needs the target to be closed by everyone, which is why the reader in
+  // `UpdateAgentBackend` closes before it gets here; when something else still holds it, the move
+  // fails and the file is replaced by deleting it first rather than left unwritten.
+  if (!::MoveFileExW(std::filesystem::path(staged).wstring().c_str(),
+                     std::filesystem::path(path).wstring().c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    std::error_code ignored;
+    if (!::DeleteFileW(std::filesystem::path(path).wstring().c_str()) ||
+        !::MoveFileW(std::filesystem::path(staged).wstring().c_str(),
+                     std::filesystem::path(path).wstring().c_str())) {
+      std::filesystem::remove(staged, ignored);
+      throw pu::GenericError("cannot replace " + path);
+    }
+  }
+#else
+  std::error_code ec;
+  std::filesystem::rename(staged, path, ec);
+  if (ec) {
+    std::filesystem::remove(staged, ec);
+    throw pu::GenericError("cannot replace " + path);
+  }
+#endif
+}
+
+void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& update) {
+  ConfigLock lock(config_path);
+  std::string original;
+  {
+    std::ifstream file(config_path);
+    if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
+    original.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  }
+  std::optional<json::value> parsed = json::TryParse(original);
+  if (!parsed) throw pu::GenericError(config_path + " is not JSON");
+  json::value& root = *parsed;
+  if (!root.is_object()) throw pu::GenericError(config_path + " is not a JSON object");
+  if (!json::HasKey(root, "backend") || !root.at("backend").is_object())
+    throw pu::GenericError(config_path + " has no backend to change");
+  boost::json::object& backend = root.at("backend").as_object();
+  backend["gateway"] = update.gateway;
+  backend["model"] = update.model;
+  // The address is written as the reader spelled it. `${VAR}` is left standing so the file keeps
+  // naming the environment rather than this run's expansion of it, and an empty value deletes the
+  // key: a host key holding "" would pin the empty address, while no key at all is what lets the
+  // gateway supply its own default on the next load.
+  if (update.host.empty()) {
+    backend.erase("host");
+  } else {
+    backend["host"] = update.host;
+  }
+  // The sampling settings follow the address' rule: stated, they are written; not stated, the key
+  // is gone. A key holding a number nobody chose is worse than no key, because the file then
+  // claims a pin the reader never asked for. `temperature` is the exception: it is not optional
+  // in the type, so a backend always answers at some value and the file always says which.
+  backend["temperature"] = update.temperature;
+  // `thinking` is the other exception, and for the same reason: `kServerDefault` is a level the
+  // file spells `default` rather than a missing key, so an absent level is written as the word
+  // the loader reads back as "no level". Writing holes here would make "the backend decides" and
+  // "nobody said" two different states the loader cannot tell apart.
+  backend["thinking"] = update.thinking;
+  if (update.max_tokens) {
+    backend["max_tokens"] = *update.max_tokens;
+  } else {
+    backend.erase("max_tokens");
+  }
+  if (update.top_p) {
+    backend["top_p"] = *update.top_p;
+  } else {
+    backend.erase("top_p");
+  }
+  if (update.seed) {
+    backend["seed"] = *update.seed;
+  } else {
+    backend.erase("seed");
+  }
+  if (update.context_window) {
+    backend["context_window"] = *update.context_window;
+  } else {
+    backend.erase("context_window");
+  }
+
+  const std::string text = boost::json::serialize(root);
+  // Read it back before it replaces anything: a file this program would refuse to load is never
+  // left on disk, so a mistake here costs the command that made it and not the next start.
+  std::optional<json::value> written = json::TryParse(text);
+  if (!written) throw pu::GenericError(config_path + " would not read back as JSON");
+  ParseAgentEntry(*written);
+
+  ReplaceFileText(config_path, text);
 }
 
 std::optional<ServeOptions> FindServeOptions() {
@@ -372,11 +570,9 @@ json::value ReadJsonFile(const std::filesystem::path& path) {
   if (!file.is_open()) throw pu::GenericError("Configuration file not found: " + path.string());
   std::ostringstream buffer;
   buffer << file.rdbuf();
-  try {
-    return json::parse(buffer.str());
-  } catch (const boost::system::system_error&) {
-    throw pu::GenericError("Failed to parse configuration JSON: " + path.string());
-  }
+  std::optional<json::value> parsed = json::TryParse(buffer.str());
+  if (!parsed) throw pu::GenericError("Failed to parse configuration JSON: " + path.string());
+  return std::move(*parsed);
 }
 
 // An agent whose table names a file reads it, and the file's text becomes the entry's system
@@ -415,10 +611,6 @@ void ApplyPersona(AgentEntry& entry, const json::value& table,
   entry.backend.system_prompt = ExpandEnvVars(prompt);
 }
 
-std::filesystem::path AgentTableDir(const std::filesystem::path& config_path) {
-  return config_path.parent_path() / "agents";
-}
-
 const std::vector<std::string>& BuiltinToolNames() {
   // The names `RegisterBuiltinTools` registers. A tool added there and not here is one a
   // `tools` list cannot name, which is the direction that fails loudly rather than silently.
@@ -426,74 +618,21 @@ const std::vector<std::string>& BuiltinToolNames() {
   return names;
 }
 
-AgentsConfig LoadAgentsConfig(const std::string& config_path) {
-  AgentsConfig result;
+AgentEntry LoadAgentConfig(const std::string& config_path) {
   const json::value j = ReadJsonFile(config_path);
-
-  if (!json::HasKey(j, "default_agent") || !j.at("default_agent").is_string())
-    throw pu::GenericError("Missing default_agent field");
-  result.default_agent = boost::json::value_to<std::string>(j.at("default_agent"));
-
-  if (!json::HasKey(j, "agents") || !j.at("agents").is_array())
-    throw pu::GenericError("Missing agents array");
-  for (const auto& item : j.at("agents").as_array()) {
-    AgentEntry entry = ParseAgentEntry(item);
-    if (entry.name.empty()) throw pu::GenericError("Missing agent name");
-    result.agents.push_back(std::move(entry));
+  AgentEntry entry = ParseAgentEntry(j);
+  if (entry.name.empty()) {
+    throw pu::GenericError(config_path +
+                           " describes one agent, so it must name itself: add a \"name\" field");
   }
-
-  // One directory per agent, beside the table that names them. The directory name is the
-  // agent's name, so `ls .pu/agents/` is the list, and a table that disagrees with the name it
-  // was filed under is refused rather than silently renamed.
-  const std::filesystem::path agents_dir = AgentTableDir(config_path);
-  std::error_code ec;
-  if (std::filesystem::is_directory(agents_dir, ec)) {
-    std::vector<std::filesystem::path> tables;
-    for (const auto& item : std::filesystem::directory_iterator(agents_dir, ec)) {
-      if (!item.is_directory()) continue;
-      const std::filesystem::path table = item.path() / "agents.json";
-      if (std::filesystem::exists(table)) tables.push_back(table);
-    }
-    std::sort(tables.begin(), tables.end());
-
-    for (const std::filesystem::path& table : tables) {
-      const json::value dir_json = ReadJsonFile(table);
-      AgentEntry entry = ParseAgentEntry(dir_json);
-      const std::string from_dir = table.parent_path().filename().string();
-      if (json::HasKey(dir_json, "name") && entry.name != from_dir) {
-        throw pu::GenericError("the table in agents/" + from_dir + " names itself '" +
-                               entry.name + "'; a directory is named after its agent");
-      }
-      entry.name = from_dir;
-      const auto clash = std::find_if(result.agents.begin(), result.agents.end(),
-                                      [&](const AgentEntry& known) { return known.name == entry.name; });
-      if (clash != result.agents.end()) {
-        throw pu::GenericError("two agents are named '" + entry.name + "': one inline in " +
-                               config_path + ", one in " + table.string());
-      }
-      entry.source_dir = table.parent_path();
-      ApplyPersona(entry, dir_json, table.parent_path());
-      for (config::McpServerConfig& server : entry.mcp_servers) {
-        server.command = ResolveAgainst(table.parent_path(), server.command);
-        for (std::string& arg : server.args) arg = ResolveAgainst(table.parent_path(), arg);
-      }
-      if (entry.backend.host.empty()) entry.backend.host = model::DefaultHostFor(entry.backend.gateway);
-      if (entry.backend.model.empty()) throw pu::GenericError("Missing model in backend of " + entry.name);
-      result.agents.push_back(std::move(entry));
-    }
+  const std::filesystem::path dir = std::filesystem::path(config_path).parent_path();
+  entry.source_dir = dir;
+  ApplyPersona(entry, j, dir);
+  for (config::McpServerConfig& server : entry.mcp_servers) {
+    server.command = ResolveAgainst(dir, server.command);
+    for (std::string& arg : server.args) arg = ResolveAgainst(dir, arg);
   }
-
-  const auto default_agent =
-      std::find_if(result.agents.begin(), result.agents.end(),
-                   [&](const AgentEntry& entry) { return entry.name == result.default_agent; });
-  if (default_agent == result.agents.end()) {
-    throw pu::GenericError(
-        "default_agent does not match any configured agent (have: " +
-        text::Join(std::views::transform(result.agents,
-                                         [](const AgentEntry& entry) { return entry.name; })) +
-        ")");
-  }
-  return result;
+  return entry;
 }
 
 // One key per field a parser above reads. A field added to a parser and not to its list here is

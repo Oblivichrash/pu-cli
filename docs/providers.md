@@ -16,7 +16,7 @@ this build know" rather than any sentence here.
 The OpenAI protocol itself is a layer below the gateway: `src/llm/openai_protocol.cpp` holds
 the endpoint, the request body and the SSE parse, and `OpenAIProvider`
 (`openai_provider.{hpp,cpp}`) is the shell that puts one host and one set of headers on it.
-So the `openai` and `codebuddy` gateways build the same protocol, and an agent of the `openai`
+So the `openai` and `tencent` gateways build the same protocol, and an agent of the `openai`
 gateway changes only the host, the headers and the response shape.
 
 The gateways a build knows are the rows `Gateways()` returns, and the refusal lists them, so a
@@ -31,7 +31,7 @@ OpenAI?" separately at each site is what turns a third gateway into a lie rather
 failure. Whether a gateway carries a thinking level follows from the gateway, and no provider
 subclass overrides it.
 
-`codebuddy` is one of these, not a third protocol: the same stream at a different
+`tencent` is one of these, not a third protocol: the same stream at a different
 base URL plus a header set. Its gateway behavior is recorded in
 [design/codebuddy-cloud-api.md](design/codebuddy-cloud-api.md).
 
@@ -228,7 +228,7 @@ or as a list is decided per provider, as the signatures row says.
 
 Each was asked rather than assumed, and the answers are observations that drift rather than a
 contract to code against. `pu models --detail caps` prints them, and that is their whole use: the
-page's context bar is drawn from `backend.context_window` in `agents.json` rather than from here. A
+page's usage reading is drawn from `backend.context_window` in `agents.json` rather than from here. A
 number worth writing there is the one this table's endpoint reports — with CodeBuddy's caveat
 below in mind, since it states 1M and enforces less.
 

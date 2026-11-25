@@ -15,6 +15,7 @@
 using namespace pu;
 using pu::tests::ScopedEnvVar;
 using pu::tests::ScopedTempDir;
+using pu::tests::ScopedWorkspaceRoot;
 
 namespace {
 
@@ -90,19 +91,52 @@ TEST_CASE("JsonLogFormatter escapes quotes and newlines", "[logging]") {
   REQUIRE(j.at("message") == "say \"hi\"\nnext line");
 }
 
-TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging]") {
+TEST_CASE("PU_HOME moves the log directory and nothing else", "[logging][process-state]") {
   // A name of its own per process: catch_discover_tests runs cases in parallel, and a fixed
   // name is a directory two of them write to at once.
   const ScopedTempDir scratch("pu_log_dir_test_");
+  // Pinned empty, so this case reads the fallback it is about and not whatever root another
+  // case in this process left behind.
+  ScopedWorkspaceRoot no_root({});
 
-  REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
+  // Compared against the root, not against `current_path()`: another case in this process may
+  // have moved the working directory under us, and the answer without a root is defined as
+  // "the directory this process is in now" rather than the one it started in.
+  REQUIRE(pu::LogDir() == pu::WorkspaceRoot() / ".pu" / "logs");
 
   {
     ScopedEnvVar home("PU_HOME", scratch.Path().string());
     REQUIRE(pu::LogDir() == scratch.Path() / "logs");
   }
 
-  REQUIRE(pu::LogDir() == std::filesystem::current_path() / ".pu" / "logs");
+  REQUIRE(pu::LogDir() == pu::WorkspaceRoot() / ".pu" / "logs");
+}
+
+// A run started with `-C` is about that directory, so its log has to be written there and not
+// where the shell happened to be. The working directory is deliberately left alone, since that
+// is the whole thing the root is meant to override.
+TEST_CASE("LogDir follows the workspace root rather than the working directory",
+          "[logging][process-state]") {
+  const ScopedTempDir workspace("pu_log_ws_test_");
+  ScopedWorkspaceRoot root(workspace.Path());
+
+  REQUIRE(pu::LogDir() == workspace.Path() / ".pu" / "logs");
+
+  // An unset root is not an empty one: it means nobody said, and the answer goes back to the
+  // directory the process is in.
+  pu::SetWorkspaceRoot({});
+  REQUIRE(pu::LogDir() == pu::WorkspaceRoot() / ".pu" / "logs");
+}
+
+// PU_HOME is a statement about the machine, the root about this run, and the machine wins:
+// a reader who set it asked for one directory for every project they work in.
+TEST_CASE("PU_HOME outranks the workspace root for logs", "[logging][process-state]") {
+  const ScopedTempDir workspace("pu_log_ws_home_test_");
+  const ScopedTempDir home("pu_log_ws_home_env_");
+  ScopedWorkspaceRoot root(workspace.Path());
+
+  ScopedEnvVar env("PU_HOME", home.Path().string());
+  REQUIRE(pu::LogDir() == home.Path() / "logs");
 }
 
 // InitLogging runs again for every Runtime in the process, so every async writer it builds has
@@ -132,20 +166,27 @@ TEST_CASE("InitLogging keeps the thread pool the loggers already use", "[logging
   REQUIRE(std::filesystem::exists(scratch.Path() / "logs" / "pu.log"));
 }
 
-// IsLoggingInitialized answers for the process, not for this Runtime: a caller that has not
-// run InitLogging yet still reads a usable logger. Both sides are checked because a predicate
-// that only ever says true is indistinguishable from one that never reads the logger at all.
-TEST_CASE("IsLoggingInitialized follows the default logger", "[logging]") {
-  auto saved = spdlog::default_logger();
-  auto& registry = spdlog::details::registry::instance();
-
-  registry.set_default_logger(nullptr);
-  INFO("no logger installed yet");
-  REQUIRE_FALSE(IsLoggingInitialized());
-
+// The bug this guards: `IsLoggingInitialized` used to read `spdlog::default_logger_raw()`, and
+// spdlog installs a logger before `main` runs. The predicate therefore answered yes in a process
+// that had never configured a destination, `Runtime::Initialize` skipped `InitLogging` on that
+// answer, and a run left no `pu.log` behind while every call appeared to be logging.
+//
+// Only one direction is asserted: once anything in this process has initialised, the answer must
+// be true -- including after the registry's own logger is replaced, which is what the pointer
+// could not tell apart from a configured one.
+TEST_CASE("IsLoggingInitialized reports a destination this process installed",
+          "[logging][process-state]") {
   InitLogging("info");
-  INFO("InitLogging installed one");
   REQUIRE(IsLoggingInitialized());
 
+  auto saved = spdlog::default_logger();
+  auto& registry = spdlog::details::registry::instance();
+  const ScopedTempDir scratch("pu_log_init_test_");
+  {
+    ScopedEnvVar home("PU_HOME", scratch.Path().string());
+    registry.set_default_logger(nullptr);
+    INFO("swapping the registry's logger does not un-initialise this process");
+    REQUIRE(IsLoggingInitialized());
+  }
   registry.set_default_logger(saved);
 }

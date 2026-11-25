@@ -36,6 +36,15 @@ struct RouterFixture {
     router = std::make_unique<CommandRouter>(runtime);
   }
 
+  // Initializing the runtime also starts the log file inside this fixture's directory, and the
+  // async writer keeps its own schedule. `ScopedTempDir` removes the directory on the way out;
+  // a writer that flushed afterwards would put `.pu/logs/pu.log` back into it, leaving one
+  // directory behind per run. Stopping the runtime first closes the file.
+  ~RouterFixture() {
+    if (router) router.reset();
+    runtime.Shutdown();
+  }
+
   CommandReply Route(const std::string& input) {
     return router->Route(input, *runtime.DefaultSession());
   }
@@ -43,22 +52,12 @@ struct RouterFixture {
  private:
   void WriteAgentsFile() const {
     boost::json::value cfg = {
-        {"default_agent", "chat"},
-        {"agents",
-         boost::json::array{
-             boost::json::value{{"name", "chat"},
-                                {"description", "Default agent"},
-                                {"backend",
-                                 {{"gateway", "ollama"},
-                                  {"host", "http://127.0.0.1:11434"},
-                                  {"model", "chat-model"}}}},
-             boost::json::value{{"name", "coder"},
-                                {"description", "Coding agent"},
-                                {"backend",
-                                 {{"gateway", "ollama"},
-                                  {"host", "http://127.0.0.1:11434"},
-                                  {"model", "coder-model"}}}},
-         }},
+        {"name", "chat"},
+        {"description", "Default agent"},
+        {"backend",
+         {{"gateway", "ollama"},
+          {"host", "http://127.0.0.1:11434"},
+          {"model", "chat-model"}}},
     };
     std::ofstream out(root.Path() / ".pu" / "agents.json", std::ios::trunc);
     out << boost::json::serialize(cfg);
@@ -88,7 +87,6 @@ TEST_CASE("CommandRouter dispatches registered commands through the registry", "
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find("chat") != std::string::npos);
-  REQUIRE(output.find("coder") != std::string::npos);
 }
 
 TEST_CASE("CommandRouter routes through the instance that was built last", "[router]") {
@@ -155,7 +153,7 @@ TEST_CASE("CommandRouter gives /backend the host its type implies", "[router]") 
   CommandReply reply;
   std::string output;
 
-  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  reply = f.Route("/backend tencent deepseek-v4-flash");
   REQUIRE(reply.ok);
   output = reply.text;
   REQUIRE(output.find(model::DefaultHostFor(model::GatewayId::kCodeBuddy)) != std::string::npos);
@@ -212,76 +210,53 @@ TEST_CASE("CommandRouter reports one current state for /backend and /agents", "[
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("chat (active)") != std::string::npos);
+  REQUIRE(output.find("chat") != std::string::npos);
+  REQUIRE(output.find("chat-model") != std::string::npos);
 
-  reply = f.Route("/backend codebuddy deepseek-v4-flash");
+  reply = f.Route("/backend tencent deepseek-v4-flash");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy") != std::string::npos);
+  REQUIRE(output.find("tencent") != std::string::npos);
 
+  // One agent has one backend: a backend switch changes the gateway under the same agent, so
+  // the agent keeps its name and stays the active one.
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy (active)") != std::string::npos);
+  REQUIRE(output.find("chat") != std::string::npos);
+  REQUIRE(output.find("tencent") != std::string::npos);
+  REQUIRE(output.find("deepseek-v4-flash") != std::string::npos);
+
+  reply = f.Route("/backend");
+  REQUIRE(reply.ok);
+  const std::string current = reply.text;
+  REQUIRE(current.find("tencent") != std::string::npos);
+  REQUIRE(current.find("deepseek-v4-flash") != std::string::npos);
+}
+
+TEST_CASE("A backend switch keeps the agent and its name", "[router]") {
+  RouterFixture f;
+  CommandReply reply;
+  std::string output;
+
+  // One agent has one backend, so switching the backend replaces it in place: no second agent
+  // appears under the backend's name, and the list of agents does not change.
+  reply = f.Route("/backend ollama llama3");
+  REQUIRE(reply.ok);
+  output = reply.text;
+  REQUIRE(output.find("Switched backend to") != std::string::npos);
 
   reply = f.Route("/backend");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("codebuddy") != std::string::npos);
-
-  reply = f.Route("/backend coder");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched to agent: coder") != std::string::npos);
-
-  reply = f.Route("/agents");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("coder (active)") != std::string::npos);
-  REQUIRE(output.find("chat (active)") == std::string::npos);
-}
-
-TEST_CASE("CommandRouter names an adopted agent after switching to it", "[router]") {
-  RouterFixture f;
-  CommandReply reply;
-  std::string output;
-
-  // Adopting a backend puts a transient entry in the manager; switching to that entry
-  // by name walks the same path a configured agent does.
-  reply = f.Route("/backend ollama llama3");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched backend to") != std::string::npos);
-
-  reply = f.Route("/backend ollama");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched to agent: ollama") != std::string::npos);
+  REQUIRE(output.find("ollama") != std::string::npos);
   REQUIRE(output.find("llama3") != std::string::npos);
 
+  // One agent has one backend: the switch changes the gateway under the same agent, so the
+  // name `chat` is still the one reported, with ollama as the gateway that answers it.
   reply = f.Route("/agents");
   REQUIRE(reply.ok);
   output = reply.text;
-  REQUIRE(output.find("ollama (active)") != std::string::npos);
-}
-
-TEST_CASE("Switching to a backend leaves a same-named configured agent alone", "[router]") {
-  RouterFixture f;
-  CommandReply reply;
-  std::string output;
-
-  reply = f.Route("/backend ollama llama3");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched backend to") != std::string::npos);
-
-  const auto* chat = f.runtime.Agents().AgentConfig("chat");
-  REQUIRE(chat != nullptr);
-  REQUIRE(chat->backend.model == "chat-model");
-
-  reply = f.Route("/backend chat");
-  REQUIRE(reply.ok);
-  output = reply.text;
-  REQUIRE(output.find("Switched to agent: chat") != std::string::npos);
-  REQUIRE(output.find("chat-model") != std::string::npos);
+  REQUIRE(output.find("chat") != std::string::npos);
+  REQUIRE(output.find("ollama") != std::string::npos);
 }

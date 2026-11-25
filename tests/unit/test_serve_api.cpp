@@ -3,6 +3,7 @@
 
 #include "serve/serve_internal.hpp"
 #include "pu/app/cli.hpp"
+#include "pu/model/gateway.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
@@ -37,6 +38,29 @@ boost::json::value HistoryOf(TestHttpClient& client) {
   return ParseJson(client.Get("/api/history")).at("messages");
 }
 
+// A directory this case creates beside the executable and removes on the way out, including when
+// an assertion fails first. Without the destructor a failing run leaves `web/` behind and the
+// next run fails for a reason that belongs to this one.
+class BesideTheExecutable {
+ public:
+  explicit BesideTheExecutable(const fs::path& dir) : dir_(dir) {
+    std::error_code ec;
+    fs::create_directories(dir_, ec);
+    failed_ = static_cast<bool>(ec);
+  }
+  ~BesideTheExecutable() {
+    std::error_code ec;
+    fs::remove_all(dir_, ec);
+  }
+  BesideTheExecutable(const BesideTheExecutable&) = delete;
+  BesideTheExecutable& operator=(const BesideTheExecutable&) = delete;
+  bool failed() const { return failed_; }
+
+ private:
+  fs::path dir_;
+  bool failed_ = false;
+};
+
 }  // namespace
 
 TEST_CASE("serve API /api/session", "[serve][api]") {
@@ -67,13 +91,13 @@ TEST_CASE("serve API /api/session says how much context the model holds", "[serv
 }
 
 TEST_CASE("serve API /api/session names the backend it is talking to", "[serve][api]") {
-  ServeHarness harness("codebuddy");
+  ServeHarness harness("tencent");
   auto client = harness.Client();
 
   auto j = ParseJson(client.Get("/api/session"));
 
   REQUIRE(j.at("success") == true);
-  REQUIRE(j.at("gateway") == "codebuddy");
+  REQUIRE(j.at("gateway") == "tencent");
   REQUIRE(j.at("backend_model") == "test-model");
 }
 
@@ -253,17 +277,308 @@ TEST_CASE("serve API /api/history replays a page as a page", "[serve][api]") {
   REQUIRE(turn.at("page").at("stored").at("dropped").as_int64() == 3420);
 }
 
-TEST_CASE("serve API /api/agents", "[serve][api]") {
+TEST_CASE("serve API /api/backend says what is in force", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  std::string body = client.Get("/api/agents");
-  auto j = ParseJson(body);
+  const auto j = ParseJson(client.Get("/api/backend")).at("backend");
 
-  REQUIRE(j.at("agents").is_array());
-  auto& agents = j.at("agents").as_array();
-  REQUIRE(agents.size() == 1);
-  REQUIRE(agents[0].at("name") == "chat");
+  // The backend in force, from the agent file. The harness writes an ollama gateway by default;
+  // the model is the one it wrote.
+  REQUIRE(j.at("gateway") == "ollama");
+  REQUIRE(j.at("model") == "test-model");
+  // What it could be instead is not carried here: the gateways are the build's own table and the
+  // models belong to one gateway, each asked at its own address.
+  const auto& obj = j.as_object();
+  REQUIRE(!obj.contains("gateways"));
+  REQUIRE(!obj.contains("models"));
+  REQUIRE(!obj.contains("model_error"));
+  // The level travels with the backend the way the sampling settings do, named the way the page's
+  // menu names it: a model that stated no level answers `auto`, not `default`, because that is the
+  // word its form offers and the word a write accepts.
+  CHECK(obj.at("thinking") == "auto");
+}
+
+// gateway that answers perfectly well.
+TEST_CASE("serve API /api/models asks the configured address, not the gateway default", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/models?gateway=ollama"));
+
+  // The harness wrote `ollama` with the fake backend's port as its address, while the gateway's
+  // own row names 11434, where nothing is listening here.
+  REQUIRE(j.at("error") == "");
+  const auto& models = j.at("models");
+  REQUIRE(models.as_array().size() == 2);
+  REQUIRE(models.as_array()[0] == "test-model");
+  REQUIRE(models.as_array()[1] == "second-model");
+}
+
+// The backend is written back to the agent file, and the address goes with the gateway and the
+// model: a reader pointing a local gateway at a port the table has never heard of has to be able
+// to put that address somewhere that survives the process.
+namespace {
+// What the agent file says about its backend, read from disk rather than from a reply: the
+// question is whether the write landed, and the server's own answer cannot settle that.
+boost::json::value BackendInFile(const fs::path& home) {
+  std::ifstream file(home / ".pu" / "agents.json", std::ios::binary);
+  REQUIRE(file.is_open());
+  const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  INFO(text);
+  // Parsed into a named value before it is looked into: `at` on a temporary would hand back a
+  // reference into a document that dies at the end of the statement.
+  const boost::json::value document = boost::json::parse(text);
+  const boost::json::object& root = document.as_object();
+  REQUIRE(root.contains("backend"));
+  return root.at("backend");
+}
+
+}  // namespace
+
+TEST_CASE("serve API /api/backend writes a thinking level into the agent file", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  for (const auto& [sent, expected] : std::vector<std::pair<std::string, std::string>>{
+           {"none", "none"}, {"low", "low"}, {"medium", "medium"}, {"high", "high"}}) {
+    const auto res = client.PostFull("/api/backend",
+                                     boost::json::object{{"gateway", "ollama"},
+                                                         {"model", "test-model"},
+                                                         {"thinking", sent}});
+    REQUIRE(res.status == 200);
+    // The file is what outlives the process, so it is what the level has to reach: the reply and
+    // the file agree, and a level this build does not know is refused rather than written.
+    const boost::json::value written = BackendInFile(harness.Home());
+    REQUIRE(written.is_object());
+    CHECK(boost::json::value_to<std::string>(written.at("thinking")) == expected);
+    // The reply is read through a named value too: `as_object()` on a returned temporary would
+    // leave the reference it hands back pointing at a document that dies at the end of the
+    // statement.
+    const boost::json::value echoed = ParseJson(res.body);
+    CHECK(boost::json::value_to<std::string>(echoed.at("backend").at("thinking")) == expected);
+  }
+}
+
+TEST_CASE("serve API /api/backend writes auto as the word the loader reads", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  REQUIRE(client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                             {"model", "test-model"},
+                                                             {"thinking", "high"}})
+              .status == 200);
+  // `auto` is the absence of a level, and the file spells that absence `default`: the type cannot
+  // hold a hole, so writing the word is what keeps "the gateway decides" a state the loader can
+  // read back rather than a key it silently ignores.
+  const auto res = client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                                       {"model", "test-model"},
+                                                                       {"thinking", "auto"}});
+  REQUIRE(res.status == 200);
+  const boost::json::value written = BackendInFile(harness.Home());
+  REQUIRE(written.is_object());
+  CHECK(boost::json::value_to<std::string>(written.at("thinking")) == "default");
+  CHECK(boost::json::value_to<std::string>(
+      ParseJson(res.body).at("backend").at("thinking")) == "auto");
+}
+
+TEST_CASE("serve API /api/backend refuses a thinking level it does not know", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  // The harness's own agent file need not name a level, so the "before" is read the way the
+  // loader reads it: an absent key is `default`, not an error.
+  const boost::json::value before_file = BackendInFile(harness.Home());
+  REQUIRE(before_file.is_object());
+  const std::string before =
+      before_file.as_object().contains("thinking")
+          ? boost::json::value_to<std::string>(before_file.at("thinking"))
+          : std::string("default");
+
+  const auto res = client.PostFull("/api/backend", boost::json::object{{"gateway", "ollama"},
+                                                                       {"model", "test-model"},
+                                                                       {"thinking", "loud"}});
+  CHECK(res.status != 200);
+  // A refused write changes nothing: the file still holds the level that was there.
+  const boost::json::value after = BackendInFile(harness.Home());
+  REQUIRE(after.is_object());
+  const std::string now = after.as_object().contains("thinking")
+                              ? boost::json::value_to<std::string>(after.at("thinking"))
+                              : std::string("default");
+  CHECK(now == before);
+}
+
+// `/api/models` asks the gateway the request names, and it must ask it at the address the agent
+// file gives rather than at the one the build's gateway row names: a reader who pointed their
+// gateway somewhere else would otherwise get an empty list after a connect timeout, for a
+TEST_CASE("serve API /api/backend writes a typed host into the agent file", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto res = client.PostFull("/api/backend",
+                                   boost::json::object{{"gateway", "ollama"},
+                                                       {"model", "test-model"},
+                                                       {"host", "http://10.0.0.7:11434"}});
+  REQUIRE(res.status == 200);
+
+  const boost::json::value& backend = BackendInFile(harness.Home());
+  REQUIRE(backend.is_object());
+  CHECK(boost::json::value_to<std::string>(backend.at("host")) == "http://10.0.0.7:11434");
+  CHECK(boost::json::value_to<std::string>(backend.at("model")) == "test-model");
+  // The reply is the same shape a read answers in, so the page draws what it just wrote.
+  CHECK(boost::json::value_to<std::string>(ParseJson(res.body).at("backend").at("host")) ==
+        "http://10.0.0.7:11434");
+}
+
+TEST_CASE("serve API /api/backend writes a placeholder host as spelled", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  // `${VAR}` is how a file names an environment rather than an address, so it is neither expanded
+  // here nor refused by the scheme check: the next load is where it becomes a destination.
+  const auto res = client.PostFull("/api/backend",
+                                   boost::json::object{{"gateway", "openai"},
+                                                       {"model", "test-model"},
+                                                       {"host", "${OPENAI_BASE_URL}"}});
+  REQUIRE(res.status == 200);
+  // Read through a named value: `as_object()` on a returned temporary would leave the reference
+  // it hands back pointing at a document that dies at the end of the statement.
+  const boost::json::value written = BackendInFile(harness.Home());
+  REQUIRE(written.is_object());
+  CHECK(boost::json::value_to<std::string>(written.at("host")) == "${OPENAI_BASE_URL}");
+}
+
+TEST_CASE("serve API /api/backend emptied host returns the gateway's default", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  // A reader who clears the field is asking for the address the gateway comes with, not for an
+  // empty string: the reply and the file both name the default, so the page can leave the field
+  // showing what the gateway will actually use.
+  const auto res = client.PostFull("/api/backend",
+                                   boost::json::object{{"gateway", "ollama"},
+                                                       {"model", "test-model"}, {"host", ""}});
+  REQUIRE(res.status == 200);
+  const boost::json::value& backend = BackendInFile(harness.Home());
+  REQUIRE(backend.is_object());
+  CHECK(boost::json::value_to<std::string>(backend.at("host")) ==
+        pu::model::DefaultHostFor(pu::model::GatewayId::kOllama));
+  CHECK(boost::json::value_to<std::string>(ParseJson(res.body).at("backend").at("host")) ==
+        pu::model::DefaultHostFor(pu::model::GatewayId::kOllama));
+}
+
+TEST_CASE("serve API /api/backend refuses a host that is not a destination", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  const std::string written =
+      boost::json::value_to<std::string>(BackendInFile(harness.Home()).as_object().at("host"));
+
+  // No scheme: the address the page would build from it has none either, and the turn it broke
+  // would fail a long way from the field that was typed in.
+  const auto bare = client.PostFull("/api/backend",
+                                    boost::json::object{{"gateway", "ollama"},
+                                                        {"model", "test-model"},
+                                                        {"host", "127.0.0.1:11434"}});
+  CHECK(bare.status == 400);
+  CHECK(ParseJson(bare.body).at("error") == "'host' must start with http:// or https://");
+
+  const auto spaced = client.PostFull("/api/backend",
+                                      boost::json::object{{"gateway", "ollama"},
+                                                          {"model", "test-model"},
+                                                          {"host", "http://1.2.3.4 :80"}});
+  CHECK(spaced.status == 400);
+
+  // Neither refusal wrote anything: the file still holds the address the harness gave it.
+  CHECK(boost::json::value_to<std::string>(
+            BackendInFile(harness.Home()).as_object().at("host")) == written);
+}
+
+TEST_CASE("serve API /api/backend keeps no address across a gateway change", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  REQUIRE(client.PostFull("/api/backend",
+                          boost::json::object{{"gateway", "ollama"}, {"model", "test-model"},
+                                              {"host", "http://10.0.0.7:11434"}}).status == 200);
+
+  // One gateway's address means nothing to the next: a menu that swapped the scheme and kept the
+  // port would point openai at ollama's server.
+  const auto res = client.PostFull("/api/backend",
+                                   boost::json::object{{"gateway", "openai"},
+                                                       {"model", "test-model"}});
+  REQUIRE(res.status == 200);
+  const boost::json::value& backend = BackendInFile(harness.Home());
+  REQUIRE(backend.is_object());
+  CHECK(boost::json::value_to<std::string>(backend.at("gateway")) == "openai");
+  CHECK(boost::json::value_to<std::string>(backend.at("host")) != "http://10.0.0.7:11434");
+  CHECK(boost::json::value_to<std::string>(ParseJson(res.body).at("backend").at("host")) ==
+        pu::model::DefaultHostFor(pu::model::GatewayId::kOpenAI));
+}
+
+TEST_CASE("serve API /api/gateways lists every gateway this build carries", "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/gateways"));
+  const auto& gateways = j.at("gateways").as_array();
+  // The table itself, in its order: a build that lost one of these could not be told to use it.
+  REQUIRE(gateways.size() >= 7);
+  const std::vector<std::string> wanted = {"ollama", "ollama-cloud", "openai", "deepseek",
+                                           "nvidia", "tencent", "anthropic"};
+  for (const std::string& name : wanted) {
+    bool saw = false;
+    for (const auto& gateway : gateways) {
+      if (gateway.as_string() == name) saw = true;
+    }
+    REQUIRE(saw);
+  }
+}
+
+TEST_CASE("serve API /api/gateways says what each gateway's address is",
+          "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+
+  const auto j = ParseJson(client.Get("/api/gateways"));
+  REQUIRE(j.at("success") == true);
+  const auto& gateways = j.at("gateways").as_array();
+  const auto& hosts = j.at("hosts").as_object();
+  // Every name in the list answers with an address, and it is the one the table would dial if the
+  // file named none. The page puts this in the address box when the reader switches gateway, so a
+  // missing or empty entry is a box left holding the address of the gateway they just left -- an
+  // address for another vendor's endpoint, which the next Save would post to.
+  CHECK(hosts.size() == gateways.size());
+  for (const auto& gateway : gateways) {
+    const std::string name = boost::json::value_to<std::string>(gateway);
+    REQUIRE(hosts.contains(name));
+    const std::string host = boost::json::value_to<std::string>(hosts.at(name));
+    CHECK(!host.empty());
+  }
+  // One known answer, so the map is the table's and not a set of identical strings: `openai` is
+  // the gateway the harness starts on, and its default is the one the routing layer would use.
+  CHECK(boost::json::value_to<std::string>(hosts.at("openai")) ==
+        pu::model::DefaultHostFor(pu::model::GatewayId::kOpenAI));
+}
+
+TEST_CASE("serve API /api/backend names the gateways when it refuses a name that is none",
+          "[serve][api]") {
+  ServeHarness harness;
+  auto client = harness.Client();
+  const std::string written =
+      boost::json::value_to<std::string>(BackendInFile(harness.Home()).as_object().at("host"));
+
+  // The page lets a gateway be typed rather than picked, so the refusal is the only place a reader
+  // is told what the list held. A bare "Unknown gateway: gpt" would leave them guessing at the
+  // spelling of a name the menu cannot offer while they are typing in a box.
+  const auto res = client.PostFull(
+      "/api/backend", boost::json::object{{"gateway", "gpt"}, {"model", "test-model"}});
+  REQUIRE(res.status == 400);
+  const std::string error = boost::json::value_to<std::string>(ParseJson(res.body).at("error"));
+  CHECK(error.find("Unknown gateway: gpt") != std::string::npos);
+  for (const std::string& name : {"ollama", "openai", "deepseek", "anthropic"}) {
+    CHECK(error.find(name) != std::string::npos);
+  }
+  // A refusal wrote nothing: the file still holds what the harness gave it.
+  CHECK(boost::json::value_to<std::string>(
+            BackendInFile(harness.Home()).as_object().at("host")) == written);
 }
 
 TEST_CASE("serve API /api/settings names every setting and where it came from",
@@ -425,24 +740,12 @@ TEST_CASE("serve API invalid JSON returns 400", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
-  auto res = client.PostRaw("/api/agent/switch", "not json");
+  auto res = client.PostRaw("/api/settings", "not json");
 
   REQUIRE(res.status == 400);
   auto j = ParseJson(res.body);
   REQUIRE(j.at("success") == false);
   REQUIRE(j.at("error") == "Invalid JSON");
-}
-
-TEST_CASE("serve API switching to an agent that does not exist returns 404", "[serve][api]") {
-  ServeHarness harness;
-  auto client = harness.Client();
-
-  auto res = client.PostFull("/api/agent/switch", boost::json::object{{"agent_name", "ghost"}});
-
-  REQUIRE(res.status == 404);
-  auto j = ParseJson(res.body);
-  REQUIRE(j.at("success") == false);
-  REQUIRE(j.at("error") == "Agent not found: ghost");
 }
 
 TEST_CASE("serve API /api/rewind steps the session back", "[serve][api]") {
@@ -634,10 +937,13 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
 
   const fs::path web = exe_dir / "web";
   std::error_code ec;
-  const bool preexisting = fs::exists(web, ec);
-  REQUIRE_FALSE(preexisting);
-  fs::create_directories(web, ec);
-  REQUIRE_FALSE(ec);
+  // The directory is the fixture: whatever an interrupted earlier run left here is removed
+  // first, so this case cannot fail for a reason that belongs to a previous one. `web` is
+  // beside the executable rather than in the build tree, so a failure needs no cleanup of its
+  // own to leave the checkout as it found it.
+  fs::remove_all(web, ec);
+  BesideTheExecutable beside(web);
+  REQUIRE_FALSE(beside.failed());
 
   {
     std::ofstream file(web / "index.html", std::ios::binary | std::ios::trunc);
@@ -654,6 +960,4 @@ TEST_CASE("serve page files are found beside the executable", "[serve][page]") {
   const HttpResponse root = client.GetRaw("/");
   CHECK(root.status == 200);
   CHECK(root.body == "<!doctype html>beside the executable");
-
-  fs::remove_all(web, ec);
 }

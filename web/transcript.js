@@ -38,16 +38,6 @@ function removeCurrentAssistantMessage() {
   PU.currentAssistantBlocks = [];
 }
 
-// A block list is a timeline, so an increment joins the block it follows only when that
-// block is the same kind. Anything else starts a new block at the end: reasoning that
-// arrives after a tool call belongs after it, not folded into the reasoning above.
-function blockAtEnd(type, make) {
-  const blocks = PU.currentAssistantBlocks;
-  const last = blocks[blocks.length - 1];
-  if (last && last.type === type) return last;
-  return pushBlock(make());
-}
-
 function pushBlock(block) {
   PU.currentAssistantBlocks.push(block);
   updateCurrentAssistantBlocks();
@@ -162,7 +152,8 @@ function handleToolEnd(payload) {
 }
 
 function handleChunk(payload) {
-  const block = blockAtEnd(BLOCK_TYPES.TEXT, () => ({ type: BLOCK_TYPES.TEXT, content: "" }));
+  const block = blockAtEnd(
+      PU.currentAssistantBlocks, BLOCK_TYPES.TEXT, () => ({ type: BLOCK_TYPES.TEXT, content: "" }));
   block.content += payload.text || "";
   updateCurrentAssistantBlocks();
 }
@@ -171,6 +162,7 @@ function handleThinking(payload) {
   const text = payload.text || "";
   if (!text) return;
   const block = blockAtEnd(
+      PU.currentAssistantBlocks,
       BLOCK_TYPES.THINKING,
       () => ({ type: BLOCK_TYPES.THINKING, content: "", collapsed: true }));
   block.content += text;

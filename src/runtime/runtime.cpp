@@ -12,6 +12,7 @@
 #include <boost/json.hpp>
 #include <spdlog/spdlog.h>
 #include "pu/core/json.hpp"
+#include "pu/core/workspace_path.hpp"
 
 #include "pu/config/agents.hpp"
 #include "pu/tools/ask_dir_tool.hpp"
@@ -27,13 +28,6 @@
 
 namespace pu {
 namespace {
-
-std::filesystem::path ResolveWorkspacePath(const std::filesystem::path& root,
-                                           const std::string& configured_path) {
-  const auto path =
-      configured_path.empty() ? std::filesystem::path(".") : std::filesystem::path(configured_path);
-  return path.is_absolute() ? path : root / path;
-}
 
 // A session this build cannot read is moved aside rather than left to be overwritten by
 // the first save of the fresh conversation that replaces it. The backup is one file, so a
@@ -109,6 +103,12 @@ void Runtime::Initialize(const std::string& config_path) {
 
   if (workspace_root_.empty()) workspace_root_ = std::filesystem::current_path();
 
+  // Before the logger is built: `LogDir` and `FindConfigPath` read their relative paths
+  // against this, and a run started with `-C` has to write its log and find its table under
+  // the directory it named. Setting it after `InitLogging` would put this run's log in
+  // whichever directory the shell was in.
+  pu::SetWorkspaceRoot(workspace_root_);
+
   // A Runtime is constructed in place for a delegated turn, so this runs more than once per
   // process. The first caller sets the destination and the level; a child cannot lower the
   // parent's verbosity or reopen the log file under it.
@@ -135,25 +135,18 @@ void Runtime::Initialize(const std::string& config_path) {
 
   config_path_ = cfg_path;
 
-  auto agents_cfg = config::LoadAgentsConfig(cfg_path);
+  auto agents_cfg = config::LoadAgentConfig(cfg_path);
 
   const std::string active_agent =
-      default_agent_override_.empty() ? agents_cfg.default_agent : default_agent_override_;
-  const auto default_entry = std::ranges::find_if(
-      agents_cfg.agents,
-      [&](const config::AgentEntry& entry) { return entry.name == active_agent; });
-  if (default_entry == agents_cfg.agents.end()) {
-    const std::string known = text::Join(
-        std::views::transform(agents_cfg.agents,
-                              [](const config::AgentEntry& entry) { return entry.name; }),
-        " ");
+      default_agent_override_.empty() ? agents_cfg.name : default_agent_override_;
+  if (active_agent != agents_cfg.name) {
     throw GenericError("Requested agent is not configured: " + active_agent +
-                       (known.empty() ? " (no agents are configured)" : "; configured: " + known));
+                       "; configured: " + agents_cfg.name);
   }
 
   agent_manager_ = std::make_unique<AgentManager>();
   agent_manager_->SetActiveAgent(active_agent);
-  agent_manager_->LoadAgentConfigs(agents_cfg.agents);
+  agent_manager_->LoadAgentConfigs({agents_cfg});
 
   command_router_ = std::make_unique<CommandRouter>(*this);
 
@@ -165,7 +158,7 @@ void Runtime::Initialize(const std::string& config_path) {
   executor_->SetStopCheck([this] { return StopRequested(); });
   http_client_ = std::make_shared<pu::http::BeastHttpClient>();
 
-  RebuildToolbox(*default_entry);
+  RebuildToolbox(agents_cfg);
 
   // An ephemeral runtime wakes up with no past: a stored conversation belongs to the world
   // that asked for it, and this one was asked to answer a question, not to continue one.
@@ -204,6 +197,10 @@ void Runtime::Shutdown() {
   // Async logging only writes on its own schedule, so a process that ends abruptly would leave
   // the last lines, which are the ones that explain the ending, unwritten.
   FlushLogging();
+  // The root was this run's, and the run is over: a second Runtime in the same process gets to
+  // say where its own is. Leaving it set pointed every later reader of `LogDir` and
+  // `FindConfigPath` at this run's directory, which by then may not exist.
+  pu::SetWorkspaceRoot({});
 }
 
 void Runtime::SaveCurrentSession() {
@@ -432,9 +429,8 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     result.error =
         "'" + target.string() +
         "' configures no agent: it has no .pu/agents.json. Write one with write_file, in the "
-        "shape of this workspace's own .pu/agents.json ({\"default_agent\": \"<name>\", "
-        "\"agents\": [{\"name\": \"<name>\", \"backend\": {\"gateway\": ..., \"model\": ...}}]}), "
-        "then ask again.";
+        "shape of this workspace's own .pu/agents.json ({\"name\": \"<name>\", "
+        "\"backend\": {\"gateway\": ..., \"model\": ...}}), then ask again.";
     return result;
   }
 
@@ -635,13 +631,52 @@ void Runtime::SwitchAgent(const config::AgentEntry& new_agent) {
 }
 
 void Runtime::SwitchBackend(const model::Backend& backend) {
-  config::AgentEntry transient = ActiveAgent();
-  transient.name = model::GatewayName(backend.gateway);
-  transient.backend = backend;
-  transient.description.clear();
+  // One agent has one backend: a switch replaces it in place, so the name and the tooling the
+  // agent was configured with stay as they are and no second agent appears. The entry is also
+  // written back into the index, because every read of the backend (CurrentBackend, the toolbox,
+  // a new session) goes through that index rather than through a copy held elsewhere.
+  config::AgentEntry switched = ActiveAgent();
+  switched.backend = backend;
+  std::vector<config::AgentEntry> entries;
+  for (const auto& name : agent_manager_->AgentNames()) {
+    const auto* entry = agent_manager_->AgentConfig(name);
+    entries.push_back(entry->name == switched.name ? switched : *entry);
+  }
+  agent_manager_->LoadAgentConfigs(entries);
 
-  agent_manager_->Adopt(transient);
-  Activate(transient);
+  // The index is what `ConfiguredBackend` reads through `spec.agent_name`, so the new entry is
+  // already reachable and no re-activation is needed to make it so. Calling `Activate` here would
+  // rebuild the toolbox on every address edit -- reconnecting every MCP server and re-registering
+  // every builtin -- for a change that touches one string, and it would do it before a session
+  // exists, where the toolbox has nothing to rebuild from.
+
+  // The file follows, so the choice outlives the process: a session remembers which agent is
+  // speaking, and the file remembers what it speaks through. A file that cannot be written
+  // leaves the switch in memory only for this run, and says so rather than pretending.
+  //
+  // The host goes with them. A value spelled `${VAR}` is written back as spelled, and `""` is
+  // written as the absence of the key, so emptying the field in the page restores the gateway's
+  // own default rather than pinning an address that resolves to nothing.
+  try {
+    // The level is spelled the way the file spells it: `default` is what the loader reads back as
+    // "no level", so writing the enum's own name here would leave a word the loader does not know.
+    const std::string thinking = backend.thinking == ThinkingLevel::kServerDefault
+                                     ? std::string("default")
+                                     : ThinkingLevelName(backend.thinking);
+    config::UpdateAgentBackend(config_path_, config::BackendUpdate{
+                                                 .gateway = model::GatewayName(backend.gateway),
+                                                 .model = backend.model,
+                                                 .host = backend.host,
+                                                 .temperature = backend.temperature,
+                                                 .max_tokens = backend.max_tokens,
+                                                 .top_p = backend.top_p,
+                                                 .seed = backend.seed,
+                                                 .context_window = backend.context_window,
+                                                 .thinking = thinking,
+                                             });
+  } catch (const std::exception& e) {
+    spdlog::error("Backend switched for this run only: {}", e.what());
+  }
 }
 
 }  // namespace pu

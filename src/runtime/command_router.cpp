@@ -16,8 +16,8 @@ namespace pu {
 namespace {
 
 constexpr const char* kBackendHelp =
-    "  /backend <agent_name>  Switch to a predefined agent\n"
-    "  /backend <type> <model> [host]  Adopt a backend as an agent of its type\n";
+    "  /backend              Report the current agent's backend\n"
+    "  /backend <type> <model> [host]  Rebuild this agent's backend\n";
 
 // What a failed command says in the transcript. Written once so the prefix is one fact: a
 // prefix that changed in three of four places would read as two different failures.
@@ -64,7 +64,7 @@ CommandRouter::CommandRouter(Runtime& runtime) : runtime_(runtime) {
       {"/backend",
        {kBackendHelp, [this](Args args, Session&) { return HandleBackend(args); }}},
       {"/agents",
-       {"  /agents                List available agents\n",
+       {"  /agents                Show the configured agent\n",
         [this](Args args, Session& session) { return HandleAgents(args, session); }}},
       {"/models",
        {"  /models                List the models the active agent's backend reports\n"
@@ -196,12 +196,10 @@ CommandReply CommandRouter::ReportModels(const model::Backend& cfg) {
   }
 }
 
-CommandReply CommandRouter::HandleAgents(Args, Session& session) {
-  // The same table `pu agents` prints: the chat is not a second place to learn who is
-  // configured, and two renderings of one list drift.
-  return Replied(
-      app::FormatAgentTable(
-          app::SummarizeAgents(runtime_.Agents(), session.Spec().agent_name)));
+CommandReply CommandRouter::HandleAgents(Args, Session&) {
+  // The same answer `pu agents` prints: the chat is not a second place to learn who is
+  // configured, and two renderings of one fact drift.
+  return Replied(app::FormatAgent(app::SummarizeAgent(runtime_.Agents())));
 }
 
 CommandReply CommandRouter::HandleRewind(Args args, Session& session) {

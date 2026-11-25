@@ -379,13 +379,7 @@ std::string TombstonedReceipt(std::string_view receipt) {
   // Which run it was, and how much of it there was. `id` and `source` are the pair that keeps
   // this result attributable across turns; the counts say how much is not being shown.
   if (const auto buffer = held.find("buffer"); buffer != held.end() && buffer->value().is_object()) {
-    const boost::json::object& fields = buffer->value().as_object();
-    boost::json::object kept;
-    for (const std::string_view key : {"id", "source"}) {
-      const auto found = fields.find(key);
-      if (found != fields.end()) kept[key] = found->value();
-    }
-    tombstone["buffer"] = std::move(kept);
+    tombstone["buffer"] = json::Keep(buffer->value().as_object(), {"id", "source"});
   }
   // How much came out. `stored` is the current name; a receipt written by a build that sent
   // `extent` still carries that, so both are lifted and either one survives.
@@ -398,12 +392,8 @@ std::string TombstonedReceipt(std::string_view receipt) {
   // function does not compress. A paged result keeps it under `verdict`; a raw
   // `execute_bash` result keeps it at the top, so both are lifted and whichever exists wins.
   if (const auto verdict = held.find("verdict"); verdict != held.end() && verdict->value().is_object()) {
-    const boost::json::object& fields = verdict->value().as_object();
-    boost::json::object kept;
-    for (const std::string_view key : {"command", "cwd", "exit_code", "ok", "error", "stopped"}) {
-      const auto found = fields.find(key);
-      if (found != fields.end()) kept[key] = found->value();
-    }
+    boost::json::object kept =
+        json::Keep(verdict->value().as_object(), {"command", "cwd", "exit_code", "ok", "error", "stopped"});
     if (!kept.empty()) tombstone["verdict"] = std::move(kept);
   }
   lift("command");

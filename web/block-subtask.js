@@ -6,13 +6,6 @@
 
 "use strict";
 
-const SUBTASK_PROMPT_MAX = 60;
-
-function subtaskOneLine(text) {
-  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
-  return flat.length > SUBTASK_PROMPT_MAX ? flat.slice(0, SUBTASK_PROMPT_MAX) + "…" : flat;
-}
-
 // The `ask_dir` arguments, named the way the tool names them. One field names who answers —
 // an agent in this table, or a directory that is a world of its own — and `prompt` is the
 // whole question, so the question is never the thing that is missing. A record written before
@@ -34,18 +27,6 @@ function subtaskFields(args) {
     prompt = strings.sort((a, b) => b.length - a.length)[0] || "";
   }
   return { who: ask, agent, dir, prompt };
-}
-
-function labelledBlock(wrapperClass, label, text, preClass) {
-  const wrapper = document.createElement("div");
-  wrapper.className = wrapperClass;
-  const strong = document.createElement("strong");
-  strong.textContent = label;
-  const pre = document.createElement("pre");
-  if (preClass) pre.className = preClass;
-  pre.textContent = text;
-  wrapper.append(strong, pre);
-  return wrapper;
 }
 
 class SubtaskBlock extends HTMLElement {
@@ -79,23 +60,16 @@ class SubtaskBlock extends HTMLElement {
     // in the header; the prompt is cut to a gist and read whole once the block is open.
     this.dirEl.textContent = who || dir || agent;
     this.dirEl.hidden = !who && !dir && !agent;
-    const summary = subtaskOneLine(prompt);
+    const summary = oneLine(prompt);
     this.summaryEl.textContent = summary;
     this.summaryEl.hidden = !summary;
-    this.statusEl.textContent = this.#statusText(block);
+    this.statusEl.textContent = blockStatusText(block);
     syncCollapsible(this, block);
     this.#fillBody(block);
   }
 
   toggle() {
     toggleSelf(this);
-  }
-
-  #statusText(block) {
-    if (block.status === "running") return "running…";
-    if (block.status === "pending") return "no result";
-    if (block.status === "interrupted") return "interrupted";
-    return block.error ? "failed" : "";
   }
 
   #fillBody(block) {
@@ -107,19 +81,19 @@ class SubtaskBlock extends HTMLElement {
       if (who) {
         // One field named who answers, so it is shown once rather than split into an agent
         // line and a directory line that could disagree.
-        asked.appendChild(labelledBlock("subtask-dir-row", "Asked of", who, ""));
+        asked.appendChild(labelledPre("subtask-dir-row", "Asked of", who, ""));
       } else {
         // A record written before the two were one: it named agent and directory separately,
         // and each of its fields is still what it said.
-        if (agent) asked.appendChild(labelledBlock("subtask-agent-row", "Agent", agent, ""));
-        if (dir) asked.appendChild(labelledBlock("subtask-dir-row", "Directory", dir, ""));
+        if (agent) asked.appendChild(labelledPre("subtask-agent-row", "Agent", agent, ""));
+        if (dir) asked.appendChild(labelledPre("subtask-dir-row", "Directory", dir, ""));
       }
-      if (prompt) asked.appendChild(labelledBlock("subtask-prompt-row", "Asked", prompt, ""));
+      if (prompt) asked.appendChild(labelledPre("subtask-prompt-row", "Asked", prompt, ""));
       this.body.appendChild(asked);
     }
     if (block.status === "running" || block.status === "pending") return;
     // The reply came from a run of its own, so it is set as text: its markup is data.
-    this.body.appendChild(labelledBlock(
+    this.body.appendChild(labelledPre(
         "subtask-answer",
         block.error ? "Error" : "Answer",
         block.error || block.output || "(no answer)",

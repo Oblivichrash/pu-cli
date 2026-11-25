@@ -10,8 +10,10 @@
 #include <atomic>
 #include <cerrno>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "pu/core/text.hpp"
 
@@ -138,6 +140,39 @@ bool ProcessRunning(int pid) {
   if (::kill(static_cast<pid_t>(pid), 0) == 0) return true;
   return errno == EPERM;
 #endif
+}
+
+bool StdinIsTerminal() {
+#ifdef _WIN32
+  // A console is a character device this process has one of; a pipe or a redirected file is
+  // a handle that reports a type rather than a terminal.
+  HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+  if (input == nullptr || input == INVALID_HANDLE_VALUE) return false;
+  DWORD mode = 0;
+  return GetConsoleMode(input, &mode) != 0;
+#else
+  // `isatty` is asked of the descriptor rather than the stream: a reader answering a prompt
+  // has one on stdin, and a redirected one has a file.
+  return ::isatty(STDIN_FILENO) != 0;
+#endif
+}
+
+std::pair<bool, std::string> ReadLineWithDefault(const std::string& prompt,
+                                                 const std::string& initial) {
+  // The default is shown beside the question and the answer is read as an ordinary line: a
+  // reader who wants it presses <enter>, and one who wants something else types it. Nothing
+  // here edits the line, so the terminal is never put into a mode of its own and a reader
+  // whose shell, keymap or screen reader already knows how to type is not overruled.
+  //
+  // A question with no default shows no brackets: there is nothing there to take.
+  std::cerr << prompt;
+  if (!initial.empty()) std::cerr << " [" << initial << ']';
+  std::cerr << ": ";
+  std::cerr.flush();
+
+  std::string line;
+  if (!std::getline(std::cin, line)) return {false, initial};
+  return {true, line.empty() ? initial : line};
 }
 
 std::string FromConsoleOutput(std::string_view text) {

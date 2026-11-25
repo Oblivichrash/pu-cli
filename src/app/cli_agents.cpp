@@ -58,16 +58,12 @@ int RunDelegate(const std::string& agent, const std::string& prompt, Runtime& ru
 }
 
 int RunAgents(Runtime& runtime, bool as_json) {
-  // The session decides which agent answers, and a workspace may have none yet.
-  std::string active;
-  if (runtime.DefaultSession()) active = runtime.DefaultSession()->Spec().agent_name;
-
-  const std::vector<app::AgentSummary> agents =
-      app::SummarizeAgents(runtime.Agents(), active);
+  // A workspace configures one agent, and it may have none yet.
+  const app::AgentSummary agent = app::SummarizeAgent(runtime.Agents());
   if (as_json) {
-    std::cout << boost::json::serialize(app::AgentsAsJson(agents)) << "\n";
+    std::cout << boost::json::serialize(app::AgentAsJson(agent)) << "\n";
   } else {
-    std::cout << app::FormatAgentTable(agents);
+    std::cout << app::FormatAgent(agent);
   }
   return static_cast<int>(ExitCode::kOk);
 }
