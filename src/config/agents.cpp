@@ -376,10 +376,20 @@ void ReplaceFileText(const std::string& path, const std::string& text) {
     if (!out) throw pu::GenericError("cannot write " + staged);
   }
 #ifdef _WIN32
-  if (!::MoveFileExA(staged.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+  // The wide call, because the ANSI one reads the paths in the machine's code page and loses any
+  // character outside it -- a user name, a temporary directory that is not ASCII. Moving over an
+  // existing file needs the target to be closed by everyone, which is why the reader in
+  // `UpdateAgentBackend` closes before it gets here; when something else still holds it, the move
+  // fails and the file is replaced by deleting it first rather than left unwritten.
+  if (!::MoveFileExW(std::filesystem::path(staged).wstring().c_str(),
+                     std::filesystem::path(path).wstring().c_str(), MOVEFILE_REPLACE_EXISTING)) {
     std::error_code ignored;
-    std::filesystem::remove(staged, ignored);
-    throw pu::GenericError("cannot replace " + path);
+    if (!::DeleteFileW(std::filesystem::path(path).wstring().c_str()) ||
+        !::MoveFileW(std::filesystem::path(staged).wstring().c_str(),
+                     std::filesystem::path(path).wstring().c_str())) {
+      std::filesystem::remove(staged, ignored);
+      throw pu::GenericError("cannot replace " + path);
+    }
   }
 #else
   std::error_code ec;
@@ -393,9 +403,12 @@ void ReplaceFileText(const std::string& path, const std::string& text) {
 
 void UpdateAgentBackend(const std::string& config_path, const BackendUpdate& update) {
   ConfigLock lock(config_path);
-  std::ifstream file(config_path);
-  if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
-  const std::string original{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  std::string original;
+  {
+    std::ifstream file(config_path);
+    if (!file.is_open()) throw pu::GenericError("cannot open " + config_path);
+    original.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  }
   std::optional<json::value> parsed = json::TryParse(original);
   if (!parsed) throw pu::GenericError(config_path + " is not JSON");
   json::value& root = *parsed;
