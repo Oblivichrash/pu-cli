@@ -658,21 +658,22 @@ void Runtime::SwitchBackend(const model::Backend& backend) {
   // written as the absence of the key, so emptying the field in the page restores the gateway's
   // own default rather than pinning an address that resolves to nothing.
   try {
-    config::BackendUpdate update;
-    update.gateway = model::GatewayName(backend.gateway);
-    update.model = backend.model;
-    update.host = backend.host;
-    update.temperature = backend.temperature;
-    update.max_tokens = backend.max_tokens;
-    update.top_p = backend.top_p;
-    update.seed = backend.seed;
-    update.context_window = backend.context_window;
     // The level is spelled the way the file spells it: `default` is what the loader reads back as
     // "no level", so writing the enum's own name here would leave a word the loader does not know.
-    update.thinking = backend.thinking == ThinkingLevel::kServerDefault
-                          ? std::string("default")
-                          : ThinkingLevelName(backend.thinking);
-    config::UpdateAgentBackend(config_path_, update);
+    const std::string thinking = backend.thinking == ThinkingLevel::kServerDefault
+                                     ? std::string("default")
+                                     : ThinkingLevelName(backend.thinking);
+    config::UpdateAgentBackend(config_path_, config::BackendUpdate{
+                                                 .gateway = model::GatewayName(backend.gateway),
+                                                 .model = backend.model,
+                                                 .host = backend.host,
+                                                 .temperature = backend.temperature,
+                                                 .max_tokens = backend.max_tokens,
+                                                 .top_p = backend.top_p,
+                                                 .seed = backend.seed,
+                                                 .context_window = backend.context_window,
+                                                 .thinking = thinking,
+                                             });
   } catch (const std::exception& e) {
     spdlog::error("Backend switched for this run only: {}", e.what());
   }
