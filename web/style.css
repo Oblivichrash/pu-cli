@@ -10,6 +10,9 @@
   --accent-soft: rgba(181, 49, 42, 0.1);
   --user-bg: #f5efe8;
   --assistant-bg: #ffffff;
+  /* The tint behind a code block, an inline token and a table header: a shade off the paper,
+     quiet enough to sit under text that is read rather than looked at. */
+  --wash: rgba(0, 0, 0, 0.035);
   --error-border: #b5312a;
   --error-text: #8a2a1a;
   --ok: #4a7c59;
@@ -955,6 +958,63 @@ text the two colours alone are too close to carry that. */
 .msg .block-text pre { margin-top: 0.75em; }
 .msg .block-text pre + * { margin-top: 0.75em; }
 
+/* ---------- what markdown draws inside a reply ---------- */
+/* Everything below is a tag `marked` emits that the page had never drawn. Without it a reply
+   containing code pushed its own bubble off the window: `pre` carries `white-space: pre` from the
+   browser, so a long line cannot wrap and `word-break` on `.msg` never reaches inside it. The
+   width is contained here rather than by wrapping the code, because a wrapped line of source is
+   a line that can no longer be read as written -- the block scrolls instead. */
+.msg .block-text pre {
+  padding: 8px 10px;
+  background: var(--wash);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.msg .block-text pre code {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: inherit;
+}
+/* Inline code sits in a sentence, so it must break like the words around it or one long token
+   drags the bubble wider than the column. */
+.msg .block-text :not(pre) > code {
+  padding: 1px 4px;
+  background: var(--wash);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  word-break: break-word;
+}
+/* A table is the other thing that can outgrow the column: it is laid out to its content, so an
+   ordinary sentence in a cell is enough. It scrolls with the same intent as a code block. */
+.msg .block-text table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.msg .block-text th,
+.msg .block-text td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.msg .block-text th {
+  background: var(--wash);
+  font-weight: 600;
+}
+.msg .block-text blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  color: var(--ink-light);
+}
+
 .msg.assistant.typing .block-text:last-child::after {
   content: "▌";
   animation: blink 1s step-end infinite;
@@ -1073,6 +1133,7 @@ dialog:not([open]) { display: none; }
     --accent: #d4645a;
     --user-bg: #262320;
     --assistant-bg: #201e1a;
+    --wash: rgba(255, 252, 245, 0.05);
     --error-border: #d4645a;
     --error-text: #e08b82;
     --ok: #6fa07d;
