@@ -135,5 +135,13 @@ int RunSse(const SseOptions& options, http::HttpClient& http);
 // docs/ARCHITECTURE.md#the-frame-every-command-runs-inside
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options);
 
+// Everything `main` does once it has the argv a process was started with. The entry point
+// itself holds only the two things that must happen before any command: the signal handler
+// and the gateway table. Kept here rather than in `main.cpp` because the parse, the page a
+// wrong flag is answered with and the dispatch are one decision — which command this line
+// is about — and a reader looking for what `pu <cmd>` runs should not have to open the file
+// that starts the process.
+int RunCommandLine(int argc, char* argv[]);
+
 }  // namespace cli
 }  // namespace pu

@@ -172,6 +172,7 @@ add_library(pu_core STATIC
     src/app/cli.cpp
     src/app/cli_agents.cpp
     src/app/cli_check.cpp
+    src/app/cli_dispatch.cpp
     src/app/cli_output.cpp
     src/app/cli_serve.cpp
     src/app/cli_sse.cpp
