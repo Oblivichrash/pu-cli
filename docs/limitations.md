@@ -5,7 +5,7 @@ as a bug. Each entry states the limit and why it was chosen, because a limit wit
 reason beside it is the first thing someone "fixes" back into the defect it was written
 around.
 
-This list used to sit at the end of [ARCHITECTURE.md](ARCHITECTURE.md). It is its own
+This list used to sit at the end of the architecture document. It is its own
 document because it is the one reference here that a reader arrives at with a symptom
 rather than a question: someone sees a page that lost its reply, or a server row that will
 not go away, and wants to know whether that is the design. A list at the end of a

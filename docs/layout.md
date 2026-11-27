@@ -2,13 +2,32 @@
 
 Where a file goes, which library it links, and which direction an `#include` may point.
 These are the three facts a contributor needs before writing the first line of a new
-module, and they were a section near the end of [ARCHITECTURE.md](ARCHITECTURE.md) — a
-place a reader arrives three hundred lines after the decision it would have informed.
+module.
 
 The layering is checked by the linker rather than by review, so most of this document is
 describing a constraint that a build failure already enforces. It is stated anyway,
 because a failure that arrives as an undefined symbol is a poor way to learn which
 library a new file belongs in.
+
+## Tech Stack
+
+What each dependency is for:
+
+- **Boost.Beast** — HTTP/WebSocket server (`pu serve`) and HTTP client
+  (`BeastHttpClient`), built on top of **Boost.Asio**.
+- **Boost.Asio** — asynchronous I/O core underneath Beast.
+- **Boost.JSON** — JSON parsing/serialization (config, session persistence,
+  WebSocket protocol, MCP, REST API).
+- **Boost.ProgramOptions** — CLI option parsing.
+- **OpenSSL** — TLS for `https://`/`wss://` connections in `BeastHttpClient`.
+- **spdlog** — structured logging.
+
+All JSON goes through `boost::json::value`; `include/pu/core/json.hpp` is a thin layer
+over it (`parse`, `serialize`, `ValueOrDefault`, `HasKey`, `PrettyPrint`) so the fallback
+for an absent member lives in one place. Each helper carries its own contract where it is
+declared, and the rule for every JSON surface — config, a stream frame, a config file
+missing a field degrades the same way a stream frame does — is stated in
+[errors.md](errors.md).
 
 ## The tree
 
@@ -211,6 +230,6 @@ rather than carried as unused state. [providers.md](providers.md) is the per-fie
 
 | What | Where it lands |
 |---|---|
-| A new gateway | A row in `src/llm/gateway_table.cpp`; a product that speaks an existing protocol needs no new class. [ARCHITECTURE.md](ARCHITECTURE.md#extension-points) has the full recipe. |
+| A new gateway | A row in `src/llm/gateway_table.cpp`; a product that speaks an existing protocol needs no new class. The recipe in full is under [Gates, protocols and providers](#gates-protocols-and-providers) below. |
 | A new module directory | A new CMake target at the layer it belongs to, linking only downward, plus its `include/pu/<module>/` beside its `src/<module>/`. |
 | A new file in an existing module | That module's directory. Nothing else changes. |

@@ -86,7 +86,8 @@ one of these, update the document in the same commit:
 | `agents.json`, environment variables, logging | `docs/configuration.md` |
 | Web UI and API: WebSocket messages, REST endpoints | `docs/web-api.md` |
 | The browser modules, and how the page is served | `docs/web-ui.md` |
-| Layer boundaries, the runtime, the tool loop, MCP, persistence, extension points | `docs/ARCHITECTURE.md` |
+| Layer boundaries, the dependency stack, the CMake targets | `docs/layout.md` |
+| The runtime, the request path, MCP, persistence, the tool loop | `docs/runtime.md` |
 | The directory tree, the CMake targets, and the dependency direction between them | `docs/layout.md` |
 | One `Runtime`: lifecycle, cancellation, streaming, the handler contract | `docs/runtime.md` |
 | Exit statuses, the exception hierarchy, and where a catch is allowed | `docs/errors.md` |

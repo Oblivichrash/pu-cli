@@ -2,8 +2,8 @@
 
 What a command exits with, what it prints, and which exceptions exist. Every subcommand
 answers within the same five statuses, and the hierarchy below them is small enough to
-state in one page — it lived inside [ARCHITECTURE.md](ARCHITECTURE.md) for a while, where
-it was three sections deep in a document about what the tree is made of.
+state in one page — it was three sections deep in a document about what the tree is made
+of for a while, where nobody reading for an exit status would find it.
 
 ## What a command exits with, and what it prints
 

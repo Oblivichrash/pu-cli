@@ -36,7 +36,7 @@ A session is refused rather than guessed at when its `schema_version` is one thi
 does not accept: `pu` reports the reason and starts a fresh conversation, and the next
 save replaces the file. A file written before the `usage` key existed is not a version
 mismatch — absent reads as "nothing was recorded" — so upgrading across that change keeps
-the transcript. [ARCHITECTURE.md](ARCHITECTURE.md#persistence) owns the file's shape.
+the transcript. [runtime.md](runtime.md#single-session-auto-persistence) owns the file's shape.
 
 The one thing a session cannot carry across is an unfinished tool call. A call left
 `pending` by an older build keeps refusing `/rewind` until it is answered or the session

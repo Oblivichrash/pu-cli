@@ -5,6 +5,42 @@ re-proposed. Everything else this document once described has either been built 
 elision, a pager that outlives the toolbox — or turned out to describe a tool this build does
 not have.
 
+## 0. Five CLI defects, still open
+
+Found by driving four agents from a shell at 0.5.1 and re-checked against 0.7.3 by grepping
+the source rather than the binary, so these are claims about this tree and not about a
+release note. Each names the observable, because each is otherwise easy to read as intended
+behaviour.
+
+- **`pu ask` appends to the workspace conversation.** Three consecutive runs in a fresh
+  directory leave 4, 6, 8 nodes. There is no stateless mode: `ask` is "continue this
+  workspace's conversation with one more turn". For a scripted probe that is both a
+  correctness problem (the model sees history it did not expect) and a growth problem.
+  `--fresh` — an empty conversation, nothing saved — is the fix, and it is also right for
+  `probe`, which captures a raw stream and has no business editing a conversation.
+- **Read-only commands touch the workspace.** `pu models` in an empty directory leaves
+  `.pu/logs/pu.log` and `.pu/session.json`, and rewrites the session even when the bytes are
+  identical. `Runtime::Shutdown()` calls `SaveCurrentSession()` with no condition. Sharing
+  this fix with the one above: who may write the session.
+- **A prompt starting with `/` cannot be sent.** `ProcessInput` treats any leading `/` as a
+  command, and `ask` has no escape — not even `--`. Asking about a path is an ordinary thing
+  to do. In `chat`, where commands exist, a leading `/` should stay a command; in `ask` it
+  should be a prompt.
+- **No stdin prompt.** `echo hi | pu ask` is an error and `pu ask -` sends the literal `-`,
+  so `pu ask "$(cat task.md)"` is the only route and it breaks on argv length and on quotes.
+  A non-tty stdin should be the prompt.
+- **`--agent` is persistent when it reads as per-run.** `--agent` is documented as "agent to
+  use" and behaves as "agent to use from now on": `pu models --agent X` silently re-points
+  what the next bare `pu ask` runs on, and a *failed* run writes it too. `ask` no longer
+  writes a session, so `models` is where it still stands. This is the one item that is a
+  breaking change to fix, which is why it is last: the split is `SetRunAgent` (this process)
+  against `SetWorkspaceAgent` (what `/backend` and chat do), and the session should outrank
+  the file's agent name once it is a deliberate choice rather than a side effect.
+
+The first two are one question and should go together. The original evidence — commands,
+outputs, and the paths that have moved since — is in
+[cli-agent-workflow.md](cli-agent-workflow.md).
+
 ## 1. The three pools, and the one still unbounded
 
 A transcript grows in three ways that need three answers:

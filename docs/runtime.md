@@ -1,9 +1,8 @@
 # Runtime, lifecycle, and cancellation
 
 How one `Runtime` instance is built, kept alive, stopped, and shared between the
-command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md);
-it lives here because it is the half of the system a *maintainer* has to hold in
-their head, while the rest of that document is what a contributor reads once.
+command line and `pu serve`. This is the half of the system a *maintainer* has to hold in
+their head: the lifecycle, the cancellation contract, the tool loop and the stream.
 
 The split is a reading aid, not a boundary: every claim below is still about the
 same binary, and a change that moves work between `Runtime` and `Executor` belongs
@@ -161,6 +160,106 @@ Page resolution and the served-file allowlist are in [web-ui.md](web-ui.md).
 session is serialized back to the same file via `Session::Serialize`. There is no
 manual save/load/list/export; persistence is fully automatic and scoped to the
 data directory.
+
+The two paths are `<workspace>/.pu/session.json` and `<workspace>/.pu/logs/`, where
+`<workspace>` is the directory the run is about: the one `-C` names, and the directory
+`pu` was started in when it names none. Logs are the only thing `PU_HOME` moves, and their
+directory is per process so two processes in one workspace never rotate the same file; the
+environment table in [configuration.md](configuration.md#environment-variables) owns both
+paths.
+
+The file carries `schema_version` beside `conversation` and `session_spec`, and a file
+stamped with a version this build does not accept is refused rather than read
+best-effort: `pu` reports the reason and starts a fresh conversation, and the next save
+replaces the file. The session file contains no system prompt — the prompt is
+configuration and is read from `agents.json` on every start.
+
+**What each turn cost is kept beside the conversation, not inside it.** `usage` is a
+sibling of `conversation` in the file, keyed by the assistant node the turn produced:
+prompt, completion and cached tokens, the credit the gateway priced it at, how many
+provider calls the turn took, and which model and gateway answered. A model never reads
+it, `History()` never renders it, and a page draws it next to the reply rather than as
+part of it — which is why it is not a field of `AssistantPayload`. It is kept because it
+is the only record that an optimization changed anything: a prompt edited so the cache
+stops hitting, or a model swapped for one that costs three times as much, shows up here
+and nowhere else. The key is absent from every file written before it existed, and absent
+is read as "nothing was recorded" rather than as a version this build cannot load, so the
+schema version did not move. A turn that has left the chain — a rewound turn, `/clear` —
+takes its entry with it on the next save.
+
+`session_spec` names the agent and carries the session's own thinking level when
+`/thinking` set one. Backend fields are read from `agents.json` on each start, so
+editing the configuration takes effect without touching the session. `/backend <type>
+<model>` adopts the model named by the file, so the backend a session reports and the
+agent it names are always the same answer. It takes no key: a key typed at the prompt is
+written into the scrollback, so an endpoint that needs one is named in `agents.json`,
+where it can come from the environment. A restart resumes the agent the session names; a
+name the file no longer carries is reported and the file's own agent is used, since a file
+describes exactly one.
+
+The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
+timestamp, its parent and one role payload, plus the `leaf` that marks the current
+position. A payload's `content` is a single string, and reasoning is a list of blocks,
+each with the provider's `text`, an optional `signature` and the provider's own `raw`
+encoding when it round-trips (see [providers.md](providers.md)).
+
+A node's id is its own, not a position: the earlier `id = size() + 1` scheme made a
+rewind representable only by rewriting the file, and a branch not at all.
+
+`/rewind` moves the `leaf` back and removes nothing, so the turns after it stay in the
+file until something replaces them. The append that follows drops whatever the new leaf
+cannot reach, so a replaced turn leaves nothing behind and the store ends up holding
+exactly the chain the view shows.
+
+A tool call has three states: `pending` while it has not been answered, `completed` once a
+receipt answers it, and `interrupted` when the turn that requested it was cancelled before
+the call ran. Cancelling seals the leaf: every call still `pending` becomes `interrupted`
+and gains a receipt recording that it never ran. Those receipts are chain nodes like any
+other, so the next request renders them to the model as `role: "tool"` messages. Only a
+`pending` call counts as unfinished, so a sealed turn stops blocking `/rewind` and a switch
+of agent while a call that may still be running goes on blocking both. Whether a receipt
+records a result or an interruption, its presence is what keeps each tool call paired with
+an answer, which is what the request path is rebuilt from.
+
+Three vocabularies name these states, and they are not interchangeable. Storage and the
+session file use `pending` / `completed` / `interrupted`
+([`message.hpp`](../include/pu/session/message.hpp), [`graph.cpp`](../src/session/graph.cpp)).
+`/api/history` renames `completed` to `done` for the Web UI, so a client sees `pending` /
+`done` / `interrupted`. The transcript additionally shows `running`, which is live-only
+state and is never written to a session.
+
+### The request path
+
+```
+User Input
+    │
+    ▼
+Runtime.ProcessInput(input, ...)
+    │
+    ├── Is command? ──► CommandRouter ──► Session mutation
+    │
+    └── Is message? ──► Session.CreateProvider()
+                         │
+                         ▼
+                       Executor.Execute()          (session-state-free)
+                         │
+                         ├── Inject system context into chat history
+                         ├── Read the Conversation
+                         ├── LLMProvider.Chat()
+                         ├── Toolbox.ExecuteTool() → JSON response
+                         ├── Store the tool result in the Conversation
+                         ├── Repeat tool loop if tool calls present
+                         └── Return final response
+                         │
+                         ▼
+                       Session::Serialize() → session.json
+```
+
+Each stored node is rendered into one `ChatMessage` on the way out
+([`request.hpp`](../include/pu/session/request.hpp)), which is the view a provider
+requires. That makes `ChatMessage` a compatibility view rather than a place to grow: a new
+context feature belongs to `MessageNode` ([`message.hpp`](../include/pu/session/message.hpp)),
+which owns what a turn is.
 
 ### Tool execution
 
@@ -388,6 +487,37 @@ bytes, because what it removes is a literal string re-sent verbatim and the unit
 is the length of the string; it is not a claim about how much context the model has left.
 
 ---
+
+### MCP servers
+
+```
+McpClient            handshake, ListTools, CallTool
+    │
+JsonRpcClient        JSON-RPC 2.0: request/response, a promise per id
+    │
+Transport            Start / Stop / WriteLine
+    │
+    ├── StdioTransport   a child process's stdio, one line of JSON per message
+    └── HttpTransport    BeastHttpClient POST, line-delimited responses
+```
+
+Servers are configured per-agent via `mcp_servers`, and a list may hold any number: each is
+started as its own client and its tools are registered under the `mcp.<server>.` prefix.
+`McpClient::Connect()` picks the transport — a non-empty `url` selects `HttpTransport`,
+otherwise a stdio child is spawned, on both POSIX (`fork`/`execvp`) and Windows
+(`CreateProcess`). `Runtime::RebuildToolbox` starts the active agent's servers, performs the
+handshake and lists tools.
+
+**How MCP and `agent_tools` meet.** The two libraries are siblings with no edge between
+them: `pu_agent_tools` states what a turn may call and `pu_mcp` states how a server is
+reached, and neither has a reason to know the other exists. The join is
+`runtime::McpTool` ([`mcp_tool.hpp`](../include/pu/runtime/mcp_tool.hpp)), a `Tool` whose
+body is one `CallTool` — written as a member of either library, that library would link the
+other for no reason but this file. `RegisterMcpTools()` wraps each `ToolDefinition` from
+`ListTools()` in an `McpTool` and registers it in the same `Toolbox` as `bash` and
+`write_file`, so a turn calls both through one interface and the model tells them apart only
+by the name prefix. The one asymmetry worth knowing: an approval pattern names a builtin by
+name, so an MCP tool is not gated by it — its reach is whatever the server declares.
 
 ### Stopping an MCP server
 

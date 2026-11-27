@@ -8,6 +8,22 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **The retry policy is what the code does, and nothing more.** `Retry-After` was
+  parsed by `ParseRetryAfter`, capped by `RetryPolicy::max_retry_after` and
+  reported through `SseParser::OnRetry` — and `src` called none of the three:
+  `WithRetry` passed a wait of zero and no caller held a response header at the
+  moment it waited. `providers.md` promised the header was honoured, so the
+  promise and the machinery are both gone and the backoff is stated to be
+  exponential and nothing else.
+- **`docs/ARCHITECTURE.md` is gone.** It restated the dependency stack that
+  `layout.md` derives from `CMakeLists.txt` and the runtime facts that
+  `runtime.md` owns. The stack and the tech list went to `layout.md`; the request
+  path, MCP servers and persistence went to `runtime.md`; eighteen references
+  across thirteen files were repointed.
+- **`docs/design/cli-agent-workflow.md` is an archive.** Fourteen of its nineteen
+  defects have been fixed; the five still open are stated, with the order to take
+  them in, at the top of `docs/design/next.md`. The workflow document is kept for
+  the commands that found each defect, not for its status table.
 - **`pu sse`'s formatter moved out of the bottom library.** `FormatSseEvent` and
   `RunSse` were compiled into `pu_core_util`, which every library above it links,
   so `pu_llm` and `pu_paging` carried a dependency on the way `pu sse` prints.
@@ -131,7 +147,7 @@ the commit that made it, and its current behaviour is in the relevant document
   test — this repository has no JavaScript runtime in its toolchain.
 
 The transcript is now bounded on four axes rather than three. All four are described together
-in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
+in [runtime.md](docs/runtime.md#paging-and-the-request-view).
 
 ### Changed
 

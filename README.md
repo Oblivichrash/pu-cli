@@ -4,7 +4,7 @@
 
 A minimalist CLI orchestrator for LLMs with **single-session auto‑persistence** and **dynamic backend switching**.
 
-Internals and layering live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the
+Internals and layering live in [docs/layout.md](docs/layout.md); the
 [document index](#docs) lists the rest.
 
 ---
@@ -209,17 +209,16 @@ on that command's page rather than in the map a reader arrives at with no comman
 | [docs/paging.md](docs/paging.md) | `execute_bash` page by page: the envelope, cursors, and what a turn keeps |
 | [docs/security.md](docs/security.md) | The trust boundary, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, the runtime, the tool loop, MCP, persistence, extension points |
-| [docs/layout.md](docs/layout.md) | The directory tree, the CMake targets, and which layer may link which |
-| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, cancellation contract, the tool loop, streaming, and the handler rules |
+| [docs/layout.md](docs/layout.md) | The dependency stack, the directory tree, the CMake targets, and which layer may link which |
+| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, the request path, MCP servers, persistence, cancellation, the tool loop, streaming |
 | [docs/errors.md](docs/errors.md) | Exit statuses, the exception hierarchy, and where a catch is allowed |
 | [docs/limitations.md](docs/limitations.md) | What the program does not do, and which of those is by design |
 | [docs/upgrading.md](docs/upgrading.md) | Which keys moved, version by version, and what an older session file does |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
-| [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
+| [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against — including the five open CLI defects |
 | [docs/design/serve-transport.md](docs/design/serve-transport.md) | Why `pu serve` is one port per workspace, one WebSocket per page, and no build step |
 | [docs/design/codebuddy-cloud-api.md](docs/design/codebuddy-cloud-api.md) | One gateway's wire format, and the two refusals it can answer |
-| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | The CLI defects found by driving four agents from a shell, with the ones still open |
+| [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | Archived: the commands that exposed each fixed CLI defect, kept as evidence for the five still open in `next.md` |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commit format, code style, testing, where a fact lives |
 

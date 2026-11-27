@@ -88,7 +88,7 @@ Three things are true of it, and the first is the one that surprises:
   gate, so any call its own `approval_patterns` cover comes back `kNobodyToAsk` even with a
   user at the page: the gate belongs to the parent's toolbox. A tool you expect to be approved
   is not available to a sub-agent, and there is no flag that changes that. See
-  [ARCHITECTURE.md](ARCHITECTURE.md) for why the boundary is drawn there.
+  [limitations.md](limitations.md) for why the boundary is drawn there.
 
 Its sandbox is its own, taken from its own table, so what it may read is decided there and not
 here; a sub-agent whose table is wider than the parent's is a decision its `.pu/` made.
@@ -205,7 +205,7 @@ than the file, and that is a warning and not a failure.
 
 A session naming an agent the file does not name is reported as a warning. The file has one
 agent, so the next turn uses that one and the session is corrected rather than the file (see
-[ARCHITECTURE.md](ARCHITECTURE.md#persistence)).
+[runtime.md](runtime.md#single-session-auto-persistence)).
 
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status

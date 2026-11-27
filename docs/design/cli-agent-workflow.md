@@ -1,13 +1,17 @@
 # CLI and agent workflow: what is broken, and what to build
 
-Written after configuring four agents in `~/.pu/agents.json` and driving them from the
-command line. Every claim below was reproduced against the installed binary
-(`pu 0.5.1`) in this workspace; the command that settled each one is quoted.
+**Archive.** Fourteen of the nineteen defects this exercise found have been fixed; the five
+that have not are stated, in the order they should be taken, in
+[next.md](next.md#0-five-cli-defects-still-open). Nothing below is needed to understand how
+the current program behaves — it is kept because the commands that settled each defect are
+why the fixes look the way they do, and because a defect re-derived from scratch costs the
+same afternoon twice.
 
-The evidence is left as it was found — it is why each change was made — and the status of
-each item is marked where it appears and collected in the table below. Commands named in the
-notes and in the code excerpts describe 0.5.1; what runs now is in
-[ARCHITECTURE.md](../ARCHITECTURE.md) and [configuration.md](../configuration.md).
+What was found: configuring four agents in `~/.pu/agents.json` and driving them from the
+command line. Every claim below was reproduced against the installed binary
+(`pu 0.5.1`) in this workspace; the command that settled each one is quoted. Commands named
+in the notes and in the code excerpts therefore describe 0.5.1; what runs now is in
+[runtime.md](../runtime.md) and [configuration.md](../configuration.md).
 
 ## What has landed since this was written
 
@@ -40,10 +44,9 @@ appends to the session. §2.6 is still open too — a message beginning with `/`
 slash command before the turn starts. Re-derive them from the code, not from this table,
 once any of them is started — a status table is a claim about a moment.
 
-What survives from this document is therefore the five `not done` rows and the reasoning
-behind them. The thirteen that landed are recorded in [CHANGELOG.md](../../CHANGELOG.md) and
-described by the documents that own them; nothing here is needed to understand how the
-current program behaves.
+The thirteen that landed are recorded in [CHANGELOG.md](../../CHANGELOG.md) and described
+by the documents that own them. The five that did not are restated, without the evidence,
+in [next.md](next.md#0-five-cli-defects-still-open).
 
 ---
 

@@ -3,7 +3,7 @@
 //
 // The exit status of a run, checked where a caller reads it: `RunAsk` returns a number, so
 // these cases drive it and look at the number. The contract is
-// docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints — a script's remedy
+// docs/errors.md#what-a-command-exits-with-and-what-it-prints — a script's remedy
 // depends on which of these it got.
 //
 // The harness owns a temp workspace and a fake backend on a port of its own, so a case
