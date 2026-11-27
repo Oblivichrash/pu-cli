@@ -8,6 +8,11 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **`pu sse`'s formatter moved out of the bottom library.** `FormatSseEvent` and
+  `RunSse` were compiled into `pu_core_util`, which every library above it links,
+  so `pu_llm` and `pu_paging` carried a dependency on the way `pu sse` prints.
+  They now live in `pu_tool_cli`, one layer above, which only `pu` and `pu-sse`
+  link. Nothing observable changed.
 - **The two `tools` directories are no longer ambiguous.** The tools the model
   calls — `bash`, `write_file`, `ask_dir` — live in `agent_tools/` and build to
   `pu_agent_tools`. The commands `pu` ships — `pu-probe`, `pu-models`, `pu-sse` —

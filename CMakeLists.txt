@@ -43,7 +43,6 @@ add_library(pu_core_util STATIC
     src/core/retry.cpp
     src/core/sse.cpp
     src/core/workspace_path.cpp
-    src/tools/sse.cpp
 )
 target_link_libraries(pu_core_util PUBLIC
     spdlog::spdlog
@@ -57,6 +56,18 @@ if(WIN32)
 endif()
 pu_configure_target(pu_core_util)
 add_library(pu::core_util ALIAS pu_core_util)
+
+# The commands `pu` ships, as libraries rather than as `main`s: `pu sse` and `pu-sse` run the
+# same code, so each command's body has to be reachable from both entry points. Above
+# `pu_core_util` rather than inside it, because a formatter for an event is not a base
+# utility — putting it at the bottom would give every library that links the bottom a
+# dependency it does not have.
+add_library(pu_tool_cli STATIC
+    src/tools/sse.cpp
+)
+target_link_libraries(pu_tool_cli PUBLIC pu_core_util)
+pu_configure_target(pu_tool_cli)
+add_library(pu::tool_cli ALIAS pu_tool_cli)
 
 add_library(pu_llm STATIC
     src/llm/anthropic_provider.cpp
@@ -181,6 +192,7 @@ add_library(pu_core STATIC
     src/app/setup.cpp
 )
 target_link_libraries(pu_core PUBLIC
+    pu_tool_cli
     pu_serve
     pu_probe
     pu_models
@@ -198,7 +210,7 @@ pu_configure_target(pu)
 add_executable(pu-sse
     src/tools/sse_main.cpp
 )
-target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
+target_link_libraries(pu-sse PRIVATE pu_tool_cli Boost::program_options)
 pu_configure_target(pu-sse)
 add_executable(pu::sse ALIAS pu-sse)
 

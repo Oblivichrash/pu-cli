@@ -43,6 +43,12 @@ A header lives in its module's directory; `include/pu/runtime/` holds the orches
 layer (`Runtime`, `Executor`, `CommandRouter`). A header whose module has no directory of
 its own stays beside the sources that include it.
 
+`serve/` is the one module with no `include/pu/serve/`. A `pu` process has one listener
+and one page, so what the listener needs to say to itself — `serve_internal.hpp` — is
+private to `src/serve/`, and the only file outside it that reads that header is
+`src/app/cli_serve.cpp`, which is the command that starts the server. A public header
+there would be a second way in to a thing that has exactly one.
+
 `web/` is the page the server mounts, served straight from the directory the server
 resolved, so adding a module means adding the file and its `<script>` tag and nothing
 else. A target that names a directory, or is not there, is a `404` rather than a read of
@@ -55,30 +61,38 @@ branches rather than forming a single chain, and the branches are the point: a l
 that does not need a session does not link one.
 
 ```
-                              pu_core
-                                 │
-                             pu_serve
-                                 │
-                             pu_runtime
-                       ┌─────────┴─────────┐
-               pu_agent_tools            pu_mcp
-                       │                   │
-                   pu_session              │
-                    ┌──┴──┐                │
-               pu_config │  └── pu_paging ─┘
-                    │              │
-                pu_model           │
-                    │              │
-                 pu_llm            │
-                    └──────┬───────┘
-                     pu_core_util
+                          pu_core
+                 ┌────────────┼───────────────┐
+           pu_serve     pu_tool_cli   pu_probe, pu_models
+              │             │
+          pu_runtime   pu_core_util (the same one drawn at the bottom)
+         ┌────┴────┐
+ pu_agent_tools  pu_mcp
+         │         │
+     pu_session ───┘
+     ┌────┴─────┐
+ pu_config  pu_paging
+     └────┬─────┘
+      pu_model
+          │
+       pu_llm
+          │
+    pu_core_util
 ```
 
 `pu_probe` and `pu_models` hang off `pu_config` without touching `pu_session`, which is
-why they are drawn as edges in the table below rather than in the picture.
+why they are drawn as edges in the table below rather than in the picture. `pu_tool_cli`
+sits alone above `pu_core_util` and below `pu_core`: it holds the bodies of the commands
+`pu` ships, which both `pu` and the standalone binaries run.
 
 `pu_paging` links `pu_core_util` directly and `pu_session` links it beside `pu_config`,
 which is why the bottom of the picture is a join rather than a single trunk.
+
+`pu_core_util` is the bottom and holds only what has no dependencies of its own: logging,
+platform, the process runner, the event parser and the HTTP client. A file in it is
+linked by everything above, so a formatter for `pu sse`'s output belongs in `pu_tool_cli`
+rather than at the bottom — the bottom would give `pu_llm` and `pu_paging` a formatting
+they have no use for.
 
 Read as edges rather than as a picture — from `CMakeLists.txt`:
 
@@ -96,7 +110,8 @@ Read as edges rather than as a picture — from `CMakeLists.txt`:
 | `pu_agent_tools` | `pu_session` |
 | `pu_runtime` | `pu_agent_tools`, `pu_mcp` |
 | `pu_serve` | `pu_runtime` |
-| `pu_core` | `pu_serve`, `pu_probe`, `pu_models` |
+| `pu_tool_cli` | `pu_core_util` |
+| `pu_core` | `pu_serve`, `pu_tool_cli`, `pu_probe`, `pu_models` |
 
 `pu_core_util` (logging, platform, process, SSE, the HTTP client) is the bottom and
 `pu_core` is the top, holding only the command layer. The `pu` executable links
