@@ -225,7 +225,8 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
 }
 
 TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
-  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent"}) {
+  for (const char* name :
+       {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent", "anthropic", "llamacpp"}) {
     const std::optional<model::GatewayId> id = model::ParseGatewayId(name);
     REQUIRE(id.has_value());
     REQUIRE(std::string(model::GatewayName(*id)) == name);

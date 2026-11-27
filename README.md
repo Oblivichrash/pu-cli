@@ -82,6 +82,24 @@ build carries) and a key in the environment rather than the file — see
 [Environment Variables](#environment-variables). `gateway` must name a product, not a
 protocol; naming a protocol is refused at load rather than guessed at.
 
+A local `llama.cpp` server is the second keyless one, under its own name and port:
+
+```bash
+llama-server -m model.gguf --port 8080
+
+cat > .pu/agents.json <<'JSON'
+{
+  "name": "local-assistant",
+  "backend": { "gateway": "llamacpp", "model": "model.gguf" }
+}
+JSON
+```
+
+The `/v1` the server listens under is the gateway's default host
+(`http://localhost:8080/v1`), so the entry names no address at all. It speaks the OpenAI
+wire, so nothing else differs — but the name is its own, so `pu probe`, `pu models` and the
+session's own record say `llamacpp` rather than borrowing `openai`'s.
+
 **2. Prove it resolves before spending a turn.** This reads the config, expands the
 environment references, and reaches the gateway's model list without running a
 conversation:

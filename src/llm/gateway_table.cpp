@@ -169,7 +169,7 @@ model::Gateway OpenAiProduct(model::GatewayId id, std::string_view name, std::st
 
 // The table, one row per product. A row that needs its own factories or headers is written
 // out in full below rather than forced through the helper above.
-const std::array<model::Gateway, 7> kGateways = {
+const std::array<model::Gateway, 8> kGateways = {
     model::Gateway{
         .id = model::GatewayId::kOllama,
         .name = "ollama",
@@ -210,6 +210,12 @@ const std::array<model::Gateway, 7> kGateways = {
         // product's name goes in front of it.
         .prefixes_agent_name = true,
     },
+    // A llama.cpp server speaks the OpenAI wire at the paths this table already dials, and it
+    // needs no key, so it is the helper's shape with an empty one. The default host carries
+    // the `/v1` the endpoint path is appended to. The Anthropic route the same server answers
+    // is deliberately not this row: a local model wants neither the version header nor the
+    // required `max_tokens` that route's provider sends.
+    OpenAiProduct(model::GatewayId::kLlamaCpp, "llamacpp", "http://localhost:8080/v1", ""),
     // The one row here whose wire format is not OpenAI's, and the one whose content is a
     // block list rather than a string. It is a full entry rather than a helper call for that
     // reason: the host, the path, the version header and the shape are all its own.

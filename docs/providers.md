@@ -25,6 +25,13 @@ none of them is refused at load time, as is one that names no gateway at all. "O
 compatible" covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which
 are the one `openai` gateway with a different `host`.
 
+`llamacpp` is a row of its own rather than an `openai` entry pointed at a local port. It
+speaks the same wire and needs no key, so it is one helper call in `gateway_table.cpp`; the
+separate name exists because the answer to "which product answered this" is `llamacpp`, and a
+call priced as an OpenAI one would be a wrong answer rather than a default. The
+Anthropic-shaped route the same server also answers is not used: it would demand a version
+header and a `max_tokens` a local model has no use for.
+
 A gateway is spelled in one place for the same reason as before — a stored session, an
 `agents.json` entry and an `/api/session` answer all name it, and answering "is it
 OpenAI?" separately at each site is what turns a third gateway into a lie rather than a

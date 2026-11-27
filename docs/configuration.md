@@ -227,7 +227,8 @@ Which gateway?
   4) deepseek
   5) nvidia
   6) tencent
-  7) anthropic
+  7) llamacpp
+  8) anthropic
 
 Gateway [ollama]: 
 URL [http://localhost:11434]: 

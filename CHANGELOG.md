@@ -6,6 +6,20 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Added
+
+- **A local `llama.cpp` server is a gateway of its own.** `llamacpp` speaks the
+  OpenAI wire at the paths this table already dials and reads no key, so it is
+  the shared row — but under its own name, because the answer to "which product
+  answered this" is `llamacpp` and a call priced as an OpenAI one would be a
+  wrong answer rather than a default. Its default host is
+  `http://localhost:8080/v1`, and the `/v1` is part of it: the endpoint path is
+  appended to whatever the host says. The Anthropic-shaped route the same server
+  also answers is deliberately not this row — it would demand a version header
+  and a `max_tokens` a local model has no use for. An entry that says
+  `"gateway": "openai"` pointed at a local port still works and now reads as
+  what it says.
+
 ## 0.7.2
 
 ### Added

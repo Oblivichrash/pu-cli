@@ -520,9 +520,9 @@ TEST_CASE("serve API /api/gateways lists every gateway this build carries", "[se
   const auto j = ParseJson(client.Get("/api/gateways"));
   const auto& gateways = j.at("gateways").as_array();
   // The table itself, in its order: a build that lost one of these could not be told to use it.
-  REQUIRE(gateways.size() >= 7);
+  REQUIRE(gateways.size() >= 8);
   const std::vector<std::string> wanted = {"ollama", "ollama-cloud", "openai", "deepseek",
-                                           "nvidia", "tencent", "anthropic"};
+                                           "nvidia", "tencent", "anthropic", "llamacpp"};
   for (const std::string& name : wanted) {
     bool saw = false;
     for (const auto& gateway : gateways) {
