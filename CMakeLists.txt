@@ -43,7 +43,7 @@ add_library(pu_core_util STATIC
     src/core/retry.cpp
     src/core/sse.cpp
     src/core/workspace_path.cpp
-    src/tools_cli/sse.cpp
+    src/tools/sse.cpp
 )
 target_link_libraries(pu_core_util PUBLIC
     spdlog::spdlog
@@ -95,15 +95,15 @@ add_library(pu::config ALIAS pu_config)
 
 # `pu probe` and the standalone `pu-probe` share this one implementation.
 add_library(pu_probe STATIC
-    src/tools_cli/probe.cpp
+    src/tools/probe.cpp
 )
 target_link_libraries(pu_probe PUBLIC pu_config)
 pu_configure_target(pu_probe)
 
 # `pu models` and the standalone `pu-models` share this one implementation.
 add_library(pu_models STATIC
-    src/tools_cli/agents_source.cpp
-    src/tools_cli/models.cpp
+    src/tools/agents_source.cpp
+    src/tools/models.cpp
 )
 target_link_libraries(pu_models PUBLIC pu_config)
 pu_configure_target(pu_models)
@@ -135,17 +135,17 @@ target_link_libraries(pu_mcp PUBLIC pu_config)
 pu_configure_target(pu_mcp)
 add_library(pu::mcp ALIAS pu_mcp)
 
-add_library(pu_tools STATIC
-    src/tools/ask_dir_tool.cpp
-    src/tools/bash.cpp
-    src/tools/delegation.cpp
-    src/tools/policy.cpp
-    src/tools/toolbox.cpp
-    src/tools/write_file.cpp
+add_library(pu_agent_tools STATIC
+    src/agent_tools/ask_dir_tool.cpp
+    src/agent_tools/bash.cpp
+    src/agent_tools/delegation.cpp
+    src/agent_tools/policy.cpp
+    src/agent_tools/toolbox.cpp
+    src/agent_tools/write_file.cpp
 )
-target_link_libraries(pu_tools PUBLIC pu_session)
-pu_configure_target(pu_tools)
-add_library(pu::tools ALIAS pu_tools)
+target_link_libraries(pu_agent_tools PUBLIC pu_session)
+pu_configure_target(pu_agent_tools)
+add_library(pu::agent_tools ALIAS pu_agent_tools)
 
 add_library(pu_runtime STATIC
     src/runtime/answer.cpp
@@ -153,7 +153,7 @@ add_library(pu_runtime STATIC
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
 )
-target_link_libraries(pu_runtime PUBLIC pu_tools pu_mcp)
+target_link_libraries(pu_runtime PUBLIC pu_agent_tools pu_mcp)
 pu_configure_target(pu_runtime)
 add_library(pu::runtime ALIAS pu_runtime)
 
@@ -195,21 +195,21 @@ target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
 
 add_executable(pu-sse
-    src/tools_cli/sse_main.cpp
+    src/tools/sse_main.cpp
 )
 target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
 pu_configure_target(pu-sse)
 add_executable(pu::sse ALIAS pu-sse)
 
 add_executable(pu-probe
-    src/tools_cli/probe_main.cpp
+    src/tools/probe_main.cpp
 )
 target_link_libraries(pu-probe PRIVATE pu_probe Boost::program_options)
 pu_configure_target(pu-probe)
 add_executable(pu::probe ALIAS pu-probe)
 
 add_executable(pu-models
-    src/tools_cli/models_main.cpp
+    src/tools/models_main.cpp
 )
 target_link_libraries(pu-models PRIVATE pu_models Boost::program_options)
 pu_configure_target(pu-models)

@@ -9,7 +9,7 @@
 // not about a conversation.
 //
 
-#include "pu/tools_cli/probe.hpp"
+#include "pu/tools/probe.hpp"
 
 #include <boost/program_options.hpp>
 
@@ -20,14 +20,14 @@
 #include "pu/config/backend_from_agent.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/model/backend.hpp"
-#include "pu/tools_cli/entry_point.hpp"
+#include "pu/tools/entry_point.hpp"
 
 namespace po = boost::program_options;
 
 namespace {
 
-using pu::tools_cli::ExitCode;
-using pu::tools_cli::ProbeOptions;
+using pu::tools::ExitCode;
+using pu::tools::ProbeOptions;
 
 po::options_description Options() {
   po::options_description options{"pu-probe options"};
@@ -57,8 +57,8 @@ pu::model::Backend BackendFor(const ProbeOptions& options) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  return pu::tools_cli::RunEntryPoint(
-      argc, argv, Options(), pu::tools_cli::BareInvocation::kPrintHelp,
+  return pu::tools::RunEntryPoint(
+      argc, argv, Options(), pu::tools::BareInvocation::kPrintHelp,
       // Nothing to check before running: `pu-probe` reads the table for a gateway and
       // accepts a prompt it will not send unless asked to.
       [](const po::variables_map&) -> std::optional<int> { return std::nullopt; },
@@ -74,6 +74,6 @@ int main(int argc, char** argv) {
 
         const pu::model::Backend backend = BackendFor(probe);
         pu::http::BeastHttpClient http;
-        return static_cast<int>(pu::tools_cli::RunProbe(probe, backend, http));
+        return static_cast<int>(pu::tools::RunProbe(probe, backend, http));
       });
 }

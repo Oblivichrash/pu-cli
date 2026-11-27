@@ -75,7 +75,7 @@ so a config file missing a field degrades the same way a stream frame does.
 
 JSON is used for configuration (`agents.json`), session persistence
 (`Session::Serialize` / `Session::Deserialize`), structured tool output
-(`pu::tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
+(`pu::agent_tools::tool.hpp`), the MCP JSON-RPC layer, and the WebSocket/REST
 API in `src/serve/serve_http_routes.cpp` and `src/serve/serve_websocket.cpp`.
 
 ---

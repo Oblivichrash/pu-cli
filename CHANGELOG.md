@@ -6,6 +6,15 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Changed
+
+- **The two `tools` directories are no longer ambiguous.** The tools the model
+  calls — `bash`, `write_file`, `ask_dir` — live in `agent_tools/` and build to
+  `pu_agent_tools`. The commands `pu` ships — `pu-probe`, `pu-models`, `pu-sse` —
+  live in `tools/`, which is the name that used to mean the former. Nothing
+  observable changed: the same headers, the same namespaces, the same three
+  executables. What changed is that a directory name now says who calls it.
+
 ### Added
 
 - **A local `llama.cpp` server is a gateway of its own.** `llamacpp` speaks the
@@ -156,7 +165,7 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
   - `runtime::Turn` is a public aggregate instead of seven numbered arguments, and a provider
     call's fate is `ProviderOutcome` (`kReplied` / `kFailed` / `kStopped` / `kAbandoned`)
     rather than a cross-round `bool abandoned` the loop had to keep alive between rounds.
-  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools_cli/exit_code.hpp`, which
+  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools/exit_code.hpp`, which
     exposed two functions that had been declared `int` while returning an exit status:
     `RunProbe` and `RunSse` return `ExitCode` now, and only the two `main`s convert.
   - `text::Join` / `text::JoinQuoted` in `core/text.hpp` are the one way this codebase joins a

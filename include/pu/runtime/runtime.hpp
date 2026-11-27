@@ -19,10 +19,10 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/mcp/client.hpp"
 #include "pu/runtime/command_router.hpp"
-#include "pu/tools/delegation.hpp"
+#include "pu/agent_tools/delegation.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 namespace pu {
 

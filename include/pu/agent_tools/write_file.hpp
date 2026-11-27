@@ -5,9 +5,9 @@
 
 #include <boost/json.hpp>
 
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 // Writes text to a file inside the sandbox. The path is resolved and compared by
 // component, so a sandbox of `/tmp/safe` does not admit `/tmp/safe-evil`.
@@ -19,4 +19,4 @@ class WriteFileTool : public pu::Tool {
   std::string Execute(const boost::json::value& args, pu::ToolContext& ctx) override;
 };
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

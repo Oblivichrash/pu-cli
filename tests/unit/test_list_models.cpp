@@ -9,8 +9,8 @@
 
 #include "pu/model/backend.hpp"
 #include "pu/llm/model_factory.hpp"
-#include "pu/tools_cli/exit_code.hpp"
-#include "pu/tools_cli/models.hpp"
+#include "pu/tools/exit_code.hpp"
+#include "pu/tools/models.hpp"
 #include "tests/mocks/mock_http_client.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -50,7 +50,7 @@ class QuietStdout {
 
 // The listing a `--verify` run starts from, and the answer each model gives when asked for a
 // token. `fail_at` is the 1-based model that throws instead of answering; 0 means none does.
-tools_cli::ExitCode VerifyAgainst(const std::vector<std::string>& ids, int fail_at) {
+tools::ExitCode VerifyAgainst(const std::vector<std::string>& ids, int fail_at) {
   auto [http, mock] = MakeMockHttpClient();
   mock->simulate_get = [&ids](const std::string&, const std::vector<std::string>&) {
     std::string body = "{\"data\":[";
@@ -71,10 +71,10 @@ tools_cli::ExitCode VerifyAgainst(const std::vector<std::string>& ids, int fail_
     write_cb(const_cast<char*>(frame.data()), frame.size());
   };
 
-  tools_cli::ModelsOptions options;
+  tools::ModelsOptions options;
   options.verify = true;
   const QuietStdout quiet;
-  return tools_cli::RunModels(options, BackendOfType(model::GatewayId::kOpenAI,
+  return tools::RunModels(options, BackendOfType(model::GatewayId::kOpenAI,
                                                      "https://x.example/v1"),
                               *http, http, std::nullopt);
 }
@@ -278,8 +278,8 @@ TEST_CASE("[list_models] --verify succeeds only when every model answered", "[li
   // The whole point of `--verify` in a script is that its exit status distinguishes "all
   // listed models work" from "one of them does not". A run that reported a dead model and
   // still exited 0 would be worse than not checking at all.
-  REQUIRE(VerifyAgainst({"m-one", "m-two"}, 0) == tools_cli::ExitCode::kOk);
-  REQUIRE(VerifyAgainst({"m-one", "dead"}, 2) == tools_cli::ExitCode::kProvider);
+  REQUIRE(VerifyAgainst({"m-one", "m-two"}, 0) == tools::ExitCode::kOk);
+  REQUIRE(VerifyAgainst({"m-one", "dead"}, 2) == tools::ExitCode::kProvider);
 }
 
 TEST_CASE("[list_models] a listing that never arrives throws what the caller maps to 2",
@@ -292,14 +292,14 @@ TEST_CASE("[list_models] a listing that never arrives throws what the caller map
   mock->simulate_get = [](const std::string&, const std::vector<std::string>&)
       -> pu::http::Response { throw pu::HttpError("HTTP connect timed out after 10s"); };
 
-  tools_cli::ModelsOptions options;
+  tools::ModelsOptions options;
   options.verify = true;
   const QuietStdout quiet;
   REQUIRE_THROWS_AS(llm::ListModels(BackendOfType(model::GatewayId::kOpenAI,
                                                   "https://x.example/v1"),
                                     *mock),
                     pu::HttpError);
-  REQUIRE_THROWS_AS(tools_cli::RunModels(options,
+  REQUIRE_THROWS_AS(tools::RunModels(options,
                                          BackendOfType(model::GatewayId::kOpenAI,
                                                        "https://x.example/v1"),
                                          *http, http, std::nullopt),
@@ -325,15 +325,15 @@ TEST_CASE("[list_models] --verify asks every model, so one refusal does not end 
     write_cb(const_cast<char*>(frame.data()), frame.size());
   };
 
-  tools_cli::ModelsOptions options;
+  tools::ModelsOptions options;
   options.verify = true;
   const QuietStdout quiet;
-  const tools_cli::ExitCode code = tools_cli::RunModels(
+  const tools::ExitCode code = tools::RunModels(
       options, BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *http, http,
       std::nullopt);
 
   REQUIRE(posts == 2);
-  REQUIRE(code == tools_cli::ExitCode::kProvider);
+  REQUIRE(code == tools::ExitCode::kProvider);
 }
 
 TEST_CASE("[list_models] --entry with no table to copy from is a usage error",
@@ -345,13 +345,13 @@ TEST_CASE("[list_models] --entry with no table to copy from is a usage error",
     return pu::http::Response{200, R"({"data":[{"id":"org/one"}]})"};
   };
 
-  tools_cli::ModelsOptions options;
-  options.shape = tools_cli::ModelShape::kEntry;
+  tools::ModelsOptions options;
+  options.shape = tools::ModelShape::kEntry;
   options.entry_id = "org/one";
   const QuietStdout quiet;
-  const tools_cli::ExitCode code = tools_cli::RunModels(
+  const tools::ExitCode code = tools::RunModels(
       options, BackendOfType(model::GatewayId::kOpenAI, "https://x.example/v1"), *http, http,
       std::nullopt);
 
-  REQUIRE(code == tools_cli::ExitCode::kUsage);
+  REQUIRE(code == tools::ExitCode::kUsage);
 }

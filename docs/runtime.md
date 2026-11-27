@@ -271,7 +271,7 @@ It is merged with the agent's configured `system_prompt`, which comes from
 switching the backend does not clear it.
 
 **Structured tool output.** Tools return JSON through the schema in
-`include/pu/tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
+`include/pu/agent_tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
 `refusal` that names why the policy refused a call when one did. The header is the field
 set's one home — `tools::Refusal` beside it says which refusal a caller can retry and which
 is a configuration to fix. The executor stores the envelope verbatim so the model sees what

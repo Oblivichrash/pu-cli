@@ -69,7 +69,7 @@ class Tool {
   virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
 };
 
-namespace tools {
+namespace agent_tools {
 
 // Why the policy refused a call. `kNobodyToAsk` is separate from the rest because it is not
 // the command's fault: the agent asks for approval and the front end has no way to put the
@@ -170,6 +170,6 @@ inline ToolResult ParseToolResult(const std::string& raw) {
   return r;
 }
 
-}  // namespace tools
+}  // namespace agent_tools
 
 }  // namespace pu

@@ -7,7 +7,7 @@
 #include "pu/core/process.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
@@ -395,7 +395,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     try {
       tool_result = turn.toolbox->ExecuteTool(call.name, call.arguments, tool_ctx);
     } catch (const std::exception& e) {
-      tool_result = tools::MakeToolResultJson(false, "",
+      tool_result = agent_tools::MakeToolResultJson(false, "",
                                               std::string("Tool execution error: ") + e.what(), -1);
     }
     const auto tool_ms =
@@ -407,10 +407,10 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     ClearLogToolName();
     ClearLogDurationMs();
 
-    const auto parsed = tools::ParseToolResult(tool_result);
+    const auto parsed = agent_tools::ParseToolResult(tool_result);
     if (parsed.valid && parsed.blocked) {
       ++result.blocked_tool_calls;
-      if (parsed.refusal == tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
+      if (parsed.refusal == agent_tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
     }
 
     if (turn.tool_callbacks.on_end) {

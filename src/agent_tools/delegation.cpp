@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/delegation.hpp"
+#include "pu/agent_tools/delegation.hpp"
 
 // The fallback: a build that links the tools without the runtime can still say what a refusal
 // means, so it needs the request type, and it must not link a turn it has no way to run. The

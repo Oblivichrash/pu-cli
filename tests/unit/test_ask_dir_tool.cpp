@@ -6,9 +6,9 @@
 #include <filesystem>
 #include <string>
 
-#include "pu/tools/ask_dir_tool.hpp"
-#include "pu/tools/delegation.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/delegation.hpp"
+#include "pu/agent_tools/tool.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 namespace {
@@ -34,7 +34,7 @@ boost::json::value Ask(const std::string& who, const std::string& prompt) {
 }  // namespace
 
 TEST_CASE("ask_dir names itself as a tool the model can see", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader", "reviewer"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader", "reviewer"});
   REQUIRE(tool.Name() == "ask_dir");
   REQUIRE(Says(tool.Description(), "only its answer"));
 
@@ -56,8 +56,8 @@ TEST_CASE("ask_dir names itself as a tool the model can see", "[ask_dir]") {
 TEST_CASE("The page says a directory needs its own table before it is asked", "[ask_dir]") {
   // The directory branch is the one a model gets wrong, and no amount of a good refusal
   // repairs a first call it could have made right. Both ways of reaching the page say it.
-  pu::tools::AskDirTool reached(fs::current_path(), Allowed{"reader"});
-  pu::tools::AskDirTool alone(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool reached(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool alone(fs::current_path(), Allowed{});
 
   REQUIRE(Says(reached.Description(), "write_file"));
   REQUIRE(Says(reached.Description(), "refused rather than answered"));
@@ -70,7 +70,7 @@ TEST_CASE("The page says a directory needs its own table before it is asked", "[
 }
 
 TEST_CASE("An agent that may ask nobody is offered only a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   const boost::json::value schema = tool.ParametersSchema();
   const boost::json::object& properties = schema.at("properties").as_object();
 
@@ -82,7 +82,7 @@ TEST_CASE("An agent that may ask nobody is offered only a directory", "[ask_dir]
 }
 
 TEST_CASE("ask_dir reads a name it may reach as an agent, not a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   // No such directory exists, so a directory reading would refuse to resolve it. Reaching the
@@ -93,7 +93,7 @@ TEST_CASE("ask_dir reads a name it may reach as an agent, not a directory", "[as
 }
 
 TEST_CASE("ask_dir refuses an agent it was not told it may ask", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply =
@@ -105,7 +105,7 @@ TEST_CASE("ask_dir refuses an agent it was not told it may ask", "[ask_dir]") {
 }
 
 TEST_CASE("ask_dir refuses to ask a named agent when it may ask none", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   pu::ToolContext ctx;
 
   const std::string reply =
@@ -116,7 +116,7 @@ TEST_CASE("ask_dir refuses to ask a named agent when it may ask none", "[ask_dir
 
 
 TEST_CASE("ask_dir adds what the turn it asked cost to the asking turn's tally", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   pu::ToolContext ctx;
   pu::ToolContext::Spending spent;
   ctx.spent = &spent;
@@ -132,7 +132,7 @@ TEST_CASE("ask_dir adds what the turn it asked cost to the asking turn's tally",
 }
 
 TEST_CASE("ask_dir refuses a call naming neither an agent nor a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(boost::json::object{{"prompt", "hi"}}, ctx);
@@ -140,7 +140,7 @@ TEST_CASE("ask_dir refuses a call naming neither an agent nor a directory", "[as
 }
 
 TEST_CASE("ask_dir refuses a directory that configures no agent", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask("ghost-directory-that-is-not-here", "hi"), ctx);
@@ -152,7 +152,7 @@ TEST_CASE("ask_dir refuses a directory that configures no agent", "[ask_dir]") {
 }
 
 TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   // An absolute path that is absolute on every platform. '/etc' is not one on Windows, where
@@ -170,7 +170,7 @@ TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
 
 TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]") {
   const fs::path root = fs::current_path() / "some" / "nested" / "place";
-  pu::tools::AskDirTool tool(root, Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(root, Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask("../../../..", "hi"), ctx);
@@ -182,7 +182,7 @@ TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]
 }
 
 TEST_CASE("ask_dir refuses to ask the directory it is already in", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask(".", "hi"), ctx);
@@ -190,7 +190,7 @@ TEST_CASE("ask_dir refuses to ask the directory it is already in", "[ask_dir]") 
 }
 
 TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   REQUIRE(Says(tool.Execute(Ask("somewhere", ""), ctx), "required"));
@@ -198,7 +198,7 @@ TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
 }
 
 TEST_CASE("ask_dir refuses a directory this question is already being asked in", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
   // The chain is read before anything is looked for, so the target needs no table: the refusal
   // below is the chain's, and a case that had to build one first would be testing the table.
@@ -210,7 +210,7 @@ TEST_CASE("ask_dir refuses a directory this question is already being asked in",
 }
 
 TEST_CASE("ask_dir looks at the chain before it decides a directory has no table", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
   ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
 

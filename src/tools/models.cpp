@@ -3,7 +3,7 @@
 // no session, writes no transcript, and adopts nothing -- asking what a product carries leaves
 // the workspace where it was.
 
-#include "pu/tools_cli/models.hpp"
+#include "pu/tools/models.hpp"
 
 #include <iostream>
 #include <optional>
@@ -15,7 +15,7 @@
 #include "pu/llm/model_factory.hpp"
 #include "pu/llm/model_listing.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 namespace {
 
@@ -78,4 +78,4 @@ ExitCode RunModels(const ModelsOptions& options, const model::Backend& backend,
   return answered == static_cast<int>(checks.size()) ? ExitCode::kOk : ExitCode::kProvider;
 }
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

@@ -3,7 +3,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/message.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -519,7 +519,7 @@ TEST_CASE("A tool the registry no longer holds cannot be executed", "[executor][
 
   ToolContext ctx;
   const std::string raw = toolbox.ExecuteTool("older_tool", boost::json::object{}, ctx);
-  const tools::ToolResult parsed = tools::ParseToolResult(raw);
+  const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(raw);
 
   REQUIRE(parsed.valid);
   REQUIRE(parsed.success == false);
@@ -805,7 +805,7 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
 // why. `refusal` picks which kind of refusal the turn has to tell apart.
 class RefusingTool : public Tool {
  public:
-  explicit RefusingTool(tools::Refusal refusal) : refusal_(refusal) {}
+  explicit RefusingTool(agent_tools::Refusal refusal) : refusal_(refusal) {}
 
   std::string Name() const override { return "execute_bash"; }
   std::string Description() const override { return "refuses what the policy names"; }
@@ -813,11 +813,11 @@ class RefusingTool : public Tool {
     return boost::json::object{{"type", "object"}};
   }
   std::string Execute(const boost::json::value& /*args*/, ToolContext& /*ctx*/) override {
-    return tools::MakeToolResultJson(false, "", "refused before it ran", -1, true, refusal_);
+    return agent_tools::MakeToolResultJson(false, "", "refused before it ran", -1, true, refusal_);
   }
 
  private:
-  tools::Refusal refusal_;
+  agent_tools::Refusal refusal_;
 };
 
 namespace {
@@ -841,7 +841,7 @@ TEST_CASE("A turn every one of whose calls the sandbox refused says so", "[execu
   // refusal is the whole turn.
   MockLLM provider(OneCallTo("execute_bash"), /*content=*/"", /*fire_calls_once=*/true);
   Toolbox toolbox;
-  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(agent_tools::Refusal::kPolicy));
 
   const ExecutionResult result =
       executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});
@@ -859,7 +859,7 @@ TEST_CASE("A turn refused only for want of an approval channel is a different an
   Conversation conversation;
   MockLLM provider(OneCallTo("execute_bash"), "", true);
   Toolbox toolbox;
-  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kNobodyToAsk));
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(agent_tools::Refusal::kNobodyToAsk));
 
   const ExecutionResult result =
       executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});
@@ -878,7 +878,7 @@ TEST_CASE("A refusal the turn recovered from is not the turn's outcome",
   Conversation conversation;
   MockLLM provider(OneCallTo("execute_bash"), "answered anyway", /*fire_calls_once=*/true);
   Toolbox toolbox;
-  toolbox.RegisterTool(std::make_unique<RefusingTool>(tools::Refusal::kPolicy));
+  toolbox.RegisterTool(std::make_unique<RefusingTool>(agent_tools::Refusal::kPolicy));
 
   const ExecutionResult result =
       executor.Execute("try it", conversation, {.provider = &provider, .toolbox = &toolbox});

@@ -11,7 +11,7 @@
 // `pu sse` and the standalone `pu-sse`. A second copy would be a second one to fix.
 //
 
-#include "pu/tools_cli/sse.hpp"
+#include "pu/tools/sse.hpp"
 
 #include <boost/json.hpp>
 
@@ -24,7 +24,7 @@
 #include "pu/core/platform.hpp"
 #include "pu/core/text.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options) {
   if (options.format == SseFormat::kJson) {
@@ -91,4 +91,4 @@ ExitCode RunSse(const SseOptions& options, http::HttpClient& http) {
   return ExitCode::kOk;
 }
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

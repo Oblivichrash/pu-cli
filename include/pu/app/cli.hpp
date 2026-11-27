@@ -5,9 +5,9 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
-#include "pu/tools_cli/models.hpp"
-#include "pu/tools_cli/probe.hpp"
-#include "pu/tools_cli/sse.hpp"
+#include "pu/tools/models.hpp"
+#include "pu/tools/probe.hpp"
+#include "pu/tools/sse.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -97,7 +97,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 // one into agents.json". `verify` is separate because it is the only shape that asks a
 // provider instead of reading a catalogue. Declared in one place because `pu models` and the
 // standalone `pu-models` call the one implementation.
-using ModelShape = tools_cli::ModelShape;
+using ModelShape = pu::tools::ModelShape;
 
 // The backend a read-only command reads — `models` and `probe`, the two that ask a product
 // something without taking a turn. A named gateway is built from the table and never adopted,
@@ -127,8 +127,8 @@ int RunAgents(Runtime& runtime, bool as_json);
 
 // What `sse` prints, and the shape `pu sse` and the standalone `pu-sse` both read. Declared
 // in one place because the two binaries call the one implementation.
-using SseFormat = tools_cli::SseFormat;
-using SseOptions = tools_cli::SseOptions;
+using SseFormat = pu::tools::SseFormat;
+using SseOptions = pu::tools::SseOptions;
 
 int RunSse(const SseOptions& options, http::HttpClient& http);
 

@@ -18,6 +18,7 @@ modules sit beside it, and the orchestration headers/modules live at the root of
 
 ```
 include/pu/                  src/
+├── agent_tools/             ├── agent_tools/          # Toolbox, the tools themselves
 ├── app/                     ├── app/                  # main, CLI parsing
 ├── config/                  ├── config/               # agents.json, the backend model, the gateways
 ├── core/                    ├── core/                 # logging, platform, HTTP client, running a command
@@ -27,10 +28,16 @@ include/pu/                  src/
 ├── runtime/                 ├── runtime/              # runtime, executor, command router
 │   ├── command_router.hpp   ├── serve/                # `pu serve`: listener, REST routes, WebSocket
 │   ├── executor.hpp         ├── session/              # Session, Conversation, message graph
-│   └── runtime.hpp          └── tools/                # Toolbox, tools
+│   └── runtime.hpp          └── tools/                # the commands `pu` ships: probe, models, sse
 ├── session/
 └── tools/
 ```
+
+Two directories are called `tools`, and the distinction is who calls them. `agent_tools/`
+holds the tools the model invokes — `bash`, `write_file`, `ask_dir` — as classes built
+against `Tool` and registered in a `Toolbox`. `tools/` holds the separate executables a
+human or a shell invokes: `pu-probe`, `pu-models`, `pu-sse`, plus the entry point and exit
+codes they share. The model reaches those through `bash`, on `PATH`, as any other command.
 
 A header lives in its module's directory; `include/pu/runtime/` holds the orchestration
 layer (`Runtime`, `Executor`, `CommandRouter`). A header whose module has no directory of
@@ -48,25 +55,27 @@ branches rather than forming a single chain, and the branches are the point: a l
 that does not need a session does not link one.
 
 ```
-                          pu_core
-                 ┌────────────┼────────────┐
-              pu_serve    pu_probe     pu_models
-                 │            │            │
-             pu_runtime       │            │
-            ┌────┴────┐       │            │
-        pu_tools   pu_mcp     │            │
-            │         │       │            │
-        pu_session ───┼───────┴────────────┘
-        ┌────┴─────┐  │
-    pu_config  pu_paging
-        └────┬─────┘
-             │
-         pu_model
-             │
-          pu_llm
-             │
-       pu_core_util
+                              pu_core
+                                 │
+                             pu_serve
+                                 │
+                             pu_runtime
+                       ┌─────────┴─────────┐
+               pu_agent_tools            pu_mcp
+                       │                   │
+                   pu_session              │
+                    ┌──┴──┐                │
+               pu_config │  └── pu_paging ─┘
+                    │              │
+                pu_model           │
+                    │              │
+                 pu_llm            │
+                    └──────┬───────┘
+                     pu_core_util
 ```
+
+`pu_probe` and `pu_models` hang off `pu_config` without touching `pu_session`, which is
+why they are drawn as edges in the table below rather than in the picture.
 
 `pu_paging` links `pu_core_util` directly and `pu_session` links it beside `pu_config`,
 which is why the bottom of the picture is a join rather than a single trunk.
@@ -84,8 +93,8 @@ Read as edges rather than as a picture — from `CMakeLists.txt`:
 | `pu_models` | `pu_config` |
 | `pu_session` | `pu_config`, `pu_paging` |
 | `pu_mcp` | `pu_config` |
-| `pu_tools` | `pu_session` |
-| `pu_runtime` | `pu_tools`, `pu_mcp` |
+| `pu_agent_tools` | `pu_session` |
+| `pu_runtime` | `pu_agent_tools`, `pu_mcp` |
 | `pu_serve` | `pu_runtime` |
 | `pu_core` | `pu_serve`, `pu_probe`, `pu_models` |
 
@@ -114,24 +123,26 @@ two.
 ## Dependency direction
 
 Includes point one way: `core/` is a leaf, `config/` and `llm/` build on it, and `mcp/`,
-`tools/`, `session/`, and the orchestration headers build on those. No directory includes
-one that sits above it, and `config/` in particular never reaches `mcp/`.
+`agent_tools/`, `session/`, and the orchestration headers build on those. No directory
+includes one that sits above it, and `config/` in particular never reaches `mcp/`.
 
 The rule holds because a record belongs to the layer that *parses* it, not the layer that
 *uses* it. `config/mcp_server.hpp` and `config/security_policy.hpp` are leaf headers
 holding plain data — `McpServerConfig` (read from `agents.json`) and `SecurityPolicy` — so
-`mcp/client.hpp` and `tools/tool.hpp` include them rather than the reverse. Before the
-split both were declared next to their consumers, which made `tools/` depend on `config/`
-depending on `mcp/`: a cycle that pulled the whole transport layer into any header naming
-a `Tool`.
+`mcp/client.hpp` and `agent_tools/tool.hpp` include them rather than the reverse. Before
+the split both were declared next to their consumers, which made `agent_tools/` depend on
+`config/` depending on `mcp/`: a cycle that pulled the whole transport layer into any
+header naming a `Tool`.
 
 ### The one link that goes the other way
 
-`pu_tools` calls `RunDelegatedTurn`, declared in `tools/delegation.hpp` and defined in
-`runtime.cpp`, so `pu_tools` links a weak fallback that answers "no turn can run here" and
+`pu_agent_tools` calls `RunDelegatedTurn`, declared in `agent_tools/delegation.hpp` and defined in
+`runtime.cpp`, so `pu_agent_tools` links a weak fallback that answers "no turn can run here" and
 `pu_runtime` links the definition that replaces it. A tool states a question; the layer
 that can answer one supplies the answer. Without that seam `ask_dir` would have to
 construct a `Runtime`, which is the one upward dependency the tools would otherwise carry.
+No header under `tools/` appears in that picture: the commands sit above `pu_core`'s own
+libraries and are reached only by the four executables.
 
 ## Gates, protocols and providers
 

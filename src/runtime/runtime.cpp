@@ -15,15 +15,15 @@
 #include "pu/core/workspace_path.hpp"
 
 #include "pu/config/agents.hpp"
-#include "pu/tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/bash.hpp"
-#include "pu/tools/write_file.hpp"
+#include "pu/agent_tools/bash.hpp"
+#include "pu/agent_tools/write_file.hpp"
 #include "pu/runtime/mcp_tool.hpp"
 
 namespace pu {
@@ -363,7 +363,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
     // build time would be the previous turn's. Delegation is the one tool that outlives its own
     // turn while it waits, which is why it is the one that needs the current token.
     for (Tool* tool : toolbox_.Tools()) {
-      auto* asking = dynamic_cast<tools::AskDirTool*>(tool);
+      auto* asking = dynamic_cast<agent_tools::AskDirTool*>(tool);
       if (asking != nullptr) asking->SetCancelToken(cancel_token);
     }
 
@@ -553,10 +553,10 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   };
 
   if (has("bash")) {
-    toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+    toolbox_.RegisterTool(std::make_unique<agent_tools::BashTool>(
         ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   }
-  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<agent_tools::WriteFileTool>());
   // A runtime that is itself answering a delegated turn gets no way to ask one further: the
   // chain that could grow is the one a tool starts, and this is where it does not start.
   if (has("ask_dir") && !delegated_) {
@@ -566,7 +566,7 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
     // The pager is this runtime's own, so an answer's rank continues the transcript's and a
     // second answer to one question elides the first. Without it the answer went in as prose
     // with no origin, and prose is the one thing the projection never compresses.
-    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates,
+    toolbox_.RegisterTool(std::make_unique<agent_tools::AskDirTool>(workspace_root_, agent.delegates,
                                                               &pager_, turn_cancel_));
   }
 }

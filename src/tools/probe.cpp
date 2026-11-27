@@ -2,7 +2,7 @@
 // The probe itself. It reads a stream and names what arrived; it opens no session, writes
 // no transcript, and keeps no state between runs.
 
-#include "pu/tools_cli/probe.hpp"
+#include "pu/tools/probe.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -11,7 +11,7 @@
 #include "pu/core/text.hpp"
 #include "pu/llm/field_capture.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 ExitCode RunProbe(const ProbeOptions& options, const model::Backend& backend,
                   http::HttpClient& http) {
@@ -49,4 +49,4 @@ ExitCode RunProbe(const ProbeOptions& options, const model::Backend& backend,
   return report.Succeeded() ? ExitCode::kOk : ExitCode::kProvider;
 }
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

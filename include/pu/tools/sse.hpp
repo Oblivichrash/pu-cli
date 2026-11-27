@@ -14,9 +14,9 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
-#include "pu/tools_cli/exit_code.hpp"
+#include "pu/tools/exit_code.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 // What `sse` prints. The three shapes are exclusive: raw bytes, one JSON object per event, or
 // the event read as text -- so they are one choice rather than three flags that could be set
@@ -40,4 +40,4 @@ std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& option
 // the process that runs it: a session, a pager and a tool box are not part of reading a feed.
 ExitCode RunSse(const SseOptions& options, http::HttpClient& http);
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

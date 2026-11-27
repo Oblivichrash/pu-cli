@@ -9,7 +9,7 @@
 #include <boost/json.hpp>
 
 #include "pu/llm/llm_types.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 namespace pu {
 

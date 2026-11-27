@@ -9,7 +9,7 @@
 // one tool answers with it: a copy per header is two descriptions of one set of numbers.
 //
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 enum class ExitCode : int {
   kOk = 0,
@@ -18,4 +18,4 @@ enum class ExitCode : int {
   kInterrupted = 4,
 };
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

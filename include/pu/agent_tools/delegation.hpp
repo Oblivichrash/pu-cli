@@ -88,7 +88,7 @@ std::string RefusedReEntry(const std::filesystem::path& target,
 
 // Carries out one delegated turn. Declared here so the tool can call it, defined in the runtime
 // that knows how to build and drive one. A build without that runtime links the fallback in
-// `src/tools/delegation.cpp`, which answers that no turn ran rather than pretending one did.
+// `src/agent_tools/delegation.cpp`, which answers that no turn ran rather than pretending one did.
 DelegationResult RunDelegatedTurn(const Delegation& request);
 
 }  // namespace pu

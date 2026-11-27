@@ -23,9 +23,9 @@
 #include <utility>
 
 #include "pu/core/text.hpp"
-#include "pu/tools_cli/exit_code.hpp"
+#include "pu/tools/exit_code.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 // How a tool opens: its own option list, and whether a bare invocation is a request for the
 // help page. A bare `pu-probe` would otherwise probe whatever agent happens to be the default,
@@ -90,4 +90,4 @@ int RunEntryPoint(int argc, char** argv, const boost::program_options::options_d
   return detail::RunAndClassify([&] { return body(vm); });
 }
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

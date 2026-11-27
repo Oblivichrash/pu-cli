@@ -17,7 +17,7 @@
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 namespace pu {
 

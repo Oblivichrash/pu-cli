@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
 
 #include "pu/core/json.hpp"
 #include "pu/core/process.hpp"
 #include "pu/core/text.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/tools/delegation.hpp"
+#include "pu/agent_tools/delegation.hpp"
 
 #include <boost/json.hpp>
 
@@ -15,7 +15,7 @@
 #include <memory>
 #include <utility>
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 namespace {
 
@@ -230,4 +230,4 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   return Answer(target.string(), prompt, result, ctx);
 }
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

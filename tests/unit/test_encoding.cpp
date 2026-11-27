@@ -5,7 +5,7 @@
 #include "pu/core/process.hpp"
 #include "pu/core/text.hpp"
 #include "pu/mcp/stdio_transport.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 #include <boost/json.hpp>
 
@@ -123,7 +123,7 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
   const std::string gbk_stdout = "\xB2\xBB\xCA\xC7\xC4\xDA\xB2\xBF\xBB\xF2";
 
   const std::string result =
-      tools::MakeToolResultJson(false, gbk_stdout, "Command failed (exit 1)", 1);
+      agent_tools::MakeToolResultJson(false, gbk_stdout, "Command failed (exit 1)", 1);
 
   const auto j = boost::json::parse(result);
   REQUIRE(j.at("success") == false);
@@ -131,7 +131,7 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
   REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
   REQUIRE(text::IsValidUtf8(boost::json::value_to<std::string>(j.at("output"))));
 
-  const auto parsed = tools::ParseToolResult(result);
+  const auto parsed = agent_tools::ParseToolResult(result);
   REQUIRE(parsed.valid);
   REQUIRE_FALSE(parsed.success);
   REQUIRE(parsed.exit_code == 1);
@@ -139,7 +139,7 @@ TEST_CASE("Tool results parse back when the output is not UTF-8", "[tools][text]
 
 TEST_CASE("Tool results keep valid text byte for byte", "[tools][text]") {
   const std::string utf8_stdout = "success \xE4\xB8\xAD\xE6\x96\x87";
-  const std::string result = tools::MakeToolResultJson(true, utf8_stdout, "", 0);
+  const std::string result = agent_tools::MakeToolResultJson(true, utf8_stdout, "", 0);
 
   const auto j = boost::json::parse(result);
   REQUIRE(boost::json::value_to<std::string>(j.at("output")) == utf8_stdout);
