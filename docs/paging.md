@@ -120,4 +120,4 @@ in a way nothing points at.
 
 What this does not bound is a conversation that runs many *different* commands, or one
 whose prompts and replies grow on their own. Each such run keeps one page, and the pages
-accumulate — see [Known Limitations](ARCHITECTURE.md#known-limitations).
+accumulate — see [Known Limitations](limitations.md).

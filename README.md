@@ -193,7 +193,7 @@ why they are separate binaries at all — `pu models`, `pu probe` and `pu sse` b
 would make "what can I pick" cost the same as "say this", and it does not.
 
 Every command exits with one of five statuses and writes only its answer to stdout; both are
-in [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+in [docs/errors.md](docs/errors.md).
 `pu --help` names every command with the one line that says what it answers, and lists only the
 flags that every command takes — `--bind` and `--verify` belong to one command each, so they are
 on that command's page rather than in the map a reader arrives at with no command chosen.
@@ -209,10 +209,15 @@ on that command's page rather than in the map a reader arrives at with no comman
 | [docs/paging.md](docs/paging.md) | `execute_bash` page by page: the envelope, cursors, and what a turn keeps |
 | [docs/security.md](docs/security.md) | The trust boundary, loopback-only routes, sandbox and approval patterns |
 | [docs/providers.md](docs/providers.md) | What each gateway puts on the wire |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, directory layout, CMake targets, extension points |
-| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, cancellation contract, and the handler rules |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, the runtime, the tool loop, MCP, persistence, extension points |
+| [docs/layout.md](docs/layout.md) | The directory tree, the CMake targets, and which layer may link which |
+| [docs/runtime.md](docs/runtime.md) | One `Runtime`: its lifecycle, cancellation contract, the tool loop, streaming, and the handler rules |
+| [docs/errors.md](docs/errors.md) | Exit statuses, the exception hierarchy, and where a catch is allowed |
+| [docs/limitations.md](docs/limitations.md) | What the program does not do, and which of those is by design |
+| [docs/upgrading.md](docs/upgrading.md) | Which keys moved, version by version, and what an older session file does |
 | [docs/releases.md](docs/releases.md) | How a release is cut, and what a CHANGELOG entry is |
 | [docs/design/next.md](docs/design/next.md) | What is left to build, in order, and what was decided against |
+| [docs/design/serve-transport.md](docs/design/serve-transport.md) | Why `pu serve` is one port per workspace, one WebSocket per page, and no build step |
 | [docs/design/codebuddy-cloud-api.md](docs/design/codebuddy-cloud-api.md) | One gateway's wire format, and the two refusals it can answer |
 | [docs/design/cli-agent-workflow.md](docs/design/cli-agent-workflow.md) | The CLI defects found by driving four agents from a shell, with the ones still open |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration between versions |
@@ -242,17 +247,10 @@ The turn can reach a directory that is not this workspace's own with `ask_dir`, 
 `delegates` names who may be asked by name. Both are in
 [docs/configuration.md](docs/configuration.md).
 
-**Upgrading** — the keys that changed, and what a session saved by an older
-version does:
-
-| From | What to do |
-|------|------------|
-| 0.4.x | Rename `backend.type` to `backend.gateway`. The agent-level `"type": "llm"` is a different field and needs no change. |
-| 0.5.1 | A cancelled turn now stores its unrun tool calls as `interrupted`. A session saved earlier that still holds a `pending` call keeps refusing `/rewind`; start a new session. |
-| 0.6.0 | `pu sse` takes `--format text\|json\|raw` instead of `--json`/`--raw`. `pu models --entry` and `pu models --caps` moved to `pu check --entry` and `pu check --caps`; no configuration change. |
-| 0.6.1 | `pu serve --host` is `--bind`, and `PU_SERVE_HOST` is `PU_SERVE_BIND`; `serve` in `agents.json` takes `bind`. `GET /api/history` answers `{"messages": [...]}` rather than an array. `GET /api/servers` lists the other servers as `{"name", "port"}`, with no `directory`, `host` or `current`. |
-| 0.7.0 | `PU_ASK_DEPTH` no longer exists: a delegated turn gets no `ask_dir`, so it stops at one hop by construction. `ask_dir` takes one `ask` field naming who answers — an agent name from the table's `delegates`, or a directory relative to this one — rather than separate `agent` and `dir` fields; an agent that names no `delegates` may ask nobody. A table that relied on asking an agent by directory is unaffected; one that relied on a tool call spelling out `agent` and `dir` is not. Peer messaging and the task board are removed: `.pu/peers.json`, `PU_PEER_TOKEN`, `send_to_peer`, `/api/jobs`, `/api/peer/message` and `/api/board` no longer exist. Delete the file if a workspace has one; a tool that posted to a peer should use `ask_dir` or read the directory instead. `GET /api/history` no longer reports `from_peer`. |
-| 0.7.2 | `nim` is now `nvidia` and `codebuddy` is now `tencent`, and their keys are read from `NVIDIA_API_KEY` and `TENCENT_API_KEY`. The old spellings are not kept as aliases, so rename the gateway in any `agents.json` that names one and move the key to the new variable. |
+**Upgrading** — a workspace written by an older version may need its
+`agents.json` edited. [docs/upgrading.md](docs/upgrading.md) lists, version by version,
+which keys moved and what a session file saved by an older build does; 0.7.2 renamed
+`nim` to `nvidia` and `codebuddy` to `tencent`, with no aliases kept.
 
 Details of each release are in [CHANGELOG.md](CHANGELOG.md).
 

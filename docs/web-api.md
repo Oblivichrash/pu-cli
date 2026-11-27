@@ -8,37 +8,18 @@
 ./build/pu serve --bind 0.0.0.0 --port 9000
 ```
 
-`--bind` names the interface the listener sits on, not an address to open. `0.0.0.0` is a
-legal bind and never a destination a browser can dial, so the start-up banner says which
-port it took and leaves the address to the reader: the page names this server by the
-address you reached it on.
-
-A server serves the directory it was started in and stays there: nothing moves it to
-another one. Each directory is a session with its own configuration, conversation and
-tools, so serving several of them at once means one server per directory — which is
-also what keeps them from sharing a conversation or a turn. Since that needs a port per
-directory, the workspace can name its own (`--bind`/`--port` first, then
-`PU_SERVE_BIND`/`PU_SERVE_PORT`, then the file):
+A server serves the directory it was started in and stays there, so serving several
+workspaces at once means one server per directory; the workspace can name its port
+(`--bind`/`--port`, then `PU_SERVE_BIND`/`PU_SERVE_PORT`, then the file):
 
 ```json
 "serve": { "bind": "127.0.0.1", "port": 8087 }
 ```
 
-A port is what a reader has to remember to tell two servers apart, and the page is what
-has to do it for them. Each server writes itself into `$HOME/.pu/serve.json` while it
-runs — directory, bind, port, pid and the process's start time — and deletes the line on the
-way out, so the page can list the machine's servers and name each one by its workspace. A
-record whose process has stopped is dropped the next time the file is read, which is what
-makes a crash cost a stale line rather than a ghost entry. The start time is there because a
-pid outlives the program that held it: once its owner exits the number is handed to the next
-program, so a reader that asked only whether the pid was alive would get a true answer about
-something else and list a server nobody can reach. Two servers starting together would
-otherwise each read the list before the other had written it and the second write would
-drop the first, so the read and the write happen under `serve.json.lock`, held for the few
-milliseconds the update takes; the temp file each writer renames is named after its own
-process, so a writer that gave up waiting on the lock cannot publish over one that finished.
-The file is a record of what is running, not a setting: `serve` in `agents.json` is still the
-port a workspace asks for, and the registry is what actually answers.
+Each running server records itself in `$HOME/.pu/serve.json` so the page can list the
+machine's servers by workspace. [design/serve-transport.md](design/serve-transport.md)
+explains why the registry is a file of pids rather than a setting, why a pid is not enough
+to name a process, and why chat is one WebSocket rather than REST polling.
 
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
@@ -48,15 +29,13 @@ port a workspace asks for, and the registry is what actually answers.
 
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` in the [README](../README.md#core-commands).
-
-The front-end lives in `web/` as plain scripts with no build step, so the load order in
-`index.html` is the dependency order and each file has one job — see
-[ARCHITECTURE](ARCHITECTURE.md#browser-modules). History is folded into one bubble per
-turn, with each tool result keeping the output the stream showed. Under the composer it shows
-the context the last reply ran against, from the counts the provider returned, and how much of
-the model's window that is when the backend states one. A backend that states none leaves the
-bar empty and the count alone, because a guess would read like a fact; `context_window` in
-`agents.json` supplies a figure the gateway does not.
+The front-end is plain scripts with no build step — [web-ui.md](web-ui.md) owns the
+modules, and [design/serve-transport.md](design/serve-transport.md) the rule that keeps them
+that way. Under the composer the page shows the context the last reply ran against, from
+the counts the provider returned, and how much of the model's window that is when the
+backend states one. A backend that states none leaves the bar empty and the count alone,
+because a guess would read like a fact; `context_window` in `agents.json` supplies a figure
+the gateway does not.
 
 ## WebSocket
 

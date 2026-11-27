@@ -13,7 +13,7 @@ notes and in the code excerpts describe 0.5.1; what runs now is in
 
 | Item | State | Where it went |
 | --- | --- | --- |
-| §2.1 `ask` exits 0 on failure | **done** | five statuses, `ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints` |
+| §2.1 `ask` exits 0 on failure | **done** | five statuses, `errors.md` |
 | §2.2 empty prompt costs a request | **done** | `--prompt ""` is a usage error, exit 1 |
 | §2.3 one error printed twice | **done** | the executor records, the front end prints |
 | §2.4 no stateless mode | **not done** | needs `--fresh`; `ask` still appends |
@@ -33,10 +33,17 @@ Still open, in the order I would take them: §2.4 and §2.7 (both small, and tog
 are one question: who may write the session).
 
 The `not done` rows were last checked against 0.7.0 by grepping the source rather than the
-binary: `--fresh` and a stdin prompt appear nowhere in `src/app/cli.cpp`, and
-`Runtime::Shutdown()` still calls `SaveCurrentSession()` with no condition. Re-derive them
-from the code, not from this table, once any of them is started — a status table is a claim
-about a moment.
+binary. They still hold as of 0.7.3: `--fresh` and a stdin prompt appear nowhere in
+`src/app/cli.cpp`, `Runtime::Shutdown()` still calls `SaveCurrentSession()` with no
+condition (`src/runtime/runtime.cpp`, the first line of the function), and `ask` still
+appends to the session. §2.6 is still open too — a message beginning with `/` is read as a
+slash command before the turn starts. Re-derive them from the code, not from this table,
+once any of them is started — a status table is a claim about a moment.
+
+What survives from this document is therefore the five `not done` rows and the reasoning
+behind them. The thirteen that landed are recorded in [CHANGELOG.md](../../CHANGELOG.md) and
+described by the documents that own them; nothing here is needed to understand how the
+current program behaves.
 
 ---
 
@@ -87,7 +94,7 @@ so the second row — a read-only query re-pointing what the next turn runs on �
 
 **Fixed.** `RunAsk` answers with the status the turn reached: a failed turn is
 2, and the five statuses are in
-[ARCHITECTURE.md](../ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+[errors.md](../errors.md).
 
 `WithInitializedRuntime` returns 0 unless an exception escapes; `RunAsk`'s body reports
 `result.has_error` and returns nothing (`cli.cpp:85-103`). So a failed turn is

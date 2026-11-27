@@ -209,7 +209,7 @@ agent, so the next turn uses that one and the session is corrected rather than t
 
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
-table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+table is in [errors.md](errors.md).
 
 ### Writing it the first time: `pu setup`
 
