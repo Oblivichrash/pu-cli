@@ -14,6 +14,11 @@
 // the caller knows whether that is recoverable. The policy answers "ask again?" and nothing
 // else.
 //
+// The wait is exponential and nothing else. A gateway's `Retry-After` is not read: no caller
+// holds a response header at the moment it decides to wait, and the hint would have to be
+// carried out of a stream callback that has already returned. A comment promising to honour
+// it is worse than not mentioning it.
+//
 
 #include <chrono>
 #include <functional>
@@ -29,17 +34,12 @@ struct RetryPolicy {
   // The first wait. Each further one doubles it, up to `max_delay`.
   std::chrono::milliseconds initial_delay{500};
   std::chrono::milliseconds max_delay{8000};
-  // A ceiling on what a gateway's own `Retry-After` may ask for. A hint longer than this is
-  // clamped rather than obeyed: a gateway asking for an hour is one a caller would rather
-  // fail on than sit through.
-  std::chrono::milliseconds max_retry_after{30000};
 };
 
-// The wait before attempt `attempt + 1`, where `attempt` counts from zero. `retry_after` is
-// the gateway's own hint in milliseconds, zero when it sent none. The growth is exponential
-// by design: a gateway under load is not helped by every client retrying at the same cadence.
-std::chrono::milliseconds DelayBeforeNextAttempt(const RetryPolicy& policy, int attempt,
-                                                 std::chrono::milliseconds retry_after);
+// The wait before attempt `attempt + 1`, where `attempt` counts from zero. The growth is
+// exponential by design: a gateway under load is not helped by every client retrying at the
+// same cadence.
+std::chrono::milliseconds DelayBeforeNextAttempt(const RetryPolicy& policy, int attempt);
 
 // Runs `attempt` until it succeeds, the policy's attempts run out, or it throws something a
 // retry cannot answer. Any exception that is not worth repeating is rethrown on the spot, so a
@@ -57,10 +57,5 @@ void WithRetry(const RetryPolicy& policy, const RetryNotice& on_retry,
 // code, or zero when the failure never reached one — a refused connection, a reset socket,
 // which are transient for the same reason a 503 is.
 bool IsTransientStatus(unsigned status);
-
-// The gateway's own `Retry-After` as milliseconds, zero when the header is absent, unreadable,
-// or dated rather than given in seconds. Exposed because the caller that reads headers is the
-// one that has them.
-std::chrono::milliseconds ParseRetryAfter(const std::string& value);
 
 }  // namespace pu::core

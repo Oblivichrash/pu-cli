@@ -83,18 +83,14 @@ TEST_CASE("A frame with no data line is not an event", "[sse]") {
   REQUIRE(events.empty());
 }
 
-TEST_CASE("A retry hint is reported and not acted on", "[sse]") {
-  std::vector<int> hints;
-  pu::core::SseParser parser([](const pu::core::SseEvent&) {});
-  parser.OnRetry([&](int milliseconds) { hints.push_back(milliseconds); });
+TEST_CASE("A retry hint is read and dropped", "[sse]") {
+  // The format lets a server suggest a reconnection delay. This build reconnects on its own
+  // backoff, so the field must not change what the parser delivers — a hint that a number
+  // formatted wrongly cannot turn into an exception is the whole of what is tested here.
+  const std::vector<pu::core::SseEvent> events = Parse("retry: 3000\nretry: nope\ndata: x\n\n");
 
-  // The caller owns the policy: a parser that slept could not be tested, and one that decided
-  // would ignore the flag a caller was given.
-  parser.Feed("retry: 3000\nretry: not-a-number\ndata: x\n\n");
-  parser.Finish();
-
-  REQUIRE(hints.size() == 1);
-  REQUIRE(hints[0] == 3000);
+  REQUIRE(events.size() == 1);
+  REQUIRE(events[0].data == "x");
 }
 
 TEST_CASE("A stream that ends without its blank line still delivers its last frame", "[sse]") {

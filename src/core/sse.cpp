@@ -116,15 +116,9 @@ void SseParser::HandleLine(std::string_view line) {
     return;
   }
   if (field == "retry") {
-    try {
-      if (on_retry_) {
-        const int milliseconds = std::stoi(std::string(value));
-        if (milliseconds >= 0) on_retry_(milliseconds);
-      }
-    } catch (const std::exception&) {
-      // A retry hint that is not a number is a hint this build cannot use; the stream is not
-      // about it.
-    }
+    // The format lets a server suggest a reconnection delay. This build reconnects on its own
+    // policy, so the field is read and dropped rather than reported: a callback nothing sets
+    // is a promise nothing keeps.
     return;
   }
   // `unknown field` is ignored by the format rather than refused, so a server may add one.
