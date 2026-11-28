@@ -127,9 +127,8 @@ boost::json::value AskDirTool::ParametersSchema() const {
 // The answer as a receipt: the conclusion, plus where it came from. It is not a page -- there
 // is no window to read and no cursor to hand back -- but it carries the one field the
 // projection reasons about, `buffer.source`. That is what makes two answers to one question
-// two runs of one source, and therefore lets the older answer be elided instead of re-sent on
-// every turn. Without it the answer went in as bare prose, no `OriginOf` could read it, and it
-// stayed in the request in full for as long as the conversation lasted.
+// two runs of one source, and therefore lets a second answer to the same question replace the
+// first. Without it the answer went in as bare prose and no `OriginOf` could read it.
 std::string AskDirTool::Answer(const std::string& target, const std::string& prompt,
                                const DelegationResult& result, pu::ToolContext& ctx) {
   Charge(ctx, result);

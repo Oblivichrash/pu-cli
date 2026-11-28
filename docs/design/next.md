@@ -41,67 +41,49 @@ The first two are one question and should go together. The original evidence —
 outputs, and the paths that have moved since — is in
 [cli-agent-workflow.md](cli-agent-workflow.md).
 
-## 1. The three pools, and the one still unbounded
+## 1. What a request carries
 
-A transcript grows in three ways that need three answers:
+A transcript grows in two ways, and the projection answers both:
 
 | Pool | Grows with | Bounded today |
 |---|---|---|
-| prose — user text, `content`, `reasoning` | turns | no, but physically slow |
-| observations — `ToolPayload::content` | bytes read | yes: page cap + elision |
-| scaffolding — `tool_calls[].id/.name/.arguments` | number of calls | **no** |
+| prose — user text, `content`, `reasoning` | turns | no, and deliberately |
+| observations — `ToolPayload::content` | bytes read | yes: page cap + supersession |
 
-Scaffolding is the pool nobody budgets for. Ids and names cost 50–80 tokens per call before
-the arguments start, and an argument body is never elided: twenty `write_file` calls of 200
-lines each are 4000 lines re-sent every turn, forever, on the input side of a call whose
-result was elided on the output side.
-
-Four tiers, applied per node, monotone — a decision may only move down:
+Two tiers, applied per node, monotone — a decision may only move down:
 
 | Tier | What survives | Enters when |
 |---|---|---|
-| T0 live | the whole text | newest run for its source, or a page read deliberately after |
-| T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
-| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
-| T3 gone | nothing | it is one of everything but the newest ten tool-call pairs |
-| T4 arguments | every argument key, with the dominant one's text replaced by `bytes`, `lines`, `omitted` | the call survives T3 and its serialised arguments exceed 16 KiB |
+| live | the whole text | newest run for its source, or a page read deliberately after |
+| receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
+| tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
 
-All four exist. T2 is `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
-`src/session/request.cpp`; T3 is `RetireOldToolCalls` in the same file, and it runs before T4
-because it is the only tier that removes anything and every tier above it is expressed in terms
-of a call that is still there. T4 is `ElideLargeArguments`, last, so that it spends its work
-only on the calls T3 keeps — which are precisely the ones that re-send their arguments forever.
-T2 is worth its ~15 tokens because what stops a model repeating a failed approach is knowing it
-tried: **compress along the body axis, never along the argv/verdict axis.** T3 goes in whole
-pairs, oldest first, because a `tool` message whose `tool_call_id` names no call is invalid on
-every provider. T4 follows the same rule from the other side: it keeps every argument key and
-takes only the text of the one that dominates, so a `write_file` still says which file it
-wrote.
+All three exist. The receipt is `paging::SupersededReceipt`; the tombstone is
+`paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in `src/session/request.cpp`. The
+tombstone is worth its ~15 tokens because what stops a model repeating a failed approach is
+knowing it tried: **compress along the body axis, never along the argv/verdict axis.**
 
-T3 keeps ten pairs, not six, and the gap is load-bearing. T2 fires on a superseded receipt that
-is older than the newest six, so a T3 that also kept six would delete the receipts T2 was about
-to shrink and leave T2 with nothing to do: the two tiers would silently collapse into one. Four
-of headroom leaves two superseded receipts past the cursor floor in the common case, which is
-what keeps both tiers observable at once.
+Neither tier removes a message, so the transcript that reaches the model is the transcript that
+was stored — same order, same length. That is not an oversight. A turn that no longer fits is a
+turn the caller should have delegated rather than a turn the projection should have cut: a
+subagent answers the question in its own context and hands back the conclusion, which is what
+keeps the bulk of the work out of this one. **No pool is bounded by deleting history.**
 
-The entry condition for each tier is **a count, not a size**, with one deliberate exception.
-T4 is driven by a byte threshold, because what it removes is a literal string re-sent verbatim
-and the unit of that harm is the length of the string; it is not a model-facing measurement of
-context, which is what made the byte budget below wrong. An earlier draft drove T2 from a
-byte budget (`256 KiB` of accumulated tool output). That was wrong twice over: a byte count
-cannot be turned into tokens without the model's tokenizer, so the threshold was a number
-nobody could check against the window it was meant to protect; and because the newest six
-results were held regardless, it was not a hard cap either — setting it to 4 KiB would have
-silently failed to take effect. Supersession is a fact about the conversation rather than a
-measurement of it, and "the newest six superseded receipts keep their cursor" is a rule that
-can be stated, tested and read back. Six is not a tuned number; it is the length of a
-plan-and-verify cycle, and the cost of being wrong is one round of rereading.
+The entry condition is a count, not a size. A byte count cannot be turned into tokens without
+the model's tokenizer, so any threshold expressed in bytes is a number nobody can check against
+the window it is meant to protect. An earlier draft drove the tombstone from a byte budget
+(`256 KiB` of accumulated tool output) and that was wrong twice over: the threshold could not be
+checked against a window, and because the newest six results were held regardless it was not a
+hard cap either. Supersession is a fact about the conversation rather than a measurement of it,
+and "the newest six superseded receipts keep their cursor" is a rule that can be stated, tested
+and read back. Six is not a tuned number; it is the length of a plan-and-verify cycle, and the
+cost of being wrong is one round of rereading.
 
-The table first said `command` and `cwd` survive T2, and both are wrong as written: a paged
-result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
+The table first said `command` and `cwd` survive the tombstone, and both are wrong as written:
+a paged result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
 nothing else — no verdict, no command, no working directory. The command a model repeats is
-in the assistant's `tool_calls` one message above, which T2 never touches. So a tombstone
-keeps a `verdict` or a top-level `command` when the receipt happens to carry one (a raw
+in the assistant's `tool_calls` one message above, which the tombstone never touches. So a
+tombstone keeps a `verdict` or a top-level `command` when the receipt happens to carry one (a raw
 `execute_bash` result does, a page does not) and otherwise keeps what the envelope has. This
 is the argv axis honoured by *not compressing what is there*, rather than by inventing a field
 to preserve.
@@ -128,24 +110,8 @@ to preserve.
    itself is unverified: this machine has no JS runtime, so the field names were traced from
    `paging.cpp` to `block-tool.js` by hand and the wire contract is covered by a serve-stack
    test, but nothing has parsed or executed the front end.
-4. ~~**T3: retire the oldest tool-call pairs.**~~ Done. `RetireOldToolCalls` removes whole
-   pairs, oldest first, keeping the newest ten. The bound is ten rather than six so that T2
-   still has receipts to tombstone; see the note under the tier table.
-5. ~~**Large `arguments` stored by reference** into the pager, for the same reason results
-   are.~~ Done, though not by reference into the pager. `ElideLargeArguments` replaces an
-   oversized argument body in place with a stand-in that keeps every key and states `bytes`,
-   `lines` and which argument carried them, and substitutes it only when building the request,
-   so the record keeps the text the provider was told. The pager was rejected because an
-   argument body evicted under the output budget would lose the command a model needs to
-   repeat, and because `arguments` is the input half of the exchange whose output half the
-   other tiers already compress — a stand-in on the same axis is the consistent move. It runs
-   after T3, so it touches exactly the calls T3 keeps. The threshold is measured in bytes
-   rather than tokens for a reason §1 does not cover: what is re-sent is a literal string, and
-   the cost is the length of that string, not a model-facing measurement of context.
 
-Ordering is not a preference: §2.5 was where the remaining growth actually is, so it came
-before the items that make reading history cheaper. Both are measured by `usage.prompt_tokens`
-per turn and `tool_call_count` per turn.
+Both are measured by `usage.prompt_tokens` per turn and `tool_call_count` per turn.
 
 ## 3. Two rungs further out
 

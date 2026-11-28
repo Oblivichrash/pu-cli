@@ -147,15 +147,15 @@ std::string SupersededReceipt(std::string_view receipt, std::string_view superse
 // A result compressed one tier further: what the command was, where it ran, whether it worked
 // and how much came out -- and nothing a caller could page back through.
 //
-// T2 exists for the things a model must remember it *tried*. A run elided to a superseded
+// It exists for the things a model must remember it *tried*. A run elided to a superseded
 // receipt still holds a cursor, which is a standing invitation to spend a turn reading it
-// again; once the pool is over budget that invitation is exactly what must go, while the
-// verdict is what stops the same failing approach being attempted a fourth time.
+// again; a tombstone keeps the verdict, which is what stops the same failing approach being
+// attempted a fourth time, and drops the invitation.
 //
 // So the compression is along the body axis and never along the argv/verdict axis: the
 // command, its exit code, the line and byte counts and the buffer id stay, because they are
 // a sentence about what happened; the window, the text and the cursors go, because they are
-// a way to ask for more. `Error` is kept for the same reason its verdict is -- a refusal the
+// a way to ask for more. `error` is kept for the same reason its verdict is -- a refusal the
 // model cannot read is a refusal it will walk into again.
 //
 // The result is not a page and must not be read as one: `OriginOf` returns nothing for it, so
@@ -183,7 +183,8 @@ class Pager {
   // Ranks compare against each other, so a pager opening a transcript continues the order it
   // finds there rather than starting over: `last_rank` is the highest rank in that transcript,
   // and the next stored run takes the one after it. Without this, a run made after a restart
-  // would rank below every page the transcript already carries and elision would stop firing.
+  // would rank below every page the transcript already carries and supersession would stop
+  // firing.
   void ContinueRankingFrom(std::size_t last_rank);
 
   // A run's output and its verdict, stored under the question it answered. Two runs of
@@ -205,7 +206,7 @@ class Pager {
   // stored like any other run -- it takes a rank, and the text stays readable -- and it keeps
   // the source its key derives, which is what makes two answers to one question two runs of one
   // source. It cannot be found by a cursor, because no cursor names it; what it buys is the
-  // rank, and the rank is what elides the older answer. `source_key` must not be empty.
+  // rank, and the rank is what supersedes the older answer. `source_key` must not be empty.
   std::shared_ptr<const Buffer> Record(std::string text, core::Verdict verdict,
                                        std::string source_key);
 

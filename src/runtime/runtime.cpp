@@ -84,8 +84,8 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
 
 // The highest rank the transcript already carries. A pager opening that transcript has to
 // continue from it: ranks only compare against each other, so a fresh one starting at 1 would
-// rank every run made after a restart below every page read before it, and elision would never
-// fire again.
+// rank every run made after a restart below every page read before it, and supersession would
+// never fire again.
 std::size_t HighestRankIn(const Session& session) {
   std::size_t highest = 0;
   for (const session::MessageNode* node : session.Messages().Chain()) {
@@ -551,8 +551,8 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
     // the turn that built it; a runtime with no turn in flight hands over nothing, and the
     // delegate's deadline is what stops it then.
     // The pager is this runtime's own, so an answer's rank continues the transcript's and a
-    // second answer to one question elides the first. Without it the answer went in as prose
-    // with no origin, and prose is the one thing the projection never compresses.
+    // second answer to one question supersedes the first. Without it the answer went in as
+    // prose with no origin, and prose is never superseded.
     toolbox_.RegisterTool(std::make_unique<agent_tools::AskDirTool>(workspace_root_, agent.delegates,
                                                               &pager_, turn_cancel_));
   }

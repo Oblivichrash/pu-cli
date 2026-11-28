@@ -441,50 +441,31 @@ layer: a matching command is rejected with a JSON error. The policy fields live 
 ### Paging and the request view
 
 `BuildRequestPath` reads the graph and writes the message list. Nothing it does is stored:
-a rewind, a reload or a second reader sees the graph as it was, which is what lets four
-tiers apply to the same transcript without any of them being a fact about it. The tiers are
-applied per node, monotone — a decision may only move a message down, never back up:
+a rewind, a reload or a second reader sees the graph as it was, which is what lets the tiers
+apply to the same transcript without any of them being a fact about it. The tiers are applied
+per node, monotone — a decision may only move a message down, never back up:
 
 | Tier | What survives | Enters when |
 |---|---|---|
 | live | the whole text | newest run for its source, or a page read deliberately after |
 | receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
 | tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
-| gone | nothing | it is one of everything but the newest ten tool-call pairs |
-| arguments | every argument key, with one text replaced by `bytes`, `lines`, `omitted` | the call survived the previous tier and its serialised arguments exceed 16 KiB |
 
-The last two are the ones that remove anything, and their order is load-bearing: the tier
-that drops pairs runs first, so the tier that shrinks arguments spends its work only on the
-calls that reach the next turn. Working on a pair that is about to be deleted would be work
-done for a message that never leaves.
+Neither tier removes a message. A receipt keeps its place and loses only its text and the
+cursor into it, which is what keeps every `tool_calls[].id` beside the `tool_call_id` that
+answers it — a `tool` message whose `tool_call_id` names no call is rejected by every provider.
+The transcript that reaches the model is the transcript that was stored, in the same order and
+at the same length.
 
-**Retiring pairs.** A `tool` message whose `tool_call_id` names no call is rejected by every
-provider, and a call with no receipt leaves the model waiting for a result that never comes,
-so this tier removes a call and its receipt together or not at all. Ten survive rather than
-six because the tombstone tier fires on a superseded receipt older than the newest six; a
-retirement that also kept six would delete exactly the receipts the tombstone was about to
-shrink and leave it nothing to do.
+The entry condition is a count, not a size: a byte count cannot be turned into tokens without
+the model's tokenizer, so a threshold expressed in bytes is a number nobody can check against
+the window it is meant to protect. Six is not a tuned number either; it is the length of a
+plan-and-verify cycle, and the cost of being wrong is one round of rereading.
 
-**Shrinking arguments.** An argument body is the input half of the exchange whose output half
-the tiers above already compress, and it is the one part of a surviving call that can be
-large. A `write_file` of a thousand lines costs its content in tokens on every request for as
-long as it is retained, while the confirmation it produced was reduced to a verdict long
-before. The stand-in keeps every key and takes only the text of the one that dominates —
-three quarters of the string bytes — so a `write_file` still says which file it wrote and a
-`bash` call still says what it ran. Only the largest text goes, and only when it does not
-leave the call ambiguous.
-
-Two things this tier does *not* do. It does not touch `arguments` in the record: the
-substitution happens in `ToolCallToJson`, which is what builds the provider's view, so the
-session still holds the text the provider was told and a reader of the graph sees the real
-call. And it does not store the body in the pager, although `pu_session` can reach it. A
-pager evicts under the output budget, and a body evicted from it would take the command a
-model needs to repeat — the argv axis, which every tier here is written not to touch.
-
-The thresholds differ in kind on purpose. The two tiers that remove work are driven by a
-count, because a count is what the transcript naturally has. The argument tier is driven by
-bytes, because what it removes is a literal string re-sent verbatim and the unit of that harm
-is the length of the string; it is not a claim about how much context the model has left.
+**No history is compressed here.** A transcript that grows past what a window holds is not
+shrunk by cutting turns out of it — the model is given the whole conversation it had. Keeping
+the context inside its window is a job for the caller, done by delegating work to another agent
+so the bulk of it never enters this conversation at all.
 
 ---
 

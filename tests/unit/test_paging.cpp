@@ -283,7 +283,7 @@ TEST_CASE("A run stored without a source has no source id", "[paging]") {
 TEST_CASE("The id of a question survives the process that asked it", "[paging]") {
   // Derived from the question rather than counted. A counter starts over with the process,
   // and a resumed transcript would read the new s1 as the old s1 — two questions wearing
-  // one name, which is the one thing elision cannot survive.
+  // one name, which is the one thing supersession cannot survive.
   Pager before;
   Pager after;
   const auto first = before.Store(core::Captured{"a\n", {}}, VerdictOf("ls"), "ls\x1f/repo");
@@ -337,7 +337,7 @@ TEST_CASE("A receipt without a rank names no order", "[paging]") {
 
 TEST_CASE("A pager opening a transcript continues its ranking", "[paging]") {
   // Ranks compare against each other, so the first run after a restart has to arrive after
-  // the pages the transcript already holds; starting over would freeze elision for good.
+  // the pages the transcript already holds; starting over would freeze supersession for good.
   Pager pager;
   pager.ContinueRankingFrom(7);
   REQUIRE(pager.Store(core::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 8);

@@ -8,6 +8,14 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ### Changed
 
+- **The request is the transcript, whole.** Two steps used to run between the stored
+  conversation and the model: one retired the oldest tool-call pairs once there were more than
+  ten, and one replaced an argument body over 16 KiB with a stand-in. Both took history out of
+  the request, and both are gone. What is sent now is every stored message, in the order it was
+  stored and at the same length; the only rewrite left is the one that empties the text of a
+  page a newer run of the same command has already answered. Keeping a conversation inside a
+  model's window is the caller's problem, answered by handing the bulk of the work to another
+  agent rather than by cutting turns the model has already had.
 - **The retry policy is what the code does, and nothing more.** `Retry-After` was
   parsed by `ParseRetryAfter`, capped by `RetryPolicy::max_retry_after` and
   reported through `SseParser::OnRetry` — and `src` called none of the three:
@@ -106,25 +114,6 @@ the commit that made it, and its current behaviour is in the relevant document
   table, not a string comparison.** `Gateway::prefixes_agent_name` replaces the
   `gateway == "codebuddy"` test in `AgentNameFor`, so the next product whose ids are
   unique only inside its own catalogue declares it where it declares its host.
-
-- **The oldest tool-call pairs are retired from the transcript.** Scaffolding was the one pool
-  still unbounded: every `execute_bash` the conversation had ever made was re-sent on every
-  turn, `tool_calls[].arguments` included, long after the result had been replaced and the
-  question had moved on. `RetireOldToolCalls` drops whole pairs — the assistant's call together
-  with the receipt that answered it — oldest first, keeping the newest ten. It never splits a
-  pair, because a `tool` message whose `tool_call_id` names no call is rejected by every
-  provider, and a call with no receipt leaves the model waiting for a result that never comes.
-  It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
-  that is still there.
-
-- **A large argument body is no longer re-sent on every turn.** The retirement above bounded
-  how many calls survive, but not how big each one is: a `write_file` of a thousand lines kept
-  its whole content in `tool_calls[].arguments` for as long as it was one of the ten, so its
-  tokens were paid again on every request even though the confirmation it produced was already
-  reduced to a verdict. `ElideLargeArguments` replaces a body over 16 KiB with a stand-in that
-  keeps every argument key and states what went — `elided`, `bytes`, `lines`, and which
-  argument carried it. A `write_file` still says which file it wrote; only the text is gone. It
-  runs after the retirement tier, so it spends its work only on the calls that survive.
 
 - **The model is told what it is spending, and who it is.** Three facts that were only in the
   source or only in the documentation now reach the model on every turn, because a model that
