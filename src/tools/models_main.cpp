@@ -7,7 +7,7 @@
 // table to find a gateway, and nothing else. A model list is not a conversation, so answering
 // "what can I pick" needs a gateway and nothing that knows what a turn is.
 
-#include "pu/tools_cli/models.hpp"
+#include "pu/tools/models.hpp"
 
 #include <boost/program_options.hpp>
 
@@ -20,16 +20,16 @@
 #include "pu/config/backend_from_agent.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/model/backend.hpp"
-#include "pu/tools_cli/entry_point.hpp"
+#include "pu/tools/entry_point.hpp"
 
 namespace po = boost::program_options;
 
 namespace {
 
-using pu::tools_cli::AgentsSource;
-using pu::tools_cli::ExitCode;
-using pu::tools_cli::ModelsOptions;
-using pu::tools_cli::ModelShape;
+using pu::tools::AgentsSource;
+using pu::tools::ExitCode;
+using pu::tools::ModelsOptions;
+using pu::tools::ModelShape;
 
 po::options_description Options() {
   po::options_description options{"pu-models options"};
@@ -63,8 +63,8 @@ int main(int argc, char** argv) {
   // to open a file.
   ModelsOptions models;
 
-  return pu::tools_cli::RunEntryPoint(
-      argc, argv, Options(), pu::tools_cli::BareInvocation::kPrintHelp,
+  return pu::tools::RunEntryPoint(
+      argc, argv, Options(), pu::tools::BareInvocation::kPrintHelp,
       [&models](const po::variables_map& vm) -> std::optional<int> {
         if (vm.count("gateway") > 0) models.gateway = vm["gateway"].as<std::string>();
         if (vm.count("model") > 0) models.model = vm["model"].as<std::string>();
@@ -100,9 +100,9 @@ int main(int argc, char** argv) {
         // `pu models` uses, so the two print the same text for the same table.
         std::optional<AgentsSource> agents;
         if (models.shape == ModelShape::kEntry) {
-          agents = pu::tools_cli::ReadAgentsSource(config_path, agent_name);
+          agents = pu::tools::ReadAgentsSource(config_path, agent_name);
         }
 
-        return static_cast<int>(pu::tools_cli::RunModels(models, backend, *http, http, agents));
+        return static_cast<int>(pu::tools::RunModels(models, backend, *http, http, agents));
       });
 }

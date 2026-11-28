@@ -8,37 +8,18 @@
 ./build/pu serve --bind 0.0.0.0 --port 9000
 ```
 
-`--bind` names the interface the listener sits on, not an address to open. `0.0.0.0` is a
-legal bind and never a destination a browser can dial, so the start-up banner says which
-port it took and leaves the address to the reader: the page names this server by the
-address you reached it on.
-
-A server serves the directory it was started in and stays there: nothing moves it to
-another one. Each directory is a session with its own configuration, conversation and
-tools, so serving several of them at once means one server per directory — which is
-also what keeps them from sharing a conversation or a turn. Since that needs a port per
-directory, the workspace can name its own (`--bind`/`--port` first, then
-`PU_SERVE_BIND`/`PU_SERVE_PORT`, then the file):
+A server serves the directory it was started in and stays there, so serving several
+workspaces at once means one server per directory; the workspace can name its port
+(`--bind`/`--port`, then `PU_SERVE_BIND`/`PU_SERVE_PORT`, then the file):
 
 ```json
 "serve": { "bind": "127.0.0.1", "port": 8087 }
 ```
 
-A port is what a reader has to remember to tell two servers apart, and the page is what
-has to do it for them. Each server writes itself into `$HOME/.pu/serve.json` while it
-runs — directory, bind, port, pid and the process's start time — and deletes the line on the
-way out, so the page can list the machine's servers and name each one by its workspace. A
-record whose process has stopped is dropped the next time the file is read, which is what
-makes a crash cost a stale line rather than a ghost entry. The start time is there because a
-pid outlives the program that held it: once its owner exits the number is handed to the next
-program, so a reader that asked only whether the pid was alive would get a true answer about
-something else and list a server nobody can reach. Two servers starting together would
-otherwise each read the list before the other had written it and the second write would
-drop the first, so the read and the write happen under `serve.json.lock`, held for the few
-milliseconds the update takes; the temp file each writer renames is named after its own
-process, so a writer that gave up waiting on the lock cannot publish over one that finished.
-The file is a record of what is running, not a setting: `serve` in `agents.json` is still the
-port a workspace asks for, and the registry is what actually answers.
+Each running server records itself in `$HOME/.pu/serve.json` so the page can list the
+machine's servers by workspace. [design/serve-transport.md](design/serve-transport.md)
+explains why the registry is a file of pids rather than a setting, why a pid is not enough
+to name a process, and why chat is one WebSocket rather than REST polling.
 
 > **Warning** — the server has no authentication and no origin checks, so
 > anyone who can reach the port can read the session history and run the active
@@ -48,15 +29,13 @@ port a workspace asks for, and the registry is what actually answers.
 
 Each message carries an **edit** link that steps back to before that turn; sending
 the text again replaces it. See `/rewind` in the [README](../README.md#core-commands).
-
-The front-end lives in `web/` as plain scripts with no build step, so the load order in
-`index.html` is the dependency order and each file has one job — see
-[ARCHITECTURE](ARCHITECTURE.md#browser-modules). History is folded into one bubble per
-turn, with each tool result keeping the output the stream showed. Under the composer it shows
-the context the last reply ran against, from the counts the provider returned, and how much of
-the model's window that is when the backend states one. A backend that states none leaves the
-bar empty and the count alone, because a guess would read like a fact; `context_window` in
-`agents.json` supplies a figure the gateway does not.
+The front-end is plain scripts with no build step — [web-ui.md](web-ui.md) owns the
+modules, and [design/serve-transport.md](design/serve-transport.md) the rule that keeps them
+that way. Under the composer the page shows the context the last reply ran against, from
+the counts the provider returned, and how much of the model's window that is when the
+backend states one. A backend that states none leaves the bar empty and the count alone,
+because a guess would read like a fact; `context_window` in `agents.json` supplies a figure
+the gateway does not.
 
 ## WebSocket
 
@@ -159,13 +138,13 @@ from anywhere else with `403`.
 | `GET` | `/api/session` | anyone | Current session info (agent, gateway/model), `context_window` (the model's window, `0` when nobody states one), the settings in force, `usage_total`: what the conversation has spent, and `server`: the `name` and `port` this server answers by |
 | `GET` | `/api/history` | anyone | `messages`: the full conversation (user, assistant and tool messages); every tool call carries `tool_call_status`, every result the parsed `output`/`error` the stream showed |
 | `GET` | `/api/backend` | anyone | The backend in force: `gateway`, `model` and `host`, then the sampling settings `temperature`, `max_tokens`, `top_p`, `seed` and `context_window`, each `null` when nothing set it, and `thinking` — the level the model answers at, `"auto"` when it stated none. It answers about one backend and nothing else — what it could be instead is the gateway table (`/api/gateways`) and one gateway's catalogue (`/api/models`) |
-| `POST` | `/api/backend` | anyone | Choose a backend (`{"gateway":"openai","model":"gpt-4.1","host":"https://example.test/v1"}`). It takes effect in this run and is written into the agent's `backend`, so the next run starts where this one left off. `host` is optional: omitted or empty means the gateway's own default, and a gateway change drops the old address because it names the other gateway's server. It is written as spelled, so a `$VAR` placeholder stays a placeholder and is never expanded into this run's resolved value. A value that names no destination — no `http://` or `https://`, or one containing spaces — is refused with `400` before anything is written. A `gateway` that is no gateway this build carries is refused with `400` too, and the reason names them all — `Unknown gateway: gpt; name one of ollama, ollama-cloud, openai, deepseek, nvidia, tencent, anthropic` — because the page lets a gateway be typed into a box rather than only picked from a menu, so this refusal is the only place a reader is told what the list held. The sampling settings ride alongside: `temperature`, `max_tokens`, `top_p`, `seed`, `context_window`, each optional, where absent leaves what is in force and an explicit `null` clears it. They are read one by one rather than taken whole, so a page cannot write a field this endpoint does not own. Out-of-range values are refused with `400`: `temperature` outside 0–2, `max_tokens` not positive, `top_p` outside (0, 1]. `thinking` goes with them, as one of `auto`, `none`, `low`, `medium` or `high`: `auto` and `null` both mean “no level of our own” and are written into the file as `default`, the word the loader reads back as that same absence, while any other string is refused with `400` |
+| `POST` | `/api/backend` | anyone | Choose a backend (`{"gateway":"openai","model":"gpt-4.1","host":"https://example.test/v1"}`). It takes effect in this run and is written into the agent's `backend`, so the next run starts where this one left off. `host` is optional: omitted or empty means the gateway's own default, and a gateway change drops the old address because it names the other gateway's server. It is written as spelled, so a `$VAR` placeholder stays a placeholder and is never expanded into this run's resolved value. A value that names no destination — no `http://` or `https://`, or one containing spaces — is refused with `400` before anything is written. A `gateway` that is no gateway this build carries is refused with `400` too, and the reason names them all — `Unknown gateway: gpt; name one of ollama, ollama-cloud, openai, deepseek, nvidia, tencent, anthropic, llamacpp` — because the page lets a gateway be typed into a box rather than only picked from a menu, so this refusal is the only place a reader is told what the list held. The sampling settings ride alongside: `temperature`, `max_tokens`, `top_p`, `seed`, `context_window`, each optional, where absent leaves what is in force and an explicit `null` clears it. They are read one by one rather than taken whole, so a page cannot write a field this endpoint does not own. Out-of-range values are refused with `400`: `temperature` outside 0–2, `max_tokens` not positive, `top_p` outside (0, 1]. `thinking` goes with them, as one of `auto`, `none`, `low`, `medium` or `high`: `auto` and `null` both mean “no level of our own” and are written into the file as `default`, the word the loader reads back as that same absence, while any other string is refused with `400` |
 | `GET` | `/api/gateways` | anyone | Every gateway this build carries, in the order of the table: `{"gateways": ["ollama", ...], "hosts": {"ollama": "http://localhost:11434", ...}}`. `hosts` answers the same names with the address each gateway would be dialled at when the agent file names none, so a page can fill its address box from the gateway the reader picked rather than from the gateway in force. The list and the map are the build's own, not asked of any host, so both answer even when no gateway is reachable |
 | `GET` | `/api/models?gateway=<name>` | anyone | What one gateway says it serves: `gateway`, `models` (the names it lists), and `error` when it could not be asked — no key in the environment, host down. The key is the one a turn would read from the environment, so none crosses the wire. It is asked at the address the agent file gives when that gateway is the one in force, and at the gateway's own default otherwise: asking the default for a gateway that was pointed somewhere else would list nothing, after a connect timeout, for a gateway that answers perfectly well. The page asks when a form is opened, so the answer is that gateway's catalogue rather than the current backend's |
 | `GET` | `/api/servers` | loopback | `servers`: the **other** servers on this machine, each with a `name` and a `port`. The one that answered is not in the list |
 | `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `GET` | `/api/settings` | anyone | Every setting this build knows, with the value in force and whether it came from this session or the agent |
-| `POST` | `/api/settings` | anyone | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
+| `POST` | `/api/settings` | anyone | Set one (`{"name":"thinking","value":"high"}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | anyone | Drop every override and go back to the agent's configuration |
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that

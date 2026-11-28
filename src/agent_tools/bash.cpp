@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/bash.hpp"
+#include "pu/agent_tools/bash.hpp"
 
 #include "pu/core/json.hpp"
 #include "pu/core/process.hpp"
-#include "pu/tools/policy.hpp"
+#include "pu/agent_tools/policy.hpp"
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 BashTool::BashTool(std::string sandbox_root, paging::Pager& pager)
     : sandbox_root_(std::move(sandbox_root)), pager_(pager) {}
@@ -242,4 +242,4 @@ std::string BashTool::Execute(const boost::json::value& args, pu::ToolContext& c
   return RunAndPage(command, *anchor, lines, ctx);
 }
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

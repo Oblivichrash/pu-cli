@@ -19,7 +19,7 @@ namespace {
 namespace json = pu::json;
 
 using Reader = std::function<boost::json::value(const boost::json::value&)>;
-using Writer = std::function<boost::json::value(const model::Backend&, int)>;
+using Writer = std::function<boost::json::value(const model::Backend&)>;
 using Applier = std::function<void(InForce&, const boost::json::value&)>;
 
 // One setting: its name, the type a page draws it as, how a value is read, what the agent's
@@ -70,31 +70,19 @@ boost::json::value ReadMaxTokens(const boost::json::value& raw) {
   return value;
 }
 
-boost::json::value ReadToolBudget(const boost::json::value& raw) {
-  if (!raw.is_int64()) throw RequestRefused("tool_budget must be a whole number");
-  // Zero is not "unlimited": it would stop the turn at its first tool call, which is a value
-  // nobody asks for on purpose. A caller that wants no limit says `null`, which clears the
-  // override and leaves the agent's number.
-  const auto value = raw.as_int64();
-  if (value < 1 || value > 100000) {
-    throw RequestRefused("tool_budget must be between 1 and 100000");
-  }
-  return value;
-}
-
 // The table. A row is the whole of adding a setting: the request parser, the view, the value
 // in force and the applied value all read it.
-const std::array<Setting, 4>& Table() {
-  static const std::array<Setting, 4> kSettings{{
+const std::array<Setting, 3>& Table() {
+  static const std::array<Setting, 3> kSettings{{
       {"thinking", "enum", &ReadThinking,
-       [](const model::Backend& backend, int) {
+       [](const model::Backend& backend) {
          return boost::json::value(ThinkingName(backend.thinking));
        },
        [](InForce& in_force, const boost::json::value& value) {
          in_force.backend.thinking = ParseThinkingLevel(boost::json::value_to<std::string>(value));
        }},
       {"temperature", "float", &ReadTemperature,
-       [](const model::Backend& backend, int) {
+       [](const model::Backend& backend) {
          return boost::json::value(static_cast<double>(backend.temperature));
        },
        [](InForce& in_force, const boost::json::value& value) {
@@ -103,16 +91,11 @@ const std::array<Setting, 4>& Table() {
                                             : static_cast<float>(value.as_int64());
        }},
       {"max_tokens", "int", &ReadMaxTokens,
-       [](const model::Backend& backend, int) {
+       [](const model::Backend& backend) {
          return backend.max_tokens ? boost::json::value(*backend.max_tokens) : boost::json::value();
        },
        [](InForce& in_force, const boost::json::value& value) {
          in_force.backend.max_tokens = static_cast<int>(value.as_int64());
-       }},
-      {"tool_budget", "int", &ReadToolBudget,
-       [](const model::Backend&, int budget) { return boost::json::value(budget); },
-       [](InForce& in_force, const boost::json::value& value) {
-         in_force.tool_budget = static_cast<int>(value.as_int64());
        }},
   }};
   return kSettings;
@@ -141,14 +124,14 @@ boost::json::value ParseSetting(const std::string& name, const boost::json::valu
   return setting->read(raw);
 }
 
-std::vector<SettingView> ViewSettings(const model::Backend& agent_backend, int agent_tool_budget,
+std::vector<SettingView> ViewSettings(const model::Backend& agent_backend,
                                       const Overrides& overrides) {
   std::vector<SettingView> views;
   for (const Setting& setting : Table()) {
     SettingView view;
     view.name = setting.name;
     view.type = setting.type;
-    view.agent_value = setting.agent_value(agent_backend, agent_tool_budget);
+    view.agent_value = setting.agent_value(agent_backend);
     const auto it = overrides.find(setting.name);
     if (it != overrides.end() && !it->value().is_null()) {
       view.value = it->value();
@@ -162,9 +145,8 @@ std::vector<SettingView> ViewSettings(const model::Backend& agent_backend, int a
   return views;
 }
 
-InForce InForce::Resolve(const model::Backend& agent_backend, int agent_tool_budget,
-                         const Overrides& overrides) {
-  InForce in_force{agent_backend, agent_tool_budget};
+InForce InForce::Resolve(const model::Backend& agent_backend, const Overrides& overrides) {
+  InForce in_force{agent_backend};
   for (const Setting& setting : Table()) {
     const auto it = overrides.find(setting.name);
     if (it == overrides.end() || it->value().is_null()) continue;

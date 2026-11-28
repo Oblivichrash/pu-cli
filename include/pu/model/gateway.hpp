@@ -28,7 +28,16 @@ struct Backend;
 // A stored agents.json names one of these, and the spelling is what the file carries. One
 // value is one product: `openai` and `deepseek` speak the same protocol and are still two
 // entries, because a host is a property of the product rather than of the caller.
-enum class GatewayId { kOllama, kOllamaCloud, kOpenAI, kDeepSeek, kNim, kCodeBuddy, kAnthropic };
+enum class GatewayId {
+  kOllama,
+  kOllamaCloud,
+  kOpenAI,
+  kDeepSeek,
+  kNim,
+  kCodeBuddy,
+  kAnthropic,
+  kLlamaCpp,
+};
 
 std::string DefaultHostFor(GatewayId id);
 

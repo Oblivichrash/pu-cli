@@ -8,7 +8,7 @@
 // nothing that knows what a conversation is.
 //
 
-#include "pu/tools_cli/sse.hpp"
+#include "pu/tools/sse.hpp"
 
 #include <boost/program_options.hpp>
 
@@ -18,15 +18,15 @@
 #include <string>
 
 #include "pu/core/beast_http_client.hpp"
-#include "pu/tools_cli/entry_point.hpp"
+#include "pu/tools/entry_point.hpp"
 
 namespace po = boost::program_options;
 
 namespace {
 
-using pu::tools_cli::ExitCode;
-using pu::tools_cli::SseFormat;
-using pu::tools_cli::SseOptions;
+using pu::tools::ExitCode;
+using pu::tools::SseFormat;
+using pu::tools::SseOptions;
 
 po::options_description Options() {
   po::options_description options{"pu-sse options"};
@@ -51,8 +51,8 @@ int main(int argc, char** argv) {
   // the options.
   SseOptions sse;
 
-  return pu::tools_cli::RunEntryPoint(
-      argc, argv, Options(), pu::tools_cli::BareInvocation::kRun,
+  return pu::tools::RunEntryPoint(
+      argc, argv, Options(), pu::tools::BareInvocation::kRun,
       [&sse](const po::variables_map& vm) -> std::optional<int> {
         if (vm.count("url") == 0) {
           std::cerr << "a URL is needed: pu-sse <url> [options]\n";
@@ -90,6 +90,6 @@ int main(int argc, char** argv) {
       },
       [&sse](const po::variables_map&) {
         pu::http::BeastHttpClient http;
-        return static_cast<int>(pu::tools_cli::RunSse(sse, http));
+        return static_cast<int>(pu::tools::RunSse(sse, http));
       });
 }

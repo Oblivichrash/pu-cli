@@ -661,8 +661,7 @@ TEST_CASE("A rendered entry copies the file's own surroundings and expands nothi
       "max_tokens": 4096,
       "thinking": "high"
     },
-    "security": {"sandbox_root": ".", "forbidden_patterns": ["the-change-directory-word"]},
-    "tool_call_budget": 100
+    "security": {"sandbox_root": ".", "forbidden_patterns": ["the-change-directory-word"]}
   })");
 
   model::ModelEntry model{"glm-5.3-flash", {}};
@@ -675,7 +674,6 @@ TEST_CASE("A rendered entry copies the file's own surroundings and expands nothi
   // Copied, not resolved: a snippet goes into a file that may be committed.
   REQUIRE(rendered.find("${SOME_KEY}") != std::string::npos);
   REQUIRE(rendered.find("\"max_tokens\": 4096") != std::string::npos);
-  REQUIRE(rendered.find("\"tool_call_budget\": 100") != std::string::npos);
   REQUIRE(rendered.find("x0.06 credits") != std::string::npos);
   // A double is written plainly, not in the exponent form boost::json picks.
   REQUIRE(rendered.find("\"temperature\": 0.3") != std::string::npos);

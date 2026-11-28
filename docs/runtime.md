@@ -1,9 +1,8 @@
 # Runtime, lifecycle, and cancellation
 
 How one `Runtime` instance is built, kept alive, stopped, and shared between the
-command line and `pu serve`. This was part of [ARCHITECTURE.md](ARCHITECTURE.md);
-it lives here because it is the half of the system a *maintainer* has to hold in
-their head, while the rest of that document is what a contributor reads once.
+command line and `pu serve`. This is the half of the system a *maintainer* has to hold in
+their head: the lifecycle, the cancellation contract, the tool loop and the stream.
 
 The split is a reading aid, not a boundary: every claim below is still about the
 same binary, and a change that moves work between `Runtime` and `Executor` belongs
@@ -162,6 +161,106 @@ session is serialized back to the same file via `Session::Serialize`. There is n
 manual save/load/list/export; persistence is fully automatic and scoped to the
 data directory.
 
+The two paths are `<workspace>/.pu/session.json` and `<workspace>/.pu/logs/`, where
+`<workspace>` is the directory the run is about: the one `-C` names, and the directory
+`pu` was started in when it names none. Logs are the only thing `PU_HOME` moves, and their
+directory is per process so two processes in one workspace never rotate the same file; the
+environment table in [configuration.md](configuration.md#environment-variables) owns both
+paths.
+
+The file carries `schema_version` beside `conversation` and `session_spec`, and a file
+stamped with a version this build does not accept is refused rather than read
+best-effort: `pu` reports the reason and starts a fresh conversation, and the next save
+replaces the file. The session file contains no system prompt — the prompt is
+configuration and is read from `agents.json` on every start.
+
+**What each turn cost is kept beside the conversation, not inside it.** `usage` is a
+sibling of `conversation` in the file, keyed by the assistant node the turn produced:
+prompt, completion and cached tokens, the credit the gateway priced it at, how many
+provider calls the turn took, and which model and gateway answered. A model never reads
+it, `History()` never renders it, and a page draws it next to the reply rather than as
+part of it — which is why it is not a field of `AssistantPayload`. It is kept because it
+is the only record that an optimization changed anything: a prompt edited so the cache
+stops hitting, or a model swapped for one that costs three times as much, shows up here
+and nowhere else. The key is absent from every file written before it existed, and absent
+is read as "nothing was recorded" rather than as a version this build cannot load, so the
+schema version did not move. A turn that has left the chain — a rewound turn, `/clear` —
+takes its entry with it on the next save.
+
+`session_spec` names the agent and carries the session's own thinking level when
+`/thinking` set one. Backend fields are read from `agents.json` on each start, so
+editing the configuration takes effect without touching the session. `/backend <type>
+<model>` adopts the model named by the file, so the backend a session reports and the
+agent it names are always the same answer. It takes no key: a key typed at the prompt is
+written into the scrollback, so an endpoint that needs one is named in `agents.json`,
+where it can come from the environment. A restart resumes the agent the session names; a
+name the file no longer carries is reported and the file's own agent is used, since a file
+describes exactly one.
+
+The conversation is a chain: `conversation.history` holds `nodes`, each with its id,
+timestamp, its parent and one role payload, plus the `leaf` that marks the current
+position. A payload's `content` is a single string, and reasoning is a list of blocks,
+each with the provider's `text`, an optional `signature` and the provider's own `raw`
+encoding when it round-trips (see [providers.md](providers.md)).
+
+A node's id is its own, not a position: the earlier `id = size() + 1` scheme made a
+rewind representable only by rewriting the file, and a branch not at all.
+
+`/rewind` moves the `leaf` back and removes nothing, so the turns after it stay in the
+file until something replaces them. The append that follows drops whatever the new leaf
+cannot reach, so a replaced turn leaves nothing behind and the store ends up holding
+exactly the chain the view shows.
+
+A tool call has three states: `pending` while it has not been answered, `completed` once a
+receipt answers it, and `interrupted` when the turn that requested it was cancelled before
+the call ran. Cancelling seals the leaf: every call still `pending` becomes `interrupted`
+and gains a receipt recording that it never ran. Those receipts are chain nodes like any
+other, so the next request renders them to the model as `role: "tool"` messages. Only a
+`pending` call counts as unfinished, so a sealed turn stops blocking `/rewind` and a switch
+of agent while a call that may still be running goes on blocking both. Whether a receipt
+records a result or an interruption, its presence is what keeps each tool call paired with
+an answer, which is what the request path is rebuilt from.
+
+Three vocabularies name these states, and they are not interchangeable. Storage and the
+session file use `pending` / `completed` / `interrupted`
+([`message.hpp`](../include/pu/session/message.hpp), [`graph.cpp`](../src/session/graph.cpp)).
+`/api/history` renames `completed` to `done` for the Web UI, so a client sees `pending` /
+`done` / `interrupted`. The transcript additionally shows `running`, which is live-only
+state and is never written to a session.
+
+### The request path
+
+```
+User Input
+    │
+    ▼
+Runtime.ProcessInput(input, ...)
+    │
+    ├── Is command? ──► CommandRouter ──► Session mutation
+    │
+    └── Is message? ──► Session.CreateProvider()
+                         │
+                         ▼
+                       Executor.Execute()          (session-state-free)
+                         │
+                         ├── Inject system context into chat history
+                         ├── Read the Conversation
+                         ├── LLMProvider.Chat()
+                         ├── Toolbox.ExecuteTool() → JSON response
+                         ├── Store the tool result in the Conversation
+                         ├── Repeat tool loop if tool calls present
+                         └── Return final response
+                         │
+                         ▼
+                       Session::Serialize() → session.json
+```
+
+Each stored node is rendered into one `ChatMessage` on the way out
+([`request.hpp`](../include/pu/session/request.hpp)), which is the view a provider
+requires. That makes `ChatMessage` a compatibility view rather than a place to grow: a new
+context feature belongs to `MessageNode` ([`message.hpp`](../include/pu/session/message.hpp)),
+which owns what a turn is.
+
 ### Tool execution
 
 A tool runs as a child process and answers with one merged stream. Its stdout and stderr are
@@ -197,11 +296,13 @@ same receipts. Nothing about the child is a special case of the loop; it is a se
 **One hop, by construction.** The child's `delegated_` flag is what withholds the tool: at
 `RegisterBuiltinTools()` the `ask_dir` tool is registered `if (has("ask_dir") && !delegated_)`,
 so a delegated turn's toolbox has no way to delegate further. The rule is a fact about which
-toolbox was built rather than a counter that a call could get wrong.
+toolbox was built rather than a counter that a call could get wrong, and it is the only rule a
+chain needs: a delegation that is the last hop cannot come back round to a workspace it already
+left, so nothing carries a list of visited directories to compare against.
 
 **The child owns its own rules.** A directory target must already carry `.pu/agents.json`;
 nothing creates one. That file — not the parent's — decides the child's sandbox, approval
-patterns, model and tool budget, which is why a parent cannot widen or narrow its child's
+patterns and model, which is why a parent cannot widen or narrow its child's
 reach, and why `Inside()` in the parent only ever guards the `ask` string itself.
 
 **Stop and deadline cross the boundary.** These are not tickets the asking turn can hold, so
@@ -235,6 +336,172 @@ deadline produces a message naming the budget and suggesting a smaller question.
 `has_error` on the asking turn's behalf — they are a result the parent model can read and act
 on, which is what keeps a stop from being reported as a broken child.
 
+### The tool loop
+
+The tool loop holds no session state (`main()` injects its collaborators) and
+runs once per turn: read the `Conversation`, inject system context, call the
+provider, execute any tool calls through `Toolbox`, store each structured result
+verbatim, and repeat until the reply carries no call.
+
+**Shape of a turn.** `Execute` takes the caller's inputs once and packs them into a
+`Turn` — provider, toolbox, callbacks, and the two cancel tokens — so the three steps
+below each take that one argument instead of re-threading a seven-parameter signature:
+
+| Step | Does |
+| :--- | :--- |
+| `CallProvider` | Builds the request path from the `Conversation`, streams the reply, and reports usage. Owns the only `try`/`catch` around a provider call, including the distinction between a cancelled call and a failed one. |
+| `RunToolCalls` | Resolves the tool context once, then per call runs the tool, reports it to the callbacks, and stores the result verbatim. |
+| `RunToolLoop` | Iterates the two above until a reply carries no call, and is the only place the iteration cap and the "empty reply" failure are decided. |
+
+**Tool context lifetimes.** `ToolContext` holds raw pointers into values that must outlive
+the tool call, so the `Control` and `Approval` structs it points at are `Executor` members
+filled in by `BuildToolContext`, not locals. `Control` is present only when the caller
+supplied a stop token — the CLI has no channel to stop a command, so its pointer stays
+null there.
+
+**System context.** `Executor` prepends a system message built from:
+
+- OS name and kernel version (probed once, see below)
+- Security policy (sandbox root, forbidden patterns)
+- Current working directory (the sandbox root)
+- Tool-use guidelines for the model
+- Whatever `context_digest` returns, when a caller set one
+
+It is merged with the agent's configured `system_prompt`, which comes from
+`agents.json` via `Runtime::RebuildToolbox` and is not session state, so
+switching the backend does not clear it.
+
+**Structured tool output.** Tools return JSON through the schema in
+`include/pu/agent_tools/tool.hpp`: `success`, `blocked`, `output`, `error`, `exit_code`, and the
+`refusal` that names why the policy refused a call when one did. The header is the field
+set's one home — `tools::Refusal` beside it says which refusal a caller can retry and which
+is a configuration to fix. The executor stores the envelope verbatim so the model sees what
+the tool produced, and reads `output`/`error` out of it only for the tool callbacks.
+`Toolbox::ExecuteTool` answers with the same envelope when the named tool is absent, so
+callers never parse two shapes.
+
+**Environment probing.** `Executor::ProbeStaticEnvironment()` runs once during
+construction (`uname` on POSIX, the Windows kernel API elsewhere) and caches the
+result. No tool-binary detection is performed.
+
+**Paged tool output.** `execute_bash` answers with one page of what the command
+printed. That shape is four nouns and a budget, in `include/pu/paging/paging.hpp`:
+
+| Noun | What it is |
+|---|---|
+| `Buffer` | one run's output, indexed by line, immutable once stored |
+| `Page` | a contiguous run of a buffer's lines, with the cursors either side |
+| `Cursor` | `<buffer>:<line>` — where a page starts |
+| `Pager` | the buffers a session can still read, and the `Budget` that decides |
+| `Anchor` | where a read starts: `head`, `tail`, or a cursor |
+
+`core::Run` (`include/pu/core/process.hpp`) produces the other half: the text, an
+`Extent` saying how much of the stream survived, and the verdict. Output and verdict are
+one value because only the reader of the stream knows both — a reader that looked away
+has to say the command was stopped, and an exit code means nothing without that. The
+budget lives in the `Pager` alone; the tool reads it from there, so a page size and a
+retention policy cannot disagree.
+
+A cursor identifies its page by itself: it names the run, and the run knows its command,
+so paging does not restate the command. The store belongs to the runtime and is borrowed
+by the tool at construction, because `RebuildToolbox()` replaces every tool object on a
+model or agent switch and a cursor has to outlive that. What a page cannot reach is
+reported rather than hidden: `page` says where the page sits, `extent` says how much of
+the run survived, and `buffer` says which run it was.
+
+The page's wire form is paging's too, in both directions: `Envelope` writes the three
+scopes, `OriginOf` reads a receipt back, `SupersededReceipt` empties one. A writer in the
+tool and a reader in the projection is how the two drift apart, and a receipt is only ever
+read by machinery that did not write it. The origin is read once, where the result enters
+the conversation (`ToolPayload::origin`), and stored with the node: a page's provenance is
+a fact about the text, and re-deriving it from the text on every turn is the same question
+asked for as long as the conversation lasts.
+
+**One page per source.** A buffer carries two ids and an order: `id` names the run,
+`source` names the question — the command and the directory — so two runs of one command
+share a source, and `rank` says how late the run was. Both ids are computed from what
+produced the run rather than counted from one, because a counter starts over with the
+process: the source would make a resumed transcript read the new `s1` as the old `s1`, and
+the run id would make this process's first run the same run as the last one's. The run id
+carries the mark of the pager that wrote it, so a cursor written elsewhere — by an earlier
+process — finds nothing instead of a namesake. `BuildRequestPath` compares the
+`rank` a receipt carries: while it assembles a request it replaces the page of a run that
+the same source has since been run again to supersede, leaving the verdict, the `page` and
+the `extent` in place and naming the newer run in `superseded_by`. A page is only superseded by a newer run
+read *after* it, so a run's own pages stay (they are complementary, not successive) and so
+does a page the model paged back to. A pager opening a transcript continues the numbering
+past the highest rank it finds there (`ContinueRankingFrom`), so a run made after a restart
+is not ranked below every page the transcript already holds. The substitution lives in the
+projection, not in the graph, so a rewind or a reload still sees every page that was ever
+read, and the buffer it replaces is still stored — the receipt is a pointer, not a dead
+end.
+
+**Forbidden patterns.** `forbidden_patterns` is enforced at the tool execution
+layer: a matching command is rejected with a JSON error. The policy fields live in
+[configuration.md](configuration.md#agentsjson).
+
+### Paging and the request view
+
+`BuildRequestPath` reads the graph and writes the message list. Nothing it does is stored:
+a rewind, a reload or a second reader sees the graph as it was, which is what lets the tiers
+apply to the same transcript without any of them being a fact about it. The tiers are applied
+per node, monotone — a decision may only move a message down, never back up:
+
+| Tier | What survives | Enters when |
+|---|---|---|
+| live | the whole text | newest run for its source, or a page read deliberately after |
+| receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
+| tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
+
+Neither tier removes a message. A receipt keeps its place and loses only its text and the
+cursor into it, which is what keeps every `tool_calls[].id` beside the `tool_call_id` that
+answers it — a `tool` message whose `tool_call_id` names no call is rejected by every provider.
+The transcript that reaches the model is the transcript that was stored, in the same order and
+at the same length.
+
+The entry condition is a count, not a size: a byte count cannot be turned into tokens without
+the model's tokenizer, so a threshold expressed in bytes is a number nobody can check against
+the window it is meant to protect. Six is not a tuned number either; it is the length of a
+plan-and-verify cycle, and the cost of being wrong is one round of rereading.
+
+**No history is compressed here.** A transcript that grows past what a window holds is not
+shrunk by cutting turns out of it — the model is given the whole conversation it had. Keeping
+the context inside its window is a job for the caller, done by delegating work to another agent
+so the bulk of it never enters this conversation at all.
+
+---
+
+### MCP servers
+
+```
+McpClient            handshake, ListTools, CallTool
+    │
+JsonRpcClient        JSON-RPC 2.0: request/response, a promise per id
+    │
+Transport            Start / Stop / WriteLine
+    │
+    ├── StdioTransport   a child process's stdio, one line of JSON per message
+    └── HttpTransport    BeastHttpClient POST, line-delimited responses
+```
+
+Servers are configured per-agent via `mcp_servers`, and a list may hold any number: each is
+started as its own client and its tools are registered under the `mcp.<server>.` prefix.
+`McpClient::Connect()` picks the transport — a non-empty `url` selects `HttpTransport`,
+otherwise a stdio child is spawned, on both POSIX (`fork`/`execvp`) and Windows
+(`CreateProcess`). `Runtime::RebuildToolbox` starts the active agent's servers, performs the
+handshake and lists tools.
+
+**How MCP and `agent_tools` meet.** The two libraries are siblings with no edge between
+them: `pu_agent_tools` states what a turn may call and `pu_mcp` states how a server is
+reached, and neither has a reason to know the other exists. The join is
+`runtime::McpTool` ([`mcp_tool.hpp`](../include/pu/runtime/mcp_tool.hpp)), a `Tool` whose
+body is one `CallTool` — written as a member of either library, that library would link the
+other for no reason but this file. `RegisterMcpTools()` wraps each `ToolDefinition` from
+`ListTools()` in an `McpTool` and registers it in the same `Toolbox` as `bash` and
+`write_file`, so a turn calls both through one interface and the model tells them apart only
+by the name prefix. The one asymmetry worth knowing: an approval pattern names a builtin by
+name, so an MCP tool is not gated by it — its reach is whatever the server declares.
+
 ### Stopping an MCP server
 
 A stdio server is a child process with three pipes, and stopping it is where a client most
@@ -247,7 +514,54 @@ stop flag between waits, and `Stop()` sets that flag first, closes the child's s
 The child itself is given a signal and a bounded wait, then killed. A server is not obliged to
 leave on its own, and a stop that hangs is worse than a process killed earlier than it liked.
 
-### Toolbox & MCP lifecycle
+---
+
+## Streaming
+
+### HTTP streaming
+
+A provider's answer arrives as an SSE body the producer writes over the life of the
+request, and `BeastHttpClient::StreamResponse` reads it the way it is written: the
+header first, then the body in bounded pieces, each handed to the line parser as it
+lands. Reading the body to its end before parsing any of it collapses the stream into
+one delivery at the end, and every layer above is then streaming in name only — a
+page cannot show a reply growing, and a stop has nothing left to interrupt. The
+failure path is the exception: an error body is collected whole, because the message
+that says what went wrong is in it.
+
+### WebSocket streaming
+
+Chat runs exclusively over the `/ws` WebSocket. A run message is queued to the
+`SessionRunner`, whose single worker starts `ProcessInput`; its `content_callback`
+hands each streamed chunk back through the connection, which queues it and writes it on
+the connection's strand, producing the typewriter effect in the browser. The
+`ToolCallbacks` passed alongside it emit tool start/end events keyed by the tool call
+`id`. Commands and non-streaming backends deliver their full text as a single chunk
+frame. The frame schema is owned by [web-api.md](web-api.md) and implemented by
+`web/ws.js`.
+
+The read loop is what an asynchronous stream buys: a connection parked in a synchronous
+read cannot be woken by closing its socket, so a shutdown would wait on a client that
+will never speak again. Here the run happens on the runner's own thread and the stream
+belongs to the strand, so shutdown stops the `io_context` and every read returns at once.
+
+A turn belongs to the client watching it. Closing the page or losing the socket ends it,
+and nothing of it is kept: what it had written is half an answer, and storing that would
+make the next request read it as the model's finished reply. The chat is therefore never
+driven by nobody, and a page that reloads mid-answer comes back to the conversation as the
+store has it — the question, and no reply to it. A `cancel` the page asked for is the one
+case that still answers: the turn stops, keeps what already arrived, and ends with `done`
+so the page can stop waiting. A socket the same page replaces — a reload, or the watchdog
+giving up on a socket that went silent — is not the page leaving, so the turn runs on and
+the frames produced while the swap happens are held for the socket that attaches next.
+
+The page itself is plain scripts with no build step, so the load order in `web/index.html`
+*is* the dependency order. The modules and the static page resolution are in
+[web-ui.md](web-ui.md).
+
+---
+
+## Toolbox & MCP lifecycle
 
  ```
  RebuildToolbox(agent)

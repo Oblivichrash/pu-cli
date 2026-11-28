@@ -37,9 +37,8 @@ model reads and one it does not:
 - **`buffer`** is for the machine, not the model. `id` names the run, `source` names the
   question — the command and the directory — so two runs of one command share a source, and
   `rank` says how late the run was, which is what makes one page supersede another. It is
-  present because `OriginOf` and `TombstonedReceipt` read it to know whether a newer run
-  replaced this one; a model is never told to read it, and the tool description no longer
-  names it.
+  present because `OriginOf` reads it to know whether a newer run replaced this one; a model
+  is never told to read it, and the tool description no longer names it.
 
 `at` says where to read: omitting it runs the command and starts at its last line, `head`
 runs it and starts at the first, and a line number reads the stored output without running
@@ -120,4 +119,4 @@ in a way nothing points at.
 
 What this does not bound is a conversation that runs many *different* commands, or one
 whose prompts and replies grow on their own. Each such run keeps one page, and the pages
-accumulate — see [Known Limitations](ARCHITECTURE.md#known-limitations).
+accumulate — see [Known Limitations](limitations.md).

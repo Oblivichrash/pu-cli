@@ -7,7 +7,7 @@
 #include "pu/core/process.hpp"
 #include "pu/llm/projection.hpp"
 #include "pu/session/request.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 #include <boost/json.hpp>
 #include "pu/core/json.hpp"
@@ -39,6 +39,51 @@ std::string StopNotice(const std::string& finish_reason) {
   }
   spdlog::debug("Provider ended the reply with finish_reason={}", finish_reason);
   return "";
+}
+
+// Said once per turn when the last request filled most of the window the agent's own
+// `context_window` names. It is a statement, not a trim: the request went out whole, and a turn
+// this one made the request for is a turn the caller has to end. Nothing here shortens anything.
+//
+// The share is approximate by construction. `prompt_tokens` is the provider's own count of one
+// request, and the harness overhead of the next one -- tool definitions, the system block -- is
+// not in it, so the boundary unit is a thought about the next request rather than a measurement
+// of it. Saying so is the point: a ceiling nobody can see is what produces the gateway's own
+// refusal a round later.
+std::string WindowNotice(int prompt_tokens, int window) {
+  if (window <= 0 || prompt_tokens <= 0) return "";
+  const double share = static_cast<double>(prompt_tokens) / static_cast<double>(window);
+  if (share < 0.8) return "";
+  std::ostringstream oss;
+  oss << "This turn's last request was " << prompt_tokens << " of the " << window
+      << " tokens this model holds, so the conversation is nearly full. Nothing was shortened: "
+         "end the turn, or hand the rest of the work to another agent with ask_dir.";
+  return oss.str();
+}
+
+// What to say when a gateway refuses a request for being larger than the window it holds. The
+// gateway's own sentence is kept under a diagnostic, because it names the figures; what is put
+// in front of it is the part the reader has to act on, which the gateway has no way to state.
+std::string TooLargeMessage(const std::string& said, int window) {
+  std::ostringstream oss;
+  oss << "The conversation outgrew this model's context window";
+  if (window > 0) oss << " (" << window << " tokens, from this agent's context_window)";
+  oss << ". Nothing was dropped to make it fit: start a new conversation, or hand the rest of "
+         "the work to another agent with ask_dir.";
+  if (!said.empty()) oss << " The provider said: " << said;
+  return oss.str();
+}
+
+// Whether a `what()` names a request the provider refused for its size. Gateways spell this
+// differently -- llama.cpp says "exceeds the available context size", OpenAI "maximum context
+// length", Anthropic "prompt is too long" -- so the test is on the subject rather than on one
+// product's wording, which is the mistake this function exists to stop being made twice.
+bool RefusedForSize(std::string_view what) {
+  const auto has = [what](std::string_view needle) {
+    return what.find(needle) != std::string_view::npos;
+  };
+  return (has("context size") || has("context_length") || has("context length") ||
+          has("maximum context") || has("prompt is too long") || has("too many tokens"));
 }
 
 #ifdef _WIN32
@@ -99,10 +144,13 @@ void Executor::ProbeStaticEnvironment() {
 }
 
 std::string Executor::BuildStaticSystemContext() const {
+  // Sent on every request of every turn, so every word here is paid for again each time. It is
+  // written as the facts a model cannot read off the tool it is about to call, and no longer:
+  // the headings earn their four words by making the block scannable, not by being pretty.
   std::ostringstream oss;
 
-  // First, because every section below is read as this agent's view of the machine. Left out
-  // when the entry named nothing: a heading with no name under it is a line the model spends
+  // First, because every line below is read as this agent's view of the machine. Left out when
+  // the entry named nothing: a name heading with nothing under it is a line the model spends
   // reasoning about rather than a fact.
   if (!agent_name_.empty() || !agent_description_.empty()) {
     oss << "=== Identity ===\n";
@@ -110,13 +158,17 @@ std::string Executor::BuildStaticSystemContext() const {
     if (!agent_description_.empty()) oss << "Role: " << agent_description_ << "\n";
   }
 
+  // The working directory is the first thing a command resolves against, so it rides with the
+  // environment rather than under a heading of its own.
   oss << "=== Environment ===\n";
   oss << "OS: " << static_env_info_.os_name << "\n";
   oss << "Kernel: " << static_env_info_.kernel_version << "\n";
-  // Stated up front rather than only when it runs out. A budget the model learns about at the
-  // last call is a budget it cannot plan against: the exhaustion notice already arrives after
-  // there is nothing left to spend it on.
-  oss << "Tool-call budget for this turn: " << tool_call_budget_ << " calls\n";
+  oss << "Working directory: ";
+  if (security_policy_ && !security_policy_->sandbox_root.empty()) {
+    oss << security_policy_->sandbox_root << "\n";
+  } else {
+    oss << ".\n";
+  }
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -125,7 +177,7 @@ std::string Executor::BuildStaticSystemContext() const {
     if (security_policy_->forbidden_patterns.empty()) {
       oss << "(none)";
     } else {
-      for (size_t i = 0; i < security_policy_->forbidden_patterns.size(); ++i) {
+      for (std::size_t i = 0; i < security_policy_->forbidden_patterns.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << "'" << security_policy_->forbidden_patterns[i] << "'";
       }
@@ -135,40 +187,28 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << "(no security policy set)\n";
   }
 
-  oss << "=== Working Directory ===\n";
-  if (security_policy_ && !security_policy_->sandbox_root.empty()) {
-    oss << security_policy_->sandbox_root << "\n";
-  } else {
-    oss << ".\n";
-  }
-
+  // One line, because the distinction it draws is one distinction: a command's own exit code is
+  // the command's, and these four are the program's.
   oss << "=== Exit Codes ===\n";
-  oss << "0 ok, 1 the invocation or its configuration was wrong, 2 a provider refused or was "
-         "unreachable, 3 the sandbox refused every call the turn tried, 4 a person stopped it. "
-         "A `bash` result carries the command's own exit code, which is whatever the command "
-         "meant by it; these four are what this program exits with.\n";
+  oss << "0 ok, 1 bad invocation or configuration, 2 provider refused or unreachable, 3 sandbox "
+         "refused every call, 4 stopped by a person. A `bash` result carries the command's own "
+         "exit code, which is whatever the command meant by it.\n";
 
   oss << "=== Tool Use Guidelines ===\n";
-  // Not "state the plan before every call": that competes with the parallel-call guideline
-  // below, and a round spent on a plan the user did not ask for is a round not spent working.
-  oss << "1. Plan before you act, in your reasoning. Write a plan into your reply only when its "
-         "steps tell the user something they could not read off the work itself.\n";
-  oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
-         "read from its head (the default), and a log, a build's output, or a failure is read "
-         "from its tail with at='tail'.\n";
-  oss << "3. A command's output comes back one page at a time. When page.later or page.earlier is "
-         "set, pass that cursor back as `at` to read that page instead of running the command "
-         "again. Paging reads what is already stored; grep runs again and finds a needle in "
-         "what you have not stored.\n";
-  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
+  oss << "1. Plan in your reasoning; put a plan in the reply only when it tells the user "
+         "something the work itself would not.\n";
+  oss << "2. Read the end you need, not the whole file: a file you are about to edit from its "
+         "head, a log or a failure from its tail with at='tail'.\n";
+  oss << "3. Output comes back one page at a time. Pass page.later or page.earlier back as `at` "
+         "to read the next one instead of running the command again; a page is stored, and "
+         "`grep` is for what you have not stored.\n";
+  oss << "4. Make parallel tool calls when they do not depend on each other.\n";
   // A delegated answer is already prose somebody finished writing. The one continuation this
   // has to stop is the cheapest a model can make: reading a paragraph and then writing the
   // same paragraph again. Stated here rather than in ask_dir's own description, because a
   // description says what a tool is, while this says what to do with what came back.
-  oss << "5. When a tool returns a conclusion -- a delegated answer, a review, a summary -- pass "
-         "it on rather than restating it. Say in your own words only what is yours to add: the "
-         "question that was asked, what you did with the answer, what is still open. Never "
-         "repeat the answer's content back as if writing it out were the work.\n";
+  oss << "5. A conclusion a tool returns -- a delegated answer, a review, a summary -- is passed "
+         "on, not restated: say what you asked, what you did with it, and what is still open.\n";
 
   return oss.str();
 }
@@ -254,7 +294,6 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
 
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
-  tool_ctx.delegated_visited = delegated_visited_;
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
   // The tally belongs to the turn: a tool adds to it, and the turn reports it beside what its
   // own model cost.
@@ -362,14 +401,27 @@ ProviderCall Executor::CallProvider(Conversation& conversation, const Turn& turn
       return {.reply = {}, .outcome = ProviderOutcome::kAbandoned};
     }
     result.has_error = true;
-    result.error_message = "Request failed: " + text::ReadableError(e.what());
+    const std::string said = text::ReadableError(e.what());
+    result.error_message = RefusedForSize(said) ? TooLargeMessage(said, context_window_)
+                                                : "Request failed: " + said;
     return {.reply = {}, .outcome = ProviderOutcome::kFailed};
   }
 }
 
+// Runs every call of one round. The loop stays sequential -- two `execute_bash` calls in one
+// round may be changing the same files, and the tools were written to be called one at a time --
+// but the receipts are appended only once the round is over.
+//
+// That delay is what the provider's prefix cache is paid for. A round's calls all answer the
+// same assistant message, so the next request repeats it whichever order the receipts land in;
+// appending between two calls would put a message the model has not seen yet in the middle of
+// the round, and the next turn would then have to re-read the whole prefix up to that point.
+// One round, one block of receipts, one cacheable prefix.
 void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
                             const std::vector<ToolCall>& calls, ExecutionResult& result) {
   ToolContext tool_ctx = BuildToolContext(turn);
+  std::vector<ChatMessage> receipts;
+  receipts.reserve(calls.size());
 
   for (const ToolCall& call : calls) {
     if (turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) {
@@ -395,7 +447,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     try {
       tool_result = turn.toolbox->ExecuteTool(call.name, call.arguments, tool_ctx);
     } catch (const std::exception& e) {
-      tool_result = tools::MakeToolResultJson(false, "",
+      tool_result = agent_tools::MakeToolResultJson(false, "",
                                               std::string("Tool execution error: ") + e.what(), -1);
     }
     const auto tool_ms =
@@ -407,10 +459,10 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
     ClearLogToolName();
     ClearLogDurationMs();
 
-    const auto parsed = tools::ParseToolResult(tool_result);
+    const auto parsed = agent_tools::ParseToolResult(tool_result);
     if (parsed.valid && parsed.blocked) {
       ++result.blocked_tool_calls;
-      if (parsed.refusal == tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
+      if (parsed.refusal == agent_tools::Refusal::kNobodyToAsk) ++result.unaskable_tool_calls;
     }
 
     if (turn.tool_callbacks.on_end) {
@@ -429,11 +481,16 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
     ChatMessage tool_msg;
     tool_msg.role = "tool";
-    tool_msg.content = tool_result;
+    tool_msg.content = std::move(tool_result);
     tool_msg.tool_name = call.name;
     tool_msg.tool_call_id = call.id;
-    conversation.Append(tool_msg);
+    receipts.push_back(std::move(tool_msg));
   }
+
+  // Appended in the order the calls were made: a provider matches a receipt to its call by
+  // `tool_call_id`, and a transcript that listed them backwards would read differently to a
+  // person than the round that produced it.
+  for (ChatMessage& receipt : receipts) conversation.Append(std::move(receipt));
 
   // The note rides after every receipt of this round: inside the loop it would land
   // between two tool receipts, and a user message splitting the assistant's
@@ -453,11 +510,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
   ExecutionResult result;
-    bool budget_reached = false;
-    bool wrap_up_asked = false;
 
-  // The tool-call budget is what this loop counts, and the two stop checks inside it are what
-  // end it early; neither is a property of this loop, so both are read rather than held here.
   for (;;) {
     // A round is counted when it opens rather than when its reply arrives: a turn stopped
     // before asking the model did open that round and did nothing in it, and a count that
@@ -471,40 +524,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       spdlog::debug("Turn stopped before round {} asked anything", result.rounds);
       conversation.SealInterruptedToolCalls();
       return result;
-    }
-
-    // The budget counts tool calls, not replies: one reply can carry several calls. The check
-    // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
-    // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
-    // stopping the round that made the second one.
-    if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
-      budget_reached = true;
-      spdlog::warn("Tool-call budget of {} reached, asking the model to wrap up",
-                   tool_call_budget_);
-    }
-
-    if (budget_reached && !wrap_up_asked) {
-      // Rather than ending the turn with an error, spend one round on a wrap-up: the
-      // model answers from what it has gathered, and the user reads an answer instead
-      // of a refusal. A wrap-up that still calls a tool is answered no further.
-      //
-      // A wrap-up is a round like any other, so a stop that arrived while the last tools ran
-      // ends the turn here rather than buying one more reply the user no longer wants.
-      if (stop_check_ && stop_check_()) {
-        spdlog::debug("Turn stopped before the wrap-up round");
-        conversation.SealInterruptedToolCalls();
-        return result;
-      }
-      ChatMessage wrap_up;
-      wrap_up.role = kUserRole;
-      wrap_up.content =
-          "[system] The tool-call budget for this turn is exhausted. Do not call any "
-          "more tools; answer now from what you have gathered so far.";
-      conversation.Append(wrap_up);
-      wrap_up_asked = true;
-    } else if (budget_reached && wrap_up_asked) {
-      spdlog::warn("Wrap-up round made no final answer, ending the turn");
-      break;
     }
 
     ProviderCall call = CallProvider(conversation, turn, result);
@@ -527,6 +546,11 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       }
       result.content = response;
       result.notice = StopNotice(chat_result.finish_reason);
+      // Said only where the stop notice left the line free: a reply cut off at `max_tokens` is
+      // a different problem, and the window is not what the reader has to act on then.
+      if (result.notice.empty() && result.usage) {
+        result.notice = WindowNotice(result.usage->prompt_tokens, context_window_);
+      }
       if (!chat_result.model.empty()) {
         result.model = chat_result.model;
         spdlog::debug("Answered by {}", chat_result.model);
@@ -544,16 +568,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     AppendAssistantTurn(conversation, chat_result);
     RunToolCalls(conversation, turn, chat_result.tool_calls, result);
-  }
-
-  if (budget_reached && result.content.empty()) {
-    result.outcome = TurnOutcome::kToolBudgetReached;
-    result.content =
-        "The tool-call budget for this turn was reached without a final answer. "
-        "Please rephrase your request or narrow the scope, or raise the budget with "
-        "the tool_call_budget agent setting.";
-    result.has_error = true;
-    return result;
   }
 
   if (result.content.empty() && result.blocked_tool_calls > 0 &&

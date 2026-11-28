@@ -22,7 +22,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
              const std::string& prompt, const std::string& out_dir, bool save, bool listing,
              Runtime& runtime) {
   return WithInitializedRuntime(agent, runtime, [&] {
-    tools_cli::ProbeOptions options;
+    tools::ProbeOptions options;
     options.gateway = gateway;
     options.model = model;
     options.prompt = prompt;
@@ -32,7 +32,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
     // The subcommand borrows the session's backend so `pu probe --gateway nim` picks up
     // the agent's keys; the standalone tool builds the same table from its own config read.
     return static_cast<int>(
-        tools_cli::RunProbe(options, ReadOnlyBackend(gateway, model, runtime), runtime.Http()));
+        tools::RunProbe(options, ReadOnlyBackend(gateway, model, runtime), runtime.Http()));
   });
 }
 }  // namespace pu::cli

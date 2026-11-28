@@ -17,7 +17,7 @@
 #include "pu/llm/llm_provider.hpp"
 #include "pu/session/request.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 namespace pu {
 
@@ -39,13 +39,10 @@ struct ToolCallbacks {
       on_end;
 };
 
-// How a turn ended. `kToolBudgetReached` means the wrap-up round also failed to
-// produce an answer; a turn that was stopped at the budget but did answer is
-// `kCompleted`, with the answer the wrap-up round produced.
+// How a turn ended.
 enum class TurnOutcome {
   kCompleted,
   kFailed,
-  kToolBudgetReached,
 };
 
 // What one provider call did. The four states are exclusive, which is why they are one value
@@ -99,19 +96,17 @@ struct ExecutionResult {
 class Executor {
  public:
 
-  // The tool-call budget for one turn: how many tool calls the model may make before it is asked
-  // to wrap up. Counted per call, not per reply, since one reply can carry several.
-  //
-  // Public because it is the number a session shows when it has no override of its own: the
-  // runtime and the page both report it rather than restating it.
-  inline static constexpr int kDefaultToolCallBudget = 100;
   Executor();
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
-  void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
+  // How much context the model this turn asks holds, or 0 when the entry names none. Advisory:
+  // nothing is trimmed against it and no turn is refused for outgrowing it. It is read for two
+  // things a caller cannot see without it -- how full the last request was, which the near-window
+  // notice states, and what "exceeds the available context size" from a gateway actually means.
+  void SetContextWindow(int tokens) { context_window_ = tokens; }
 
   // Who is answering this turn, in the runtime's own words. Carried into the static context
   // because a prompt a person wrote says what an agent is for, and an agent that has been
@@ -120,14 +115,6 @@ class Executor {
   void SetAgentIdentity(std::string name, std::string description) {
     agent_name_ = std::move(name);
     agent_description_ = std::move(description);
-  }
-
-  // The workspaces the question this turn is answering has already been asked in. Empty for an
-  // ordinary turn; set by the runtime on a delegated one, which is how a tool that asks another
-  // workspace learns where the question came from. Refreshed on every toolbox rebuild, so a turn
-  // started after the runtime's chain grows sees the new one.
-  void SetDelegatedChain(std::vector<std::filesystem::path> chain) {
-    delegated_visited_ = std::move(chain);
   }
 
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
@@ -210,11 +197,8 @@ class Executor {
   ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
 
-  int tool_call_budget_ = kDefaultToolCallBudget;
-
-  // Where this turn's question has already been asked. Copied into every ToolContext the turn
-  // builds, so a tool that delegates carries it onward without the executor knowing why.
-  std::vector<std::filesystem::path> delegated_visited_;
+  // From the agent's own `context_window`; 0 when it names none. See SetContextWindow.
+  int context_window_ = 0;
 
   std::function<bool()> stop_check_;
 

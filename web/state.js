@@ -46,16 +46,9 @@ const PU = {
   // The socket a reopened one replaces. It keeps delivering the turn until the server
   // closes it, and its close is the handover rather than the page going away.
   supersededSocket: null,
-  // True from a socket's open until the transcript it bought is rebuilt. Frames arriving
-  // meanwhile wait in loadingFrames instead of being drawn into boxes about to be replaced.
-  // Lowered by two things: the rebuild's own end, and this timer.
-  loading: false,
-  loadingTimer: null,
-  loadingFrames: [],
-  // Bumped by each load, so a load that a later one overtook knows not to replay for it.
-  loadGen: 0,
-  // True while loadHistory is appending, so two runs cannot draw the chain twice.
-  loadHistBusy: false,
+  // Bumped by each history load, so a load a later one overtook can tell that its answer is no
+  // longer the one to draw.
+  loadHistGen: 0,
 
   // The next message sent is turn chainLength + 1, which is the number /api/rewind expects.
   chainLength: 0,
@@ -91,6 +84,11 @@ const PU = {
   // That same turn as the console stated it -- count, cached share, completion -- so the tooltip
   // repeats it rather than recomputing it.
   lastTurnLine: "",
+  // The share of that prompt the provider answered from its cache. Kept beside the count rather
+  // than folded into the line, because the line is a sentence and this is a number the tooltip
+  // does arithmetic on: a prompt 90% cached costs a tenth of what an uncached one does, and that
+  // is the only figure on this bar that says what a change to the prompt actually saved.
+  lastTurnCached: null,
   usageTotal: null,
 
   composer: {

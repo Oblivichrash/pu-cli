@@ -520,9 +520,9 @@ TEST_CASE("serve API /api/gateways lists every gateway this build carries", "[se
   const auto j = ParseJson(client.Get("/api/gateways"));
   const auto& gateways = j.at("gateways").as_array();
   // The table itself, in its order: a build that lost one of these could not be told to use it.
-  REQUIRE(gateways.size() >= 7);
+  REQUIRE(gateways.size() >= 8);
   const std::vector<std::string> wanted = {"ollama", "ollama-cloud", "openai", "deepseek",
-                                           "nvidia", "tencent", "anthropic"};
+                                           "nvidia", "tencent", "anthropic", "llamacpp"};
   for (const std::string& name : wanted) {
     bool saw = false;
     for (const auto& gateway : gateways) {
@@ -589,7 +589,7 @@ TEST_CASE("serve API /api/settings names every setting and where it came from",
   const auto j = ParseJson(client.Get("/api/settings"));
   REQUIRE(j.at("success") == true);
   const auto& settings = j.at("settings").as_array();
-  REQUIRE(settings.size() == 4);
+  REQUIRE(settings.size() == 3);
 
   bool saw_thinking = false;
   for (const auto& setting : settings) {
@@ -598,15 +598,13 @@ TEST_CASE("serve API /api/settings names every setting and where it came from",
     if (name == "thinking") {
       saw_thinking = true;
       CHECK(setting.at("value") == "auto");
-    } else if (name == "tool_budget") {
-      CHECK(setting.at("value") == 100);  // the executor's default, which the agent did not name
     }
   }
   CHECK(saw_thinking);
 
   // The same answer, in the shape the transcript surface already reported.
   const auto session_j = ParseJson(client.Get("/api/session"));
-  REQUIRE(session_j.at("settings").as_array().size() == 4);
+  REQUIRE(session_j.at("settings").as_array().size() == 3);
 }
 
 TEST_CASE("serve API /api/settings accepts a value and reports it as the session's",
@@ -640,25 +638,24 @@ TEST_CASE("serve API /api/settings accepts a value and reports it as the session
   REQUIRE_FALSE(back.as_object().count("thinking_override") == 1);
 }
 
-TEST_CASE("serve API /api/settings takes a budget, and reset drops every override",
-          "[serve][api]") {
+TEST_CASE("serve API /api/settings reset drops every override", "[serve][api]") {
   ServeHarness harness;
   auto client = harness.Client();
 
   const auto set = client.PostFull(
-      "/api/settings", boost::json::object{{"name", "tool_budget"}, {"value", 3}});
+      "/api/settings", boost::json::object{{"name", "temperature"}, {"value", 0.25}});
   REQUIRE(set.status == 200);
-  REQUIRE(ParseJson(set.body).at("settings").as_array().size() == 4);
+  REQUIRE(ParseJson(set.body).at("settings").as_array().size() == 3);
 
   const auto session_j = ParseJson(client.Get("/api/session"));
-  bool budget_from_session = false;
+  bool temperature_from_session = false;
   for (const auto& setting : session_j.at("settings").as_array()) {
-    if (setting.at("name") != "tool_budget") continue;
-    budget_from_session = true;
-    CHECK(setting.at("value") == 3);
+    if (setting.at("name") != "temperature") continue;
+    temperature_from_session = true;
+    CHECK(setting.at("value") == 0.25);
     CHECK(setting.at("source") == "session");
   }
-  CHECK(budget_from_session);
+  CHECK(temperature_from_session);
 
   const auto reset = client.PostFull("/api/settings/reset", boost::json::object{});
   REQUIRE(reset.status == 200);
@@ -667,40 +664,6 @@ TEST_CASE("serve API /api/settings takes a budget, and reset drops every overrid
   const auto reset_j = ParseJson(reset.body);
   for (const auto& setting : reset_j.at("settings").as_array()) {
     CHECK(boost::json::value_to<std::string>(setting.at("source")) == "agent");
-  }
-}
-
-// The point of a session override is that the next turn runs under it, not that a number was
-// echoed back: the budget in force is read from the runtime the turn uses.
-TEST_CASE("a session's budget override is what the turn runs under", "[serve][api]") {
-  ServeHarness harness;
-  auto client = harness.Client();
-
-  // The agent named no budget, so the executor's default is in force.
-  REQUIRE(harness.RuntimeRef().Settings().size() == 4);
-  int before = 0;
-  for (const auto& view : harness.RuntimeRef().Settings()) {
-    if (view.name == "tool_budget") before = static_cast<int>(view.value.as_int64());
-  }
-  REQUIRE(before == pu::Executor::kDefaultToolCallBudget);
-
-  REQUIRE(client
-              .PostFull("/api/settings",
-                        boost::json::object{{"name", "tool_budget"}, {"value", 3}})
-              .status == 200);
-
-  for (const auto& view : harness.RuntimeRef().Settings()) {
-    if (view.name != "tool_budget") continue;
-    CHECK(static_cast<int>(view.value.as_int64()) == 3);
-    CHECK(view.source == "session");
-  }
-
-  // Clearing it names the agent's number again, which is what a reset does for every row.
-  REQUIRE(client.PostFull("/api/settings/reset", boost::json::object{}).status == 200);
-  for (const auto& view : harness.RuntimeRef().Settings()) {
-    if (view.name != "tool_budget") continue;
-    CHECK(view.source == "agent");
-    CHECK(static_cast<int>(view.value.as_int64()) == pu::Executor::kDefaultToolCallBudget);
   }
 }
 
@@ -722,11 +685,6 @@ TEST_CASE("serve API /api/settings refuses a value the setting cannot take", "[s
       "/api/settings", boost::json::object{{"name", "temperature"}, {"value", 3.0}});
   REQUIRE(out_of_range.status == 400);
   CHECK(out_of_range.body.find("between 0 and 2") != std::string::npos);
-
-  // Zero is not "unlimited": it would stop the turn at its first call.
-  const auto zero =
-      client.PostFull("/api/settings", boost::json::object{{"name", "tool_budget"}, {"value", 0}});
-  REQUIRE(zero.status == 400);
 
   const auto missing = client.PostFull("/api/settings", boost::json::object{});
   REQUIRE(missing.status == 400);

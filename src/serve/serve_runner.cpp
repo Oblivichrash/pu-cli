@@ -33,7 +33,7 @@ SessionRunner::~SessionRunner() { Stop(); }
 
 bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
   std::shared_ptr<WebSocketConnection> replaced;
-  std::deque<std::shared_ptr<const std::string>> pending;
+  std::deque<boost::json::object> pending;
   {
     std::lock_guard<std::mutex> lock(attach_mutex_);
     auto current = attached_.lock();
@@ -49,14 +49,15 @@ bool SessionRunner::Attach(const std::shared_ptr<WebSocketConnection>& conn) {
     if (current && current != conn) current->DetachFromPage();
     attached_ = conn;
     // The turn may still be running for the socket that went away. The page is handed the
-    // frames of the turn in flight so it joins in, and of the last finished one so a reply that
-    // arrived while nobody was watching is drawn without a reload.
-    pending = FramesForNextPage();
+    // state of the turn in flight so it joins in, and of the last finished one so a reply that
+    // arrived while nobody was watching is drawn without a reload. States, not frames: a frame
+    // replay would append a second copy of a reply this page may already have drawn.
+    pending = SnapshotsForNextPage();
   }
   // Outside the lock: the old socket's teardown posts to its own strand and takes this mutex
   // again on the way out.
   if (replaced) replaced->Close();
-  for (const auto& frame : pending) conn->Send(boost::json::parse(*frame));
+  for (const auto& snapshot : pending) conn->Send(snapshot);
   return true;
 }
 
@@ -84,7 +85,81 @@ std::shared_ptr<SessionRunner::TurnRecord> SessionRunner::RecordOf(
   return nullptr;
 }
 
+namespace {
+
+// Folds one frame into the state of the turn it belongs to. Every field a snapshot carries is
+// written here and nowhere else, so the snapshot and the live stream cannot drift apart and a
+// new frame type is added in one place.
+//
+// Appending is right only for text: a tool that starts and ends is one entry, and a turn
+// handed over again must not grow a second one. Hence the upsert by id.
+void ApplyToState(boost::json::object& state, const std::string& type,
+                  const boost::json::value* payload) {
+  static const boost::json::object kNoPayload;
+  const boost::json::object& body =
+      (payload != nullptr && payload->is_object()) ? payload->as_object() : kNoPayload;
+
+  if (type == "chunk" || type == "thinking") {
+    const boost::json::value* add = body.if_contains("text");
+    if (add == nullptr || !add->is_string()) return;
+    const char* field = type == "chunk" ? "text" : "thinking";
+    std::string merged;
+    if (const boost::json::value* was = state.if_contains(field);
+        was != nullptr && was->is_string()) {
+      merged = was->as_string().c_str();
+    }
+    merged.append(add->as_string().c_str());
+    state[field] = std::move(merged);
+    return;
+  }
+
+  if (type == "tool_start") {
+    boost::json::value& tools = state["tools"];
+    if (!tools.is_array()) tools = boost::json::array();
+    tools.as_array().push_back(boost::json::object{{"id", body.at("id")},
+                                                   {"name", body.at("name")},
+                                                   {"args", body.at("args")},
+                                                   {"state", "running"}});
+    return;
+  }
+
+  if (type == "tool_end") {
+    boost::json::value& tools = state["tools"];
+    if (tools.is_array()) {
+      for (auto& entry : tools.as_array()) {
+        if (!entry.is_object() || entry.as_object().at("id") != body.at("id")) continue;
+        boost::json::object& tool = entry.as_object();
+        tool["state"] = "done";
+        for (const char* key : {"output", "error", "page"}) {
+          if (const boost::json::value* found = body.if_contains(key)) tool[key] = *found;
+        }
+        return;
+      }
+    }
+    // Ended without a start, which a cancelled tool can do: keep it rather than lose the
+    // result, in the same shape a completed one has.
+    boost::json::value& created = state["tools"];
+    if (!created.is_array()) created = boost::json::array();
+    created.as_array().push_back(boost::json::value(body));
+    return;
+  }
+
+  // Everything else -- `notice`, `usage`, `approval_ask`, `error` -- travels as it is, and
+  // `done` also says no more is coming.
+  if (payload != nullptr) state[type] = *payload;
+  if (type == "done") state["finished"] = true;
+}
+
+}  // namespace
+
 void SessionRunner::AppendFrame(boost::json::value frame) {
+  const boost::json::object& msg = frame.as_object();
+  const std::string type(msg.at("type").as_string().c_str());
+  const boost::json::value* payload = msg.if_contains("payload");
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    if (!turns_.empty()) ApplyToState(turns_.back()->state, type, payload);
+  }
   std::string wire = boost::json::serialize(frame);
   // A WebSocket text frame must be valid UTF-8, and a failure the transport reported carries
   // the platform's own message, which on Windows is in the console codepage rather than UTF-8.
@@ -92,13 +167,9 @@ void SessionRunner::AppendFrame(boost::json::value frame) {
   // that failed looked like a page that had gone away.
   if (!text::IsValidUtf8(wire)) wire = text::SanitizeUtf8(wire);
   auto text = std::make_shared<const std::string>(std::move(wire));
-  {
-    std::lock_guard<std::mutex> lock(frame_mutex_);
-    if (!turns_.empty()) turns_.back()->frames.push_back(text);
-  }
   // A page that is here sees the turn as it happens. One that attaches later is handed the
-  // record instead, which is also what a subscriber reads, and waiting for a reload was the
-  // whole reason this record exists.
+  // state above, which is also what a subscriber reads, and not having to wait for a reload is
+  // the whole reason the state exists.
   std::shared_ptr<WebSocketConnection> current;
   {
     std::lock_guard<std::mutex> lock(attach_mutex_);
@@ -111,7 +182,9 @@ void SessionRunner::AppendFrame(boost::json::value frame) {
 
 void SessionRunner::FinishTurn() {
   std::lock_guard<std::mutex> lock(frame_mutex_);
-  if (!turns_.empty()) turns_.back()->finished = true;
+  if (turns_.empty()) return;
+  turns_.back()->finished = true;
+  turns_.back()->state["finished"] = true;
 }
 
 void SessionRunner::Submit(std::string text, std::shared_ptr<WebSocketConnection> conn) {
@@ -200,8 +273,8 @@ void SessionRunner::ReportFailedTurn(const Job& /*job*/, const std::string& reas
 
 void SessionRunner::RunJob(Job& job) {
   {
-    // A new record per turn: the frames of the one that ran before it are kept beside it, so
-    // a subscriber can still read a turn that ended while nobody was watching.
+    // A new record per turn: the state of the one that ran before it is kept beside it, so a
+    // page that attaches later still gets the turn that ended while nobody was watching.
     std::lock_guard<std::mutex> lock(turns_mutex_);
     auto record = std::make_shared<TurnRecord>();
     record->id = job.turn_id;
@@ -259,12 +332,14 @@ void SessionRunner::RunJob(Job& job) {
       job.text, cancel,
       [&](std::string_view chunk) {
         if (chunk.empty()) return;
-        say({{"type", "chunk"}, {"payload", {{"text", std::string(chunk)}}}});
+        say({{"type", "chunk"},
+             {"payload", {{"text", std::string(chunk)}, {"turn_id", job.turn_id}}}});
       },
       tool_cb,
       [&](std::string_view thought) {
         if (thought.empty()) return;
-        say({{"type", "thinking"}, {"payload", {{"text", std::string(thought)}}}});
+        say({{"type", "thinking"},
+             {"payload", {{"text", std::string(thought)}, {"turn_id", job.turn_id}}}});
       },
       cancel);
 
@@ -340,19 +415,29 @@ void SessionRunner::RunJob(Job& job) {
   FinishTurn();
 }
 
-std::deque<std::shared_ptr<const std::string>> SessionRunner::FramesForNextPage() const {
-  std::deque<std::shared_ptr<const std::string>> frames;
+std::deque<boost::json::object> SessionRunner::SnapshotsForNextPage() const {
+  std::deque<boost::json::object> snapshots;
+  // The list first, then the state inside a record: `AppendFrame` takes the second lock only,
+  // and `RunJob` starts a record by taking the first, so this order is the one that cannot
+  // deadlock against either.
   std::lock_guard<std::mutex> list_lock(turns_mutex_);
-  std::lock_guard<std::mutex> frame_lock(frame_mutex_);
-  if (turns_.empty()) return frames;
+  std::lock_guard<std::mutex> state_lock(frame_mutex_);
+  if (turns_.empty()) return snapshots;
   // The turn in flight (or the last one that ran) plus the one before it when it has finished:
   // a single finished turn is the reply the page missed, and two gives an exchange a reader
   // can follow.
   const std::size_t from = turns_.size() >= 2 ? turns_.size() - 2 : 0;
   for (std::size_t i = from; i < turns_.size(); ++i) {
-    for (const auto& frame : turns_[i]->frames) frames.push_back(frame);
+    const TurnRecord& record = *turns_[i];
+    boost::json::object payload = record.state;
+    // Stated on every snapshot rather than only once the turn ends: a reader is told whether
+    // more is coming without having to read a missing key as a no.
+    payload["finished"] = record.finished;
+    payload["turn_id"] = record.id;
+    snapshots.push_back(
+        boost::json::object{{"type", "turn_snapshot"}, {"payload", std::move(payload)}});
   }
-  return frames;
+  return snapshots;
 }
 
 }  // namespace pu::serve::detail

@@ -22,7 +22,6 @@ add_executable(pu_tests
     unit/test_backend_resolution.cpp
     unit/test_bash_tool.cpp
     unit/test_billing.cpp
-    unit/test_budget.cpp
     unit/test_capabilities.cpp
     unit/test_cli_check.cpp
     unit/test_cli_exit.cpp

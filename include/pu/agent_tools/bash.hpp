@@ -7,9 +7,9 @@
 #include <boost/json.hpp>
 
 #include "pu/paging/paging.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 // Runs a shell command and hands back one page of its output.
 //
@@ -53,4 +53,4 @@ class BashTool : public pu::Tool {
   paging::Pager& pager_;
 };
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

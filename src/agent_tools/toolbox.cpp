@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 #include "pu/core/base.hpp"
 
@@ -84,7 +84,7 @@ std::string Toolbox::ExecuteTool(const std::string& name, const boost::json::val
                                  ToolContext& ctx) {
   const auto it = tools_.find(name);
   if (it == tools_.end()) {
-    return tools::MakeToolResultJson(false, "", "Tool not found: " + name, -1);
+    return agent_tools::MakeToolResultJson(false, "", "Tool not found: " + name, -1);
   }
 
   return it->second->Execute(args, ctx);

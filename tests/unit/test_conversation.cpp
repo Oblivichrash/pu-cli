@@ -213,7 +213,7 @@ TEST_CASE("A page keeps where it came from through a save and a load", "[convers
   REQUIRE(receipt->origin->buffer == "o7f3a-2");
   REQUIRE(receipt->origin->rank == 2);
 
-  // The point of keeping it: elision still fires on a transcript that was reloaded, without
+  // The point of keeping it: supersession still fires on a transcript that was reloaded, without
   // the projection reading a single receipt's text to find out what is a page.
   const std::vector<ChatMessage> messages = session::BuildRequestPath(restored->Graph(), {});
   REQUIRE(messages.size() == 2);

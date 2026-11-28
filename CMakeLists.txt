@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(pu-cli VERSION 0.7.2 LANGUAGES CXX)
+project(pu-cli VERSION 0.7.3 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -43,7 +43,6 @@ add_library(pu_core_util STATIC
     src/core/retry.cpp
     src/core/sse.cpp
     src/core/workspace_path.cpp
-    src/tools_cli/sse.cpp
 )
 target_link_libraries(pu_core_util PUBLIC
     spdlog::spdlog
@@ -57,6 +56,18 @@ if(WIN32)
 endif()
 pu_configure_target(pu_core_util)
 add_library(pu::core_util ALIAS pu_core_util)
+
+# The commands `pu` ships, as libraries rather than as `main`s: `pu sse` and `pu-sse` run the
+# same code, so each command's body has to be reachable from both entry points. Above
+# `pu_core_util` rather than inside it, because a formatter for an event is not a base
+# utility — putting it at the bottom would give every library that links the bottom a
+# dependency it does not have.
+add_library(pu_tool_cli STATIC
+    src/tools/sse.cpp
+)
+target_link_libraries(pu_tool_cli PUBLIC pu_core_util)
+pu_configure_target(pu_tool_cli)
+add_library(pu::tool_cli ALIAS pu_tool_cli)
 
 add_library(pu_llm STATIC
     src/llm/anthropic_provider.cpp
@@ -95,15 +106,15 @@ add_library(pu::config ALIAS pu_config)
 
 # `pu probe` and the standalone `pu-probe` share this one implementation.
 add_library(pu_probe STATIC
-    src/tools_cli/probe.cpp
+    src/tools/probe.cpp
 )
 target_link_libraries(pu_probe PUBLIC pu_config)
 pu_configure_target(pu_probe)
 
 # `pu models` and the standalone `pu-models` share this one implementation.
 add_library(pu_models STATIC
-    src/tools_cli/agents_source.cpp
-    src/tools_cli/models.cpp
+    src/tools/agents_source.cpp
+    src/tools/models.cpp
 )
 target_link_libraries(pu_models PUBLIC pu_config)
 pu_configure_target(pu_models)
@@ -135,17 +146,17 @@ target_link_libraries(pu_mcp PUBLIC pu_config)
 pu_configure_target(pu_mcp)
 add_library(pu::mcp ALIAS pu_mcp)
 
-add_library(pu_tools STATIC
-    src/tools/ask_dir_tool.cpp
-    src/tools/bash.cpp
-    src/tools/delegation.cpp
-    src/tools/policy.cpp
-    src/tools/toolbox.cpp
-    src/tools/write_file.cpp
+add_library(pu_agent_tools STATIC
+    src/agent_tools/ask_dir_tool.cpp
+    src/agent_tools/bash.cpp
+    src/agent_tools/delegation.cpp
+    src/agent_tools/policy.cpp
+    src/agent_tools/toolbox.cpp
+    src/agent_tools/write_file.cpp
 )
-target_link_libraries(pu_tools PUBLIC pu_session)
-pu_configure_target(pu_tools)
-add_library(pu::tools ALIAS pu_tools)
+target_link_libraries(pu_agent_tools PUBLIC pu_session)
+pu_configure_target(pu_agent_tools)
+add_library(pu::agent_tools ALIAS pu_agent_tools)
 
 add_library(pu_runtime STATIC
     src/runtime/answer.cpp
@@ -153,7 +164,7 @@ add_library(pu_runtime STATIC
     src/runtime/executor.cpp
     src/runtime/runtime.cpp
 )
-target_link_libraries(pu_runtime PUBLIC pu_tools pu_mcp)
+target_link_libraries(pu_runtime PUBLIC pu_agent_tools pu_mcp)
 pu_configure_target(pu_runtime)
 add_library(pu::runtime ALIAS pu_runtime)
 
@@ -172,6 +183,7 @@ add_library(pu_core STATIC
     src/app/cli.cpp
     src/app/cli_agents.cpp
     src/app/cli_check.cpp
+    src/app/cli_dispatch.cpp
     src/app/cli_output.cpp
     src/app/cli_serve.cpp
     src/app/cli_sse.cpp
@@ -180,6 +192,7 @@ add_library(pu_core STATIC
     src/app/setup.cpp
 )
 target_link_libraries(pu_core PUBLIC
+    pu_tool_cli
     pu_serve
     pu_probe
     pu_models
@@ -195,21 +208,21 @@ target_link_libraries(pu PRIVATE pu_core)
 pu_configure_target(pu)
 
 add_executable(pu-sse
-    src/tools_cli/sse_main.cpp
+    src/tools/sse_main.cpp
 )
-target_link_libraries(pu-sse PRIVATE pu_core_util Boost::program_options)
+target_link_libraries(pu-sse PRIVATE pu_tool_cli Boost::program_options)
 pu_configure_target(pu-sse)
 add_executable(pu::sse ALIAS pu-sse)
 
 add_executable(pu-probe
-    src/tools_cli/probe_main.cpp
+    src/tools/probe_main.cpp
 )
 target_link_libraries(pu-probe PRIVATE pu_probe Boost::program_options)
 pu_configure_target(pu-probe)
 add_executable(pu::probe ALIAS pu-probe)
 
 add_executable(pu-models
-    src/tools_cli/models_main.cpp
+    src/tools/models_main.cpp
 )
 target_link_libraries(pu-models PRIVATE pu_models Boost::program_options)
 pu_configure_target(pu-models)

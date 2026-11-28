@@ -2,11 +2,11 @@
 // The table an `--entry` report copies from, read without a session. Both `pu models` and the
 // standalone `pu-models` go through here, so the two print the same entry for the same file.
 
-#include "pu/tools_cli/models.hpp"
+#include "pu/tools/models.hpp"
 
 #include "pu/config/agents.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 AgentsSource ReadAgentsSource(const std::string& config_path, const std::string& agent_name) {
   AgentsSource source;
@@ -18,4 +18,4 @@ AgentsSource ReadAgentsSource(const std::string& config_path, const std::string&
   return source;
 }
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

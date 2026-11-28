@@ -5,67 +5,85 @@ re-proposed. Everything else this document once described has either been built 
 elision, a pager that outlives the toolbox — or turned out to describe a tool this build does
 not have.
 
-## 1. The three pools, and the one still unbounded
+## 0. Five CLI defects, still open
 
-A transcript grows in three ways that need three answers:
+Found by driving four agents from a shell at 0.5.1 and re-checked against 0.7.3 by grepping
+the source rather than the binary, so these are claims about this tree and not about a
+release note. Each names the observable, because each is otherwise easy to read as intended
+behaviour.
+
+- **`pu ask` appends to the workspace conversation.** Three consecutive runs in a fresh
+  directory leave 4, 6, 8 nodes. There is no stateless mode: `ask` is "continue this
+  workspace's conversation with one more turn". For a scripted probe that is both a
+  correctness problem (the model sees history it did not expect) and a growth problem.
+  `--fresh` — an empty conversation, nothing saved — is the fix, and it is also right for
+  `probe`, which captures a raw stream and has no business editing a conversation.
+- **Read-only commands touch the workspace.** `pu models` in an empty directory leaves
+  `.pu/logs/pu.log` and `.pu/session.json`, and rewrites the session even when the bytes are
+  identical. `Runtime::Shutdown()` calls `SaveCurrentSession()` with no condition. Sharing
+  this fix with the one above: who may write the session.
+- **A prompt starting with `/` cannot be sent.** `ProcessInput` treats any leading `/` as a
+  command, and `ask` has no escape — not even `--`. Asking about a path is an ordinary thing
+  to do. In `chat`, where commands exist, a leading `/` should stay a command; in `ask` it
+  should be a prompt.
+- **No stdin prompt.** `echo hi | pu ask` is an error and `pu ask -` sends the literal `-`,
+  so `pu ask "$(cat task.md)"` is the only route and it breaks on argv length and on quotes.
+  A non-tty stdin should be the prompt.
+- **`--agent` is persistent when it reads as per-run.** `--agent` is documented as "agent to
+  use" and behaves as "agent to use from now on": `pu models --agent X` silently re-points
+  what the next bare `pu ask` runs on, and a *failed* run writes it too. `ask` no longer
+  writes a session, so `models` is where it still stands. This is the one item that is a
+  breaking change to fix, which is why it is last: the split is `SetRunAgent` (this process)
+  against `SetWorkspaceAgent` (what `/backend` and chat do), and the session should outrank
+  the file's agent name once it is a deliberate choice rather than a side effect.
+
+The first two are one question and should go together. The original evidence — commands,
+outputs, and the paths that have moved since — is in
+[cli-agent-workflow.md](cli-agent-workflow.md).
+
+## 1. What a request carries
+
+A transcript grows in two ways, and the projection answers both:
 
 | Pool | Grows with | Bounded today |
 |---|---|---|
-| prose — user text, `content`, `reasoning` | turns | no, but physically slow |
-| observations — `ToolPayload::content` | bytes read | yes: page cap + elision |
-| scaffolding — `tool_calls[].id/.name/.arguments` | number of calls | **no** |
+| prose — user text, `content`, `reasoning` | turns | no, and deliberately |
+| observations — `ToolPayload::content` | bytes read | yes: page cap + supersession |
 
-Scaffolding is the pool nobody budgets for. Ids and names cost 50–80 tokens per call before
-the arguments start, and an argument body is never elided: twenty `write_file` calls of 200
-lines each are 4000 lines re-sent every turn, forever, on the input side of a call whose
-result was elided on the output side.
-
-Four tiers, applied per node, monotone — a decision may only move down:
+Two tiers, applied per node, monotone — a decision may only move down:
 
 | Tier | What survives | Enters when |
 |---|---|---|
-| T0 live | the whole text | newest run for its source, or a page read deliberately after |
-| T1 receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
-| T2 tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
-| T3 gone | nothing | it is one of everything but the newest ten tool-call pairs |
-| T4 arguments | every argument key, with the dominant one's text replaced by `bytes`, `lines`, `omitted` | the call survives T3 and its serialised arguments exceed 16 KiB |
+| live | the whole text | newest run for its source, or a page read deliberately after |
+| receipt | verdict, `page`, `buffer`, `extent`, `superseded_by` | a newer run of the same source was read |
+| tombstone | `success`, `blocked`, `error`, `refusal`, `stored`, `buffer.{id,source}`, `elided` — no cursor | it is a superseded receipt and more than the newest six receipts are |
 
-All four exist. T2 is `paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in
-`src/session/request.cpp`; T3 is `RetireOldToolCalls` in the same file, and it runs before T4
-because it is the only tier that removes anything and every tier above it is expressed in terms
-of a call that is still there. T4 is `ElideLargeArguments`, last, so that it spends its work
-only on the calls T3 keeps — which are precisely the ones that re-send their arguments forever.
-T2 is worth its ~15 tokens because what stops a model repeating a failed approach is knowing it
-tried: **compress along the body axis, never along the argv/verdict axis.** T3 goes in whole
-pairs, oldest first, because a `tool` message whose `tool_call_id` names no call is invalid on
-every provider. T4 follows the same rule from the other side: it keeps every argument key and
-takes only the text of the one that dominates, so a `write_file` still says which file it
-wrote.
+All three exist. The receipt is `paging::SupersededReceipt`; the tombstone is
+`paging::TombstonedReceipt`, spent by `TombstoneOldReceipts` in `src/session/request.cpp`. The
+tombstone is worth its ~15 tokens because what stops a model repeating a failed approach is
+knowing it tried: **compress along the body axis, never along the argv/verdict axis.**
 
-T3 keeps ten pairs, not six, and the gap is load-bearing. T2 fires on a superseded receipt that
-is older than the newest six, so a T3 that also kept six would delete the receipts T2 was about
-to shrink and leave T2 with nothing to do: the two tiers would silently collapse into one. Four
-of headroom leaves two superseded receipts past the cursor floor in the common case, which is
-what keeps both tiers observable at once.
+Neither tier removes a message, so the transcript that reaches the model is the transcript that
+was stored — same order, same length. That is not an oversight. A turn that no longer fits is a
+turn the caller should have delegated rather than a turn the projection should have cut: a
+subagent answers the question in its own context and hands back the conclusion, which is what
+keeps the bulk of the work out of this one. **No pool is bounded by deleting history.**
 
-The entry condition for each tier is **a count, not a size**, with one deliberate exception.
-T4 is driven by a byte threshold, because what it removes is a literal string re-sent verbatim
-and the unit of that harm is the length of the string; it is not a model-facing measurement of
-context, which is what made the byte budget below wrong. An earlier draft drove T2 from a
-byte budget (`256 KiB` of accumulated tool output). That was wrong twice over: a byte count
-cannot be turned into tokens without the model's tokenizer, so the threshold was a number
-nobody could check against the window it was meant to protect; and because the newest six
-results were held regardless, it was not a hard cap either — setting it to 4 KiB would have
-silently failed to take effect. Supersession is a fact about the conversation rather than a
-measurement of it, and "the newest six superseded receipts keep their cursor" is a rule that
-can be stated, tested and read back. Six is not a tuned number; it is the length of a
-plan-and-verify cycle, and the cost of being wrong is one round of rereading.
+The entry condition is a count, not a size. A byte count cannot be turned into tokens without
+the model's tokenizer, so any threshold expressed in bytes is a number nobody can check against
+the window it is meant to protect. An earlier draft drove the tombstone from a byte budget
+(`256 KiB` of accumulated tool output) and that was wrong twice over: the threshold could not be
+checked against a window, and because the newest six results were held regardless it was not a
+hard cap either. Supersession is a fact about the conversation rather than a measurement of it,
+and "the newest six superseded receipts keep their cursor" is a rule that can be stated, tested
+and read back. Six is not a tuned number; it is the length of a plan-and-verify cycle, and the
+cost of being wrong is one round of rereading.
 
-The table first said `command` and `cwd` survive T2, and both are wrong as written: a paged
-result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
+The table first said `command` and `cwd` survive the tombstone, and both are wrong as written:
+a paged result is a `paging::Envelope`, and that envelope holds `page`, `buffer` and `extent` and
 nothing else — no verdict, no command, no working directory. The command a model repeats is
-in the assistant's `tool_calls` one message above, which T2 never touches. So a tombstone
-keeps a `verdict` or a top-level `command` when the receipt happens to carry one (a raw
+in the assistant's `tool_calls` one message above, which the tombstone never touches. So a
+tombstone keeps a `verdict` or a top-level `command` when the receipt happens to carry one (a raw
 `execute_bash` result does, a page does not) and otherwise keeps what the envelope has. This
 is the argv axis honoured by *not compressing what is there*, rather than by inventing a field
 to preserve.
@@ -76,9 +94,7 @@ to preserve.
    then undone deliberately. The projection is the right place for this work — it is pure and
    rewind-safe — and it is where the tiers now live. But the *budget* framing was removed: what
    drives a receipt down a tier is supersession, not a byte count. See §1 for why a byte
-   threshold was the wrong measure, and note that the tool-call budget in the executor is a
-   different mechanism with a different subject: it bounds how many calls one turn may make,
-   not how much history is re-sent. Nothing was removed from the history to achieve this — a
+   threshold was the wrong measure. Nothing was removed from the history to achieve this — a
    receipt keeps its place and loses only the cursor.
 2. ~~**`find` over a retained buffer.**~~ Done. `execute_bash` takes `query`, which searches
    the stored run without executing anything and reports each hit with its own line number so
@@ -94,24 +110,8 @@ to preserve.
    itself is unverified: this machine has no JS runtime, so the field names were traced from
    `paging.cpp` to `block-tool.js` by hand and the wire contract is covered by a serve-stack
    test, but nothing has parsed or executed the front end.
-4. ~~**T3: retire the oldest tool-call pairs.**~~ Done. `RetireOldToolCalls` removes whole
-   pairs, oldest first, keeping the newest ten. The bound is ten rather than six so that T2
-   still has receipts to tombstone; see the note under the tier table.
-5. ~~**Large `arguments` stored by reference** into the pager, for the same reason results
-   are.~~ Done, though not by reference into the pager. `ElideLargeArguments` replaces an
-   oversized argument body in place with a stand-in that keeps every key and states `bytes`,
-   `lines` and which argument carried them, and substitutes it only when building the request,
-   so the record keeps the text the provider was told. The pager was rejected because an
-   argument body evicted under the output budget would lose the command a model needs to
-   repeat, and because `arguments` is the input half of the exchange whose output half the
-   other tiers already compress — a stand-in on the same axis is the consistent move. It runs
-   after T3, so it touches exactly the calls T3 keeps. The threshold is measured in bytes
-   rather than tokens for a reason §1 does not cover: what is re-sent is a literal string, and
-   the cost is the length of that string, not a model-facing measurement of context.
 
-Ordering is not a preference: §2.5 was where the remaining growth actually is, so it came
-before the items that make reading history cheaper. Both are measured by `usage.prompt_tokens`
-per turn and `tool_call_count` per turn.
+Both are measured by `usage.prompt_tokens` per turn and `tool_call_count` per turn.
 
 ## 3. Two rungs further out
 

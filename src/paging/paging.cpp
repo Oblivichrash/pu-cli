@@ -60,7 +60,7 @@ std::size_t RankIn(const boost::json::value& object) {
 
 // A question's id, computed from the question rather than counted. A counter restarts
 // with the process, and a resumed transcript would then read the new `s1` as the old
-// `s1` -- two different questions wearing one name, which is exactly the case elision
+// `s1` -- two different questions wearing one name, which is exactly the case supersession
 // cannot survive. FNV-1a over the key, eight hex digits: a collision needs both a
 // billion-to-one roll and two questions in one transcript.
 //
@@ -243,9 +243,9 @@ boost::json::object Envelope(const Buffer& buffer, const Page& page) {
   // A result says three things a model needs and nothing about this process: which lines it
   // is looking at, how much of the command's output survived, and how to see more. The
   // readable fields are those three. The `buffer` block is the fourth, and it is not for the
-  // model: `OriginOf` and `TombstonedReceipt` read it to know which run this was and whether
-  // a newer one replaced it, so it cannot be dropped without silently disabling supersession.
-  // It is kept because a machine needs it, and the tool description stops teaching it.
+  // model: `OriginOf` reads it to know which run this was and whether a newer one replaced
+  // it, so it cannot be dropped without silently disabling supersession. It is kept because a
+  // machine needs it, and the tool description stops teaching it.
   const std::size_t printed = extent.lines;
   const std::size_t kept = extent.retained;
   const std::size_t dropped = printed > kept ? printed - kept : 0;

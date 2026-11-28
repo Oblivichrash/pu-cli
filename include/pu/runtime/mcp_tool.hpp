@@ -17,7 +17,7 @@
 #include <boost/json.hpp>
 
 #include "pu/mcp/client.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 namespace pu::runtime {
 
@@ -36,7 +36,7 @@ class McpTool : public Tool {
 
   std::string Execute(const boost::json::value& args, ToolContext& /*ctx*/) override {
     if (!client_->IsConnected()) {
-      return tools::MakeToolResultJson(false, "", "MCP client is not connected", -1);
+      return agent_tools::MakeToolResultJson(false, "", "MCP client is not connected", -1);
     }
     return WrapResult(client_->CallTool(original_tool_name_, args));
   }
@@ -45,7 +45,7 @@ class McpTool : public Tool {
   static std::string WrapResult(const std::string& raw) {
     const bool is_error = raw.rfind("Error:", 0) == 0 || raw.rfind("MCP error:", 0) == 0 ||
                           raw.rfind("MCP call error:", 0) == 0;
-    return tools::MakeToolResultJson(!is_error, raw, is_error ? raw : std::string{},
+    return agent_tools::MakeToolResultJson(!is_error, raw, is_error ? raw : std::string{},
                                      is_error ? 1 : 0);
   }
 

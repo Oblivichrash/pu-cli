@@ -41,9 +41,8 @@ using Overrides = boost::json::object;
 // apart can be given two answers that were true a moment apart.
 struct InForce {
   model::Backend backend;
-  int tool_budget = 0;
 
-  static InForce Resolve(const model::Backend& agent_backend, int agent_tool_budget,
+  static InForce Resolve(const model::Backend& agent_backend,
                          const Overrides& overrides);
 };
 
@@ -55,6 +54,6 @@ boost::json::value ParseSetting(const std::string& name, const boost::json::valu
 // Every setting this build knows, with the value in force: the session's override where there
 // is one, and the agent's own configuration otherwise.
 std::vector<SettingView> ViewSettings(const model::Backend& agent_backend,
-                                      int agent_tool_budget, const Overrides& overrides);
+                                      const Overrides& overrides);
 
 }  // namespace pu::session

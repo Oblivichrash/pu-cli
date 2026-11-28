@@ -22,8 +22,6 @@ struct AgentEntry {
   SecurityPolicy security;
   paging::Budget paging;
   std::vector<McpServerConfig> mcp_servers;
-  // The tool-call budget for one turn. Absent: the executor's default applies.
-  std::optional<int> tool_call_budget;
   // Which agents this one may hand a turn to, by name. Empty means it may hand a turn to
   // nobody, which is the answer a file that says nothing should get: a file that does not
   // mention delegation cannot be used to reach an agent it does not mention.

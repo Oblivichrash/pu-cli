@@ -8,9 +8,9 @@
 
 #include "pu/model/backend.hpp"
 #include "pu/core/http_client.hpp"
-#include "pu/tools_cli/exit_code.hpp"
+#include "pu/tools/exit_code.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 struct ProbeOptions {
   std::string agent;
@@ -28,4 +28,4 @@ struct ProbeOptions {
 ExitCode RunProbe(const ProbeOptions& options, const model::Backend& backend,
                     http::HttpClient& http);
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

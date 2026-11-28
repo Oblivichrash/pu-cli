@@ -2,7 +2,7 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/core/base.hpp"
 #include "pu/session/message.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

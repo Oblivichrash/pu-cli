@@ -33,7 +33,7 @@
 #include "pu/llm/projection.hpp"
 #include "pu/runtime/runtime.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 
 namespace pu::serve::detail {
 namespace {
@@ -310,7 +310,7 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
     }
 
     if (msg.role == kToolRole) {
-      const tools::ToolResult parsed = tools::ParseToolResult(msg.content);
+      const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(msg.content);
       item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
       item.as_object()["error"] = parsed.error;
       // The same field the live frame carries, so a reloaded turn draws a page as a page.

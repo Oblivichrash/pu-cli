@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
 
 #include "pu/core/json.hpp"
 #include "pu/core/process.hpp"
 #include "pu/core/text.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/tools/delegation.hpp"
+#include "pu/agent_tools/delegation.hpp"
 
 #include <boost/json.hpp>
 
@@ -15,7 +15,7 @@
 #include <memory>
 #include <utility>
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 namespace {
 
@@ -127,9 +127,8 @@ boost::json::value AskDirTool::ParametersSchema() const {
 // The answer as a receipt: the conclusion, plus where it came from. It is not a page -- there
 // is no window to read and no cursor to hand back -- but it carries the one field the
 // projection reasons about, `buffer.source`. That is what makes two answers to one question
-// two runs of one source, and therefore lets the older answer be elided instead of re-sent on
-// every turn. Without it the answer went in as bare prose, no `OriginOf` could read it, and it
-// stayed in the request in full for as long as the conversation lasted.
+// two runs of one source, and therefore lets a second answer to the same question replace the
+// first. Without it the answer went in as bare prose and no `OriginOf` could read it.
 std::string AskDirTool::Answer(const std::string& target, const std::string& prompt,
                                const DelegationResult& result, pu::ToolContext& ctx) {
   Charge(ctx, result);
@@ -173,12 +172,6 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   // read; a turn may make many, and each one may be a tool running for minutes, so without a
   // figure here the only stop is the process.
   request.timeout = kDelegatedTurnBudget;
-  // The chain of workspaces this question has already been asked in, carried down from the turn
-  // asking. Empty on the first ask; on a delegated ask it already names where the question came
-  // from, which is what turns a table pointing back at an ancestor into a refusal rather than a
-  // wait for an answer that is already being worked on.
-  request.visited = ctx.delegated_visited;
-
   // One field names who answers, and which of the two it is is read rather than declared: a
   // name this agent may reach is an agent, and anything else is a directory to look for. The
   // list is what settles it, so a name that is also a directory is asked as the agent — the
@@ -230,4 +223,4 @@ std::string AskDirTool::Execute(const boost::json::value& args, pu::ToolContext&
   return Answer(target.string(), prompt, result, ctx);
 }
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

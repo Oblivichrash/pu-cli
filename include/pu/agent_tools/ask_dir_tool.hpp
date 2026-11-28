@@ -8,10 +8,10 @@
 
 #include "pu/core/base.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/tools/delegation.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/delegation.hpp"
+#include "pu/agent_tools/tool.hpp"
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 // Asks a question of an agent, and answers with the last thing that agent said.
 //
@@ -63,4 +63,4 @@ class AskDirTool : public pu::Tool {
   CancelToken cancel_token_;
 };
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

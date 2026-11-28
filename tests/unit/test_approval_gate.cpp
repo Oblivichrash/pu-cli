@@ -7,7 +7,7 @@
 
 #include "pu/config/security_policy.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/tools/bash.hpp"
+#include "pu/agent_tools/bash.hpp"
 
 using namespace pu;
 
@@ -37,7 +37,7 @@ ToolContext GateContext(config::SecurityPolicy& policy, bool allow, std::string 
 
 TEST_CASE("a command matching an approval pattern asks and runs when allowed",
           "[bash][approval]") {
-  tools::BashTool tool(".", Store());
+  agent_tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;
@@ -53,7 +53,7 @@ TEST_CASE("a command matching an approval pattern asks and runs when allowed",
 
 TEST_CASE("a denied command is refused with the user's note beside it",
           "[bash][approval]") {
-  tools::BashTool tool(".", Store());
+  agent_tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;
@@ -71,7 +71,7 @@ TEST_CASE("a denied command is refused with the user's note beside it",
 
 TEST_CASE("a command the gate has no channel for is refused, not silently run",
           "[bash][approval]") {
-  tools::BashTool tool(".", Store());
+  agent_tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
 
@@ -87,7 +87,7 @@ TEST_CASE("a command the gate has no channel for is refused, not silently run",
 }
 
 TEST_CASE("a command matching no approval pattern never asks", "[bash][approval]") {
-  tools::BashTool tool(".", Store());
+  agent_tools::BashTool tool(".", Store());
   config::SecurityPolicy policy;
   policy.approval_patterns = {"curl"};
   bool asked = false;

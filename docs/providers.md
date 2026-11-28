@@ -2,7 +2,7 @@
 
 What each backend puts on the wire, and what it does with what comes back. This
 is reference material: which layer decides the provider is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+[layout.md](layout.md).
 
 ## Which provider a request reaches
 
@@ -24,6 +24,13 @@ misspelt name answers with the set rather than a pointer to this page. An entry 
 none of them is refused at load time, as is one that names no gateway at all. "OpenAI
 compatible" covers OpenAI, DeepSeek thinking mode, vLLM and compatible gateways, all of which
 are the one `openai` gateway with a different `host`.
+
+`llamacpp` is a row of its own rather than an `openai` entry pointed at a local port. It
+speaks the same wire and needs no key, so it is one helper call in `gateway_table.cpp`; the
+separate name exists because the answer to "which product answered this" is `llamacpp`, and a
+call priced as an OpenAI one would be a wrong answer rather than a default. The
+Anthropic-shaped route the same server also answers is not used: it would demand a version
+header and a `max_tokens` a local model has no use for.
 
 A gateway is spelled in one place for the same reason as before — a stored session, an
 `agents.json` entry and an `/api/session` answer all name it, and answering "is it
@@ -96,7 +103,7 @@ states:
 | --- | --- |
 | A `\n` landed mid-character because the read split the sequence | The line waits for the rest of it. Handing the half on would corrupt it, so the parser holds what is incomplete until any split of the stream is whole again |
 | The stream ended on a frame with no blank line | It is still delivered. A server that closes after its last `data:` line sent that line, so `Finish()` reports it rather than dropping it |
-| A `retry:` field arrived | It is reported, not acted on. The caller owns the reconnect policy, and a parser that slept would be one a caller could not test |
+| A `retry:` field arrived | It is read and dropped. The format lets a server suggest a reconnection delay; this build reconnects on its own exponential backoff, so a parser that reported the hint would be offering a number nothing uses |
 | A gateway sends newline-delimited JSON | `SetBareLinesAreEvents` makes a line with no field name an event whose payload is the line. A stream carrying a `data:` line is an event stream regardless, so the setting only decides what to do with a bare line |
 | Two `data:` lines in one frame | Joined with a newline. A payload split over several lines is one payload, and the split is transport rather than content |
 | A frame with no `data:` line at all | Not an event. `event` and `id` name an event, they do not make one |
@@ -178,11 +185,10 @@ itself.
 | Any other 4xx | no | The same request would be answered the same way |
 | No status at all | only when the transport marks it | A deadline or a dropped connection says nothing about whether the request was valid, which is the transport's judgement to make and not this table's |
 
-The wait before each repeat doubles from 500 ms up to an 8 s ceiling. A `Retry-After` header
-outranks that guess and is honoured up to 30 s, because a server that names a time knows better
-than a client's backoff does — and one that names an hour does not get to hold this build for an
-hour. A value that is not a whole number of seconds is ignored rather than guessed at; the
-header's date form would need the server's clock and ours to agree.
+The wait before each repeat doubles from 500 ms up to an 8 s ceiling. A `Retry-After` header is
+not read: by the time a failure is caught the response headers are gone, and the hint would
+have to be plumbed out of a stream callback that has already returned. A gateway that wants a
+client to wait states a status this build repeats and lets the backoff run.
 
 **A retry is not safe mid-stream.** The callbacks a caller registered with
 `ChatRequest::on_content` and `on_reasoning` have already fired for whatever arrived before the

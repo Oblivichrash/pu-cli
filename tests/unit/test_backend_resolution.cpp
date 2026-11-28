@@ -134,16 +134,13 @@ TEST_CASE("A session spec carries only the agent and the thinking override", "[b
   const boost::json::value written = chosen.Serialize();
   REQUIRE(written.as_object().count("agent_name") == 1);
   REQUIRE(written.as_object().count("thinking_override") == 0);
-  REQUIRE(written.as_object().count("tool_budget_override") == 0);
 
   chosen.overrides["thinking"] = boost::json::value("low");
-  chosen.overrides["tool_budget"] = 7;
 
   const auto restored = SessionSpec::Deserialize(chosen.Serialize());
   REQUIRE(restored.has_value());
   REQUIRE(restored->agent_name == "chat");
   REQUIRE(restored->overrides.at("thinking") == "low");
-  REQUIRE(restored->overrides.at("tool_budget") == 7);
   REQUIRE(restored->ThinkingOverride() == ThinkingLevel::kLow);
 }
 
@@ -225,7 +222,8 @@ TEST_CASE("A session this build cannot read is kept, not overwritten", "[backend
 }
 
 TEST_CASE("A gateway name is one product, and the table answers for all of them", "[backend]") {
-  for (const char* name : {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent"}) {
+  for (const char* name :
+       {"ollama", "ollama-cloud", "openai", "deepseek", "nvidia", "tencent", "anthropic", "llamacpp"}) {
     const std::optional<model::GatewayId> id = model::ParseGatewayId(name);
     REQUIRE(id.has_value());
     REQUIRE(std::string(model::GatewayName(*id)) == name);

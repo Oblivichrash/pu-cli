@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/policy.hpp"
+#include "pu/agent_tools/policy.hpp"
 
 #include <regex>
 #include <vector>
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 namespace {
 
@@ -89,4 +89,4 @@ Assessment Assess(std::string_view command, const config::SecurityPolicy* policy
   return {MatchesAny(text, SafeRules(), nullptr) ? Risk::kSafe : Risk::kNeutral, {}};
 }
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

@@ -21,11 +21,6 @@ namespace pu {
 struct ToolContext {
   const config::SecurityPolicy* security = nullptr;
 
-  // The workspaces this question has already been asked in, oldest first. Empty in an ordinary
-  // turn, which is the top of any chain; a delegated turn hands its own chain down, which is
-  // what lets a tool that asks another workspace see that it would be asking somewhere an
-  // ancestor is still waiting on.
-  std::vector<std::filesystem::path> delegated_visited;
   // Who can stop a running command, and what the user wants the model to know
   // about it. Null when the caller offers no control, which the CLI does.
   struct Control {
@@ -69,7 +64,7 @@ class Tool {
   virtual std::string Execute(const boost::json::value& args, ToolContext& ctx) = 0;
 };
 
-namespace tools {
+namespace agent_tools {
 
 // Why the policy refused a call. `kNobodyToAsk` is separate from the rest because it is not
 // the command's fault: the agent asks for approval and the front end has no way to put the
@@ -170,6 +165,6 @@ inline ToolResult ParseToolResult(const std::string& raw) {
   return r;
 }
 
-}  // namespace tools
+}  // namespace agent_tools
 
 }  // namespace pu

@@ -7,7 +7,7 @@
 
 #include "pu/config/security_policy.hpp"
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 // How much a command has to be checked before it may run. Named for the answer rather
 // than for the command, because the same command is a different answer under a
@@ -30,4 +30,4 @@ Assessment Assess(std::string_view command, const config::SecurityPolicy* policy
 // belongs next to `Assess` rather than beside every caller that has its own list.
 bool MatchesAnyPattern(std::string_view command, const std::vector<std::string>& patterns);
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

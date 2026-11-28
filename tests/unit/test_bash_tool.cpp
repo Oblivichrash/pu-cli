@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "pu/paging/paging.hpp"
-#include "pu/tools/bash.hpp"
-#include "pu/tools/write_file.hpp"
+#include "pu/agent_tools/bash.hpp"
+#include "pu/agent_tools/write_file.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,7 +12,7 @@
 #include <string>
 
 using namespace pu;
-using namespace pu::tools;
+using namespace pu::agent_tools;
 using namespace pu::tests;
 
 namespace {
@@ -551,36 +551,36 @@ TEST_CASE("write_file refuses to run with no policy", "[bash]") {
 
 TEST_CASE("A refusal says which kind it is", "[tools][refusal]") {
   // What a policy refusal looks like: the flag alone, since the command is what to rework.
-  const pu::tools::ToolResult policy = pu::tools::ParseToolResult(
+  const pu::agent_tools::ToolResult policy = pu::agent_tools::ParseToolResult(
       R"({"success":false,"blocked":true,"output":"","error":"contains forbidden pattern","exit_code":-1})");
   REQUIRE(policy.valid);
   REQUIRE(policy.blocked);
-  REQUIRE(policy.refusal == pu::tools::Refusal::kPolicy);
+  REQUIRE(policy.refusal == pu::agent_tools::Refusal::kPolicy);
 
   // What an agent with approval_patterns and no channel to ask on looks like. Same flag,
   // different remedy: nothing is wrong with the command.
-  const pu::tools::ToolResult unaskable = pu::tools::ParseToolResult(pu::tools::MakeToolResultJson(
+  const pu::agent_tools::ToolResult unaskable = pu::agent_tools::ParseToolResult(pu::agent_tools::MakeToolResultJson(
       false, "", "needs approval and no channel is open", -1, true,
-      pu::tools::Refusal::kNobodyToAsk));
+      pu::agent_tools::Refusal::kNobodyToAsk));
   REQUIRE(unaskable.valid);
   REQUIRE(unaskable.blocked);
-  REQUIRE(unaskable.refusal == pu::tools::Refusal::kNobodyToAsk);
+  REQUIRE(unaskable.refusal == pu::agent_tools::Refusal::kNobodyToAsk);
 
   // A result that ran carries no refusal at all, and one that failed on its own is not a
   // refusal either.
-  REQUIRE(pu::tools::ParseToolResult(
+  REQUIRE(pu::agent_tools::ParseToolResult(
               R"({"success":true,"blocked":false,"output":"a.txt","error":"","exit_code":0})")
-              .refusal == pu::tools::Refusal::kNone);
-  REQUIRE(pu::tools::ParseToolResult(
+              .refusal == pu::agent_tools::Refusal::kNone);
+  REQUIRE(pu::agent_tools::ParseToolResult(
               R"({"success":false,"blocked":false,"output":"","error":"exit 1","exit_code":1})")
-              .refusal == pu::tools::Refusal::kNone);
+              .refusal == pu::agent_tools::Refusal::kNone);
 }
 
 TEST_CASE("A page keeps its envelope through parsing", "[tools][paging]") {
   // What a paged result looks like: the text, then the three scopes the envelope adds beside
   // it. The envelope is what lets a reader draw a page as a page rather than as a whole answer
   // -- the text alone cannot say which it is.
-  const pu::tools::ToolResult paged = pu::tools::ParseToolResult(
+  const pu::agent_tools::ToolResult paged = pu::agent_tools::ParseToolResult(
       R"({"success":true,"blocked":false,"output":"one\ntwo","error":"","exit_code":0,)"
       R"("lines":{"first":1,"last":2,"of":3500},)"
       R"("stored":{"printed":3500,"kept":80,"dropped":3420,"printed_bytes":200000,)"
@@ -597,7 +597,7 @@ TEST_CASE("A page keeps its envelope through parsing", "[tools][paging]") {
 
   // A result with no envelope leaves the field null rather than empty: an empty object would
   // read as a page showing nothing, which is a different claim from "this was not a page".
-  const pu::tools::ToolResult whole = pu::tools::ParseToolResult(
+  const pu::agent_tools::ToolResult whole = pu::agent_tools::ParseToolResult(
       R"({"success":true,"blocked":false,"output":"a.txt","error":"","exit_code":0})");
   REQUIRE(whole.valid);
   REQUIRE(whole.page.is_null());

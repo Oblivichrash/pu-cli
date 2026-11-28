@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "pu/tools/write_file.hpp"
+#include "pu/agent_tools/write_file.hpp"
 
 #include "pu/core/json.hpp"
 
 #include <filesystem>
 #include <fstream>
 
-namespace pu::tools {
+namespace pu::agent_tools {
 
 namespace {
 
@@ -88,4 +88,4 @@ std::string WriteFileTool::Execute(const boost::json::value& args, pu::ToolConte
       true, "Successfully wrote " + std::to_string(content.size()) + " bytes to " + path, "", 0);
 }
 
-}  // namespace pu::tools
+}  // namespace pu::agent_tools

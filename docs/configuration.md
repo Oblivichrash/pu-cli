@@ -46,7 +46,6 @@ wizard are the same shape.
 | `backend` | Required object; see below |
 | `security` | Optional; see below |
 | `mcp_servers` | Optional; see below |
-| `tool_call_budget` | Optional; how many tool calls the model may make in one turn (default 100). The count is over calls, not replies, and it is checked between rounds: a budget of 2 lets two calls happen and then asks the model to wrap up. A wrap-up that calls a tool anyway ends the turn with an error naming this setting. A session may override it from the page without touching this file |
 | `tools` | Optional; which builtin tools this agent has, by name: `bash`, `write_file`, `ask_dir`. Absent means all of them, so an agent meant to be read-only has to say so. A name this build does not register is refused at load |
 | `delegates` | Optional; the agents this one may hand a turn to, by name. Absent means it may hand a turn to nobody. `pu check` refuses this agent's own name, since the turn that reached it would recurse until a budget stopped it. A name nothing configures is found when `ask_dir` is called, not here: the agent that would answer may be a directory this workspace does not hold, so a file is in no position to say it does not exist. A circle is refused when it closes, by the child that would be asked to answer a question already being worked on further up the chain |
 | `system_prompt` | Optional; this agent's system prompt, merged with the injected context |
@@ -88,7 +87,7 @@ Three things are true of it, and the first is the one that surprises:
   gate, so any call its own `approval_patterns` cover comes back `kNobodyToAsk` even with a
   user at the page: the gate belongs to the parent's toolbox. A tool you expect to be approved
   is not available to a sub-agent, and there is no flag that changes that. See
-  [ARCHITECTURE.md](ARCHITECTURE.md) for why the boundary is drawn there.
+  [limitations.md](limitations.md) for why the boundary is drawn there.
 
 Its sandbox is its own, taken from its own table, so what it may read is decided there and not
 here; a sub-agent whose table is wider than the parent's is a decision its `.pu/` made.
@@ -194,7 +193,6 @@ fast
   context      250000
   sandbox      /home/me/work
   forbids      'X1', 'X2'
-  tool budget  100
 ```
 
 A host marked `(default for this gateway)` is one the file never named. A key printed as
@@ -205,11 +203,11 @@ than the file, and that is a warning and not a failure.
 
 A session naming an agent the file does not name is reported as a warning. The file has one
 agent, so the next turn uses that one and the session is corrected rather than the file (see
-[ARCHITECTURE.md](ARCHITECTURE.md#persistence)).
+[runtime.md](runtime.md#single-session-auto-persistence)).
 
 The command exits `1` only when the file cannot be loaded — which is what the 0.5.0 rename of
 `backend.type` to `backend.gateway` produces, without spending a turn to find out. The status
-table is in [ARCHITECTURE.md](ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints).
+table is in [errors.md](errors.md).
 
 ### Writing it the first time: `pu setup`
 
@@ -227,7 +225,8 @@ Which gateway?
   4) deepseek
   5) nvidia
   6) tencent
-  7) anthropic
+  7) llamacpp
+  8) anthropic
 
 Gateway [ollama]: 
 URL [http://localhost:11434]: 

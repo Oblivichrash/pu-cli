@@ -15,15 +15,15 @@
 #include "pu/core/workspace_path.hpp"
 
 #include "pu/config/agents.hpp"
-#include "pu/tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
 #include "pu/core/logging.hpp"
 #include "pu/core/text.hpp"
 #include "pu/core/base.hpp"
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/bash.hpp"
-#include "pu/tools/write_file.hpp"
+#include "pu/agent_tools/bash.hpp"
+#include "pu/agent_tools/write_file.hpp"
 #include "pu/runtime/mcp_tool.hpp"
 
 namespace pu {
@@ -84,8 +84,8 @@ std::shared_ptr<Session> LoadSessionFromFile(const std::filesystem::path& path) 
 
 // The highest rank the transcript already carries. A pager opening that transcript has to
 // continue from it: ranks only compare against each other, so a fresh one starting at 1 would
-// rank every run made after a restart below every page read before it, and elision would never
-// fire again.
+// rank every run made after a restart below every page read before it, and supersession would
+// never fire again.
 std::size_t HighestRankIn(const Session& session) {
   std::size_t highest = 0;
   for (const session::MessageNode* node : session.Messages().Chain()) {
@@ -250,7 +250,7 @@ model::Backend Runtime::ConfiguredBackend() const {
 model::Backend Runtime::CurrentBackend() const {
   const model::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
-  return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
+  return session::InForce::Resolve(backend, Overrides()).backend;
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
@@ -279,11 +279,7 @@ session::Overrides Runtime::Overrides() const {
 }
 
 std::vector<session::SettingView> Runtime::Settings() const {
-  return session::ViewSettings(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
-}
-
-int Runtime::ConfiguredToolBudget() const {
-  return ActiveAgent().tool_call_budget.value_or(Executor::kDefaultToolCallBudget);
+  return session::ViewSettings(ConfiguredBackend(), Overrides());
 }
 
 void Runtime::SetSetting(const std::string& name, const boost::json::value& raw) {
@@ -298,7 +294,6 @@ void Runtime::SetSetting(const std::string& name, const boost::json::value& raw)
       overrides[name] = value;
     }
   }
-  ApplyToolBudget();
   SaveCurrentSession();
 }
 
@@ -307,15 +302,7 @@ void Runtime::ClearSettings() {
     std::lock_guard<std::mutex> lock(overrides_mutex_);
     DefaultSession()->Spec().overrides.clear();
   }
-  ApplyToolBudget();
   SaveCurrentSession();
-}
-
-void Runtime::ApplyToolBudget() {
-  if (!executor_) return;
-  const session::InForce in_force =
-      session::InForce::Resolve(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
-  executor_->SetToolCallBudget(in_force.tool_budget);
 }
 
 namespace {
@@ -363,7 +350,7 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
     // build time would be the previous turn's. Delegation is the one tool that outlives its own
     // turn while it waits, which is why it is the one that needs the current token.
     for (Tool* tool : toolbox_.Tools()) {
-      auto* asking = dynamic_cast<tools::AskDirTool*>(tool);
+      auto* asking = dynamic_cast<agent_tools::AskDirTool*>(tool);
       if (asking != nullptr) asking->SetCancelToken(cancel_token);
     }
 
@@ -402,22 +389,11 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
   }
 }
 
-// Hands the chain this runtime is already answering inside to the executor, so a tool that
-// receives it can tell a directory it is already in from one it has never asked.
-void Runtime::ApplyDelegatedChain() { executor_->SetDelegatedChain(delegated_visited_); }
-
 DelegationResult Runtime::Delegate(const Delegation& request) {
   DelegationResult result;
 
   const std::filesystem::path target =
       request.dir.empty() ? workspace_root_ : request.dir;
-  // Checked before anything is built, because the cost of finding out by asking is a whole
-  // turn. The rule itself lives beside the request it reads, where it can be stated and
-  // checked without a runtime.
-  if (const std::string refused = RefusedReEntry(target, request.visited); !refused.empty()) {
-    result.error = refused;
-    return result;
-  }
 
   const std::filesystem::path table = target / ".pu" / "agents.json";
   const std::filesystem::path inherited = target / ".pu" / "agents";
@@ -441,11 +417,9 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     // written, so the same question asked twice costs the same and means the same.
     child.SetEphemeral();
     if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
+    // The one hop this chain is made of: the child registers no `ask_dir` of its own, so the
+    // rule that a delegation cannot delegate is a fact about which toolbox was built.
     child.delegated_ = true;
-    // The chain so far, plus the workspace answering this one: a child that is asked something
-    // new can then tell whether it was here already.
-    child.delegated_visited_ = request.visited;
-    child.delegated_visited_.push_back(AsOnePlace(target));
     // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
     // waiting rather than in the one that has already handed the question over.
     child.turn_cancel_ = request.cancel_token;
@@ -453,10 +427,6 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
     }
     child.Initialize();
-    // Initialize rebuilds the toolbox before any of the above is set, so the chain reaches the
-    // executor here -- after the runtime exists, before it answers. Nothing else carries it: a
-    // child that never ran this line would hold an empty chain and refuse no re-entry at all.
-    child.ApplyDelegatedChain();
 
     const ExecutionResult answered =
         child.ProcessInput(request.prompt, request.cancel_token);
@@ -553,10 +523,10 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
   };
 
   if (has("bash")) {
-    toolbox_.RegisterTool(std::make_unique<tools::BashTool>(
+    toolbox_.RegisterTool(std::make_unique<agent_tools::BashTool>(
         ResolveWorkspacePath(workspace_root_, agent.security.sandbox_root).string(), pager_));
   }
-  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<tools::WriteFileTool>());
+  if (has("write_file")) toolbox_.RegisterTool(std::make_unique<agent_tools::WriteFileTool>());
   // A runtime that is itself answering a delegated turn gets no way to ask one further: the
   // chain that could grow is the one a tool starts, and this is where it does not start.
   if (has("ask_dir") && !delegated_) {
@@ -564,9 +534,9 @@ void Runtime::RegisterBuiltinTools(const config::AgentEntry& agent) {
     // the turn that built it; a runtime with no turn in flight hands over nothing, and the
     // delegate's deadline is what stops it then.
     // The pager is this runtime's own, so an answer's rank continues the transcript's and a
-    // second answer to one question elides the first. Without it the answer went in as prose
-    // with no origin, and prose is the one thing the projection never compresses.
-    toolbox_.RegisterTool(std::make_unique<tools::AskDirTool>(workspace_root_, agent.delegates,
+    // second answer to one question supersedes the first. Without it the answer went in as
+    // prose with no origin, and prose is never superseded.
+    toolbox_.RegisterTool(std::make_unique<agent_tools::AskDirTool>(workspace_root_, agent.delegates,
                                                               &pager_, turn_cancel_));
   }
 }
@@ -609,7 +579,9 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
   executor_->SetAgentIdentity(agent.name, agent.description);
-  ApplyToolBudget();
+  // Same source as ContextWindow(): the file's own figure, read here so the executor can say
+  // what a gateway's refusal means and how full the last request was.
+  executor_->SetContextWindow(agent.backend.context_window.value_or(0));
   agent_manager_->SetActiveAgent(agent.name);
 }
 

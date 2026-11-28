@@ -6,6 +6,58 @@ the commit that made it, and its current behaviour is in the relevant document
 
 ## Unreleased
 
+### Changed
+
+- **The request is the transcript, whole.** Two steps used to run between the stored
+  conversation and the model: one retired the oldest tool-call pairs once there were more than
+  ten, and one replaced an argument body over 16 KiB with a stand-in. Both took history out of
+  the request, and both are gone. What is sent now is every stored message, in the order it was
+  stored and at the same length; the only rewrite left is the one that empties the text of a
+  page a newer run of the same command has already answered. Keeping a conversation inside a
+  model's window is the caller's problem, answered by handing the bulk of the work to another
+  agent rather than by cutting turns the model has already had.
+- **The retry policy is what the code does, and nothing more.** `Retry-After` was
+  parsed by `ParseRetryAfter`, capped by `RetryPolicy::max_retry_after` and
+  reported through `SseParser::OnRetry` — and `src` called none of the three:
+  `WithRetry` passed a wait of zero and no caller held a response header at the
+  moment it waited. `providers.md` promised the header was honoured, so the
+  promise and the machinery are both gone and the backoff is stated to be
+  exponential and nothing else.
+- **`docs/ARCHITECTURE.md` is gone.** It restated the dependency stack that
+  `layout.md` derives from `CMakeLists.txt` and the runtime facts that
+  `runtime.md` owns. The stack and the tech list went to `layout.md`; the request
+  path, MCP servers and persistence went to `runtime.md`; eighteen references
+  across thirteen files were repointed.
+- **`docs/design/cli-agent-workflow.md` is an archive.** Fourteen of its nineteen
+  defects have been fixed; the five still open are stated, with the order to take
+  them in, at the top of `docs/design/next.md`. The workflow document is kept for
+  the commands that found each defect, not for its status table.
+- **`pu sse`'s formatter moved out of the bottom library.** `FormatSseEvent` and
+  `RunSse` were compiled into `pu_core_util`, which every library above it links,
+  so `pu_llm` and `pu_paging` carried a dependency on the way `pu sse` prints.
+  They now live in `pu_tool_cli`, one layer above, which only `pu` and `pu-sse`
+  link. Nothing observable changed.
+- **The two `tools` directories are no longer ambiguous.** The tools the model
+  calls — `bash`, `write_file`, `ask_dir` — live in `agent_tools/` and build to
+  `pu_agent_tools`. The commands `pu` ships — `pu-probe`, `pu-models`, `pu-sse` —
+  live in `tools/`, which is the name that used to mean the former. Nothing
+  observable changed: the same headers, the same namespaces, the same three
+  executables. What changed is that a directory name now says who calls it.
+
+### Added
+
+- **A local `llama.cpp` server is a gateway of its own.** `llamacpp` speaks the
+  OpenAI wire at the paths this table already dials and reads no key, so it is
+  the shared row — but under its own name, because the answer to "which product
+  answered this" is `llamacpp` and a call priced as an OpenAI one would be a
+  wrong answer rather than a default. Its default host is
+  `http://localhost:8080/v1`, and the `/v1` is part of it: the endpoint path is
+  appended to whatever the host says. The Anthropic-shaped route the same server
+  also answers is deliberately not this row — it would demand a version header
+  and a `max_tokens` a local model has no use for. An entry that says
+  `"gateway": "openai"` pointed at a local port still works and now reads as
+  what it says.
+
 ## 0.7.2
 
 ### Added
@@ -63,25 +115,6 @@ the commit that made it, and its current behaviour is in the relevant document
   `gateway == "codebuddy"` test in `AgentNameFor`, so the next product whose ids are
   unique only inside its own catalogue declares it where it declares its host.
 
-- **The oldest tool-call pairs are retired from the transcript.** Scaffolding was the one pool
-  still unbounded: every `execute_bash` the conversation had ever made was re-sent on every
-  turn, `tool_calls[].arguments` included, long after the result had been replaced and the
-  question had moved on. `RetireOldToolCalls` drops whole pairs — the assistant's call together
-  with the receipt that answered it — oldest first, keeping the newest ten. It never splits a
-  pair, because a `tool` message whose `tool_call_id` names no call is rejected by every
-  provider, and a call with no receipt leaves the model waiting for a result that never comes.
-  It runs after the cursor and tombstone tiers, since those are expressed in terms of a call
-  that is still there.
-
-- **A large argument body is no longer re-sent on every turn.** The retirement above bounded
-  how many calls survive, but not how big each one is: a `write_file` of a thousand lines kept
-  its whole content in `tool_calls[].arguments` for as long as it was one of the ten, so its
-  tokens were paid again on every request even though the confirmation it produced was already
-  reduced to a verdict. `ElideLargeArguments` replaces a body over 16 KiB with a stand-in that
-  keeps every argument key and states what went — `elided`, `bytes`, `lines`, and which
-  argument carried it. A `write_file` still says which file it wrote; only the text is gone. It
-  runs after the retirement tier, so it spends its work only on the calls that survive.
-
 - **The model is told what it is spending, and who it is.** Three facts that were only in the
   source or only in the documentation now reach the model on every turn, because a model that
   cannot see them makes avoidable mistakes rather than avoiding them.
@@ -103,7 +136,7 @@ the commit that made it, and its current behaviour is in the relevant document
   test — this repository has no JavaScript runtime in its toolchain.
 
 The transcript is now bounded on four axes rather than three. All four are described together
-in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
+in [runtime.md](docs/runtime.md#paging-and-the-request-view).
 
 ### Changed
 
@@ -142,7 +175,7 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
   - `runtime::Turn` is a public aggregate instead of seven numbered arguments, and a provider
     call's fate is `ProviderOutcome` (`kReplied` / `kFailed` / `kStopped` / `kAbandoned`)
     rather than a cross-round `bool abandoned` the loop had to keep alive between rounds.
-  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools_cli/exit_code.hpp`, which
+  - `ExitCode` is an `enum class` in both `app/cli.hpp` and `tools/exit_code.hpp`, which
     exposed two functions that had been declared `int` while returning an exit status:
     `RunProbe` and `RunSse` return `ExitCode` now, and only the two `main`s convert.
   - `text::Join` / `text::JoinQuoted` in `core/text.hpp` are the one way this codebase joins a
@@ -173,7 +206,7 @@ in [ARCHITECTURE.md](docs/ARCHITECTURE.md#paging-and-the-request-view).
   only in `gateway.cpp`, which is the file that exists for them.
 
 - **A weak symbol the tools can do without is no longer emitted where it cannot be weak.**
-  `RunDelegatedTurn` has a fallback in `src/tools/delegation.cpp` so a build that links the
+  `RunDelegatedTurn` has a fallback in `src/agent_tools/delegation.cpp` so a build that links the
   tools without the runtime can still refuse a delegated turn, and a real definition in
   `src/runtime/runtime.cpp` that replaces it. That replacement relied on
   `__attribute__((weak))`, which MSVC does not have: on Windows the two were two strong

@@ -5,9 +5,9 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/sse.hpp"
-#include "pu/tools_cli/models.hpp"
-#include "pu/tools_cli/probe.hpp"
-#include "pu/tools_cli/sse.hpp"
+#include "pu/tools/models.hpp"
+#include "pu/tools/probe.hpp"
+#include "pu/tools/sse.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -24,7 +24,7 @@ class Runtime;
 namespace cli {
 
 // The contract, and what a caller should do with each code, is in
-// docs/ARCHITECTURE.md#what-a-command-exits-with-and-what-it-prints. Scoped because a second
+// docs/errors.md#what-a-command-exits-with-and-what-it-prints. Scoped because a second
 // `ExitCode` names the same four values for the standalone tools, and both are visible to
 // whatever includes both headers.
 enum class ExitCode : int {
@@ -74,7 +74,7 @@ CommandLine BuildCommandLine();
 // the two places that show this page — `pu --help` and a bare `pu` — must not drift apart.
 std::string TopLevelPage(const CommandLine& line);
 // The frame every command that needs a Runtime runs inside; see
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside. `ephemeral` settles it before
+// docs/layout.md#the-tree. `ephemeral` settles it before
 // Initialize, so it belongs to the command's signature rather than to its body.
 int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
                            const std::function<int()>& body, bool ephemeral = false);
@@ -97,7 +97,7 @@ int RunProbe(const std::string& agent, const std::string& gateway, const std::st
 // one into agents.json". `verify` is separate because it is the only shape that asks a
 // provider instead of reading a catalogue. Declared in one place because `pu models` and the
 // standalone `pu-models` call the one implementation.
-using ModelShape = tools_cli::ModelShape;
+using ModelShape = pu::tools::ModelShape;
 
 // The backend a read-only command reads — `models` and `probe`, the two that ask a product
 // something without taking a turn. A named gateway is built from the table and never adopted,
@@ -127,13 +127,21 @@ int RunAgents(Runtime& runtime, bool as_json);
 
 // What `sse` prints, and the shape `pu sse` and the standalone `pu-sse` both read. Declared
 // in one place because the two binaries call the one implementation.
-using SseFormat = tools_cli::SseFormat;
-using SseOptions = tools_cli::SseOptions;
+using SseFormat = pu::tools::SseFormat;
+using SseOptions = pu::tools::SseOptions;
 
 int RunSse(const SseOptions& options, http::HttpClient& http);
 
-// docs/ARCHITECTURE.md#the-frame-every-command-runs-inside
+// docs/layout.md#the-tree
 std::string FormatSseEvent(const core::SseEvent& event, const SseOptions& options);
+
+// Everything `main` does once it has the argv a process was started with. The entry point
+// itself holds only the two things that must happen before any command: the signal handler
+// and the gateway table. Kept here rather than in `main.cpp` because the parse, the page a
+// wrong flag is answered with and the dispatch are one decision — which command this line
+// is about — and a reader looking for what `pu <cmd>` runs should not have to open the file
+// that starts the process.
+int RunCommandLine(int argc, char* argv[]);
 
 }  // namespace cli
 }  // namespace pu

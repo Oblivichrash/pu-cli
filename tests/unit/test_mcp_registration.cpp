@@ -8,7 +8,7 @@
 #include <string>
 
 #include "pu/core/json.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 #include "tests/mocks/serve_harness.hpp"
 
 namespace beast = boost::beast;

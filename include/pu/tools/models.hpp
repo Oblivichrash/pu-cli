@@ -12,9 +12,9 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/model/backend.hpp"
-#include "pu/tools_cli/exit_code.hpp"
+#include "pu/tools/exit_code.hpp"
 
-namespace pu::tools_cli {
+namespace pu::tools {
 
 // What `models` prints, and how much of it. The three shapes are exclusive answers to the same
 // listing, so they are one choice rather than three flags that could be set together: `kIds`
@@ -58,4 +58,4 @@ ExitCode RunModels(const ModelsOptions& options, const model::Backend& backend,
                    http::HttpClient& http, std::shared_ptr<http::HttpClient> shared_http,
                    const std::optional<AgentsSource>& agents);
 
-}  // namespace pu::tools_cli
+}  // namespace pu::tools

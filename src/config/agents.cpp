@@ -169,7 +169,6 @@ AgentEntry ParseAgentEntry(const json::value& j) {
     entry.paging = ParsePaging(j.at("paging"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
-  entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");
 
   if (json::HasKey(j, "delegates")) {
     const json::value& list = j.at("delegates");
@@ -248,7 +247,7 @@ std::string FormatAgentEntry(const model::ModelEntry& model, const boost::json::
   }
   entry["backend"] = std::move(copied);
 
-  for (const char* key : {"security", "mcp_servers", "tool_call_budget"}) {
+  for (const char* key : {"security", "mcp_servers"}) {
     if (const auto it = src->find(key); it != src->end()) entry[key] = it->value();
   }
 
@@ -280,6 +279,17 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
 }
 
 std::string FindConfigPath() {
+  // The file a run was told to read outranks every guess below. `Runtime::Initialize()` already
+  // honours `PU_AGENTS_CONFIG`, and this function did not, so a run that named its table was
+  // configured as far as the runtime was concerned and unconfigured as far as the setup wizard
+  // was concerned: `pu chat` worked and `pu ask` asked for a gateway that was already in the
+  // file. One order, written once, for every caller that asks where the table is.
+  const char* explicit_config = std::getenv("PU_AGENTS_CONFIG");
+  if (explicit_config && *explicit_config) {
+    const std::filesystem::path named = explicit_config;
+    if (std::filesystem::exists(named)) return named.string();
+  }
+
   // Read against the run's own root, not the shell's: `pu -C ..` asks about the directory it
   // named, and a file sitting there is the one it means. Falling back to the working
   // directory would find nothing in that case and report a configured workspace as a first
@@ -642,8 +652,7 @@ AgentEntry LoadAgentConfig(const std::string& config_path) {
 const std::set<std::string>& ReadAgentKeys() {
   static const std::set<std::string> keys{"name",      "description", "backend",
                                           "security",  "paging",      "mcp_servers",
-                                          "tool_call_budget", "delegates", "tools",
-                                          "persona"};
+                                          "delegates", "tools",       "persona"};
   return keys;
 }
 

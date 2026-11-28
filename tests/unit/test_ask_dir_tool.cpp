@@ -6,9 +6,8 @@
 #include <filesystem>
 #include <string>
 
-#include "pu/tools/ask_dir_tool.hpp"
-#include "pu/tools/delegation.hpp"
-#include "pu/tools/tool.hpp"
+#include "pu/agent_tools/ask_dir_tool.hpp"
+#include "pu/agent_tools/tool.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
 namespace {
@@ -34,7 +33,7 @@ boost::json::value Ask(const std::string& who, const std::string& prompt) {
 }  // namespace
 
 TEST_CASE("ask_dir names itself as a tool the model can see", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader", "reviewer"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader", "reviewer"});
   REQUIRE(tool.Name() == "ask_dir");
   REQUIRE(Says(tool.Description(), "only its answer"));
 
@@ -56,8 +55,8 @@ TEST_CASE("ask_dir names itself as a tool the model can see", "[ask_dir]") {
 TEST_CASE("The page says a directory needs its own table before it is asked", "[ask_dir]") {
   // The directory branch is the one a model gets wrong, and no amount of a good refusal
   // repairs a first call it could have made right. Both ways of reaching the page say it.
-  pu::tools::AskDirTool reached(fs::current_path(), Allowed{"reader"});
-  pu::tools::AskDirTool alone(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool reached(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool alone(fs::current_path(), Allowed{});
 
   REQUIRE(Says(reached.Description(), "write_file"));
   REQUIRE(Says(reached.Description(), "refused rather than answered"));
@@ -70,7 +69,7 @@ TEST_CASE("The page says a directory needs its own table before it is asked", "[
 }
 
 TEST_CASE("An agent that may ask nobody is offered only a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   const boost::json::value schema = tool.ParametersSchema();
   const boost::json::object& properties = schema.at("properties").as_object();
 
@@ -82,7 +81,7 @@ TEST_CASE("An agent that may ask nobody is offered only a directory", "[ask_dir]
 }
 
 TEST_CASE("ask_dir reads a name it may reach as an agent, not a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   // No such directory exists, so a directory reading would refuse to resolve it. Reaching the
@@ -93,7 +92,7 @@ TEST_CASE("ask_dir reads a name it may reach as an agent, not a directory", "[as
 }
 
 TEST_CASE("ask_dir refuses an agent it was not told it may ask", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply =
@@ -105,7 +104,7 @@ TEST_CASE("ask_dir refuses an agent it was not told it may ask", "[ask_dir]") {
 }
 
 TEST_CASE("ask_dir refuses to ask a named agent when it may ask none", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   pu::ToolContext ctx;
 
   const std::string reply =
@@ -116,7 +115,7 @@ TEST_CASE("ask_dir refuses to ask a named agent when it may ask none", "[ask_dir
 
 
 TEST_CASE("ask_dir adds what the turn it asked cost to the asking turn's tally", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{});
   pu::ToolContext ctx;
   pu::ToolContext::Spending spent;
   ctx.spent = &spent;
@@ -132,7 +131,7 @@ TEST_CASE("ask_dir adds what the turn it asked cost to the asking turn's tally",
 }
 
 TEST_CASE("ask_dir refuses a call naming neither an agent nor a directory", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(boost::json::object{{"prompt", "hi"}}, ctx);
@@ -140,7 +139,7 @@ TEST_CASE("ask_dir refuses a call naming neither an agent nor a directory", "[as
 }
 
 TEST_CASE("ask_dir refuses a directory that configures no agent", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask("ghost-directory-that-is-not-here", "hi"), ctx);
@@ -152,7 +151,7 @@ TEST_CASE("ask_dir refuses a directory that configures no agent", "[ask_dir]") {
 }
 
 TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   // An absolute path that is absolute on every platform. '/etc' is not one on Windows, where
@@ -170,7 +169,7 @@ TEST_CASE("ask_dir will not be pointed at an absolute path", "[ask_dir]") {
 
 TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]") {
   const fs::path root = fs::current_path() / "some" / "nested" / "place";
-  pu::tools::AskDirTool tool(root, Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(root, Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask("../../../..", "hi"), ctx);
@@ -182,7 +181,7 @@ TEST_CASE("ask_dir will not climb out of the directory it was given", "[ask_dir]
 }
 
 TEST_CASE("ask_dir refuses to ask the directory it is already in", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   const std::string reply = tool.Execute(Ask(".", "hi"), ctx);
@@ -190,90 +189,9 @@ TEST_CASE("ask_dir refuses to ask the directory it is already in", "[ask_dir]") 
 }
 
 TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
+  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
   pu::ToolContext ctx;
 
   REQUIRE(Says(tool.Execute(Ask("somewhere", ""), ctx), "required"));
   REQUIRE(Says(tool.Execute(Ask("", ""), ctx), "required"));
-}
-
-TEST_CASE("ask_dir refuses a directory this question is already being asked in", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
-  pu::ToolContext ctx;
-  // The chain is read before anything is looked for, so the target needs no table: the refusal
-  // below is the chain's, and a case that had to build one first would be testing the table.
-  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
-
-  const std::string reply = tool.Execute(Ask("elsewhere", "hi"), ctx);
-  REQUIRE(Says(reply, "already answering"));
-  REQUIRE(Says(reply, "further up the chain"));
-}
-
-TEST_CASE("ask_dir looks at the chain before it decides a directory has no table", "[ask_dir]") {
-  pu::tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
-  pu::ToolContext ctx;
-  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
-
-  // A cycle check that matches too eagerly answers "already answering" here and never looks at
-  // the target at all. The chain names a different place, so this one is refused for the reason
-  // it would have been refused with no chain: it has no table.
-  const std::string reply = tool.Execute(Ask("another-place", "hi"), ctx);
-  REQUIRE(Says(reply, "no .pu/agents.json"));
-  REQUIRE_FALSE(Says(reply, "already answering"));
-}
-
-// The rule itself, stated without a runtime or a provider: the tool cases above reach it
-// through an executor that publishes a chain, and those check that the chain arrives. These
-// check that the chain, once it arrives, is read correctly.
-
-TEST_CASE("An empty chain refuses nothing", "[delegation]") {
-  // The top of a chain has nothing behind it, so there is nothing to re-enter. A rule that
-  // refused on an empty chain would make the first delegation of every run impossible.
-  REQUIRE(pu::RefusedReEntry(fs::current_path(), {}).empty());
-}
-
-TEST_CASE("A chain refuses the workspace it already names", "[delegation]") {
-  const fs::path here = fs::current_path();
-  const std::string refused = pu::RefusedReEntry(here, {here});
-  REQUIRE_FALSE(refused.empty());
-  // The message names the directory, so a model told to stop can tell which one to avoid.
-  REQUIRE(refused.find(here.string()) != std::string::npos);
-  REQUIRE(refused.find("further up the chain") != std::string::npos);
-}
-
-TEST_CASE("A chain compares places, not spellings", "[delegation]") {
-  // The same directory reaches here by different routes: an absolute path, one with `..` in
-  // it, and whatever the shell happened to produce. A rule that compared strings would let a
-  // cycle through on the second spelling, which is the whole failure it exists to stop.
-  //
-  // The `..` leg has to exist for the comparison to be about the rule rather than about
-  // `weakly_canonical`'s tolerance for missing parents, so this case builds one -- in a temp
-  // directory of its own, because a case that writes into the checkout leaves something
-  // behind when it fails.
-  const fs::path root = pu::tests::UniqueTempPath("pu_reentry");
-  const fs::path deep = root / "sub";
-  fs::create_directories(deep);
-
-  REQUIRE_FALSE(pu::RefusedReEntry(root, {deep / ".."}).empty());
-  // And the same comparison the other way round: the chain names the deep path, the target is
-  // its parent. A rule that only normalised one side would pass the line above and fail this.
-  REQUIRE_FALSE(pu::RefusedReEntry(root, {deep / ".." / "."}).empty());
-
-  fs::remove_all(root);
-}
-
-TEST_CASE("A chain lets through a directory it does not name", "[delegation]") {
-  // A guard that refused everything would satisfy the cases above and break delegation
-  // altogether, so the accepting side is stated too.
-  const fs::path here = fs::current_path();
-  REQUIRE(pu::RefusedReEntry(here / "elsewhere", {here / "another"}).empty());
-}
-
-TEST_CASE("AsOnePlace leaves a path it cannot resolve as it found it", "[delegation]") {
-  // `weakly_canonical` fails on the filesystem for reasons that say nothing about whether the
-  // place is a cycle. Returning the input is the answer that refuses no call, which is the
-  // safe direction to fail in.
-  const fs::path odd = fs::current_path() / "a" / ".." / "b";
-  REQUIRE(pu::AsOnePlace(odd) == fs::weakly_canonical(odd));
-  REQUIRE(pu::AsOnePlace({}).empty());
 }

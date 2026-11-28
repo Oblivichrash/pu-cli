@@ -19,10 +19,10 @@
 #include "pu/runtime/executor.hpp"
 #include "pu/mcp/client.hpp"
 #include "pu/runtime/command_router.hpp"
-#include "pu/tools/delegation.hpp"
+#include "pu/agent_tools/delegation.hpp"
 #include "pu/paging/paging.hpp"
 #include "pu/session/session.hpp"
-#include "pu/tools/toolbox.hpp"
+#include "pu/agent_tools/toolbox.hpp"
 
 namespace pu {
 
@@ -150,16 +150,11 @@ class Runtime {
  private:
   model::Backend ConfiguredBackend() const;
   // The budget the agent's configuration names, which is what a cleared override returns to.
-  int ConfiguredToolBudget() const;
   // Pushes the budget in force into the executor, after an override changed or an agent switch.
-  void ApplyToolBudget();
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();
   void RegisterBuiltinTools(const config::AgentEntry& agent);
-  // Pushes the chain this runtime is answering inside into the executor, so a tool that asks
-  // another workspace can see where the question has already been.
-  void ApplyDelegatedChain();
   void RegisterMcpTools();
 
   bool is_initialized_ = false;
@@ -177,10 +172,6 @@ class Runtime {
   // Whether this runtime is itself answering a delegated turn. A delegated runtime registers no
   // `ask_dir`, so a chain stops here rather than at a depth counter somebody has to carry.
   bool delegated_ = false;
-  // The workspaces the question this runtime is answering has already been asked in, oldest
-  // first. Only set on a delegated runtime; a chain that comes back to one of these is refused
-  // instead of waited on.
-  std::vector<std::filesystem::path> delegated_visited_;
   bool ephemeral_ = false;
   // The stop the current turn answers to, when it is a delegated turn: the asking turn's token
   // and the clock, folded into one by StopRequested(). Both are empty for an ordinary turn, whose

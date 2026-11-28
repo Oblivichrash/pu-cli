@@ -48,21 +48,6 @@ TEST_CASE("IsTransientStatus names the statuses worth repeating", "[retry]") {
   REQUIRE_FALSE(IsTransientStatus(0));
 }
 
-TEST_CASE("ParseRetryAfter reads seconds and nothing else", "[retry]") {
-  REQUIRE(ParseRetryAfter("0") == 0ms);
-  REQUIRE(ParseRetryAfter("1") == 1000ms);
-  REQUIRE(ParseRetryAfter("30") == 30000ms);
-
-  // The header may also be an HTTP date, which this build does not parse: it answers zero
-  // rather than guessing at a clock, and the caller's own backoff is used instead.
-  REQUIRE(ParseRetryAfter("Wed, 21 Oct 2015 07:28:00 GMT") == 0ms);
-  REQUIRE(ParseRetryAfter("") == 0ms);
-  REQUIRE(ParseRetryAfter("soon") == 0ms);
-  REQUIRE(ParseRetryAfter("-5") == 0ms);
-  // A value far past any sensible wait is refused as garbled rather than slept through.
-  REQUIRE(ParseRetryAfter("999999") == 0ms);
-}
-
 TEST_CASE("DelayBeforeNextAttempt backs off exponentially until the ceiling", "[retry]") {
   RetryPolicy policy;
   policy.initial_delay = 500ms;
@@ -70,28 +55,13 @@ TEST_CASE("DelayBeforeNextAttempt backs off exponentially until the ceiling", "[
 
   // The wait before a repeat doubles with the attempt number, so the second attempt waits the
   // initial delay and each one after it waits twice the last.
-  REQUIRE(DelayBeforeNextAttempt(policy, 0, 0ms) == 500ms);
-  REQUIRE(DelayBeforeNextAttempt(policy, 1, 0ms) == 1000ms);
-  REQUIRE(DelayBeforeNextAttempt(policy, 2, 0ms) == 2000ms);
-  REQUIRE(DelayBeforeNextAttempt(policy, 3, 0ms) == 4000ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 0) == 500ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 1) == 1000ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 2) == 2000ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 3) == 4000ms);
   // Past the ceiling it stays at the ceiling rather than growing without bound.
-  REQUIRE(DelayBeforeNextAttempt(policy, 4, 0ms) == 4000ms);
-  REQUIRE(DelayBeforeNextAttempt(policy, 20, 0ms) == 4000ms);
-}
-
-TEST_CASE("DelayBeforeNextAttempt honours a stated wait over its own", "[retry]") {
-  RetryPolicy policy;
-  policy.initial_delay = 500ms;
-  policy.max_delay = 4000ms;
-  policy.max_retry_after = 30000ms;
-
-  // A server that says how long to wait outranks the policy's own guess.
-  REQUIRE(DelayBeforeNextAttempt(policy, 1, 2000ms) == 2000ms);
-  // Even when that wait is shorter than the backoff would have been.
-  REQUIRE(DelayBeforeNextAttempt(policy, 5, 100ms) == 100ms);
-  // And a stated wait past the policy's ceiling is clamped to it: a server may not ask this
-  // build to sleep for an hour.
-  REQUIRE(DelayBeforeNextAttempt(policy, 1, 600000ms) == 30000ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 4) == 4000ms);
+  REQUIRE(DelayBeforeNextAttempt(policy, 20) == 4000ms);
 }
 
 TEST_CASE("WithRetry repeats a transient failure and returns once it succeeds", "[retry]") {

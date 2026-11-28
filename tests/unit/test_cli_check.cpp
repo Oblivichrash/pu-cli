@@ -158,8 +158,7 @@ TEST_CASE("A file that sets every field it can is called out for none of them", 
         "page_lines": 100, "max_lines": 200, "capture_bytes": 8192,
         "retain_bytes": 16384, "retain_buffers": 2
       },
-      "mcp_servers": [{"name": "s", "command": "c"}],
-      "tool_call_budget": 4
+      "mcp_servers": [{"name": "s", "command": "c"}]
   })");
 
   CapturedStdout capture;

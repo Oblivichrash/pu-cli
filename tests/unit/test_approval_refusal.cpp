@@ -17,13 +17,13 @@
 
 #include "pu/runtime/executor.hpp"
 #include "pu/paging/paging.hpp"
-#include "pu/tools/bash.hpp"
+#include "pu/agent_tools/bash.hpp"
 
 namespace {
 
 using pu::ToolContext;
 namespace config = pu::config;
-namespace tools = pu::tools;
+namespace agent_tools = pu::agent_tools;
 
 // The store is the session's; a test borrows one for as long as it runs.
 pu::paging::Pager& Store() {
@@ -53,16 +53,16 @@ TEST_CASE("A command the policy parks for approval is refused when nobody can an
           "[tools][refusal]") {
   const config::SecurityPolicy policy = PolicyNaming("my_script");
   ToolContext ctx = ContextNeedingApproval(policy);
-  tools::BashTool tool(policy.sandbox_root, Store());
+  agent_tools::BashTool tool(policy.sandbox_root, Store());
 
   const std::string raw = tool.Execute(boost::json::object{{"command", "my_script --go"}}, ctx);
 
-  const tools::ToolResult parsed = tools::ParseToolResult(raw);
+  const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(raw);
   REQUIRE(parsed.valid);
   REQUIRE(parsed.blocked);
   // The whole point: the refusal names itself as the kind a configuration fixes, not the
   // kind a command rework fixes.
-  REQUIRE(parsed.refusal == tools::Refusal::kNobodyToAsk);
+  REQUIRE(parsed.refusal == agent_tools::Refusal::kNobodyToAsk);
   REQUIRE(parsed.error.find("no approval channel") != std::string::npos);
 }
 
@@ -71,12 +71,12 @@ TEST_CASE("The same policy leaves a command it does not name alone", "[tools][re
   // above has to be about this command, not about the policy being present.
   const config::SecurityPolicy policy = PolicyNaming("my_script");
   ToolContext ctx = ContextNeedingApproval(policy);
-  tools::BashTool tool(policy.sandbox_root, Store());
+  agent_tools::BashTool tool(policy.sandbox_root, Store());
 
   const std::string raw = tool.Execute(boost::json::object{{"command", "true"}}, ctx);
-  const tools::ToolResult parsed = tools::ParseToolResult(raw);
+  const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(raw);
 
   REQUIRE(parsed.valid);
   REQUIRE_FALSE(parsed.blocked);
-  REQUIRE(parsed.refusal == tools::Refusal::kNone);
+  REQUIRE(parsed.refusal == agent_tools::Refusal::kNone);
 }
