@@ -32,6 +32,12 @@ struct Budget {
   std::size_t capture_bytes = 262144;
   std::size_t retain_bytes = 4u << 20;
   std::size_t retain_buffers = 8;
+  // 20 MiB of attached payloads, kept apart from the command output above: a picture and a log
+  // are retained for different reasons, and one shared bound would let a screenshot evict the
+  // command a model is still reading. A payload over `max_payload_bytes` is refused rather than
+  // stored, because a block the provider will not accept is a turn that fails one round later.
+  std::size_t retain_payload_bytes = 20u << 20;
+  std::size_t max_payload_bytes = 5u << 20;
 };
 
 // A place in one command's output: the buffer, and the 0-based line within it.
@@ -88,6 +94,35 @@ class Buffer {
   std::size_t lines() const { return line_starts_.size(); }
   std::size_t bytes() const { return text_.size(); }
   std::string_view line(std::size_t index) const;
+
+  // Set for a buffer stored by `Attach` rather than by `Store`: bytes a message carries. A
+  // payload has no lines, no page and no cursor, so anything that pages reads `IsPayload()`
+  // first rather than finding out by reading an empty line index.
+  bool IsPayload() const { return payload_; }
+  const std::string& media_type() const { return media_type_; }
+  const std::string& name() const { return name_; }
+  // The bytes as they were stored. `text` stays the same buffer so one type carries both; a
+  // payload's `text` is not text and must not be handed to anything that reads lines.
+  const std::string& payload() const { return text_; }
+
+  // Set once by `Pager::Attach`, which is the only thing that makes one. A second constructor
+  // would let a caller store bytes with no media type, and the media type is the half of an
+  // attachment a provider needs.
+  void SetPayload(std::string media_type, std::string name) {
+    payload_ = true;
+    media_type_ = std::move(media_type);
+    name_ = std::move(name);
+  }
+
+  // Drops the line index the constructor built. Called with `SetPayload`, by `Pager::Attach`
+  // alone: bytes a message carries have no lines, and an index over them is a page writer's
+  // invitation to read a picture as text.
+  void ClearLineIndex();
+
+ private:
+  bool payload_ = false;
+  std::string media_type_;
+  std::string name_;
 
  private:
   std::string id_;
@@ -210,10 +245,28 @@ class Pager {
   std::shared_ptr<const Buffer> Record(std::string text, core::Verdict verdict,
                                        std::string source_key);
 
+  // Bytes a message carries rather than text a command printed: an image, a file. Stored under
+  // its own retention so a screenshot cannot evict the log a model is reading, and found by id
+  // only -- there is no line index and no cursor, because nothing pages through a picture.
+  //
+  // The id is all a message keeps. `session.json` names it, and the transcript on disk stays a
+  // description of the conversation rather than a copy of everything in it.
+  //
+  // Returns nothing when the bytes are larger than `budget().max_payload_bytes`: the caller
+  // refuses the attachment rather than storing something no provider will take.
+  std::shared_ptr<const Buffer> Attach(std::string bytes, std::string media_type,
+                                       std::string name);
+  std::shared_ptr<const Buffer> FindPayload(std::string_view id) const;
+
  private:
   mutable std::mutex mutex_;
   std::vector<std::shared_ptr<const Buffer>> buffers_;  // oldest first
   std::size_t retained_bytes_ = 0;
+  // Attached payloads, kept apart from the command output above: their own bound, their own
+  // eviction, and never handed to `Newest()` -- a picture is not the run a bare line number
+  // means.
+  std::vector<std::shared_ptr<const Buffer>> payloads_;  // oldest first
+  std::size_t retained_payload_bytes_ = 0;
   Budget budget_;
   // Four hex digits, one per pager: the part of an id that keeps two processes' first run
   // from wearing one name.

@@ -340,7 +340,8 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
                                       TokenCallback content_callback,
                                       ToolCallbacks tool_callbacks,
                                       TokenCallback reasoning_callback,
-                                      CancelToken command_stop_token) {
+                                      CancelToken command_stop_token,
+                                      std::vector<Attachment> attachments) {
   ExecutionResult result;
   try {
     BeginRequest();
@@ -367,6 +368,31 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
       return result;
     }
 
+    // Stored before the turn starts, so a block that names a buffer is never handed to a
+    // projection that cannot find it. A payload over the bound is refused here, where the file's
+    // name is still in hand and the refusal can say it.
+    std::vector<ContentBlock> carried;
+    carried.reserve(attachments.size());
+    for (Attachment& attachment : attachments) {
+      const auto stored = pager_.Attach(std::move(attachment.bytes), attachment.media_type,
+                                        attachment.name);
+      if (stored == nullptr) {
+        result.has_error = true;
+        result.error_message =
+            "'" + attachment.name + "' is larger than this workspace's max_payload_bytes (" +
+            std::to_string(pager_.budget().max_payload_bytes) +
+            "), so it was not sent. Raise `paging.max_payload_bytes` in agents.json, or attach "
+            "something smaller";
+        return result;
+      }
+      ContentBlock block;
+      block.kind = attachment.kind;
+      block.media_type = attachment.media_type;
+      block.name = attachment.name;
+      block.source = stored->id();
+      carried.push_back(std::move(block));
+    }
+
     const model::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
     auto exec_result =
@@ -377,7 +403,8 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
                             .tool_callbacks = tool_callbacks,
                             .reasoning_callback = reasoning_callback,
                             .cancel_token = cancel_token,
-                            .command_stop_token = command_stop_token});
+                            .command_stop_token = command_stop_token},
+                           std::move(carried));
     result = std::move(exec_result);
     RecordTurnUsage(*session, result, backend);
     SaveCurrentSession();

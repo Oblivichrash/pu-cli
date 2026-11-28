@@ -347,3 +347,73 @@ TEST_CASE("A pager opening a transcript continues its ranking", "[paging]") {
   fresh.ContinueRankingFrom(0);
   REQUIRE(fresh.Store(core::Captured{"a\n", {}}, VerdictOf("ls"))->rank() == 1);
 }
+
+namespace {
+
+// A payload is stored the way an attachment is: bytes, a media type and a name, with no line
+// index behind it.
+std::shared_ptr<const Buffer> AttachBytes(Pager& pager, const std::string& bytes,
+                                          const std::string& media_type = "image/png") {
+  return pager.Attach(bytes, media_type, "shot.png");
+}
+
+}  // namespace
+
+TEST_CASE("An attached payload is found by its id and reads back byte for byte", "[paging]") {
+  Pager pager;
+  const std::string bytes("\x89PNG\r\n\x1a\n\x00\x01\x02", 12);
+  const auto stored = AttachBytes(pager, bytes);
+  REQUIRE(stored != nullptr);
+
+  // The bytes survive exactly: an attachment is not text and nothing here treats it as one.
+  const auto found = pager.FindPayload(stored->id());
+  REQUIRE(found != nullptr);
+  REQUIRE(found->payload() == bytes);
+  REQUIRE(found->IsPayload());
+  REQUIRE(found->media_type() == "image/png");
+  REQUIRE(found->name() == "shot.png");
+  // No lines, so nothing that pages can mistake it for output worth reading.
+  REQUIRE(found->lines() == 0);
+}
+
+TEST_CASE("An attached payload takes no rank and is not the newest run", "[paging]") {
+  // A bare line number means the newest run of a command. A picture is not one, and a payload
+  // that answered here would make `at: "12"` read from a screenshot.
+  Pager pager;
+  const auto stored = AttachBytes(pager, "picture");
+  REQUIRE(stored->rank() == 0);
+  REQUIRE(pager.Newest() == nullptr);
+  REQUIRE(pager.Find(stored->id()) == nullptr);
+}
+
+TEST_CASE("A payload over the bound is refused rather than stored", "[paging]") {
+  Budget budget;
+  budget.max_payload_bytes = 8;
+  Pager pager(budget);
+
+  REQUIRE(AttachBytes(pager, "12345678") != nullptr);
+  // One byte over: refused with nothing, which is what lets a caller name the file it could not
+  // take instead of failing a turn later at the provider.
+  REQUIRE(AttachBytes(pager, "123456789") == nullptr);
+}
+
+TEST_CASE("Old payloads are evicted against the payload bound, not the command one", "[paging]") {
+  // The two pools are separate on purpose: a screenshot must not evict the log a model is still
+  // reading, and a page read must not evict the picture the turn is about.
+  Budget budget;
+  budget.retain_payload_bytes = 20;  // room for two of the three below
+  budget.max_payload_bytes = 16;
+  Pager pager(budget);
+
+  const auto first = AttachBytes(pager, "aaaaaaaa");
+  const auto second = AttachBytes(pager, "bbbbbbbb");
+  const auto third = AttachBytes(pager, "cccccccc");
+  REQUIRE(first != nullptr);
+  REQUIRE(second != nullptr);
+  REQUIRE(third != nullptr);
+  // Oldest first, and only down to the bound: the two newest payloads survive and the one a
+  // reader stopped looking at longest ago is the one that went.
+  REQUIRE(pager.FindPayload(first->id()) == nullptr);
+  REQUIRE(pager.FindPayload(second->id()) != nullptr);
+  REQUIRE(pager.FindPayload(third->id()) != nullptr);
+}

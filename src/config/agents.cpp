@@ -75,6 +75,10 @@ paging::Budget ParsePaging(const json::value& j) {
   budget.retain_bytes = json::ValueOrDefault<std::size_t>(j, "retain_bytes", budget.retain_bytes);
   budget.retain_buffers =
       json::ValueOrDefault<std::size_t>(j, "retain_buffers", budget.retain_buffers);
+  budget.retain_payload_bytes = json::ValueOrDefault<std::size_t>(
+      j, "retain_payload_bytes", budget.retain_payload_bytes);
+  budget.max_payload_bytes =
+      json::ValueOrDefault<std::size_t>(j, "max_payload_bytes", budget.max_payload_bytes);
 
   // A page is a page: a request is clamped to `max_lines`, so a `page_lines` above it
   // would be silently narrowed. Nothing retained keeps nothing, and a store that keeps
@@ -86,6 +90,10 @@ paging::Budget ParsePaging(const json::value& j) {
   budget.capture_bytes = std::max<std::size_t>(1024, budget.capture_bytes);
   budget.retain_bytes = std::max<std::size_t>(1024, budget.retain_bytes);
   budget.retain_buffers = std::max<std::size_t>(1, budget.retain_buffers);
+  // A payload bound of zero would evict every attachment the moment a second arrived, and a
+  // maximum of zero would refuse all of them. Both are legal to ask for and neither is a store.
+  budget.retain_payload_bytes = std::max<std::size_t>(1024, budget.retain_payload_bytes);
+  budget.max_payload_bytes = std::max<std::size_t>(1024, budget.max_payload_bytes);
   return budget;
 }
 

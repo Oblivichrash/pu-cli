@@ -51,12 +51,26 @@ class Runtime {
   DelegationResult Delegate(const Delegation& request);
   void Shutdown();
 
+  // What a prompt carries besides its words. A picture and a prompt are one message, so it is
+  // handed over with the words rather than appended as a turn of its own: a message may be a
+  // paragraph and a screenshot at once, and splitting them would ask two questions.
+  //
+  // The bytes are given as they were read. The runtime stores them in its pager and puts the
+  // buffer's id in the block, so the session file names an attachment rather than holding it.
+  struct Attachment {
+    BlockKind kind = BlockKind::kImage;
+    std::string media_type;
+    std::string name;
+    std::string bytes;
+  };
+
   ExecutionResult ProcessInput(
       const std::string& input, CancelToken cancel_token = nullptr,
       TokenCallback content_callback = nullptr,
       ToolCallbacks tool_callbacks = {},
       TokenCallback reasoning_callback = nullptr,
-      CancelToken command_stop_token = nullptr);
+      CancelToken command_stop_token = nullptr,
+      std::vector<Attachment> attachments = {});
 
   // Whether this turn should stop now: the caller's token, the shutdown below, and the clock.
   // The runtime owns the two things a caller cannot see, which is why it is the runtime that

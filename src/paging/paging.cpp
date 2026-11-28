@@ -89,6 +89,8 @@ Buffer::Buffer(std::string id, std::string source, core::Verdict verdict, std::s
       rank_(rank),
       line_starts_(IndexLines(text_)) {}
 
+void Buffer::ClearLineIndex() { line_starts_.clear(); }
+
 std::string_view Buffer::line(std::size_t index) const {
   const std::size_t begin = line_starts_[index];
   const std::size_t end = index + 1 < line_starts_.size() ? line_starts_[index + 1] : text_.size();
@@ -496,6 +498,56 @@ std::shared_ptr<const Buffer> Pager::Record(std::string text, core::Verdict verd
   // the price of the whole delegated turn again. Dropping the text is worth less than keeping
   // the answer.
   return buffer;
+}
+
+std::shared_ptr<const Buffer> Pager::Attach(std::string bytes, std::string media_type,
+                                            std::string name) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  // Checked before anything is stored: a block over the bound is one every provider would
+  // refuse, and a caller that finds out here can say so while it still has the file's name.
+  if (bytes.size() > budget_.max_payload_bytes) return nullptr;
+
+  const std::string id = "a" + generation_ + "-p" + std::to_string(next_ordinal_++);
+  // A verdict no page reads: a payload succeeded by being stored. `extent` counts bytes and
+  // claims one line, which is what a reader that only wants the size expects.
+  core::Verdict verdict;
+  verdict.ok = true;
+  core::Extent extent;
+  extent.lines = 0;
+  extent.bytes = bytes.size();
+  extent.retained = 0;
+
+  // Built mutable, named, and only then frozen: a `const Buffer` cannot be told what it is, and
+  // a constructor that took the media type would give a caller a way to store bytes with none.
+  auto buffer = std::make_shared<Buffer>(id, std::string{}, std::move(verdict), std::move(bytes),
+                                         extent, 0);
+  buffer->SetPayload(std::move(media_type), std::move(name));
+  // Bytes are not lines: a payload that kept an index built from its newlines would let a reader
+  // that asked for a page get one, and a picture with three 0x0A bytes in it is not three lines.
+  buffer->ClearLineIndex();
+  std::shared_ptr<const Buffer> frozen = buffer;
+  const std::size_t attached_bytes = frozen->bytes();
+  payloads_.push_back(frozen);
+  retained_payload_bytes_ += attached_bytes;
+
+  // Oldest first, and only down to the payload bound: the command buffers are a separate pool
+  // because a screenshot and a log are retained for different reasons.
+  while (payloads_.size() > 1 && retained_payload_bytes_ > budget_.retain_payload_bytes) {
+    // The oldest goes, and the byte count with it. `payloads_` is oldest first, so the front is
+    // the one a reader stopped looking at longest ago.
+    const std::size_t evicted = payloads_.front()->bytes();
+    payloads_.erase(payloads_.begin());
+    retained_payload_bytes_ -= evicted;
+  }
+  return frozen;
+}
+
+std::shared_ptr<const Buffer> Pager::FindPayload(std::string_view id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const auto& buffer : payloads_) {
+    if (buffer->id() == id) return buffer;
+  }
+  return nullptr;
 }
 
 }  // namespace pu::paging
