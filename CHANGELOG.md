@@ -206,7 +206,7 @@ in [runtime.md](docs/runtime.md#paging-and-the-request-view).
   only in `gateway.cpp`, which is the file that exists for them.
 
 - **A weak symbol the tools can do without is no longer emitted where it cannot be weak.**
-  `RunDelegatedTurn` has a fallback in `src/tools/delegation.cpp` so a build that links the
+  `RunDelegatedTurn` has a fallback in `src/agent_tools/delegation.cpp` so a build that links the
   tools without the runtime can still refuse a delegated turn, and a real definition in
   `src/runtime/runtime.cpp` that replaces it. That replacement relied on
   `__attribute__((weak))`, which MSVC does not have: on Windows the two were two strong
