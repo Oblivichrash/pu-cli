@@ -39,13 +39,10 @@ struct ToolCallbacks {
       on_end;
 };
 
-// How a turn ended. `kToolBudgetReached` means the wrap-up round also failed to
-// produce an answer; a turn that was stopped at the budget but did answer is
-// `kCompleted`, with the answer the wrap-up round produced.
+// How a turn ended.
 enum class TurnOutcome {
   kCompleted,
   kFailed,
-  kToolBudgetReached,
 };
 
 // What one provider call did. The four states are exclusive, which is why they are one value
@@ -99,19 +96,11 @@ struct ExecutionResult {
 class Executor {
  public:
 
-  // The tool-call budget for one turn: how many tool calls the model may make before it is asked
-  // to wrap up. Counted per call, not per reply, since one reply can carry several.
-  //
-  // Public because it is the number a session shows when it has no override of its own: the
-  // runtime and the page both report it rather than restating it.
-  inline static constexpr int kDefaultToolCallBudget = 100;
   Executor();
 
   void SetSecurityPolicy(const config::SecurityPolicy& policy);
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
-
-  void SetToolCallBudget(int budget) { tool_call_budget_ = budget; }
 
   // Who is answering this turn, in the runtime's own words. Carried into the static context
   // because a prompt a person wrote says what an agent is for, and an agent that has been
@@ -209,8 +198,6 @@ class Executor {
   // provider's own count before the result is returned.
   ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
-
-  int tool_call_budget_ = kDefaultToolCallBudget;
 
   // Where this turn's question has already been asked. Copied into every ToolContext the turn
   // builds, so a tool that delegates carries it onward without the executor knowing why.

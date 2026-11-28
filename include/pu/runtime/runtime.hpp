@@ -150,9 +150,7 @@ class Runtime {
  private:
   model::Backend ConfiguredBackend() const;
   // The budget the agent's configuration names, which is what a cleared override returns to.
-  int ConfiguredToolBudget() const;
   // Pushes the budget in force into the executor, after an override changed or an agent switch.
-  void ApplyToolBudget();
   void Activate(const config::AgentEntry& agent);
   void RebuildToolbox(const config::AgentEntry& agent);
   void SaveCurrentSession();

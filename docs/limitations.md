@@ -31,30 +31,9 @@ seven-hundred-line document is a list nobody reads at the moment they need it.
 
 ## What a turn does that a reader may not expect
 
-- **The tool-call budget is the turn loop's one automatic stop.** It counts calls rather than
-  replies, since one reply can carry several, and it is checked between rounds: a budget of 2
-  lets two calls run and then appends an instruction to wrap up, so the model answers from what
-  it has instead of the turn failing. A wrap-up round that calls a tool anyway ends the turn with
-  `TurnOutcome::kToolBudgetReached` and an error naming the setting, rather than looping. The
-  number comes from the agent's `tool_call_budget`, or from the session's override when the page
-  or `/api/settings` set one.
-- **A session's cost is summed, not stored.** `UsageLedger::Total()` adds the counts of every
-  turn the conversation still holds. A price is summed only while every turn that reported one
-  used the same unit, and only if every turn was priced: one unpriced turn or two units make the
-  total carry no price at all, because a number that covers part of the session reads as the
-  whole of it. `priced_turns` says how many were priced, so a page can explain the absence.
-- **A `max_tokens` cap that lands inside a tool call ends the turn with an error.** The reply
-  stops mid-argument, so the call never completed and its text is not a usable argument; the
-  provider raises rather than keeping the fragment. A `finish_reason` other than `length`
-  leaves a non-JSON argument as it stands.
-- **A cancelled run keeps no partial reply, by design.** The transport aborts the stream and
-  the executor ends the turn with neither a reply nor an error, so nothing is appended: the
-  session holds the user message and no answer, and a follow-up "continue" restarts the answer
-  rather than resuming it.
-- **MCP requests time out after a fixed 5 seconds.**
-- **A stopped MCP server is killed rather than negotiated with.** The child gets `SIGTERM`,
-  two seconds of polls, then `SIGKILL`; a server that needs longer to flush on the way out does
-  not get it.
+- **A turn ends when the model stops calling tools.** There is no per-turn cap on how many
+  calls it may make, and nothing tells it that one exists: the loop runs until a reply carries
+  no tool call, or until the caller interrupts it.
 
 ## What is kept, and how long
 

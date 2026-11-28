@@ -51,8 +51,8 @@ struct SessionSpec {
   // the values both come from the table in `pu/session/settings.hpp`: a name that is not in it
   // is never stored, and a value is checked before it gets here.
   //
-  // It is a map rather than a field per setting so that `tool_budget` did not have to be the
-  // second of eight copies: one row in that table is the whole of adding one.
+  // It is a map rather than a field per setting so that one row in that table is the whole of
+  // adding one.
   session::Overrides overrides;
 
   // The `thinking` override, for the callers that only know about that one.

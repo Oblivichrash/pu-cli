@@ -113,10 +113,6 @@ std::string Executor::BuildStaticSystemContext() const {
   oss << "=== Environment ===\n";
   oss << "OS: " << static_env_info_.os_name << "\n";
   oss << "Kernel: " << static_env_info_.kernel_version << "\n";
-  // Stated up front rather than only when it runs out. A budget the model learns about at the
-  // last call is a budget it cannot plan against: the exhaustion notice already arrives after
-  // there is nothing left to spend it on.
-  oss << "Tool-call budget for this turn: " << tool_call_budget_ << " calls\n";
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -453,11 +449,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
 ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& turn) {
   ExecutionResult result;
-    bool budget_reached = false;
-    bool wrap_up_asked = false;
 
-  // The tool-call budget is what this loop counts, and the two stop checks inside it are what
-  // end it early; neither is a property of this loop, so both are read rather than held here.
   for (;;) {
     // A round is counted when it opens rather than when its reply arrives: a turn stopped
     // before asking the model did open that round and did nothing in it, and a count that
@@ -471,40 +463,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       spdlog::debug("Turn stopped before round {} asked anything", result.rounds);
       conversation.SealInterruptedToolCalls();
       return result;
-    }
-
-    // The budget counts tool calls, not replies: one reply can carry several calls. The check
-    // sits at the top of a round, so a round whose reply *reaches* the budget has already run —
-    // a budget of 2 lets two calls happen and asks for the wrap-up after them, rather than
-    // stopping the round that made the second one.
-    if (!budget_reached && result.tool_call_count >= tool_call_budget_) {
-      budget_reached = true;
-      spdlog::warn("Tool-call budget of {} reached, asking the model to wrap up",
-                   tool_call_budget_);
-    }
-
-    if (budget_reached && !wrap_up_asked) {
-      // Rather than ending the turn with an error, spend one round on a wrap-up: the
-      // model answers from what it has gathered, and the user reads an answer instead
-      // of a refusal. A wrap-up that still calls a tool is answered no further.
-      //
-      // A wrap-up is a round like any other, so a stop that arrived while the last tools ran
-      // ends the turn here rather than buying one more reply the user no longer wants.
-      if (stop_check_ && stop_check_()) {
-        spdlog::debug("Turn stopped before the wrap-up round");
-        conversation.SealInterruptedToolCalls();
-        return result;
-      }
-      ChatMessage wrap_up;
-      wrap_up.role = kUserRole;
-      wrap_up.content =
-          "[system] The tool-call budget for this turn is exhausted. Do not call any "
-          "more tools; answer now from what you have gathered so far.";
-      conversation.Append(wrap_up);
-      wrap_up_asked = true;
-    } else if (budget_reached && wrap_up_asked) {
-      spdlog::warn("Wrap-up round made no final answer, ending the turn");
-      break;
     }
 
     ProviderCall call = CallProvider(conversation, turn, result);
@@ -544,16 +502,6 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
 
     AppendAssistantTurn(conversation, chat_result);
     RunToolCalls(conversation, turn, chat_result.tool_calls, result);
-  }
-
-  if (budget_reached && result.content.empty()) {
-    result.outcome = TurnOutcome::kToolBudgetReached;
-    result.content =
-        "The tool-call budget for this turn was reached without a final answer. "
-        "Please rephrase your request or narrow the scope, or raise the budget with "
-        "the tool_call_budget agent setting.";
-    result.has_error = true;
-    return result;
   }
 
   if (result.content.empty() && result.blocked_tool_calls > 0 &&

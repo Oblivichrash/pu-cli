@@ -169,7 +169,6 @@ AgentEntry ParseAgentEntry(const json::value& j) {
     entry.paging = ParsePaging(j.at("paging"));
   if (json::HasKey(j, "mcp_servers") && j.at("mcp_servers").is_array())
     entry.mcp_servers = ParseMcpServers(j.at("mcp_servers"));
-  entry.tool_call_budget = json::OptionalOrDefault<int>(j, "tool_call_budget");
 
   if (json::HasKey(j, "delegates")) {
     const json::value& list = j.at("delegates");
@@ -248,7 +247,7 @@ std::string FormatAgentEntry(const model::ModelEntry& model, const boost::json::
   }
   entry["backend"] = std::move(copied);
 
-  for (const char* key : {"security", "mcp_servers", "tool_call_budget"}) {
+  for (const char* key : {"security", "mcp_servers"}) {
     if (const auto it = src->find(key); it != src->end()) entry[key] = it->value();
   }
 
@@ -642,8 +641,7 @@ AgentEntry LoadAgentConfig(const std::string& config_path) {
 const std::set<std::string>& ReadAgentKeys() {
   static const std::set<std::string> keys{"name",      "description", "backend",
                                           "security",  "paging",      "mcp_servers",
-                                          "tool_call_budget", "delegates", "tools",
-                                          "persona"};
+                                          "delegates", "tools",       "persona"};
   return keys;
 }
 

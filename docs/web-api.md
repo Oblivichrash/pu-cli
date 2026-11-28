@@ -144,7 +144,7 @@ from anywhere else with `403`.
 | `GET` | `/api/servers` | loopback | `servers`: the **other** servers on this machine, each with a `name` and a `port`. The one that answered is not in the list |
 | `POST` | `/api/rewind` | anyone | Step back to before a turn (`{"turn":n}`); the next message replaces it |
 | `GET` | `/api/settings` | anyone | Every setting this build knows, with the value in force and whether it came from this session or the agent |
-| `POST` | `/api/settings` | anyone | Set one (`{"name":"tool_budget","value":25}`); a missing or `null` `value` clears it |
+| `POST` | `/api/settings` | anyone | Set one (`{"name":"thinking","value":"high"}`); a missing or `null` `value` clears it |
 | `POST` | `/api/settings/reset` | anyone | Drop every override and go back to the agent's configuration |
 A request that fails is answered with the status that names whose it is: `400` for one the
 caller can fix — a body that is not JSON, a value that is missing or unknown, a state that

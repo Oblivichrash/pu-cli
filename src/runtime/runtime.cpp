@@ -250,7 +250,7 @@ model::Backend Runtime::ConfiguredBackend() const {
 model::Backend Runtime::CurrentBackend() const {
   const model::Backend backend = ConfiguredBackend();
   if (!current_session_) return backend;
-  return session::InForce::Resolve(backend, ConfiguredToolBudget(), Overrides()).backend;
+  return session::InForce::Resolve(backend, Overrides()).backend;
 }
 
 ThinkingLevel Runtime::CurrentThinkingLevel() const { return CurrentBackend().thinking; }
@@ -279,11 +279,7 @@ session::Overrides Runtime::Overrides() const {
 }
 
 std::vector<session::SettingView> Runtime::Settings() const {
-  return session::ViewSettings(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
-}
-
-int Runtime::ConfiguredToolBudget() const {
-  return ActiveAgent().tool_call_budget.value_or(Executor::kDefaultToolCallBudget);
+  return session::ViewSettings(ConfiguredBackend(), Overrides());
 }
 
 void Runtime::SetSetting(const std::string& name, const boost::json::value& raw) {
@@ -298,7 +294,6 @@ void Runtime::SetSetting(const std::string& name, const boost::json::value& raw)
       overrides[name] = value;
     }
   }
-  ApplyToolBudget();
   SaveCurrentSession();
 }
 
@@ -307,15 +302,7 @@ void Runtime::ClearSettings() {
     std::lock_guard<std::mutex> lock(overrides_mutex_);
     DefaultSession()->Spec().overrides.clear();
   }
-  ApplyToolBudget();
   SaveCurrentSession();
-}
-
-void Runtime::ApplyToolBudget() {
-  if (!executor_) return;
-  const session::InForce in_force =
-      session::InForce::Resolve(ConfiguredBackend(), ConfiguredToolBudget(), Overrides());
-  executor_->SetToolCallBudget(in_force.tool_budget);
 }
 
 namespace {
@@ -609,7 +596,6 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
   executor_->SetAgentIdentity(agent.name, agent.description);
-  ApplyToolBudget();
   agent_manager_->SetActiveAgent(agent.name);
 }
 

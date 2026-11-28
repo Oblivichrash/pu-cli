@@ -143,9 +143,6 @@ std::string FormatAgent(const config::AgentEntry& entry, const boost::json::valu
            })
         << "\n";
   }
-  if (entry.tool_call_budget) {
-    out << "  tool budget  " << *entry.tool_call_budget << "\n";
-  }
   // What this one is allowed to change. The default is every builtin, which is the answer a
   // reader is most likely to be wrong about, so it is said rather than left blank.
   out << "  tools        ";
@@ -287,7 +284,7 @@ int RunCheck(const std::string& config_path, const std::filesystem::path& worksp
   }
 
   // Each target configures itself elsewhere, so the one delegation mistake a file can make is
-  // asking itself: the turn that reaches it recurses until a budget stops it.
+  // asking itself.
   std::vector<std::string> errors;
   for (const std::string& target : cfg.delegates) {
     if (target == cfg.name) errors.push_back(cfg.name + " delegates to itself");

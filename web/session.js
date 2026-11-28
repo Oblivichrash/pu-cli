@@ -24,13 +24,13 @@ function turnOf(el) {
 }
 
 async function loadHistory() {
-  // Appending a second copy of the chain into a list another run is filling is what drew
-  // every turn twice, so one run at a time. The socket's hold on incoming frames is not
-  // this function's to raise or lower: see beginLoad/endLoad in ws.js.
-  if (PU.loadHistBusy) return;
-  PU.loadHistBusy = true;
+  // Appending a second copy of the chain into a list another run is filling is what drew every
+  // turn twice. A run counts itself and only the last one draws: a run a later one overtook is
+  // read from a store the later one is about to describe again, so its answer is dropped.
+  const gen = ++PU.loadHistGen;
   try {
     const history = (await fetchJson("/api/history")).messages;
+    if (gen !== PU.loadHistGen) return;
     if (!Array.isArray(history)) return;
     // A tool-using turn is several messages; drawing each alone would show another chat.
     for (const turn of groupHistory(history)) {
@@ -49,8 +49,6 @@ async function loadHistory() {
     const replies = groupHistory(history).filter((turn) => turn.role === "assistant" && turn.usage);
     if (replies.length > 0) showUsage(replies[replies.length - 1].usage);
   } catch (_) {
-  } finally {
-    PU.loadHistBusy = false;
   }
 }
 
@@ -125,8 +123,7 @@ function renderSettings(settings) {
 }
 
 async function setSetting(name, control) {
-  // An empty number box is a cleared override, not a zero: the server reads null that way and
-  // refuses 0 for a budget, which would stop the turn at its first call.
+  // An empty number box is a cleared override, not a zero: the server reads null that way.
   let value = control.value;
   if (control.type === "number") {
     value = control.value.trim() === "" ? null : Number(control.value);

@@ -166,21 +166,22 @@ class SessionRunner {
   bool Attach(const std::shared_ptr<WebSocketConnection>& conn);
   void Detach(const std::shared_ptr<WebSocketConnection>& conn);
 
-  // The frames of one turn, as they were delivered. A page that was not attached while the
-  // turn ran reads them here instead of waiting for the next reload: this is what an
-  // event-stream subscriber gets, and what a reconnecting page is handed in `Attach`.
+  // The state of one turn, not the frames that built it. A page that was not attached while the
+  // turn ran is handed this in `Attach` and draws it in place of whatever it had, so the same
+  // turn handed over twice is drawn once. Replaying the frames instead would append a second
+  // copy: those frames are the process, and a process is not idempotent.
   //
-  // `frames` is the whole turn as it happened, and `finished` says the `done` frame is in it.
-  // A subscriber records how many it has seen and is given the rest, which is what makes a
-  // reconnect mid-turn cost nothing.
+  // `state` is the snapshot payload and nothing else -- the same fields the live frames carry,
+  // folded together by `AppendFrame`. A field is written there and nowhere else, so a new frame
+  // type is added in one place.
   struct TurnRecord {
     std::string id;
     bool finished = false;
-    std::deque<std::shared_ptr<const std::string>> frames;
+    boost::json::object state;
   };
   // The record for `turn_id`, or nullptr when it is no longer kept. The shared_ptr is the
-  // record itself: a subscriber holds it and reads `frames` under `frame_mutex_`, which is
-  // also the lock the worker appends under.
+  // record itself: a reader reads `state` under `frame_mutex_`, which is also the lock the
+  // worker writes it under.
   std::shared_ptr<TurnRecord> RecordOf(const std::string& turn_id) const;
   std::mutex& FrameMutex() const { return frame_mutex_; }
 
@@ -199,15 +200,16 @@ class SessionRunner {
   void ReportFailedTurn(const Job& job, const std::string& reason);
   // `by_page` is whether the page asked for this, which decides if the turn still answers.
   void RequestCancel(bool by_page);
-  // The frames a page attaching now should be handed: the turn in flight and the last
+  // The snapshots a page attaching now should be handed: the turn in flight and the last
   // finished one, so a reply that arrived with nobody watching is drawn without a reload.
-  std::deque<std::shared_ptr<const std::string>> FramesForNextPage() const;
-  // Frames of the turn in flight and of the last few finished ones, newest last. Bounded so a
-  // long-lived server does not keep every byte it ever sent; an older turn is still readable
-  // from /api/history, which carries the result rather than the stream.
+  std::deque<boost::json::object> SnapshotsForNextPage() const;
+  // The turn in flight and the last few finished ones, newest last. Bounded so a long-lived
+  // server does not keep every byte it ever sent; an older turn is still readable from
+  // /api/history, which carries the result rather than the stream.
   //
   // `turns_mutex_` guards the list itself (which records exist). `frame_mutex_` guards the
-  // frames inside one record, since a subscriber reads them while the worker appends.
+  // state inside one record, since a reader reads it while the worker writes. Taken in that
+  // order where both are needed, which is what `SnapshotsForNextPage` does.
   mutable std::mutex turns_mutex_;
   mutable std::mutex frame_mutex_;
   std::deque<std::shared_ptr<TurnRecord>> turns_;

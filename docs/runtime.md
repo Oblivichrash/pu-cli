@@ -300,7 +300,7 @@ toolbox was built rather than a counter that a call could get wrong.
 
 **The child owns its own rules.** A directory target must already carry `.pu/agents.json`;
 nothing creates one. That file — not the parent's — decides the child's sandbox, approval
-patterns, model and tool budget, which is why a parent cannot widen or narrow its child's
+patterns and model, which is why a parent cannot widen or narrow its child's
 reach, and why `Inside()` in the parent only ever guards the `ask` string itself.
 
 **Stop and deadline cross the boundary.** These are not tickets the asking turn can hold, so

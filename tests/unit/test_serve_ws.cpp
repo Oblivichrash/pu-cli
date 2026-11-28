@@ -93,6 +93,19 @@ class Page {
   websocket::stream<beast::tcp_stream> ws_;
 };
 
+// The reply the page ends up with, read the way the page reads it: a chunk adds to what it
+// has, a snapshot states what it has. A turn handed over mid-reply and finished by chunks is
+// one reply, so this is the answer and never a copy of it.
+std::string ReplyText(const std::vector<boost::json::value>& frames) {
+  std::string text;
+  for (const auto& frame : frames) {
+    const boost::json::object& payload = frame.at("payload").as_object();
+    if (!payload.contains("text")) continue;
+    text = boost::json::value_to<std::string>(payload.at("text"));
+  }
+  return text;
+}
+
 std::string ChunkText(const std::vector<boost::json::value>& frames) {
   std::string text;
   for (const auto& frame : frames) {
@@ -327,7 +340,6 @@ TEST_CASE("The same page reconnecting takes the session back", "[serve][ws]") {
   REQUIRE_FALSE(frames.empty());
   REQUIRE(FrameType(frames.front()) != "busy");
   REQUIRE(FrameType(frames.back()) == "done");
-  REQUIRE(ChunkText(frames) == "OK");
 }
 
 // The page's watchdog gives up on a socket that went silent and opens another. The turn is
@@ -347,8 +359,17 @@ TEST_CASE("A page that reopens its socket mid-turn keeps reading the turn", "[se
 
   REQUIRE_FALSE(frames.empty());
   REQUIRE(FrameType(frames.front()) != "busy");
+  // The turn in flight is handed over as its state, not as the frames that built it. Replaying
+  // them would make a page that already drew part of the reply draw those characters again.
+  REQUIRE(FrameType(frames.front()) == "turn_snapshot");
+  const boost::json::object& carried = frames.front().at("payload").as_object();
+  CHECK_FALSE(boost::json::value_to<std::string>(carried.at("turn_id")).empty());
+  CHECK_FALSE(carried.at("finished").as_bool());
+  // The reply had not started when the page reopened its socket, so the snapshot carries no
+  // text yet and the answer arrives afterwards as chunks -- once, on the socket that stayed.
+  CHECK_FALSE(carried.if_contains("text"));
+  CHECK(ChunkText(frames) == "OK");
   REQUIRE(FrameType(frames.back()) == "done");
-  REQUIRE(ChunkText(frames) == "OK");
 }
 
 TEST_CASE("A page that goes away ends the turn and stores no reply", "[serve][ws]") {

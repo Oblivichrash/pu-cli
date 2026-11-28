@@ -107,16 +107,6 @@ TEST_CASE("What the environment probe found reaches the request", "[executor]") 
   REQUIRE(context.find("Kernel: \n") == std::string::npos);
 }
 
-TEST_CASE("The tool-call budget is stated before the first call", "[executor]") {
-  Executor executor;
-  REQUIRE(executor.BuildStaticSystemContext().find(
-              "Tool-call budget for this turn: 100 calls") != std::string::npos);
-
-  executor.SetToolCallBudget(7);
-  REQUIRE(executor.BuildStaticSystemContext().find(
-              "Tool-call budget for this turn: 7 calls") != std::string::npos);
-}
-
 TEST_CASE("The exit code table reaches the model", "[executor]") {
   Executor executor;
   const std::string context = executor.BuildStaticSystemContext();

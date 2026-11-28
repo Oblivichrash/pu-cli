@@ -128,9 +128,9 @@ function handleToolEnd(payload) {
       (b) => (b.type === BLOCK_TYPES.TOOL_CALL || b.type === BLOCK_TYPES.SUBTASK) &&
           b.id === payload.id);
   if (!block) {
-    // A page that reconnected mid-command is replayed the end without the start: the frames
-    // before the reconnect were drawn and dropped. The result carries the call's own name and
-    // arguments for that reason, so the block is drawn from the end rather than lost.
+    // A snapshot carries a tool's end, so a turn that arrives whole never sees its start: the
+    // result carries the call's own name and arguments for that reason, and the block is drawn
+    // from the end rather than lost.
     pushBlock({
       type: blockKindForTool(payload.name),
       id: payload.id,
@@ -167,4 +167,50 @@ function handleThinking(payload) {
       () => ({ type: BLOCK_TYPES.THINKING, content: "", collapsed: true }));
   block.content += text;
   updateCurrentAssistantBlocks();
+}
+
+// A turn handed over whole: the server sends the state of the turn in flight and of the last
+// finished one when a page attaches, not the frames that built them. A chunk appends to a turn
+// and a snapshot replaces it, so a turn drawn once on connect and handed over again on the next
+// reconnect is still one reply on the page -- which is why nothing has to be held back while the
+// page catches up, and why a snapshot of a finished turn can be ignored outright.
+function handleTurnSnapshot(payload) {
+  if (!payload || payload.finished) return;
+  const blocks = blocksFromSnapshot(payload);
+  if (!PU.currentAssistantEl) {
+    if (blocks.length === 0) return;
+    PU.currentAssistantBlocks = [];
+    PU.currentAssistantEl = createMessage("assistant", PU.currentAssistantBlocks);
+    PU.currentAssistantEl.classList.add("typing");
+  }
+  PU.currentAssistantBlocks.length = 0;
+  for (const block of blocks) PU.currentAssistantBlocks.push(block);
+  updateCurrentAssistantBlocks();
+}
+
+// The snapshot's fields in the order a live turn draws them. A tool is one block whether it is
+// running or done, so the two lists are walked as one.
+function blocksFromSnapshot(snapshot) {
+  const blocks = [];
+  const thinking = snapshot.thinking || "";
+  if (thinking) {
+    blocks.push({ type: BLOCK_TYPES.THINKING, content: thinking, collapsed: true });
+  }
+  for (const tool of snapshot.tools || []) {
+    const done = tool.state === "done";
+    blocks.push({
+      type: blockKindForTool(tool.name),
+      id: tool.id,
+      name: tool.name || "unknown",
+      args: tool.args ?? null,
+      output: done ? (tool.output || "") : "",
+      error: done ? (tool.error || "") : "",
+      page: done ? (tool.page ?? null) : null,
+      status: done ? "done" : "running",
+      collapsed: true,
+    });
+  }
+  const text = snapshot.text || "";
+  if (text) blocks.push({ type: BLOCK_TYPES.TEXT, content: text });
+  return blocks;
 }

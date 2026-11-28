@@ -3,10 +3,9 @@
 // page keeps exactly one socket and reports a refusal instead of taking the session from the page
 // that holds it.
 //
-// A load is two things at once: the socket starts delivering the turn still being written, and the
-// transcript is rebuilt from the store. Frames arriving mid-rebuild wait in `PU.loadingFrames` and
-// are dispatched into the fresh transcript; drawn immediately, they would be appended to boxes
-// about to be replaced and the turn would show twice.
+// A reconnect hands over the state of the turn in flight and of the last finished one, as frames
+// of their own: a chunk appends to a turn, a snapshot replaces it. Nothing is held back while the
+// page catches up, because a turn drawn twice ends up on the page once.
 
 "use strict";
 
@@ -187,6 +186,7 @@ const FRAME_HANDLERS = {
   tool_end: handleToolEnd,
   chunk: handleChunk,
   thinking: handleThinking,
+  turn_snapshot: handleTurnSnapshot,
   done: handleDone,
   error: handleError,
   notice: handleNotice,
@@ -228,70 +228,18 @@ function handleSocketClose(refused) {
   scheduleReconnect();
 }
 
-// A transcript rebuild holds the socket's frames until it has the transcript it is drawing into:
-// a frame drawn first would be appended to boxes the rebuild is about to replace, and the turn
-// would show twice. The hold has one owner and lets go on every path — the rebuild's own end, a
-// failure, and this timer — since a hold left up is a page that stops mid-answer and needs a
-// reload.
-const LOAD_HOLD_MS = 3000;
-
-function beginLoad() {
-  PU.loading = true;
-  PU.loadingFrames = [];
-  clearTimeout(PU.loadingTimer);
-  PU.loadingTimer = setTimeout(() => {
-    PU.loadingTimer = null;
-    endLoad();
-  }, LOAD_HOLD_MS);
-}
-
-// `replay` is false for a hold nobody is waiting on any more: the frames it kept describe a
-// transcript that has since been replaced.
-function endLoad(replay = true) {
-  clearTimeout(PU.loadingTimer);
-  PU.loadingTimer = null;
-  PU.loading = false;
-  PU.loadGen += 1;
-  const held = PU.loadingFrames;
-  PU.loadingFrames = [];
-  if (!replay) return;
-  for (const data of held) dispatchFrame(data);
-}
-
-// Re-draw what the server knows after a reconnect: the transcript is cleared and replayed from the
-// store, so a turn that completed while the socket was down appears instead of a half-drawn reply.
+// The chain length is the one thing a snapshot does not carry, so it is always re-read.
 //
-// It returns at once and reads in the background. `onopen` must not await it: a socket's handlers
-// run one at a time each to completion, so a handler waiting on a fetch holds the read call that
-// would deliver the frames it is waiting for, and the page sits on a request of its own making.
+// The store itself is read only into an empty transcript. A first open arrives with nothing
+// drawn and nothing handed over but the last turn or two, so the chain has to be fetched. A
+// reconnect arrives with the chain already on the page: the server hands over the turn it missed
+// as a snapshot, which `applyTurn` replaces in place, and reading the store again would append
+// the turns the page already holds. The two are told apart by whether anything is drawn, not by
+// whether a turn is running: a page whose turn was in flight when the socket dropped still has
+// that turn's bubble, and so still does not need the store.
 function resyncAfterReconnect() {
-  // A streaming turn keeps the bubble it is drawing: the store holds no reply for it yet, so
-  // replaying would delete the answer and leave arriving frames drawing into a message no longer on
-  // the page.
-  if (PU.isStreaming) {
-    endLoad();
-    refreshChainLength();
-    return;
-  }
-  beginLoad();
-  // This rebuild's number: `endLoad` bumps it, so a rebuild that a later one overtook can
-  // tell that the frames in the hold are no longer its own to replay.
-  const gen = PU.loadGen;
-  rebuildTranscript()
-      .catch(() => {})
-      .finally(() => {
-        // Always lets go. The frames are replayed only by the rebuild still current when it
-        // ends; a rebuild a later one overtook leaves them to it.
-        endLoad(PU.loadGen === gen);
-      });
-}
-
-// The reading half, so the caller can let go of it. `onopen` starts it and returns.
-async function rebuildTranscript() {
-  PU.composer.messagesEl.replaceChildren();
-  await loadSession();
-  await loadHistory();
-  scrollToBottom();
+  refreshChainLength();
+  if (PU.composer.messagesEl.childElementCount === 0) loadHistory().then(scrollToBottom);
 }
 
 function connectWebSocket() {
@@ -339,15 +287,8 @@ function connectWebSocket() {
     } else {
       PU.busyRefusals = 0;
     }
-    // While the transcript is being rebuilt, frames wait for it. One from a socket something else
-    // has replaced describes a turn the live socket now owns, so it is dropped instead of drawn
-    // into a transcript it does not belong to.
-    if (PU.loading) {
-      if (ws === PU.ws) PU.loadingFrames.push(data);
-      return;
-    }
     if (data.type === "chunk" || data.type === "tool_start" || data.type === "tool_end" ||
-        data.type === "thinking") {
+        data.type === "thinking" || data.type === "turn_snapshot") {
       armWatchdog();
     }
     dispatchFrame(data);

@@ -112,9 +112,7 @@ to preserve.
    then undone deliberately. The projection is the right place for this work — it is pure and
    rewind-safe — and it is where the tiers now live. But the *budget* framing was removed: what
    drives a receipt down a tier is supersession, not a byte count. See §1 for why a byte
-   threshold was the wrong measure, and note that the tool-call budget in the executor is a
-   different mechanism with a different subject: it bounds how many calls one turn may make,
-   not how much history is re-sent. Nothing was removed from the history to achieve this — a
+   threshold was the wrong measure. Nothing was removed from the history to achieve this — a
    receipt keeps its place and loses only the cursor.
 2. ~~**`find` over a retained buffer.**~~ Done. `execute_bash` takes `query`, which searches
    the stored run without executing anything and reports each hit with its own line number so
