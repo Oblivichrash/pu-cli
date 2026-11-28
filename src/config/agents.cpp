@@ -279,6 +279,17 @@ std::optional<boost::json::value> FindRawAgentEntry(const std::string& config_pa
 }
 
 std::string FindConfigPath() {
+  // The file a run was told to read outranks every guess below. `Runtime::Initialize()` already
+  // honours `PU_AGENTS_CONFIG`, and this function did not, so a run that named its table was
+  // configured as far as the runtime was concerned and unconfigured as far as the setup wizard
+  // was concerned: `pu chat` worked and `pu ask` asked for a gateway that was already in the
+  // file. One order, written once, for every caller that asks where the table is.
+  const char* explicit_config = std::getenv("PU_AGENTS_CONFIG");
+  if (explicit_config && *explicit_config) {
+    const std::filesystem::path named = explicit_config;
+    if (std::filesystem::exists(named)) return named.string();
+  }
+
   // Read against the run's own root, not the shell's: `pu -C ..` asks about the directory it
   // named, and a file sitting there is the one it means. Falling back to the working
   // directory would find nothing in that case and report a configured workspace as a first
