@@ -62,7 +62,7 @@ TEST_CASE("BuildStaticSystemContext shows no-security-policy message when unset"
   REQUIRE(msg.find("(no security policy set)") != std::string::npos);
 }
 
-TEST_CASE("BuildStaticSystemContext includes working directory section", "[executor]") {
+TEST_CASE("BuildStaticSystemContext names the working directory", "[executor]") {
   Executor executor;
   config::SecurityPolicy policy;
   policy.sandbox_root = "/home/user/project";
@@ -70,16 +70,17 @@ TEST_CASE("BuildStaticSystemContext includes working directory section", "[execu
 
   std::string msg = executor.BuildStaticSystemContext();
 
-  REQUIRE(msg.find("=== Working Directory ===") != std::string::npos);
-  REQUIRE(msg.find("/home/user/project") != std::string::npos);
+  // A command resolves against this directory, so the model is told it once rather than left to
+  // ask `pwd`. It rides with the environment rather than under a heading of its own: a heading
+  // costs four words on every request and says nothing this line does not.
+  REQUIRE(msg.find("Working directory: /home/user/project") != std::string::npos);
 }
 
 TEST_CASE("BuildStaticSystemContext working directory defaults to dot", "[executor]") {
   Executor executor;
   std::string msg = executor.BuildStaticSystemContext();
 
-  REQUIRE(msg.find("=== Working Directory ===") != std::string::npos);
-  REQUIRE(msg.find(".\n") != std::string::npos);
+  REQUIRE(msg.find("Working directory: .\n") != std::string::npos);
 }
 
 TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]") {
@@ -89,13 +90,14 @@ TEST_CASE("BuildStaticSystemContext includes tool use guidelines", "[executor]")
   REQUIRE(msg.find("=== Tool Use Guidelines ===") != std::string::npos);
   // The plan is asked for in reasoning rather than in the reply: stating it in the reply
   // competes with the parallel-call guideline below, and costs a round the user did not ask for.
-  REQUIRE(msg.find("Plan before you act, in your reasoning") != std::string::npos);
-  // Which end a read starts at is the model's call, so the prompt names both ends — and
-  // names them the way the tool's schema does, since a name the schema does not carry
-  // comes back as a refusal.
+  REQUIRE(msg.find("Plan in your reasoning") != std::string::npos);
+  // Which end a read starts at is the model's call, so the prompt names it the way the tool's
+  // schema does, since a name the schema does not carry comes back as a refusal.
   REQUIRE(msg.find("at='tail'") != std::string::npos);
-  REQUIRE(msg.find("cursor") != std::string::npos);
+  REQUIRE(msg.find("page.later") != std::string::npos);
   REQUIRE(msg.find("parallel tool calls") != std::string::npos);
+  // The one continuation a delegated answer needs stopped: restating it is the work.
+  REQUIRE(msg.find("passed on, not restated") != std::string::npos);
 }
 
 TEST_CASE("What the environment probe found reaches the request", "[executor]") {
@@ -113,11 +115,30 @@ TEST_CASE("The exit code table reaches the model", "[executor]") {
 
   REQUIRE(context.find("=== Exit Codes ===") != std::string::npos);
   // Every code is named, because a model that knows only the ones it has met infers the rest.
-  for (const char* code : {"0 ok", "1 the invocation", "2 a provider refused", "3 the sandbox",
-                           "4 a person stopped it"}) {
+  for (const char* code : {"0 ok", "1 bad invocation", "2 provider refused", "3 sandbox",
+                           "4 stopped by a person"}) {
     INFO(code);
     REQUIRE(context.find(code) != std::string::npos);
   }
+  // The distinction that makes the table worth its tokens: a command's exit code is the
+  // command's, and nothing here renumbers it.
+  REQUIRE(context.find("command's own exit code") != std::string::npos);
+}
+
+TEST_CASE("The static context stays short enough to re-send every turn", "[executor]") {
+  // This block goes out with every request of every round, so its length is a per-round cost
+  // rather than a one-off. The budget is a guard against a section growing back: it was about
+  // 1.6 KiB when the working directory had a heading of its own and the exit codes were a
+  // paragraph.
+  Executor executor;
+  config::SecurityPolicy policy;
+  policy.sandbox_root = "/home/user/project";
+  executor.SetSecurityPolicy(policy);
+  executor.SetAgentIdentity("review", "Reviews a diff and reports what is wrong with it");
+
+  const std::string context = executor.BuildStaticSystemContext();
+  INFO(context.size() << " bytes");
+  REQUIRE(context.size() < 1300);
 }
 
 TEST_CASE("An agent's identity reaches the model", "[executor]") {

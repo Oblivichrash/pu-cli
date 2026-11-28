@@ -99,10 +99,13 @@ void Executor::ProbeStaticEnvironment() {
 }
 
 std::string Executor::BuildStaticSystemContext() const {
+  // Sent on every request of every turn, so every word here is paid for again each time. It is
+  // written as the facts a model cannot read off the tool it is about to call, and no longer:
+  // the headings earn their four words by making the block scannable, not by being pretty.
   std::ostringstream oss;
 
-  // First, because every section below is read as this agent's view of the machine. Left out
-  // when the entry named nothing: a heading with no name under it is a line the model spends
+  // First, because every line below is read as this agent's view of the machine. Left out when
+  // the entry named nothing: a name heading with nothing under it is a line the model spends
   // reasoning about rather than a fact.
   if (!agent_name_.empty() || !agent_description_.empty()) {
     oss << "=== Identity ===\n";
@@ -110,9 +113,17 @@ std::string Executor::BuildStaticSystemContext() const {
     if (!agent_description_.empty()) oss << "Role: " << agent_description_ << "\n";
   }
 
+  // The working directory is the first thing a command resolves against, so it rides with the
+  // environment rather than under a heading of its own.
   oss << "=== Environment ===\n";
   oss << "OS: " << static_env_info_.os_name << "\n";
   oss << "Kernel: " << static_env_info_.kernel_version << "\n";
+  oss << "Working directory: ";
+  if (security_policy_ && !security_policy_->sandbox_root.empty()) {
+    oss << security_policy_->sandbox_root << "\n";
+  } else {
+    oss << ".\n";
+  }
 
   oss << "=== Security Policy ===\n";
   if (security_policy_) {
@@ -121,7 +132,7 @@ std::string Executor::BuildStaticSystemContext() const {
     if (security_policy_->forbidden_patterns.empty()) {
       oss << "(none)";
     } else {
-      for (size_t i = 0; i < security_policy_->forbidden_patterns.size(); ++i) {
+      for (std::size_t i = 0; i < security_policy_->forbidden_patterns.size(); ++i) {
         if (i > 0) oss << ", ";
         oss << "'" << security_policy_->forbidden_patterns[i] << "'";
       }
@@ -131,40 +142,28 @@ std::string Executor::BuildStaticSystemContext() const {
     oss << "(no security policy set)\n";
   }
 
-  oss << "=== Working Directory ===\n";
-  if (security_policy_ && !security_policy_->sandbox_root.empty()) {
-    oss << security_policy_->sandbox_root << "\n";
-  } else {
-    oss << ".\n";
-  }
-
+  // One line, because the distinction it draws is one distinction: a command's own exit code is
+  // the command's, and these four are the program's.
   oss << "=== Exit Codes ===\n";
-  oss << "0 ok, 1 the invocation or its configuration was wrong, 2 a provider refused or was "
-         "unreachable, 3 the sandbox refused every call the turn tried, 4 a person stopped it. "
-         "A `bash` result carries the command's own exit code, which is whatever the command "
-         "meant by it; these four are what this program exits with.\n";
+  oss << "0 ok, 1 bad invocation or configuration, 2 provider refused or unreachable, 3 sandbox "
+         "refused every call, 4 stopped by a person. A `bash` result carries the command's own "
+         "exit code, which is whatever the command meant by it.\n";
 
   oss << "=== Tool Use Guidelines ===\n";
-  // Not "state the plan before every call": that competes with the parallel-call guideline
-  // below, and a round spent on a plan the user did not ask for is a round not spent working.
-  oss << "1. Plan before you act, in your reasoning. Write a plan into your reply only when its "
-         "steps tell the user something they could not read off the work itself.\n";
-  oss << "2. Read the end of what you want, not the whole of it: a file you are about to edit is "
-         "read from its head (the default), and a log, a build's output, or a failure is read "
-         "from its tail with at='tail'.\n";
-  oss << "3. A command's output comes back one page at a time. When page.later or page.earlier is "
-         "set, pass that cursor back as `at` to read that page instead of running the command "
-         "again. Paging reads what is already stored; grep runs again and finds a needle in "
-         "what you have not stored.\n";
-  oss << "4. Use parallel tool calls when possible to minimize round trips.\n";
+  oss << "1. Plan in your reasoning; put a plan in the reply only when it tells the user "
+         "something the work itself would not.\n";
+  oss << "2. Read the end you need, not the whole file: a file you are about to edit from its "
+         "head, a log or a failure from its tail with at='tail'.\n";
+  oss << "3. Output comes back one page at a time. Pass page.later or page.earlier back as `at` "
+         "to read the next one instead of running the command again; a page is stored, and "
+         "`grep` is for what you have not stored.\n";
+  oss << "4. Make parallel tool calls when they do not depend on each other.\n";
   // A delegated answer is already prose somebody finished writing. The one continuation this
   // has to stop is the cheapest a model can make: reading a paragraph and then writing the
   // same paragraph again. Stated here rather than in ask_dir's own description, because a
   // description says what a tool is, while this says what to do with what came back.
-  oss << "5. When a tool returns a conclusion -- a delegated answer, a review, a summary -- pass "
-         "it on rather than restating it. Say in your own words only what is yours to add: the "
-         "question that was asked, what you did with the answer, what is still open. Never "
-         "repeat the answer's content back as if writing it out were the work.\n";
+  oss << "5. A conclusion a tool returns -- a delegated answer, a review, a summary -- is passed "
+         "on, not restated: say what you asked, what you did with it, and what is still open.\n";
 
   return oss.str();
 }
