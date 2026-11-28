@@ -41,6 +41,51 @@ std::string StopNotice(const std::string& finish_reason) {
   return "";
 }
 
+// Said once per turn when the last request filled most of the window the agent's own
+// `context_window` names. It is a statement, not a trim: the request went out whole, and a turn
+// this one made the request for is a turn the caller has to end. Nothing here shortens anything.
+//
+// The share is approximate by construction. `prompt_tokens` is the provider's own count of one
+// request, and the harness overhead of the next one -- tool definitions, the system block -- is
+// not in it, so the boundary unit is a thought about the next request rather than a measurement
+// of it. Saying so is the point: a ceiling nobody can see is what produces the gateway's own
+// refusal a round later.
+std::string WindowNotice(int prompt_tokens, int window) {
+  if (window <= 0 || prompt_tokens <= 0) return "";
+  const double share = static_cast<double>(prompt_tokens) / static_cast<double>(window);
+  if (share < 0.8) return "";
+  std::ostringstream oss;
+  oss << "This turn's last request was " << prompt_tokens << " of the " << window
+      << " tokens this model holds, so the conversation is nearly full. Nothing was shortened: "
+         "end the turn, or hand the rest of the work to another agent with ask_dir.";
+  return oss.str();
+}
+
+// What to say when a gateway refuses a request for being larger than the window it holds. The
+// gateway's own sentence is kept under a diagnostic, because it names the figures; what is put
+// in front of it is the part the reader has to act on, which the gateway has no way to state.
+std::string TooLargeMessage(const std::string& said, int window) {
+  std::ostringstream oss;
+  oss << "The conversation outgrew this model's context window";
+  if (window > 0) oss << " (" << window << " tokens, from this agent's context_window)";
+  oss << ". Nothing was dropped to make it fit: start a new conversation, or hand the rest of "
+         "the work to another agent with ask_dir.";
+  if (!said.empty()) oss << " The provider said: " << said;
+  return oss.str();
+}
+
+// Whether a `what()` names a request the provider refused for its size. Gateways spell this
+// differently -- llama.cpp says "exceeds the available context size", OpenAI "maximum context
+// length", Anthropic "prompt is too long" -- so the test is on the subject rather than on one
+// product's wording, which is the mistake this function exists to stop being made twice.
+bool RefusedForSize(std::string_view what) {
+  const auto has = [what](std::string_view needle) {
+    return what.find(needle) != std::string_view::npos;
+  };
+  return (has("context size") || has("context_length") || has("context length") ||
+          has("maximum context") || has("prompt is too long") || has("too many tokens"));
+}
+
 #ifdef _WIN32
 std::string WindowsKernelVersion() {
   using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
@@ -356,7 +401,9 @@ ProviderCall Executor::CallProvider(Conversation& conversation, const Turn& turn
       return {.reply = {}, .outcome = ProviderOutcome::kAbandoned};
     }
     result.has_error = true;
-    result.error_message = "Request failed: " + text::ReadableError(e.what());
+    const std::string said = text::ReadableError(e.what());
+    result.error_message = RefusedForSize(said) ? TooLargeMessage(said, context_window_)
+                                                : "Request failed: " + said;
     return {.reply = {}, .outcome = ProviderOutcome::kFailed};
   }
 }
@@ -499,6 +546,11 @@ ExecutionResult Executor::RunToolLoop(Conversation& conversation, const Turn& tu
       }
       result.content = response;
       result.notice = StopNotice(chat_result.finish_reason);
+      // Said only where the stop notice left the line free: a reply cut off at `max_tokens` is
+      // a different problem, and the window is not what the reader has to act on then.
+      if (result.notice.empty() && result.usage) {
+        result.notice = WindowNotice(result.usage->prompt_tokens, context_window_);
+      }
       if (!chat_result.model.empty()) {
         result.model = chat_result.model;
         spdlog::debug("Answered by {}", chat_result.model);

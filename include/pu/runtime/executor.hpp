@@ -102,6 +102,12 @@ class Executor {
 
   void SetSystemPrompt(std::string prompt) { system_prompt_ = std::move(prompt); }
 
+  // How much context the model this turn asks holds, or 0 when the entry names none. Advisory:
+  // nothing is trimmed against it and no turn is refused for outgrowing it. It is read for two
+  // things a caller cannot see without it -- how full the last request was, which the near-window
+  // notice states, and what "exceeds the available context size" from a gateway actually means.
+  void SetContextWindow(int tokens) { context_window_ = tokens; }
+
   // Who is answering this turn, in the runtime's own words. Carried into the static context
   // because a prompt a person wrote says what an agent is for, and an agent that has been
   // switched to mid-session otherwise answers as whichever agent the model last heard about.
@@ -190,6 +196,9 @@ class Executor {
   // provider's own count before the result is returned.
   ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
+
+  // From the agent's own `context_window`; 0 when it names none. See SetContextWindow.
+  int context_window_ = 0;
 
   std::function<bool()> stop_check_;
 

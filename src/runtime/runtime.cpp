@@ -579,6 +579,9 @@ void Runtime::RebuildToolbox(const config::AgentEntry& agent) {
   executor_->SetSecurityPolicy(std::move(security));
   executor_->SetSystemPrompt(agent.backend.system_prompt.value_or(""));
   executor_->SetAgentIdentity(agent.name, agent.description);
+  // Same source as ContextWindow(): the file's own figure, read here so the executor can say
+  // what a gateway's refusal means and how full the last request was.
+  executor_->SetContextWindow(agent.backend.context_window.value_or(0));
   agent_manager_->SetActiveAgent(agent.name);
 }
 
