@@ -361,9 +361,20 @@ ProviderCall Executor::CallProvider(Conversation& conversation, const Turn& turn
   }
 }
 
+// Runs every call of one round. The loop stays sequential -- two `execute_bash` calls in one
+// round may be changing the same files, and the tools were written to be called one at a time --
+// but the receipts are appended only once the round is over.
+//
+// That delay is what the provider's prefix cache is paid for. A round's calls all answer the
+// same assistant message, so the next request repeats it whichever order the receipts land in;
+// appending between two calls would put a message the model has not seen yet in the middle of
+// the round, and the next turn would then have to re-read the whole prefix up to that point.
+// One round, one block of receipts, one cacheable prefix.
 void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
                             const std::vector<ToolCall>& calls, ExecutionResult& result) {
   ToolContext tool_ctx = BuildToolContext(turn);
+  std::vector<ChatMessage> receipts;
+  receipts.reserve(calls.size());
 
   for (const ToolCall& call : calls) {
     if (turn.cancel_token && turn.cancel_token->load(std::memory_order_acquire)) {
@@ -423,11 +434,16 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
     ChatMessage tool_msg;
     tool_msg.role = "tool";
-    tool_msg.content = tool_result;
+    tool_msg.content = std::move(tool_result);
     tool_msg.tool_name = call.name;
     tool_msg.tool_call_id = call.id;
-    conversation.Append(tool_msg);
+    receipts.push_back(std::move(tool_msg));
   }
+
+  // Appended in the order the calls were made: a provider matches a receipt to its call by
+  // `tool_call_id`, and a transcript that listed them backwards would read differently to a
+  // person than the round that produced it.
+  for (ChatMessage& receipt : receipts) conversation.Append(std::move(receipt));
 
   // The note rides after every receipt of this round: inside the loop it would land
   // between two tool receipts, and a user message splitting the assistant's
