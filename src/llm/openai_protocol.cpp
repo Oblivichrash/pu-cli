@@ -28,6 +28,7 @@ constexpr llm::ProviderCapabilities kCapabilities{
     .tool_calls_carry_type = true,
     .sends_tool_name = false,
     .omits_empty_tool_call_id = false,
+    .attachments = llm::AttachmentWire::kOpenAIContentBlocks,
 };
 
 }  // namespace
@@ -78,7 +79,7 @@ std::string OpenAIProtocol::BuildRequest(std::span<const ChatMessage> history,
     req.as_object()["reasoning_effort"] = ThinkingLevelName(config_.thinking);
   }
 
-  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities, PayloadForTurn());
 
   if (!tools.empty()) {
     boost::json::array tools_json;

@@ -22,6 +22,7 @@
 #include "pu/core/beast_http_client.hpp"
 #include "pu/core/platform.hpp"
 #include "pu/session/session.hpp"
+#include "pu/llm/streaming_provider.hpp"
 #include "pu/agent_tools/bash.hpp"
 #include "pu/agent_tools/write_file.hpp"
 #include "pu/runtime/mcp_tool.hpp"
@@ -395,6 +396,14 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
 
     const model::Backend backend = CurrentBackend();
     auto provider = session->CreateProvider(backend, http_client_);
+    // Where an attachment's bytes are. The runtime holds the pager, so the projection asks
+    // here; the `llm` layer never learns what a buffer is.
+    if (auto* streaming = dynamic_cast<StreamingProvider*>(provider.get())) {
+      streaming->SetPayloadLookup([this](const ContentBlock& block) -> std::string {
+        const auto buffer = pager_.FindPayload(block.source);
+        return buffer ? buffer->payload() : std::string{};
+      });
+    }
     auto exec_result =
         executor_->Execute(input, session->Messages(),
                            {.provider = provider.get(),

@@ -48,7 +48,20 @@ boost::json::value ToolUseBlock(const boost::json::value& call) {
 // One stored message as one Anthropic message. A `tool` role becomes a user turn holding a
 // `tool_result` block, because this API has no separate role for one; a message whose only
 // content is a tool call carries no `text` block, since an empty one is rejected.
-boost::json::value ProjectMessage(const ChatMessage& message) {
+// The bytes of an attachment, or a refusal. Same rule as the shared projection: a picture whose
+// buffer is gone is reported, not sent as an empty base64 string.
+std::string PayloadOf(const ContentBlock& block, const llm::PayloadLookup& lookup) {
+  if (block.HasPayload()) return block.data;
+  if (lookup) {
+    std::string payload = lookup(block);
+    if (!payload.empty()) return payload;
+  }
+  throw RequestRefused("the attachment '" + (block.name.empty() ? block.media_type : block.name) +
+                       "' is no longer in the store, so this turn cannot send it. Run the "
+                       "command that read it again, or start a new conversation");
+}
+
+boost::json::value ProjectMessage(const ChatMessage& message, const llm::PayloadLookup& lookup) {
   if (message.role == kToolRole) {
     boost::json::array blocks;
     blocks.push_back(ToolResultBlock(message));
@@ -56,6 +69,28 @@ boost::json::value ProjectMessage(const ChatMessage& message) {
   }
 
   boost::json::array blocks;
+  // A picture, or a document, before the words: this API states a block list in the order the
+  // content appeared, and an attachment a turn opened with came before its question.
+  for (const ContentBlock& block : message.content) {
+    if (block.kind == BlockKind::kText) continue;
+    if (block.kind == BlockKind::kImage) {
+      blocks.push_back(boost::json::value{
+          {"type", "image"},
+          {"source", boost::json::object{{"type", "base64"},
+                                         {"media_type", block.media_type},
+                                         {"data", PayloadOf(block, lookup)}}},
+      });
+    } else {
+      // This wire's own document block: the bytes, and the name a reader sees.
+      blocks.push_back(boost::json::value{
+          {"type", "document"},
+          {"source", boost::json::object{{"type", "base64"},
+                                         {"media_type", block.media_type},
+                                         {"data", PayloadOf(block, lookup)}}},
+          {"title", block.name},
+      });
+    }
+  }
   // The thinking first, before the text and the calls, which is the order this API states a
   // block list in and the order the reply carried. It was dropped entirely: the OpenAI and
   // Ollama paths re-send theirs, this one built its own block list and had no branch for it, so
@@ -140,7 +175,7 @@ std::string AnthropicProvider::BuildRequest(std::span<const ChatMessage> history
     if (message.role == kSystemRole) {
       continue;
     }
-    messages.push_back(ProjectMessage(message));
+    messages.push_back(ProjectMessage(message, PayloadForTurn()));
   }
   req.as_object()["messages"] = std::move(messages);
 

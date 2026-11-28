@@ -101,17 +101,98 @@ boost::json::value OllamaThinkValue(ThinkingLevel level) {
   return ThinkingLevelName(level);
 }
 
+namespace {
+
+// A block's bytes, or a refusal. An attachment whose buffer was evicted cannot be sent, and
+// sending an empty one would be a picture the model reads as blank rather than as missing.
+std::string PayloadOf(const ContentBlock& block, const PayloadLookup& lookup) {
+  if (block.HasPayload()) return block.data;
+  if (lookup) {
+    std::string payload = lookup(block);
+    if (!payload.empty()) return payload;
+  }
+  throw RequestRefused("the attachment '" + (block.name.empty() ? block.media_type : block.name) +
+                       "' is no longer in the store, so this turn cannot send it. Run the "
+                       "command that read it again, or start a new conversation");
+}
+
+std::string DataUrl(const ContentBlock& block, const PayloadLookup& lookup) {
+  return "data:" + block.media_type + ";base64," + PayloadOf(block, lookup);
+}
+
+// OpenAI's content-block list: text blocks for the words, an `image_url` for a picture, and a
+// text block naming the file for anything else. That wire has no document block, so a file is
+// carried as what it is -- text with a heading that says where it came from -- and a binary
+// body is refused rather than mangled into a string.
+boost::json::array OpenAIContent(const ChatMessage& message, const PayloadLookup& lookup) {
+  boost::json::array blocks;
+  for (const ContentBlock& block : message.content) {
+    switch (block.kind) {
+      case BlockKind::kText:
+        blocks.push_back(boost::json::value{{"type", "text"}, {"text", block.text}});
+        break;
+      case BlockKind::kImage:
+        blocks.push_back(boost::json::value{
+            {"type", "image_url"},
+            {"image_url", boost::json::object{{"url", DataUrl(block, lookup)}}},
+        });
+        break;
+      case BlockKind::kFile:
+        throw RequestRefused("a file attachment cannot be sent to this gateway: it has no "
+                             "document block, and the block list is where a file would go. "
+                             "Remove the file from the message, or use a gateway that carries "
+                             "one");
+    }
+  }
+  if (blocks.empty()) blocks.push_back(boost::json::value{{"type", "text"}, {"text", ""}});
+  return blocks;
+}
+
+}  // namespace
+
 boost::json::value ProjectMessage(const ChatMessage& message,
-                                  const ProviderCapabilities& capabilities) {
+                                  const ProviderCapabilities& capabilities,
+                                  const PayloadLookup& lookup) {
   const std::string role = ProjectRole(message.role, capabilities.role_naming);
   const bool has_tool_calls = message.HasToolCalls();
   const bool has_reasoning = !message.reasoning.empty();
+  const bool has_attachments = HasAttachment(message.content);
+
   boost::json::value projected = {{"role", role}};
 
   if (has_tool_calls && !capabilities.allows_content_with_tool_calls) {
     projected.as_object()["content"] = boost::json::value();
-  } else {
+  } else if (!has_attachments) {
+    // The overwhelming case, and it stays one string: a gateway that receives a block list for
+    // a message made only of words is one more shape to be wrong about, and some of them refuse
+    // it.
     projected.as_object()["content"] = message.Text();
+  } else if (capabilities.attachments == AttachmentWire::kOpenAIContentBlocks) {
+    projected.as_object()["content"] = OpenAIContent(message, lookup);
+  } else if (capabilities.attachments == AttachmentWire::kOllamaImages) {
+    // Ollama keeps the words a string and takes the pictures beside them. A file has no place
+    // here at all, so it is refused rather than folded into the string as if it were text.
+    projected.as_object()["content"] = message.Text();
+    boost::json::array images;
+    for (const ContentBlock& block : message.content) {
+      switch (block.kind) {
+        case BlockKind::kText:
+          break;
+        case BlockKind::kImage:
+          images.push_back(boost::json::value(PayloadOf(block, lookup)));
+          break;
+        case BlockKind::kFile:
+          throw RequestRefused("a file attachment cannot be sent to this gateway: it carries "
+                               "pictures beside a string and nothing else. Remove the file from "
+                               "the message, or use a gateway with a document block");
+      }
+    }
+    if (!images.empty()) projected.as_object()["images"] = std::move(images);
+  } else {
+    // Anthropic's block list is built by its own provider, which has its own translation for
+    // tool calls; a message that reaches here with that wire named is a misconfiguration rather
+    // than a conversation.
+    throw RequestRefused("this gateway's attachment wire is not built here yet");
   }
 
   if (has_reasoning && role == kAssistantRole && capabilities.echoes_reasoning) {
@@ -140,11 +221,12 @@ boost::json::value ProjectMessage(const ChatMessage& message,
 }
 
 boost::json::array ProjectMessages(std::span<const ChatMessage> history,
-                                   const ProviderCapabilities& capabilities) {
+                                   const ProviderCapabilities& capabilities,
+                                   const PayloadLookup& lookup) {
   boost::json::array messages;
   messages.reserve(history.size());
   for (const ChatMessage& message : history) {
-    messages.push_back(ProjectMessage(message, capabilities));
+    messages.push_back(ProjectMessage(message, capabilities, lookup));
   }
   return messages;
 }

@@ -13,6 +13,7 @@
 
 #include "pu/core/http_client.hpp"
 #include "pu/core/retry.hpp"
+#include "pu/llm/projection.hpp"
 #include "pu/llm/llm_provider.hpp"
 
 namespace pu {
@@ -49,11 +50,21 @@ class StreamingProvider : public LLMProvider {
   virtual void ResetTurnState() {}
   virtual void FinishStream(const ChatRequest& request) { (void)request; }
 
+ private:
+  llm::PayloadLookup payload_lookup_;
+
+ public:
   virtual std::vector<std::string> Headers() const;
 
   // How a turn is asked again when the gateway answers something transient. The default is
   // the policy a caller expects of a model endpoint; a caller with a reason to differ — a
   // test, a probe — sets its own before the turn.
+  // Where an attachment's bytes are. A message names a buffer rather than carrying it, so the
+  // one lookup a projection needs is given to the provider by whoever holds the store -- the
+  // runtime -- and this layer still does not depend on `paging`.
+  void SetPayloadLookup(llm::PayloadLookup lookup) { payload_lookup_ = std::move(lookup); }
+  const llm::PayloadLookup& PayloadForTurn() const { return payload_lookup_; }
+
   void SetRetryPolicy(core::RetryPolicy policy) { retry_ = policy; }
   const core::RetryPolicy& RetryPolicyForTurn() const { return retry_; }
 

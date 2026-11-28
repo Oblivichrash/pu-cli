@@ -23,6 +23,7 @@ constexpr llm::ProviderCapabilities kCapabilities{
     .tool_calls_carry_type = false,
     .sends_tool_name = true,
     .omits_empty_tool_call_id = true,
+    .attachments = llm::AttachmentWire::kOllamaImages,
 };
 
 }  // namespace
@@ -51,7 +52,7 @@ std::string OllamaProvider::BuildRequest(std::span<const ChatMessage> history,
   if (config_.seed) options["seed"] = *config_.seed;
   if (!config_.stop.empty()) options["stop"] = boost::json::value_from(config_.stop);
 
-  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities);
+  req.as_object()["messages"] = llm::ProjectMessages(history, kCapabilities, PayloadForTurn());
 
   if (!tools.empty()) {
     boost::json::array tools_json;

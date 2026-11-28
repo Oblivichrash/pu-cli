@@ -37,6 +37,7 @@ llm::ProviderCapabilities OllamaLike() {
       .tool_calls_carry_type = false,
       .sends_tool_name = true,
       .omits_empty_tool_call_id = true,
+      .attachments = llm::AttachmentWire::kOllamaImages,
   };
 }
 
@@ -227,4 +228,94 @@ TEST_CASE("ProjectMessages keeps the conversation order", "[projection]") {
   REQUIRE(projected.at(1).at("content") == "one");
   REQUIRE(projected.at(2).at("content") == "two");
   REQUIRE(llm::ProjectMessages({}, OpenAiLike()).empty());
+}
+
+namespace {
+
+// A message that carries one picture whose bytes are in the store rather than in the block.
+ChatMessage WithPicture(const std::string& source = "a1-p1") {
+  ChatMessage msg;
+  msg.role = "user";
+  msg.content = TextContent("what is this?");
+  ContentBlock picture;
+  picture.kind = BlockKind::kImage;
+  picture.media_type = "image/png";
+  picture.name = "shot.png";
+  picture.source = source;
+  msg.content.push_back(std::move(picture));
+  return msg;
+}
+
+// The one lookup the projection is given: the store, by the id the block names.
+llm::PayloadLookup StoreOf(const std::string& source, const std::string& bytes) {
+  return [source, bytes](const ContentBlock& block) {
+    return block.source == source ? bytes : std::string{};
+  };
+}
+
+}  // namespace
+
+TEST_CASE("A message of words alone stays one string on every wire", "[projection]") {
+  // The common case, and it must not become a block list: a gateway handed one for a message
+  // made only of text is one more shape to be wrong about.
+  const ChatMessage message = Text("user", "hello");
+  for (const auto capabilities : {OpenAiLike(), OllamaLike()}) {
+    const boost::json::value projected = llm::ProjectMessage(message, capabilities);
+    REQUIRE(projected.at("content").is_string());
+    REQUIRE(boost::json::value_to<std::string>(projected.at("content")) == "hello");
+  }
+}
+
+TEST_CASE("An image becomes an image_url block on the openai wire", "[projection]") {
+  const ChatMessage message = WithPicture();
+  const boost::json::value projected =
+      llm::ProjectMessage(message, OpenAiLike(), StoreOf("a1-p1", "QUJD"));
+
+  REQUIRE(projected.at("content").is_array());
+  const boost::json::array& blocks = projected.at("content").as_array();
+  REQUIRE(blocks.size() == 2);
+  REQUIRE(boost::json::value_to<std::string>(blocks[0].at("type")) == "text");
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("type")) == "image_url");
+  // The bytes travel as the data URL this wire expects, under the media type the block named.
+  REQUIRE(boost::json::value_to<std::string>(blocks[1].at("image_url").at("url")) ==
+          "data:image/png;base64,QUJD");
+}
+
+TEST_CASE("An image rides beside the words on the ollama wire", "[projection]") {
+  const ChatMessage message = WithPicture();
+  const boost::json::value projected =
+      llm::ProjectMessage(message, OllamaLike(), StoreOf("a1-p1", "QUJD"));
+
+  // This API has no block list: the words stay a string and the pictures are their own array.
+  REQUIRE(projected.at("content").is_string());
+  REQUIRE(boost::json::value_to<std::string>(projected.at("content")) == "what is this?");
+  REQUIRE(projected.at("images").is_array());
+  REQUIRE(boost::json::value_to<std::string>(projected.at("images").as_array()[0]) == "QUJD");
+}
+
+TEST_CASE("A file is refused by a wire that cannot carry one", "[projection]") {
+  // No document block, so it is refused rather than folded into the words: a conversation that
+  // silently lost its attachment is a turn answered from a question nobody asked.
+  ChatMessage message;
+  message.role = "user";
+  message.content = TextContent("read this");
+  ContentBlock file;
+  file.kind = BlockKind::kFile;
+  file.media_type = "text/plain";
+  file.name = "notes.txt";
+  file.source = "a1-p1";
+  message.content.push_back(std::move(file));
+
+  REQUIRE_THROWS_AS(llm::ProjectMessage(message, OpenAiLike(), StoreOf("a1-p1", "aGk=")),
+                    RequestRefused);
+  REQUIRE_THROWS_AS(llm::ProjectMessage(message, OllamaLike(), StoreOf("a1-p1", "aGk=")),
+                    RequestRefused);
+}
+
+TEST_CASE("A picture whose buffer is gone is refused, not sent empty", "[projection]") {
+  // The store evicted it. Sending an empty data URL would reach the model as a blank picture,
+  // which reads as a question about nothing rather than as a missing attachment.
+  const ChatMessage message = WithPicture("a1-p1");
+  REQUIRE_THROWS_AS(llm::ProjectMessage(message, OpenAiLike(), StoreOf("other", "QUJD")),
+                    RequestRefused);
 }
