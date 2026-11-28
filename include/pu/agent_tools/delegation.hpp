@@ -10,8 +10,8 @@
 //
 // `RunDelegatedTurn` is the seam that keeps the direction one-way. `runtime` defines it; a build
 // that links only the tools links the fallback in `src/agent_tools/delegation.cpp`, which says no
-// turn can run. Why the chain is shaped this way, and what closes a cycle, is in
-// docs/runtime.md#delegation.
+// turn can run. A delegated turn registers no `ask_dir` of its own, which is what makes a chain
+// exactly one hop; docs/runtime.md#delegation owns that rule.
 //
 
 #include <chrono>
@@ -38,10 +38,6 @@ struct Delegation {
   // A ceiling on the whole delegated turn, which may run several rounds and call tools that take
   // minutes each. Zero means the asking turn's own platform default.
   std::chrono::milliseconds timeout{0};
-
-  // The workspaces this question has already been asked in, oldest first, ending with the one
-  // asking now. A target that appears here is refused as a cycle; empty means the top of a chain.
-  std::vector<std::filesystem::path> visited;
 };
 
 struct DelegationResult {
@@ -52,18 +48,6 @@ struct DelegationResult {
   // fault; a tool has no vocabulary for it, so it also carries an `error` naming the stop.
   bool stopped = false;
 };
-
-// The workspace a path should compare as, on both sides of a chain. `weakly_canonical` resolves
-// `..` and symlinks without requiring the path to exist. A path it cannot resolve is its own
-// answer rather than an error.
-std::filesystem::path AsOnePlace(const std::filesystem::path& where);
-
-// Why `target` may not be asked, or an empty string when it may. The answer is about the chain
-// alone — no runtime, no provider, no table — which is what lets it be checked before anything is
-// built, since the cost of finding out by asking is a whole turn. The entries of `visited` are
-// compared already-resolved.
-std::string RefusedReEntry(const std::filesystem::path& target,
-                           const std::vector<std::filesystem::path>& visited);
 
 // Carries out one delegated turn. Declared here so the tool can call it, defined in the runtime.
 DelegationResult RunDelegatedTurn(const Delegation& request);

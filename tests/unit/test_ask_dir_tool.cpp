@@ -7,7 +7,6 @@
 #include <string>
 
 #include "pu/agent_tools/ask_dir_tool.hpp"
-#include "pu/agent_tools/delegation.hpp"
 #include "pu/agent_tools/tool.hpp"
 #include "tests/mocks/test_helpers.hpp"
 
@@ -195,85 +194,4 @@ TEST_CASE("ask_dir refuses an empty question", "[ask_dir]") {
 
   REQUIRE(Says(tool.Execute(Ask("somewhere", ""), ctx), "required"));
   REQUIRE(Says(tool.Execute(Ask("", ""), ctx), "required"));
-}
-
-TEST_CASE("ask_dir refuses a directory this question is already being asked in", "[ask_dir]") {
-  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
-  pu::ToolContext ctx;
-  // The chain is read before anything is looked for, so the target needs no table: the refusal
-  // below is the chain's, and a case that had to build one first would be testing the table.
-  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
-
-  const std::string reply = tool.Execute(Ask("elsewhere", "hi"), ctx);
-  REQUIRE(Says(reply, "already answering"));
-  REQUIRE(Says(reply, "further up the chain"));
-}
-
-TEST_CASE("ask_dir looks at the chain before it decides a directory has no table", "[ask_dir]") {
-  pu::agent_tools::AskDirTool tool(fs::current_path(), Allowed{"reader"});
-  pu::ToolContext ctx;
-  ctx.delegated_visited.push_back(fs::current_path() / "elsewhere");
-
-  // A cycle check that matches too eagerly answers "already answering" here and never looks at
-  // the target at all. The chain names a different place, so this one is refused for the reason
-  // it would have been refused with no chain: it has no table.
-  const std::string reply = tool.Execute(Ask("another-place", "hi"), ctx);
-  REQUIRE(Says(reply, "no .pu/agents.json"));
-  REQUIRE_FALSE(Says(reply, "already answering"));
-}
-
-// The rule itself, stated without a runtime or a provider: the tool cases above reach it
-// through an executor that publishes a chain, and those check that the chain arrives. These
-// check that the chain, once it arrives, is read correctly.
-
-TEST_CASE("An empty chain refuses nothing", "[delegation]") {
-  // The top of a chain has nothing behind it, so there is nothing to re-enter. A rule that
-  // refused on an empty chain would make the first delegation of every run impossible.
-  REQUIRE(pu::RefusedReEntry(fs::current_path(), {}).empty());
-}
-
-TEST_CASE("A chain refuses the workspace it already names", "[delegation]") {
-  const fs::path here = fs::current_path();
-  const std::string refused = pu::RefusedReEntry(here, {here});
-  REQUIRE_FALSE(refused.empty());
-  // The message names the directory, so a model told to stop can tell which one to avoid.
-  REQUIRE(refused.find(here.string()) != std::string::npos);
-  REQUIRE(refused.find("further up the chain") != std::string::npos);
-}
-
-TEST_CASE("A chain compares places, not spellings", "[delegation]") {
-  // The same directory reaches here by different routes: an absolute path, one with `..` in
-  // it, and whatever the shell happened to produce. A rule that compared strings would let a
-  // cycle through on the second spelling, which is the whole failure it exists to stop.
-  //
-  // The `..` leg has to exist for the comparison to be about the rule rather than about
-  // `weakly_canonical`'s tolerance for missing parents, so this case builds one -- in a temp
-  // directory of its own, because a case that writes into the checkout leaves something
-  // behind when it fails.
-  const fs::path root = pu::tests::UniqueTempPath("pu_reentry");
-  const fs::path deep = root / "sub";
-  fs::create_directories(deep);
-
-  REQUIRE_FALSE(pu::RefusedReEntry(root, {deep / ".."}).empty());
-  // And the same comparison the other way round: the chain names the deep path, the target is
-  // its parent. A rule that only normalised one side would pass the line above and fail this.
-  REQUIRE_FALSE(pu::RefusedReEntry(root, {deep / ".." / "."}).empty());
-
-  fs::remove_all(root);
-}
-
-TEST_CASE("A chain lets through a directory it does not name", "[delegation]") {
-  // A guard that refused everything would satisfy the cases above and break delegation
-  // altogether, so the accepting side is stated too.
-  const fs::path here = fs::current_path();
-  REQUIRE(pu::RefusedReEntry(here / "elsewhere", {here / "another"}).empty());
-}
-
-TEST_CASE("AsOnePlace leaves a path it cannot resolve as it found it", "[delegation]") {
-  // `weakly_canonical` fails on the filesystem for reasons that say nothing about whether the
-  // place is a cycle. Returning the input is the answer that refuses no call, which is the
-  // safe direction to fail in.
-  const fs::path odd = fs::current_path() / "a" / ".." / "b";
-  REQUIRE(pu::AsOnePlace(odd) == fs::weakly_canonical(odd));
-  REQUIRE(pu::AsOnePlace({}).empty());
 }

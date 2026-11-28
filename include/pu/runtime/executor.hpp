@@ -111,14 +111,6 @@ class Executor {
     agent_description_ = std::move(description);
   }
 
-  // The workspaces the question this turn is answering has already been asked in. Empty for an
-  // ordinary turn; set by the runtime on a delegated one, which is how a tool that asks another
-  // workspace learns where the question came from. Refreshed on every toolbox rebuild, so a turn
-  // started after the runtime's chain grows sees the new one.
-  void SetDelegatedChain(std::vector<std::filesystem::path> chain) {
-    delegated_visited_ = std::move(chain);
-  }
-
   void SetUserNote(std::string note) { user_note_ = std::move(note); }
 
   // How the executor learns it should stop, beyond the token its caller passed. A token covers a
@@ -198,10 +190,6 @@ class Executor {
   // provider's own count before the result is returned.
   ToolContext::Spending spent_by_tools_;
   int next_tool_call_id_ = 0;
-
-  // Where this turn's question has already been asked. Copied into every ToolContext the turn
-  // builds, so a tool that delegates carries it onward without the executor knowing why.
-  std::vector<std::filesystem::path> delegated_visited_;
 
   std::function<bool()> stop_check_;
 

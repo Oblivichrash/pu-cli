@@ -250,7 +250,6 @@ ToolContext Executor::BuildToolContext(const Turn& turn) {
 
   if (turn.command_stop_token) tool_ctx.control = &control_;
 
-  tool_ctx.delegated_visited = delegated_visited_;
   tool_ctx.approval = approval_asks_ ? &approval_ : nullptr;
   // The tally belongs to the turn: a tool adds to it, and the turn reports it beside what its
   // own model cost.

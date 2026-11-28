@@ -296,7 +296,9 @@ same receipts. Nothing about the child is a special case of the loop; it is a se
 **One hop, by construction.** The child's `delegated_` flag is what withholds the tool: at
 `RegisterBuiltinTools()` the `ask_dir` tool is registered `if (has("ask_dir") && !delegated_)`,
 so a delegated turn's toolbox has no way to delegate further. The rule is a fact about which
-toolbox was built rather than a counter that a call could get wrong.
+toolbox was built rather than a counter that a call could get wrong, and it is the only rule a
+chain needs: a delegation that is the last hop cannot come back round to a workspace it already
+left, so nothing carries a list of visited directories to compare against.
 
 **The child owns its own rules.** A directory target must already carry `.pu/agents.json`;
 nothing creates one. That file — not the parent's — decides the child's sandbox, approval

@@ -389,22 +389,11 @@ ExecutionResult Runtime::ProcessInput(const std::string& input, CancelToken canc
   }
 }
 
-// Hands the chain this runtime is already answering inside to the executor, so a tool that
-// receives it can tell a directory it is already in from one it has never asked.
-void Runtime::ApplyDelegatedChain() { executor_->SetDelegatedChain(delegated_visited_); }
-
 DelegationResult Runtime::Delegate(const Delegation& request) {
   DelegationResult result;
 
   const std::filesystem::path target =
       request.dir.empty() ? workspace_root_ : request.dir;
-  // Checked before anything is built, because the cost of finding out by asking is a whole
-  // turn. The rule itself lives beside the request it reads, where it can be stated and
-  // checked without a runtime.
-  if (const std::string refused = RefusedReEntry(target, request.visited); !refused.empty()) {
-    result.error = refused;
-    return result;
-  }
 
   const std::filesystem::path table = target / ".pu" / "agents.json";
   const std::filesystem::path inherited = target / ".pu" / "agents";
@@ -428,11 +417,9 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
     // written, so the same question asked twice costs the same and means the same.
     child.SetEphemeral();
     if (!request.agent.empty()) child.SetDefaultAgent(request.agent);
+    // The one hop this chain is made of: the child registers no `ask_dir` of its own, so the
+    // rule that a delegation cannot delegate is a fact about which toolbox was built.
     child.delegated_ = true;
-    // The chain so far, plus the workspace answering this one: a child that is asked something
-    // new can then tell whether it was here already.
-    child.delegated_visited_ = request.visited;
-    child.delegated_visited_.push_back(AsOnePlace(target));
     // The asking turn's stop reaches the child as its own, so the stop lands in the turn that is
     // waiting rather than in the one that has already handed the question over.
     child.turn_cancel_ = request.cancel_token;
@@ -440,10 +427,6 @@ DelegationResult Runtime::Delegate(const Delegation& request) {
       child.turn_deadline_ = std::chrono::steady_clock::now() + request.timeout;
     }
     child.Initialize();
-    // Initialize rebuilds the toolbox before any of the above is set, so the chain reaches the
-    // executor here -- after the runtime exists, before it answers. Nothing else carries it: a
-    // child that never ran this line would hold an empty chain and refuse no re-entry at all.
-    child.ApplyDelegatedChain();
 
     const ExecutionResult answered =
         child.ProcessInput(request.prompt, request.cancel_token);
