@@ -81,8 +81,11 @@ int WithInitializedRuntime(const std::string& agent, Runtime& runtime,
 
 // `show_usage` moves what the turn cost onto stderr, off by default so that stdout stays the
 // answer alone.
+// `attachments` are files to put on the message beside the prompt, in the order they were named.
+// A path that cannot be read is a mistake in the invocation rather than a turn to send, so it is
+// refused before anything reaches a provider.
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
-           bool show_usage = false);
+           bool show_usage = false, const std::vector<std::string>& attachments = {});
 int RunChat(const std::string& agent, Runtime& runtime);
 // A developer tool, kept off the top-level listing: it captures a provider's raw bytes for
 // someone writing a gateway adapter, which is not a question `agents.json` has an answer to.

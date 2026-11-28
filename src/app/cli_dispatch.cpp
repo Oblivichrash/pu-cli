@@ -220,8 +220,17 @@ int RunCommandLine(int argc, char* argv[]) {
       if (!vm.count("prompt") || vm["prompt"].as<std::string>().empty()) {
         return usage_error("prompt required for ask command");
       }
+      // A picture and a file are the same thing to the runtime; the two flags exist so the
+      // command line reads as what the turn is about.
+      std::vector<std::string> attachments;
+      for (const char* flag : {"image", "file"}) {
+        if (vm.count(flag) == 0) continue;
+        for (const std::string& path : vm[flag].as<std::vector<std::string>>()) {
+          attachments.push_back(path);
+        }
+      }
       return pu::cli::RunAsk(OptionOr(vm, "agent", ""), vm["prompt"].as<std::string>(), runtime,
-                             vm.count("show-usage") > 0);
+                             vm.count("show-usage") > 0, attachments);
     }
 
     if (cmd == "delegate") {

@@ -8,8 +8,13 @@
 #include "pu/app/cli.hpp"
 
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "pu/core/platform.hpp"
 #include "pu/runtime/answer.hpp"
@@ -19,8 +24,61 @@
 
 namespace pu::cli {
 
+namespace {
+
+// The media type a path's own bytes name. Read from the extension rather than sniffed: the
+// wire wants the type the sender asserts, and a magic-byte guess would disagree with the file
+// the user named in the cases where they differ.
+std::string MediaTypeOf(const std::filesystem::path& path) {
+  const std::string ext = path.extension().string();
+  if (ext == ".png") return "image/png";
+  if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+  if (ext == ".gif") return "image/gif";
+  if (ext == ".webp") return "image/webp";
+  if (ext == ".bmp") return "image/bmp";
+  if (ext == ".txt" || ext == ".md" || ext == ".log") return "text/plain";
+  if (ext == ".pdf") return "application/pdf";
+  if (ext == ".json") return "application/json";
+  return {};
+}
+
+// A file named on the command line, as the block the turn will carry. Nothing is stored yet --
+// the runtime does that -- so this is only the read and the kind.
+std::optional<Runtime::Attachment> ReadAttachment(const std::string& named) {
+  const std::filesystem::path path(named);
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) return std::nullopt;
+  std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  if (bytes.empty()) return std::nullopt;
+
+  Runtime::Attachment attachment;
+  attachment.media_type = MediaTypeOf(path);
+  attachment.name = path.filename().string();
+  attachment.bytes = std::move(bytes);
+  // A picture is a picture and everything else is a file. The kind decides which wire block
+  // carries it, and a gateway that has none for a file refuses the turn rather than guessing.
+  attachment.kind = attachment.media_type.rfind("image/", 0) == 0 ? BlockKind::kImage
+                                                                  : BlockKind::kFile;
+  return attachment;
+}
+
+}  // namespace
+
 int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime,
-           bool show_usage) {
+           bool show_usage, const std::vector<std::string>& attachments) {
+  // Read before the runtime is built: a path that cannot be opened is a mistake in the
+  // invocation, and a turn sent without it would answer a different question than the one the
+  // command line asked.
+  std::vector<Runtime::Attachment> carried;
+  carried.reserve(attachments.size());
+  for (const std::string& named : attachments) {
+    std::optional<Runtime::Attachment> attachment = ReadAttachment(named);
+    if (!attachment) {
+      std::cerr << "cannot attach '" << named << "': it is missing, unreadable or empty\n";
+      return static_cast<int>(ExitCode::kUsage);
+    }
+    carried.push_back(std::move(*attachment));
+  }
   // The prompt is the whole of what this turn knows. `chat` and `serve` remember, and are
   // where a conversation that continues belongs; an answer asked for once should not move the
   // conversation the next `pu ask` inherits.
@@ -29,7 +87,7 @@ int RunAsk(const std::string& agent, const std::string& prompt, Runtime& runtime
       [&] {
         ExecutionResult result =
             runtime.ProcessInput(prompt, platform::ShutdownToken(), nullptr, {},
-                                 nullptr, platform::ShutdownToken());
+                                 nullptr, platform::ShutdownToken(), std::move(carried));
         ::pu::runtime::PrintAnswer(result, std::cout);
         detail::PrintFailure(result);
         detail::PrintNotice(result);

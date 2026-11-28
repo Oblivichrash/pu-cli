@@ -130,6 +130,10 @@ CommandLine BuildCommandLine() {
       {"agents", {{"json", "the shape GET /api/agents answers with, for a pipe", false}}},
       {"ask",
        {{"prompt", "prompt to send", true},
+        // Repeated rather than comma-separated: a path may contain a comma, and `--image a
+        // --image b` is the shape every other tool that takes a list of files already uses.
+        {"image", "a picture to put on the message, repeated for each one", true},
+        {"file", "a file to put on the message, repeated for each one", true},
         agent_option,
         {"show-usage", "print the tokens and price this turn cost, on stderr", false}}},
       {"chat", {agent_option}},
@@ -173,8 +177,11 @@ CommandLine BuildCommandLine() {
 
   auto declare = [](boost::program_options::options_description& into,
                     const OptionSpec& option) {
-    // `--header` is given once per header, so it is a vector; every other value is one word.
-    if (std::string(option.name) == "header") {
+    // `--header`, `--image` and `--file` are given once per value, so they are vectors; every
+    // other value is one word. A name added here and left out of this list takes one value and
+    // then answers `bad_any_cast` when the dispatcher asks for a list.
+    const std::string name(option.name);
+    if (name == "header" || name == "image" || name == "file") {
       into.add_options()(option.name,
                          boost::program_options::value<std::vector<std::string>>(),
                          option.help);
